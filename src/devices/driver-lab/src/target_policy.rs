@@ -11,7 +11,7 @@
 //!
 //! Manifests are canonicalized and digested via SHA-256 (Spec 9.6).
 
-use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId};
+use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId, WritableRegister};
 use crate::digest::Sha256Digest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest as _, Sha256};
@@ -87,6 +87,41 @@ impl<'de> Deserialize<'de> for RangeDto {
     }
 }
 
+/// Manifest specification for one writable register.
+///
+/// Fields are declared in alphabetical order to produce deterministic canonical JSON.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct WritableRegisterDto {
+    /// Allowed writable bitmask.
+    pub allow_mask: u32,
+    /// Whether read-modify-write is allowed.
+    pub allow_rmw: bool,
+    /// Byte offset from the start of the logical resource.
+    pub offset: u64,
+    /// Valid precondition bitmask.
+    pub precondition_mask: u32,
+    /// Whether readback is configured/supported.
+    pub readback: bool,
+    /// Whether a precondition is required for writes.
+    pub require_precondition: bool,
+    /// Access width in bytes (must be 4).
+    pub width: u32,
+}
+
+impl WritableRegisterDto {
+    pub fn to_writable_register(&self) -> WritableRegister {
+        WritableRegister {
+            offset: self.offset,
+            width: self.width,
+            allow_mask: self.allow_mask,
+            allow_rmw: self.allow_rmw,
+            require_precondition: self.require_precondition,
+            precondition_mask: self.precondition_mask,
+            readback: self.readback,
+        }
+    }
+}
+
 /// Manifest specification for one resource's ceiling.
 ///
 /// Fields are declared in alphabetical order to produce deterministic canonical JSON.
@@ -102,6 +137,9 @@ pub struct ResourcePolicyManifest {
     pub id: ResourceId,
     /// Stable logical resource name.
     pub name: String,
+    /// Writable registers permitted on this resource.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub writable_registers: Vec<WritableRegisterDto>,
 }
 
 impl ResourcePolicyManifest {
@@ -118,6 +156,25 @@ impl ResourcePolicyManifest {
             });
         }
         self.hard_denied = canonicalize_ranges(&self.hard_denied)?;
+        self.writable_registers.sort();
+        let mut seen = std::collections::BTreeSet::new();
+        for reg in &self.writable_registers {
+            if !seen.insert(reg.offset) {
+                return Err(PolicyValidationError::DuplicateWritableRegister {
+                    id: self.id,
+                    offset: reg.offset,
+                });
+            }
+            if reg.width != 4 {
+                return Err(PolicyValidationError::UnsupportedWidth(reg.width));
+            }
+            if reg.allow_mask == 0 {
+                return Err(PolicyValidationError::InvalidWritableRegisterMask {
+                    id: self.id,
+                    offset: reg.offset,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -127,6 +184,11 @@ impl ResourcePolicyManifest {
             hard_denied: self.hard_denied.iter().map(|r| r.to_range()).collect(),
             allow_unknown_reads: self.allow_unknown_reads,
             allow_poll: self.allow_poll,
+            writable_registers: self
+                .writable_registers
+                .iter()
+                .map(|w| w.to_writable_register())
+                .collect(),
         }
     }
 }
@@ -159,6 +221,7 @@ impl TargetPolicyManifest {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 hard_denied: vec![],
+                writable_registers: vec![],
             })
             .collect();
 
@@ -297,6 +360,41 @@ impl TargetPolicyManifest {
                     });
                 }
             }
+
+            // Runtime writable registers must exist in baseline and cannot widen masks or permissions.
+            for rt_reg in &runtime_res.writable_registers {
+                let base_reg =
+                    base_res.writable_registers.iter().find(|b| b.offset == rt_reg.offset).ok_or(
+                        NarrowingError::WidenedWritableRegister {
+                            id: runtime_res.id,
+                            offset: rt_reg.offset,
+                        },
+                    )?;
+                if (rt_reg.allow_mask & !base_reg.allow_mask) != 0 {
+                    return Err(NarrowingError::WidenedWritableRegisterMask {
+                        id: runtime_res.id,
+                        offset: rt_reg.offset,
+                    });
+                }
+                if !base_reg.allow_rmw && rt_reg.allow_rmw {
+                    return Err(NarrowingError::WidenedWritableRegister {
+                        id: runtime_res.id,
+                        offset: rt_reg.offset,
+                    });
+                }
+                if base_reg.require_precondition && !rt_reg.require_precondition {
+                    return Err(NarrowingError::WidenedWritableRegister {
+                        id: runtime_res.id,
+                        offset: rt_reg.offset,
+                    });
+                }
+                if (rt_reg.precondition_mask & !base_reg.precondition_mask) != 0 {
+                    return Err(NarrowingError::WidenedWritableRegisterMask {
+                        id: runtime_res.id,
+                        offset: rt_reg.offset,
+                    });
+                }
+            }
         }
 
         let mut narrowed = runtime.clone();
@@ -346,6 +444,9 @@ pub enum PolicyValidationError {
     DuplicateResourceId(ResourceId),
     DuplicateResourceName(String),
     TooManyResources { count: usize, max: usize },
+    DuplicateWritableRegister { id: ResourceId, offset: u64 },
+    UnsupportedWidth(u32),
+    InvalidWritableRegisterMask { id: ResourceId, offset: u64 },
 }
 
 /// Errors when a runtime configuration widens rather than narrows the baseline policy.
@@ -360,6 +461,8 @@ pub enum NarrowingError {
     WidenedUnknownReads(ResourceId),
     WidenedPoll(ResourceId),
     ReducedHardDenial { id: ResourceId, unconstrained_start: u64, unconstrained_end: u64 },
+    WidenedWritableRegister { id: ResourceId, offset: u64 },
+    WidenedWritableRegisterMask { id: ResourceId, offset: u64 },
     Validation(PolicyValidationError),
 }
 
@@ -383,6 +486,13 @@ impl std::fmt::Display for PolicyValidationError {
             Self::DuplicateResourceName(name) => write!(f, "duplicate resource name: {name}"),
             Self::TooManyResources { count, max } => {
                 write!(f, "resource count {count} exceeds maximum {max}")
+            }
+            Self::DuplicateWritableRegister { id, offset } => {
+                write!(f, "duplicate writable register for resource {id} at offset {offset}")
+            }
+            Self::UnsupportedWidth(w) => write!(f, "unsupported width: {w}"),
+            Self::InvalidWritableRegisterMask { id, offset } => {
+                write!(f, "invalid allow mask for resource {id} at offset {offset}")
             }
         }
     }
@@ -413,6 +523,15 @@ impl std::fmt::Display for NarrowingError {
                 write!(
                     f,
                     "runtime hard denials for resource {id} fail to cover baseline denial [{unconstrained_start}, {unconstrained_end})"
+                )
+            }
+            Self::WidenedWritableRegister { id, offset } => {
+                write!(f, "writable register on resource {id} at offset {offset} widened baseline")
+            }
+            Self::WidenedWritableRegisterMask { id, offset } => {
+                write!(
+                    f,
+                    "mask for writable register on resource {id} at offset {offset} widened baseline"
                 )
             }
             Self::Validation(err) => write!(f, "validation error: {err}"),
@@ -463,6 +582,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap()],
+                writable_registers: vec![],
             }],
         };
         manifest.canonicalize().unwrap();
@@ -493,6 +613,7 @@ mod tests {
                 allow_unknown_reads: true,
                 allow_poll: true,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap()],
+                writable_registers: vec![],
             }],
         };
 
@@ -508,6 +629,7 @@ mod tests {
                 allow_unknown_reads: false,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 68).unwrap(), RangeDto::new(128, 144).unwrap()],
+                writable_registers: vec![],
             }],
         };
 
@@ -533,6 +655,7 @@ mod tests {
                 allow_unknown_reads: false,
                 allow_poll: false,
                 hard_denied: vec![RangeDto::new(64, 128).unwrap()],
+                writable_registers: vec![],
             }],
         };
 
@@ -578,5 +701,75 @@ mod tests {
                 unconstrained_end: 128
             })
         );
+    }
+
+    #[test]
+    fn writable_registers_canonicalization_and_narrowing() {
+        let base_reg = WritableRegisterDto {
+            allow_mask: 0x0000FFFF,
+            allow_rmw: false,
+            offset: 0x10,
+            precondition_mask: 0x00000001,
+            readback: true,
+            require_precondition: true,
+            width: 4,
+        };
+        let mut baseline = TargetPolicyManifest {
+            schema_version: 1,
+            allow_mutating_sessions: true,
+            audit_capacity: 1024,
+            max_snapshot_items: 64,
+            resources: vec![ResourcePolicyManifest {
+                id: 0,
+                name: "mmio0".to_string(),
+                allow_unknown_reads: true,
+                allow_poll: false,
+                hard_denied: vec![],
+                writable_registers: vec![base_reg.clone()],
+            }],
+        };
+        baseline.canonicalize().unwrap();
+
+        // Runtime cannot add a new writable register not in baseline
+        let mut runtime = baseline.clone();
+        runtime.resources[0].writable_registers.push(WritableRegisterDto {
+            allow_mask: 0xFFFFFFFF,
+            allow_rmw: true,
+            offset: 0x20,
+            precondition_mask: 0,
+            readback: false,
+            require_precondition: false,
+            width: 4,
+        });
+        assert_eq!(
+            baseline.narrow_with(&runtime),
+            Err(NarrowingError::WidenedWritableRegister { id: 0, offset: 0x20 })
+        );
+
+        // Runtime cannot widen allow_mask
+        let mut runtime = baseline.clone();
+        runtime.resources[0].writable_registers[0].allow_mask = 0x0001FFFF;
+        assert_eq!(
+            baseline.narrow_with(&runtime),
+            Err(NarrowingError::WidenedWritableRegisterMask { id: 0, offset: 0x10 })
+        );
+
+        // Runtime cannot enable RMW when baseline disallows
+        let mut runtime = baseline.clone();
+        runtime.resources[0].writable_registers[0].allow_rmw = true;
+        assert_eq!(
+            baseline.narrow_with(&runtime),
+            Err(NarrowingError::WidenedWritableRegister { id: 0, offset: 0x10 })
+        );
+
+        // Runtime can narrow allow_mask
+        let mut runtime = baseline.clone();
+        runtime.resources[0].writable_registers[0].allow_mask = 0x000000FF;
+        assert!(baseline.narrow_with(&runtime).is_ok());
+
+        // Runtime can omit writable registers (narrowing to read-only)
+        let mut runtime = baseline.clone();
+        runtime.resources[0].writable_registers.clear();
+        assert!(baseline.narrow_with(&runtime).is_ok());
     }
 }

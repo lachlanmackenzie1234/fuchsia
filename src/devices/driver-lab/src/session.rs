@@ -43,15 +43,7 @@ pub struct ProxyIdentity {
     pub policy_digest: String,
 }
 
-/// Session mode. A read-only session can never issue a write; a mutating
-/// session additionally requires the exclusive mutation lease.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SessionMode {
-    /// The session may only read.
-    ReadOnly,
-    /// The session holds the exclusive mutation lease.
-    Mutating,
-}
+pub use crate::access_policy::SessionMode;
 
 /// Why a session could not be opened.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,8 +163,9 @@ impl SessionManager {
                 return Err(OpenError::MutationLeaseHeld);
             }
         }
-        let policy = AccessPolicy::new(self.resources.clone(), self.ceiling.clone(), allowlist)
-            .map_err(|(rule, denial)| OpenError::RejectedAllowlist { rule, denial })?;
+        let policy =
+            AccessPolicy::new(mode, self.resources.clone(), self.ceiling.clone(), allowlist)
+                .map_err(|(rule, denial)| OpenError::RejectedAllowlist { rule, denial })?;
         let id = self.next_id;
         self.next_id += 1;
         if mode == SessionMode::Mutating {
@@ -232,7 +225,12 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         )]);
         SessionManager::new(identity(), resources, ceiling, true)
     }
@@ -336,7 +334,12 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         )]);
         let mut manager = SessionManager::new(identity(), resources, ceiling, false);
         assert_eq!(open(&mut manager, SessionMode::Mutating), Err(OpenError::MutationNotPermitted));

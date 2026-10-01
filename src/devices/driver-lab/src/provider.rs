@@ -121,7 +121,12 @@ mod tests {
         bundle.resources.insert(1, resource(0x100, 0x1000));
         bundle.ceiling.insert(
             1,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         );
         bundle.backends.insert(1, FakeMmio::new());
         bundle
@@ -148,7 +153,12 @@ mod tests {
         let mut bundle = bundle();
         bundle.ceiling.insert(
             9,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: false, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: false,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         );
         assert_eq!(
             bundle.validate(),

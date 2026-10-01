@@ -147,6 +147,21 @@ class _BridgeSessionServer(fdl.SessionServer):
             next_cursor=page.next_cursor,
         )
 
+    async def write32(self, request: Any) -> Any:
+        if hasattr(self._session, "write32"):
+            return await self._session.write32(request)
+        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+
+    async def poll32(self, request: Any) -> Any:
+        if hasattr(self._session, "poll32"):
+            return await self._session.poll32(request)
+        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+
+    async def execute_sequence(self, request: Any) -> Any:
+        if hasattr(self._session, "execute_sequence"):
+            return await self._session.execute_sequence(request)
+        return DomainError(error=fdl.OperationError.NOT_PERMITTED_BY_CEILING)
+
 
 class _BridgeProxyServer(fdl.ProxyServer):
     """Serves `Proxy` by delegating to a `FakeProxyTarget`."""

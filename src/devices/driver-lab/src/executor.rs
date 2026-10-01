@@ -9,9 +9,9 @@
 //! touch hardware. A snapshot validates every item before the first read
 //! and is an ordered series of reads, not an atomic hardware snapshot.
 
-use crate::access_policy::{AccessClass, AccessPolicy, Denial, ResourceId};
+use crate::access_policy::{AccessClass, AccessPolicy, Denial, ResourceId, WritePrecondition};
 use crate::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
-use crate::hardware_backend::{BackendError, Clock, MmioBackend};
+use crate::hardware_backend::{BackendError, Clock, MmioBackend, Timer};
 use std::collections::BTreeMap;
 
 /// Instance-wide execution limits, derived from the target ceiling.
@@ -19,6 +19,20 @@ use std::collections::BTreeMap;
 pub struct ExecLimits {
     /// Maximum number of items in one snapshot.
     pub max_snapshot_items: usize,
+    /// Maximum number of items in one sequence.
+    pub max_sequence_items: usize,
+    /// Maximum single delay in nanoseconds.
+    pub max_delay_ns: i64,
+}
+
+impl Default for ExecLimits {
+    fn default() -> Self {
+        Self {
+            max_snapshot_items: 64,
+            max_sequence_items: 64,
+            max_delay_ns: 5_000_000_000, // 5 seconds
+        }
+    }
 }
 
 /// One requested snapshot read.
@@ -58,6 +72,127 @@ pub enum ReadError {
         /// Audit sequence of the failure record.
         audit_seq: u64,
     },
+}
+
+/// The outcome of a completed 32-bit write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WriteOutcome {
+    /// Value read back if readback was configured or requested.
+    pub readback_value: u32,
+    /// Audit sequence assigned to the write.
+    pub audit_seq: u64,
+    /// Timestamp of the write.
+    pub timestamp_ns: i64,
+}
+
+/// Why a 32-bit write did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteError {
+    /// Policy rejected the write; hardware was not touched.
+    Denied {
+        /// The rejecting policy layer's reason.
+        denial: Denial,
+        /// Audit sequence of the rejection record.
+        audit_seq: u64,
+    },
+    /// The backend failed after policy allowed the write.
+    Backend {
+        /// The backend error.
+        error: BackendError,
+        /// Audit sequence of the failure record.
+        audit_seq: u64,
+    },
+}
+
+/// The outcome of a completed 32-bit poll.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PollOutcome {
+    /// Final value read from the register.
+    pub value: u32,
+    /// Audit sequence assigned to the matching read.
+    pub audit_seq: u64,
+    /// Timestamp of the matching read.
+    pub timestamp_ns: i64,
+}
+
+/// Why a 32-bit poll did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PollError {
+    /// Policy rejected the poll or the poll timed out.
+    Denied {
+        /// The rejection or timeout reason.
+        denial: Denial,
+        /// Audit sequence of the rejection record.
+        audit_seq: u64,
+    },
+    /// The backend failed during polling.
+    Backend {
+        /// The backend error.
+        error: BackendError,
+        /// Audit sequence of the failure record.
+        audit_seq: u64,
+    },
+}
+
+/// An operation within a bounded sequence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequenceItem {
+    Read32 {
+        resource: ResourceId,
+        offset: u64,
+    },
+    Write32 {
+        resource: ResourceId,
+        offset: u64,
+        value: u32,
+        write_mask: u32,
+        precondition: Option<WritePrecondition>,
+        readback: bool,
+    },
+    Poll32 {
+        resource: ResourceId,
+        offset: u64,
+        expected: u32,
+        mask: u32,
+        interval_ns: i64,
+        timeout_ns: i64,
+    },
+    DelayNs(i64),
+    Barrier,
+}
+
+/// The outcome of one sequence item that completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequenceItemOutcome {
+    Read32(ReadOutcome),
+    Write32(WriteOutcome),
+    Poll32(PollOutcome),
+    DelayNs,
+    Barrier,
+    Error(Denial),
+    Backend(BackendError),
+}
+
+/// Result of one sequence item that began execution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SequenceItemResult {
+    pub index: u32,
+    pub ok: bool,
+    pub outcome: SequenceItemOutcome,
+}
+
+/// Outcome of a sequence whose prevalidation succeeded.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SequenceOutcome {
+    pub results: Vec<SequenceItemResult>,
+    pub complete: bool,
+}
+
+/// Why a sequence was rejected before any hardware access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequenceError {
+    TooManyItems { max: usize, audit_seq: u64 },
+    Rejected { index: usize, denial: Denial, audit_seq: u64 },
 }
 
 /// The per-item result of a snapshot read that began execution.
@@ -105,8 +240,8 @@ pub enum SnapshotError {
     },
 }
 
-/// Read-path executor shared by all sessions. Each call takes the calling
-/// session's validated [`AccessPolicy`].
+/// Read-path and sequence executor shared by all sessions. Each call takes the
+/// calling session's validated [`AccessPolicy`].
 #[derive(Debug)]
 pub struct Executor<B, C> {
     backends: BTreeMap<ResourceId, B>,
@@ -130,6 +265,23 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
         self.backends.get(&resource)
     }
 
+    /// Reads a register once directly from the backend without policy or audit.
+    pub fn poll_read_once(
+        &mut self,
+        resource: ResourceId,
+        offset: u64,
+    ) -> Result<u32, BackendError> {
+        let backend = self.backends.get_mut(&resource).ok_or(BackendError::Fault)?;
+        backend.read32(offset)
+    }
+
+    /// Invokes hardware MMIO barriers across all backends.
+    pub fn barrier(&mut self) {
+        for backend in self.backends.values_mut() {
+            backend.barrier();
+        }
+    }
+
     /// Performs one policy-checked, audited 32-bit read.
     pub fn read32(
         &mut self,
@@ -139,9 +291,24 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
         resource: ResourceId,
         offset: u64,
     ) -> Result<ReadOutcome, ReadError> {
+        self.read32_internal(policy, audit, session, resource, offset, None)
+    }
+
+    /// Internal 32-bit read implementation supporting sequence item indexing.
+    pub fn read32_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        item_index: Option<u32>,
+    ) -> Result<ReadOutcome, ReadError> {
         let timestamp_ns = self.clock.now_ns();
-        if let Err(denial) = policy.check_read32(resource, offset, AccessClass::ReadOnce) {
-            let audit_seq = audit.append(op_record(
+        let access_class =
+            if item_index.is_some() { AccessClass::Sequence } else { AccessClass::ReadOnce };
+        if let Err(denial) = policy.check_read32(resource, offset, access_class) {
+            let mut record = op_record(
                 session,
                 resource,
                 "read32",
@@ -150,11 +317,13 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
                 OpStatus::Rejected,
                 None,
                 timestamp_ns,
-            ));
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
             return Err(ReadError::Denied { denial, audit_seq });
         }
         let Some(backend) = self.backends.get_mut(&resource) else {
-            let audit_seq = audit.append(op_record(
+            let mut record = op_record(
                 session,
                 resource,
                 "read32",
@@ -163,12 +332,14 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
                 OpStatus::BackendFault,
                 None,
                 timestamp_ns,
-            ));
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
             return Err(ReadError::Backend { error: BackendError::Fault, audit_seq });
         };
         match backend.read32(offset) {
             Ok(value) => {
-                let audit_seq = audit.append(op_record(
+                let mut record = op_record(
                     session,
                     resource,
                     "read32",
@@ -177,11 +348,13 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
                     OpStatus::Ok,
                     Some(value),
                     timestamp_ns,
-                ));
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
                 Ok(ReadOutcome { value, audit_seq, timestamp_ns })
             }
             Err(error) => {
-                let audit_seq = audit.append(op_record(
+                let mut record = op_record(
                     session,
                     resource,
                     "read32",
@@ -190,10 +363,344 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
                     OpStatus::BackendFault,
                     None,
                     timestamp_ns,
-                ));
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
                 Err(ReadError::Backend { error, audit_seq })
             }
         }
+    }
+
+    /// Performs one policy-checked, audited 32-bit masked write.
+    pub fn write32(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        value: u32,
+        write_mask: u32,
+        precondition: Option<WritePrecondition>,
+        readback: bool,
+    ) -> Result<WriteOutcome, WriteError> {
+        self.write32_internal(
+            policy,
+            audit,
+            session,
+            resource,
+            offset,
+            value,
+            write_mask,
+            precondition,
+            readback,
+            None,
+        )
+    }
+
+    /// Internal 32-bit write implementation supporting sequence item indexing.
+    pub fn write32_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        value: u32,
+        write_mask: u32,
+        precondition: Option<WritePrecondition>,
+        readback: bool,
+        item_index: Option<u32>,
+    ) -> Result<WriteOutcome, WriteError> {
+        let timestamp_ns = self.clock.now_ns();
+        let reg = match policy.check_write32(resource, offset, write_mask, precondition.as_ref()) {
+            Ok(r) => *r,
+            Err(denial) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "write32",
+                    offset,
+                    Decision::Denied(denial),
+                    OpStatus::Rejected,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                return Err(WriteError::Denied { denial, audit_seq });
+            }
+        };
+
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let mut record = op_record(
+                session,
+                resource,
+                "write32",
+                offset,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(WriteError::Backend { error: BackendError::Fault, audit_seq });
+        };
+
+        let needs_before_read =
+            write_mask != 0xFFFF_FFFF || precondition.is_some() || reg.require_precondition;
+        let mut before_val = 0u32;
+        if needs_before_read {
+            let read_ts = self.clock.now_ns();
+            match backend.read32(offset) {
+                Ok(val) => {
+                    before_val = val;
+                    let mut record = op_record(
+                        session,
+                        resource,
+                        "write32_before_read",
+                        offset,
+                        Decision::Allowed,
+                        OpStatus::Ok,
+                        Some(val),
+                        read_ts,
+                    );
+                    record.item_index = item_index;
+                    audit.append(record);
+                }
+                Err(error) => {
+                    let mut record = op_record(
+                        session,
+                        resource,
+                        "write32_before_read",
+                        offset,
+                        Decision::Allowed,
+                        OpStatus::BackendFault,
+                        None,
+                        read_ts,
+                    );
+                    record.item_index = item_index;
+                    let audit_seq = audit.append(record);
+                    return Err(WriteError::Backend { error, audit_seq });
+                }
+            }
+        }
+
+        if let Some(pre) = precondition {
+            if (before_val & pre.mask) != (pre.expected & pre.mask) {
+                let fail_ts = self.clock.now_ns();
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "write32",
+                    offset,
+                    Decision::Denied(Denial::PreconditionFailed),
+                    OpStatus::Rejected,
+                    Some(before_val),
+                    fail_ts,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                return Err(WriteError::Denied { denial: Denial::PreconditionFailed, audit_seq });
+            }
+        }
+
+        let final_val = if write_mask == 0xFFFF_FFFF {
+            value
+        } else {
+            (before_val & !write_mask) | (value & write_mask)
+        };
+
+        let write_ts = self.clock.now_ns();
+        if let Err(error) = backend.write32(offset, final_val) {
+            let mut record = op_record(
+                session,
+                resource,
+                "write32",
+                offset,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                Some(final_val),
+                write_ts,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(WriteError::Backend { error, audit_seq });
+        }
+
+        let mut record = op_record(
+            session,
+            resource,
+            "write32",
+            offset,
+            Decision::Allowed,
+            OpStatus::Ok,
+            Some(final_val),
+            write_ts,
+        );
+        record.item_index = item_index;
+        let audit_seq = audit.append(record);
+
+        backend.barrier();
+
+        let do_readback = readback || reg.readback;
+        let readback_val = if do_readback {
+            let rb_ts = self.clock.now_ns();
+            match backend.read32(offset) {
+                Ok(rb) => {
+                    let mut rb_record = op_record(
+                        session,
+                        resource,
+                        "write32_readback",
+                        offset,
+                        Decision::Allowed,
+                        OpStatus::Ok,
+                        Some(rb),
+                        rb_ts,
+                    );
+                    rb_record.item_index = item_index;
+                    audit.append(rb_record);
+                    rb
+                }
+                Err(error) => {
+                    let mut rb_record = op_record(
+                        session,
+                        resource,
+                        "write32_readback",
+                        offset,
+                        Decision::Allowed,
+                        OpStatus::BackendFault,
+                        None,
+                        rb_ts,
+                    );
+                    rb_record.item_index = item_index;
+                    let rb_audit_seq = audit.append(rb_record);
+                    return Err(WriteError::Backend { error, audit_seq: rb_audit_seq });
+                }
+            }
+        } else {
+            0
+        };
+
+        Ok(WriteOutcome { readback_value: readback_val, audit_seq, timestamp_ns: write_ts })
+    }
+
+    /// Evaluates one polling read step against expected value and mask.
+    pub fn poll32_read_step(
+        &mut self,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        expected: u32,
+        mask: u32,
+        item_index: Option<u32>,
+    ) -> Result<Result<PollOutcome, u32>, PollError> {
+        let timestamp_ns = self.clock.now_ns();
+        let val = match self.poll_read_once(resource, offset) {
+            Ok(v) => v,
+            Err(error) => {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "poll32",
+                    offset,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                return Err(PollError::Backend { error, audit_seq });
+            }
+        };
+        if (val & mask) == (expected & mask) {
+            let mut record = op_record(
+                session,
+                resource,
+                "poll32",
+                offset,
+                Decision::Allowed,
+                OpStatus::Ok,
+                Some(val),
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            Ok(Ok(PollOutcome { value: val, audit_seq, timestamp_ns }))
+        } else {
+            Ok(Err(val))
+        }
+    }
+
+    /// Records an audit rejection when polling times out.
+    pub fn poll32_timeout(
+        &mut self,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        last_val: Option<u32>,
+        item_index: Option<u32>,
+    ) -> PollError {
+        let timestamp_ns = self.clock.now_ns();
+        let mut record = op_record(
+            session,
+            resource,
+            "poll32",
+            offset,
+            Decision::Denied(Denial::Timeout),
+            OpStatus::Rejected,
+            last_val,
+            timestamp_ns,
+        );
+        record.item_index = item_index;
+        let audit_seq = audit.append(record);
+        PollError::Denied { denial: Denial::Timeout, audit_seq }
+    }
+
+    /// Validates whole sequence before any hardware execution.
+    pub fn prevalidate_sequence(
+        &self,
+        policy: &AccessPolicy,
+        items: &[SequenceItem],
+    ) -> Result<(), (usize, Denial)> {
+        if items.len() > self.limits.max_sequence_items {
+            return Err((0, Denial::LimitExceeded));
+        }
+        for (index, item) in items.iter().enumerate() {
+            match item {
+                SequenceItem::Read32 { resource, offset } => {
+                    policy
+                        .check_read32(*resource, *offset, AccessClass::Sequence)
+                        .map_err(|d| (index, d))?;
+                }
+                SequenceItem::Write32 { resource, offset, write_mask, precondition, .. } => {
+                    policy
+                        .check_write32(*resource, *offset, *write_mask, precondition.as_ref())
+                        .map_err(|d| (index, d))?;
+                }
+                SequenceItem::Poll32 {
+                    resource, offset, mask, interval_ns, timeout_ns, ..
+                } => {
+                    policy
+                        .check_poll32(*resource, *offset, *mask, *interval_ns, *timeout_ns)
+                        .map_err(|d| (index, d))?;
+                    if *timeout_ns > self.limits.max_delay_ns {
+                        return Err((index, Denial::LimitExceeded));
+                    }
+                }
+                SequenceItem::DelayNs(delay_ns) => {
+                    if *delay_ns < 0 || *delay_ns > self.limits.max_delay_ns {
+                        return Err((index, Denial::LimitExceeded));
+                    }
+                }
+                SequenceItem::Barrier => {}
+            }
+        }
+        Ok(())
     }
 
     /// Performs a bounded snapshot: every item is validated before the
@@ -279,6 +786,360 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
     }
 }
 
+impl<B: MmioBackend, C: Timer> Executor<B, C> {
+    /// Performs an asynchronous 32-bit poll.
+    pub async fn poll32(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        expected: u32,
+        mask: u32,
+        interval_ns: i64,
+        timeout_ns: i64,
+    ) -> Result<PollOutcome, PollError> {
+        self.poll32_internal(
+            policy,
+            audit,
+            session,
+            resource,
+            offset,
+            expected,
+            mask,
+            interval_ns,
+            timeout_ns,
+            None,
+        )
+        .await
+    }
+
+    /// Internal 32-bit poll implementation supporting sequence item indexing.
+    pub async fn poll32_internal(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        expected: u32,
+        mask: u32,
+        interval_ns: i64,
+        timeout_ns: i64,
+        item_index: Option<u32>,
+    ) -> Result<PollOutcome, PollError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_poll32(resource, offset, mask, interval_ns, timeout_ns) {
+            let mut record = op_record(
+                session,
+                resource,
+                "poll32",
+                offset,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(PollError::Denied { denial, audit_seq });
+        }
+        if timeout_ns > self.limits.max_delay_ns {
+            let mut record = op_record(
+                session,
+                resource,
+                "poll32",
+                offset,
+                Decision::Denied(Denial::LimitExceeded),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            record.item_index = item_index;
+            let audit_seq = audit.append(record);
+            return Err(PollError::Denied { denial: Denial::LimitExceeded, audit_seq });
+        }
+
+        let start_ns = self.clock.now_ns();
+        let deadline_ns = start_ns.saturating_add(timeout_ns);
+        let mut last_val: Option<u32>;
+        loop {
+            match self
+                .poll32_read_step(audit, session, resource, offset, expected, mask, item_index)?
+            {
+                Ok(outcome) => return Ok(outcome),
+                Err(val) => {
+                    last_val = Some(val);
+                    let now = self.clock.now_ns();
+                    if now >= deadline_ns {
+                        return Err(self.poll32_timeout(
+                            audit, session, resource, offset, last_val, item_index,
+                        ));
+                    }
+                    let sleep_ns = interval_ns.min(deadline_ns - now);
+                    if sleep_ns > 0 {
+                        self.clock.sleep(sleep_ns).await;
+                    }
+                    if self.clock.now_ns() >= deadline_ns {
+                        match self.poll32_read_step(
+                            audit, session, resource, offset, expected, mask, item_index,
+                        )? {
+                            Ok(outcome) => return Ok(outcome),
+                            Err(final_val) => {
+                                return Err(self.poll32_timeout(
+                                    audit,
+                                    session,
+                                    resource,
+                                    offset,
+                                    Some(final_val),
+                                    item_index,
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Executes a bounded ordered sequence.
+    pub async fn execute_sequence(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        items: &[SequenceItem],
+    ) -> Result<SequenceOutcome, SequenceError> {
+        if items.len() > self.limits.max_sequence_items {
+            let timestamp_ns = self.clock.now_ns();
+            let record = AuditRecord {
+                session: Some(session),
+                resource: None,
+                operation: "sequence",
+                offset: None,
+                decision: Decision::Denied(Denial::LimitExceeded),
+                status: OpStatus::Rejected,
+                value: None,
+                timestamp_ns,
+                run_id: None,
+                item_index: None,
+            };
+            let audit_seq = audit.append(record);
+            return Err(SequenceError::TooManyItems {
+                max: self.limits.max_sequence_items,
+                audit_seq,
+            });
+        }
+        if let Err((index, denial)) = self.prevalidate_sequence(policy, items) {
+            let timestamp_ns = self.clock.now_ns();
+            let record = AuditRecord {
+                session: Some(session),
+                resource: None,
+                operation: "sequence",
+                offset: None,
+                decision: Decision::Denied(denial),
+                status: OpStatus::Rejected,
+                value: None,
+                timestamp_ns,
+                run_id: None,
+                item_index: Some(index as u32),
+            };
+            let audit_seq = audit.append(record);
+            return Err(SequenceError::Rejected { index, denial, audit_seq });
+        }
+
+        let mut results = Vec::with_capacity(items.len());
+        let mut complete = true;
+
+        for (index, item) in items.iter().enumerate() {
+            let idx = index as u32;
+            match item {
+                SequenceItem::Read32 { resource, offset } => {
+                    match self.read32_internal(
+                        policy,
+                        audit,
+                        session,
+                        *resource,
+                        *offset,
+                        Some(idx),
+                    ) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::Read32(outcome),
+                            });
+                        }
+                        Err(ReadError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(ReadError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::Write32 {
+                    resource,
+                    offset,
+                    value,
+                    write_mask,
+                    precondition,
+                    readback,
+                } => {
+                    match self.write32_internal(
+                        policy,
+                        audit,
+                        session,
+                        *resource,
+                        *offset,
+                        *value,
+                        *write_mask,
+                        *precondition,
+                        *readback,
+                        Some(idx),
+                    ) {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::Write32(outcome),
+                            });
+                        }
+                        Err(WriteError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(WriteError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::Poll32 {
+                    resource,
+                    offset,
+                    expected,
+                    mask,
+                    interval_ns,
+                    timeout_ns,
+                } => {
+                    match self
+                        .poll32_internal(
+                            policy,
+                            audit,
+                            session,
+                            *resource,
+                            *offset,
+                            *expected,
+                            *mask,
+                            *interval_ns,
+                            *timeout_ns,
+                            Some(idx),
+                        )
+                        .await
+                    {
+                        Ok(outcome) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: true,
+                                outcome: SequenceItemOutcome::Poll32(outcome),
+                            });
+                        }
+                        Err(PollError::Denied { denial, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Error(denial),
+                            });
+                            complete = false;
+                            break;
+                        }
+                        Err(PollError::Backend { error, .. }) => {
+                            results.push(SequenceItemResult {
+                                index: idx,
+                                ok: false,
+                                outcome: SequenceItemOutcome::Backend(error),
+                            });
+                            complete = false;
+                            break;
+                        }
+                    }
+                }
+                SequenceItem::DelayNs(delay_ns) => {
+                    let ts = self.clock.now_ns();
+                    if *delay_ns > 0 {
+                        self.clock.sleep(*delay_ns).await;
+                    }
+                    let record = AuditRecord {
+                        session: Some(session),
+                        resource: None,
+                        operation: "delay",
+                        offset: None,
+                        decision: Decision::Allowed,
+                        status: OpStatus::Ok,
+                        value: None,
+                        timestamp_ns: ts,
+                        run_id: None,
+                        item_index: Some(idx),
+                    };
+                    audit.append(record);
+                    results.push(SequenceItemResult {
+                        index: idx,
+                        ok: true,
+                        outcome: SequenceItemOutcome::DelayNs,
+                    });
+                }
+                SequenceItem::Barrier => {
+                    let ts = self.clock.now_ns();
+                    self.barrier();
+                    let record = AuditRecord {
+                        session: Some(session),
+                        resource: None,
+                        operation: "barrier",
+                        offset: None,
+                        decision: Decision::Allowed,
+                        status: OpStatus::Ok,
+                        value: None,
+                        timestamp_ns: ts,
+                        run_id: None,
+                        item_index: Some(idx),
+                    };
+                    audit.append(record);
+                    results.push(SequenceItemResult {
+                        index: idx,
+                        ok: true,
+                        outcome: SequenceItemOutcome::Barrier,
+                    });
+                }
+            }
+        }
+        Ok(SequenceOutcome { results, complete })
+    }
+}
+
 fn op_record(
     session: u64,
     resource: ResourceId,
@@ -306,7 +1167,9 @@ fn op_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::access_policy::{AccessRule, MmioResource, ResourceCeiling, WIDTH32};
+    use crate::access_policy::{
+        AccessRule, MmioResource, ResourceCeiling, SessionMode, WIDTH32, WritableRegister,
+    };
     use crate::hardware_backend::{FakeClock, FakeMmio};
 
     const CTRL: ResourceId = 1;
@@ -325,21 +1188,82 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         )]);
-        let policy = AccessPolicy::new(resources, ceiling, rules.iter().copied()).unwrap();
+        let policy =
+            AccessPolicy::new(SessionMode::ReadOnly, resources, ceiling, rules.iter().copied())
+                .unwrap();
         let mut mmio = FakeMmio::new();
         mmio.set(0x3c, 0xdead_beef);
         mmio.set(0x40, 0x1234_5678);
         mmio.fail_at(0x44);
         let backends = BTreeMap::from([(CTRL, mmio)]);
-        let clock = FakeClock { now: 1000, step: 10 };
-        let executor = Executor::new(backends, clock, ExecLimits { max_snapshot_items: 4 });
-        (executor, policy, AuditRing::new(16))
+        let clock = FakeClock::new(1000, 10);
+        let executor = Executor::new(
+            backends,
+            clock,
+            ExecLimits {
+                max_snapshot_items: 4,
+                max_sequence_items: 4,
+                max_delay_ns: 5_000_000_000,
+            },
+        );
+        (executor, policy, AuditRing::new(32))
+    }
+
+    fn make_mutating_executor(
+        writable_registers: Vec<WritableRegister>,
+        rules: &[AccessRule],
+    ) -> (Executor<FakeMmio, FakeClock>, AccessPolicy, AuditRing) {
+        let resources = BTreeMap::from([(
+            CTRL,
+            MmioResource { name: "ctrl".to_string(), logical_size: 0x100, mapped_size: 0x100 },
+        )]);
+        let ceiling = BTreeMap::from([(
+            CTRL,
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: true,
+                writable_registers,
+            },
+        )]);
+        let policy =
+            AccessPolicy::new(SessionMode::Mutating, resources, ceiling, rules.iter().copied())
+                .unwrap();
+        let mut mmio = FakeMmio::new();
+        mmio.set(0x3c, 0xdead_beef);
+        mmio.set(0x40, 0x1234_5678);
+        mmio.fail_at(0x44);
+        let backends = BTreeMap::from([(CTRL, mmio)]);
+        let clock = FakeClock::new(1000, 10);
+        let executor = Executor::new(
+            backends,
+            clock,
+            ExecLimits {
+                max_snapshot_items: 4,
+                max_sequence_items: 8,
+                max_delay_ns: 5_000_000_000,
+            },
+        );
+        (executor, policy, AuditRing::new(32))
     }
 
     fn accesses(executor: &Executor<FakeMmio, FakeClock>) -> &[u64] {
         &executor.backend(CTRL).unwrap().accesses
+    }
+
+    fn write_accesses(executor: &Executor<FakeMmio, FakeClock>) -> &[(u64, u32)] {
+        &executor.backend(CTRL).unwrap().write_accesses
+    }
+
+    fn barriers(executor: &Executor<FakeMmio, FakeClock>) -> usize {
+        executor.backend(CTRL).unwrap().barriers
     }
 
     #[test]
@@ -481,15 +1405,29 @@ mod tests {
         )]);
         let ceiling = BTreeMap::from([(
             CTRL,
-            ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false },
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: true,
+                allow_poll: false,
+                writable_registers: vec![],
+            },
         )]);
-        let policy =
-            AccessPolicy::new(resources, ceiling, [rule(0x3c, AccessClass::ReadOnce)]).unwrap();
-        let clock = FakeClock { now: 0, step: 1 };
+        let policy = AccessPolicy::new(
+            SessionMode::ReadOnly,
+            resources,
+            ceiling,
+            [rule(0x3c, AccessClass::ReadOnce)],
+        )
+        .unwrap();
+        let clock = FakeClock::new(0, 1);
         let mut executor = Executor::<FakeMmio, _>::new(
             BTreeMap::new(),
             clock,
-            ExecLimits { max_snapshot_items: 4 },
+            ExecLimits {
+                max_snapshot_items: 4,
+                max_sequence_items: 4,
+                max_delay_ns: 5_000_000_000,
+            },
         );
         let mut audit = AuditRing::new(4);
         let error = executor.read32(&policy, &mut audit, SESSION, CTRL, 0x3c).unwrap_err();
@@ -499,5 +1437,393 @@ mod tests {
         assert_eq!(error, BackendError::Fault);
         let entry = &audit.read(audit_seq, 1).entries[0];
         assert_eq!(entry.record.status, OpStatus::BackendFault);
+    }
+
+    #[test]
+    fn write_full_mask_writes_directly_and_applies_barrier() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: false,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: false,
+        };
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![reg], &[rule(0x40, AccessClass::Write)]);
+        let outcome = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0xcafe_babe,
+                0xFFFF_FFFF,
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(outcome.readback_value, 0);
+        assert_eq!(write_accesses(&executor), &[(0x40, 0xcafe_babe)]);
+        assert_eq!(barriers(&executor), 1);
+        assert!(accesses(&executor).is_empty()); // No before-read since full-mask & no precondition
+
+        let entry = &audit.read(outcome.audit_seq, 1).entries[0];
+        assert_eq!(entry.record.decision, Decision::Allowed);
+        assert_eq!(entry.record.status, OpStatus::Ok);
+        assert_eq!(entry.record.value, Some(0xcafe_babe));
+    }
+
+    #[test]
+    fn write_rmw_reads_before_and_modifies_bits() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0x00FF_0000,
+            allow_rmw: true,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: false,
+        };
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![reg], &[rule(0x40, AccessClass::Write)]);
+        // Original 0x40 is 0x1234_5678. We modify byte 2 to 0xab. Expected: 0x12ab_5678.
+        let outcome = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0x00ab_0000,
+                0x00FF_0000,
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(outcome.readback_value, 0);
+        assert_eq!(accesses(&executor), &[0x40]); // Audited before-read
+        assert_eq!(write_accesses(&executor), &[(0x40, 0x12ab_5678)]);
+        assert_eq!(barriers(&executor), 1);
+
+        let entries = &audit.read(0, 5).entries;
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].record.operation, "write32_before_read");
+        assert_eq!(entries[0].record.value, Some(0x1234_5678));
+        assert_eq!(entries[1].record.operation, "write32");
+        assert_eq!(entries[1].record.value, Some(0x12ab_5678));
+    }
+
+    #[test]
+    fn write_precondition_satisfied_allows_write() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: true,
+            require_precondition: true,
+            precondition_mask: 0xFFFF_0000,
+            readback: false,
+        };
+        let pre = WritePrecondition { expected: 0x1234_0000, mask: 0xFFFF_0000 };
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![reg], &[rule(0x40, AccessClass::Write)]);
+        let outcome = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0xcafe_babe,
+                0xFFFF_FFFF,
+                Some(pre),
+                false,
+            )
+            .unwrap();
+        assert_eq!(write_accesses(&executor), &[(0x40, 0xcafe_babe)]);
+        assert_eq!(outcome.readback_value, 0);
+    }
+
+    #[test]
+    fn write_precondition_failed_rejects_and_prevents_write() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: true,
+            require_precondition: true,
+            precondition_mask: 0xFFFF_0000,
+            readback: false,
+        };
+        let pre = WritePrecondition { expected: 0x9999_0000, mask: 0xFFFF_0000 };
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![reg], &[rule(0x40, AccessClass::Write)]);
+        let error = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0xcafe_babe,
+                0xFFFF_FFFF,
+                Some(pre),
+                false,
+            )
+            .unwrap_err();
+        let WriteError::Denied { denial, audit_seq } = error else {
+            panic!("expected denial, got {error:?}");
+        };
+        assert_eq!(denial, Denial::PreconditionFailed);
+        assert!(write_accesses(&executor).is_empty()); // Hardware was not written!
+
+        let entry = &audit.read(audit_seq, 1).entries[0];
+        assert_eq!(entry.record.decision, Decision::Denied(Denial::PreconditionFailed));
+        assert_eq!(entry.record.status, OpStatus::Rejected);
+        assert_eq!(entry.record.value, Some(0x1234_5678)); // Audited before-value
+    }
+
+    #[test]
+    fn write_readback_audited_and_returned() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: false,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: true,
+        };
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![reg], &[rule(0x40, AccessClass::Write)]);
+        let outcome = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0xcafe_babe,
+                0xFFFF_FFFF,
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(outcome.readback_value, 0xcafe_babe);
+
+        let entries = &audit.read(0, 5).entries;
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].record.operation, "write32");
+        assert_eq!(entries[1].record.operation, "write32_readback");
+        assert_eq!(entries[1].record.value, Some(0xcafe_babe));
+    }
+
+    #[test]
+    fn write_denied_in_read_only_session() {
+        let (mut executor, policy, mut audit) = make_executor(&[rule(0x40, AccessClass::ReadOnce)]);
+        let error = executor
+            .write32(
+                &policy,
+                &mut audit,
+                SESSION,
+                CTRL,
+                0x40,
+                0xcafe_babe,
+                0xFFFF_FFFF,
+                None,
+                false,
+            )
+            .unwrap_err();
+        let WriteError::Denied { denial, .. } = error else {
+            panic!("expected denial, got {error:?}");
+        };
+        assert_eq!(denial, Denial::ReadOnlySession);
+        assert!(write_accesses(&executor).is_empty());
+    }
+
+    #[test]
+    fn poll32_matches_immediately_without_sleep() {
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![], &[rule(0x3c, AccessClass::Poll)]);
+        let outcome = futures::executor::block_on(executor.poll32(
+            &policy,
+            &mut audit,
+            SESSION,
+            CTRL,
+            0x3c,
+            0xdead_beef,
+            0xFFFF_FFFF,
+            100,
+            1000,
+        ))
+        .unwrap();
+        assert_eq!(outcome.value, 0xdead_beef);
+        assert_eq!(executor.clock.sleeps.len(), 0);
+        assert_eq!(accesses(&executor), &[0x3c]);
+    }
+
+    #[test]
+    fn poll32_timeout_audited_and_records_sleeps() {
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![], &[rule(0x3c, AccessClass::Poll)]);
+        let error = futures::executor::block_on(executor.poll32(
+            &policy,
+            &mut audit,
+            SESSION,
+            CTRL,
+            0x3c,
+            0x9999_9999,
+            0xFFFF_FFFF,
+            100,
+            300,
+        ))
+        .unwrap_err();
+        let PollError::Denied { denial, audit_seq } = error else {
+            panic!("expected timeout denial, got {error:?}");
+        };
+        assert_eq!(denial, Denial::Timeout);
+        assert!(executor.clock.sleeps.len() > 0);
+
+        let entry = &audit.read(audit_seq, 1).entries[0];
+        assert_eq!(entry.record.operation, "poll32");
+        assert_eq!(entry.record.decision, Decision::Denied(Denial::Timeout));
+        assert_eq!(entry.record.status, OpStatus::Rejected);
+        assert_eq!(entry.record.value, Some(0xdead_beef));
+    }
+
+    #[test]
+    fn sequence_prevalidation_blocks_all_hardware_access() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: false,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: false,
+        };
+        let (mut executor, policy, mut audit) = make_mutating_executor(
+            vec![reg],
+            &[rule(0x3c, AccessClass::Sequence), rule(0x40, AccessClass::Sequence)],
+        );
+        let items = [
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c },
+            SequenceItem::Write32 {
+                resource: CTRL,
+                offset: 0x50, // Not permitted by ceiling or allowlist!
+                value: 123,
+                write_mask: 0xFFFF_FFFF,
+                precondition: None,
+                readback: false,
+            },
+        ];
+        let error = futures::executor::block_on(
+            executor.execute_sequence(&policy, &mut audit, SESSION, &items),
+        )
+        .unwrap_err();
+        let SequenceError::Rejected { index, denial, .. } = error else {
+            panic!("expected rejection, got {error:?}");
+        };
+        assert_eq!(index, 1);
+        assert_eq!(denial, Denial::WriteNotPermitted);
+        // Zero hardware reads or writes!
+        assert!(accesses(&executor).is_empty());
+        assert!(write_accesses(&executor).is_empty());
+    }
+
+    #[test]
+    fn sequence_full_execution_succeeds_in_order() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: false,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: false,
+        };
+        let (mut executor, policy, mut audit) = make_mutating_executor(
+            vec![reg],
+            &[rule(0x3c, AccessClass::Sequence), rule(0x40, AccessClass::Sequence)],
+        );
+        let items = [
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c },
+            SequenceItem::Write32 {
+                resource: CTRL,
+                offset: 0x40,
+                value: 0x9999_8888,
+                write_mask: 0xFFFF_FFFF,
+                precondition: None,
+                readback: false,
+            },
+            SequenceItem::DelayNs(200),
+            SequenceItem::Barrier,
+            SequenceItem::Poll32 {
+                resource: CTRL,
+                offset: 0x40,
+                expected: 0x9999_8888,
+                mask: 0xFFFF_FFFF,
+                interval_ns: 50,
+                timeout_ns: 200,
+            },
+        ];
+        let outcome = futures::executor::block_on(
+            executor.execute_sequence(&policy, &mut audit, SESSION, &items),
+        )
+        .unwrap();
+        assert!(outcome.complete);
+        assert_eq!(outcome.results.len(), 5);
+        assert!(outcome.results.iter().all(|r| r.ok));
+        assert_eq!(write_accesses(&executor), &[(0x40, 0x9999_8888)]);
+        assert_eq!(barriers(&executor), 2); // 1 from write, 1 explicit barrier item
+
+        let entries = &audit.read(0, 10).entries;
+        assert_eq!(entries.len(), 5);
+        for (i, entry) in entries.iter().enumerate() {
+            assert_eq!(entry.record.item_index, Some(i as u32));
+        }
+    }
+
+    #[test]
+    fn sequence_stops_at_first_runtime_failure() {
+        let reg = WritableRegister {
+            offset: 0x40,
+            width: WIDTH32,
+            allow_mask: 0xFFFF_FFFF,
+            allow_rmw: true,
+            require_precondition: true,
+            precondition_mask: 0xFFFF_FFFF,
+            readback: false,
+        };
+        let (mut executor, policy, mut audit) = make_mutating_executor(
+            vec![reg],
+            &[rule(0x3c, AccessClass::Sequence), rule(0x40, AccessClass::Sequence)],
+        );
+        let items = [
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c },
+            SequenceItem::Write32 {
+                resource: CTRL,
+                offset: 0x40,
+                value: 0x9999_8888,
+                write_mask: 0xFFFF_FFFF,
+                precondition: Some(WritePrecondition { expected: 0x0000_0000, mask: 0xFFFF_FFFF }), // Will fail
+                readback: false,
+            },
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c }, // Should never execute!
+        ];
+        let outcome = futures::executor::block_on(
+            executor.execute_sequence(&policy, &mut audit, SESSION, &items),
+        )
+        .unwrap();
+        assert!(!outcome.complete);
+        assert_eq!(outcome.results.len(), 2);
+        assert!(outcome.results[0].ok);
+        assert!(!outcome.results[1].ok);
+        // Third item never touched hardware
+        assert_eq!(accesses(&executor), &[0x3c, 0x40]); // 0x3c from item 0, 0x40 from before-read in item 1
+        assert!(write_accesses(&executor).is_empty());
     }
 }

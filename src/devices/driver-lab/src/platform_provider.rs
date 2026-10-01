@@ -31,7 +31,12 @@ pub const PROVIDER: &str = "platform";
 /// (ceiling, then exact session allowlist, then bounds) is unchanged.
 /// TODO: replace with the reviewed policy manifest (spec section 9.6).
 fn engineering_ceiling() -> ResourceCeiling {
-    ResourceCeiling { hard_denied: vec![], allow_unknown_reads: true, allow_poll: false }
+    ResourceCeiling {
+        hard_denied: vec![],
+        allow_unknown_reads: true,
+        allow_poll: false,
+        writable_registers: vec![],
+    }
 }
 
 /// Volatile access to one locally mapped MMIO region.
@@ -49,6 +54,15 @@ impl MmioBackend for MappedMmio {
     fn read32(&mut self, offset: u64) -> Result<u32, BackendError> {
         let offset = usize::try_from(offset).map_err(|_| BackendError::Fault)?;
         self.region.try_load32(offset).map_err(|_| BackendError::Fault)
+    }
+
+    fn write32(&mut self, offset: u64, value: u32) -> Result<(), BackendError> {
+        let offset = usize::try_from(offset).map_err(|_| BackendError::Fault)?;
+        self.region.try_store32(offset, value).map_err(|_| BackendError::Fault)
+    }
+
+    fn barrier(&mut self) {
+        std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
     }
 }
 

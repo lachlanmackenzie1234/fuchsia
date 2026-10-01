@@ -9,12 +9,45 @@ use crate::platform_provider::MappedMmio;
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async::ScopeHandle;
 use futures::TryStreamExt;
-use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial};
+use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial, WritePrecondition};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
-use lab_proxy_core::executor::{Executor, ReadError, SnapshotError, SnapshotItem};
+use lab_proxy_core::executor::{
+    Executor, PollError, ReadError, SequenceItem as CoreSequenceItem, SnapshotError, SnapshotItem,
+    WriteError,
+};
 use lab_proxy_core::hardware_backend::Clock;
 use lab_proxy_core::session::{OpenError, ProxyIdentity, RunContext, SessionManager, SessionMode};
 use std::sync::{Arc, Mutex};
+
+fn fidl_to_core_sequence_item(item: &flab::SequenceItem) -> Option<CoreSequenceItem> {
+    match item {
+        flab::SequenceItem::Read32(read) => {
+            Some(CoreSequenceItem::Read32 { resource: read.resource, offset: read.offset })
+        }
+        flab::SequenceItem::Write32(write) => Some(CoreSequenceItem::Write32 {
+            resource: write.resource,
+            offset: write.offset,
+            value: write.value,
+            write_mask: write.write_mask,
+            precondition: write
+                .precondition
+                .as_ref()
+                .map(|p| WritePrecondition { expected: p.expected, mask: p.mask }),
+            readback: write.readback,
+        }),
+        flab::SequenceItem::Poll32(poll) => Some(CoreSequenceItem::Poll32 {
+            resource: poll.resource,
+            offset: poll.offset,
+            expected: poll.expected,
+            mask: poll.mask,
+            interval_ns: poll.interval_ns,
+            timeout_ns: poll.timeout_ns,
+        }),
+        flab::SequenceItem::DelayNs(delay) => Some(CoreSequenceItem::DelayNs(*delay)),
+        flab::SequenceItem::Barrier(_) => Some(CoreSequenceItem::Barrier),
+        _ => None,
+    }
+}
 
 /// Wire-contract version served by this driver.
 pub const PROTOCOL_MAJOR: u32 = 1;
@@ -28,6 +61,17 @@ pub struct ZxClock;
 impl Clock for ZxClock {
     fn now_ns(&mut self) -> i64 {
         zx::MonotonicInstant::get().into_nanos()
+    }
+}
+
+impl lab_proxy_core::hardware_backend::Timer for ZxClock {
+    async fn sleep(&mut self, duration_ns: i64) {
+        if duration_ns > 0 {
+            fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::Duration::from_nanos(
+                duration_ns,
+            )))
+            .await;
+        }
     }
 }
 
@@ -64,13 +108,18 @@ fn denial_to_fidl(denial: Denial) -> flab::OperationError {
         Denial::NotPermittedByCeiling => flab::OperationError::NotPermittedByCeiling,
         Denial::HardDenied => flab::OperationError::HardDenied,
         Denial::UnknownReadsNotPermitted => flab::OperationError::UnknownReadsNotPermitted,
-        Denial::PollNotPermitted => flab::OperationError::NotPermittedByCeiling,
+        Denial::PollNotPermitted => flab::OperationError::PollNotPermitted,
         Denial::NotInAllowlist => flab::OperationError::NotInAllowlist,
         Denial::LimitExceeded => flab::OperationError::LimitExceeded,
         Denial::StaleIdentity => flab::OperationError::StaleIdentity,
         Denial::MutationLeaseContention => flab::OperationError::MutationLeaseContention,
         Denial::NotAccepting => flab::OperationError::NotAccepting,
         Denial::UnsupportedExpectation => flab::OperationError::UnsupportedExpectation,
+        Denial::PreconditionFailed => flab::OperationError::PreconditionFailed,
+        Denial::MissingPrecondition => flab::OperationError::MissingPrecondition,
+        Denial::Timeout => flab::OperationError::Timeout,
+        Denial::ReadOnlySession => flab::OperationError::ReadOnlySession,
+        Denial::WriteNotPermitted => flab::OperationError::WriteNotPermitted,
     }
 }
 
@@ -189,6 +238,9 @@ fn open_session(
             class: match rule.class {
                 flab::AccessClass::ReadOnce => AccessClass::ReadOnce,
                 flab::AccessClass::Snapshot => AccessClass::Snapshot,
+                flab::AccessClass::Write => AccessClass::Write,
+                flab::AccessClass::Poll => AccessClass::Poll,
+                flab::AccessClass::Sequence => AccessClass::Sequence,
             },
         })
         .collect();
@@ -333,6 +385,566 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                         .map(|(results, complete)| (results.as_slice(), *complete))
                         .map_err(|error| *error),
                 );
+            }
+            flab::SessionRequest::Write32 {
+                resource,
+                offset,
+                value,
+                write_mask,
+                precondition,
+                readback,
+                responder,
+            } => {
+                let precondition =
+                    precondition.map(|p| WritePrecondition { expected: p.expected, mask: p.mask });
+                let result = {
+                    let guard = &mut *state.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => executor
+                            .write32(
+                                &session.policy,
+                                audit,
+                                id,
+                                resource,
+                                offset,
+                                value,
+                                write_mask,
+                                precondition,
+                                readback,
+                            )
+                            .map(|outcome| {
+                                (outcome.readback_value, outcome.audit_seq, outcome.timestamp_ns)
+                            })
+                            .map_err(|error| match error {
+                                WriteError::Denied { denial, .. } => denial_to_fidl(denial),
+                                WriteError::Backend { .. } => flab::OperationError::BackendFault,
+                            }),
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::Poll32 {
+                resource,
+                offset,
+                expected,
+                mask,
+                interval_ns,
+                timeout_ns,
+                responder,
+            } => {
+                let start_ts = now_ns();
+                let deadline = start_ts.saturating_add(timeout_ns);
+
+                // Initial lock: validate session and policy.
+                let initial_check = {
+                    let guard = &mut *state.lock().unwrap();
+                    let ProxyState { sessions, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            match session.policy.check_poll32(
+                                resource,
+                                offset,
+                                mask,
+                                interval_ns,
+                                timeout_ns,
+                            ) {
+                                Ok(()) => Ok(()),
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "poll32",
+                                        offset: Some(offset),
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now_ns(),
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if let Err(err) = initial_check {
+                    let _ = responder.send(Err(err));
+                    continue;
+                }
+
+                let mut last_val = None;
+                let poll_res = loop {
+                    // Lock to perform one read step
+                    let step_res = {
+                        let guard = &mut *state.lock().unwrap();
+                        let ProxyState { sessions, executor, audit, .. } = guard;
+                        match sessions.session(id) {
+                            None => Err(flab::OperationError::StaleIdentity),
+                            Some(_) => match executor
+                                .poll32_read_step(audit, id, resource, offset, expected, mask, None)
+                            {
+                                Ok(Ok(outcome)) => Ok(Some(outcome)),
+                                Ok(Err(val)) => {
+                                    last_val = Some(val);
+                                    Ok(None)
+                                }
+                                Err(PollError::Denied { denial, .. }) => {
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Err(PollError::Backend { .. }) => {
+                                    Err(flab::OperationError::BackendFault)
+                                }
+                            },
+                        }
+                    };
+
+                    match step_res {
+                        Err(err) => break Err(err),
+                        Ok(Some(outcome)) => {
+                            break Ok((outcome.value, outcome.audit_seq, outcome.timestamp_ns));
+                        }
+                        Ok(None) => {
+                            let now = now_ns();
+                            if now >= deadline {
+                                let guard = &mut *state.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                if sessions.session(id).is_none() {
+                                    break Err(flab::OperationError::StaleIdentity);
+                                } else {
+                                    executor.poll32_timeout(
+                                        audit, id, resource, offset, last_val, None,
+                                    );
+                                    break Err(flab::OperationError::Timeout);
+                                }
+                            }
+                            let sleep_dur = if interval_ns > 0 {
+                                let rem = deadline.saturating_sub(now);
+                                interval_ns.min(rem)
+                            } else {
+                                0
+                            };
+                            if sleep_dur > 0 {
+                                fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                    zx::Duration::from_nanos(sleep_dur),
+                                ))
+                                .await;
+                            } else {
+                                fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                    zx::Duration::from_nanos(1000),
+                                ))
+                                .await;
+                            }
+                        }
+                    }
+                };
+
+                let _ = responder.send(poll_res);
+            }
+            flab::SessionRequest::ExecuteSequence { items, responder } => {
+                let mut core_items = Vec::with_capacity(items.len());
+                let mut unknown_item_index = None;
+                for (idx, item) in items.iter().enumerate() {
+                    match fidl_to_core_sequence_item(item) {
+                        Some(core_item) => core_items.push(core_item),
+                        None => {
+                            unknown_item_index = Some(idx);
+                            break;
+                        }
+                    }
+                }
+
+                // Initial lock: whole-sequence prevalidation
+                let prevalidation = {
+                    let guard = &mut *state.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            if let Some(idx) = unknown_item_index {
+                                let record = AuditRecord {
+                                    session: Some(id),
+                                    resource: None,
+                                    operation: "sequence",
+                                    offset: None,
+                                    decision: Decision::Denied(Denial::UnsupportedAccessClass),
+                                    status: OpStatus::Rejected,
+                                    value: None,
+                                    timestamp_ns: now_ns(),
+                                    run_id: None,
+                                    item_index: Some(idx as u32),
+                                };
+                                audit.append(record);
+                                Err(flab::OperationError::UnsupportedAccessClass)
+                            } else if core_items.len() > executor.limits().max_sequence_items {
+                                let record = AuditRecord {
+                                    session: Some(id),
+                                    resource: None,
+                                    operation: "sequence",
+                                    offset: None,
+                                    decision: Decision::Denied(Denial::LimitExceeded),
+                                    status: OpStatus::Rejected,
+                                    value: None,
+                                    timestamp_ns: now_ns(),
+                                    run_id: None,
+                                    item_index: None,
+                                };
+                                audit.append(record);
+                                Err(flab::OperationError::LimitExceeded)
+                            } else {
+                                match executor.prevalidate_sequence(&session.policy, &core_items) {
+                                    Ok(()) => Ok(()),
+                                    Err((idx, denial)) => {
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: None,
+                                            operation: "sequence",
+                                            offset: None,
+                                            decision: Decision::Denied(denial),
+                                            status: OpStatus::Rejected,
+                                            value: None,
+                                            timestamp_ns: now_ns(),
+                                            run_id: None,
+                                            item_index: Some(idx as u32),
+                                        };
+                                        audit.append(record);
+                                        Err(denial_to_fidl(denial))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if let Err(err) = prevalidation {
+                    let _ = responder.send(Err(err));
+                    continue;
+                }
+
+                // Sequence execution loop
+                let mut results = Vec::with_capacity(core_items.len());
+                let mut complete = true;
+
+                for (index, item) in core_items.iter().enumerate() {
+                    let idx = index as u32;
+                    match item {
+                        CoreSequenceItem::Read32 { resource, offset } => {
+                            let step = {
+                                let guard = &mut *state.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.read32_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        *offset,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::Read32(
+                                                flab::ReadResult {
+                                                    value: outcome.value,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(ReadError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(ReadError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::Write32 {
+                            resource,
+                            offset,
+                            value,
+                            write_mask,
+                            precondition,
+                            readback,
+                        } => {
+                            let step = {
+                                let guard = &mut *state.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(session) => match executor.write32_internal(
+                                        &session.policy,
+                                        audit,
+                                        id,
+                                        *resource,
+                                        *offset,
+                                        *value,
+                                        *write_mask,
+                                        *precondition,
+                                        *readback,
+                                        Some(idx),
+                                    ) {
+                                        Ok(outcome) => Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::Write32(
+                                                flab::WriteResult {
+                                                    readback_value: outcome.readback_value,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        }),
+                                        Err(WriteError::Denied { denial, .. }) => {
+                                            Err(denial_to_fidl(denial))
+                                        }
+                                        Err(WriteError::Backend { .. }) => {
+                                            Err(flab::OperationError::BackendFault)
+                                        }
+                                    },
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::Barrier => {
+                            let step = {
+                                let guard = &mut *state.lock().unwrap();
+                                let ProxyState { sessions, executor, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(_) => {
+                                        let ts = now_ns();
+                                        executor.barrier();
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: None,
+                                            operation: "barrier",
+                                            offset: None,
+                                            decision: Decision::Allowed,
+                                            status: OpStatus::Ok,
+                                            value: None,
+                                            timestamp_ns: ts,
+                                            run_id: None,
+                                            item_index: Some(idx),
+                                        };
+                                        audit.append(record);
+                                        Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::Barrier(
+                                                flab::Barrier,
+                                            ),
+                                        })
+                                    }
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::DelayNs(delay_ns) => {
+                            if *delay_ns > 0 {
+                                fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                    zx::Duration::from_nanos(*delay_ns),
+                                ))
+                                .await;
+                            }
+                            let step = {
+                                let guard = &mut *state.lock().unwrap();
+                                let ProxyState { sessions, audit, .. } = guard;
+                                match sessions.session(id) {
+                                    None => Err(flab::OperationError::StaleIdentity),
+                                    Some(_) => {
+                                        let ts = now_ns();
+                                        let record = AuditRecord {
+                                            session: Some(id),
+                                            resource: None,
+                                            operation: "delay",
+                                            offset: None,
+                                            decision: Decision::Allowed,
+                                            status: OpStatus::Ok,
+                                            value: None,
+                                            timestamp_ns: ts,
+                                            run_id: None,
+                                            item_index: Some(idx),
+                                        };
+                                        audit.append(record);
+                                        Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::DelayNs(
+                                                flab::DelayNs,
+                                            ),
+                                        })
+                                    }
+                                }
+                            };
+                            match step {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                        CoreSequenceItem::Poll32 {
+                            resource,
+                            offset,
+                            expected,
+                            mask,
+                            interval_ns,
+                            timeout_ns,
+                        } => {
+                            let start_ts = now_ns();
+                            let deadline = start_ts.saturating_add(*timeout_ns);
+                            let mut last_val = None;
+                            let poll_res = loop {
+                                let step = {
+                                    let guard = &mut *state.lock().unwrap();
+                                    let ProxyState { sessions, executor, audit, .. } = guard;
+                                    match sessions.session(id) {
+                                        None => Err(flab::OperationError::StaleIdentity),
+                                        Some(_) => match executor.poll32_read_step(
+                                            audit,
+                                            id,
+                                            *resource,
+                                            *offset,
+                                            *expected,
+                                            *mask,
+                                            Some(idx),
+                                        ) {
+                                            Ok(Ok(outcome)) => Ok(Some(outcome)),
+                                            Ok(Err(val)) => {
+                                                last_val = Some(val);
+                                                Ok(None)
+                                            }
+                                            Err(PollError::Denied { denial, .. }) => {
+                                                Err(denial_to_fidl(denial))
+                                            }
+                                            Err(PollError::Backend { .. }) => {
+                                                Err(flab::OperationError::BackendFault)
+                                            }
+                                        },
+                                    }
+                                };
+                                match step {
+                                    Err(err) => break Err(err),
+                                    Ok(Some(outcome)) => {
+                                        break Ok(flab::SequenceItemResult {
+                                            index: idx,
+                                            ok: true,
+                                            outcome: flab::SequenceItemOutcome::Poll32(
+                                                flab::PollResult {
+                                                    value: outcome.value,
+                                                    audit_seq: outcome.audit_seq,
+                                                    timestamp_ns: outcome.timestamp_ns,
+                                                },
+                                            ),
+                                        });
+                                    }
+                                    Ok(None) => {
+                                        let now = now_ns();
+                                        if now >= deadline {
+                                            let guard = &mut *state.lock().unwrap();
+                                            let ProxyState { sessions, executor, audit, .. } =
+                                                guard;
+                                            if sessions.session(id).is_none() {
+                                                break Err(flab::OperationError::StaleIdentity);
+                                            } else {
+                                                executor.poll32_timeout(
+                                                    audit,
+                                                    id,
+                                                    *resource,
+                                                    *offset,
+                                                    last_val,
+                                                    Some(idx),
+                                                );
+                                                break Err(flab::OperationError::Timeout);
+                                            }
+                                        }
+                                        let sleep_dur = if *interval_ns > 0 {
+                                            let rem = deadline.saturating_sub(now);
+                                            (*interval_ns).min(rem)
+                                        } else {
+                                            0
+                                        };
+                                        if sleep_dur > 0 {
+                                            fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                                zx::Duration::from_nanos(sleep_dur),
+                                            ))
+                                            .await;
+                                        } else {
+                                            fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                                                zx::Duration::from_nanos(1000),
+                                            ))
+                                            .await;
+                                        }
+                                    }
+                                }
+                            };
+                            match poll_res {
+                                Ok(res) => results.push(res),
+                                Err(err) => {
+                                    results.push(flab::SequenceItemResult {
+                                        index: idx,
+                                        ok: false,
+                                        outcome: flab::SequenceItemOutcome::Error(err),
+                                    });
+                                    complete = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = responder.send(Ok((results.as_slice(), complete)));
             }
             flab::SessionRequest::ReadAudit { cursor, limit, responder } => {
                 let (page, boot_id, proxy_generation) = {

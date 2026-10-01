@@ -38,6 +38,7 @@ rustc_library("core") {
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:sha2",
   ]
+  test_deps = [ "//third_party/rust_crates:futures" ]
 }
 
 fuchsia_rust_driver("driver") {

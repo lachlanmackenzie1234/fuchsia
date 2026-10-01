@@ -25,13 +25,28 @@ pub trait Clock {
     fn now_ns(&mut self) -> i64;
 }
 
+/// An asynchronous timer for delays and polling.
+pub trait Timer: Clock + Send {
+    /// Asynchronously sleeps for `duration_ns` nanoseconds.
+    fn sleep(&mut self, duration_ns: i64) -> impl std::future::Future<Output = ()> + Send;
+}
+
 /// Deterministic test clock advancing by a fixed step per reading.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct FakeClock {
     /// Timestamp returned by the next call.
     pub now: i64,
     /// Amount added after each call.
     pub step: i64,
+    /// Record of sleeps requested.
+    pub sleeps: Vec<i64>,
+}
+
+impl FakeClock {
+    /// Creates a fake clock.
+    pub fn new(now: i64, step: i64) -> Self {
+        Self { now, step, sleeps: Vec::new() }
+    }
 }
 
 impl Clock for FakeClock {
@@ -42,11 +57,27 @@ impl Clock for FakeClock {
     }
 }
 
+impl Timer for FakeClock {
+    async fn sleep(&mut self, duration_ns: i64) {
+        if duration_ns > 0 {
+            self.now += duration_ns;
+            self.sleeps.push(duration_ns);
+        }
+    }
+}
+
 /// Volatile 32-bit MMIO access to one resource.
 pub trait MmioBackend {
     /// Performs one volatile 32-bit read at `offset` bytes from the start
     /// of the logical resource.
     fn read32(&mut self, offset: u64) -> Result<u32, BackendError>;
+
+    /// Performs one volatile 32-bit write at `offset` bytes from the start
+    /// of the logical resource.
+    fn write32(&mut self, offset: u64, value: u32) -> Result<(), BackendError>;
+
+    /// Applies a platform MMIO memory barrier.
+    fn barrier(&mut self);
 }
 
 /// In-memory fake MMIO region that records every access, for unit tests
@@ -57,6 +88,10 @@ pub struct FakeMmio {
     faults: BTreeSet<u64>,
     /// Offsets read, in order.
     pub accesses: Vec<u64>,
+    /// Writes performed, in order: (offset, value).
+    pub write_accesses: Vec<(u64, u32)>,
+    /// Number of memory barriers performed.
+    pub barriers: usize,
 }
 
 impl FakeMmio {
@@ -70,7 +105,7 @@ impl FakeMmio {
         self.values.insert(offset, value);
     }
 
-    /// Makes reads at `offset` fail with [`BackendError::Fault`].
+    /// Makes reads or writes at `offset` fail with [`BackendError::Fault`].
     pub fn fail_at(&mut self, offset: u64) {
         self.faults.insert(offset);
     }
@@ -83,5 +118,18 @@ impl MmioBackend for FakeMmio {
             return Err(BackendError::Fault);
         }
         Ok(self.values.get(&offset).copied().unwrap_or(0))
+    }
+
+    fn write32(&mut self, offset: u64, value: u32) -> Result<(), BackendError> {
+        self.write_accesses.push((offset, value));
+        if self.faults.contains(&offset) {
+            return Err(BackendError::Fault);
+        }
+        self.values.insert(offset, value);
+        Ok(())
+    }
+
+    fn barrier(&mut self) {
+        self.barriers += 1;
     }
 }

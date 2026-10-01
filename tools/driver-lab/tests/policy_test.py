@@ -11,6 +11,7 @@ from driver_lab.policy import (
     PolicyError,
     ResourcePolicyManifest,
     TargetPolicyManifest,
+    WritableRegister,
     canonicalize_ranges,
 )
 
@@ -214,6 +215,115 @@ class PolicyManifestTest(unittest.TestCase):
         )
         with self.assertRaises(NarrowingError):
             baseline.narrow_with(widened)
+
+    def test_writable_registers_narrowing_and_canonicalization(self) -> None:
+        base_reg = WritableRegister(
+            offset=0x10,
+            allow_mask=0x0000FFFF,
+            width=4,
+            allow_rmw=False,
+            require_precondition=True,
+            precondition_mask=0x00000001,
+            readback=True,
+        )
+        baseline = TargetPolicyManifest(
+            schema_version=1,
+            allow_mutating_sessions=True,
+            audit_capacity=1024,
+            max_snapshot_items=64,
+            resources=[
+                ResourcePolicyManifest(
+                    id=0,
+                    name="mmio0",
+                    allow_unknown_reads=True,
+                    allow_poll=False,
+                    hard_denied=[],
+                    writable_registers=[base_reg],
+                )
+            ],
+        )
+
+        # Runtime cannot add new register
+        runtime = TargetPolicyManifest(
+            schema_version=1,
+            allow_mutating_sessions=True,
+            audit_capacity=1024,
+            max_snapshot_items=64,
+            resources=[
+                ResourcePolicyManifest(
+                    id=0,
+                    name="mmio0",
+                    allow_unknown_reads=True,
+                    allow_poll=False,
+                    hard_denied=[],
+                    writable_registers=[
+                        base_reg,
+                        WritableRegister(offset=0x20, allow_mask=0xFFFFFFFF),
+                    ],
+                )
+            ],
+        )
+        with self.assertRaises(NarrowingError):
+            baseline.narrow_with(runtime)
+
+        # Runtime cannot widen allow_mask
+        runtime = TargetPolicyManifest(
+            schema_version=1,
+            allow_mutating_sessions=True,
+            audit_capacity=1024,
+            max_snapshot_items=64,
+            resources=[
+                ResourcePolicyManifest(
+                    id=0,
+                    name="mmio0",
+                    allow_unknown_reads=True,
+                    allow_poll=False,
+                    hard_denied=[],
+                    writable_registers=[
+                        WritableRegister(
+                            offset=0x10,
+                            allow_mask=0x0001FFFF,
+                            width=4,
+                            allow_rmw=False,
+                            require_precondition=True,
+                            precondition_mask=0x00000001,
+                            readback=True,
+                        )
+                    ],
+                )
+            ],
+        )
+        with self.assertRaises(NarrowingError):
+            baseline.narrow_with(runtime)
+
+        # Runtime can narrow allow_mask
+        runtime = TargetPolicyManifest(
+            schema_version=1,
+            allow_mutating_sessions=True,
+            audit_capacity=1024,
+            max_snapshot_items=64,
+            resources=[
+                ResourcePolicyManifest(
+                    id=0,
+                    name="mmio0",
+                    allow_unknown_reads=True,
+                    allow_poll=False,
+                    hard_denied=[],
+                    writable_registers=[
+                        WritableRegister(
+                            offset=0x10,
+                            allow_mask=0x000000FF,
+                            width=4,
+                            allow_rmw=False,
+                            require_precondition=True,
+                            precondition_mask=0x00000001,
+                            readback=True,
+                        )
+                    ],
+                )
+            ],
+        )
+        self.assertEqual(baseline.narrow_with(runtime), runtime)
 
 
 if __name__ == "__main__":

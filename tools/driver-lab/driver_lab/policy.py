@@ -93,6 +93,49 @@ def canonicalize_ranges(ranges_in: Sequence[object]) -> list[list[int]]:
 
 
 @dataclasses.dataclass(frozen=True)
+class WritableRegister:
+    """Policy specification for one writable register."""
+
+    offset: int
+    allow_mask: int
+    width: int = 4
+    allow_rmw: bool = False
+    require_precondition: bool = False
+    precondition_mask: int = 0
+    readback: bool = False
+
+    def __post_init__(self) -> None:
+        _require_int(self.offset, "writable_register.offset")
+        _require_int(self.allow_mask, "writable_register.allow_mask")
+        _require_int(self.width, "writable_register.width")
+        if self.width != 4:
+            raise PolicyError(
+                f"unsupported writable register width: {self.width}"
+            )
+        if self.allow_mask == 0:
+            raise PolicyError("writable_register.allow_mask must be non-zero")
+        _require_bool(self.allow_rmw, "writable_register.allow_rmw")
+        _require_bool(
+            self.require_precondition, "writable_register.require_precondition"
+        )
+        _require_int(
+            self.precondition_mask, "writable_register.precondition_mask"
+        )
+        _require_bool(self.readback, "writable_register.readback")
+
+    def canonical_dict(self) -> dict[str, Any]:
+        return {
+            "allow_mask": self.allow_mask,
+            "allow_rmw": self.allow_rmw,
+            "offset": self.offset,
+            "precondition_mask": self.precondition_mask,
+            "readback": self.readback,
+            "require_precondition": self.require_precondition,
+            "width": self.width,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class ResourcePolicyManifest:
     """Policy ceiling for one resource."""
 
@@ -101,6 +144,9 @@ class ResourcePolicyManifest:
     allow_unknown_reads: bool = True
     allow_poll: bool = False
     hard_denied: list[list[int]] = dataclasses.field(default_factory=list)
+    writable_registers: list[WritableRegister] = dataclasses.field(
+        default_factory=list
+    )
 
     def __post_init__(self) -> None:
         _require_int(self.id, "resource.id")
@@ -109,15 +155,31 @@ class ResourcePolicyManifest:
         _require_bool(self.allow_poll, "resource.allow_poll")
         canonical = canonicalize_ranges(self.hard_denied)
         object.__setattr__(self, "hard_denied", canonical)
+        seen_offsets: set[int] = set()
+        for reg in self.writable_registers:
+            if reg.offset in seen_offsets:
+                raise PolicyError(
+                    f"duplicate writable register offset: {reg.offset}"
+                )
+            seen_offsets.add(reg.offset)
+        sorted_writable = sorted(
+            self.writable_registers, key=lambda w: w.offset
+        )
+        object.__setattr__(self, "writable_registers", sorted_writable)
 
     def canonical_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "allow_poll": self.allow_poll,
             "allow_unknown_reads": self.allow_unknown_reads,
             "hard_denied": self.hard_denied,
             "id": self.id,
             "name": self.name,
         }
+        if self.writable_registers:
+            d["writable_registers"] = [
+                w.canonical_dict() for w in self.writable_registers
+            ]
+        return d
 
 
 @dataclasses.dataclass(frozen=True)
@@ -267,6 +329,33 @@ class TargetPolicyManifest:
                 if not covered:
                     raise NarrowingError(
                         f"runtime hard denials for resource {rt_res.id} fail to cover baseline denial [{b_start}, {b_end})"
+                    )
+
+            base_writable = {w.offset: w for w in base_res.writable_registers}
+            for rt_w in rt_res.writable_registers:
+                base_w = base_writable.get(rt_w.offset)
+                if base_w is None:
+                    raise NarrowingError(
+                        f"writable register on resource {rt_res.id} at offset {rt_w.offset} widened baseline"
+                    )
+                if (rt_w.allow_mask & ~base_w.allow_mask) != 0:
+                    raise NarrowingError(
+                        f"mask for writable register on resource {rt_res.id} at offset {rt_w.offset} widened baseline"
+                    )
+                if not base_w.allow_rmw and rt_w.allow_rmw:
+                    raise NarrowingError(
+                        f"writable register on resource {rt_res.id} at offset {rt_w.offset} widened baseline"
+                    )
+                if (
+                    base_w.require_precondition
+                    and not rt_w.require_precondition
+                ):
+                    raise NarrowingError(
+                        f"writable register on resource {rt_res.id} at offset {rt_w.offset} widened baseline"
+                    )
+                if (rt_w.precondition_mask & ~base_w.precondition_mask) != 0:
+                    raise NarrowingError(
+                        f"mask for writable register on resource {rt_res.id} at offset {rt_w.offset} widened baseline"
                     )
 
         return runtime

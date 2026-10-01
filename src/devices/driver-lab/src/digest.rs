@@ -181,6 +181,7 @@ mod tests {
             hard_denied: vec![0x40..0x44, 0x80..0x90],
             allow_unknown_reads: true,
             allow_poll: false,
+            writable_registers: vec![],
         }
     }
 
@@ -273,6 +274,7 @@ mod tests {
             hard_denied: vec![0x80..0x90, 0x40..0x44],
             allow_unknown_reads: true,
             allow_poll: false,
+            writable_registers: vec![],
         };
         assert_eq!(
             digest_of(&resource(), Some(&reordered)),
@@ -341,6 +343,7 @@ mod tests {
                 hard_denied: vec![0x80..0x90, 0x40..0x44],
                 allow_unknown_reads: true,
                 allow_poll: false,
+                writable_registers: vec![],
             },
         )]);
         assert_eq!(policy_digest(&reordered_denies), policy_digest(&one));

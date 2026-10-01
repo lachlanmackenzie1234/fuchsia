@@ -25,6 +25,12 @@ const AUDIT_CAPACITY: usize = 1024;
 /// Maximum snapshot items accepted, within the wire-contract bound.
 const MAX_SNAPSHOT_ITEMS: usize = 64;
 
+/// Maximum sequence items accepted, within the wire-contract bound.
+const MAX_SEQUENCE_ITEMS: usize = 64;
+
+/// Maximum delay accepted in a single sequence step (1 second).
+const MAX_DELAY_NS: i64 = 1_000_000_000;
+
 struct LabProxy {
     _node: Node,
     _scope: fasync::Scope,
@@ -95,7 +101,11 @@ impl Driver for LabProxy {
         let executor = Executor::new(
             bundle.backends,
             ZxClock,
-            ExecLimits { max_snapshot_items: MAX_SNAPSHOT_ITEMS },
+            ExecLimits {
+                max_snapshot_items: MAX_SNAPSHOT_ITEMS,
+                max_sequence_items: MAX_SEQUENCE_ITEMS,
+                max_delay_ns: MAX_DELAY_NS,
+            },
         );
         let mut audit = AuditRing::new(AUDIT_CAPACITY);
         audit.append(AuditRecord::lifecycle("driver_start", now_ns()));

@@ -13,6 +13,7 @@ library fuchsia.driver.lab;
 const MAX_RESOURCES uint32 = 64;
 const MAX_ALLOWLIST_RULES uint32 = 256;
 const MAX_SNAPSHOT_ITEMS uint32 = 64;
+const MAX_SEQUENCE_ITEMS uint32 = 64;
 const MAX_AUDIT_PAGE_ENTRIES uint32 = 64;
 const MAX_NAME_LENGTH uint32 = 64;
 const MAX_STRING_LENGTH uint32 = 128;
@@ -23,6 +24,9 @@ const MAX_OPERATION_LENGTH uint32 = 32;
 type AccessClass = strict enum : uint32 {
     READ_ONCE = 1;
     SNAPSHOT = 2;
+    WRITE = 3;
+    POLL = 4;
+    SEQUENCE = 5;
 };
 
 /// Machine-readable reason an operation, allowlist rule, or session open
@@ -49,6 +53,12 @@ type OperationError = flexible enum : uint32 {
     /// example a phase 2 takeover expectation). Fail closed rather than
     /// silently ignoring the field.
     UNSUPPORTED_EXPECTATION = 17;
+    PRECONDITION_FAILED = 18;
+    MISSING_PRECONDITION = 19;
+    TIMEOUT = 20;
+    READ_ONLY_SESSION = 21;
+    WRITE_NOT_PERMITTED = 22;
+    POLL_NOT_PERMITTED = 23;
 };
 
 /// One exact session allowlist rule. Wildcards do not exist.
@@ -230,6 +240,73 @@ type AuditPage = struct {
     next_cursor uint64;
 };
 
+type WritePrecondition = struct {
+    expected uint32;
+    mask uint32;
+};
+
+type WriteResult = struct {
+    /// Present if readback was configured or requested.
+    readback_value uint32;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type PollResult = struct {
+    value uint32;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type BarrierVariant = flexible enum : uint32 {
+    MEMORY = 1;
+};
+
+type SequenceItem = flexible union {
+    1: read32 struct {
+        resource uint32;
+        offset uint64;
+    };
+    2: write32 struct {
+        resource uint32;
+        offset uint64;
+        value uint32;
+        write_mask uint32;
+        precondition box<WritePrecondition>;
+        readback bool;
+    };
+    3: poll32 struct {
+        resource uint32;
+        offset uint64;
+        expected uint32;
+        mask uint32;
+        interval_ns int64;
+        timeout_ns int64;
+    };
+    4: delay_ns int64;
+    5: barrier BarrierVariant;
+};
+
+type SequenceItemOutcome = flexible union {
+    1: read32 ReadResult;
+    2: write32 WriteResult;
+    3: poll32 PollResult;
+    4: delay_ns struct {};
+    5: barrier struct {};
+    6: error OperationError;
+};
+
+type SequenceItemResult = struct {
+    index uint32;
+    ok bool;
+    outcome SequenceItemOutcome;
+};
+
+type SequenceResult = struct {
+    results vector<SequenceItemResult>:MAX_SEQUENCE_ITEMS;
+    complete bool;
+};
+
 /// One experiment session. Closing the channel closes the session,
 /// cancels its pending work, and releases the mutation lease.
 open protocol Session {
@@ -250,6 +327,34 @@ open protocol Session {
         cursor uint64;
         limit uint32;
     }) -> (AuditPage);
+
+    /// One policy-checked, audited 32-bit write with optional precondition,
+    /// read-modify-write, barrier, and readback.
+    flexible Write32(struct {
+        resource uint32;
+        offset uint64;
+        value uint32;
+        write_mask uint32;
+        precondition box<WritePrecondition>;
+        readback bool;
+    }) -> (WriteResult) error OperationError;
+
+    /// Repeated bounded read until (value & mask) == (expected & mask)
+    /// or timeout. Uses asynchronous timers on the driver dispatcher.
+    flexible Poll32(struct {
+        resource uint32;
+        offset uint64;
+        expected uint32;
+        mask uint32;
+        interval_ns int64;
+        timeout_ns int64;
+    }) -> (PollResult) error OperationError;
+
+    /// Bounded ordered sequence of operations. Whole-sequence validation
+    /// occurs before any hardware operation begins.
+    flexible ExecuteSequence(struct {
+        items vector<SequenceItem>:MAX_SEQUENCE_ITEMS;
+    }) -> (SequenceResult) error OperationError;
 };
 
 @discoverable

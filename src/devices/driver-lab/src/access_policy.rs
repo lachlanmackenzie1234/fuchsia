@@ -18,6 +18,16 @@ pub type ResourceId = u32;
 /// The only MMIO access width supported by the V1 wire contract, in bytes.
 pub const WIDTH32: u32 = 4;
 
+/// Session mode. A read-only session can never issue a write; a mutating
+/// session additionally requires the exclusive mutation lease.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionMode {
+    /// The session may only read.
+    ReadOnly,
+    /// The session holds the exclusive mutation lease.
+    Mutating,
+}
+
 /// Access classes distinguished by policy. A grant for one class never
 /// authorizes another: a one-shot read grant does not authorize polling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,10 +36,12 @@ pub enum AccessClass {
     ReadOnce,
     /// A read performed as part of a bounded snapshot.
     Snapshot,
-    /// A repeated bounded read. Not supported by the V1 read-only executor.
+    /// A repeated bounded read.
     Poll,
-    /// A masked write. Not supported by the V1 read-only executor.
+    /// A masked write.
     Write,
+    /// An operation within a bounded sequence.
+    Sequence,
 }
 
 /// Description of an MMIO resource offered by the parent node. Descriptions
@@ -45,6 +57,38 @@ pub struct MmioResource {
     pub mapped_size: u64,
 }
 
+/// Target ceiling specification for one writable register.
+///
+/// Writes are denied unless the immutable target ceiling contains an exact
+/// writable-register entry (Spec 9.4). A host/session grant cannot invent a
+/// write entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WritableRegister {
+    /// Byte offset from the start of the logical resource.
+    pub offset: u64,
+    /// Access width in bytes (must be 4 for V1).
+    pub width: u32,
+    /// Bitmask of writable bits permitted by policy.
+    pub allow_mask: u32,
+    /// Whether read-modify-write is permitted for partial mask writes.
+    pub allow_rmw: bool,
+    /// Whether a precondition is required for any write to this register.
+    pub require_precondition: bool,
+    /// Bitmask of valid precondition bits.
+    pub precondition_mask: u32,
+    /// Whether readback is configured/supported.
+    pub readback: bool,
+}
+
+/// A precondition required or checked before executing a write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WritePrecondition {
+    /// Expected value of bits selected by `mask`.
+    pub expected: u32,
+    /// Bitmask of bits to check.
+    pub mask: u32,
+}
+
 /// Immutable per-resource read ceiling. A resource with no ceiling entry
 /// permits nothing.
 #[derive(Clone, Debug, Default)]
@@ -57,6 +101,15 @@ pub struct ResourceCeiling {
     /// Whether repeated polling reads may be authorized by an exact
     /// session allowlist rule.
     pub allow_poll: bool,
+    /// Exact writable registers permitted by immutable target policy.
+    pub writable_registers: Vec<WritableRegister>,
+}
+
+impl ResourceCeiling {
+    /// Looks up a writable register definition at `offset`.
+    pub fn get_writable_register(&self, offset: u64) -> Option<&WritableRegister> {
+        self.writable_registers.iter().find(|r| r.offset == offset)
+    }
 }
 
 /// One exact session allowlist rule. Wildcards do not exist: a rule matches
@@ -117,6 +170,16 @@ pub enum Denial {
     /// example a phase 2 takeover expectation). Fail closed rather than
     /// silently ignoring the field.
     UnsupportedExpectation,
+    /// A precondition specified for a write failed.
+    PreconditionFailed,
+    /// Target policy requires a precondition, but none was provided.
+    MissingPrecondition,
+    /// An asynchronous poll timed out without matching.
+    Timeout,
+    /// A write was attempted in a read-only session.
+    ReadOnlySession,
+    /// A write was attempted to an offset or bits not permitted by target policy.
+    WriteNotPermitted,
 }
 
 /// The validated policy engine for one session.
@@ -126,6 +189,7 @@ pub enum Denial {
 /// session, and no hardware operation is performed.
 #[derive(Debug)]
 pub struct AccessPolicy {
+    mode: SessionMode,
     resources: BTreeMap<ResourceId, MmioResource>,
     ceiling: BTreeMap<ResourceId, ResourceCeiling>,
     allowlist: BTreeSet<AccessRule>,
@@ -136,16 +200,22 @@ impl AccessPolicy {
     /// and against the ceiling. Returns the first offending rule and the
     /// reason on failure.
     pub fn new(
+        mode: SessionMode,
         resources: BTreeMap<ResourceId, MmioResource>,
         ceiling: BTreeMap<ResourceId, ResourceCeiling>,
         allowlist: impl IntoIterator<Item = AccessRule>,
     ) -> Result<Self, (AccessRule, Denial)> {
         let allowlist: BTreeSet<AccessRule> = allowlist.into_iter().collect();
-        let policy = Self { resources, ceiling, allowlist };
+        let policy = Self { mode, resources, ceiling, allowlist };
         for rule in &policy.allowlist {
             policy.validate_rule(rule).map_err(|denial| (*rule, denial))?;
         }
         Ok(policy)
+    }
+
+    /// The session mode (read-only or mutating).
+    pub fn mode(&self) -> SessionMode {
+        self.mode
     }
 
     /// IDs of every resource this policy knows about.
@@ -164,12 +234,86 @@ impl AccessPolicy {
         offset: u64,
         class: AccessClass,
     ) -> Result<(), Denial> {
-        if !matches!(class, AccessClass::ReadOnce | AccessClass::Snapshot) {
+        if !matches!(class, AccessClass::ReadOnce | AccessClass::Snapshot | AccessClass::Sequence) {
             return Err(Denial::UnsupportedAccessClass);
         }
         self.validate_read(resource, offset, WIDTH32)?;
         let rule = AccessRule { resource, offset, width: WIDTH32, class };
-        if !self.allowlist.contains(&rule) {
+        let rule_seq =
+            AccessRule { resource, offset, width: WIDTH32, class: AccessClass::Sequence };
+        if !self.allowlist.contains(&rule) && !self.allowlist.contains(&rule_seq) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for a 32-bit write.
+    pub fn check_write32(
+        &self,
+        resource: ResourceId,
+        offset: u64,
+        write_mask: u32,
+        precondition: Option<&WritePrecondition>,
+    ) -> Result<&WritableRegister, Denial> {
+        if self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        if write_mask == 0 {
+            return Err(Denial::WriteNotPermitted);
+        }
+        self.validate_write_rule(resource, offset, WIDTH32)?;
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let reg = ceiling.get_writable_register(offset).ok_or(Denial::WriteNotPermitted)?;
+        if (write_mask & !reg.allow_mask) != 0 {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if write_mask != 0xFFFF_FFFF && !reg.allow_rmw {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if reg.require_precondition && precondition.is_none() {
+            return Err(Denial::MissingPrecondition);
+        }
+        if let Some(pre) = precondition {
+            if !reg.allow_rmw {
+                return Err(Denial::WriteNotPermitted);
+            }
+            if pre.mask == 0 || (pre.mask & !reg.precondition_mask) != 0 {
+                return Err(Denial::WriteNotPermitted);
+            }
+        }
+        let rule_write = AccessRule { resource, offset, width: WIDTH32, class: AccessClass::Write };
+        let rule_seq =
+            AccessRule { resource, offset, width: WIDTH32, class: AccessClass::Sequence };
+        if !self.allowlist.contains(&rule_write) && !self.allowlist.contains(&rule_seq) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(reg)
+    }
+
+    /// Immediately-before-access validation for repeated polling reads.
+    pub fn check_poll32(
+        &self,
+        resource: ResourceId,
+        offset: u64,
+        mask: u32,
+        interval_ns: i64,
+        timeout_ns: i64,
+    ) -> Result<(), Denial> {
+        if mask == 0 {
+            return Err(Denial::Misaligned);
+        }
+        if interval_ns < 0 || timeout_ns < 0 {
+            return Err(Denial::LimitExceeded);
+        }
+        self.validate_read(resource, offset, WIDTH32)?;
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        if !ceiling.allow_poll {
+            return Err(Denial::PollNotPermitted);
+        }
+        let rule_poll = AccessRule { resource, offset, width: WIDTH32, class: AccessClass::Poll };
+        let rule_seq =
+            AccessRule { resource, offset, width: WIDTH32, class: AccessClass::Sequence };
+        if !self.allowlist.contains(&rule_poll) && !self.allowlist.contains(&rule_seq) {
             return Err(Denial::NotInAllowlist);
         }
         Ok(())
@@ -190,12 +334,50 @@ impl AccessPolicy {
                 }
                 Ok(())
             }
-            AccessClass::Write => Err(Denial::UnsupportedAccessClass),
+            AccessClass::Write => {
+                if self.mode != SessionMode::Mutating {
+                    return Err(Denial::ReadOnlySession);
+                }
+                self.validate_write_rule(rule.resource, rule.offset, rule.width)?;
+                let ceiling =
+                    self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                if ceiling.get_writable_register(rule.offset).is_none() {
+                    return Err(Denial::WriteNotPermitted);
+                }
+                Ok(())
+            }
+            AccessClass::Sequence => {
+                let desc = self.resources.get(&rule.resource).ok_or(Denial::UnknownResource)?;
+                if rule.width != WIDTH32 {
+                    return Err(Denial::UnsupportedWidth);
+                }
+                if rule.offset % u64::from(rule.width) != 0 {
+                    return Err(Denial::Misaligned);
+                }
+                let end =
+                    rule.offset.checked_add(u64::from(rule.width)).ok_or(Denial::OffsetOverflow)?;
+                if end > desc.logical_size {
+                    return Err(Denial::OutOfLogicalBounds);
+                }
+                if end > desc.mapped_size {
+                    return Err(Denial::OutOfMappedBounds);
+                }
+                let ceiling =
+                    self.ceiling.get(&rule.resource).ok_or(Denial::NotPermittedByCeiling)?;
+                if ceiling
+                    .hard_denied
+                    .iter()
+                    .any(|range| range.start < end && rule.offset < range.end)
+                {
+                    return Err(Denial::HardDenied);
+                }
+                Ok(())
+            }
         }
     }
 
     /// Structural and ceiling checks shared by rule prevalidation and
-    /// per-access validation.
+    /// per-access validation for reads.
     fn validate_read(&self, resource: ResourceId, offset: u64, width: u32) -> Result<(), Denial> {
         let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
         if width != WIDTH32 {
@@ -217,6 +399,38 @@ impl AccessPolicy {
         }
         if !ceiling.allow_unknown_reads {
             return Err(Denial::UnknownReadsNotPermitted);
+        }
+        Ok(())
+    }
+
+    /// Structural and ceiling checks for writes.
+    fn validate_write_rule(
+        &self,
+        resource: ResourceId,
+        offset: u64,
+        width: u32,
+    ) -> Result<(), Denial> {
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if width != WIDTH32 {
+            return Err(Denial::UnsupportedWidth);
+        }
+        if offset % u64::from(width) != 0 {
+            return Err(Denial::Misaligned);
+        }
+        let end = offset.checked_add(u64::from(width)).ok_or(Denial::OffsetOverflow)?;
+        if end > desc.logical_size {
+            return Err(Denial::OutOfLogicalBounds);
+        }
+        if end > desc.mapped_size {
+            return Err(Denial::OutOfMappedBounds);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        if ceiling.hard_denied.iter().any(|range| range.start < end && offset < range.end) {
+            return Err(Denial::HardDenied);
+        }
+        let reg = ceiling.get_writable_register(offset).ok_or(Denial::WriteNotPermitted)?;
+        if reg.width != width {
+            return Err(Denial::UnsupportedWidth);
         }
         Ok(())
     }
@@ -272,6 +486,26 @@ mod tests {
                     hard_denied: vec![0x40..0x44],
                     allow_unknown_reads: true,
                     allow_poll: true,
+                    writable_registers: vec![
+                        WritableRegister {
+                            offset: 0x20,
+                            width: WIDTH32,
+                            allow_mask: 0x0000FFFF,
+                            allow_rmw: true,
+                            require_precondition: false,
+                            precondition_mask: 0,
+                            readback: false,
+                        },
+                        WritableRegister {
+                            offset: 0x24,
+                            width: WIDTH32,
+                            allow_mask: 0xFFFFFFFF,
+                            allow_rmw: true,
+                            require_precondition: true,
+                            precondition_mask: 0x00000001,
+                            readback: true,
+                        },
+                    ],
                 },
             ),
             (
@@ -280,6 +514,7 @@ mod tests {
                     hard_denied: vec![],
                     allow_unknown_reads: false,
                     allow_poll: false,
+                    writable_registers: vec![],
                 },
             ),
             (
@@ -288,6 +523,7 @@ mod tests {
                     hard_denied: vec![],
                     allow_unknown_reads: true,
                     allow_poll: false,
+                    writable_registers: vec![],
                 },
             ),
         ])
@@ -298,7 +534,8 @@ mod tests {
     }
 
     fn policy(rules: &[AccessRule]) -> AccessPolicy {
-        AccessPolicy::new(resources(), ceiling(), rules.iter().copied()).unwrap()
+        AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), rules.iter().copied())
+            .unwrap()
     }
 
     #[test]
@@ -382,7 +619,12 @@ mod tests {
     #[test]
     fn hard_denied_wins_over_allowlist() {
         // The rule cannot even enter the allowlist.
-        let denied = AccessPolicy::new(resources(), ceiling(), [read_rule(CTRL, 0x40)]);
+        let denied = AccessPolicy::new(
+            SessionMode::ReadOnly,
+            resources(),
+            ceiling(),
+            [read_rule(CTRL, 0x40)],
+        );
         assert_eq!(denied.unwrap_err(), (read_rule(CTRL, 0x40), Denial::HardDenied));
         // And a direct check is denied before the allowlist is consulted.
         let policy = policy(&[]);
@@ -397,7 +639,12 @@ mod tests {
 
     #[test]
     fn unknown_reads_disabled_by_ceiling() {
-        let denied = AccessPolicy::new(resources(), ceiling(), [read_rule(LOCKED, 0x0)]);
+        let denied = AccessPolicy::new(
+            SessionMode::ReadOnly,
+            resources(),
+            ceiling(),
+            [read_rule(LOCKED, 0x0)],
+        );
         assert_eq!(denied.unwrap_err(), (read_rule(LOCKED, 0x0), Denial::UnknownReadsNotPermitted));
     }
 
@@ -415,7 +662,10 @@ mod tests {
         // CTRL has allow_poll: true
         let rule_poll_allowed =
             AccessRule { resource: CTRL, offset: 0x0, width: WIDTH32, class: AccessClass::Poll };
-        assert!(AccessPolicy::new(resources(), ceiling(), [rule_poll_allowed]).is_ok());
+        assert!(
+            AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule_poll_allowed])
+                .is_ok()
+        );
 
         // SHORT_MAP has allow_poll: false
         let rule_poll_denied = AccessRule {
@@ -424,30 +674,84 @@ mod tests {
             width: WIDTH32,
             class: AccessClass::Poll,
         };
-        let denied = AccessPolicy::new(resources(), ceiling(), [rule_poll_denied]);
+        let denied =
+            AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule_poll_denied]);
         assert_eq!(denied.unwrap_err(), (rule_poll_denied, Denial::PollNotPermitted));
     }
 
     #[test]
-    fn allowlist_prevalidation_rejects_write_class() {
+    fn allowlist_prevalidation_rejects_write_in_read_only_session() {
         let rule =
-            AccessRule { resource: CTRL, offset: 0x0, width: WIDTH32, class: AccessClass::Write };
-        let denied = AccessPolicy::new(resources(), ceiling(), [rule]);
-        assert_eq!(denied.unwrap_err(), (rule, Denial::UnsupportedAccessClass));
+            AccessRule { resource: CTRL, offset: 0x20, width: WIDTH32, class: AccessClass::Write };
+        let denied = AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule]);
+        assert_eq!(denied.unwrap_err(), (rule, Denial::ReadOnlySession));
+    }
+
+    #[test]
+    fn allowlist_prevalidation_accepts_valid_write_in_mutating_session() {
+        let rule =
+            AccessRule { resource: CTRL, offset: 0x20, width: WIDTH32, class: AccessClass::Write };
+        let policy = AccessPolicy::new(SessionMode::Mutating, resources(), ceiling(), [rule]);
+        assert!(policy.is_ok());
+    }
+
+    #[test]
+    fn write_checks_enforce_session_mode_mask_and_preconditions() {
+        let write_rule =
+            AccessRule { resource: CTRL, offset: 0x20, width: WIDTH32, class: AccessClass::Write };
+        let write_rule_pre =
+            AccessRule { resource: CTRL, offset: 0x24, width: WIDTH32, class: AccessClass::Write };
+        let policy = AccessPolicy::new(
+            SessionMode::Mutating,
+            resources(),
+            ceiling(),
+            [write_rule, write_rule_pre],
+        )
+        .unwrap();
+
+        // Valid write on offset 0x20 (allow_mask 0x0000FFFF)
+        let reg = policy.check_write32(CTRL, 0x20, 0x000000FF, None).unwrap();
+        assert_eq!(reg.offset, 0x20);
+
+        // Disallowed bit in write_mask
+        assert_eq!(
+            policy.check_write32(CTRL, 0x20, 0x00010000, None),
+            Err(Denial::WriteNotPermitted)
+        );
+
+        // Zero mask rejected
+        assert_eq!(policy.check_write32(CTRL, 0x20, 0, None), Err(Denial::WriteNotPermitted));
+
+        // Offset 0x24 requires precondition
+        assert_eq!(
+            policy.check_write32(CTRL, 0x24, 0xFFFFFFFF, None),
+            Err(Denial::MissingPrecondition)
+        );
+
+        // Invalid precondition mask (precondition_mask is 0x1)
+        let bad_pre = WritePrecondition { expected: 1, mask: 0x2 };
+        assert_eq!(
+            policy.check_write32(CTRL, 0x24, 0xFFFFFFFF, Some(&bad_pre)),
+            Err(Denial::WriteNotPermitted)
+        );
+
+        // Valid precondition
+        let good_pre = WritePrecondition { expected: 1, mask: 0x1 };
+        assert!(policy.check_write32(CTRL, 0x24, 0xFFFFFFFF, Some(&good_pre)).is_ok());
     }
 
     #[test]
     fn allowlist_prevalidation_rejects_bad_width() {
         let rule =
             AccessRule { resource: CTRL, offset: 0x0, width: 8, class: AccessClass::ReadOnce };
-        let denied = AccessPolicy::new(resources(), ceiling(), [rule]);
+        let denied = AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule]);
         assert_eq!(denied.unwrap_err(), (rule, Denial::UnsupportedWidth));
     }
 
     #[test]
     fn allowlist_prevalidation_rejects_out_of_bounds() {
         let rule = read_rule(CTRL, 0x200);
-        let denied = AccessPolicy::new(resources(), ceiling(), [rule]);
+        let denied = AccessPolicy::new(SessionMode::ReadOnly, resources(), ceiling(), [rule]);
         assert_eq!(denied.unwrap_err(), (rule, Denial::OutOfLogicalBounds));
     }
 }
