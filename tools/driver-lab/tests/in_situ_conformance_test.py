@@ -64,6 +64,7 @@ SAMPLE_DRIVER_URL = (
 TARGET_SCOPE = "sample-engineering-target"
 MMIO_DIGEST = "sha256:" + "11" * 32
 IRQ_DIGEST = "sha256:" + "22" * 32
+STATE_DIGEST = "sha256:" + "55" * 32
 RESOURCE_DIGEST = "sha256:" + "33" * 32
 POLICY_DIGEST = "sha256:" + "44" * 32
 
@@ -73,6 +74,13 @@ REG_STATUS = 0x04
 REG_CONTROL = 0x08
 REG_SCRATCH = 0x10
 REG_FIFO_DATA = 0x40
+
+# Software state / knob / trigger layout matching sample_driver.rs
+STATE_BUSY_FLAG = 0x00
+STATE_INVARIANT_VIOLATIONS = 0x04
+KNOB_RACE_DELAY_US = 0x08
+KNOB_FIX_ENABLED = 0x0C
+TRIGGER_CONCURRENT_OP = 0x10
 
 DEVICE_ID_VALUE = 0x5341_4D50  # "SAMP"
 STATUS_RUNNING = 1 << 0
@@ -113,8 +121,15 @@ class SyntheticSampleDriverTarget:
                     id=2,
                     name="irq0",
                     kind=ResourceKind.INTERRUPT,
-                    logical_size=0,
+                    logical_size=0x10,
                     digest=IRQ_DIGEST,
+                ),
+                ResourceInfo(
+                    id=3,
+                    name="state0",
+                    kind=ResourceKind.MMIO,
+                    logical_size=0x14,
+                    digest=STATE_DIGEST,
                 ),
             ),
             max_snapshot_items=64,
@@ -136,6 +151,19 @@ class SyntheticSampleDriverTarget:
         self.fake.set_writable_registers(1, [REG_CONTROL, REG_SCRATCH])
         self.fake.set_quiesce_hook(self._on_quiesce)
 
+        # Software state bank ("state0", resource 3) matching sample_driver.rs:
+        self.fake.set_value(3, STATE_BUSY_FLAG, 0)
+        self.fake.set_value(3, STATE_INVARIANT_VIOLATIONS, 0)
+        self.fake.set_value(3, KNOB_RACE_DELAY_US, 0)
+        self.fake.set_value(3, KNOB_FIX_ENABLED, 0)
+        self.fake.set_value(3, TRIGGER_CONCURRENT_OP, 0)
+        self.fake.set_writable_registers(
+            3, [KNOB_RACE_DELAY_US, KNOB_FIX_ENABLED, TRIGGER_CONCURRENT_OP]
+        )
+        self.fake.set_write_hook(
+            3, TRIGGER_CONCURRENT_OP, self._on_trigger_concurrent_op
+        )
+
         self.driver_isr_count = 0
 
     @property
@@ -149,6 +177,19 @@ class SyntheticSampleDriverTarget:
         else:
             status &= ~STATUS_QUIESCED
         self.fake.set_value(1, REG_STATUS, status)
+
+    def _on_trigger_concurrent_op(self, arg: int) -> None:
+        self.fake.set_value(3, STATE_BUSY_FLAG, 1)
+        delay_us = self.fake.get_value(3, KNOB_RACE_DELAY_US)
+        fix_enabled = self.fake.get_value(3, KNOB_FIX_ENABLED)
+        if delay_us > 0 and fix_enabled == 0:
+            violations = self.fake.get_value(3, STATE_INVARIANT_VIOLATIONS)
+            self.fake.set_value(
+                3, STATE_INVARIANT_VIOLATIONS, violations + max(arg, 1)
+            )
+        self.fake.set_value(3, STATE_BUSY_FLAG, 0)
+        # Trigger slot always reads as 0.
+        self.fake.set_value(3, TRIGGER_CONCURRENT_OP, 0)
 
     def trigger_hardware_irq(self) -> None:
         """Simulates hardware firing irq0: driver ISR runs and taps LabInstance."""
@@ -256,7 +297,105 @@ class _InSituSessionServer(fdl.SessionServer):
         )
 
     async def execute_sequence(self, request: Any) -> Any:
-        return fdl.SequenceResult(results=[], complete=True)
+        from driver_lab.transport import SequenceItem
+
+        seq_items: list[SequenceItem] = []
+        for item in request.items:
+            if item.read32 is not None:
+                seq_items.append(
+                    SequenceItem(
+                        kind="read32",
+                        resource=item.read32.resource,
+                        offset=item.read32.offset,
+                    )
+                )
+            elif item.write32 is not None:
+                precond = None
+                if item.write32.precondition is not None:
+                    precond = (
+                        item.write32.precondition.expected,
+                        item.write32.precondition.mask,
+                    )
+                seq_items.append(
+                    SequenceItem(
+                        kind="write32",
+                        resource=item.write32.resource,
+                        offset=item.write32.offset,
+                        value=item.write32.value,
+                        write_mask=item.write32.write_mask,
+                        precondition=precond,
+                        readback=item.write32.readback,
+                    )
+                )
+            elif item.poll32 is not None:
+                seq_items.append(
+                    SequenceItem(
+                        kind="poll32",
+                        resource=item.poll32.resource,
+                        offset=item.poll32.offset,
+                        expected=item.poll32.expected,
+                        mask=item.poll32.mask,
+                        interval_ns=item.poll32.interval_ns,
+                        timeout_ns=item.poll32.timeout_ns,
+                    )
+                )
+            elif item.delay_ns is not None:
+                seq_items.append(
+                    SequenceItem(kind="delay_ns", delay_ns=item.delay_ns)
+                )
+            elif item.barrier is not None:
+                seq_items.append(SequenceItem(kind="barrier"))
+        try:
+            outcome = await self._session.execute_sequence(seq_items)
+        except Exception as error:
+            denial = getattr(error, "denial", None)
+            if denial is None:
+                raise
+            return DomainError(error=getattr(fdl.OperationError, denial.name))
+        fidl_results = []
+        for res in outcome.results:
+            if not res.ok and res.error is not None:
+                item_outcome = fdl.SequenceItemOutcome(
+                    error=getattr(fdl.OperationError, res.error.name)
+                )
+            elif res.kind == "read32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    read32=fdl.ReadResult(
+                        value=res.value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "write32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    write32=fdl.WriteResult(
+                        readback_value=res.readback_value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "poll32":
+                item_outcome = fdl.SequenceItemOutcome(
+                    poll32=fdl.PollResult(
+                        value=res.value or 0,
+                        audit_seq=res.audit_seq,
+                        timestamp_ns=res.timestamp_ns,
+                    )
+                )
+            elif res.kind == "delay_ns":
+                item_outcome = fdl.SequenceItemOutcome(delay_ns=fdl.DelayNs())
+            else:
+                item_outcome = fdl.SequenceItemOutcome(barrier=fdl.Barrier())
+            fidl_results.append(
+                fdl.SequenceItemResult(
+                    index=res.index,
+                    ok=res.ok,
+                    outcome=item_outcome,
+                )
+            )
+        return fdl.SequenceResult(
+            results=fidl_results, complete=outcome.complete
+        )
 
     async def gpio_read(self, request: Any) -> Any:
         return fdl.GpioReadResult(value=False, audit_seq=1, timestamp_ns=100)
@@ -554,7 +693,7 @@ class InSituConformanceTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(code, 0)
             self.assertEqual(
                 [r["name"] for r in desc["description"]["resources"]],
-                ["mmio0", "irq0"],
+                ["mmio0", "irq0", "state0"],
             )
             self.assertEqual(
                 desc["node"]["bound_driver_url"], SAMPLE_DRIVER_URL
@@ -885,6 +1024,181 @@ class InSituConformanceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("quiesce_engaged", audit_ops)
         self.assertIn("read32", audit_ops)
         self.assertIn("write32", audit_ops)
+
+    async def test_in_situ_software_state_knob_and_trigger_single_build_repro_and_fix_proof(
+        self,
+    ) -> None:
+        from driver_lab.consent import ConsentDecision
+
+        class AllowOncePrompt:
+            async def request_consent(
+                self, req: Any, warning: str
+            ) -> ConsentDecision:
+                return ConsentDecision.ALLOW_ONCE
+
+        save_grants(
+            self.grants_path,
+            [
+                ReadGrant(
+                    schema_version=1,
+                    target_scope=TARGET_SCOPE,
+                    node_id=SAMPLE_MONIKER,
+                    resource_digest=STATE_DIGEST,
+                    resource="state0",
+                    offset=STATE_INVARIANT_VIOLATIONS,
+                    width=4,
+                    access=AccessClass.READ_ONCE,
+                    decision=Decision.ALLOW,
+                    approved_at="2026-09-22T00:00:00Z",
+                ),
+                ReadGrant(
+                    schema_version=1,
+                    target_scope=TARGET_SCOPE,
+                    node_id=SAMPLE_MONIKER,
+                    resource_digest=STATE_DIGEST,
+                    resource="state0",
+                    offset=STATE_INVARIANT_VIOLATIONS,
+                    width=4,
+                    access=AccessClass.POLL,
+                    decision=Decision.ALLOW,
+                    approved_at="2026-09-22T00:00:00Z",
+                    max_poll_hz=1000,
+                    max_poll_timeout_s=1.0,
+                ),
+            ],
+        )
+
+        # Plan 1: Reproduce the race bug in-situ by widening KNOB_RACE_DELAY_US
+        # with KNOB_FIX_ENABLED=0 and firing TRIGGER_CONCURRENT_OP.
+        repro_plan: dict[str, Any] = {
+            "schema_version": 1,
+            "run_id": "run-mode-b-repro",
+            "case_id": "repro-race-violation",
+            "target": {"selector": "lab-target"},
+            "node": {
+                "id": SAMPLE_MONIKER,
+                "driver_moniker": SAMPLE_MONIKER,
+                "expected_unclaimed": False,
+                "expected_resource_digest": RESOURCE_DIGEST,
+            },
+            "access": {"mode": "in-situ", "activation": "in-situ"},
+            "operations": [
+                {
+                    "kind": "knob_write32",
+                    "offset": KNOB_RACE_DELAY_US,
+                    "value": 5000,
+                },
+                {
+                    "kind": "knob_write32",
+                    "offset": KNOB_FIX_ENABLED,
+                    "value": 0,
+                },
+                {
+                    "kind": "trigger_write32",
+                    "offset": TRIGGER_CONCURRENT_OP,
+                    "arg": 2,
+                },
+                {
+                    "kind": "state_read32",
+                    "offset": STATE_INVARIANT_VIOLATIONS,
+                },
+            ],
+        }
+
+        transport1 = self._make_fidl_transport()
+        lab1 = DriverLab(
+            transport1,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=SAMPLE_MONIKER,
+            driver_moniker=SAMPLE_MONIKER,
+            driver_url=SAMPLE_DRIVER_URL,
+            discovery=self.discovery,
+            activator=self.activator,
+            consent=AllowOncePrompt(),
+        )
+        repro_res = await lab1.run_plan(repro_plan)
+        self.assertTrue(repro_res.ok, repro_res.failure)
+        self.assertEqual(len(repro_res.reads), 1)
+        self.assertEqual(repro_res.reads[0].value, 2)
+
+        repro_ops = [
+            json.loads(line)["kind"]
+            for line in (repro_res.evidence_dir / "operations.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        self.assertEqual(
+            repro_ops,
+            [
+                "knob_write32",
+                "knob_write32",
+                "trigger_write32",
+                "state_read32",
+            ],
+        )
+
+        # Plan 2: Prove the fix in the SAME boot (without a rebuild) by toggling
+        # KNOB_FIX_ENABLED=1, firing TRIGGER_CONCURRENT_OP inside a sequence,
+        # and polling STATE_INVARIANT_VIOLATIONS to confirm it stays at 2.
+        fix_proof_plan: dict[str, Any] = {
+            "schema_version": 1,
+            "run_id": "run-mode-b-fix-proof",
+            "case_id": "prove-fix-via-knob",
+            "target": {"selector": "lab-target"},
+            "node": {
+                "id": SAMPLE_MONIKER,
+                "driver_moniker": SAMPLE_MONIKER,
+                "expected_unclaimed": False,
+                "expected_resource_digest": RESOURCE_DIGEST,
+            },
+            "access": {"mode": "in-situ", "activation": "in-situ"},
+            "operations": [
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {
+                            "kind": "knob_write32",
+                            "offset": KNOB_FIX_ENABLED,
+                            "value": 1,
+                        },
+                        {
+                            "kind": "trigger_write32",
+                            "offset": TRIGGER_CONCURRENT_OP,
+                            "arg": 3,
+                        },
+                        {
+                            "kind": "state_read32",
+                            "offset": STATE_INVARIANT_VIOLATIONS,
+                        },
+                    ],
+                },
+                {
+                    "kind": "state_poll32",
+                    "offset": STATE_INVARIANT_VIOLATIONS,
+                    "expected": 2,
+                },
+            ],
+        }
+
+        transport2 = self._make_fidl_transport()
+        lab2 = DriverLab(
+            transport2,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=SAMPLE_MONIKER,
+            driver_moniker=SAMPLE_MONIKER,
+            driver_url=SAMPLE_DRIVER_URL,
+            discovery=self.discovery,
+            activator=self.activator,
+            consent=AllowOncePrompt(),
+        )
+        proof_res = await lab2.run_plan(fix_proof_plan)
+        self.assertTrue(proof_res.ok, proof_res.failure)
+        self.assertEqual(len(proof_res.polls), 1)
+        self.assertEqual(proof_res.polls[0].value, 2)
 
 
 if __name__ == "__main__":

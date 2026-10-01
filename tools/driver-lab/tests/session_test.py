@@ -20,6 +20,7 @@ from driver_lab.session import (
     MmioRegion,
     SessionCapabilities,
     Spi,
+    StateHandle,
     TranslationMetadata,
     UnsupportedCapabilityError,
 )
@@ -127,6 +128,13 @@ def make_extended_proxy_description() -> ProxyDescription:
                 kind=ResourceKind.INTERRUPT,
                 logical_size=0,
                 digest="sha256:" + "88" * 32,
+            ),
+            ResourceInfo(
+                id=7,
+                name="state0",
+                kind=ResourceKind.MMIO,
+                logical_size=0x20,
+                digest="sha256:" + "99" * 32,
             ),
         ),
         max_snapshot_items=64,
@@ -700,6 +708,63 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(OperationDenied) as cm:
                 await mmio.poll32(0x10, expected=42, timeout_s=0.1)
             self.assertEqual(cm.exception.denial, Denial.LIMIT_EXCEEDED)
+
+    async def test_proxy_state_handle_read_knob_trigger_poll_snapshot(
+        self,
+    ) -> None:
+        ext_proxy = FakeProxyTarget(make_extended_proxy_description())
+        ext_proxy.set_value(7, 0x00, 0)  # STATE_BUSY_FLAG
+        ext_proxy.set_value(7, 0x04, 0)  # STATE_INVARIANT_VIOLATIONS
+        ext_proxy.set_value(7, 0x08, 0)  # KNOB_RACE_DELAY_US
+        ext_proxy.set_value(7, 0x0C, 0)  # KNOB_FIX_ENABLED
+        ext_proxy.set_value(7, 0x10, 0)  # TRIGGER_CONCURRENT_OP
+
+        def on_trigger(arg: int) -> None:
+            delay_us = ext_proxy.get_value(7, 0x08)
+            fix_enabled = ext_proxy.get_value(7, 0x0C)
+            if delay_us > 0 and fix_enabled == 0:
+                violations = ext_proxy.get_value(7, 0x04)
+                ext_proxy.set_value(7, 0x04, violations + max(arg, 1))
+            # Trigger slot always reads as 0.
+            ext_proxy.set_value(7, 0x10, 0)
+
+        ext_proxy.set_write_hook(7, 0x10, on_trigger)
+
+        prompt = ScriptedPrompt(ConsentDecision.ALLOW_ONCE)
+        lab = DriverLab(
+            ext_proxy,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope="target-1",
+            node_id="node-1",
+            consent=prompt,
+        )
+
+        async with await lab.attach(
+            "node-1",
+            mode="proxy",
+            session_mode=SessionMode.MUTATING,
+        ) as session:
+            state = await session.state("state0")
+            self.assertIsInstance(state, StateHandle)
+            self.assertEqual(state.name, "state0")
+            self.assertEqual(state.id, 7)
+
+            # 1. Repro bug: widen race window via knob and fire trigger.
+            knob_res = await state.write_knob(0x08, 5000)
+            self.assertEqual(knob_res.readback_value, 5000)
+            trig_res = await state.trigger(0x10, arg=1)
+            self.assertIsNone(trig_res.readback_value)
+            self.assertEqual(await state.read32(0x04), 1)
+
+            # 2. Prove fix in-situ: enable fix knob, fire trigger, verify counter stays 1.
+            await state.write_knob(0x0C, 1)
+            await state.trigger(0x10, arg=2)
+            poll_res = await state.poll32(0x04, expected=1)
+            self.assertEqual(poll_res.value, 1)
+
+            snap = await state.snapshot32([0x04, 0x08, 0x0C])
+            self.assertEqual(snap, [1, 5000, 1])
 
 
 if __name__ == "__main__":

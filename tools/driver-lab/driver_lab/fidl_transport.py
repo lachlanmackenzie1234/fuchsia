@@ -451,7 +451,7 @@ class _FidlProxySession:
         """See `ProxySession.execute_sequence`."""
         fidl_items: list[fdl.SequenceItem] = []
         for item in items:
-            if item.kind in ("mmio_read32", "read32"):
+            if item.kind in ("mmio_read32", "state_read32", "read32"):
                 fidl_items.append(
                     fdl.SequenceItem(
                         read32=fdl.Read32(
@@ -459,7 +459,12 @@ class _FidlProxySession:
                         )
                     )
                 )
-            elif item.kind in ("mmio_write32", "write32"):
+            elif item.kind in (
+                "mmio_write32",
+                "knob_write32",
+                "trigger_write32",
+                "write32",
+            ):
                 precond = None
                 if item.precondition is not None:
                     precond = fdl.WritePrecondition(
@@ -478,7 +483,7 @@ class _FidlProxySession:
                         )
                     )
                 )
-            elif item.kind in ("mmio_poll32", "poll32"):
+            elif item.kind in ("mmio_poll32", "state_poll32", "poll32"):
                 fidl_items.append(
                     fdl.SequenceItem(
                         poll32=fdl.Poll32(

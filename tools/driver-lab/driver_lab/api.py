@@ -235,6 +235,7 @@ class _ReadOp:
     index: int
     resource: ResourceInfo
     offset: int
+    kind: str = "mmio_read32"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -252,6 +253,7 @@ class _WriteOp:
     write_mask: int
     precondition: tuple[int, int] | None
     readback: bool
+    kind: str = "mmio_write32"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -263,6 +265,7 @@ class _PollOp:
     mask: int
     interval_ns: int
     timeout_ns: int
+    kind: str = "mmio_poll32"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -806,11 +809,16 @@ class DriverLab:
 
         for index, operation in enumerate(canonical["operations"]):
             kind = operation["kind"]
-            if kind == "mmio_read32":
+            if kind in ("mmio_read32", "state_read32"):
                 resource = lookup(operation["resource"])
                 offset = operation["offset"]
                 operations.append(
-                    _ReadOp(index=index, resource=resource, offset=offset)
+                    _ReadOp(
+                        index=index,
+                        resource=resource,
+                        offset=offset,
+                        kind=kind,
+                    )
                 )
                 requests.append(
                     (index, request(resource, offset, AccessClass.READ_ONCE))
@@ -825,7 +833,7 @@ class DriverLab:
                     (index, request(resource, offset, AccessClass.SNAPSHOT))
                     for resource, offset in items
                 )
-            elif kind == "mmio_write32":
+            elif kind in ("mmio_write32", "knob_write32", "trigger_write32"):
                 resource = lookup(operation["resource"])
                 offset = operation["offset"]
                 precondition = None
@@ -846,12 +854,13 @@ class DriverLab:
                         write_mask=operation.get("write_mask", 0xFFFF_FFFF),
                         precondition=precondition,
                         readback=operation.get("readback", True),
+                        kind=kind,
                     )
                 )
                 requests.append(
                     (index, request(resource, offset, AccessClass.WRITE))
                 )
-            elif kind == "mmio_poll32":
+            elif kind in ("mmio_poll32", "state_poll32"):
                 resource = lookup(operation["resource"])
                 offset = operation["offset"]
                 operations.append(
@@ -863,6 +872,7 @@ class DriverLab:
                         mask=operation.get("mask", 0xFFFF_FFFF),
                         interval_ns=operation["interval_ns"],
                         timeout_ns=operation["timeout_ns"],
+                        kind=kind,
                     )
                 )
                 requests.append(
@@ -873,7 +883,7 @@ class DriverLab:
                 has_mutation = False
                 for item in operation["items"]:
                     ikind = item["kind"]
-                    if ikind == "mmio_read32":
+                    if ikind in ("mmio_read32", "state_read32"):
                         res = lookup(item["resource"])
                         off = item["offset"]
                         seq_items.append(
@@ -886,7 +896,11 @@ class DriverLab:
                         requests.append(
                             (index, request(res, off, AccessClass.SEQUENCE))
                         )
-                    elif ikind == "mmio_write32":
+                    elif ikind in (
+                        "mmio_write32",
+                        "knob_write32",
+                        "trigger_write32",
+                    ):
                         res = lookup(item["resource"])
                         off = item["offset"]
                         has_mutation = True
@@ -913,7 +927,7 @@ class DriverLab:
                         requests.append(
                             (index, request(res, off, AccessClass.WRITE))
                         )
-                    elif ikind == "mmio_poll32":
+                    elif ikind in ("mmio_poll32", "state_poll32"):
                         res = lookup(item["resource"])
                         off = item["offset"]
                         seq_items.append(
@@ -1215,9 +1229,13 @@ class DriverLab:
                 op["kind"]
                 in (
                     "mmio_read32",
+                    "state_read32",
                     "mmio_snapshot32",
                     "mmio_write32",
+                    "knob_write32",
+                    "trigger_write32",
                     "mmio_poll32",
+                    "state_poll32",
                     "sequence",
                 )
                 for op in canonical["operations"]
@@ -1588,7 +1606,7 @@ class DriverLab:
                     operation_rows.append(
                         {
                             "operation": operation.index,
-                            "kind": "mmio_read32",
+                            "kind": operation.kind,
                             "resource": operation.resource.name,
                             "offset": operation.offset,
                             "value": read_outcome.value,
@@ -1648,7 +1666,7 @@ class DriverLab:
                     operation_rows.append(
                         {
                             "operation": operation.index,
-                            "kind": "mmio_write32",
+                            "kind": operation.kind,
                             "resource": operation.resource.name,
                             "offset": operation.offset,
                             "value": operation.value,
@@ -1684,7 +1702,7 @@ class DriverLab:
                     operation_rows.append(
                         {
                             "operation": operation.index,
-                            "kind": "mmio_poll32",
+                            "kind": operation.kind,
                             "resource": operation.resource.name,
                             "offset": operation.offset,
                             "expected": operation.expected,
@@ -1760,14 +1778,10 @@ class DriverLab:
                         break
             except OperationDenied as error:
                 kind = "unknown"
-                if isinstance(operation, _ReadOp):
-                    kind = "mmio_read32"
+                if isinstance(operation, (_ReadOp, _WriteOp, _PollOp)):
+                    kind = operation.kind
                 elif isinstance(operation, _SnapshotOp):
                     kind = "mmio_snapshot32"
-                elif isinstance(operation, _WriteOp):
-                    kind = "mmio_write32"
-                elif isinstance(operation, _PollOp):
-                    kind = "mmio_poll32"
                 elif isinstance(operation, _SequenceOp):
                     kind = "sequence"
                 operation_rows.append(
@@ -1782,14 +1796,10 @@ class DriverLab:
                 break
             except TransportError as error:
                 kind = "unknown"
-                if isinstance(operation, _ReadOp):
-                    kind = "mmio_read32"
+                if isinstance(operation, (_ReadOp, _WriteOp, _PollOp)):
+                    kind = operation.kind
                 elif isinstance(operation, _SnapshotOp):
                     kind = "mmio_snapshot32"
-                elif isinstance(operation, _WriteOp):
-                    kind = "mmio_write32"
-                elif isinstance(operation, _PollOp):
-                    kind = "mmio_poll32"
                 elif isinstance(operation, _SequenceOp):
                     kind = "sequence"
                 operation_rows.append(

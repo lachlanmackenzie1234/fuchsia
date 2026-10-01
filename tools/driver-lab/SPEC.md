@@ -1314,7 +1314,7 @@ Changesets continue the global numbering:
 
 - [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
+- [x] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
 - [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
 
 Phase: 3 -- software state, runtime knobs, and adaptive verification workflow.
@@ -1331,3 +1331,48 @@ Phase 3 enables host probe plans, the asynchronous Python API, and the
 experimentation, while selecting the lightest-weight verification mode for any
 driver bug.
 
+### 2. Host plan operation aliases and `StateHandle` API (CS32)
+
+#### 2.1 Plan operation aliases (`driver_lab/plans.py`, `api.py`, `cli.py`)
+
+Probe plans support semantic operation kinds for `StateBank` resources both at
+top-level `operations` and inside `sequence.items`:
+
+1. **`state_read32`**:
+   - Reads a 32-bit state slot or read probe at `offset`.
+   - `resource` defaults to `"state0"` when omitted.
+   - Maps to `AccessClass.READ_ONCE` (or `AccessClass.SEQUENCE` inside a
+     sequence) and executes via `session.read32(resource_id, offset)`.
+2. **`state_poll32`**:
+   - Polls a 32-bit state slot until `(value & mask) == (expected & mask)` or
+     timeout (`timeout_ns` defaults to `100_000_000` when omitted).
+   - `resource` defaults to `"state0"` when omitted.
+   - Maps to `AccessClass.POLL` and executes via `session.poll32(...)`.
+3. **`knob_write32`**:
+   - Writes a 32-bit runtime tuning knob or fix-toggle flag at `offset`.
+   - `resource` defaults to `"state0"` when omitted; `readback` defaults to
+     `True`.
+   - Marks the plan as mutating (`is_mutating_plan() == True`), maps to
+     `AccessClass.WRITE` (requiring one-time operator consent), and executes via
+     `session.write32(...)`.
+4. **`trigger_write32`**:
+   - Invokes a deterministic diagnostic trigger callback at `offset`.
+   - `resource` defaults to `"state0"` when omitted; accepts `arg` or `value`
+     (defaulting to `1`); `readback` defaults to `False`.
+   - Marks the plan as mutating (`is_mutating_plan() == True`), maps to
+     `AccessClass.WRITE` (requiring one-time operator consent), and executes via
+     `session.write32(...)`.
+
+Evidence bundles (`operations.jsonl`) preserve the exact semantic operation
+`kind` (`"state_read32"`, `"state_poll32"`, `"knob_write32"`,
+`"trigger_write32"`) for audit clarity.
+
+#### 2.2 Asynchronous Python `StateHandle` (`driver_lab/session.py`)
+
+`HardwareSession.state(name: str = "state0") -> StateHandle` wraps the named
+`StateBank` resource with a driver-shaped asynchronous API:
+- `await state.read32(offset) -> int`
+- `await state.poll32(offset, expected=0, mask=0xFFFF_FFFF, interval_s=0.001, timeout_s=1.0) -> PollOutcome`
+- `await state.write_knob(offset, value, ..., require_readback=True) -> WriteOutcome`
+- `await state.trigger(offset, arg=1, ..., require_readback=False) -> WriteOutcome`
+- `await state.snapshot32(offsets) -> list[int]`

@@ -255,6 +255,133 @@ class MmioRegion:
         return [r.value for r in outcome.results if r.ok]
 
 
+class StateHandle:
+    """Driver-shaped interface to a software state, runtime knob, and trigger bank (Phase 3 / CS32).
+
+    Wraps an underlying 32-bit `StateBank` resource (`MmioRegion`) with semantic methods for:
+    - `.read32(offset)` for reading state slots and read probes
+    - `.poll32(offset, expected, mask)` for polling software state transitions
+    - `.write_knob(offset, value)` for tuning runtime parameters with readback
+    - `.trigger(offset, arg=1)` for invoking deterministic self-tests and reading back their result
+    """
+
+    read32_metadata = TranslationMetadata(
+        cpp_analogue="state_slot.load(std::memory_order_seq_cst)",
+        rust_analogue="state_slot.load()",
+        directly_translatable=False,
+        differences="In-situ host observation of a driver StateBank slot or read probe over FIDL.",
+        target_local_timing=False,
+        experiment_only=True,
+    )
+
+    write_knob_metadata = TranslationMetadata(
+        cpp_analogue="knob_slot.store(value, std::memory_order_seq_cst)",
+        rust_analogue="knob_slot.store(value)",
+        directly_translatable=False,
+        differences="In-situ host write to a driver StateBank runtime tuning knob with readback.",
+        target_local_timing=False,
+        experiment_only=True,
+    )
+
+    trigger_metadata = TranslationMetadata(
+        cpp_analogue="trigger_callback(arg)",
+        rust_analogue="trigger_callback(arg) -> Result<u32, BackendError>",
+        directly_translatable=False,
+        differences="In-situ host invocation of a synchronous driver StateBank trigger callback returning its status via readback.",
+        target_local_timing=True,
+        experiment_only=True,
+    )
+
+    def __init__(self, region: MmioRegion) -> None:
+        self._region = region
+
+    @property
+    def name(self) -> str:
+        """Name of the logical state bank resource."""
+        return self._region.name
+
+    @property
+    def id(self) -> int:
+        """Numeric ID of the state bank resource."""
+        return self._region.id
+
+    @property
+    def logical_size(self) -> int:
+        """Logical size in bytes."""
+        return self._region.logical_size
+
+    @property
+    def digest(self) -> str:
+        """Resource digest."""
+        return self._region.digest
+
+    async def read32(self, offset: int) -> int:
+        """Reads a 32-bit software state slot or read probe at byte offset."""
+        return await self._region.read32(offset)
+
+    async def poll32(
+        self,
+        offset: int,
+        expected: int = 0,
+        mask: int = 0xFFFF_FFFF,
+        *,
+        interval_s: float = 0.001,
+        timeout_s: float = 1.0,
+    ) -> PollOutcome:
+        """Polls a 32-bit software state slot until (value & mask) == (expected & mask) or timeout."""
+        return await self._region.poll32(
+            offset,
+            expected=expected,
+            mask=mask,
+            interval_s=interval_s,
+            timeout_s=timeout_s,
+        )
+
+    async def write_knob(
+        self,
+        offset: int,
+        value: int,
+        *,
+        mask: int = 0xFFFF_FFFF,
+        expected_before: int | None = None,
+        expected_mask: int | None = 0xFFFF_FFFF,
+        require_readback: bool = True,
+    ) -> WriteOutcome:
+        """Writes a 32-bit runtime tuning knob with automatic readback."""
+        return await self._region.write32(
+            offset,
+            value,
+            mask=mask,
+            expected_before=expected_before,
+            expected_mask=expected_mask,
+            require_readback=require_readback,
+        )
+
+    async def trigger(
+        self,
+        offset: int,
+        arg: int = 1,
+        *,
+        mask: int = 0xFFFF_FFFF,
+        expected_before: int | None = None,
+        expected_mask: int | None = 0xFFFF_FFFF,
+        require_readback: bool = False,
+    ) -> WriteOutcome:
+        """Invokes a deterministic trigger slot at `offset` with `arg` without performing an extra readback."""
+        return await self._region.write32(
+            offset,
+            arg,
+            mask=mask,
+            expected_before=expected_before,
+            expected_mask=expected_mask,
+            require_readback=require_readback,
+        )
+
+    async def snapshot32(self, offsets: Sequence[int]) -> list[int]:
+        """Reads multiple 32-bit state slots in a single bounded batch."""
+        return await self._region.snapshot32(offsets)
+
+
 class ProtocolProxy:
     """Direct published FIDL protocol client adapter."""
 
@@ -696,6 +823,14 @@ class HardwareSession:
             audit_drainer=self._audit_drainer,
         )
 
+    async def state(
+        self, name: str = "state0", *, resource: str | None = None
+    ) -> StateHandle:
+        """Acquires a named StateBank resource handle (`StateHandle`). Fails closed in direct mode."""
+        target_name = resource if resource is not None else name
+        region = await self.mmio(target_name)
+        return StateHandle(region)
+
     async def protocol(self, protocol_name: str) -> ProtocolProxy:
         """Connects to a published FIDL protocol. Fails in proxy mode."""
         self._check_not_closed()
@@ -934,6 +1069,7 @@ __all__ = [
     "Serial",
     "SessionCapabilities",
     "Spi",
+    "StateHandle",
     "TranslationMetadata",
     "UnsupportedCapabilityError",
     "WriteResult",

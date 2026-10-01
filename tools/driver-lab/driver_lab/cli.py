@@ -160,7 +160,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
         requests: list[tuple[int, AccessRequest]] = []
         for index, op in enumerate(canonical["operations"]):
             kind = op["kind"]
-            if kind == "mmio_read32":
+            if kind in ("mmio_read32", "state_read32"):
                 requests.append(
                     (
                         index,
@@ -191,7 +191,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
                             ),
                         )
                     )
-            elif kind == "mmio_write32":
+            elif kind in ("mmio_write32", "knob_write32", "trigger_write32"):
                 requests.append(
                     (
                         index,
@@ -206,7 +206,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
                         ),
                     )
                 )
-            elif kind == "mmio_poll32":
+            elif kind in ("mmio_poll32", "state_poll32"):
                 requests.append(
                     (
                         index,
@@ -224,7 +224,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
             elif kind == "sequence":
                 for item in op["items"]:
                     item_kind = item["kind"]
-                    if item_kind == "mmio_read32":
+                    if item_kind in ("mmio_read32", "state_read32"):
                         requests.append(
                             (
                                 index,
@@ -239,7 +239,11 @@ def _permissions_explain(args: argparse.Namespace) -> int:
                                 ),
                             )
                         )
-                    elif item_kind == "mmio_write32":
+                    elif item_kind in (
+                        "mmio_write32",
+                        "knob_write32",
+                        "trigger_write32",
+                    ):
                         requests.append(
                             (
                                 index,
@@ -254,7 +258,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
                                 ),
                             )
                         )
-                    elif item_kind == "mmio_poll32":
+                    elif item_kind in ("mmio_poll32", "state_poll32"):
                         requests.append(
                             (
                                 index,

@@ -452,6 +452,7 @@ class FakeProxyTarget:
         self._quiesce_hook: Callable[[bool], None] | None = None
         self._hard_denied_ranges: dict[int, list[tuple[int, int]]] = {}
         self._writable_registers: dict[int, set[int]] = {}
+        self._write_hooks: dict[tuple[int, int], Callable[[int], None]] = {}
         self._interrupt_sequence: dict[int, int] = {}
         self._interrupt_count: dict[int, int] = {}
         self._interrupt_timestamps: dict[int, int] = {}
@@ -463,6 +464,12 @@ class FakeProxyTarget:
     def set_quiesce_hook(self, hook: Callable[[bool], None] | None) -> None:
         """Registers a cooperative quiesce callback invoked on mutating session open/close."""
         self._quiesce_hook = hook
+
+    def set_write_hook(
+        self, resource: int, offset: int, hook: Callable[[int], None]
+    ) -> None:
+        """Registers a write callback invoked when (resource, offset) is written."""
+        self._write_hooks[(resource, offset)] = hook
 
     def set_hard_denied_ranges(
         self, resource: int, ranges: Sequence[tuple[int, int]]
@@ -895,6 +902,9 @@ class _FakeSession:
             raise OperationDenied(Denial.BACKEND_FAULT)
         new_val = (current & ~write_mask) | (value & write_mask)
         target._values[(resource, offset)] = new_val
+        write_hook = target._write_hooks.get((resource, offset))
+        if write_hook is not None:
+            write_hook(new_val)
         rb_val = target._values.get((resource, offset), 0) if readback else None
         seq = target._append(
             {
@@ -1108,7 +1118,12 @@ class _FakeSession:
             self._deny("sequence", 0, 0, Denial.LIMIT_EXCEEDED)
         # Whole-sequence prevalidation before first hardware access
         for index, item in enumerate(items):
-            if item.kind in ("mmio_write32", "write32"):
+            if item.kind in (
+                "mmio_write32",
+                "knob_write32",
+                "trigger_write32",
+                "write32",
+            ):
                 if self._mode != SessionMode.MUTATING:
                     target._append(
                         {
@@ -1143,7 +1158,7 @@ class _FakeSession:
                         }
                     )
                     raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
-            elif item.kind in ("mmio_read32", "read32"):
+            elif item.kind in ("mmio_read32", "state_read32", "read32"):
                 if (
                     item.resource,
                     item.offset,
@@ -1163,7 +1178,7 @@ class _FakeSession:
                         }
                     )
                     raise OperationDenied(Denial.NOT_IN_ALLOWLIST)
-            elif item.kind in ("mmio_poll32", "poll32"):
+            elif item.kind in ("mmio_poll32", "state_poll32", "poll32"):
                 if (
                     item.resource,
                     item.offset,
@@ -1337,7 +1352,7 @@ class _FakeSession:
         complete = True
         for index, item in enumerate(items):
             timestamp = target._tick()
-            if item.kind in ("mmio_read32", "read32"):
+            if item.kind in ("mmio_read32", "state_read32", "read32"):
                 if (item.resource, item.offset) in target._faults:
                     seq = target._append(
                         {
@@ -1384,7 +1399,12 @@ class _FakeSession:
                         timestamp_ns=timestamp,
                     )
                 )
-            elif item.kind in ("mmio_write32", "write32"):
+            elif item.kind in (
+                "mmio_write32",
+                "knob_write32",
+                "trigger_write32",
+                "write32",
+            ):
                 curr = target._values.get((item.resource, item.offset), 0)
                 if item.precondition is not None:
                     exp, pmask = item.precondition
@@ -1442,7 +1462,16 @@ class _FakeSession:
                     item.value & item.write_mask
                 )
                 target._values[(item.resource, item.offset)] = new_val
-                rb = new_val if item.readback else None
+                write_hook = target._write_hooks.get(
+                    (item.resource, item.offset)
+                )
+                if write_hook is not None:
+                    write_hook(new_val)
+                rb = (
+                    target._values.get((item.resource, item.offset), 0)
+                    if item.readback
+                    else None
+                )
                 seq = target._append(
                     {
                         "operation": "sequence_write32",
@@ -1465,7 +1494,7 @@ class _FakeSession:
                         timestamp_ns=timestamp,
                     )
                 )
-            elif item.kind in ("mmio_poll32", "poll32"):
+            elif item.kind in ("mmio_poll32", "state_poll32", "poll32"):
                 curr = target._values.get((item.resource, item.offset), 0)
                 if (curr & item.mask) == (item.expected & item.mask):
                     seq = target._append(

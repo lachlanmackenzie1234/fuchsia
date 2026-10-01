@@ -1396,7 +1396,7 @@ The embedded debug library must never be active in production (`user`) builds:
 Changesets continue the global numbering from Phase 2:
 
 - [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
-- [ ] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
+- [x] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
       (in //tools/driver-lab/SPEC.md).
 - [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
       (in //tools/driver-lab/SPEC.md).

@@ -10,6 +10,7 @@ from typing import Any
 from driver_lab.plans import (
     PlanError,
     canonical_json,
+    is_mutating_plan,
     plan_digest,
     validate_plan,
 )
@@ -357,6 +358,183 @@ class ValidationTest(unittest.TestCase):
         )
         with self.assertRaises(PlanError):
             validate_plan(bad_args)
+
+    def test_state_knob_trigger_operations_validate(self) -> None:
+        good = make_plan(
+            operations=[
+                {"kind": "state_read32", "offset": "0x00"},
+                {
+                    "kind": "state_poll32",
+                    "offset": "0x04",
+                    "expected": 0,
+                    "mask": 0xFFFF_FFFF,
+                },
+                {
+                    "kind": "knob_write32",
+                    "offset": "0x08",
+                    "value": 5000,
+                },
+                {
+                    "kind": "trigger_write32",
+                    "offset": "0x10",
+                    "arg": 3,
+                },
+                {
+                    "kind": "trigger_write32",
+                    "resource": "custom_state",
+                    "offset": "0x14",
+                },
+                {
+                    "kind": "sequence",
+                    "items": [
+                        {
+                            "kind": "knob_write32",
+                            "offset": "0x08",
+                            "value": 1000,
+                        },
+                        {"kind": "trigger_write32", "offset": "0x10", "arg": 1},
+                        {"kind": "state_read32", "offset": "0x04"},
+                        {
+                            "kind": "state_poll32",
+                            "offset": "0x04",
+                            "expected": 0,
+                        },
+                    ],
+                },
+            ]
+        )
+        validated = validate_plan(good)
+        ops = validated["operations"]
+        self.assertEqual(ops[0]["kind"], "state_read32")
+        self.assertEqual(ops[0]["resource"], "state0")
+        self.assertEqual(ops[0]["offset"], 0x00)
+
+        self.assertEqual(ops[1]["kind"], "state_poll32")
+        self.assertEqual(ops[1]["resource"], "state0")
+        self.assertEqual(ops[1]["offset"], 0x04)
+
+        self.assertEqual(ops[2]["kind"], "knob_write32")
+        self.assertEqual(ops[2]["resource"], "state0")
+        self.assertEqual(ops[2]["value"], 5000)
+
+        self.assertEqual(ops[3]["kind"], "trigger_write32")
+        self.assertEqual(ops[3]["resource"], "state0")
+        self.assertEqual(ops[3]["value"], 3)
+        self.assertFalse(ops[3]["readback"])
+
+        self.assertEqual(ops[4]["kind"], "trigger_write32")
+        self.assertEqual(ops[4]["resource"], "custom_state")
+        self.assertEqual(ops[4]["value"], 1)
+
+        seq_items = ops[5]["items"]
+        self.assertEqual(seq_items[0]["kind"], "knob_write32")
+        self.assertEqual(seq_items[0]["resource"], "state0")
+        self.assertEqual(seq_items[1]["kind"], "trigger_write32")
+        self.assertEqual(seq_items[1]["resource"], "state0")
+        self.assertEqual(seq_items[1]["value"], 1)
+        self.assertEqual(seq_items[2]["kind"], "state_read32")
+        self.assertEqual(seq_items[2]["resource"], "state0")
+        self.assertEqual(seq_items[3]["kind"], "state_poll32")
+        self.assertEqual(seq_items[3]["resource"], "state0")
+
+    def test_state_knob_trigger_mutation_detection(self) -> None:
+        ro_plan = validate_plan(
+            make_plan(
+                operations=[
+                    {"kind": "state_read32", "offset": "0x00"},
+                    {
+                        "kind": "state_poll32",
+                        "offset": "0x04",
+                        "expected": 0,
+                    },
+                ]
+            )
+        )
+        self.assertFalse(is_mutating_plan(ro_plan))
+
+        knob_plan = validate_plan(
+            make_plan(
+                operations=[
+                    {"kind": "knob_write32", "offset": "0x08", "value": 1}
+                ]
+            )
+        )
+        self.assertTrue(is_mutating_plan(knob_plan))
+
+        trigger_plan = validate_plan(
+            make_plan(
+                operations=[
+                    {"kind": "trigger_write32", "offset": "0x10", "arg": 1}
+                ]
+            )
+        )
+        self.assertTrue(is_mutating_plan(trigger_plan))
+
+        seq_trigger_plan = validate_plan(
+            make_plan(
+                operations=[
+                    {
+                        "kind": "sequence",
+                        "items": [
+                            {"kind": "trigger_write32", "offset": "0x10"}
+                        ],
+                    }
+                ]
+            )
+        )
+        self.assertTrue(is_mutating_plan(seq_trigger_plan))
+
+    def test_mismatched_mmio_and_state_resources_rejected(self) -> None:
+        with self.assertRaisesRegex(PlanError, "StateBank resource"):
+            validate_plan(
+                make_plan(
+                    operations=[
+                        {
+                            "kind": "mmio_read32",
+                            "resource": "state0",
+                            "offset": "0x00",
+                        }
+                    ]
+                )
+            )
+        with self.assertRaisesRegex(PlanError, "StateBank resource"):
+            validate_plan(
+                make_plan(
+                    operations=[
+                        {
+                            "kind": "mmio_write32",
+                            "resource": "state0",
+                            "offset": "0x08",
+                            "value": 1,
+                        }
+                    ]
+                )
+            )
+        with self.assertRaisesRegex(PlanError, "MMIO resource"):
+            validate_plan(
+                make_plan(
+                    operations=[
+                        {
+                            "kind": "state_read32",
+                            "resource": "mmio0",
+                            "offset": "0x00",
+                        }
+                    ]
+                )
+            )
+        with self.assertRaisesRegex(PlanError, "MMIO resource"):
+            validate_plan(
+                make_plan(
+                    operations=[
+                        {
+                            "kind": "knob_write32",
+                            "resource": "mmio0",
+                            "offset": "0x08",
+                            "value": 1,
+                        }
+                    ]
+                )
+            )
 
 
 if __name__ == "__main__":
