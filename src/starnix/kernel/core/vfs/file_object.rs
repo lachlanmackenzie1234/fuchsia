@@ -49,10 +49,11 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     F_OWNER_PGRP, F_OWNER_PID, F_OWNER_TID, FIBMAP, FIGETBSZ, FIONBIO, FIONREAD, FIOQSIZE,
     FS_CASEFOLD_FL, FS_IOC_ADD_ENCRYPTION_KEY, FS_IOC_ENABLE_VERITY, FS_IOC_FSGETXATTR,
-    FS_IOC_FSSETXATTR, FS_IOC_MEASURE_VERITY, FS_IOC_READ_VERITY_METADATA,
-    FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY, FS_VERITY_FL,
-    FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA, SEEK_END, SEEK_HOLE,
-    SEEK_SET, errno, error, fscrypt_add_key_arg, fscrypt_identifier, fsxattr, off_t, pid_t, uapi,
+    FS_IOC_FSSETXATTR, FS_IOC_GET_ENCRYPTION_POLICY, FS_IOC_GET_ENCRYPTION_POLICY_EX,
+    FS_IOC_MEASURE_VERITY, FS_IOC_READ_VERITY_METADATA, FS_IOC_REMOVE_ENCRYPTION_KEY,
+    FS_IOC_SET_ENCRYPTION_POLICY, FS_VERITY_FL, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER,
+    FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA, SEEK_END, SEEK_HOLE, SEEK_SET, errno, error,
+    fscrypt_add_key_arg, fscrypt_identifier, fsxattr, off_t, pid_t, uapi,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -980,6 +981,7 @@ pub fn default_vfs_ioctl(
                 key_identifier: policy.master_key_identifier,
                 flags,
             };
+
             let attributes = file.node().fetch_and_refresh_info(current_task)?;
             if let Some(existing_policy) = &attributes.encryption_policy {
                 // TODO(https://fxbug.dev/567619442): Legacy directories formatted before fxfs
@@ -1003,6 +1005,46 @@ pub fn default_vfs_ioctl(
                     Ok(())
                 })?;
             }
+            Ok(Some(SUCCESS))
+        }
+        FS_IOC_GET_ENCRYPTION_POLICY => {
+            let attributes = file.node().fetch_and_refresh_info(current_task)?;
+            if attributes.encryption_policy.is_some() {
+                // `FS_IOC_GET_ENCRYPTION_POLICY` only supports v1 policies and returns `EINVAL`
+                // when the file is encrypted with a v2 policy.
+                return error!(EINVAL);
+            }
+            error!(ENODATA)
+        }
+        FS_IOC_GET_ENCRYPTION_POLICY_EX => {
+            let attributes = file.node().fetch_and_refresh_info(current_task)?;
+            let Some(node_policy) = attributes.encryption_policy else {
+                return error!(ENODATA);
+            };
+
+            let policy_size_ref = UserRef::<u64>::from(arg);
+            let policy_size = current_task.read_object(policy_size_ref.clone())?;
+            let v2_size = std::mem::size_of::<uapi::fscrypt_policy_v2>() as u64;
+            if policy_size < v2_size {
+                return error!(EOVERFLOW);
+            }
+
+            // Starnix/Fxfs only supports v2 policies with AES-256-XTS for contents and
+            // AES-256-CTS for filenames (see https://fxbug.dev/375684057), so only `key_identifier`
+            // and `flags` are persisted on the node.
+            let policy = uapi::fscrypt_policy_v2 {
+                version: FSCRYPT_POLICY_V2 as u8,
+                contents_encryption_mode: FSCRYPT_MODE_AES_256_XTS as u8,
+                filenames_encryption_mode: FSCRYPT_MODE_AES_256_CTS as u8,
+                flags: node_policy.flags.bits(),
+                log2_data_unit_size: 0,
+                __reserved: [0; 3],
+                master_key_identifier: node_policy.key_identifier,
+            };
+
+            current_task.write_object(policy_size_ref.clone(), &v2_size)?;
+            let policy_ref = policy_size_ref.next()?.cast::<uapi::fscrypt_policy_v2>();
+            current_task.write_object(policy_ref, &policy)?;
             Ok(Some(SUCCESS))
         }
         FS_IOC_REMOVE_ENCRYPTION_KEY => {
