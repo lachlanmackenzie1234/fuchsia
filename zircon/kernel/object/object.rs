@@ -8,6 +8,8 @@ mod bti;
 pub mod buffer_chain;
 mod bus_transaction_initiator_dispatcher;
 mod bus_transaction_initiator_dispatcher_ffi;
+mod channel_dispatcher;
+mod channel_dispatcher_ffi;
 mod clock_dispatcher;
 mod clock_dispatcher_ffi;
 mod counter_dispatcher;
@@ -69,6 +71,7 @@ mod thread_dispatcher;
 mod thread_dispatcher_ffi;
 mod timer_dispatcher;
 mod timer_dispatcher_ffi;
+mod user_handles;
 mod vm_address_region_dispatcher;
 mod vm_address_region_dispatcher_ffi;
 mod vm_object_dispatcher;
@@ -78,6 +81,7 @@ mod wait_signal_observer;
 pub use bti::{IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE};
 pub use buffer_chain::BufferChain;
 pub use bus_transaction_initiator_dispatcher::BusTransactionInitiatorDispatcher;
+pub use channel_dispatcher::ChannelDispatcher;
 pub use clock_dispatcher::{ClockDispatcher, ClockUpdateArgs};
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -86,20 +90,22 @@ pub use event_pair_dispatcher::EventPairDispatcher;
 pub use fifo_dispatcher::FifoDispatcher;
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
-pub use handle::{HandleRef, HandleValue, KernelHandle};
+pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
 pub use io_buffer_dispatcher::IoBufferDispatcher;
 pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;
 pub use job_dispatcher::*;
 pub use job_policy::{JobPolicy, JobPolicyCollection, Policy};
 pub use log_dispatcher::*;
-pub use message_packet::{MessagePacket, MessagePacketPtr};
+pub use message_packet::{FidlHeader, MessagePacket, MessagePacketPtr};
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
 pub use port_dispatcher::PortDispatcher;
-pub use process_dispatcher::{CurrentProcessDispatcher, HandleTableReadGuard, ProcessDispatcher};
+pub use process_dispatcher::{
+    CurrentProcessDispatcher, HandleTableReadGuard, HandleTableWriteGuard, ProcessDispatcher,
+};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{
     StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
@@ -110,8 +116,13 @@ pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use stream_dispatcher::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
-pub use thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
+pub use thread_dispatcher::{AutoBlocked, Blocked, CurrentMessageWaiter, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;
+pub use user_handles::{
+    MAX_MESSAGE_HANDLES, RawHandleDisposition, UserHandles, get_handle_for_message_locked,
+    get_handle_for_message_locked_disposition, get_user_handles_to_consume,
+    get_user_handles_to_consume_disposition, remove_user_handles,
+};
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
 pub use vm_object_dispatcher::{InitialMutability, VmObjectDispatcher};
 pub use wait_signal_observer::WaitSignalObserver;

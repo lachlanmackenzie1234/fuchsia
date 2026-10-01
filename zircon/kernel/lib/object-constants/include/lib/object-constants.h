@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_
 
 #include <stddef.h>
-#include <stdint.h>
 
 // Size and alignment constants for Rust dispatcher states stored in C++ OpaqueStorage.
 // These values must match the exact size and alignment of their corresponding Rust structs,
@@ -34,6 +33,15 @@ constexpr size_t kClockDispatcherStateOffset = 48;
 // Size and alignment for ClockDispatcher.
 constexpr size_t kClockTransformationStorageSize = 112;
 constexpr size_t kClockTransformationStorageAlign = 8;
+
+// Size, alignment, and offset for ChannelDispatcherState.
+constexpr size_t kChannelDispatcherStateSize = 112;
+constexpr size_t kChannelDispatcherStateAlign = 8;
+constexpr size_t kChannelDispatcherStateOffset = 48;
+
+// Size and alignment for MessageWaiter.
+constexpr size_t kMessageWaiterSize = 136;
+constexpr size_t kMessageWaiterAlign = 8;
 
 // Size, alignment, and offset for CounterDispatcherState.
 constexpr size_t kCounterDispatcherStateSize = 64;

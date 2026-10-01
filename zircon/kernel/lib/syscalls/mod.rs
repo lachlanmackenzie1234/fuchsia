@@ -9,6 +9,7 @@ pub mod syscall_signatures {
 }
 
 mod bti;
+mod channel;
 mod clock;
 mod counter;
 mod cprng;
