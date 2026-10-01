@@ -31,6 +31,7 @@ use lab_proxy_core::executor::{ExecLimits, Executor};
 use lab_proxy_core::interrupt::{InterruptEvent, InterruptManager};
 use lab_proxy_core::provider::{ProvidedResources, ProviderError};
 use lab_proxy_core::session::{ProxyIdentity, QuiesceHook, SessionManager};
+pub use lab_proxy_core::state_bank::{StateBank, StateEntry, StateSlotHandle};
 use lab_proxy_core::target_policy::TargetPolicyManifest;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -206,6 +207,41 @@ impl DriverLabBuilder {
         self.next_id += 1;
         let mapped_size = mmio.len() as u64;
         self.bundle.add_mmio(id, name, logical_size, mapped_size, ceiling, LiveBackend::Mmio(mmio));
+        id
+    }
+
+    /// Registers an in-memory [`StateBank`] exposing software state slots,
+    /// runtime knobs, read probes, and diagnostic triggers with a
+    /// [`ResourceCeiling`] populated from `bank.writable_offsets()`.
+    pub fn with_state_bank(&mut self, name: impl Into<String>, bank: StateBank) -> ResourceId {
+        self.add_state_bank(name, bank)
+    }
+
+    /// Registers an in-memory [`StateBank`] using its configured writable
+    /// offsets ceiling.
+    pub fn add_state_bank(&mut self, name: impl Into<String>, bank: StateBank) -> ResourceId {
+        let ceiling = bank.ceiling();
+        self.add_state_bank_with_ceiling(name, bank, ceiling)
+    }
+
+    /// Registers an in-memory [`StateBank`] with an explicit [`ResourceCeiling`].
+    pub fn add_state_bank_with_ceiling(
+        &mut self,
+        name: impl Into<String>,
+        bank: StateBank,
+        ceiling: ResourceCeiling,
+    ) -> ResourceId {
+        let id = self.next_id;
+        self.next_id += 1;
+        let logical_size = bank.logical_size();
+        self.bundle.add_mmio(
+            id,
+            name,
+            logical_size,
+            logical_size,
+            ceiling,
+            LiveBackend::State(bank),
+        );
         id
     }
 
@@ -820,5 +856,131 @@ mod tests {
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_engaged"));
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_released"));
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "interrupt_tap"));
+    }
+
+    #[fuchsia::test]
+    async fn embedded_state_bank_supports_slots_knobs_and_triggers_over_fidl() {
+        let mut bank = StateBank::new(0x20);
+        let violations_slot = bank.define_state_slot(0x00, 0);
+        let delay_knob = bank.define_knob(0x04, 0);
+        let fix_knob = bank.define_knob(0x08, 0);
+
+        let violations_for_trigger = violations_slot.clone();
+        let delay_for_trigger = delay_knob.clone();
+        let fix_for_trigger = fix_knob.clone();
+        bank.define_trigger(0x0C, move |_arg| {
+            if delay_for_trigger.load() > 0 && fix_for_trigger.load() == 0 {
+                violations_for_trigger.fetch_add(1);
+                Ok(1)
+            } else {
+                Ok(0)
+            }
+        });
+
+        let mut builder = DriverLabBuilder::new("sample-driver");
+        let state_id = builder.with_state_bank("state0", bank);
+        assert_eq!(state_id, 0);
+
+        let server = builder.build().unwrap();
+        let scope = fasync::Scope::new_with_name("embedded-state-bank-test");
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<flab::Proxy_Marker>();
+        server.serve_proxy_stream(scope.to_handle(), stream);
+
+        let desc = proxy.describe().await.unwrap();
+        let resources = desc.resources.as_ref().unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].name.as_deref(), Some("state0"));
+        assert_eq!(resources[0].logical_size, Some(0x20));
+
+        // Attempting to open a session with a Write rule on read-only state slot 0x00 fails.
+        let (_bad_session, bad_server) = fidl::endpoints::create_proxy::<flab::SessionMarker>();
+        let bad_open = proxy
+            .open_session(
+                &flab::RunContext::default(),
+                flab::SessionMode::Mutating,
+                &flab::Expectations {
+                    boot_id: desc.boot_id.clone(),
+                    proxy_generation: desc.proxy_generation,
+                    resource_digest: desc.resource_digest.clone(),
+                    policy_digest: desc.policy_digest.clone(),
+                    ..Default::default()
+                },
+                &[flab::AccessRule {
+                    resource: 0,
+                    offset: 0x00,
+                    width: 4,
+                    class: flab::AccessClass::Write,
+                }],
+                bad_server,
+            )
+            .await
+            .unwrap();
+        assert_eq!(bad_open, Err(flab::OpenSessionError::RejectedAllowlist));
+
+        // Open mutating session with read access to 0x00 and write access to 0x04, 0x08, 0x0C.
+        let (session_proxy, session_server) =
+            fidl::endpoints::create_proxy::<flab::SessionMarker>();
+        let open_res = proxy
+            .open_session(
+                &flab::RunContext { run_id: Some("run-state".to_string()), ..Default::default() },
+                flab::SessionMode::Mutating,
+                &flab::Expectations {
+                    boot_id: desc.boot_id.clone(),
+                    proxy_generation: desc.proxy_generation,
+                    resource_digest: desc.resource_digest.clone(),
+                    policy_digest: desc.policy_digest.clone(),
+                    ..Default::default()
+                },
+                &[
+                    flab::AccessRule {
+                        resource: 0,
+                        offset: 0x00,
+                        width: 4,
+                        class: flab::AccessClass::ReadOnce,
+                    },
+                    flab::AccessRule {
+                        resource: 0,
+                        offset: 0x04,
+                        width: 4,
+                        class: flab::AccessClass::Write,
+                    },
+                    flab::AccessRule {
+                        resource: 0,
+                        offset: 0x08,
+                        width: 4,
+                        class: flab::AccessClass::Write,
+                    },
+                    flab::AccessRule {
+                        resource: 0,
+                        offset: 0x0C,
+                        width: 4,
+                        class: flab::AccessClass::Write,
+                    },
+                ],
+                session_server,
+            )
+            .await
+            .unwrap();
+        assert!(open_res.is_ok());
+
+        // Set delay knob = 50 us, fix knob = 0, then trigger -> violation observed.
+        let (delay_rb, _, _) =
+            session_proxy.write32(0, 0x04, 50, 0xFFFF_FFFF, None, true).await.unwrap().unwrap();
+        assert_eq!(delay_rb, 50);
+        let (trig_rb, _, _) =
+            session_proxy.write32(0, 0x0C, 1, 0xFFFF_FFFF, None, true).await.unwrap().unwrap();
+        assert_eq!(trig_rb, 1);
+        let (violations, _, _) = session_proxy.read32(0, 0x00).await.unwrap().unwrap();
+        assert_eq!(violations, 1);
+
+        // Set fix knob = 1, then trigger -> no violation (readback == 0, violations stays 1).
+        let (fix_rb, _, _) =
+            session_proxy.write32(0, 0x08, 1, 0xFFFF_FFFF, None, true).await.unwrap().unwrap();
+        assert_eq!(fix_rb, 1);
+        let (trig_fixed_rb, _, _) =
+            session_proxy.write32(0, 0x0C, 1, 0xFFFF_FFFF, None, true).await.unwrap().unwrap();
+        assert_eq!(trig_fixed_rb, 0);
+        let (violations_after, _, _) = session_proxy.read32(0, 0x00).await.unwrap().unwrap();
+        assert_eq!(violations_after, 1);
     }
 }

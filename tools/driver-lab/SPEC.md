@@ -12,6 +12,9 @@ Phase 1 -- the unclaimed-node proxy workflow, which requires no Driver Manager
 changes -- is delivered first. Phase 2 -- in-situ driver debugging via an
 embedded library -- extends host tooling to active, bound drivers without
 managed takeover or Driver Manager changes, requiring no major contract change.
+Phase 3 -- software state, runtime knobs, and adaptive bug verification --
+extends host plans, the Python API, and agent skills to drive single-build
+software state and concurrency experiments over `StateBank` resources.
 
 ## Phase 1: unclaimed-node proxy workflow
 
@@ -1302,3 +1305,29 @@ mechanism:
 - The CLI adds `ffx driver-lab inspect --moniker <id>` as the primary entry point
   for live driver diagnostics.
 - Evidence records the driver component moniker and URL in `manifest.json`.
+
+## Phase 3: software state, runtime knobs, and adaptive verification workflow
+
+### Implementation status
+
+Changesets continue the global numbering:
+
+- [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
+      (in //src/devices/driver-lab/SPEC.md).
+- [ ] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
+- [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
+
+Phase: 3 -- software state, runtime knobs, and adaptive verification workflow.
+Extends: Phases 1 and 2 of this document.
+
+Companion specification: the proxy driver specification at
+`//src/devices/driver-lab/SPEC.md`.
+
+### 1. Purpose
+
+Phase 3 enables host probe plans, the asynchronous Python API, and the
+`autoda-fix` skill to interact ergonomically with target-side
+`StateBank` resources (CS31) for single-build software state and concurrency
+experimentation, while selecting the lightest-weight verification mode for any
+driver bug.
+

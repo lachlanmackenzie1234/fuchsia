@@ -19,4 +19,5 @@ pub mod interrupt;
 pub mod protocol_resource_adapter;
 pub mod provider;
 pub mod session;
+pub mod state_bank;
 pub mod target_policy;

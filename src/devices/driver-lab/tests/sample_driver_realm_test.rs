@@ -30,6 +30,12 @@ const STATUS_QUIESCED: u32 = 0x10;
 const REG_CONTROL: u64 = 0x08;
 const REG_FIFO_DATA: u64 = 0x40;
 
+const STATE_BUSY_FLAG: u64 = 0x00;
+const STATE_INVARIANT_VIOLATIONS: u64 = 0x04;
+const KNOB_RACE_DELAY_US: u64 = 0x08;
+const KNOB_FIX_ENABLED: u64 = 0x0C;
+const TRIGGER_CONCURRENT_OP: u64 = 0x10;
+
 async fn start_sample_realm() -> Result<(fuchsia_component_test::RealmInstance, flab::Proxy_Proxy)>
 {
     let builder = RealmBuilder::new().await?;
@@ -76,11 +82,14 @@ async fn sample_driver_in_situ_describe_quiesce_and_interrupt_tap() -> Result<()
 
     assert_eq!(description.protocol_major, Some(1));
     let resources = description.resources.clone().expect("resources present");
-    assert_eq!(resources.len(), 2);
+    assert_eq!(resources.len(), 3);
     assert_eq!(resources[0].name.as_deref(), Some("mmio0"));
     assert_eq!(resources[0].kind, Some(flab::ResourceKind::Mmio));
     assert_eq!(resources[1].name.as_deref(), Some("irq0"));
     assert_eq!(resources[1].kind, Some(flab::ResourceKind::Interrupt));
+    assert_eq!(resources[2].name.as_deref(), Some("state0"));
+    assert_eq!(resources[2].kind, Some(flab::ResourceKind::Mmio));
+    assert_eq!(resources[2].logical_size, Some(0x20));
 
     // 1. Destructive FIFO register (0x40) is hard_denied in the ceiling.
     let (_denied_session, denied_server) = create_proxy::<flab::SessionMarker>();
@@ -99,6 +108,24 @@ async fn sample_driver_in_situ_describe_quiesce_and_interrupt_tap() -> Result<()
         )
         .await?;
     assert_eq!(denied_res, Err(flab::OpenSessionError::RejectedAllowlist));
+
+    // 1b. Read-only state slot (STATE_BUSY_FLAG) on state0 (resource 2) rejects write allowlist.
+    let (_denied_state_session, denied_state_server) = create_proxy::<flab::SessionMarker>();
+    let denied_state_res = proxy
+        .open_session(
+            &run_context(),
+            flab::SessionMode::Mutating,
+            &expectations(&description),
+            &[flab::AccessRule {
+                resource: 2,
+                offset: STATE_BUSY_FLAG,
+                width: 4,
+                class: flab::AccessClass::Write,
+            }],
+            denied_state_server,
+        )
+        .await?;
+    assert_eq!(denied_state_res, Err(flab::OpenSessionError::RejectedAllowlist));
 
     // 2. Read-only session reads DEVICE_ID and STATUS without quiescing.
     let (ro_session, ro_server) = create_proxy::<flab::SessionMarker>();
@@ -147,7 +174,8 @@ async fn sample_driver_in_situ_describe_quiesce_and_interrupt_tap() -> Result<()
 
     drop(ro_session);
 
-    // 4. Mutating session engages quiesce hook (sets STATUS_QUIESCED) and writes REG_CONTROL.
+    // 4. Mutating session engages quiesce hook (sets STATUS_QUIESCED), writes REG_CONTROL,
+    // and exercises state0 knobs + trigger in a single boot.
     let (mut_session, mut_server) = create_proxy::<flab::SessionMarker>();
     proxy
         .open_session(
@@ -167,6 +195,36 @@ async fn sample_driver_in_situ_describe_quiesce_and_interrupt_tap() -> Result<()
                     width: 4,
                     class: flab::AccessClass::Write,
                 },
+                flab::AccessRule {
+                    resource: 2,
+                    offset: STATE_BUSY_FLAG,
+                    width: 4,
+                    class: flab::AccessClass::ReadOnce,
+                },
+                flab::AccessRule {
+                    resource: 2,
+                    offset: STATE_INVARIANT_VIOLATIONS,
+                    width: 4,
+                    class: flab::AccessClass::ReadOnce,
+                },
+                flab::AccessRule {
+                    resource: 2,
+                    offset: KNOB_RACE_DELAY_US,
+                    width: 4,
+                    class: flab::AccessClass::Write,
+                },
+                flab::AccessRule {
+                    resource: 2,
+                    offset: KNOB_FIX_ENABLED,
+                    width: 4,
+                    class: flab::AccessClass::Write,
+                },
+                flab::AccessRule {
+                    resource: 2,
+                    offset: TRIGGER_CONCURRENT_OP,
+                    width: 4,
+                    class: flab::AccessClass::Write,
+                },
             ],
             mut_server,
         )
@@ -182,6 +240,43 @@ async fn sample_driver_in_situ_describe_quiesce_and_interrupt_tap() -> Result<()
         .await?
         .expect("write32 REG_CONTROL");
     assert_eq!(readback_val, 0xABCD_1234);
+
+    // 4b. Reproduce race condition with KNOB_RACE_DELAY_US = 50, KNOB_FIX_ENABLED = 0:
+    let (delay_rb, _, _) = mut_session
+        .write32(2, KNOB_RACE_DELAY_US, 50, 0xFFFF_FFFF, None, true)
+        .await?
+        .expect("write KNOB_RACE_DELAY_US");
+    assert_eq!(delay_rb, 50);
+    let (trig_bug_rb, _, _) = mut_session
+        .write32(2, TRIGGER_CONCURRENT_OP, 1, 0xFFFF_FFFF, None, true)
+        .await?
+        .expect("trigger concurrent op with fix disabled");
+    assert_eq!(trig_bug_rb, 1);
+    let (violations_before, _, _) = mut_session
+        .read32(2, STATE_INVARIANT_VIOLATIONS)
+        .await?
+        .expect("read STATE_INVARIANT_VIOLATIONS");
+    assert_eq!(violations_before, 1);
+
+    // 4c. Enable fix via KNOB_FIX_ENABLED = 1 and re-trigger: no new violation!
+    let (fix_rb, _, _) = mut_session
+        .write32(2, KNOB_FIX_ENABLED, 1, 0xFFFF_FFFF, None, true)
+        .await?
+        .expect("write KNOB_FIX_ENABLED");
+    assert_eq!(fix_rb, 1);
+    let (trig_fixed_rb, _, _) = mut_session
+        .write32(2, TRIGGER_CONCURRENT_OP, 1, 0xFFFF_FFFF, None, true)
+        .await?
+        .expect("trigger concurrent op with fix enabled");
+    assert_eq!(trig_fixed_rb, 0);
+    let (violations_after, _, _) = mut_session
+        .read32(2, STATE_INVARIANT_VIOLATIONS)
+        .await?
+        .expect("read STATE_INVARIANT_VIOLATIONS after fix");
+    assert_eq!(violations_after, 1);
+    let (busy_val, _, _) =
+        mut_session.read32(2, STATE_BUSY_FLAG).await?.expect("read STATE_BUSY_FLAG");
+    assert_eq!(busy_val, 0);
 
     drop(mut_session);
 

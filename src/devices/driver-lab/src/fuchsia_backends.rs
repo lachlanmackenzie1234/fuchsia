@@ -15,6 +15,7 @@ use lab_proxy_core::hardware_backend::BackendError;
 use lab_proxy_core::protocol_resource_adapter::{
     ClockBackend, GpioBackend, I2cBackend, ResetBackend, ResourceBackend, SerialBackend, SpiBackend,
 };
+use lab_proxy_core::state_bank::StateBank;
 
 /// Volatile GPIO pin backend using synchronous FIDL proxy.
 pub struct FuchsiaGpio {
@@ -472,10 +473,11 @@ impl ResourceBackend for FuchsiaSerial {
     }
 }
 
-/// Heterogeneous live hardware backend covering MMIO, GPIO, I2C, SPI, Clock, Reset, Serial, and Interrupts.
+/// Heterogeneous live hardware backend covering MMIO, software state banks, GPIO, I2C, SPI, Clock, Reset, Serial, and Interrupts.
 #[derive(Debug)]
 pub enum LiveBackend {
     Mmio(MappedMmio),
+    State(StateBank),
     Gpio(FuchsiaGpio),
     I2c(FuchsiaI2c),
     Spi(FuchsiaSpi),
@@ -489,6 +491,7 @@ impl ResourceBackend for LiveBackend {
     fn read32(&mut self, offset: u64) -> Result<u32, BackendError> {
         match self {
             Self::Mmio(m) => m.read32(offset),
+            Self::State(s) => s.read32(offset),
             _ => Err(BackendError::Fault),
         }
     }
@@ -496,13 +499,16 @@ impl ResourceBackend for LiveBackend {
     fn write32(&mut self, offset: u64, value: u32) -> Result<(), BackendError> {
         match self {
             Self::Mmio(m) => m.write32(offset, value),
+            Self::State(s) => s.write32(offset, value),
             _ => Err(BackendError::Fault),
         }
     }
 
     fn barrier(&mut self) {
-        if let Self::Mmio(m) = self {
-            m.barrier();
+        match self {
+            Self::Mmio(m) => m.barrier(),
+            Self::State(s) => s.barrier(),
+            _ => {}
         }
     }
 

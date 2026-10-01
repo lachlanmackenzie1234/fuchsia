@@ -11,7 +11,7 @@
 //! interrupt service routine via [`EmbeddedLabServer::notify_interrupt_with_timestamp`],
 //! and publishes `fuchsia.driver.lab.Service` alongside normal execution.
 
-use driver_lab_rust::embedded::{DriverLabBuilder, EmbeddedLabServer};
+use driver_lab_rust::embedded::{DriverLabBuilder, EmbeddedLabServer, StateBank};
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
 use fuchsia_async as fasync;
@@ -42,6 +42,19 @@ pub const REG_IRQ_COUNT: u64 = 0x0C;
 pub const REG_FIFO_DATA: u64 = 0x40;
 /// Seeded value in [`REG_FIFO_DATA`].
 pub const FIFO_SEED_VALUE: u32 = 0xCAFE_BABE;
+
+/// Logical size of the `"state0"` software state bank (`0x20` bytes).
+pub const STATE_BANK_SIZE: u64 = 0x20;
+/// Read-only state slot (`0x00`): simulated busy/in-flight state flag.
+pub const STATE_BUSY_FLAG: u64 = 0x00;
+/// Read-only state slot (`0x04`): count of observed concurrency invariant violations.
+pub const STATE_INVARIANT_VIOLATIONS: u64 = 0x04;
+/// Writable runtime knob (`0x08`): simulated race-window delay in microseconds.
+pub const KNOB_RACE_DELAY_US: u64 = 0x08;
+/// Writable runtime knob (`0x0C`): candidate fix toggle (`0` = unguarded, `1` = guarded).
+pub const KNOB_FIX_ENABLED: u64 = 0x0C;
+/// Writable trigger offset (`0x10`): triggers a simulated concurrent state transition.
+pub const TRIGGER_CONCURRENT_OP: u64 = 0x10;
 
 struct LabSampleDriver {
     _node: Node,
@@ -138,6 +151,29 @@ impl Driver for LabSampleDriver {
         builder.with_writable_registers(mmio_id, vec![REG_CONTROL]);
         builder.with_hard_denied_ranges(mmio_id, vec![(REG_FIFO_DATA, REG_FIFO_DATA + 4)]);
         let irq_id = builder.with_interrupt("irq0");
+
+        let mut state_bank = StateBank::new(STATE_BANK_SIZE);
+        let busy_slot = state_bank.define_state_slot(STATE_BUSY_FLAG, 0);
+        let violations_slot = state_bank.define_state_slot(STATE_INVARIANT_VIOLATIONS, 0);
+        let race_delay_knob = state_bank.define_knob(KNOB_RACE_DELAY_US, 0);
+        let fix_enabled_knob = state_bank.define_knob(KNOB_FIX_ENABLED, 0);
+        let busy_for_trigger = busy_slot.clone();
+        let violations_for_trigger = violations_slot.clone();
+        let delay_for_trigger = race_delay_knob.clone();
+        let fix_for_trigger = fix_enabled_knob.clone();
+        state_bank.define_trigger(TRIGGER_CONCURRENT_OP, move |arg| {
+            busy_for_trigger.store(arg & 1);
+            let violated = delay_for_trigger.load() > 0 && fix_for_trigger.load() == 0;
+            if violated {
+                violations_for_trigger.fetch_add(1);
+                busy_for_trigger.store(0);
+                Ok(1)
+            } else {
+                busy_for_trigger.store(0);
+                Ok(0)
+            }
+        });
+        builder.with_state_bank("state0", state_bank);
 
         let hook_mapping = mapping.clone();
         builder.with_quiesce_hook(move |paused| {

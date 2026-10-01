@@ -8,12 +8,16 @@ This is the normative specification for the engineering-only driver-lab
 proxy driver (`lab_proxy`) at `//src/devices/driver-lab`. The companion
 host tooling specification lives at `//tools/driver-lab/SPEC.md`.
 
-The specification is delivered in two phases. Phase 1 -- unclaimed-node
+The specification is delivered in three phases. Phase 1 -- unclaimed-node
 binding through existing Driver Framework mechanisms, with no Driver Manager
 changes -- is delivered first. Phase 2 -- in-situ cooperative debugging via an
 embedded driver-lab library -- extends the architecture to existing, active drivers
 without managed takeover or Driver Manager modifications, allowing live register
-inspection while preserving device state.
+inspection while preserving device state. Phase 3 -- software state banks,
+runtime knobs, and diagnostic triggers -- extends in-situ debugging beyond
+physical hardware registers so host plans can observe internal driver state,
+inject bounded race-window delays, toggle candidate fixes at runtime, and trigger
+diagnostic actions in a single build.
 
 ## Phase 1: unclaimed-node proxy
 
@@ -1384,3 +1388,80 @@ The embedded debug library must never be active in production (`user`) builds:
    subtrees and power topologies remain undisturbed.
 3. *ARM64 clock/power gating panics*: Resolved. The running driver maintains its
    votes for power domains and clocks throughout the debug session.
+
+## Phase 3: software state banks, runtime knobs, and diagnostic triggers
+
+### Implementation status
+
+Changesets continue the global numbering from Phase 2:
+
+- [x] CS31 `[driver-lab] Software state banks, runtime knobs, and diagnostic triggers`
+- [ ] CS32 `[driver-lab] Host plan aliases and StateHandle API for state and knob experiments`
+      (in //tools/driver-lab/SPEC.md).
+- [ ] CS33 `[driver-lab] Update driver-lab and autoda-fix skills for Mode A/B/C verification`
+      (in //tools/driver-lab/SPEC.md).
+
+Phase: 3 -- single-build in-situ software state observation, runtime knobs, and
+diagnostic triggers.
+Extends: Phases 1 and 2 of this document. `StateBank` implements `MmioBackend`
+and `ResourceBackend`, requiring no breaking changes to `fuchsia.driver.lab`.
+
+Companion specification: host tooling at `//tools/driver-lab/SPEC.md`.
+
+### 1. Purpose
+
+Phase 3 extends embedded in-situ debugging (`driver_lab_rust::embedded`) beyond
+physical MMIO registers so developers and agents can reproduce, diagnose,
+prototype fixes for, and verify software state-machine and concurrency bugs
+without repeated `edit -> build -> flash/OTA -> reboot` cycles.
+
+### 2. `StateBank` architecture and primitives
+
+`lab_proxy_core::state_bank::StateBank` exposes a 32-bit word-addressed virtual
+resource backed by 4-byte aligned offsets within a declared `logical_size`:
+
+1. **Observable state slots (`define_state_slot(offset, initial) -> StateSlotHandle`)**:
+   - Backed by `Arc<AtomicU32>` (`StateEntry::AtomicSlot`).
+   - Read-only to the host by default (`offset` is omitted from
+     `writable_offsets`).
+   - The driver updates and reads the slot with zero lock contention via
+     `StateSlotHandle` (`load`, `store`, `fetch_add`, `fetch_or`, `fetch_and`).
+2. **Runtime knobs (`define_knob(offset, initial) -> StateSlotHandle`)**:
+   - Backed by `Arc<AtomicU32>` (`StateEntry::AtomicSlot`) with `offset` added
+     to `writable_offsets`.
+   - Enables fault/race-window injection knobs (e.g., bounded microsecond delay
+     at a suspect critical section) and candidate fix-toggle knobs (e.g.,
+     enabling a lock or teardown guard at runtime to prove reproduction with
+     `knob = 0` and resolution with `knob = 1` in the same boot).
+3. **On-demand read probes (`define_read_probe(offset, probe)`)**:
+   - Backed by `Arc<dyn Fn() -> Result<u32, BackendError> + Send + Sync>`
+     (`StateEntry::ReadProbe`), evaluated synchronously when `read32` is called.
+   - Read-only; host writes are rejected.
+4. **Diagnostic triggers (`define_trigger(offset, trigger)`)**:
+   - Backed by `StateEntry::Trigger { last_result: Arc<AtomicU32>, callback }`
+     with `offset` added to `writable_offsets`.
+   - Invokes `callback(value)` on `write32(offset, value)` under a mutating
+     session lease, stores the returned `u32` status into `last_result` for
+     immediate `readback` or subsequent `read32`/`poll32`, and returns
+     `Err(BackendError::Fault)` if the callback fails.
+
+### 3. Policy enforcement and wire contract stability
+
+- `StateBank` implements `MmioBackend` (`read32`, `write32`, and `barrier` via
+  `std::sync::atomic::fence(Ordering::SeqCst)`) and `ResourceBackend`.
+- `LiveBackend::State(StateBank)` integrates with `DriverLabBuilder::with_state_bank(name, bank)`,
+  which registers the bank in `ProvidedResources` with a `ResourceCeiling`
+  populated from `bank.writable_offsets()`.
+- All existing target policy invariants (`writable_registers`, `hard_denied`,
+  session allowlist narrowing, mutating session lease, `quiesce_hook`, and
+  `target-audit.jsonl` recording) apply automatically without changing
+  `driver_lab.fidl`.
+
+### 4. Reference sample driver integration
+
+`lab_sample_driver` (`//src/devices/driver-lab/testing/src/sample_driver.rs`)
+registers a `"state0"` `StateBank` alongside `"mmio0"` and `"irq0"`, exposing
+`STATE_BUSY_FLAG` (`0x00`), `STATE_INVARIANT_VIOLATIONS` (`0x04`),
+`KNOB_RACE_DELAY_US` (`0x08`), `KNOB_FIX_ENABLED` (`0x0C`), and
+`TRIGGER_CONCURRENT_OP` (`0x10`), verified in `sample_driver_realm_test`.
+

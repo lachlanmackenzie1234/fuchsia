@@ -39,6 +39,7 @@ rustc_library("core") {
     "src/protocol_resource_adapter.rs",
     "src/provider.rs",
     "src/session.rs",
+    "src/state_bank.rs",
     "src/target_policy.rs",
   ]
   deps = [
