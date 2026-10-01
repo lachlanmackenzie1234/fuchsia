@@ -197,7 +197,11 @@ impl DataBuffer for TestVecBuffer {
 }
 
 impl PageRequest for TestVecBuffer {
-    fn prepare(&mut self, read_range: Range<u64>) -> Result<(), ChunkedArchiveError> {
+    fn prepare(
+        &mut self,
+        read_range: Range<u64>,
+        _read_alignment: usize,
+    ) -> Result<(), ChunkedArchiveError> {
         let size = (read_range.end - read_range.start) as usize;
         if self.data.len() < size {
             self.data.resize(size, 0);
