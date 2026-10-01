@@ -16,8 +16,8 @@ use crate::vfs::fsverity::{
 };
 use crate::vfs::{
     ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId, FileMapping,
-    FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, NamespaceNode, RecordLockCommand,
-    RecordLockOwner,
+    FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, FscryptPolicyFlags,
+    NamespaceNode, RecordLockCommand, RecordLockOwner,
 };
 use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
@@ -957,14 +957,24 @@ pub fn default_vfs_ioctl(
             }
 
             // Like Linux, reject flags that aren't defined rather than silently ignoring them.
-            let flags = crate::vfs::FscryptPolicyFlags::from_bits(policy.flags)
-                .ok_or_else(|| errno!(EINVAL))?;
-            if !flags.is_empty() {
+            let flags =
+                FscryptPolicyFlags::from_bits(policy.flags).ok_or_else(|| errno!(EINVAL))?;
+            let supported_flags = FscryptPolicyFlags::PAD_8
+                | FscryptPolicyFlags::PAD_16
+                | FscryptPolicyFlags::IV_INO_LBLK_64
+                | FscryptPolicyFlags::IV_INO_LBLK_32;
+            if !supported_flags.contains(flags) {
                 track_stub!(
                     TODO("https://fxbug.dev/375700939"),
                     "fscrypt policy flags",
                     policy.flags
                 );
+                return error!(EINVAL);
+            }
+            if flags.contains(FscryptPolicyFlags::IV_INO_LBLK_64)
+                && flags.contains(FscryptPolicyFlags::IV_INO_LBLK_32)
+            {
+                return error!(EINVAL);
             }
             let new_policy = crate::vfs::FscryptNodePolicy {
                 key_identifier: policy.master_key_identifier,
@@ -972,12 +982,17 @@ pub fn default_vfs_ioctl(
             };
             let attributes = file.node().fetch_and_refresh_info(current_task)?;
             if let Some(existing_policy) = &attributes.encryption_policy {
-                // TODO(https://fxbug.dev/527952709): Remove this fallback once fxfs persists
-                // the encryption policy flags on disk.
-                let flags_match = existing_policy.flags == new_policy.flags
-                    || existing_policy.flags
-                        == (new_policy.flags | crate::vfs::FscryptPolicyFlags::IV_INO_LBLK_32);
-                if existing_policy.key_identifier != new_policy.key_identifier || !flags_match {
+                // TODO(https://fxbug.dev/567619442): Legacy directories formatted before fxfs
+                // persisted policy flags in `DirType` only report `PAD_16`, even on legacy eMMC
+                // devices that used `PAD_16 | IV_INO_LBLK_32`. Allow `PAD_16 | IV_INO_LBLK_32` to
+                // match an existing `PAD_16` policy until support for those legacy devices is
+                // dropped.
+                let is_legacy_lblk32_fallback = existing_policy.flags == FscryptPolicyFlags::PAD_16
+                    && new_policy.flags
+                        == (FscryptPolicyFlags::PAD_16 | FscryptPolicyFlags::IV_INO_LBLK_32);
+                if existing_policy.key_identifier != new_policy.key_identifier
+                    || (existing_policy.flags != new_policy.flags && !is_legacy_lblk32_fallback)
+                {
                     return error!(EEXIST);
                 }
             } else {
