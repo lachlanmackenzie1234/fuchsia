@@ -10,6 +10,7 @@ use crate::object::{
     Dispatcher, EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher,
     validate_system_resource,
 };
+use crate::platform_rs::HaltToken;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
 use syscalls_macro::syscall;
@@ -66,7 +67,6 @@ unsafe extern "C" {
     fn cpp_mp_hotplug_cpu_mask_all() -> zx_status_t;
     fn cpp_mp_unplug_cpu_mask_all_but_primary() -> zx_status_t;
     fn cpp_platform_graceful_halt_helper(action: u32);
-    fn cpp_halt_token_ack_pending_halt() -> zx_status_t;
     #[cfg(target_arch = "x86_64")]
     fn cpp_system_powerctl_x86_set_pkg_pl1(arg: &zx_system_powerctl_arg_t) -> zx_status_t;
     fn cpp_wake_vector_discard_wake_event_report();
@@ -364,12 +364,7 @@ pub fn sys_system_powerctl(
             unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_REBOOT) };
             Ok(())
         }
-        ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT => {
-            // SAFETY: Call C++ halt token ack helper.
-            let status = unsafe { cpp_halt_token_ack_pending_halt() };
-            Status::ok(status)?;
-            Ok(())
-        }
+        ZX_SYSTEM_POWERCTL_ACK_KERNEL_INITIATED_REBOOT => HaltToken::get().ack_pending_halt(),
         ZX_SYSTEM_POWERCTL_REBOOT_BOOTLOADER => {
             // SAFETY: Call C++ halt helper for reboot bootloader.
             unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_REBOOT_BOOTLOADER) };
