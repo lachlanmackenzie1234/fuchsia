@@ -186,6 +186,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.hardware.power.sensor:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.power.source:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.power.statecontrol:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.hardware.power.stats:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.power.suspend:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.power.usb:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.power:verify_bazel2gn",
