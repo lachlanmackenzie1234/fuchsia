@@ -37,6 +37,7 @@ from driver_lab.transport import (
     OperationDenied,
     PollOutcome,
     ProxyDescription,
+    ProxySession,
     ReadOutcome,
     ResourceInfo,
     SequenceItem,
@@ -153,6 +154,50 @@ def connect_transport(
     context = Context(config=config, target=target)
     channel = context.connect_device_proxy(moniker, capability)
     return FidlProxyTransport(fdl.ProxyClient(channel), context.channel_create)
+
+
+class LazyFidlProxyTransport:
+    """Connects to the proxy on first use (e.g. after bind_proxy activates it)."""
+
+    def __init__(
+        self,
+        moniker: str,
+        capability: str = "fuchsia.driver.lab.Service/default/proxy",
+        target: str | None = None,
+        config: dict[str, str] | None = None,
+    ) -> None:
+        self._moniker = moniker
+        self._capability = capability
+        self._target = target
+        self._config = config
+        self._inner: FidlProxyTransport | None = None
+
+    def _get_inner(self) -> FidlProxyTransport:
+        if self._inner is None:
+            self._inner = connect_transport(
+                moniker=self._moniker,
+                capability=self._capability,
+                target=self._target,
+                config=self._config,
+            )
+        return self._inner
+
+    async def describe(self) -> ProxyDescription:
+        return await self._get_inner().describe()
+
+    async def open_session(
+        self,
+        context: SessionContext,
+        expectations: Expectations,
+        allowlist: Sequence[AllowRule],
+        mode: SessionMode = SessionMode.READ_ONLY,
+    ) -> ProxySession:
+        return await self._get_inner().open_session(
+            context=context,
+            expectations=expectations,
+            allowlist=allowlist,
+            mode=mode,
+        )
 
 
 class FidlProxyTransport:

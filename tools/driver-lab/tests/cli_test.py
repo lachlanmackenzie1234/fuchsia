@@ -256,7 +256,11 @@ class CliTest(unittest.TestCase):
         plan["run_id"] = run_id
         plan_path = self.base / f"{run_id}.json"
         plan_path.write_text(json.dumps(plan))
-        with mock.patch.object(cli, "_connect_transport", return_value=fake):
+        with (
+            mock.patch.object(cli, "_connect_transport", return_value=fake),
+            mock.patch.object(cli, "_connect_discovery", return_value=None),
+            mock.patch.object(cli, "_connect_activator", return_value=None),
+        ):
             return self.run_cli(
                 "run",
                 "--plan",

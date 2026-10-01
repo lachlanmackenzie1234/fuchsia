@@ -355,9 +355,9 @@ def _connect_transport(moniker: str, target: str | None) -> ProxyTransport:
     # Deferred import: the device connection path needs the
     # fuchsia-controller runtime, which permissions/plan commands and
     # their tests should not load. Tests substitute this seam.
-    from driver_lab.fidl_transport import connect_transport
+    from driver_lab.fidl_transport import LazyFidlProxyTransport
 
-    return connect_transport(moniker=moniker, target=target)
+    return LazyFidlProxyTransport(moniker=moniker, target=target)
 
 
 def _connect_discovery(target: str | None = None) -> NodeDiscovery | None:

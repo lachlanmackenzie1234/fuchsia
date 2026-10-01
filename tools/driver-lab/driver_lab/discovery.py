@@ -45,7 +45,10 @@ class NodeSummary:
     @property
     def is_unclaimed(self) -> bool:
         """True if the node has no bound driver."""
-        return self.bound_driver_url is None or self.bound_driver_url == ""
+        return self.bound_driver_url is None or self.bound_driver_url in (
+            "",
+            "unbound",
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -63,7 +66,10 @@ class NodeDescription:
     @property
     def is_unclaimed(self) -> bool:
         """True if the node has no bound driver."""
-        return self.bound_driver_url is None or self.bound_driver_url == ""
+        return self.bound_driver_url is None or self.bound_driver_url in (
+            "",
+            "unbound",
+        )
 
     def has_protocol(self, protocol: str) -> bool:
         """True if the node offers the specified protocol."""
@@ -243,7 +249,7 @@ class FidlNodeDiscovery:
                         if hasattr(item, "bound_driver_url")
                         else None
                     )
-                    if url == "":
+                    if url in ("", "unbound"):
                         url = None
                     summaries.append(
                         NodeSummary(
@@ -317,7 +323,7 @@ class FidlNodeDiscovery:
             if hasattr(found_item, "bound_driver_url")
             else None
         )
-        if url == "":
+        if url in ("", "unbound"):
             url = None
 
         return NodeDescription(
@@ -449,9 +455,26 @@ class FfxProxyActivator:
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise DiscoveryTransportError(
-                f"ffx driver register failed ({proc.returncode}): {stderr.decode().strip()}"
-            )
+            err_text = stderr.decode().strip()
+            if "-26" in err_text or "ALREADY_EXISTS" in err_text:
+                enable_cmd = ["ffx"]
+                if self._target:
+                    enable_cmd.extend(["--target", self._target])
+                enable_cmd.extend(["driver", "enable", driver_url])
+                enable_proc = await asyncio.create_subprocess_exec(
+                    *enable_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, enable_stderr = await enable_proc.communicate()
+                if enable_proc.returncode != 0:
+                    raise DiscoveryTransportError(
+                        f"ffx driver enable failed ({enable_proc.returncode}): {enable_stderr.decode().strip()}"
+                    )
+            else:
+                raise DiscoveryTransportError(
+                    f"ffx driver register failed ({proc.returncode}): {err_text}"
+                )
 
     async def end_proxy(
         self,
