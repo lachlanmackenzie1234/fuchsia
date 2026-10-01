@@ -377,9 +377,47 @@ _bazel_env=(
     # )
 )
 
+_bazel_exec="${_BAZEL_BIN}"
+_bazel_install_dir="$(dirname "${_BAZEL_BIN}")"
+_bazel_install_base="${_bazel_install_dir}/install_base"
+if [[ -f "${_BAZEL_BIN}-real" && -d "${_bazel_install_base}" ]]; then
+  # The prebuilt `${_BAZEL_BIN}` wrapper script in CIPD unconditionally runs
+  # `touch $(find "${BAZEL_INSTALL_BASE}")` on every invocation. Even when
+  # mtimes are already in the future, `touch` updates ctime, which Bazel
+  # includes in its FileStateValue for `@bazel_tools`
+  # (`install_base/embedded_tools`) and which forces Bzlmod module resolution
+  # and full package reloading on every Bazel command. Only touch files whose
+  # mtime is not already in the future, and invoke `bazel-real` directly.
+  # See //build/bootstrap_scripts/bazel/bazel_wrapper_script.bash.
+  #
+  # TODO(b/567975215): Remove this bypass once the prebuilt Bazel CIPD
+  # package includes the updated bazel_wrapper_script.bash.
+  #
+  # The timestamps and cutoffs must match bazel_wrapper_script.bash.
+  case "$OSTYPE" in
+    linux*)
+      find "${_bazel_install_base}" ! -newermt "2042-07-28" \
+        -exec touch -d "2042-07-29 00:00:00" {} +
+      ;;
+    darwin*|*bsd)
+      find "${_bazel_install_base}" ! -newermt "2040-02-04" \
+        -exec touch -t 204002050000 {} +
+      ;;
+  esac
+  _bazel_exec="${_BAZEL_BIN}-real"
+  # These must exactly match the flags passed by bazel_wrapper_script.bash,
+  # otherwise the Bazel server restarts whenever a command is run through
+  # the other entry point.
+  _BAZEL_PRE_COMMAND_ARGS=(
+    --install_base="${_bazel_install_base}"
+    --server_javabase="${_bazel_install_base}/embedded_tools/jdk"
+    "${_BAZEL_PRE_COMMAND_ARGS[@]}"
+  )
+fi
+
 _bazel_command=(
     "${_bazel_env[@]}"
-    "${_BAZEL_BIN}"
+    "${_bazel_exec}"
     "${_BAZEL_PRE_COMMAND_ARGS[@]}"
 )
 # When "${BAZEL_COMMAND} is empty, do not add it nor _BAZEL_EXTRA_ARGS to _bazel_command,
