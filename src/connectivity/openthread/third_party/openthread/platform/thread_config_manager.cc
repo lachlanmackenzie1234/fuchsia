@@ -6,7 +6,6 @@
 
 #include <simdutf.h>
 
-#include <sstream>
 #include <string>
 
 #include "openthread-system.h"
@@ -18,22 +17,8 @@
 ThreadConfigManager::ThreadConfigManager(const std::string& path) : config_store_path_(path) {
   json::JSONParser json_parser_;
   if (files::IsFile(config_store_path_)) {
-    std::vector<uint8_t> file_contents;
-    if (files::ReadFileToVector(config_store_path_, &file_contents)) {
-      otPlatLog(OT_LOG_LEVEL_DEBG, OT_LOG_REGION_PLATFORM, "Read the file: %s",
-                config_store_path_.c_str());
-      {
-        std::stringstream file_contents_combined;
-        std::copy(file_contents.begin(), file_contents.end(),
-                  std::ostream_iterator<char>(file_contents_combined, ""));
-        otPlatLog(OT_LOG_LEVEL_DEBG, OT_LOG_REGION_PLATFORM, "               ...with contents: %s",
-                  file_contents_combined.str().c_str());
-      }
-
-    } else {
-      otPlatLog(OT_LOG_LEVEL_CRIT, OT_LOG_REGION_PLATFORM, "Failed to read file: %s to vector.",
-                config_store_path_.c_str());
-    }
+    otPlatLog(OT_LOG_LEVEL_DEBG, OT_LOG_REGION_PLATFORM, "Read the file: %s",
+              config_store_path_.c_str());
 
     config_ = json_parser_.ParseFromFile(config_store_path_);
   } else {
