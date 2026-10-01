@@ -305,6 +305,7 @@ class GeneratedWorkspaceFiles(object):
                 # Nothing to change here.
                 return False
 
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(current_manifest)
         create_clean_dir(str(out_dir))
         self.write(out_dir)
@@ -659,24 +660,39 @@ def generate_fuchsia_workspace(
         log=log,
     )
 
-    # Remove the old workspace's content, which is just a set
-    # of symlinks and some auto-generated files.
-    create_clean_dir(str(top_dir / "workspace"))
+    # Only recreate the workspace directory and clean `output_base/external`
+    # when the generated workspace manifest actually changes. Unconditionally
+    # unlinking `workspace` deletes the running Bazel server's working
+    # directory (forcing a daemon restart on every `fx gen`), and wiping
+    # `output_base/external` forces Bazel to re-fetch all external
+    # repositories during `tests.json` generation.
+    generated_json = generated.to_json()
+    generated_info_file = top_dir / "generated-info.json"
+    workspace_dir = top_dir / "workspace"
+    if (
+        not workspace_dir.is_dir()
+        or not generated_info_file.exists()
+        or generated_info_file.read_text() != generated_json
+    ):
+        # Remove the old workspace's content, which is just a set
+        # of symlinks and some auto-generated files.
+        create_clean_dir(str(workspace_dir))
 
-    # Do not clean the output_base because it is now massive,
-    # and doing this will very slow and will force a lot of
-    # unnecessary rebuilds after that,
-    #
-    # However, do remove $OUTPUT_BASE/external/ which holds
-    # the content of external repositories.
-    #
-    # This is a guard against repository rules that do not
-    # list their input dependencies properly, and would fail
-    # to re-run if one of them is updated. Sadly, this is
-    # pretty common with Bazel.
-    create_clean_dir(os.path.join(top_dir / "output_base" / "external"))
+        # Do not clean the output_base because it is now massive,
+        # and doing this will very slow and will force a lot of
+        # unnecessary rebuilds after that,
+        #
+        # However, do remove $OUTPUT_BASE/external/ which holds
+        # the content of external repositories.
+        #
+        # This is a guard against repository rules that do not
+        # list their input dependencies properly, and would fail
+        # to re-run if one of them is updated. Sadly, this is
+        # pretty common with Bazel.
+        create_clean_dir(os.path.join(top_dir / "output_base" / "external"))
 
-    generated.write(top_dir)
+        generated.write(top_dir)
+        generated_info_file.write_text(generated_json)
 
     return input_files | generated.input_files
 
@@ -1593,10 +1609,15 @@ def generate_fuchsia_platform_sysroot_repository(
             variant, _ = _extract_variant_and_subpath(symlink_dest, "debug/")
             debug_files[variant] = symlink_dest_path
 
+    def write_file_if_changed(path: Path, content: str) -> None:
+        if not path.exists() or path.read_text() != content:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+
     # As Bazel doesn't support labels pointing to directories, this empty file can
     # be referenced as @<repo_name>//:sysroot/empty instead.
     repository_dir.mkdir(parents=True, exist_ok=True)
-    (repository_dir / "sysroot/empty").write_text("")
+    write_file_if_changed(repository_dir / "sysroot/empty", "")
 
     dist_targets = _generate_sysroot_dist_targets(
         dist_files,
@@ -1632,12 +1653,13 @@ def generate_fuchsia_platform_sysroot_repository(
     )
     dist_targets_str = "\n\n".join(dist_targets)
 
-    (repository_dir / "MODULE.bazel").write_text(module_content)
+    write_file_if_changed(repository_dir / "MODULE.bazel", module_content)
 
     header_files_str = "".join(f'        "{f}",\n' for f in header_files)
     lib_files_str = "".join(f'        "{f}",\n' for f in lib_files)
 
-    (repository_dir / "BUILD.bazel").write_text(
+    write_file_if_changed(
+        repository_dir / "BUILD.bazel",
         f"""# AUTO-GENERATED - DO NOT EDIT
 
 {load_block}
@@ -1667,7 +1689,7 @@ filegroup(
 )
 
 {dist_targets_str}
-"""
+""",
     )
 
 

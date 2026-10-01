@@ -499,20 +499,21 @@ def main() -> int:
             build_dir,
         )
 
-        with (idk_repository_path / "WORKSPACE.bazel").open("wt") as f:
-            f.write(f'workspace(name = "{_idk_repository_name}")\n')
-        with (idk_repository_path / "MODULE.bazel").open("wt") as f:
-            f.write(f'module(name = "{_idk_repository_name}", version = "1")\n')
+        write_file_if_changed(
+            idk_repository_path / "WORKSPACE.bazel",
+            f'workspace(name = "{_idk_repository_name}")\n',
+        )
+        write_file_if_changed(
+            idk_repository_path / "MODULE.bazel",
+            f'module(name = "{_idk_repository_name}", version = "1")\n',
+        )
 
         ninja_idk_export_dir_symlink_path = (
             idk_repository_path / "ninja_idk_export_dir_symlink"
         )
-        if (
-            ninja_idk_export_dir_symlink_path.exists()
-            or ninja_idk_export_dir_symlink_path.is_symlink()
-        ):
-            os.remove(ninja_idk_export_dir_symlink_path)
-        os.symlink(idk_export_dir_path, ninja_idk_export_dir_symlink_path)
+        build_utils.force_raw_symlink(
+            ninja_idk_export_dir_symlink_path, idk_export_dir_path
+        )
 
         time_profile.start(
             "product_bundles.json", "Generating product_bundles.json."

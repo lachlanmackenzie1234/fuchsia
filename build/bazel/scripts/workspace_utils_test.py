@@ -11,8 +11,10 @@ import typing as T
 import unittest
 from pathlib import Path
 from textwrap import dedent
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(__file__))
+import build_utils
 import workspace_utils
 from workspace_utils import BazelrcFromGnConfigGenerator, GnBuildArgs
 
@@ -1133,8 +1135,9 @@ alias(
 """,
         )
 
+        module_bazel = self._repository_dir / "MODULE.bazel"
         self.assertEqual(
-            (self._repository_dir / "MODULE.bazel").read_text(),
+            module_bazel.read_text(),
             dedent(
                 f"""\
                 module(name = "test_sysroot_repo_name")
@@ -1149,6 +1152,103 @@ alias(
                 """
             ),
         )
+
+        os.utime(build_bazel, (1000, 1000))
+        os.utime(module_bazel, (1000, 1000))
+        workspace_utils.generate_fuchsia_platform_sysroot_repository(
+            self._repository_dir,
+            "test_sysroot_repo_name",
+            self._sysroot_json_path,
+            "x64",
+            self._build_dir,
+        )
+        self.assertEqual(build_bazel.stat().st_mtime, 1000)
+        self.assertEqual(module_bazel.stat().st_mtime, 1000)
+
+        # Changing an input should rewrite only the affected file.
+        self._sysroot_json_path.write_text("[]")
+        workspace_utils.generate_fuchsia_platform_sysroot_repository(
+            self._repository_dir,
+            "test_sysroot_repo_name",
+            self._sysroot_json_path,
+            "x64",
+            self._build_dir,
+        )
+        self.assertNotEqual(build_bazel.stat().st_mtime, 1000)
+        self.assertEqual(module_bazel.stat().st_mtime, 1000)
+
+
+class GenerateFuchsiaWorkspaceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self._root = Path(self._td.name)
+        self._build_dir = self._root / "out"
+        self._top_dir = self._build_dir / "gen/build/bazel"
+        self._workspace_dir = self._top_dir / "workspace"
+        self._external_dir = self._top_dir / "output_base/external"
+        self._file_content = "initial"
+
+        def fake_record_fuchsia_workspace(
+            generated: workspace_utils.GeneratedWorkspaceFiles,
+            **kwargs: T.Any,
+        ) -> None:
+            generated.record_file_content(
+                "workspace/MODULE.bazel", self._file_content
+            )
+
+        patches = [
+            mock.patch.object(
+                build_utils,
+                "find_host_binary_path",
+                return_value="/bin/git",
+            ),
+            mock.patch.object(
+                build_utils,
+                "get_bazel_relative_topdir",
+                return_value=("gen/build/bazel", set()),
+            ),
+            mock.patch.object(
+                workspace_utils,
+                "record_fuchsia_workspace",
+                side_effect=fake_record_fuchsia_workspace,
+            ),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def _generate(self) -> None:
+        workspace_utils.generate_fuchsia_workspace(
+            self._root / "fuchsia", self._build_dir
+        )
+
+    def test_regenerates_only_when_inputs_change(self) -> None:
+        self._generate()
+        module_bazel = self._workspace_dir / "MODULE.bazel"
+        self.assertEqual(module_bazel.read_text(), "initial")
+
+        # Simulate state created by a running Bazel server.
+        workspace_marker = self._workspace_dir / "marker"
+        workspace_marker.write_text("")
+        external_marker = self._external_dir / "marker"
+        external_marker.parent.mkdir(parents=True, exist_ok=True)
+        external_marker.write_text("")
+
+        # The workspace and external repositories must be preserved when
+        # nothing changed, otherwise the Bazel server's working directory is
+        # deleted and all external repositories must be re-fetched.
+        self._generate()
+        self.assertTrue(workspace_marker.exists())
+        self.assertTrue(external_marker.exists())
+
+        self._file_content = "updated"
+        self._generate()
+        self.assertEqual(module_bazel.read_text(), "updated")
+        self.assertFalse(workspace_marker.exists())
+        self.assertFalse(external_marker.exists())
 
 
 if __name__ == "__main__":
