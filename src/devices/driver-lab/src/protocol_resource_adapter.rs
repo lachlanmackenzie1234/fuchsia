@@ -33,6 +33,30 @@ pub trait SpiBackend: Send {
     fn transmit(&mut self, tx_data: &[u8]) -> Result<Vec<u8>, BackendError>;
 }
 
+/// Hardware access abstraction for a Clock device.
+pub trait ClockBackend: Send {
+    fn enable(&mut self) -> Result<(), BackendError>;
+    fn disable(&mut self) -> Result<(), BackendError>;
+    fn is_enabled(&mut self) -> Result<bool, BackendError>;
+    fn set_rate(&mut self, hz: u64) -> Result<(), BackendError>;
+    fn query_rate(&mut self, hz_in: u64) -> Result<u64, BackendError>;
+    fn get_rate(&mut self) -> Result<u64, BackendError>;
+}
+
+/// Hardware access abstraction for a Reset device.
+pub trait ResetBackend: Send {
+    fn assert(&mut self) -> Result<(), BackendError>;
+    fn deassert(&mut self) -> Result<(), BackendError>;
+    fn toggle(&mut self) -> Result<(), BackendError>;
+    fn status(&mut self) -> Result<bool, BackendError>;
+}
+
+/// Hardware access abstraction for a Serial device.
+pub trait SerialBackend: Send {
+    fn read(&mut self) -> Result<Vec<u8>, BackendError>;
+    fn write(&mut self, data: &[u8]) -> Result<(), BackendError>;
+}
+
 /// Unified hardware access trait covering MMIO and protocol resources.
 pub trait ResourceBackend: Send {
     fn read32(&mut self, _offset: u64) -> Result<u32, BackendError> {
@@ -56,6 +80,42 @@ pub trait ResourceBackend: Send {
         Err(BackendError::Fault)
     }
     fn spi_transmit(&mut self, _tx_data: &[u8]) -> Result<Vec<u8>, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_enable(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_disable(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_is_enabled(&mut self) -> Result<bool, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_set_rate(&mut self, _hz: u64) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_query_rate(&mut self, _hz_in: u64) -> Result<u64, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn clock_get_rate(&mut self) -> Result<u64, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn reset_assert(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn reset_deassert(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn reset_toggle(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn reset_status(&mut self) -> Result<bool, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn serial_read(&mut self) -> Result<Vec<u8>, BackendError> {
+        Err(BackendError::Fault)
+    }
+    fn serial_write(&mut self, _data: &[u8]) -> Result<(), BackendError> {
         Err(BackendError::Fault)
     }
 }
@@ -228,16 +288,236 @@ impl ResourceBackend for FakeSpi {
     }
 }
 
+/// In-memory fake Clock for tests.
+#[derive(Clone, Debug, Default)]
+pub struct FakeClock {
+    pub enabled: bool,
+    pub rate: u64,
+    pub fault: bool,
+}
+
+impl FakeClock {
+    pub fn new(enabled: bool, rate: u64) -> Self {
+        Self { enabled, rate, fault: false }
+    }
+
+    pub fn fail(&mut self, fault: bool) {
+        self.fault = fault;
+    }
+}
+
+impl ClockBackend for FakeClock {
+    fn enable(&mut self) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.enabled = true;
+        Ok(())
+    }
+
+    fn disable(&mut self) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.enabled = false;
+        Ok(())
+    }
+
+    fn is_enabled(&mut self) -> Result<bool, BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        Ok(self.enabled)
+    }
+
+    fn set_rate(&mut self, hz: u64) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.rate = hz;
+        Ok(())
+    }
+
+    fn query_rate(&mut self, hz_in: u64) -> Result<u64, BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        Ok(hz_in)
+    }
+
+    fn get_rate(&mut self) -> Result<u64, BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        Ok(self.rate)
+    }
+}
+
+impl ResourceBackend for FakeClock {
+    fn clock_enable(&mut self) -> Result<(), BackendError> {
+        ClockBackend::enable(self)
+    }
+    fn clock_disable(&mut self) -> Result<(), BackendError> {
+        ClockBackend::disable(self)
+    }
+    fn clock_is_enabled(&mut self) -> Result<bool, BackendError> {
+        ClockBackend::is_enabled(self)
+    }
+    fn clock_set_rate(&mut self, hz: u64) -> Result<(), BackendError> {
+        ClockBackend::set_rate(self, hz)
+    }
+    fn clock_query_rate(&mut self, hz_in: u64) -> Result<u64, BackendError> {
+        ClockBackend::query_rate(self, hz_in)
+    }
+    fn clock_get_rate(&mut self) -> Result<u64, BackendError> {
+        ClockBackend::get_rate(self)
+    }
+}
+
+/// In-memory fake Reset for tests.
+#[derive(Clone, Debug, Default)]
+pub struct FakeReset {
+    pub asserted: bool,
+    pub fault: bool,
+}
+
+impl FakeReset {
+    pub fn new(asserted: bool) -> Self {
+        Self { asserted, fault: false }
+    }
+
+    pub fn fail(&mut self, fault: bool) {
+        self.fault = fault;
+    }
+}
+
+impl ResetBackend for FakeReset {
+    fn assert(&mut self) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.asserted = true;
+        Ok(())
+    }
+
+    fn deassert(&mut self) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.asserted = false;
+        Ok(())
+    }
+
+    fn toggle(&mut self) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.asserted = !self.asserted;
+        Ok(())
+    }
+
+    fn status(&mut self) -> Result<bool, BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        Ok(self.asserted)
+    }
+}
+
+impl ResourceBackend for FakeReset {
+    fn reset_assert(&mut self) -> Result<(), BackendError> {
+        ResetBackend::assert(self)
+    }
+    fn reset_deassert(&mut self) -> Result<(), BackendError> {
+        ResetBackend::deassert(self)
+    }
+    fn reset_toggle(&mut self) -> Result<(), BackendError> {
+        ResetBackend::toggle(self)
+    }
+    fn reset_status(&mut self) -> Result<bool, BackendError> {
+        ResetBackend::status(self)
+    }
+}
+
+/// In-memory fake Serial for tests.
+#[derive(Clone, Debug, Default)]
+pub struct FakeSerial {
+    pub rx_queue: VecDeque<u8>,
+    pub tx_log: Vec<Vec<u8>>,
+    pub loopback: bool,
+    pub fault: bool,
+}
+
+impl FakeSerial {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_loopback(mut self) -> Self {
+        self.loopback = true;
+        self
+    }
+
+    pub fn push_rx(&mut self, data: &[u8]) {
+        self.rx_queue.extend(data);
+    }
+
+    pub fn fail(&mut self, fault: bool) {
+        self.fault = fault;
+    }
+}
+
+impl SerialBackend for FakeSerial {
+    fn read(&mut self) -> Result<Vec<u8>, BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        let data: Vec<u8> = self.rx_queue.drain(..).collect();
+        Ok(data)
+    }
+
+    fn write(&mut self, data: &[u8]) -> Result<(), BackendError> {
+        if self.fault {
+            return Err(BackendError::Fault);
+        }
+        self.tx_log.push(data.to_vec());
+        if self.loopback {
+            self.rx_queue.extend(data);
+        }
+        Ok(())
+    }
+}
+
+impl ResourceBackend for FakeSerial {
+    fn serial_read(&mut self) -> Result<Vec<u8>, BackendError> {
+        SerialBackend::read(self)
+    }
+    fn serial_write(&mut self, data: &[u8]) -> Result<(), BackendError> {
+        SerialBackend::write(self, data)
+    }
+}
+
 /// Unified enum backend allowing heterogeneous resources to coexist in one proxy instance.
 #[derive(Clone, Debug)]
-pub enum DeviceBackend<M = FakeMmio, G = FakeGpio, I = FakeI2c, S = FakeSpi> {
+pub enum DeviceBackend<
+    M = FakeMmio,
+    G = FakeGpio,
+    I = FakeI2c,
+    S = FakeSpi,
+    C = FakeClock,
+    R = FakeReset,
+    U = FakeSerial,
+> {
     Mmio(M),
     Gpio(G),
     I2c(I),
     Spi(S),
+    Clock(C),
+    Reset(R),
+    Serial(U),
 }
 
-impl<M, G, I, S> DeviceBackend<M, G, I, S> {
+impl<M, G, I, S, C, R, U> DeviceBackend<M, G, I, S, C, R, U> {
     pub fn new_mmio(mmio: M) -> Self {
         Self::Mmio(mmio)
     }
@@ -253,10 +533,29 @@ impl<M, G, I, S> DeviceBackend<M, G, I, S> {
     pub fn new_spi(spi: S) -> Self {
         Self::Spi(spi)
     }
+
+    pub fn new_clock(clock: C) -> Self {
+        Self::Clock(clock)
+    }
+
+    pub fn new_reset(reset: R) -> Self {
+        Self::Reset(reset)
+    }
+
+    pub fn new_serial(serial: U) -> Self {
+        Self::Serial(serial)
+    }
 }
 
-impl<M: ResourceBackend, G: ResourceBackend, I: ResourceBackend, S: ResourceBackend> ResourceBackend
-    for DeviceBackend<M, G, I, S>
+impl<
+    M: ResourceBackend,
+    G: ResourceBackend,
+    I: ResourceBackend,
+    S: ResourceBackend,
+    C: ResourceBackend,
+    R: ResourceBackend,
+    U: ResourceBackend,
+> ResourceBackend for DeviceBackend<M, G, I, S, C, R, U>
 {
     fn read32(&mut self, offset: u64) -> Result<u32, BackendError> {
         match self {
@@ -306,6 +605,90 @@ impl<M: ResourceBackend, G: ResourceBackend, I: ResourceBackend, S: ResourceBack
     fn spi_transmit(&mut self, tx_data: &[u8]) -> Result<Vec<u8>, BackendError> {
         match self {
             Self::Spi(s) => s.spi_transmit(tx_data),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_enable(&mut self) -> Result<(), BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_enable(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_disable(&mut self) -> Result<(), BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_disable(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_is_enabled(&mut self) -> Result<bool, BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_is_enabled(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_set_rate(&mut self, hz: u64) -> Result<(), BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_set_rate(hz),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_query_rate(&mut self, hz_in: u64) -> Result<u64, BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_query_rate(hz_in),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn clock_get_rate(&mut self) -> Result<u64, BackendError> {
+        match self {
+            Self::Clock(c) => c.clock_get_rate(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn reset_assert(&mut self) -> Result<(), BackendError> {
+        match self {
+            Self::Reset(r) => r.reset_assert(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn reset_deassert(&mut self) -> Result<(), BackendError> {
+        match self {
+            Self::Reset(r) => r.reset_deassert(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn reset_toggle(&mut self) -> Result<(), BackendError> {
+        match self {
+            Self::Reset(r) => r.reset_toggle(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn reset_status(&mut self) -> Result<bool, BackendError> {
+        match self {
+            Self::Reset(r) => r.reset_status(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn serial_read(&mut self) -> Result<Vec<u8>, BackendError> {
+        match self {
+            Self::Serial(u) => u.serial_read(),
+            _ => Err(BackendError::Fault),
+        }
+    }
+
+    fn serial_write(&mut self, data: &[u8]) -> Result<(), BackendError> {
+        match self {
+            Self::Serial(u) => u.serial_write(data),
             _ => Err(BackendError::Fault),
         }
     }

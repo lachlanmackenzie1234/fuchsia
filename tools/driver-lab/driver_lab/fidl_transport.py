@@ -68,6 +68,9 @@ _RESOURCE_KIND_FROM_FIDL = {
     fdl.ResourceKind.I2_C: ResourceKind.I2C,
     fdl.ResourceKind.SPI: ResourceKind.SPI,
     fdl.ResourceKind.INTERRUPT: ResourceKind.INTERRUPT,
+    fdl.ResourceKind.CLOCK: ResourceKind.CLOCK,
+    fdl.ResourceKind.RESET: ResourceKind.RESET,
+    fdl.ResourceKind.SERIAL: ResourceKind.SERIAL,
 }
 
 

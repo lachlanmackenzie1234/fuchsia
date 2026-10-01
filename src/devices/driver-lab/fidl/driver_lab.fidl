@@ -82,6 +82,9 @@ type ResourceKind = flexible enum : uint32 {
     I2C = 3;
     SPI = 4;
     INTERRUPT = 5;
+    CLOCK = 6;
+    RESET = 7;
+    SERIAL = 8;
 };
 
 /// Logical description of one offered resource. Never contains physical
@@ -302,6 +305,71 @@ type InterruptResult = struct {
     coalesced_count uint64;
 };
 
+type ClockEnableResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ClockDisableResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ClockIsEnabledResult = struct {
+    enabled bool;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ClockSetRateResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ClockQueryRateResult = struct {
+    hz_out uint64;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ClockGetRateResult = struct {
+    hz uint64;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ResetAssertResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ResetDeassertResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ResetToggleResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type ResetStatusResult = struct {
+    asserted bool;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type SerialReadResult = struct {
+    data vector<uint8>:MAX_TRANSFER_SIZE;
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
+type SerialWriteResult = struct {
+    audit_seq uint64;
+    timestamp_ns int64;
+};
+
 type SequenceItem = flexible union {
     1: read32 struct {
         resource uint32;
@@ -488,6 +556,69 @@ open protocol Session {
         after_sequence uint64;
         timeout_ns int64;
     }) -> (InterruptResult) error OperationError;
+
+    /// One policy-checked, audited Clock enable. Requires mutation lease.
+    flexible ClockEnable(struct {
+        resource uint32;
+    }) -> (ClockEnableResult) error OperationError;
+
+    /// One policy-checked, audited Clock disable. Requires mutation lease.
+    flexible ClockDisable(struct {
+        resource uint32;
+    }) -> (ClockDisableResult) error OperationError;
+
+    /// One policy-checked, audited Clock is_enabled query.
+    flexible ClockIsEnabled(struct {
+        resource uint32;
+    }) -> (ClockIsEnabledResult) error OperationError;
+
+    /// One policy-checked, audited Clock set_rate. Requires mutation lease.
+    flexible ClockSetRate(struct {
+        resource uint32;
+        hz uint64;
+    }) -> (ClockSetRateResult) error OperationError;
+
+    /// One policy-checked, audited Clock query_supported_rate query.
+    flexible ClockQueryRate(struct {
+        resource uint32;
+        hz_in uint64;
+    }) -> (ClockQueryRateResult) error OperationError;
+
+    /// One policy-checked, audited Clock get_rate query.
+    flexible ClockGetRate(struct {
+        resource uint32;
+    }) -> (ClockGetRateResult) error OperationError;
+
+    /// One policy-checked, audited Reset assert. Requires mutation lease.
+    flexible ResetAssert(struct {
+        resource uint32;
+    }) -> (ResetAssertResult) error OperationError;
+
+    /// One policy-checked, audited Reset deassert. Requires mutation lease.
+    flexible ResetDeassert(struct {
+        resource uint32;
+    }) -> (ResetDeassertResult) error OperationError;
+
+    /// One policy-checked, audited Reset toggle. Requires mutation lease.
+    flexible ResetToggle(struct {
+        resource uint32;
+    }) -> (ResetToggleResult) error OperationError;
+
+    /// One policy-checked, audited Reset status query.
+    flexible ResetStatus(struct {
+        resource uint32;
+    }) -> (ResetStatusResult) error OperationError;
+
+    /// One policy-checked, audited Serial read.
+    flexible SerialRead(struct {
+        resource uint32;
+    }) -> (SerialReadResult) error OperationError;
+
+    /// One policy-checked, audited Serial write. Requires mutation lease.
+    flexible SerialWrite(struct {
+        resource uint32;
+        data vector<uint8>:MAX_TRANSFER_SIZE;
+    }) -> (SerialWriteResult) error OperationError;
 };
 
 @discoverable

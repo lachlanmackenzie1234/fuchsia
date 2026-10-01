@@ -183,6 +183,9 @@ class ResourceKind(str, enum.Enum):
     I2C = "i2c"
     SPI = "spi"
     INTERRUPT = "interrupt"
+    CLOCK = "clock"
+    RESET = "reset"
+    SERIAL = "serial"
 
 
 @dataclasses.dataclass(frozen=True)

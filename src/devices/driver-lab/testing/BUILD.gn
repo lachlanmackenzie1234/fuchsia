@@ -22,11 +22,19 @@ fuchsia_rust_driver("driver") {
   output_name = "lab_root"
   sources = [ "src/lib.rs" ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
+    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/fake-platform-device/rust",
     "//sdk/rust/zx",
+    "//src/devices/bind/fuchsia:fuchsia_rust",
     "//src/devices/driver-lab/bind:fuchsia.driver.lab_rust",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/mapped-vmo",

@@ -98,6 +98,9 @@ pub fn resource_digest(inputs: &DigestInputs<'_>) -> Sha256Digest {
             ResourceKind::I2c => b"i2c",
             ResourceKind::Spi => b"spi",
             ResourceKind::Interrupt => b"interrupt",
+            ResourceKind::Clock => b"clock",
+            ResourceKind::Reset => b"reset",
+            ResourceKind::Serial => b"serial",
         },
     );
     put_u64(&mut hasher, "logical_size", inputs.resource.logical_size);

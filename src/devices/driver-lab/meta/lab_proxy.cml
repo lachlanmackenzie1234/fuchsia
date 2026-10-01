@@ -16,6 +16,18 @@
     capabilities: [
         { service: "fuchsia.driver.lab.Service" },
     ],
+    use: [
+        {
+            service: [
+                "fuchsia.hardware.clock.Service",
+                "fuchsia.hardware.gpio.Service",
+                "fuchsia.hardware.i2c.Service",
+                "fuchsia.hardware.reset.Service",
+                "fuchsia.hardware.serial.Service",
+                "fuchsia.hardware.spi.Service",
+            ],
+        },
+    ],
     expose: [
         {
             service: "fuchsia.driver.lab.Service",

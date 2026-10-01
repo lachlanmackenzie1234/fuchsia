@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod fuchsia_backends;
 mod platform_provider;
 mod server;
 
@@ -22,6 +23,7 @@ struct LabProxy {
     _node: Node,
     _scope: fasync::Scope,
     state: SharedState,
+    irq_cancellers: Mutex<Vec<zx::Interrupt>>,
 }
 
 driver_register!(LabProxy);
@@ -45,7 +47,7 @@ impl Driver for LabProxy {
         // platform device yields zero resources; a node whose MMIOs
         // cannot all be mapped fails start rather than serving a
         // partially acquired identity.
-        let bundle =
+        let (bundle, interrupts) =
             platform_provider::acquire(&context, &node_identity).await.map_err(|error| {
                 warn!("resource acquisition failed: {error}");
                 DriverError::Status(zx::Status::INTERNAL)
@@ -79,10 +81,10 @@ impl Driver for LabProxy {
         };
         let resource_digests: BTreeMap<u32, String> =
             digests.iter().map(|(id, digest)| (*id, digest.to_string())).collect();
-        let mut interrupts = lab_proxy_core::interrupt::InterruptManager::new();
+        let mut interrupts_mgr = lab_proxy_core::interrupt::InterruptManager::new();
         for (id, res) in &bundle.resources {
             if res.kind == lab_proxy_core::access_policy::ResourceKind::Interrupt {
-                interrupts.register(*id);
+                interrupts_mgr.register(*id);
             }
         }
 
@@ -115,10 +117,21 @@ impl Driver for LabProxy {
             config.max_ops_per_second,
             config.max_deadline_ns,
         );
+        let mut ceiling_map = manifest.to_ceiling_map();
+        for (id, res) in &bundle.resources {
+            if let Some(entry) = ceiling_map.get_mut(id) {
+                if res.kind != lab_proxy_core::access_policy::ResourceKind::Mmio {
+                    entry.protocol =
+                        Some(lab_proxy_core::access_policy::ProtocolCeiling::default_for(res.kind));
+                }
+                entry.allow_interrupt =
+                    res.kind == lab_proxy_core::access_policy::ResourceKind::Interrupt;
+            }
+        }
         let mut sessions = SessionManager::with_limits(
             identity,
             bundle.resources,
-            manifest.to_ceiling_map(),
+            ceiling_map,
             manifest.allow_mutating_sessions,
             limit_enforcer,
         );
@@ -144,13 +157,47 @@ impl Driver for LabProxy {
                 executor,
                 audit,
                 resource_digests,
-                interrupts,
+                interrupts: interrupts_mgr,
                 config,
             }),
             abort_token: std::sync::atomic::AtomicBool::new(false),
         });
 
         let scope = fasync::Scope::new_with_name(Self::NAME);
+
+        let mut irq_cancellers = Vec::new();
+        for (irq_id, irq_handle) in interrupts {
+            let state = state.clone();
+            if let Ok(dup) = irq_handle.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                irq_cancellers.push(dup);
+            }
+            std::thread::Builder::new()
+                .name(format!("driver-lab-irq-{irq_id}"))
+                .spawn(move || {
+                    loop {
+                        match irq_handle.wait() {
+                            Ok(timestamp) => {
+                                let ts_nanos = timestamp.into_nanos();
+                                {
+                                    let mut guard = state.inner.lock().unwrap();
+                                    let _ = guard.interrupts.on_interrupt(irq_id, ts_nanos, None);
+                                }
+                                let _ = irq_handle.ack();
+                            }
+                            Err(zx::Status::CANCELED) => {
+                                log::info!("IRQ {irq_id} listener canceled");
+                                break;
+                            }
+                            Err(e) => {
+                                log::warn!("IRQ {irq_id} wait failed: {e:?}");
+                                break;
+                            }
+                        }
+                    }
+                })
+                .expect("failed to spawn IRQ listener thread");
+        }
+
         let mut outgoing = ServiceFs::new();
         outgoing.dir("svc").add_fidl_service_instance(
             "default",
@@ -173,10 +220,15 @@ impl Driver for LabProxy {
         }
 
         info!("LabProxy started; serving fuchsia.driver.lab");
-        Ok(Self { _node: node, _scope: scope, state })
+        Ok(Self { _node: node, _scope: scope, state, irq_cancellers: Mutex::new(irq_cancellers) })
     }
 
     async fn stop(&self) {
+        if let Ok(mut cancellers) = self.irq_cancellers.lock() {
+            for irq in cancellers.drain(..) {
+                let _ = irq.destroy();
+            }
+        }
         self.state.abort_token.store(true, std::sync::atomic::Ordering::SeqCst);
         let mut state = self.state.inner.lock().unwrap();
         state.sessions.reject_new_sessions();

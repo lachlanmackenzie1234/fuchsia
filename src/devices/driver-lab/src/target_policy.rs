@@ -235,7 +235,7 @@ impl TargetPolicyManifest {
 
         Self {
             schema_version: TARGET_POLICY_SCHEMA_VERSION,
-            allow_mutating_sessions: false,
+            allow_mutating_sessions: true,
             max_snapshot_items: MAX_SNAPSHOT_ITEMS,
             audit_capacity: 1024,
             resources: resource_manifests,

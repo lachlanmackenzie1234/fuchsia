@@ -2,18 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Platform-device resource provider.
+//! Platform-device and peripheral resource provider.
 //!
-//! Maps every MMIO region the bound node offers through
-//! `fuchsia.hardware.platform.device` and packages them as a
-//! [`ProvidedResources`] bundle for the core. A node that offers no
-//! platform device yields an empty bundle: the control plane still
-//! serves, but nothing is reachable. A node that offers MMIOs the
-//! driver cannot map fails acquisition -- a partially acquired device
+//! Discovers and maps every MMIO region, IRQ, GPIO, I2C, and SPI resource
+//! the bound node offers, packaging them into a [`ProvidedResources`] bundle.
+//! A node that offers no resources yields an empty bundle: the control plane
+//! still serves, but nothing is reachable. A node that offers resources the
+//! driver cannot acquire fails acquisition -- a partially acquired device
 //! would misrepresent the resource identity the digests promise.
 
+use crate::fuchsia_backends::{
+    FuchsiaClock, FuchsiaGpio, FuchsiaI2c, FuchsiaReset, FuchsiaSerial, FuchsiaSpi, LiveBackend,
+};
+use fidl_fuchsia_hardware_clock as fclock;
+use fidl_fuchsia_hardware_gpio as fgpio;
+use fidl_fuchsia_hardware_i2c as fi2c;
+use fidl_fuchsia_hardware_reset as freset;
+use fidl_fuchsia_hardware_serial as fserial;
+use fidl_fuchsia_hardware_spi as fspi;
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
-use lab_proxy_core::access_policy::{MmioResource, ResourceCeiling};
+use lab_proxy_core::access_policy::{
+    MmioResource, ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind,
+};
 use lab_proxy_core::hardware_backend::{BackendError, MmioBackend};
 use lab_proxy_core::provider::ProvidedResources;
 use log::info;
@@ -24,22 +34,6 @@ use pdev::PlatformDevice;
 
 /// Provider kind recorded in resource digests.
 pub const PROVIDER: &str = "platform";
-
-/// Engineering default ceiling until generated target policy lands:
-/// operator-consented unknown reads are permitted and nothing is hard
-/// denied. This is the ceiling *content*; the layered enforcement
-/// (ceiling, then exact session allowlist, then bounds) is unchanged.
-/// TODO: replace with the reviewed policy manifest (spec section 9.6).
-fn engineering_ceiling() -> ResourceCeiling {
-    ResourceCeiling {
-        hard_denied: vec![],
-        allow_unknown_reads: true,
-        allow_poll: false,
-        writable_registers: vec![],
-        protocol: None,
-        allow_interrupt: false,
-    }
-}
 
 /// Volatile access to one locally mapped MMIO region.
 pub struct MappedMmio {
@@ -91,12 +85,18 @@ pub enum AcquireError {
         /// The MMIO index that failed.
         id: u32,
     },
+    /// The device reported an IRQ the driver could not fetch.
+    Irq {
+        /// The IRQ index that failed.
+        id: u32,
+    },
 }
 
 impl std::fmt::Display for AcquireError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AcquireError::Mmio { id } => write!(f, "MMIO {id} could not be fetched or mapped"),
+            AcquireError::Irq { id } => write!(f, "IRQ {id} could not be fetched"),
         }
     }
 }
@@ -116,23 +116,28 @@ fn connect_instance(
     Some(client_end.spawn())
 }
 
-/// Acquires the bound node's platform-device MMIOs.
+/// Acquires the bound node's platform-device and protocol resources.
 ///
-/// Returns an empty bundle when the node offers no platform device (the
-/// service is absent or unresponsive) -- by construction no hardware is
-/// reachable then. Both common service instance names are tried:
-/// `pdev` (the platform bus convention) and `default` (what the SDK
-/// offer builders produce).
+/// Returns an empty bundle when the node offers no reachable resources.
 pub async fn acquire(
     context: &fdf_component::DriverContext,
     node_identity: &str,
-) -> Result<ProvidedResources<MappedMmio>, AcquireError> {
-    let mut connected = None;
+) -> Result<(ProvidedResources<LiveBackend>, Vec<(ResourceId, zx::Interrupt)>), AcquireError> {
+    let mut bundle = ProvidedResources::empty(PROVIDER, node_identity);
+    let mut acquired_irqs = Vec::new();
+    let mut next_id: ResourceId = 0;
+
+    // 1. Probe platform device for MMIOs and IRQs
+    let mut connected_pdev = None;
     for instance in ["pdev", "default"] {
         let Some(pdev) = connect_instance(context, instance) else { continue };
         match pdev.get_node_device_info().await {
             Ok(Ok(device_info)) => {
-                connected = Some((pdev, device_info.mmio_count.unwrap_or(0)));
+                connected_pdev = Some((
+                    pdev,
+                    device_info.mmio_count.unwrap_or(0),
+                    device_info.irq_count.unwrap_or(0),
+                ));
                 break;
             }
             Ok(Err(status)) => {
@@ -143,22 +148,333 @@ pub async fn acquire(
             }
         }
     }
-    let Some((pdev, mmio_count)) = connected else {
-        info!("no platform device offered; serving zero resources");
-        return Ok(ProvidedResources::empty("none", node_identity));
-    };
 
-    let mut bundle = ProvidedResources::empty(PROVIDER, node_identity);
-    for id in 0..mmio_count {
-        let region = pdev.map_mmio_by_id(id).await.map_err(|error| {
-            info!("mapping MMIO {id} failed: {error:?}");
-            AcquireError::Mmio { id }
-        })?;
-        let size = region.len() as u64;
-        bundle.resources.insert(id, MmioResource::mmio(format!("mmio{id}"), size, size));
-        bundle.ceiling.insert(id, engineering_ceiling());
-        bundle.backends.insert(id, MappedMmio { region });
+    if let Some((pdev, mmio_count, irq_count)) = connected_pdev {
+        for id in 0..mmio_count {
+            let region = pdev.map_mmio_by_id(id).await.map_err(|error| {
+                info!("mapping MMIO {id} failed: {error:?}");
+                AcquireError::Mmio { id }
+            })?;
+            let size = region.len() as u64;
+            let res_id = next_id;
+            next_id += 1;
+            bundle.resources.insert(res_id, MmioResource::mmio(format!("mmio{id}"), size, size));
+            bundle.ceiling.insert(
+                res_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: true,
+                    allow_poll: true,
+                    writable_registers: vec![],
+                    protocol: None,
+                    allow_interrupt: false,
+                },
+            );
+            bundle.backends.insert(res_id, LiveBackend::Mmio(MappedMmio { region }));
+        }
+
+        for id in 0..irq_count {
+            let irq = pdev
+                .get_interrupt_by_id(id, 0)
+                .await
+                .map_err(|error| {
+                    info!("getting IRQ {id} failed: {error:?}");
+                    AcquireError::Irq { id }
+                })?
+                .map_err(|status| {
+                    info!("getting IRQ {id} returned status {status:?}");
+                    AcquireError::Irq { id }
+                })?
+                .irq;
+            let res_id = next_id;
+            next_id += 1;
+            bundle.resources.insert(res_id, MmioResource::interrupt(format!("irq{id}")));
+            bundle.ceiling.insert(
+                res_id,
+                ResourceCeiling {
+                    hard_denied: vec![],
+                    allow_unknown_reads: false,
+                    allow_poll: false,
+                    writable_registers: vec![],
+                    protocol: Some(ProtocolCeiling::default_for(ResourceKind::Interrupt)),
+                    allow_interrupt: true,
+                },
+            );
+            bundle.backends.insert(res_id, LiveBackend::Interrupt);
+            acquired_irqs.push((res_id, irq));
+        }
     }
-    info!("acquired {mmio_count} platform MMIO resource(s)");
-    Ok(bundle)
+
+    // 2. Probe GPIO services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(fgpio::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_device_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                match proxy.read(probe_deadline) {
+                    Ok(_) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "gpio0".to_string()
+                        } else {
+                            format!("gpio-{instance}")
+                        };
+                        info!("acquired GPIO resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::gpio(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Gpio)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle.backends.insert(res_id, LiveBackend::Gpio(FuchsiaGpio::new(proxy)));
+                    }
+                    Err(e) => {
+                        info!("GPIO instance {instance} probe failed: {e:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Probe I2C services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(fi2c::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_device_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                // An empty transfer triggers no bus activity and succeeds with INVALID_ARGS if the server is active.
+                match proxy.transfer(&[], probe_deadline) {
+                    Ok(Err(status)) if status == zx::Status::INVALID_ARGS.into_raw() => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "i2c0".to_string()
+                        } else {
+                            format!("i2c-{instance}")
+                        };
+                        info!("acquired I2C resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::i2c(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::I2c)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle.backends.insert(res_id, LiveBackend::I2c(FuchsiaI2c::new(proxy)));
+                    }
+                    Ok(Ok(_)) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "i2c0".to_string()
+                        } else {
+                            format!("i2c-{instance}")
+                        };
+                        info!("acquired I2C resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::i2c(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::I2c)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle.backends.insert(res_id, LiveBackend::I2c(FuchsiaI2c::new(proxy)));
+                    }
+                    res => {
+                        info!("I2C instance {instance} probe returned: {res:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Probe SPI services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(fspi::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_device_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                // CanAssertCs is a pure software query that verifies server liveness without bus transmission.
+                match proxy.can_assert_cs(probe_deadline) {
+                    Ok(_) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "spi0".to_string()
+                        } else {
+                            format!("spi-{instance}")
+                        };
+                        info!("acquired SPI resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::spi(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Spi)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle.backends.insert(res_id, LiveBackend::Spi(FuchsiaSpi::new(proxy)));
+                    }
+                    Err(e) => {
+                        info!("SPI instance {instance} probe returned: {e:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Probe Clock services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(fclock::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_clock_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                match proxy.is_enabled(probe_deadline) {
+                    Ok(_) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "clock0".to_string()
+                        } else {
+                            format!("clock-{instance}")
+                        };
+                        info!("acquired Clock resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::clock(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Clock)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle
+                            .backends
+                            .insert(res_id, LiveBackend::Clock(FuchsiaClock::new(proxy)));
+                    }
+                    Err(e) => {
+                        info!("Clock instance {instance} probe returned: {e:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Probe Reset services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(freset::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_reset_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                match proxy.status(probe_deadline) {
+                    Ok(_) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "reset0".to_string()
+                        } else {
+                            format!("reset-{instance}")
+                        };
+                        info!("acquired Reset resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::reset(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Reset)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle
+                            .backends
+                            .insert(res_id, LiveBackend::Reset(FuchsiaReset::new(proxy)));
+                    }
+                    Err(e) => {
+                        info!("Reset instance {instance} probe returned: {e:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    // 7. Probe Serial services
+    for instance in ["default"] {
+        if let Ok(service) =
+            context.incoming.service_marker(fserial::ServiceMarker).instance(&instance).connect()
+        {
+            if let Ok(proxy) = service.connect_to_device_sync() {
+                let probe_deadline = zx::MonotonicInstant::after(zx::Duration::from_millis(50));
+                match proxy.get_class(probe_deadline) {
+                    Ok(_) => {
+                        let res_id = next_id;
+                        next_id += 1;
+                        let name = if instance == "default" {
+                            "serial0".to_string()
+                        } else {
+                            format!("serial-{instance}")
+                        };
+                        info!("acquired Serial resource {name} (id {res_id})");
+                        bundle.resources.insert(res_id, MmioResource::serial(name));
+                        bundle.ceiling.insert(
+                            res_id,
+                            ResourceCeiling {
+                                hard_denied: vec![],
+                                allow_unknown_reads: false,
+                                allow_poll: false,
+                                writable_registers: vec![],
+                                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Serial)),
+                                allow_interrupt: false,
+                            },
+                        );
+                        bundle
+                            .backends
+                            .insert(res_id, LiveBackend::Serial(FuchsiaSerial::new(proxy)));
+                    }
+                    Err(e) => {
+                        info!("Serial instance {instance} probe returned: {e:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    if bundle.resources.is_empty() {
+        info!("no hardware resources offered; serving zero resources");
+        return Ok((ProvidedResources::empty("none", node_identity), acquired_irqs));
+    }
+
+    info!("acquired {} total hardware resource(s)", bundle.resources.len());
+    Ok((bundle, acquired_irqs))
 }

@@ -5,15 +5,16 @@
 //! FIDL server for the `fuchsia.driver.lab` wire contract, bridging the
 //! host-facing protocol to the host-testable core logic.
 
-use crate::platform_provider::MappedMmio;
+use crate::fuchsia_backends::LiveBackend;
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async::ScopeHandle;
 use futures::{FutureExt as _, TryStreamExt};
 use lab_proxy_core::access_policy::{AccessClass, AccessRule, Denial, WritePrecondition};
 use lab_proxy_core::audit_ring::{AuditRecord, AuditRing, Decision, OpStatus};
 use lab_proxy_core::executor::{
-    Executor, GpioReadError, GpioWriteError, I2cTransferError, PollError, ReadError,
-    SequenceItem as CoreSequenceItem, SnapshotError, SnapshotItem, SpiTransmitError, WriteError,
+    ClockOpError, Executor, GpioReadError, GpioWriteError, I2cTransferError, PollError, ReadError,
+    ResetOpError, SequenceItem as CoreSequenceItem, SerialOpError, SnapshotError, SnapshotItem,
+    SpiTransmitError, WriteError,
 };
 use lab_proxy_core::hardware_backend::Clock;
 use lab_proxy_core::interrupt::InterruptManager;
@@ -97,7 +98,7 @@ pub struct ProxyState {
     /// Session lifecycle and per-session policy.
     pub sessions: SessionManager,
     /// The shared read-path executor over the acquired MMIO mappings.
-    pub executor: Executor<MappedMmio, ZxClock>,
+    pub executor: Executor<LiveBackend, ZxClock>,
     /// The instance audit ring.
     pub audit: AuditRing,
     /// Per-resource description digests, reported by `Describe` for
@@ -197,6 +198,9 @@ fn describe(state: &SharedState) -> flab::ProxyDescription {
                 lab_proxy_core::access_policy::ResourceKind::Interrupt => {
                     flab::ResourceKind::Interrupt
                 }
+                lab_proxy_core::access_policy::ResourceKind::Clock => flab::ResourceKind::Clock,
+                lab_proxy_core::access_policy::ResourceKind::Reset => flab::ResourceKind::Reset,
+                lab_proxy_core::access_policy::ResourceKind::Serial => flab::ResourceKind::Serial,
             }),
             logical_size: Some(resource.logical_size),
             digest: state.resource_digests.get(id).cloned(),
@@ -2167,6 +2171,878 @@ async fn serve_session(
                 };
 
                 let _ = responder.send(fidl_res);
+            }
+            flab::SessionRequest::ClockEnable { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_enable(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_enable(&session.policy, audit, id, resource)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_enable",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_enable(&session.policy, audit, id, resource)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ClockDisable { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_disable(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_disable(&session.policy, audit, id, resource)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_disable",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_disable(&session.policy, audit, id, resource)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ClockIsEnabled { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_is_enabled(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_is_enabled(&session.policy, audit, id, resource)
+                                .map(|outcome| {
+                                    (outcome.enabled, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_is_enabled",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_is_enabled(&session.policy, audit, id, resource)
+                                        .map(|outcome| {
+                                            (
+                                                outcome.enabled,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ClockSetRate { resource, hz, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_set_rate(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_set_rate(&session.policy, audit, id, resource, hz)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_set_rate",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_set_rate(&session.policy, audit, id, resource, hz)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ClockQueryRate { resource, hz_in, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_query_rate(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_query_rate(&session.policy, audit, id, resource, hz_in)
+                                .map(|outcome| {
+                                    (outcome.hz_out, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_query_rate",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_query_rate(
+                                            &session.policy,
+                                            audit,
+                                            id,
+                                            resource,
+                                            hz_in,
+                                        )
+                                        .map(|outcome| {
+                                            (
+                                                outcome.hz_out,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ClockGetRate { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_clock_get_rate(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .clock_get_rate(&session.policy, audit, id, resource)
+                                .map(|outcome| {
+                                    (outcome.hz, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    ClockOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ClockOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "clock_get_rate",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .clock_get_rate(&session.policy, audit, id, resource)
+                                        .map(|outcome| {
+                                            (outcome.hz, outcome.audit_seq, outcome.timestamp_ns)
+                                        })
+                                        .map_err(|error| match error {
+                                            ClockOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ClockOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ResetAssert { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_reset_assert(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .reset_assert(&session.policy, audit, id, resource)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ResetOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ResetOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "reset_assert",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .reset_assert(&session.policy, audit, id, resource)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ResetOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ResetOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ResetDeassert { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_reset_deassert(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .reset_deassert(&session.policy, audit, id, resource)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ResetOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ResetOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "reset_deassert",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .reset_deassert(&session.policy, audit, id, resource)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ResetOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ResetOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ResetToggle { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_reset_toggle(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .reset_toggle(&session.policy, audit, id, resource)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    ResetOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ResetOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "reset_toggle",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .reset_toggle(&session.policy, audit, id, resource)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            ResetOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ResetOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::ResetStatus { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_reset_status(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .reset_status(&session.policy, audit, id, resource)
+                                .map(|outcome| {
+                                    (outcome.asserted, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    ResetOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    ResetOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "reset_status",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .reset_status(&session.policy, audit, id, resource)
+                                        .map(|outcome| {
+                                            (
+                                                outcome.asserted,
+                                                outcome.audit_seq,
+                                                outcome.timestamp_ns,
+                                            )
+                                        })
+                                        .map_err(|error| match error {
+                                            ResetOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            ResetOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
+            }
+            flab::SessionRequest::SerialRead { resource, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => {
+                            session.policy.check_serial_read(resource).map_err(denial_to_fidl)
+                        }
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .serial_read(&session.policy, audit, id, resource)
+                                .map(|outcome| {
+                                    (outcome.data, outcome.audit_seq, outcome.timestamp_ns)
+                                })
+                                .map_err(|error| match error {
+                                    SerialOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    SerialOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "serial_read",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .serial_read(&session.policy, audit, id, resource)
+                                        .map(|outcome| {
+                                            (outcome.data, outcome.audit_seq, outcome.timestamp_ns)
+                                        })
+                                        .map_err(|error| match error {
+                                            SerialOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            SerialOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(
+                    result
+                        .as_ref()
+                        .map(|(data, seq, ts)| (data.as_slice(), *seq, *ts))
+                        .map_err(|err| *err),
+                );
+            }
+            flab::SessionRequest::SerialWrite { resource, data, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
+                let result = {
+                    let guard = &mut *state.inner.lock().unwrap();
+                    let ProxyState { sessions, executor, audit, .. } = guard;
+                    let check = match sessions.session(id) {
+                        None => Err(flab::OperationError::StaleIdentity),
+                        Some(session) => session
+                            .policy
+                            .check_serial_write(resource, data.len())
+                            .map_err(denial_to_fidl),
+                    };
+                    match check {
+                        Err(flab::OperationError::StaleIdentity) => {
+                            Err(flab::OperationError::StaleIdentity)
+                        }
+                        Err(_) => {
+                            let session = sessions.session(id).unwrap();
+                            executor
+                                .serial_write(&session.policy, audit, id, resource, &data)
+                                .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                .map_err(|error| match error {
+                                    SerialOpError::Denied { denial, .. } => denial_to_fidl(denial),
+                                    SerialOpError::Backend { .. } => {
+                                        flab::OperationError::BackendFault
+                                    }
+                                })
+                        }
+                        Ok(_) => {
+                            let now = now_ns();
+                            match sessions.check_access(id, AccessClass::Protocol, now) {
+                                Err(denial) => {
+                                    let record = AuditRecord {
+                                        session: Some(id),
+                                        resource: Some(resource),
+                                        operation: "serial_write",
+                                        offset: None,
+                                        decision: Decision::Denied(denial),
+                                        status: OpStatus::Rejected,
+                                        value: None,
+                                        timestamp_ns: now,
+                                        run_id: None,
+                                        item_index: None,
+                                    };
+                                    audit.append(record);
+                                    Err(denial_to_fidl(denial))
+                                }
+                                Ok(()) => {
+                                    let session = sessions.session(id).unwrap();
+                                    executor
+                                        .serial_write(&session.policy, audit, id, resource, &data)
+                                        .map(|outcome| (outcome.audit_seq, outcome.timestamp_ns))
+                                        .map_err(|error| match error {
+                                            SerialOpError::Denied { denial, .. } => {
+                                                denial_to_fidl(denial)
+                                            }
+                                            SerialOpError::Backend { .. } => {
+                                                flab::OperationError::BackendFault
+                                            }
+                                        })
+                                }
+                            }
+                        }
+                    }
+                };
+                let _ = responder.send(result);
             }
             flab::SessionRequest::_UnknownMethod { .. } => {}
         }

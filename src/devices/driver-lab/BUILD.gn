@@ -56,6 +56,7 @@ fuchsia_rust_driver("driver") {
 
   output_name = "lab_proxy"
   sources = [
+    "src/fuchsia_backends.rs",
     "src/lib.rs",
     "src/platform_provider.rs",
     "src/server.rs",
@@ -65,7 +66,14 @@ fuchsia_rust_driver("driver") {
     ":lab_proxy_config",
     "fidl:fuchsia.driver.lab_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
+    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
     "//sdk/lib/driver/platform-device/rust:pdev",
@@ -75,6 +83,7 @@ fuchsia_rust_driver("driver") {
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
@@ -173,5 +182,6 @@ group("tests") {
     ":core_test($host_toolchain)",
     ":lab_proxy-realm-test-pkg",
     ":lab_proxy-unit-test-pkg",
+    ":pkg",
   ]
 }

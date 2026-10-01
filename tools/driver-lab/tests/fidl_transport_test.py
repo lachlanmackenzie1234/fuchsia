@@ -464,6 +464,50 @@ class _BridgeSessionServer(fdl.SessionServer):
             coalesced_count=outcome.coalesced_count,
         )
 
+    async def clock_enable(self, request: Any) -> Any:
+        return fdl.ClockEnableResult(audit_seq=1, timestamp_ns=100)
+
+    async def clock_disable(self, request: Any) -> Any:
+        return fdl.ClockDisableResult(audit_seq=1, timestamp_ns=100)
+
+    async def clock_is_enabled(self, request: Any) -> Any:
+        return fdl.ClockIsEnabledResult(
+            enabled=True, audit_seq=1, timestamp_ns=100
+        )
+
+    async def clock_set_rate(self, request: Any) -> Any:
+        return fdl.ClockSetRateResult(audit_seq=1, timestamp_ns=100)
+
+    async def clock_query_rate(self, request: Any) -> Any:
+        return fdl.ClockQueryRateResult(
+            hz_out=request.hz_in, audit_seq=1, timestamp_ns=100
+        )
+
+    async def clock_get_rate(self, request: Any) -> Any:
+        return fdl.ClockGetRateResult(
+            hz=24000000, audit_seq=1, timestamp_ns=100
+        )
+
+    async def reset_assert(self, request: Any) -> Any:
+        return fdl.ResetAssertResult(audit_seq=1, timestamp_ns=100)
+
+    async def reset_deassert(self, request: Any) -> Any:
+        return fdl.ResetDeassertResult(audit_seq=1, timestamp_ns=100)
+
+    async def reset_toggle(self, request: Any) -> Any:
+        return fdl.ResetToggleResult(audit_seq=1, timestamp_ns=100)
+
+    async def reset_status(self, request: Any) -> Any:
+        return fdl.ResetStatusResult(
+            asserted=False, audit_seq=1, timestamp_ns=100
+        )
+
+    async def serial_read(self, request: Any) -> Any:
+        return fdl.SerialReadResult(data=[], audit_seq=1, timestamp_ns=100)
+
+    async def serial_write(self, request: Any) -> Any:
+        return fdl.SerialWriteResult(audit_seq=1, timestamp_ns=100)
+
 
 _RESOURCE_KIND_TO_FIDL = {
     ResourceKind.MMIO: fdl.ResourceKind.MMIO,
@@ -471,6 +515,9 @@ _RESOURCE_KIND_TO_FIDL = {
     ResourceKind.I2C: fdl.ResourceKind.I2_C,
     ResourceKind.SPI: fdl.ResourceKind.SPI,
     ResourceKind.INTERRUPT: fdl.ResourceKind.INTERRUPT,
+    ResourceKind.CLOCK: fdl.ResourceKind.CLOCK,
+    ResourceKind.RESET: fdl.ResourceKind.RESET,
+    ResourceKind.SERIAL: fdl.ResourceKind.SERIAL,
 }
 
 

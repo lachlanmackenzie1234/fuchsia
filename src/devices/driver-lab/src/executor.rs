@@ -197,6 +197,116 @@ pub enum SpiTransmitError {
     Backend { error: BackendError, audit_seq: u64 },
 }
 
+/// The outcome of a completed Clock enable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockEnableOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Clock disable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockDisableOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Clock is_enabled query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockIsEnabledOutcome {
+    pub enabled: bool,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Clock set_rate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockSetRateOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Clock query_rate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockQueryRateOutcome {
+    pub hz_out: u64,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Clock get_rate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClockGetRateOutcome {
+    pub hz: u64,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a Clock operation did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockOpError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// The outcome of a completed Reset assert.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResetAssertOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Reset deassert.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResetDeassertOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Reset toggle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResetToggleOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Reset status query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResetStatusOutcome {
+    pub asserted: bool,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a Reset operation did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetOpError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
+/// The outcome of a completed Serial read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerialReadOutcome {
+    pub data: Vec<u8>,
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// The outcome of a completed Serial write.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerialWriteOutcome {
+    pub audit_seq: u64,
+    pub timestamp_ns: i64,
+}
+
+/// Why a Serial operation did not complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SerialOpError {
+    Denied { denial: Denial, audit_seq: u64 },
+    Backend { error: BackendError, audit_seq: u64 },
+}
+
 /// An operation within a bounded sequence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SequenceItem {
@@ -1228,6 +1338,825 @@ impl<B: ResourceBackend, C: Clock> Executor<B, C> {
                 record.item_index = item_index;
                 let audit_seq = audit.append(record);
                 Err(SpiTransmitError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_enable(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ClockEnableOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_enable(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_enable",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_enable",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_enable() {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_enable",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockEnableOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_enable",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_disable(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ClockDisableOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_disable(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_disable",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_disable",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_disable() {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_disable",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockDisableOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_disable",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_is_enabled(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ClockIsEnabledOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_is_enabled(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_is_enabled",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_is_enabled",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_is_enabled() {
+            Ok(enabled) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_is_enabled",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(enabled as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockIsEnabledOutcome { enabled, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_is_enabled",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_set_rate(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        hz: u64,
+    ) -> Result<ClockSetRateOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_set_rate(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_set_rate",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_set_rate",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_set_rate(hz) {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_set_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some((hz & 0xffffffff) as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockSetRateOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_set_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_query_rate(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        hz_in: u64,
+    ) -> Result<ClockQueryRateOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_query_rate(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_query_rate",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_query_rate",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_query_rate(hz_in) {
+            Ok(hz_out) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_query_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some((hz_out & 0xffffffff) as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockQueryRateOutcome { hz_out, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_query_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn clock_get_rate(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ClockGetRateOutcome, ClockOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_clock_get_rate(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "clock_get_rate",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "clock_get_rate",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ClockOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.clock_get_rate() {
+            Ok(hz) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_get_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some((hz & 0xffffffff) as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ClockGetRateOutcome { hz, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "clock_get_rate",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ClockOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn reset_assert(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ResetAssertOutcome, ResetOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_reset_assert(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "reset_assert",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "reset_assert",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.reset_assert() {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_assert",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ResetAssertOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_assert",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ResetOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn reset_deassert(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ResetDeassertOutcome, ResetOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_reset_deassert(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "reset_deassert",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "reset_deassert",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.reset_deassert() {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_deassert",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ResetDeassertOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_deassert",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ResetOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn reset_toggle(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ResetToggleOutcome, ResetOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_reset_toggle(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "reset_toggle",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "reset_toggle",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.reset_toggle() {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_toggle",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ResetToggleOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_toggle",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ResetOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn reset_status(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<ResetStatusOutcome, ResetOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_reset_status(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "reset_status",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "reset_status",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(ResetOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.reset_status() {
+            Ok(asserted) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_status",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(asserted as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(ResetStatusOutcome { asserted, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "reset_status",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(ResetOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn serial_read(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+    ) -> Result<SerialReadOutcome, SerialOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_serial_read(resource) {
+            let record = op_record(
+                session,
+                resource,
+                "serial_read",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(SerialOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "serial_read",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(SerialOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.serial_read() {
+            Ok(data) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "serial_read",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(data.len() as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(SerialReadOutcome { data, audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "serial_read",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(SerialOpError::Backend { error, audit_seq })
+            }
+        }
+    }
+
+    pub fn serial_write(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        data: &[u8],
+    ) -> Result<SerialWriteOutcome, SerialOpError> {
+        let timestamp_ns = self.clock.now_ns();
+        if let Err(denial) = policy.check_serial_write(resource, data.len()) {
+            let record = op_record(
+                session,
+                resource,
+                "serial_write",
+                0,
+                Decision::Denied(denial),
+                OpStatus::Rejected,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(SerialOpError::Denied { denial, audit_seq });
+        }
+        let Some(backend) = self.backends.get_mut(&resource) else {
+            let record = op_record(
+                session,
+                resource,
+                "serial_write",
+                0,
+                Decision::Allowed,
+                OpStatus::BackendFault,
+                None,
+                timestamp_ns,
+            );
+            let audit_seq = audit.append(record);
+            return Err(SerialOpError::Backend { error: BackendError::Fault, audit_seq });
+        };
+        match backend.serial_write(data) {
+            Ok(()) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "serial_write",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::Ok,
+                    Some(data.len() as u32),
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Ok(SerialWriteOutcome { audit_seq, timestamp_ns })
+            }
+            Err(error) => {
+                let record = op_record(
+                    session,
+                    resource,
+                    "serial_write",
+                    0,
+                    Decision::Allowed,
+                    OpStatus::BackendFault,
+                    None,
+                    timestamp_ns,
+                );
+                let audit_seq = audit.append(record);
+                Err(SerialOpError::Backend { error, audit_seq })
             }
         }
     }

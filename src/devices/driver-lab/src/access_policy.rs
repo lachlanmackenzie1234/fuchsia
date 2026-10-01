@@ -56,6 +56,9 @@ pub enum ResourceKind {
     I2c,
     Spi,
     Interrupt,
+    Clock,
+    Reset,
+    Serial,
 }
 
 /// Description of a resource offered by the parent node. Descriptions
@@ -92,6 +95,18 @@ impl MmioResource {
 
     pub fn interrupt(name: impl Into<String>) -> Self {
         Self { name: name.into(), kind: ResourceKind::Interrupt, logical_size: 0, mapped_size: 0 }
+    }
+
+    pub fn clock(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Clock, logical_size: 0, mapped_size: 0 }
+    }
+
+    pub fn reset(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Reset, logical_size: 0, mapped_size: 0 }
+    }
+
+    pub fn serial(name: impl Into<String>) -> Self {
+        Self { name: name.into(), kind: ResourceKind::Serial, logical_size: 0, mapped_size: 0 }
     }
 }
 
@@ -158,6 +173,27 @@ impl ProtocolCeiling {
             ResourceKind::Interrupt => {
                 allowed_methods.insert("wait".to_string());
                 Self { allowed_methods, max_transfer_size: 0, allow_mutating: false }
+            }
+            ResourceKind::Clock => {
+                allowed_methods.insert("enable".to_string());
+                allowed_methods.insert("disable".to_string());
+                allowed_methods.insert("is_enabled".to_string());
+                allowed_methods.insert("set_rate".to_string());
+                allowed_methods.insert("query_rate".to_string());
+                allowed_methods.insert("get_rate".to_string());
+                Self { allowed_methods, max_transfer_size: 0, allow_mutating: true }
+            }
+            ResourceKind::Reset => {
+                allowed_methods.insert("assert".to_string());
+                allowed_methods.insert("deassert".to_string());
+                allowed_methods.insert("toggle".to_string());
+                allowed_methods.insert("status".to_string());
+                Self { allowed_methods, max_transfer_size: 0, allow_mutating: true }
+            }
+            ResourceKind::Serial => {
+                allowed_methods.insert("read".to_string());
+                allowed_methods.insert("write".to_string());
+                Self { allowed_methods, max_transfer_size: 8192, allow_mutating: true }
             }
             ResourceKind::Mmio => {
                 Self { allowed_methods, max_transfer_size: 0, allow_mutating: false }
@@ -597,6 +633,153 @@ impl AccessPolicy {
         let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
         let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
         if !proto.allowed_methods.contains("transmit") {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if !proto.allow_mutating {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if tx_len as u32 > proto.max_transfer_size {
+            return Err(Denial::TransferTooLarge);
+        }
+        if !self.is_protocol_allowed(resource, true) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for Clock enable. Requires mutation lease.
+    pub fn check_clock_enable(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "enable", true)
+    }
+
+    /// Immediately-before-access validation for Clock disable. Requires mutation lease.
+    pub fn check_clock_disable(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "disable", true)
+    }
+
+    /// Immediately-before-access validation for Clock is_enabled query.
+    pub fn check_clock_is_enabled(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "is_enabled", false)
+    }
+
+    /// Immediately-before-access validation for Clock set_rate. Requires mutation lease.
+    pub fn check_clock_set_rate(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "set_rate", true)
+    }
+
+    /// Immediately-before-access validation for Clock query_rate.
+    pub fn check_clock_query_rate(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "query_rate", false)
+    }
+
+    /// Immediately-before-access validation for Clock get_rate.
+    pub fn check_clock_get_rate(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_clock_op(resource, "get_rate", false)
+    }
+
+    fn check_clock_op(
+        &self,
+        resource: ResourceId,
+        method: &str,
+        is_mutating: bool,
+    ) -> Result<(), Denial> {
+        if is_mutating && self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Clock {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains(method) {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if is_mutating && !proto.allow_mutating {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if !self.is_protocol_allowed(resource, is_mutating) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for Reset assert. Requires mutation lease.
+    pub fn check_reset_assert(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_reset_op(resource, "assert", true)
+    }
+
+    /// Immediately-before-access validation for Reset deassert. Requires mutation lease.
+    pub fn check_reset_deassert(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_reset_op(resource, "deassert", true)
+    }
+
+    /// Immediately-before-access validation for Reset toggle. Requires mutation lease.
+    pub fn check_reset_toggle(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_reset_op(resource, "toggle", true)
+    }
+
+    /// Immediately-before-access validation for Reset status query.
+    pub fn check_reset_status(&self, resource: ResourceId) -> Result<(), Denial> {
+        self.check_reset_op(resource, "status", false)
+    }
+
+    fn check_reset_op(
+        &self,
+        resource: ResourceId,
+        method: &str,
+        is_mutating: bool,
+    ) -> Result<(), Denial> {
+        if is_mutating && self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Reset {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains(method) {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if is_mutating && !proto.allow_mutating {
+            return Err(Denial::WriteNotPermitted);
+        }
+        if !self.is_protocol_allowed(resource, is_mutating) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for Serial read.
+    pub fn check_serial_read(&self, resource: ResourceId) -> Result<(), Denial> {
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Serial {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains("read") {
+            return Err(Denial::UnsupportedMethod);
+        }
+        if !self.is_protocol_allowed(resource, false) {
+            return Err(Denial::NotInAllowlist);
+        }
+        Ok(())
+    }
+
+    /// Immediately-before-access validation for Serial write. Requires mutation lease.
+    pub fn check_serial_write(&self, resource: ResourceId, tx_len: usize) -> Result<(), Denial> {
+        if self.mode != SessionMode::Mutating {
+            return Err(Denial::ReadOnlySession);
+        }
+        let desc = self.resources.get(&resource).ok_or(Denial::UnknownResource)?;
+        if desc.kind != ResourceKind::Serial {
+            return Err(Denial::UnknownResource);
+        }
+        let ceiling = self.ceiling.get(&resource).ok_or(Denial::NotPermittedByCeiling)?;
+        let proto = ceiling.protocol.as_ref().ok_or(Denial::NotPermittedByCeiling)?;
+        if !proto.allowed_methods.contains("write") {
             return Err(Denial::UnsupportedMethod);
         }
         if !proto.allow_mutating {
