@@ -15,6 +15,8 @@ BT_FILE_DEPS=(
     "build/force_clean/force_clean_if_needed.py"
     "build/scripts/top_build_wrap.sh"
     "build/profile/hardware_profiler.py"
+    "build/rbe/rbe_settings.py"
+    "build/python/modules/serialization/serialization.py"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/lib/is_invoked_by_agent.sh"
     "tools/devshell/lib/agents.txt"
@@ -130,7 +132,28 @@ EOF
   btf::make_pass_through_mock "build/tui/build-tui-wrap.sh"
 
   # Ensure RBE appears enabled to test that orchestration works.
-  echo '{"local_only": false}' > "${TEST_BUILD_DIR}/rbe_settings.json"
+  cat > "${TEST_BUILD_DIR}/rbe_settings.json" <<EOF
+{
+  "final": {
+    "bazel_enable": false,
+    "bazel_exec_strategy": "local",
+    "bazel_download_outputs": "all",
+    "cxx_download_objects": false,
+    "cxx_enable": false,
+    "cxx_exec_strategy": "local",
+    "cxx_minimalist_wrapper": false,
+    "link_download_unstripped_outputs": false,
+    "link_enable": false,
+    "link_exec_strategy": "local",
+    "rust_download_rlibs": false,
+    "rust_download_unstripped_binaries": false,
+    "rust_enable": false,
+    "rust_exec_strategy": "local",
+    "needs_reproxy": false,
+    "needs_auth": false
+  }
+}
+EOF
   export FX_REMOTE_BUILD_METRICS=0
 
   # fuchsia-vendored-python is used to run helper scripts like count-ninja-actions.py.

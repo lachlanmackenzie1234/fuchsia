@@ -34,6 +34,30 @@ btf::setup_fx() {
   btf::make_out_dir "out/default"
   echo "out/default" > "${_FUCHSIA_DIR}/.fx-build-dir"
 
+  # Create centralized mock RBE settings for main_build.py to parse successfully
+  cat > "${_FUCHSIA_DIR}/out/default/rbe_settings.json" <<EOF
+{
+  "final": {
+    "bazel_enable": false,
+    "bazel_exec_strategy": "local",
+    "bazel_download_outputs": "all",
+    "cxx_download_objects": false,
+    "cxx_enable": false,
+    "cxx_exec_strategy": "local",
+    "cxx_minimalist_wrapper": false,
+    "link_download_unstripped_outputs": false,
+    "link_enable": false,
+    "link_exec_strategy": "local",
+    "rust_download_rlibs": false,
+    "rust_download_unstripped_binaries": false,
+    "rust_enable": false,
+    "rust_exec_strategy": "local",
+    "needs_reproxy": false,
+    "needs_auth": false
+  }
+}
+EOF
+
   if (( with_metrics )); then
     BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/metrics.sh"
   else

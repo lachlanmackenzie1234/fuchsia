@@ -20,8 +20,16 @@ import typing as T
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
+# Insert fuchsia root directory to sys.path so we can import build packages hermetically
+_FUCHSIA_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+)
+if _FUCHSIA_DIR not in sys.path:
+    sys.path.insert(0, _FUCHSIA_DIR)
+
 import build_utils
 import stdio_redirection
+from build.rbe import rbe_settings
 from build_utils import BazelPaths
 
 
@@ -266,39 +274,36 @@ class BazelRbeSettings(object):
         Returns:
             New BazelGlobalArguments
         Raises:
-            FileNotFoundError if file is missing.
+            ValueError if the file is missing or invalid.
         """
-        with (build_dir / "rbe_settings.json").open("rb") as f:
-            content = json.load(f)
+        # Load and parse using RbeSettings module
+        settings = rbe_settings.load(build_dir)
+        enabled = settings.bazel_enable
+        exec_strategy = settings.bazel_exec_strategy
 
-            # LINT.IfChange(BazelRbeSettings)
-            final_settings = content["final"]
-            enabled = final_settings["bazel_enable"]
-            if not isinstance(enabled, bool):
-                raise ValueError(
-                    f"'bazel_enable' must be a boolean, not: {enabled}"
-                )
-            exec_strategy_lookup_map = {
-                "remote": "remote",
-                "local": "remote_cache_only",
-                "nocache": "nocache",
-                "": None,
-            }
-            exec_strategy = final_settings["bazel_exec_strategy"]
-            if not exec_strategy in exec_strategy_lookup_map:
-                raise ValueError(
-                    f"'bazel_exec_strategy' was '{exec_strategy}', but must be empty or one of: {', '.join([key for key in exec_strategy_lookup_map.keys() if key != ''])}\n\n"
-                )
-            if enabled and not exec_strategy:
-                raise ValueError(
-                    f"A 'bazel_exec_strategy' must be set when 'bazel_rbe_enabled' is true."
-                )
-
-            # LINT.ThenChange(//build/rbe/BUILD.gn:FinalRbeSettings)
-            return BazelRbeSettings(
-                enabled=enabled,
-                exec_strategy=exec_strategy_lookup_map[exec_strategy],
+        if not isinstance(enabled, bool):
+            raise ValueError(
+                f"'bazel_enable' must be a boolean, not: {enabled}"
             )
+        exec_strategy_lookup_map = {
+            "remote": "remote",
+            "local": "remote_cache_only",
+            "nocache": "nocache",
+            "": None,
+        }
+        if not exec_strategy in exec_strategy_lookup_map:
+            raise ValueError(
+                f"'bazel_exec_strategy' was '{exec_strategy}', but must be empty or one of: {', '.join([key for key in exec_strategy_lookup_map.keys() if key != ''])}\n\n"
+            )
+        if enabled and not exec_strategy:
+            raise ValueError(
+                f"A 'bazel_exec_strategy' must be set when 'bazel_rbe_enabled' is true."
+            )
+
+        return BazelRbeSettings(
+            enabled=enabled,
+            exec_strategy=exec_strategy_lookup_map[exec_strategy],
+        )
 
 
 @dataclasses.dataclass

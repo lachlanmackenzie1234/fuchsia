@@ -82,6 +82,7 @@ if (is_host) {
     library_deps = [
       ":build_utils",
       ":stdio_redirection",
+      "//build/rbe:rbe_settings",
     ]
   }
 

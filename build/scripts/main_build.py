@@ -37,6 +37,13 @@ from typing import Any, TextIO
 
 import signal_utils
 
+# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
+_FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
+if str(_FUCHSIA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_ROOT))
+
+from build.rbe import rbe_settings
+
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
 JSONObject = dict[str, JSONValue]
@@ -879,23 +886,29 @@ class FuchsiaBuildContext(object):
         return []
 
     @functools.cached_property
-    def _rbe_settings(self) -> dict[str, Any]:
+    def _rbe_settings(self) -> rbe_settings.RbeSettings:
         """Automatically detect RBE usage from a GN-generated JSON file."""
-        return read_json(self.rbe_settings_file)
+        try:
+            return rbe_settings.load(self.build_dir)
+        except Exception as e:
+            raise BuildConfigurationError(
+                f"RBE settings could not be loaded from {self.build_dir}: {e}. "
+                "Make sure you have run 'fx set'."
+            )
 
     @property
     def rbe_enabled(self) -> bool:
         if self.config.rbe is not None:
             return self.config.rbe
 
-        return self._rbe_settings.get("final", {}).get("needs_reproxy", False)
+        return self._rbe_settings.needs_reproxy
 
     @property
     def needs_auth(self) -> bool:
         if self.config.resultstore != "none":
             return True
 
-        return self._rbe_settings.get("final", {}).get("needs_auth", False)
+        return self._rbe_settings.needs_auth
 
     @functools.cached_property
     def resolved_auth_mode(self) -> str:

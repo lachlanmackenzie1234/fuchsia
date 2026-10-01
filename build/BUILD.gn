@@ -86,6 +86,7 @@ if (is_host) {
                "//build/bazel/scripts/get_git_head_commit.py",
                "//build/regenerator.py",
              ] + libc_headers.idk_generate_inputs
+    deps = [ "//build/rbe:rbe_settings" ]
   }
 
   python_build_time_tests("build_tests_json_tests") {

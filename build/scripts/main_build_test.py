@@ -25,6 +25,26 @@ from unittest import mock
 
 import main_build
 import signal_utils
+from build.rbe import rbe_settings
+
+_FAKE_RBE_SETTINGS = rbe_settings.RbeSettings(
+    bazel_enable=False,
+    bazel_exec_strategy="",
+    bazel_download_outputs="all",
+    cxx_download_objects=False,
+    cxx_enable=False,
+    cxx_exec_strategy="",
+    cxx_minimalist_wrapper=False,
+    link_download_unstripped_outputs=False,
+    link_enable=False,
+    link_exec_strategy="",
+    rust_download_rlibs=False,
+    rust_download_unstripped_binaries=False,
+    rust_enable=False,
+    rust_exec_strategy="",
+    needs_reproxy=False,
+    needs_auth=False,
+)
 
 
 def default_args() -> argparse.Namespace:
@@ -44,8 +64,17 @@ class MainBuildTestBase(unittest.TestCase):
         )
         self.mock_read_json = self.read_json_patcher.start()
 
+        # Mock rbe_settings.load to avoid FileNotFoundError in tests
+        self.rbe_settings_load_patcher = mock.patch.object(
+            rbe_settings,
+            "load",
+            return_value=_FAKE_RBE_SETTINGS,
+        )
+        self.mock_rbe_settings_load = self.rbe_settings_load_patcher.start()
+
     def tearDown(self) -> None:
         self.read_json_patcher.stop()
+        self.rbe_settings_load_patcher.stop()
 
     @contextmanager
     def mock_invocation_context(
@@ -220,12 +249,10 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
 
     def test_rbe_settings_missing_throws(self) -> None:
         context = self.create_context(rbe=None)
-        self.mock_read_json.side_effect = main_build.BuildConfigurationError(
-            "missing file"
-        )
+        self.mock_rbe_settings_load.side_effect = ValueError("missing file")
         with self.assertRaises(main_build.BuildConfigurationError) as cm:
             _ = context.rbe_enabled
-        self.assertEqual(str(cm.exception), "missing file")
+        self.assertIn("missing file", str(cm.exception))
 
     def test_concurrency_capped(self) -> None:
         context = self.create_context(rbe=True, max_concurrency=64)

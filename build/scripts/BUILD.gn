@@ -11,6 +11,7 @@ if (is_host) {
       "main_build.py",
       "signal_utils.py",
     ]
+    library_deps = [ "//build/rbe:rbe_settings" ]
   }
 
   python_library("signal_utils_lib") {
