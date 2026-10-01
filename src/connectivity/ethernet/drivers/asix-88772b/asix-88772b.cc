@@ -93,8 +93,16 @@ static zx_status_t ax88772b_set_value(ax88772b_t* eth, uint8_t request, uint16_t
 }
 
 static zx_status_t ax88772b_get_value(ax88772b_t* eth, uint8_t request, uint16_t* value_addr) {
-  return usb_control_in(&eth->usb, kVendorDeviceIn, request, 0, 0, ZX_TIME_INFINITE,
-                        (uint8_t*)value_addr, sizeof(uint16_t), NULL);
+  size_t out_length;
+  zx_status_t status = usb_control_in(&eth->usb, kVendorDeviceIn, request, 0, 0, ZX_TIME_INFINITE,
+                                      (uint8_t*)value_addr, sizeof(uint16_t), &out_length);
+  if (status < 0) {
+    return status;
+  }
+  if (out_length != sizeof(uint16_t)) {
+    return ZX_ERR_IO;
+  }
+  return ZX_OK;
 }
 
 static zx_status_t ax88772b_mdio_read(ax88772b_t* eth, uint8_t offset, uint16_t* value) {
@@ -103,11 +111,16 @@ static zx_status_t ax88772b_mdio_read(ax88772b_t* eth, uint8_t offset, uint16_t*
     zxlogf(ERROR, "ax88772b: ASIX_REQ_SW_SERIAL_MGMT_CTRL failed: %d", status);
     return status;
   }
+  size_t out_length;
   status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_PHY_READ, eth->phy_id, offset,
-                          ZX_TIME_INFINITE, (uint8_t*)value, sizeof(*value), NULL);
+                          ZX_TIME_INFINITE, (uint8_t*)value, sizeof(*value), &out_length);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_PHY_READ failed: %d", status);
     return status;
+  }
+  if (out_length != sizeof(*value)) {
+    zxlogf(ERROR, "ax88772b: ASIX_REQ_PHY_READ short read: %zu", out_length);
+    return ZX_ERR_IO;
   }
   status = ax88772b_set_value(eth, ASIX_REQ_HW_SERIAL_MGMT_CTRL, 0);
   if (status < 0) {
@@ -519,10 +532,16 @@ static int ax88772b_start_thread(void* arg) {
 
   // select the PHY
   uint8_t phy_addr[2];
+  size_t out_length;
   status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_PHY_ADDR, 0, 0, ZX_TIME_INFINITE,
-                          (uint8_t*)&phy_addr, sizeof(phy_addr), NULL);
+                          (uint8_t*)&phy_addr, sizeof(phy_addr), &out_length);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_READ_PHY_ADDR failed: %d", status);
+    goto fail;
+  }
+  if (out_length != sizeof(phy_addr)) {
+    zxlogf(ERROR, "ax88772b: ASIX_REQ_READ_PHY_ADDR short read: %zu", out_length);
+    status = ZX_ERR_IO;
     goto fail;
   }
   eth->phy_id = phy_addr[1];
@@ -585,9 +604,14 @@ static int ax88772b_start_thread(void* arg) {
   }
 
   status = usb_control_in(&eth->usb, kVendorDeviceIn, ASIX_REQ_NODE_ID_READ, 0, 0, ZX_TIME_INFINITE,
-                          eth->mac_addr, sizeof(eth->mac_addr), NULL);
+                          eth->mac_addr, sizeof(eth->mac_addr), &out_length);
   if (status < 0) {
     zxlogf(ERROR, "ax88772b: ASIX_REQ_NODE_ID_READ failed: %d", status);
+    goto fail;
+  }
+  if (out_length != sizeof(eth->mac_addr)) {
+    zxlogf(ERROR, "ax88772b: ASIX_REQ_NODE_ID_READ short read: %zu", out_length);
+    status = ZX_ERR_IO;
     goto fail;
   }
   zxlogf(INFO, "ax88772b: MAC address: %02x:%02x:%02x:%02x:%02x:%02x", eth->mac_addr[0],
