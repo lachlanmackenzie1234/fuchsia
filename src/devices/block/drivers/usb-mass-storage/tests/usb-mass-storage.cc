@@ -46,6 +46,22 @@ const usb_descriptor kDescriptors[] = {
                               fidl::ToUnderlying(fdescriptor::EndpointDirection::kOut),
                               fidl::ToUnderlying(fdescriptor::EndpointType::kBulk), 64, 0}};
 
+const usb_descriptor kDescriptorsInterface1[] = {
+    // Interface descriptor
+    usb_interface_descriptor_t{sizeof(usb_descriptor),
+                               fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface), 1, 0, 2,
+                               8, 7, 0x50, 0},
+    // IN endpoint
+    usb_endpoint_descriptor_t{sizeof(usb_descriptor),
+                              fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+                              fidl::ToUnderlying(fdescriptor::EndpointDirection::kIn),
+                              fidl::ToUnderlying(fdescriptor::EndpointType::kBulk), 64, 0},
+    // OUT endpoint
+    usb_endpoint_descriptor_t{sizeof(usb_descriptor),
+                              fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+                              fidl::ToUnderlying(fdescriptor::EndpointDirection::kOut),
+                              fidl::ToUnderlying(fdescriptor::EndpointType::kBulk), 64, 0}};
+
 struct Packet;
 struct Packet : fbl::DoublyLinkedListable<fbl::RefPtr<Packet>>, fbl::RefCounted<Packet> {
   explicit Packet(fbl::Array<unsigned char>&& source) { data = std::move(source); }
@@ -92,6 +108,7 @@ struct Context {
   fit::function<void(usb_request_t*)> on_request_queue;
   fit::function<void(const ums_cbw_t&)> on_cbw;
   std::optional<uint8_t> tur_csw_status;
+  uint16_t last_get_max_lun_index = 0;
 };
 
 class UsbBanjoServer : public ddk::UsbProtocol<UsbBanjoServer> {
@@ -116,6 +133,7 @@ class UsbBanjoServer : public ddk::UsbProtocol<UsbBanjoServer> {
                            size_t* out_read_actual) {
     switch (request) {
       case fidl::ToUnderlying(fdescriptor::MscRequest::kGetMaxLun): {
+        context_->last_get_max_lun_index = index;
         if (!read_size) {
           *out_read_actual = 0;
           return ZX_OK;
@@ -1076,6 +1094,16 @@ TEST_F(UmsTest, NewRequestsFailDuringLunShutdown) {
   check_thread.join();
 
   EXPECT_EQ(driver_->block_devs()[1], nullptr);
+}
+
+TEST_F(UmsTest, GetMaxLunRoutesToCorrectInterface) {
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    env.context().descs = kDescriptorsInterface1;
+    env.context().desc_length = sizeof(kDescriptorsInterface1);
+  });
+  StartDriver();
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_EQ(1u, env.context().last_get_max_lun_index); });
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestUsbMassStorageDevice);
