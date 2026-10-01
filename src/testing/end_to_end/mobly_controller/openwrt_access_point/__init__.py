@@ -78,6 +78,9 @@ def destroy(objects: List[OpenWrtAP]) -> None:
         ap.reset_wifi_config()
         ap.dhcp.reset_dhcp_config()
         ap.iperf_server.stop()
+        # iperf_server.stop() only terminates the remote iperf3 process and does
+        # not close IPerfServerOverSsh's SSH connection, so close it explicitly.
+        ap.iperf_server.close_ssh()
         ap.ssh.close()
 
 
@@ -344,6 +347,7 @@ class OpenWrtAP:
             ssh_settings=self.ssh_settings,
             port=5201,
             test_interface=InterfaceName.lan,
+            use_killall=True,
         )
 
     @property
