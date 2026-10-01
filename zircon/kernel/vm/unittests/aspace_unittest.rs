@@ -29,7 +29,7 @@ mod aspace_rs {
     use crate::vm::vm::vaddr_to_paddr;
     use crate::vm::vm_address_region::{self as vmar, MemoryPriority, VmAddressRegionOpChildren};
     use crate::vm::vm_aspace::{ShareOpt, Type, VmAspace, vmm_flag};
-    use crate::vm::vm_object::{Resizability, SnapshotType, VmObject};
+    use crate::vm::vm_object::{Resizability, SnapshotType, VmObject, VmObjectReadWriteOptions};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::{pmm, vmm};
     use crate::vm_unittests::test_helper::{
@@ -42,8 +42,8 @@ mod aspace_rs {
     use kprint::kprintln;
     use page::SIZE as PAGE_SIZE_USIZE;
     use unittest::{
-        assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false, expect_ne,
-        expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
+        assert_eq, assert_err, assert_nonnull, assert_ok, assert_true, expect_eq, expect_false,
+        expect_ne, expect_ok, expect_true, subtest, unwrap_ok, unwrap_some,
     };
     use zx_status::Status;
 
@@ -403,6 +403,42 @@ mod aspace_rs {
         } else {
             kprintln!("Skipping vmaspace_accessed_test_tagged; not aarch64.");
         }
+    }
+
+    /// Ensure user requested VMO read/write handles faults after access bits are harvested.
+    #[test]
+    fn vmaspace_usercopy_accessed_fault_test() {
+        // Ensure that if a user requested VMO read/write operation would hit a page that has had
+        // its accessed bits harvested that any resulting fault (on ARM) can be handled.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create some memory we can map touch to test accessed tracking on. Needs to be created
+        // from user pager backed memory as harvesting is allowed to be limited to just that.
+        let (mapping_vmo, [_page]) = unwrap_ok!(make_committed_pager_vmo::<1>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+        let mem = unwrap_some!(UserMemory::create_from_vmo(
+            VmObjectPaged::into_vm_object(mapping_vmo),
+            0,
+            0
+        ));
+
+        assert_ok!(mem.commit_and_map(0..PAGE_SIZE_USIZE));
+
+        // Need a separate VMO to read/write from.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+
+        // Touch the mapping to make sure it is committed and mapped.
+        unwrap_ok!(mem.put::<u8>(42, 0));
+
+        // Harvest any accessed bits.
+        harvest_access_bits(NonTerminalAction::Retain, TerminalAction::UpdateAgeAndHarvest);
+
+        // Read from the VMO into the mapping that has been harvested.
+        let (res, read_actual) =
+            vmo.read_user(mem.user_out::<u8>(), 0, size_of::<u8>(), VmObjectReadWriteOptions::NONE);
+        assert_ok!(res);
+        assert_eq!(read_actual, size_of::<u8>());
     }
 
     /// Tests sparse VM mappings with an empty backing VMO.
