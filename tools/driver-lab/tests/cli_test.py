@@ -499,6 +499,172 @@ class CliTest(unittest.TestCase):
             assert node is not None
             self.assertTrue(node.is_unclaimed)
 
+    def test_list_debug_capable_filters_active_drivers_exposing_service(
+        self,
+    ) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="dev.sys.platform.unclaimed",
+                    bound_driver_url=None,
+                    offers=("fuchsia.driver.lab.Service",),
+                ),
+                NodeDescription(
+                    moniker="dev.sys.platform.normal-driver",
+                    bound_driver_url="fuchsia-pkg://fuchsia.com/normal#meta/normal.cm",
+                    offers=("fuchsia.hardware.gpio.Service",),
+                ),
+                NodeDescription(
+                    moniker="dev.sys.platform.sample-device",
+                    bound_driver_url="fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm",
+                    offers=("fuchsia.driver.lab.Service",),
+                ),
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ):
+            code, payload, _ = self.run_cli("list", "--debug-capable")
+            self.assertEqual(code, 0)
+            self.assertEqual(len(payload["nodes"]), 1)
+            self.assertEqual(
+                payload["nodes"][0]["moniker"],
+                "dev.sys.platform.sample-device",
+            )
+            self.assertTrue(payload["nodes"][0]["debug_capable"])
+
+    def test_describe_with_moniker_fetches_embedded_proxy_description(
+        self,
+    ) -> None:
+        fake = self._run_fixture()
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="dev.sys.platform.sample-device",
+                    bound_driver_url="fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm",
+                    offers=("fuchsia.driver.lab.Service",),
+                )
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_transport", return_value=fake
+        ), mock.patch.object(cli, "_connect_discovery", return_value=discovery):
+            code, payload, _ = self.run_cli(
+                "describe",
+                "--moniker",
+                "dev.sys.platform.sample-device",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(
+                payload["moniker"], "dev.sys.platform.sample-device"
+            )
+            self.assertEqual(payload["description"]["boot_id"], "boot-1")
+            self.assertEqual(
+                payload["node"]["bound_driver_url"],
+                "fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm",
+            )
+
+    def test_inspect_moniker_reads_register_and_drains_audit(self) -> None:
+        fake = self._run_fixture()
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="dev.sys.platform.sample-device",
+                    bound_driver_url="fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm",
+                    offers=("fuchsia.driver.lab.Service",),
+                )
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_transport", return_value=fake
+        ), mock.patch.object(cli, "_connect_discovery", return_value=discovery):
+            code, payload, _ = self.run_cli(
+                "inspect",
+                "--moniker",
+                "dev.sys.platform.sample-device",
+                "--resource",
+                "control",
+                "--offset",
+                "0x3c",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(
+                payload["driver_url"],
+                "fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm",
+            )
+            self.assertEqual(payload["read"]["value"], 0xDEAD_BEEF)
+            self.assertTrue(len(payload["audit"]) >= 1)
+
+    def test_in_situ_run_preserves_bound_driver_and_records_manifest_metadata(
+        self,
+    ) -> None:
+        save_grants(self.grants, [make_grant()])
+        fake = self._run_fixture()
+        driver_url = (
+            "fuchsia-pkg://fuchsia.com/lab_root#meta/lab_sample_driver.cm"
+        )
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="node",
+                    bound_driver_url=driver_url,
+                    offers=("fuchsia.driver.lab.Service",),
+                )
+            ]
+        )
+        activator = FakeProxyActivator(discovery)
+        plan = make_plan()
+        plan["access"] = {"mode": "in-situ"}
+        plan["node"] = {
+            "id": "node",
+            "driver_moniker": "/bootstrap/boot-drivers:dev.sys.platform.sample-device",
+            "expected_unclaimed": False,
+        }
+        plan_path = self.base / "run_in_situ.json"
+        plan_path.write_text(json.dumps(plan))
+        with mock.patch.object(
+            cli, "_connect_transport", return_value=fake
+        ), mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ), mock.patch.object(
+            cli, "_connect_activator", return_value=activator
+        ):
+            code, payload, _ = self.run_cli(
+                "run",
+                "--plan",
+                str(plan_path),
+                "--evidence-dir",
+                str(self.base / "evidence_in_situ"),
+                "--grants",
+                str(self.grants),
+                "--target-scope",
+                "scope",
+                "--node-id",
+                "node",
+                "--moniker",
+                "/bootstrap/boot-drivers:dev.sys.platform.sample-device",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["reads"][0]["value"], 0xDEAD_BEEF)
+            # In-situ mode never calls bind_proxy or end_proxy
+            self.assertEqual(len(activator.bind_calls), 0)
+            self.assertEqual(len(activator.end_calls), 0)
+            # Driver remains actively bound after in-situ session
+            node = asyncio.run(discovery.describe_node("node"))
+            self.assertIsNotNone(node)
+            assert node is not None
+            self.assertFalse(node.is_unclaimed)
+            self.assertEqual(node.bound_driver_url, driver_url)
+            # Evidence manifest records driver_moniker and driver_url
+            manifest = json.loads(
+                (Path(payload["evidence_dir"]) / "manifest.json").read_text()
+            )
+            self.assertEqual(
+                manifest["driver_moniker"],
+                "/bootstrap/boot-drivers:dev.sys.platform.sample-device",
+            )
+            self.assertEqual(manifest["driver_url"], driver_url)
+
 
 if __name__ == "__main__":
     unittest.main()

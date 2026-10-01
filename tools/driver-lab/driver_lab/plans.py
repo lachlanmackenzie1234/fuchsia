@@ -40,7 +40,12 @@ _TARGET_KEYS = {
     "requires_recovery",
     "requires_serial",
 }
-_NODE_KEYS = {"id", "expected_unclaimed", "expected_resource_digest"} | {
+_NODE_KEYS = {
+    "id",
+    "driver_moniker",
+    "expected_unclaimed",
+    "expected_resource_digest",
+} | {
     "expected_bound_driver_url",
     "expected_topology_generation",
 }
@@ -537,6 +542,10 @@ def validate_plan(plan: Mapping[str, object]) -> dict[str, Any]:
     _require_keys(node_in, _NODE_KEYS, "node")  # type: ignore[arg-type]
     assert isinstance(node_in, Mapping)
     node: dict[str, Any] = {"id": _require_str(node_in.get("id"), "node.id")}
+    if "driver_moniker" in node_in:
+        node["driver_moniker"] = _require_str(
+            node_in.get("driver_moniker"), "node.driver_moniker"
+        )
     if "expected_unclaimed" in node_in:
         node["expected_unclaimed"] = _require_bool(
             node_in.get("expected_unclaimed"), "node.expected_unclaimed"
@@ -551,7 +560,7 @@ def validate_plan(plan: Mapping[str, object]) -> dict[str, Any]:
     _require_keys(access_in, _ACCESS_KEYS, "access")  # type: ignore[arg-type]
     assert isinstance(access_in, Mapping)
     mode = access_in.get("mode")
-    if mode not in ("direct", "proxy"):
+    if mode not in ("direct", "proxy", "in-situ"):
         raise PlanError(f"access.mode is unsupported: {mode!r}")
     access: dict[str, Any] = {"mode": mode}
     activation = access_in.get("activation")
@@ -560,11 +569,21 @@ def validate_plan(plan: Mapping[str, object]) -> dict[str, Any]:
             raise PlanError(
                 "access.activation 'takeover' is not supported until phase 2"
             )
-        if activation not in (None, "bind-unclaimed"):
+        if activation not in (None, "bind-unclaimed", "in-situ"):
             raise PlanError(f"access.activation is unsupported: {activation!r}")
-        access["activation"] = "bind-unclaimed"
+        access["activation"] = activation or "bind-unclaimed"
+    elif mode == "in-situ":
+        if activation == "takeover":
+            raise PlanError(
+                "access.activation 'takeover' is not supported until phase 2"
+            )
+        if activation not in (None, "in-situ"):
+            raise PlanError(f"access.activation is unsupported: {activation!r}")
+        access["activation"] = "in-situ"
     elif activation is not None:
-        raise PlanError("access.activation is only valid in proxy mode")
+        raise PlanError(
+            "access.activation is only valid in proxy or in-situ mode"
+        )
     for flag in (
         "requires_target_policy",
         "requires_target_audit",

@@ -1198,7 +1198,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [x] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
-- [ ] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
+- [x] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
 - [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
 
 Phase: 2 -- in-situ driver debugging workflow.

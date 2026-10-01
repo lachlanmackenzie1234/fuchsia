@@ -1286,7 +1286,7 @@ Changesets continue the global numbering from Phase 1:
 - [x] CS26 `[driver-lab] Cooperative locking, quiesce hooks, and interrupt tap support`
 - [x] CS27 `[driver-lab] Assembly gating, CML debug shard, and production-absence verification`
 - [x] CS28 `[driver-lab] Reference integration: synthetic platform driver in testing/`
-- [ ] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
+- [x] CS29 `[driver-lab] Host tooling discovery of embedded debug endpoints and in-situ session workflow`
       (in //tools/driver-lab/SPEC.md).
 - [ ] CS30 `[driver-lab] In-situ live-target conformance test suite`
       (in //tools/driver-lab/SPEC.md).

@@ -46,7 +46,13 @@ from driver_lab.permissions import (
     revoke_grant,
 )
 from driver_lab.plans import PlanError, plan_digest, validate_plan
-from driver_lab.transport import ProxyTransport
+from driver_lab.transport import (
+    AllowRule,
+    ProxyTransport,
+    SessionContext,
+    SessionMode,
+    TransportError,
+)
 
 EXIT_SUCCESS = 0
 EXIT_ERROR = 2
@@ -388,7 +394,9 @@ def _list(args: argparse.Namespace) -> int:
         return EXIT_ERROR
 
     async def run() -> int:
-        if args.unclaimed:
+        if getattr(args, "debug_capable", False):
+            nodes = await discovery.find_debug_capable()
+        elif args.unclaimed:
             nodes = await discovery.find_unclaimed()
         else:
             nodes = await discovery.list_nodes()
@@ -399,6 +407,41 @@ def _list(args: argparse.Namespace) -> int:
 
 
 def _describe(args: argparse.Namespace) -> int:
+    moniker = getattr(args, "moniker", None)
+    node_id = getattr(args, "node", None)
+    if not moniker and not node_id:
+        print(
+            json.dumps({"error": "either --node or --moniker is required"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    if moniker:
+        transport = _connect_transport(moniker=moniker, target=args.target)
+        discovery = _connect_discovery(target=args.target)
+
+        async def run_moniker() -> int:
+            try:
+                desc = await transport.describe()
+            except TransportError as exc:
+                print(
+                    json.dumps({"error": f"describe failed: {exc}"}),
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+            payload: dict[str, object] = {
+                "moniker": moniker,
+                "description": dataclasses.asdict(desc),
+            }
+            if discovery is not None:
+                node = await discovery.describe_node(node_id or moniker)
+                if node is not None:
+                    payload["node"] = dataclasses.asdict(node)
+            _emit(payload)
+            return EXIT_SUCCESS
+
+        return asyncio.run(run_moniker())
+
     discovery = _connect_discovery(target=args.target)
     if discovery is None:
         print(
@@ -408,14 +451,111 @@ def _describe(args: argparse.Namespace) -> int:
         return EXIT_ERROR
 
     async def run() -> int:
-        node = await discovery.describe_node(args.node)
+        assert node_id is not None
+        node = await discovery.describe_node(node_id)
         if node is None:
             print(
-                json.dumps({"error": f"node {args.node!r} not found"}),
+                json.dumps({"error": f"node {node_id!r} not found"}),
                 file=sys.stderr,
             )
             return EXIT_ERROR
         _emit({"node": dataclasses.asdict(node)})
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
+def _inspect(args: argparse.Namespace) -> int:
+    transport = _connect_transport(moniker=args.moniker, target=args.target)
+    discovery = _connect_discovery(target=args.target)
+
+    async def run() -> int:
+        try:
+            desc = await transport.describe()
+        except TransportError as exc:
+            print(
+                json.dumps({"error": f"inspect describe failed: {exc}"}),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+        driver_url: str | None = None
+        node_payload: dict[str, object] | None = None
+        if discovery is not None:
+            lookup_id = getattr(args, "node", None) or args.moniker
+            node = await discovery.describe_node(lookup_id)
+            if node is not None:
+                driver_url = node.bound_driver_url
+                node_payload = dataclasses.asdict(node)
+
+        allowlist: list[AllowRule] = []
+        target_res_id: int | None = None
+        if args.resource is not None and args.offset is not None:
+            res_info = desc.resource_named(args.resource)
+            if res_info is None:
+                print(
+                    json.dumps(
+                        {"error": f"unknown resource {args.resource!r}"}
+                    ),
+                    file=sys.stderr,
+                )
+                return EXIT_ERROR
+            target_res_id = res_info.id
+            allowlist.append(
+                AllowRule(
+                    resource=res_info.id,
+                    offset=args.offset,
+                    width=4,
+                    access=AccessClass.READ_ONCE,
+                )
+            )
+
+        ctx = SessionContext(
+            run_id=f"inspect-{args.moniker}",
+            case_id="inspect",
+            plan_digest="inspect-session",
+        )
+        read_result: dict[str, object] | None = None
+        audit_entries: list[dict[str, object]] = []
+        try:
+            session = await transport.open_session(
+                ctx,
+                desc.expectations(),
+                allowlist,
+                mode=SessionMode.READ_ONLY,
+            )
+            try:
+                if target_res_id is not None and args.offset is not None:
+                    outcome = await session.read32(target_res_id, args.offset)
+                    read_result = {
+                        "resource": args.resource,
+                        "offset": args.offset,
+                        "value": outcome.value,
+                        "audit_seq": outcome.audit_seq,
+                        "timestamp_ns": outcome.timestamp_ns,
+                    }
+                page = await session.read_audit(0, 64)
+                audit_entries = [entry.to_json() for entry in page.entries]
+            finally:
+                await session.close()
+        except Exception as exc:
+            print(
+                json.dumps({"error": f"inspect session failed: {exc}"}),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+        payload: dict[str, object] = {
+            "moniker": args.moniker,
+            "driver_url": driver_url,
+            "description": dataclasses.asdict(desc),
+            "audit": audit_entries,
+        }
+        if node_payload is not None:
+            payload["node"] = node_payload
+        if read_result is not None:
+            payload["read"] = read_result
+        _emit(payload)
         return EXIT_SUCCESS
 
     return asyncio.run(run())
@@ -576,12 +716,18 @@ def _run(args: argparse.Namespace) -> int:
         if discovery is not None
         else None
     )
+    access_cfg = plan.get("access")
+    is_in_situ = isinstance(access_cfg, dict) and (
+        access_cfg.get("mode") == "in-situ"
+        or access_cfg.get("activation") == "in-situ"
+    )
     lab = DriverLab(
         transport,
         grants_path=args.grants,
         evidence_root=args.evidence_dir,
         target_scope=args.target_scope,
         node_id=args.node_id,
+        driver_moniker=args.moniker if is_in_situ else None,
         consent=_StdinConsent() if args.consent else None,
         discovery=discovery,
         activator=activator,
@@ -696,14 +842,59 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="only list unclaimed nodes eligible for proxy activation",
     )
+    list_cmd.add_argument(
+        "--debug-capable",
+        action="store_true",
+        help="only list active bound drivers exposing fuchsia.driver.lab.Service",
+    )
     list_cmd.set_defaults(handler=_list)
 
     describe_cmd = subcommands.add_parser(
-        "describe", help="describe a hardware node"
+        "describe",
+        help="describe a hardware node or embedded driver debug endpoint",
     )
-    describe_cmd.add_argument("--node", required=True, help="node ID / moniker")
+    describe_cmd.add_argument(
+        "--node", required=False, default=None, help="node ID / moniker"
+    )
+    describe_cmd.add_argument(
+        "--moniker",
+        required=False,
+        default=None,
+        help="live driver moniker exposing fuchsia.driver.lab.Service",
+    )
     describe_cmd.add_argument("--target", default=None, help="target nodename")
     describe_cmd.set_defaults(handler=_describe)
+
+    inspect_cmd = subcommands.add_parser(
+        "inspect",
+        help="inspect a live driver's embedded fuchsia.driver.lab.Service endpoint in-situ",
+    )
+    inspect_cmd.add_argument(
+        "--moniker",
+        required=True,
+        help="component moniker of the active driver exposing fuchsia.driver.lab.Service",
+    )
+    inspect_cmd.add_argument(
+        "--node",
+        required=False,
+        default=None,
+        help="optional node ID for discovery metadata",
+    )
+    inspect_cmd.add_argument(
+        "--resource",
+        required=False,
+        default=None,
+        help="optional MMIO resource name for single-register inspection",
+    )
+    inspect_cmd.add_argument(
+        "--offset",
+        type=_offset,
+        required=False,
+        default=None,
+        help="optional 32-bit register byte offset for single-register inspection",
+    )
+    inspect_cmd.add_argument("--target", default=None, help="target nodename")
+    inspect_cmd.set_defaults(handler=_inspect)
 
     direct_cmd = subcommands.add_parser(
         "direct", help="verify direct connection to a published protocol"

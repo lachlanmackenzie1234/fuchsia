@@ -104,6 +104,15 @@ DIRECT_CAPABILITIES = {
     "target_local_timing": False,
 }
 
+# Phase 2 in-situ mode connects directly to a live driver's embedded
+# fuchsia.driver.lab.Service endpoint without unbinding the driver.
+IN_SITU_CAPABILITIES = {
+    "mode": "in-situ",
+    "target_policy": True,
+    "target_audit": True,
+    "target_local_timing": True,
+}
+
 _DEFERRED_ARTIFACTS = (
     "target.description.json",
     "permission-resolution.json",
@@ -283,6 +292,8 @@ class DriverLab:
         activator: ProxyActivator | None = None,
         serial_capture: SerialCapture | None = None,
         recovery: RecoveryController | None = None,
+        driver_moniker: str | None = None,
+        driver_url: str | None = None,
     ) -> None:
         self._transport = transport
         self._grants_path = grants_path
@@ -294,6 +305,8 @@ class DriverLab:
         self._activator = activator
         self._serial_capture = serial_capture
         self._recovery = recovery
+        self._driver_moniker = driver_moniker
+        self._driver_url = driver_url
 
     @property
     def serial_capture(self) -> SerialCapture | None:
@@ -302,6 +315,14 @@ class DriverLab:
     @property
     def recovery(self) -> RecoveryController | None:
         return self._recovery
+
+    @property
+    def driver_moniker(self) -> str | None:
+        return self._driver_moniker
+
+    @property
+    def driver_url(self) -> str | None:
+        return self._driver_url
 
     async def recover_target(self, mode: str = "normal") -> None:
         """Triggers out-of-band recovery.
@@ -327,6 +348,14 @@ class DriverLab:
             )
         return await self._discovery.list_nodes(node_filter, exact_match)
 
+    async def find_debug_capable_drivers(self) -> list[NodeSummary]:
+        """Discovers active bound drivers exposing fuchsia.driver.lab.Service (Phase 2)."""
+        if self._discovery is None:
+            raise DriverLabError(
+                "node discovery is not configured for this DriverLab instance"
+            )
+        return await self._discovery.find_debug_capable()
+
     async def describe_node(self, node_id: str) -> NodeDescription | None:
         """Describes a node by moniker."""
         if self._discovery is None:
@@ -334,6 +363,14 @@ class DriverLab:
                 "node discovery is not configured for this DriverLab instance"
             )
         return await self._discovery.describe_node(node_id)
+
+    async def describe_driver(self) -> ProxyDescription:
+        """Fetches ProxyDescription directly from the live driver's embedded endpoint."""
+        if not isinstance(self._transport, ProxyTransport):
+            raise DriverLabError(
+                "Proxy/in-situ transport is not configured for this DriverLab instance"
+            )
+        return await self._transport.describe()
 
     async def bind_proxy(
         self,
@@ -370,6 +407,8 @@ class DriverLab:
         evidence_root: Path | None = None,
         target_scope: str | None = None,
         node_id: str | None = None,
+        driver_moniker: str | None = None,
+        driver_url: str | None = None,
         consent: ConsentPrompt | None = None,
         discovery: NodeDiscovery | None = None,
         activator: ProxyActivator | None = None,
@@ -378,17 +417,18 @@ class DriverLab:
         proxy_transport: ProxyTransport | None = None,
         direct_transport: DirectTransport | None = None,
     ) -> "DriverLab":
-        """Connects to a target device, establishing transports according to mode."""
+        """Connects to a target device or directly to a live driver moniker (Phase 2)."""
+        endpoint_moniker = driver_moniker or node_id or target
         active_transport: ProxyTransport | DirectTransport
         if proxy_transport is not None:
             active_transport = proxy_transport
         elif direct_transport is not None:
             active_transport = direct_transport
-        elif transport in ("proxy", "auto"):
+        elif transport in ("proxy", "in-situ", "auto"):
             from driver_lab.fidl_transport import connect_transport
 
             active_transport = connect_transport(
-                node_id or target, target=target
+                endpoint_moniker, target=target
             )
         else:
             raise DriverLabError(
@@ -419,19 +459,21 @@ class DriverLab:
             grants_path=grants_path or Path("grants.toml"),
             evidence_root=evidence_root or Path("evidence"),
             target_scope=target_scope or target,
-            node_id=node_id or target,
+            node_id=node_id or driver_moniker or target,
             consent=consent,
             discovery=discovery,
             activator=activator,
             serial_capture=serial_capture,
             recovery=recovery,
+            driver_moniker=driver_moniker,
+            driver_url=driver_url,
         )
 
     async def attach(
         self,
         node_id: str,
         *,
-        mode: Literal["auto", "direct", "proxy"] = "auto",
+        mode: Literal["auto", "direct", "proxy", "in-situ"] = "auto",
         requirements: AccessRequirements | None = None,
         session_mode: SessionMode = SessionMode.READ_ONLY,
         allowlist: Sequence[AllowRule] | None = None,
@@ -439,14 +481,29 @@ class DriverLab:
         context: SessionContext | None = None,
         consent: ConsentPrompt | None = None,
     ) -> HardwareSession:
-        """Attaches to a node, returning a driver-shaped HardwareSession (Spec Sections 6.1, 7.3, 9)."""
-        if mode not in ("auto", "direct", "proxy"):
+        """Attaches to a node or active driver moniker, returning a HardwareSession."""
+        if mode not in ("auto", "direct", "proxy", "in-situ"):
             raise ValueError(
-                f"Invalid mode '{mode}': must be 'auto', 'direct', or 'proxy'"
+                f"Invalid mode '{mode}': must be 'auto', 'direct', 'proxy', or 'in-situ'"
             )
 
+        is_in_situ = mode == "in-situ" or self._driver_moniker is not None
+        if not is_in_situ and self._discovery is not None:
+            try:
+                node_desc = await self._discovery.describe_node(node_id)
+                if (
+                    node_desc is not None
+                    and not node_desc.is_unclaimed
+                    and node_desc.debug_capable
+                ):
+                    is_in_situ = True
+            except Exception:
+                pass
+
         if mode == "auto":
-            if requirements and (
+            if is_in_situ:
+                selected_mode = "in-situ"
+            elif requirements and (
                 requirements.needs_mmio
                 or requirements.needs_sequence
                 or requirements.needs_target_timing
@@ -471,9 +528,11 @@ class DriverLab:
                 or requirements.is_mutating
             ):
                 raise DriverLabError(
-                    "Direct mode cannot satisfy requested requirements (requires proxy mode)"
+                    "Direct mode cannot satisfy requested requirements (requires proxy or in-situ mode)"
                 )
             selected_mode = "direct"
+        elif mode == "in-situ":
+            selected_mode = "in-situ"
         else:
             selected_mode = "proxy"
 
@@ -509,7 +568,7 @@ class DriverLab:
                 direct_description=direct_desc,
             )
 
-        # Proxy mode
+        # Proxy or In-Situ mode
         if not isinstance(self._transport, ProxyTransport):
             raise DriverLabError(
                 "Proxy transport is not configured for this DriverLab instance"
@@ -632,9 +691,9 @@ class DriverLab:
                         break
 
         proxy_ctx = context or SessionContext(
-            run_id=f"proxy-{node_id}",
+            run_id=f"{selected_mode}-{node_id}",
             case_id="interactive",
-            plan_digest="proxy-session",
+            plan_digest=f"{selected_mode}-session",
             host_tool_version="0.1.0",
         )
         exp: Expectations
@@ -655,19 +714,47 @@ class DriverLab:
                 resource_digest=proxy_desc.resource_digest,
                 policy_digest=proxy_desc.policy_digest,
             )
-        proxy_session = await self._transport.open_session(
-            context=proxy_ctx,
-            mode=session_mode,
-            expectations=exp,
-            allowlist=rules,
-        )
+        try:
+            proxy_session = await self._transport.open_session(
+                context=proxy_ctx,
+                mode=session_mode,
+                expectations=exp,
+                allowlist=rules,
+            )
+        except OpenSessionRejected as exc:
+            if allowlist is not None:
+                raise
+            # When no explicit allowlist was provided and the embedded driver's
+            # target ceiling hard-denied or write-restricted some default probe
+            # offsets, probe individual rules to retain only ceiling-permitted rules.
+            permitted_rules: list[AllowRule] = []
+            for candidate in rules:
+                try:
+                    probe_sess = await self._transport.open_session(
+                        context=proxy_ctx,
+                        mode=SessionMode.READ_ONLY
+                        if candidate.access != AccessClass.WRITE
+                        else session_mode,
+                        expectations=exp,
+                        allowlist=[candidate],
+                    )
+                    await probe_sess.close()
+                    permitted_rules.append(candidate)
+                except OpenSessionRejected:
+                    continue
+            proxy_session = await self._transport.open_session(
+                context=proxy_ctx,
+                mode=session_mode,
+                expectations=exp,
+                allowlist=permitted_rules,
+            )
         caps = SessionCapabilities(
-            mode="proxy",
+            mode=selected_mode,
             target_policy=True,
             target_audit=True,
             target_local_timing=True,
             fault_isolation="driver_host",
-            production_driver_active=False,
+            production_driver_active=(selected_mode == "in-situ" or is_in_situ),
             restoration_required=False,
             resources=tuple(r.name for r in proxy_desc.resources),
             protocols=(),
@@ -974,6 +1061,22 @@ class DriverLab:
         serial_result: SerialCaptureResult | None = None
         was_proxy_activated = False
         teardown_done = False
+        access = canonical["access"]
+        requested_mode = access["mode"]
+        is_in_situ = (
+            requested_mode == "in-situ"
+            or (
+                requested_mode == "proxy"
+                and access.get("activation") == "in-situ"
+            )
+            or self._driver_moniker is not None
+        )
+        recorded_driver_moniker: str | None = (
+            canonical["node"].get("driver_moniker")
+            or self._driver_moniker
+            or (canonical["node"]["id"] if is_in_situ else None)
+        )
+        recorded_driver_url: str | None = self._driver_url
 
         async def finish(exit_category: int, failure: str | None) -> RunResult:
             nonlocal was_proxy_activated, teardown_done, serial_result
@@ -1014,6 +1117,19 @@ class DriverLab:
                     if failure is None:
                         exit_category = EXIT_ACTIVATION
                         failure = f"teardown failed: {exc}"
+            elif (
+                is_in_situ and not teardown_done and self._discovery is not None
+            ):
+                teardown_done = True
+                node_id = canonical["node"]["id"]
+                try:
+                    post_desc = await self._discovery.describe_node(node_id)
+                    if post_desc is not None:
+                        recorder.write_json(
+                            "node.after.json", dataclasses.asdict(post_desc)
+                        )
+                except Exception:
+                    pass
 
             for name in _DEFERRED_ARTIFACTS + _NOT_APPLICABLE_ARTIFACTS:
                 if not recorder.recorded(name):
@@ -1024,6 +1140,9 @@ class DriverLab:
                 "plan_digest": digest,
                 "failure": failure,
             }
+            if is_in_situ or recorded_driver_moniker is not None:
+                manifest_extra["driver_moniker"] = recorded_driver_moniker
+                manifest_extra["driver_url"] = recorded_driver_url
             if serial_result is not None:
                 manifest_extra[
                     "serial_capture"
@@ -1047,8 +1166,6 @@ class DriverLab:
         # Mode and guarantee resolution happen before any target
         # connection: an unsupported mode or guarantee fails here, never
         # by silently substituting a different backend.
-        access = canonical["access"]
-        requested_mode = access["mode"]
         is_direct_transport = getattr(self._transport, "is_direct", False)
 
         if requested_mode == "direct":
@@ -1058,13 +1175,22 @@ class DriverLab:
                     "transport does not support direct mode; a direct-mode plan must never silently execute over the proxy",
                 )
             capabilities = DIRECT_CAPABILITIES
+        elif requested_mode == "in-situ":
+            if is_direct_transport:
+                return await finish(
+                    EXIT_UNSUPPORTED,
+                    "transport does not support in-situ mode",
+                )
+            capabilities = IN_SITU_CAPABILITIES
         elif requested_mode == "proxy":
             if is_direct_transport:
                 return await finish(
                     EXIT_UNSUPPORTED,
                     "transport does not support proxy mode",
                 )
-            capabilities = PROXY_CAPABILITIES
+            capabilities = (
+                IN_SITU_CAPABILITIES if is_in_situ else PROXY_CAPABILITIES
+            )
         else:
             return await finish(
                 EXIT_UNSUPPORTED,
@@ -1100,11 +1226,11 @@ class DriverLab:
                     EXIT_UNSUPPORTED,
                     "direct mode does not provide private MMIO access",
                 )
-        elif requested_mode == "proxy":
+        elif requested_mode in ("proxy", "in-situ"):
             if any(op["kind"] == "fidl_call" for op in canonical["operations"]):
                 return await finish(
                     EXIT_UNSUPPORTED,
-                    "proxy mode in phase 1 does not support fidl_call",
+                    f"{requested_mode} mode does not support fidl_call",
                 )
 
         # Spec 14.1 Step 9: Verify independent serial/recovery availability.
@@ -1146,7 +1272,46 @@ class DriverLab:
                         f"starting serial capture failed: {exc}",
                     )
 
-        if "expected_unclaimed" in canonical["node"] or (
+        if is_in_situ:
+            node_id = canonical["node"]["id"]
+            if self._discovery is not None:
+                try:
+                    node_desc = await self._discovery.describe_node(node_id)
+                except DiscoveryError as exc:
+                    return await finish(
+                        EXIT_ACTIVATION,
+                        f"node discovery failed for {node_id}: {exc}",
+                    )
+                if node_desc is not None:
+                    expected_unclaimed = canonical["node"].get(
+                        "expected_unclaimed", False
+                    )
+                    if expected_unclaimed and not node_desc.is_unclaimed:
+                        return await finish(
+                            EXIT_ACTIVATION,
+                            f"node {node_id} is bound to {node_desc.bound_driver_url}, expected unclaimed",
+                        )
+                    if not expected_unclaimed and node_desc.is_unclaimed:
+                        return await finish(
+                            EXIT_ACTIVATION,
+                            f"node {node_id} is unclaimed, expected active bound driver for in-situ session",
+                        )
+                    if node_desc.bound_driver_url:
+                        recorded_driver_url = node_desc.bound_driver_url
+                    recorder.write_json(
+                        "node.before.json", dataclasses.asdict(node_desc)
+                    )
+                elif "expected_unclaimed" in canonical["node"]:
+                    return await finish(
+                        EXIT_ACTIVATION,
+                        f"node {node_id} not found during discovery",
+                    )
+            elif "expected_unclaimed" in canonical["node"]:
+                return await finish(
+                    EXIT_UNSUPPORTED,
+                    "node.expected_unclaimed cannot be verified without node discovery",
+                )
+        elif "expected_unclaimed" in canonical["node"] or (
             requested_mode == "proxy"
             and access.get("activation") == "bind-unclaimed"
             and self._discovery is not None
@@ -1191,7 +1356,8 @@ class DriverLab:
             )
 
         if (
-            requested_mode == "proxy"
+            not is_in_situ
+            and requested_mode == "proxy"
             and access.get("activation") == "bind-unclaimed"
             and self._activator is not None
             and self._discovery is not None

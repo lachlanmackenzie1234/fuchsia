@@ -30,6 +30,9 @@ class DiscoveryTransportError(DiscoveryError):
     """Underlying FIDL or transport failure during node discovery."""
 
 
+DRIVER_LAB_SERVICE = "fuchsia.driver.lab.Service"
+
+
 @dataclasses.dataclass(frozen=True)
 class NodeSummary:
     """Stable summary of a discovered driver-framework node."""
@@ -41,6 +44,11 @@ class NodeSummary:
     offers: tuple[str, ...] = ()
     quarantined: bool = False
     topological_path: str | None = None
+    debug_capable: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.is_unclaimed and DRIVER_LAB_SERVICE in self.offers:
+            object.__setattr__(self, "debug_capable", True)
 
     @property
     def is_unclaimed(self) -> bool:
@@ -62,6 +70,11 @@ class NodeDescription:
     offers: tuple[str, ...] = ()
     quarantined: bool = False
     topological_path: str | None = None
+    debug_capable: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.is_unclaimed and DRIVER_LAB_SERVICE in self.offers:
+            object.__setattr__(self, "debug_capable", True)
 
     @property
     def is_unclaimed(self) -> bool:
@@ -142,6 +155,10 @@ class NodeDiscovery(Protocol):
         """Returns all nodes offering the specified protocol or service."""
         ...
 
+    async def find_debug_capable(self) -> list[NodeSummary]:
+        """Returns all active bound nodes exposing fuchsia.driver.lab.Service."""
+        ...
+
 
 class FakeNodeDiscovery:
     """In-memory node discovery provider for unit tests."""
@@ -182,6 +199,7 @@ class FakeNodeDiscovery:
                         offers=desc.offers,
                         quarantined=desc.quarantined,
                         topological_path=desc.topological_path,
+                        debug_capable=desc.debug_capable,
                     )
                 )
         return results
@@ -196,6 +214,15 @@ class FakeNodeDiscovery:
     async def find_nodes_offering(self, protocol: str) -> list[NodeSummary]:
         nodes = await self.list_nodes()
         return [n for n in nodes if protocol in n.offers]
+
+    async def find_debug_capable(self) -> list[NodeSummary]:
+        nodes = await self.list_nodes()
+        return [
+            n
+            for n in nodes
+            if not n.is_unclaimed
+            and (n.debug_capable or DRIVER_LAB_SERVICE in n.offers)
+        ]
 
 
 class FidlNodeDiscovery:
@@ -272,18 +299,52 @@ class FidlNodeDiscovery:
                 f"reading NodeInfoIterator failed: {exc}"
             ) from exc
 
+        # In DFv2, a driver's outgoing ServiceOffer appears in the offer_list of
+        # its child node (e.g. `spi-db31000.dw-spi`), while the bound driver
+        # itself resides on the parent node (`spi-db31000`). Propagate
+        # DRIVER_LAB_SERVICE from child nodes to their parent bound driver node.
+        parents_with_lab_offer: set[str] = set()
+        for s in summaries:
+            if DRIVER_LAB_SERVICE in s.offers and "." in s.moniker:
+                parent_moniker = s.moniker.rsplit(".", 1)[0]
+                parents_with_lab_offer.add(parent_moniker)
+
+        if parents_with_lab_offer:
+            enriched: list[NodeSummary] = []
+            for s in summaries:
+                is_real_driver = (
+                    s.bound_driver_url is not None
+                    and not s.bound_driver_url.startswith("owned by")
+                )
+                if (
+                    s.moniker in parents_with_lab_offer
+                    and is_real_driver
+                    and DRIVER_LAB_SERVICE not in s.offers
+                ):
+                    enriched.append(
+                        dataclasses.replace(
+                            s,
+                            offers=s.offers + (DRIVER_LAB_SERVICE,),
+                            debug_capable=True,
+                        )
+                    )
+                else:
+                    enriched.append(s)
+            summaries = enriched
+
         return summaries
 
     async def describe_node(self, moniker: str) -> NodeDescription | None:
+        query_moniker = moniker.split(":", 1)[-1] if ":" in moniker else moniker
         client_chan, server_chan = self._channel_factory()
         server_handle = (
             server_chan.take() if hasattr(server_chan, "take") else server_chan
         )
         try:
             res = self._manager.get_node_info(
-                node_filter=[moniker],
+                node_filter=[query_moniker],
                 iterator=server_handle,
-                exact_match=True,
+                exact_match=False,
             )
             if hasattr(res, "__await__"):
                 await res
@@ -293,7 +354,8 @@ class FidlNodeDiscovery:
             ) from exc
 
         iterator = fdd.NodeInfoIteratorClient(client_chan)
-        found_item = None
+        matching_items: list[Any] = []
+        child_has_lab_offer = False
         try:
             while True:
                 response = await iterator.get_next()
@@ -305,18 +367,31 @@ class FidlNodeDiscovery:
                 if not batch:
                     break
                 for item in batch:
-                    if (item.moniker or "") == moniker:
-                        found_item = item
-                        break
-                if found_item is not None:
-                    break
+                    item_moniker = item.moniker or ""
+                    if item_moniker in (moniker, query_moniker):
+                        matching_items.append(item)
+                    elif item_moniker.startswith(f"{query_moniker}."):
+                        if DRIVER_LAB_SERVICE in _extract_offers(item):
+                            child_has_lab_offer = True
         except Exception as exc:
             raise DiscoveryTransportError(
                 f"reading NodeInfoIterator failed: {exc}"
             ) from exc
 
-        if found_item is None:
+        if not matching_items:
             return None
+
+        # Prefer an entry bound to an actual driver package over "owned by composite(s)".
+        found_item = matching_items[0]
+        for candidate in matching_items:
+            cand_url = getattr(candidate, "bound_driver_url", None) or ""
+            if (
+                cand_url
+                and not cand_url.startswith("owned by")
+                and cand_url != "unbound"
+            ):
+                found_item = candidate
+                break
 
         url = (
             found_item.bound_driver_url
@@ -326,12 +401,21 @@ class FidlNodeDiscovery:
         if url in ("", "unbound"):
             url = None
 
+        offers = _extract_offers(found_item)
+        if (
+            child_has_lab_offer
+            and url is not None
+            and not url.startswith("owned by")
+            and DRIVER_LAB_SERVICE not in offers
+        ):
+            offers = offers + (DRIVER_LAB_SERVICE,)
+
         return NodeDescription(
             moniker=found_item.moniker or "",
             bound_driver_url=url,
             driver_host_koid=getattr(found_item, "driver_host_koid", None),
             properties=_extract_properties(found_item),
-            offers=_extract_offers(found_item),
+            offers=offers,
             quarantined=getattr(found_item, "quarantined", False) or False,
             topological_path=getattr(found_item, "topological_path", None),
         )
@@ -343,6 +427,15 @@ class FidlNodeDiscovery:
     async def find_nodes_offering(self, protocol: str) -> list[NodeSummary]:
         nodes = await self.list_nodes()
         return [n for n in nodes if protocol in n.offers]
+
+    async def find_debug_capable(self) -> list[NodeSummary]:
+        nodes = await self.list_nodes()
+        return [
+            n
+            for n in nodes
+            if not n.is_unclaimed
+            and (n.debug_capable or DRIVER_LAB_SERVICE in n.offers)
+        ]
 
 
 def connect_discovery(

@@ -71,9 +71,9 @@ class SessionCapabilities:
 
     def check_support(self, feature: str) -> None:
         """Fails closed if the requested feature is not supported by the current session mode."""
-        if feature == "mmio" and self.mode != "proxy":
+        if feature == "mmio" and self.mode not in ("proxy", "in-situ"):
             raise UnsupportedCapabilityError(
-                "MMIO register operations are only supported in proxy mode (current mode: direct)"
+                f"MMIO register operations are only supported in proxy or in-situ mode (current mode: {self.mode})"
             )
         if feature == "sequence" and not self.target_local_timing:
             raise UnsupportedCapabilityError(
