@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-mod fuchsia_backends;
-mod platform_provider;
-mod server;
-
+use driver_lab_rust::platform_provider;
+use driver_lab_rust::server::{self, ProxyState, SharedState, ZxClock};
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async as fasync;
@@ -15,7 +13,6 @@ use lab_proxy_core::audit_ring::{AuditRecord, AuditRing};
 use lab_proxy_core::executor::{ExecLimits, Executor};
 use lab_proxy_core::session::{ProxyIdentity, SessionManager};
 use log::{info, warn};
-use server::{ProxyState, SharedState, ZxClock};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 

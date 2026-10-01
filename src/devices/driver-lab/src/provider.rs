@@ -12,14 +12,19 @@
 //! bug fails driver start instead of producing a resource without policy
 //! or a policy without a resource.
 
-use crate::access_policy::{MmioResource, ResourceCeiling, ResourceId};
+use crate::access_policy::{
+    MmioResource, ProtocolCeiling, ResourceCeiling, ResourceId, ResourceKind,
+};
 use crate::digest::{Sha256Digest, combined_digest, per_resource_digests};
 use std::collections::BTreeMap;
+
+/// Provider kind used by the embedded driver library (Phase 2).
+pub const EMBEDDED_PROVIDER: &str = "embedded";
 
 /// Everything one provider acquired for the bound node.
 #[derive(Debug)]
 pub struct ProvidedResources<B> {
-    /// Provider kind, for example `"platform"` or `"fake"`. Feeds the
+    /// Provider kind, for example `"platform"`, `"embedded"`, or `"fake"`. Feeds the
     /// per-resource digests.
     pub provider: String,
     /// Stable node identity criteria (for example the node moniker),
@@ -67,6 +72,78 @@ impl<B> ProvidedResources<B> {
             ceiling: BTreeMap::new(),
             backends: BTreeMap::new(),
         }
+    }
+
+    /// Creates an empty bundle for an embedded in-situ driver library.
+    pub fn embedded(node_identity: &str) -> Self {
+        Self::empty(EMBEDDED_PROVIDER, node_identity)
+    }
+
+    /// Registers a pre-mapped MMIO bank with its logical size, actual mapped size,
+    /// target ceiling policy, and backend.
+    pub fn add_mmio(
+        &mut self,
+        id: ResourceId,
+        name: impl Into<String>,
+        logical_size: u64,
+        mapped_size: u64,
+        ceiling: ResourceCeiling,
+        backend: B,
+    ) {
+        self.resources.insert(id, MmioResource::mmio(name, logical_size, mapped_size));
+        self.ceiling.insert(id, ceiling);
+        self.backends.insert(id, backend);
+    }
+
+    /// Registers a protocol-backed resource (GPIO, I2C, SPI, Clock, Reset, Serial).
+    pub fn add_protocol(
+        &mut self,
+        id: ResourceId,
+        name: impl Into<String>,
+        kind: ResourceKind,
+        ceiling: ProtocolCeiling,
+        backend: B,
+    ) {
+        let resource = match kind {
+            ResourceKind::Gpio => MmioResource::gpio(name),
+            ResourceKind::I2c => MmioResource::i2c(name),
+            ResourceKind::Spi => MmioResource::spi(name),
+            ResourceKind::Clock => MmioResource::clock(name),
+            ResourceKind::Reset => MmioResource::reset(name),
+            ResourceKind::Serial => MmioResource::serial(name),
+            ResourceKind::Interrupt => MmioResource::interrupt(name),
+            ResourceKind::Mmio => MmioResource::mmio(name, 0, 0),
+        };
+        self.resources.insert(id, resource);
+        self.ceiling.insert(
+            id,
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: false,
+                allow_poll: false,
+                writable_registers: vec![],
+                protocol: Some(ceiling),
+                allow_interrupt: kind == ResourceKind::Interrupt,
+            },
+        );
+        self.backends.insert(id, backend);
+    }
+
+    /// Registers an interrupt observation resource.
+    pub fn add_interrupt(&mut self, id: ResourceId, name: impl Into<String>, backend: B) {
+        self.resources.insert(id, MmioResource::interrupt(name));
+        self.ceiling.insert(
+            id,
+            ResourceCeiling {
+                hard_denied: vec![],
+                allow_unknown_reads: false,
+                allow_poll: false,
+                writable_registers: vec![],
+                protocol: Some(ProtocolCeiling::default_for(ResourceKind::Interrupt)),
+                allow_interrupt: true,
+            },
+        );
+        self.backends.insert(id, backend);
     }
 
     /// Validates internal consistency. Driver start fails on error.
@@ -198,5 +275,43 @@ mod tests {
         let digests = bundle.digests();
         assert_eq!(digests.len(), 1);
         assert_eq!(bundle.combined_digest(), combined_digest(digests.values().copied()));
+    }
+
+    #[test]
+    fn embedded_provider_registers_mmio_protocol_and_interrupt() {
+        let mut bundle = ProvidedResources::embedded("sample-driver");
+        assert_eq!(bundle.provider, EMBEDDED_PROVIDER);
+        assert_eq!(bundle.node_identity, "sample-driver");
+
+        bundle.add_mmio(
+            0,
+            "regs",
+            0x100,
+            0x1000,
+            ResourceCeiling {
+                hard_denied: vec![0x40..0x44],
+                allow_unknown_reads: true,
+                allow_poll: true,
+                writable_registers: vec![],
+                protocol: None,
+                allow_interrupt: false,
+            },
+            FakeMmio::new(),
+        );
+        bundle.add_protocol(
+            1,
+            "gpio0",
+            ResourceKind::Gpio,
+            ProtocolCeiling::default_for(ResourceKind::Gpio),
+            FakeMmio::new(),
+        );
+        bundle.add_interrupt(2, "irq0", FakeMmio::new());
+
+        assert_eq!(bundle.validate(), Ok(()));
+        assert_eq!(bundle.resources.len(), 3);
+        assert_eq!(bundle.resources[&0].kind, ResourceKind::Mmio);
+        assert_eq!(bundle.resources[&1].kind, ResourceKind::Gpio);
+        assert_eq!(bundle.resources[&2].kind, ResourceKind::Interrupt);
+        assert!(bundle.ceiling[&2].allow_interrupt);
     }
 }

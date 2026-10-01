@@ -29,7 +29,7 @@ use lab_proxy_core::provider::ProvidedResources;
 use log::info;
 use mmio::Mmio as _;
 use mmio::region::MmioRegion;
-use mmio::vmo::VmoMemory;
+use mmio::vmo::{VmoMapping, VmoMemory};
 use pdev::PlatformDevice;
 
 /// Provider kind recorded in resource digests.
@@ -38,6 +38,36 @@ pub const PROVIDER: &str = "platform";
 /// Volatile access to one locally mapped MMIO region.
 pub struct MappedMmio {
     region: MmioRegion<VmoMemory>,
+}
+
+impl MappedMmio {
+    /// Wraps an already-mapped [`MmioRegion`].
+    pub fn from_region(region: MmioRegion<VmoMemory>) -> Self {
+        Self { region }
+    }
+
+    /// Creates an independent local MMIO mapping by duplicating an existing
+    /// driver MMIO VMO handle (`zx::Rights::SAME_RIGHTS`) and mapping it into
+    /// the current driver host process address space (Spec Phase 2 Section 2.1).
+    ///
+    /// Preserves the VMO's existing cache policy so already-mapped VMOs can be
+    /// mapped a second time without failing on `zx_vmo_set_cache_policy`.
+    pub fn from_vmo(vmo: &zx::Vmo, offset: usize, size: usize) -> Result<Self, zx::Status> {
+        let dup_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+        let cache_policy = dup_vmo.info()?.cache_policy();
+        let region = VmoMapping::map_with_cache_policy(offset, size, dup_vmo, cache_policy)?;
+        Ok(Self { region })
+    }
+
+    /// Returns the mapped byte length of the region.
+    pub fn len(&self) -> usize {
+        self.region.len()
+    }
+
+    /// Returns whether the mapped region has zero length.
+    pub fn is_empty(&self) -> bool {
+        self.region.len() == 0
+    }
 }
 
 impl std::fmt::Debug for MappedMmio {
@@ -477,4 +507,51 @@ pub async fn acquire(
 
     info!("acquired {} total hardware resource(s)", bundle.resources.len());
     Ok((bundle, acquired_irqs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zx::CachePolicy;
+
+    #[test]
+    fn mapped_mmio_from_vmo_shares_memory_independently_of_driver_mapping() {
+        const SIZE: usize = 4096;
+        let vmo = zx::Vmo::create(SIZE as u64).unwrap();
+        let driver_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+        // Simulate the active driver mapping its own MMIO region first.
+        let mut driver_region =
+            VmoMapping::map_with_cache_policy(0, SIZE, driver_vmo, CachePolicy::Cached).unwrap();
+        assert_eq!(vmo.info().unwrap().num_mappings, 1);
+
+        // Driver initializes a register at 0x10.
+        driver_region.try_store32(0x10, 0xCAFE_BABE).unwrap();
+
+        // Embedded library duplicates the VMO and creates an independent local mapping.
+        let mut lab_mmio = MappedMmio::from_vmo(&vmo, 0, SIZE).unwrap();
+        assert_eq!(lab_mmio.len(), SIZE);
+        assert!(!lab_mmio.is_empty());
+        assert_eq!(vmo.info().unwrap().num_mappings, 2);
+
+        // Library observes live register value written by the driver.
+        assert_eq!(MmioBackend::read32(&mut lab_mmio, 0x10), Ok(0xCAFE_BABE));
+
+        // Library writes a value at 0x20; driver observes it in its own mapping.
+        assert_eq!(MmioBackend::write32(&mut lab_mmio, 0x20, 0x1234_5678), Ok(()));
+        assert_eq!(driver_region.try_load32(0x20), Ok(0x1234_5678));
+
+        // Dropping the library mapping leaves the driver's mapping intact.
+        drop(lab_mmio);
+        assert_eq!(vmo.info().unwrap().num_mappings, 1);
+        assert_eq!(driver_region.try_load32(0x10), Ok(0xCAFE_BABE));
+        assert_eq!(driver_region.try_load32(0x20), Ok(0x1234_5678));
+    }
+
+    #[test]
+    fn mapped_mmio_from_vmo_rejects_out_of_range_size() {
+        let vmo = zx::Vmo::create(4096).unwrap();
+        let err = MappedMmio::from_vmo(&vmo, 0, 8192).unwrap_err();
+        assert_eq!(err, zx::Status::OUT_OF_RANGE);
+    }
 }

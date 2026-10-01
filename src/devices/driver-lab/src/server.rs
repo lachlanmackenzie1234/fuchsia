@@ -271,7 +271,7 @@ fn open_session(
             status: OpStatus::Rejected,
             value: None,
             timestamp_ns: now_ns(),
-            run_id: Some(context.run_id.clone()),
+            run_id: Some(context.run_id),
             item_index: None,
         });
         return Err(OpenError::UnsupportedExpectation);

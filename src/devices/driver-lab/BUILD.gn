@@ -21,7 +21,6 @@ driver_bind_rules("bind") {
 # Pure-logic policy and audit code, kept free of Fuchsia dependencies so its
 # unit tests run on the build host without an emulator.
 rustc_library("core") {
-  testonly = true
   name = "lab_proxy_core"
   edition = "2024"
   with_unit_tests = true
@@ -49,23 +48,23 @@ rustc_library("core") {
   test_deps = [ "//third_party/rust_crates:futures" ]
 }
 
-fuchsia_rust_driver("driver") {
-  testonly = true
+# Shared Fuchsia runtime library for both the standalone lab_proxy driver
+# and embedded in-situ debugging in existing DFv2 Rust drivers.
+rustc_library("driver_lab_rust") {
+  name = "driver_lab_rust"
   edition = "2024"
   with_unit_tests = true
 
-  output_name = "lab_proxy"
+  source_root = "src/driver_lab_lib.rs"
   sources = [
+    "src/driver_lab_lib.rs",
     "src/fuchsia_backends.rs",
-    "src/lib.rs",
     "src/platform_provider.rs",
     "src/server.rs",
   ]
   deps = [
     ":core",
-    ":lab_proxy_config",
     "fidl:fuchsia.driver.lab_rust",
-    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
@@ -73,17 +72,33 @@ fuchsia_rust_driver("driver") {
     "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
     "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
     "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
     "//sdk/lib/driver/platform-device/rust:pdev",
-    "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_rust_driver("driver") {
+  testonly = true
+  edition = "2024"
+  with_unit_tests = true
+
+  output_name = "lab_proxy"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    ":core",
+    ":driver_lab_rust",
+    ":lab_proxy_config",
+    "fidl:fuchsia.driver.lab_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
@@ -135,6 +150,11 @@ fuchsia_driver_package("pkg") {
   export_to_bazel = true
 }
 
+fuchsia_unittest_package("driver_lab_rust-unit-test-pkg") {
+  package_name = "driver_lab_rust-unit-test"
+  deps = [ ":driver_lab_rust_test" ]
+}
+
 fuchsia_unittest_package("lab_proxy-unit-test-pkg") {
   package_name = "lab_proxy-unit-test"
   deps = [ ":driver_test" ]
@@ -180,6 +200,7 @@ group("tests") {
   testonly = true
   deps = [
     ":core_test($host_toolchain)",
+    ":driver_lab_rust-unit-test-pkg",
     ":lab_proxy-realm-test-pkg",
     ":lab_proxy-unit-test-pkg",
     ":pkg",
