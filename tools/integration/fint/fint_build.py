@@ -80,7 +80,12 @@ PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
 FORCE_NONHERMETIC_REBUILD_SENTINEL = "force_nonhermetic_rebuild"
 LAST_NINJA_BUILD_SUCCESS_STAMP = "last_ninja_build_success.stamp"
 RUST_TARGET_MAPPING_JSON = "rust_target_mapping.json"
+NINJATRACE2JSON_PY_RELATIVE_PATH = pathlib.Path(
+    "build/scripts/ninjatrace2json.py"
+)
+# LINT.IfChange(ninja_build_trace_filename)
 NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
+# LINT.ThenChange(/build/scripts/main_build.py:ninja_build_trace_filename)
 NINJATRACE_JSON_GZ = "ninjatrace.json.gz"
 BUILDSTATS_JSON_GZ = "buildstats.json.gz"
 
@@ -585,18 +590,23 @@ class BuildContext:
         return self.build_dir / RUST_TARGET_MAPPING_JSON
 
     @property
-    def top_ninja_trace_path(self) -> pathlib.Path:
-        """Returns the absolute path to Ninja's raw build trace file."""
+    def raw_ninja_trace_path(self) -> pathlib.Path:
+        """Returns the absolute path to the raw input Chrome trace file written by Ninja."""
         return self.build_dir / NINJA_BUILD_TRACE_GZ
 
     @property
-    def ninjatrace_json_path(self) -> pathlib.Path:
-        """Returns the absolute path to the generated Perfetto ninjatrace file."""
+    def ninjatrace2json_py_path(self) -> pathlib.Path:
+        """Returns the absolute path to the ninjatrace2json.py helper script."""
+        return self.checkout_dir / NINJATRACE2JSON_PY_RELATIVE_PATH
+
+    @property
+    def processed_trace_path(self) -> pathlib.Path:
+        """Returns the absolute path to the generated Perfetto ninjatrace file (the output trace file)."""
         return self.build_dir / NINJATRACE_JSON_GZ
 
     @property
     def buildstats_json_path(self) -> pathlib.Path:
-        """Returns the absolute path to the generated build stats file."""
+        """Returns the absolute path to the generated build stats file (the output stats file)."""
         return self.build_dir / BUILDSTATS_JSON_GZ
 
     @property
@@ -946,11 +956,52 @@ class BuildContext:
                 f"export_last_build_debug_symbols failed with exit code {res.returncode}"
             )
 
+    def _run_buildstats(self, buildstats_tool: str) -> pathlib.Path | None:
+        """Runs the buildstats prebuilt tool on the raw trace to generate buildstats.json.gz (Step 2)."""
+        stats_cmd = [
+            str(self.checkout_dir / buildstats_tool),
+            "--ninjatrace",
+            str(self.processed_trace_path),
+            "--output",
+            str(self.buildstats_json_path),
+        ]
+        if self.verbose:
+            msg(f"Running buildstats: {shlex.join(stats_cmd)}")
+        res_stats = subprocess.run(stats_cmd)
+        if res_stats.returncode == 0:
+            return self.buildstats_json_path
+        return None
+
+    def _merge_subbuild_traces(self, ninjatrace_tool: str) -> None:
+        """Merges and interleaves nested sub-build traces into processed_trace_path in-place (Step 3)."""
+        if not (
+            (self.build_dir / "ninja_subbuilds.json").is_file()
+            and self.ninjatrace2json_py_path.is_file()
+        ):
+            return
+
+        merge_cmd = [
+            sys.executable,
+            str(self.ninjatrace2json_py_path),
+            "--fuchsia-build-dir",
+            str(self.build_dir),
+            "--ninja-path",
+            str(self.checkout_dir / self.host.ninja_relative_path),
+            "--ninjatrace-path",
+            str(self.checkout_dir / ninjatrace_tool),
+            "--subbuilds-in-place",
+        ]
+        if self.verbose:
+            msg(f"Running ninjatrace2json: {shlex.join(merge_cmd)}")
+        subprocess.run(merge_cmd)
+
     def _generate_ninja_traces(
         self,
     ) -> tuple[pathlib.Path | None, pathlib.Path | None]:
         """Generates Perfetto ninjatrace and buildstats files from Ninja's build trace, if available."""
-        if not self.top_ninja_trace_path.is_file():
+        if not (
+            self.raw_ninja_trace_path and self.raw_ninja_trace_path.is_file()
+        ):
             return None, None
 
         # Warn if the raw trace exists but tool paths fail to load
@@ -988,34 +1039,29 @@ class BuildContext:
         buildstats_out = None
 
         try:
-            # Run ninjatrace to generate ninjatrace.json.gz
+            # Step 1: Run the raw ninjatrace prebuilt tool to generate a raw unmerged processed trace!
             cmd = [
                 str(self.checkout_dir / ninjatrace_tool),
                 "-ninjabuildtrace",
-                str(self.top_ninja_trace_path),
+                str(self.raw_ninja_trace_path),
                 "-trace-json",
-                str(self.ninjatrace_json_path),
+                str(self.processed_trace_path),
             ]
             if self.verbose:
                 msg(f"Running ninjatrace: {shlex.join(cmd)}")
             res = subprocess.run(cmd)
             if res.returncode == 0:
-                ninjatrace_out = self.ninjatrace_json_path
+                ninjatrace_out = self.processed_trace_path
 
-                # Run buildstats to generate buildstats.json.gz
+                # Step 2: Run buildstats on this unmerged raw trace to generate buildstats.json.gz.
+                # This completely prevents any Go string-pid unmarshal crashes or subbuild double-counting!
                 if buildstats_tool:
-                    stats_cmd = [
-                        str(self.checkout_dir / buildstats_tool),
-                        "--ninjatrace",
-                        str(self.ninjatrace_json_path),
-                        "--output",
-                        str(self.buildstats_json_path),
-                    ]
-                    if self.verbose:
-                        msg(f"Running buildstats: {shlex.join(stats_cmd)}")
-                    res_stats = subprocess.run(stats_cmd)
-                    if res_stats.returncode == 0:
-                        buildstats_out = self.buildstats_json_path
+                    buildstats_out = self._run_buildstats(buildstats_tool)
+
+                # Step 3: Run the in-tree ninjatrace2json.py script with --subbuilds-in-place.
+                # This chronologically merges and interleaves sub-build traces into processed_trace_path
+                # to produce the final, consolidated trace for Perfetto, with full safety guarantees!
+                self._merge_subbuild_traces(ninjatrace_tool)
         except OSError as e:
             msg(
                 f"Warning: Failed to execute Ninja trace post-processing: {e}",
@@ -1121,7 +1167,12 @@ def make_build_context(
         )
 
     host = HostProperties.detect()
-    return BuildContext(static_spec, context_spec, host, verbose)
+    return BuildContext(
+        static_spec=static_spec,
+        context_spec=context_spec,
+        host=host,
+        verbose=verbose,
+    )
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
@@ -1229,7 +1280,11 @@ def main(argv: list[str]) -> int:
 
     ts_msg("Fint build wrapper starting up...", args.verbose)
 
-    ctx = make_build_context(args.static, args.context, verbose=args.verbose)
+    ctx = make_build_context(
+        static_path=args.static,
+        context_path=args.context,
+        verbose=args.verbose,
+    )
 
     # Select Build Strategy
     wrappers = {

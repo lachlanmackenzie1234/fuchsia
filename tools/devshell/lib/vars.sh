@@ -116,16 +116,6 @@ if [[ -f "$fx_build_profile_config" ]]; then
   # This sets BUILD_PROFILE_ENABLED to 0 or 1.
 fi
 
-# Always create a ninja build trace file.
-# This path is relative to the the ninja -C dir ($FUCHSIA_BUILD_DIR).
-readonly NINJA_BUILD_TRACE_FILE="ninja_build_trace.json.gz"
-
-# Output action metrics to this JSON file.
-readonly NINJA_ACTION_METRICS_FILE="ninja_action_metrics.json"
-
-# Record the set if inputs that triggered some build actions.
-readonly NINJA_DIRTY_SOURCES_FILE="ninja_dirty_sources.log"
-
 # Unified standalone build script that can enable RBE, profiling, ResultStore...
 readonly main_build_script="${FUCHSIA_DIR}/build/scripts/main_build.py"
 

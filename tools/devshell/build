@@ -868,7 +868,6 @@ function main {
     fi
 
     fx-run-ninja "${is_logging}" "${ninja_path}" \
-      "--chrome_trace" "${NINJA_BUILD_TRACE_FILE}" \
       -C "${FUCHSIA_BUILD_DIR}" \
       "${extra_switches[@]}" "${ninja_targets[@]}"
 

@@ -86,7 +86,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             ctx.produce_build_artifacts(42)
@@ -113,7 +116,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             ctx.produce_build_artifacts(42, failure_summary="test failure")
@@ -149,7 +155,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             ctx.produce_build_artifacts(42)
@@ -218,7 +227,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             # We must stub subprocess.run to touch the files they generate, since they are mocked
@@ -285,7 +297,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             # Execution should succeed, but print warning using contextlib redirect_stderr
@@ -335,7 +350,10 @@ class BuildArtifactsTest(unittest.TestCase):
             )
             host = fint_build.HostProperties(os="linux", cpu="x64")
             ctx = fint_build.BuildContext(
-                static_spec, context_spec, host, verbose=False
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
             )
 
             # Execution should succeed, but print warning using contextlib redirect_stderr

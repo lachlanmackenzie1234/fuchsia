@@ -1334,6 +1334,12 @@ class InjectNinjaArgsTest(MainBuildTestBase):
             self.assertEqual(injected[0], "ninja")
             self.assertIn("--dirty_sources_list", injected)
             self.assertIn("--action_metrics_output", injected)
+            self.assertIn("--chrome_trace", injected)
+            idx = injected.index("--chrome_trace")
+            self.assertEqual(
+                injected[idx + 1],
+                str(invocation.context.ninja_build_trace_path),
+            )
             self.assertEqual(injected[-1], "target")
             mock_mkdir.assert_any_call(invocation.log_dir / "ninja_logs")
 
@@ -1656,10 +1662,10 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             config=config,
         )
 
-        # 1. Verify fint_build_py resolved path
+        # 1. Verify fint_build_py resolved path using relative path constants
         self.assertEqual(
             context.fint_build_py,
-            pathlib.Path("/tmp/fuchsia/tools/integration/fint/fint_build.py"),
+            context.source_dir / main_build.FINT_BUILD_PY_RELATIVE_PATH,
         )
 
         # Verify that the resolved Python binary path is absolute.
@@ -1674,7 +1680,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(main_build.PYTHON_BIN),
             "-S",
             "-u",
-            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
             "--",
@@ -1690,7 +1696,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(main_build.PYTHON_BIN),
             "-S",
             "-u",
-            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
             "--context",
@@ -1725,7 +1731,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(main_build.PYTHON_BIN),
             "-S",
             "-u",
-            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
             "--verbose",

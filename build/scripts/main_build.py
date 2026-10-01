@@ -72,6 +72,12 @@ LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
 DEFAULT_RBE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
 DEFAULT_RESULTSTORE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
 DEFAULT_CAS_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
+# LINT.IfChange(ninja_build_trace_filename)
+NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
+# LINT.ThenChange(/tools/integration/fint/fint_build.py:ninja_build_trace_filename)
+FINT_BUILD_PY_RELATIVE_PATH = pathlib.Path(
+    "tools/integration/fint/fint_build.py"
+)
 BAZEL_CRED_HELPER = pathlib.Path(
     "/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
 )
@@ -714,7 +720,8 @@ class FuchsiaBuildContext(object):
 
     @property
     def fint_build_py(self) -> pathlib.Path:
-        return self.source_dir / "tools/integration/fint/fint_build.py"
+        """Returns the path to the fint_build.py script."""
+        return self.source_dir / FINT_BUILD_PY_RELATIVE_PATH
 
     def _fint_wrapper_cmd(
         self,
@@ -844,6 +851,11 @@ class FuchsiaBuildContext(object):
     def gn_trace_path(self) -> pathlib.Path:
         """Returns the path to the GN-generated trace file."""
         return self.build_dir / "fuchsia_gn_trace.json"
+
+    @property
+    def ninja_build_trace_path(self) -> pathlib.Path:
+        """The path where Ninja's raw Chrome build trace is recorded."""
+        return self.build_dir / NINJA_BUILD_TRACE_GZ
 
     @property
     def rsninja_sh(self) -> pathlib.Path:
@@ -1270,6 +1282,7 @@ class BuildInvocation(object):
                         ninja_log_dir / "ninja_action_metrics.json",
                         ninja_log_dir / "ninja_dirty_sources.log",
                         context.ninja_edge_weights_csv,
+                        context.ninja_build_trace_path,
                     ]
                 )
 
@@ -1314,6 +1327,8 @@ class BuildInvocation(object):
         action_metrics = ninja_log_dir / "ninja_action_metrics.json"
         # Record structured action failures
         error_logging_output = self.ninja_errors_path
+        # Record Ninja's raw chrome build trace file
+        chrome_trace_output = self.context.ninja_build_trace_path
 
         ninja_bin = build_command[0]
         remaining_args = build_command[1:]
@@ -1325,6 +1340,8 @@ class BuildInvocation(object):
             str(action_metrics),
             "--error_logging_output",
             str(error_logging_output),
+            "--chrome_trace",
+            str(chrome_trace_output),
         ] + list(remaining_args)
 
 
