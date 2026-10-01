@@ -190,6 +190,7 @@ class FtdiDevice : public DeviceType,
 
   uint16_t ftditype_ = 0;
   uint32_t baudrate_ = 0;
+  uint16_t port_index_ = 1;
 
   size_t read_offset_ = 0;
 
