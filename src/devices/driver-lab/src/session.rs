@@ -196,6 +196,11 @@ impl SessionManager {
         self.accepting = false;
     }
 
+    /// Whether new sessions are being accepted.
+    pub fn is_accepting(&self) -> bool {
+        self.accepting
+    }
+
     /// Number of open sessions.
     pub fn open_count(&self) -> usize {
         self.sessions.len()

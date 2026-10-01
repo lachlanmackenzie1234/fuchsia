@@ -7,6 +7,7 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 
 driver_bind_rules("bind") {
+  testonly = true
   rules = "meta/lab_root.bind"
   bind_output = "lab_root.bindbc"
   deps = [
@@ -16,6 +17,7 @@ driver_bind_rules("bind") {
 }
 
 fuchsia_rust_driver("driver") {
+  testonly = true
   edition = "2024"
   output_name = "lab_root"
   sources = [ "src/lib.rs" ]
@@ -34,6 +36,7 @@ fuchsia_rust_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
+  testonly = true
   component_name = "lab_root"
   manifest = "meta/lab_root.cml"
   deps = [
@@ -46,6 +49,7 @@ fuchsia_driver_component("component") {
 # Standalone package so the conformance workflow can register lab_root
 # ephemerally on a running engineering target.
 fuchsia_driver_package("pkg") {
+  testonly = true
   package_name = "lab_root"
   driver_components = [ ":component" ]
 }

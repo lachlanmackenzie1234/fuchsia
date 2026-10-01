@@ -52,13 +52,13 @@ list shows which changes precede and which follow that commit.
 
 Remaining phase 1 work:
 
-- [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
+- [x] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
       (11.4, 11.5, 12.2-12.4, 13; milestone P3).
-- [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`
+- [x] CS15 `[driver-lab] Host tooling support for mutation and sequences`
       (in //tools/driver-lab/SPEC.md).
-- [ ] CS16 `[driver-lab] Driver-shaped public Python API` (in
+- [x] CS16 `[driver-lab] Driver-shaped public Python API` (in
       //tools/driver-lab/SPEC.md).
-- [ ] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
+- [x] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
 - [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
       (in //tools/driver-lab/SPEC.md).
 - [ ] Engineering assembly inclusion and production-absence

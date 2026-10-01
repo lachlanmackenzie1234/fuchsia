@@ -1,3 +1,6 @@
+# Build assertion: testonly = true on all lab_proxy targets strictly
+# forbids inclusion in any production (non-test) assembly or image.
+
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -9,6 +12,7 @@ import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 
 driver_bind_rules("bind") {
+  testonly = true
   rules = "meta/lab_proxy.bind"
   bind_output = "lab_proxy.bindbc"
   deps = [ "bind:fuchsia.driver.lab" ]
@@ -17,6 +21,7 @@ driver_bind_rules("bind") {
 # Pure-logic policy and audit code, kept free of Fuchsia dependencies so its
 # unit tests run on the build host without an emulator.
 rustc_library("core") {
+  testonly = true
   name = "lab_proxy_core"
   edition = "2024"
   with_unit_tests = true
@@ -42,6 +47,7 @@ rustc_library("core") {
 }
 
 fuchsia_rust_driver("driver") {
+  testonly = true
   edition = "2024"
   with_unit_tests = true
 
@@ -72,6 +78,7 @@ fuchsia_rust_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
+  testonly = true
   component_name = "lab_proxy"
   manifest = "meta/lab_proxy.cml"
   deps = [
@@ -82,6 +89,7 @@ fuchsia_driver_component("component") {
 }
 
 fuchsia_driver_package("pkg") {
+  testonly = true
   package_name = "lab_proxy"
   driver_components = [ ":component" ]
   export_to_bazel = true

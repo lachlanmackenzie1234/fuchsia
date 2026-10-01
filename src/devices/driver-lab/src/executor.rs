@@ -23,6 +23,8 @@ pub struct ExecLimits {
     pub max_sequence_items: usize,
     /// Maximum single delay in nanoseconds.
     pub max_delay_ns: i64,
+    /// Maximum duration of an entire sequence in nanoseconds.
+    pub max_sequence_duration_ns: i64,
 }
 
 impl Default for ExecLimits {
@@ -30,7 +32,8 @@ impl Default for ExecLimits {
         Self {
             max_snapshot_items: 64,
             max_sequence_items: 64,
-            max_delay_ns: 5_000_000_000, // 5 seconds
+            max_delay_ns: 5_000_000_000,             // 5 seconds
+            max_sequence_duration_ns: 1_000_000_000, // 1 second
         }
     }
 }
@@ -787,6 +790,36 @@ impl<B: MmioBackend, C: Clock> Executor<B, C> {
 }
 
 impl<B: MmioBackend, C: Timer> Executor<B, C> {
+    /// Performs an asynchronous 32-bit poll with an optional abort token.
+    pub async fn poll32_with_abort(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        resource: ResourceId,
+        offset: u64,
+        expected: u32,
+        mask: u32,
+        interval_ns: i64,
+        timeout_ns: i64,
+        abort: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<PollOutcome, PollError> {
+        self.poll32_internal(
+            policy,
+            audit,
+            session,
+            resource,
+            offset,
+            expected,
+            mask,
+            interval_ns,
+            timeout_ns,
+            None,
+            abort,
+        )
+        .await
+    }
+
     /// Performs an asynchronous 32-bit poll.
     pub async fn poll32(
         &mut self,
@@ -800,7 +833,7 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
         interval_ns: i64,
         timeout_ns: i64,
     ) -> Result<PollOutcome, PollError> {
-        self.poll32_internal(
+        self.poll32_with_abort(
             policy,
             audit,
             session,
@@ -828,8 +861,26 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
         interval_ns: i64,
         timeout_ns: i64,
         item_index: Option<u32>,
+        abort: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<PollOutcome, PollError> {
         let timestamp_ns = self.clock.now_ns();
+        if let Some(token) = abort {
+            if token.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut record = op_record(
+                    session,
+                    resource,
+                    "poll32",
+                    offset,
+                    Decision::Denied(Denial::NotAccepting),
+                    OpStatus::Rejected,
+                    None,
+                    timestamp_ns,
+                );
+                record.item_index = item_index;
+                let audit_seq = audit.append(record);
+                return Err(PollError::Denied { denial: Denial::NotAccepting, audit_seq });
+            }
+        }
         if let Err(denial) = policy.check_poll32(resource, offset, mask, interval_ns, timeout_ns) {
             let mut record = op_record(
                 session,
@@ -863,8 +914,25 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
 
         let start_ns = self.clock.now_ns();
         let deadline_ns = start_ns.saturating_add(timeout_ns);
-        let mut last_val: Option<u32>;
+        let mut last_val: Option<u32> = None;
         loop {
+            if let Some(token) = abort {
+                if token.load(std::sync::atomic::Ordering::Relaxed) {
+                    let mut record = op_record(
+                        session,
+                        resource,
+                        "poll32",
+                        offset,
+                        Decision::Denied(Denial::NotAccepting),
+                        OpStatus::Rejected,
+                        last_val,
+                        self.clock.now_ns(),
+                    );
+                    record.item_index = item_index;
+                    let audit_seq = audit.append(record);
+                    return Err(PollError::Denied { denial: Denial::NotAccepting, audit_seq });
+                }
+            }
             match self
                 .poll32_read_step(audit, session, resource, offset, expected, mask, item_index)?
             {
@@ -880,6 +948,26 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
                     let sleep_ns = interval_ns.min(deadline_ns - now);
                     if sleep_ns > 0 {
                         self.clock.sleep(sleep_ns).await;
+                    }
+                    if let Some(token) = abort {
+                        if token.load(std::sync::atomic::Ordering::Relaxed) {
+                            let mut record = op_record(
+                                session,
+                                resource,
+                                "poll32",
+                                offset,
+                                Decision::Denied(Denial::NotAccepting),
+                                OpStatus::Rejected,
+                                last_val,
+                                self.clock.now_ns(),
+                            );
+                            record.item_index = item_index;
+                            let audit_seq = audit.append(record);
+                            return Err(PollError::Denied {
+                                denial: Denial::NotAccepting,
+                                audit_seq,
+                            });
+                        }
                     }
                     if self.clock.now_ns() >= deadline_ns {
                         match self.poll32_read_step(
@@ -910,6 +998,18 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
         audit: &mut AuditRing,
         session: u64,
         items: &[SequenceItem],
+    ) -> Result<SequenceOutcome, SequenceError> {
+        self.execute_sequence_with_abort(policy, audit, session, items, None).await
+    }
+
+    /// Executes a bounded ordered sequence with an optional abort token.
+    pub async fn execute_sequence_with_abort(
+        &mut self,
+        policy: &AccessPolicy,
+        audit: &mut AuditRing,
+        session: u64,
+        items: &[SequenceItem],
+        abort: Option<&std::sync::atomic::AtomicBool>,
     ) -> Result<SequenceOutcome, SequenceError> {
         if items.len() > self.limits.max_sequence_items {
             let timestamp_ns = self.clock.now_ns();
@@ -948,12 +1048,86 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
             let audit_seq = audit.append(record);
             return Err(SequenceError::Rejected { index, denial, audit_seq });
         }
+        if let Some(token) = abort {
+            if token.load(std::sync::atomic::Ordering::Relaxed) {
+                let timestamp_ns = self.clock.now_ns();
+                let record = AuditRecord {
+                    session: Some(session),
+                    resource: None,
+                    operation: "sequence",
+                    offset: None,
+                    decision: Decision::Denied(Denial::NotAccepting),
+                    status: OpStatus::Rejected,
+                    value: None,
+                    timestamp_ns,
+                    run_id: None,
+                    item_index: None,
+                };
+                let audit_seq = audit.append(record);
+                return Err(SequenceError::Rejected {
+                    index: 0,
+                    denial: Denial::NotAccepting,
+                    audit_seq,
+                });
+            }
+        }
 
         let mut results = Vec::with_capacity(items.len());
         let mut complete = true;
+        let start_ts = self.clock.now_ns();
 
         for (index, item) in items.iter().enumerate() {
             let idx = index as u32;
+            let now = self.clock.now_ns();
+
+            if let Some(token) = abort {
+                if token.load(std::sync::atomic::Ordering::Relaxed) {
+                    let record = AuditRecord {
+                        session: Some(session),
+                        resource: None,
+                        operation: "sequence",
+                        offset: None,
+                        decision: Decision::Denied(Denial::NotAccepting),
+                        status: OpStatus::Rejected,
+                        value: None,
+                        timestamp_ns: now,
+                        run_id: None,
+                        item_index: Some(idx),
+                    };
+                    audit.append(record);
+                    results.push(SequenceItemResult {
+                        index: idx,
+                        ok: false,
+                        outcome: SequenceItemOutcome::Error(Denial::NotAccepting),
+                    });
+                    complete = false;
+                    break;
+                }
+            }
+
+            if now.saturating_sub(start_ts) > self.limits.max_sequence_duration_ns {
+                let record = AuditRecord {
+                    session: Some(session),
+                    resource: None,
+                    operation: "sequence",
+                    offset: None,
+                    decision: Decision::Denied(Denial::Timeout),
+                    status: OpStatus::Rejected,
+                    value: None,
+                    timestamp_ns: now,
+                    run_id: None,
+                    item_index: Some(idx),
+                };
+                audit.append(record);
+                results.push(SequenceItemResult {
+                    index: idx,
+                    ok: false,
+                    outcome: SequenceItemOutcome::Error(Denial::Timeout),
+                });
+                complete = false;
+                break;
+            }
+
             match item {
                 SequenceItem::Read32 { resource, offset } => {
                     match self.read32_internal(
@@ -1058,6 +1232,7 @@ impl<B: MmioBackend, C: Timer> Executor<B, C> {
                             *interval_ns,
                             *timeout_ns,
                             Some(idx),
+                            abort,
                         )
                         .await
                     {
@@ -1211,6 +1386,7 @@ mod tests {
                 max_snapshot_items: 4,
                 max_sequence_items: 4,
                 max_delay_ns: 5_000_000_000,
+                max_sequence_duration_ns: 1_000_000_000,
             },
         );
         (executor, policy, AuditRing::new(32))
@@ -1249,6 +1425,7 @@ mod tests {
                 max_snapshot_items: 4,
                 max_sequence_items: 8,
                 max_delay_ns: 5_000_000_000,
+                max_sequence_duration_ns: 1_000_000_000,
             },
         );
         (executor, policy, AuditRing::new(32))
@@ -1427,6 +1604,7 @@ mod tests {
                 max_snapshot_items: 4,
                 max_sequence_items: 4,
                 max_delay_ns: 5_000_000_000,
+                max_sequence_duration_ns: 1_000_000_000,
             },
         );
         let mut audit = AuditRing::new(4);
@@ -1825,5 +2003,71 @@ mod tests {
         // Third item never touched hardware
         assert_eq!(accesses(&executor), &[0x3c, 0x40]); // 0x3c from item 0, 0x40 from before-read in item 1
         assert!(write_accesses(&executor).is_empty());
+    }
+
+    #[test]
+    fn sequence_stops_on_duration_timeout() {
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![], &[rule(0x3c, AccessClass::Sequence)]);
+        executor.limits.max_sequence_duration_ns = 500;
+        let items = [
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c },
+            SequenceItem::DelayNs(600),
+            SequenceItem::Read32 { resource: CTRL, offset: 0x3c },
+        ];
+        let outcome = futures::executor::block_on(
+            executor.execute_sequence(&policy, &mut audit, SESSION, &items),
+        )
+        .unwrap();
+        assert!(!outcome.complete);
+        assert_eq!(outcome.results.len(), 3);
+        assert!(outcome.results[0].ok);
+        assert!(outcome.results[1].ok);
+        assert!(!outcome.results[2].ok);
+        assert_eq!(outcome.results[2].outcome, SequenceItemOutcome::Error(Denial::Timeout));
+    }
+
+    #[test]
+    fn sequence_stops_on_abort() {
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![], &[rule(0x3c, AccessClass::Sequence)]);
+        let abort = std::sync::atomic::AtomicBool::new(true);
+        let items = [SequenceItem::Read32 { resource: CTRL, offset: 0x3c }];
+        let error = futures::executor::block_on(executor.execute_sequence_with_abort(
+            &policy,
+            &mut audit,
+            SESSION,
+            &items,
+            Some(&abort),
+        ))
+        .unwrap_err();
+        let SequenceError::Rejected { denial, .. } = error else {
+            panic!("expected rejected error, got {error:?}");
+        };
+        assert_eq!(denial, Denial::NotAccepting);
+    }
+
+    #[test]
+    fn poll32_aborts_when_token_set() {
+        let (mut executor, policy, mut audit) =
+            make_mutating_executor(vec![], &[rule(0x3c, AccessClass::Poll)]);
+        let abort = std::sync::atomic::AtomicBool::new(true);
+        let error = futures::executor::block_on(executor.poll32_with_abort(
+            &policy,
+            &mut audit,
+            SESSION,
+            CTRL,
+            0x3c,
+            0xdead_beef,
+            0xFFFF_FFFF,
+            100,
+            1000,
+            Some(&abort),
+        ))
+        .unwrap_err();
+        let PollError::Denied { denial, .. } = error else {
+            panic!("expected denial, got {error:?}");
+        };
+        assert_eq!(denial, Denial::NotAccepting);
     }
 }

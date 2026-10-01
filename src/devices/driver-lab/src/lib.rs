@@ -31,6 +31,9 @@ const MAX_SEQUENCE_ITEMS: usize = 64;
 /// Maximum delay accepted in a single sequence step (1 second).
 const MAX_DELAY_NS: i64 = 1_000_000_000;
 
+/// Maximum duration of an entire sequence (1 second bound).
+const MAX_SEQUENCE_DURATION_NS: i64 = 1_000_000_000;
+
 struct LabProxy {
     _node: Node,
     _scope: fasync::Scope,
@@ -105,12 +108,15 @@ impl Driver for LabProxy {
                 max_snapshot_items: MAX_SNAPSHOT_ITEMS,
                 max_sequence_items: MAX_SEQUENCE_ITEMS,
                 max_delay_ns: MAX_DELAY_NS,
+                max_sequence_duration_ns: MAX_SEQUENCE_DURATION_NS,
             },
         );
         let mut audit = AuditRing::new(AUDIT_CAPACITY);
         audit.append(AuditRecord::lifecycle("driver_start", now_ns()));
-        let state: SharedState =
-            Arc::new(Mutex::new(ProxyState { sessions, executor, audit, resource_digests }));
+        let state: SharedState = Arc::new(server::SharedStateData {
+            inner: Mutex::new(ProxyState { sessions, executor, audit, resource_digests }),
+            abort_token: std::sync::atomic::AtomicBool::new(false),
+        });
 
         let scope = fasync::Scope::new_with_name(Self::NAME);
         let mut outgoing = ServiceFs::new();
@@ -139,7 +145,8 @@ impl Driver for LabProxy {
     }
 
     async fn stop(&self) {
-        let mut state = self.state.lock().unwrap();
+        self.state.abort_token.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut state = self.state.inner.lock().unwrap();
         state.sessions.reject_new_sessions();
         let seq = state.audit.append(AuditRecord::lifecycle("driver_stop", now_ns()));
         info!("LabProxy::stop() audit seq {seq}");
@@ -160,5 +167,28 @@ mod tests {
         assert!(true);
 
         started_driver.stop_driver().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_driver_stop_sets_abort_token_and_rejects_sessions() {
+        let mut harness = TestHarness::<LabProxy>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+        let state = started_driver.get_driver().expect("driver").state.clone();
+
+        assert!(!state.abort_token.load(std::sync::atomic::Ordering::SeqCst));
+        {
+            let inner = state.inner.lock().unwrap();
+            assert!(inner.sessions.is_accepting());
+        }
+
+        started_driver.stop_driver().await;
+
+        assert!(state.abort_token.load(std::sync::atomic::Ordering::SeqCst));
+        {
+            let inner = state.inner.lock().unwrap();
+            assert!(!inner.sessions.is_accepting());
+            let page = inner.audit.read(0, 100);
+            assert!(page.entries.iter().any(|e| e.record.operation == "driver_stop"));
+        }
     }
 }

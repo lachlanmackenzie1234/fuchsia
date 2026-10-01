@@ -63,14 +63,14 @@ commit.
 
 Remaining phase 1 work:
 
-- [ ] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
+- [x] CS14 `[driver-lab] Bounded sequences and mutation in proxy driver`
       (11.4, 11.5, 12.2-12.4, 13; milestone P3).
-- [ ] CS15 `[driver-lab] Host tooling support for mutation and sequences`
+- [x] CS15 `[driver-lab] Host tooling support for mutation and sequences`
       (11, 14; milestone P3 / H4).
-- [ ] CS16 `[driver-lab] Driver-shaped public Python API` -- `connect`/`attach`,
+- [x] CS16 `[driver-lab] Driver-shaped public Python API` -- `connect`/`attach`,
       `HardwareSession`, `MmioRegion`, and representative protocol resources
       (6.1, 9; milestone H4).
-- [ ] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
+- [x] CS17 `[driver-lab] Stop-path hardening and cancellation` (19; milestone P2).
 - [ ] CS18 `[driver-lab] Host CLI subtool expansion and verified teardown`
       (8.3, 12, 14.2; milestone H3 remainder).
 - [ ] Engineering assembly inclusion and production-absence verification

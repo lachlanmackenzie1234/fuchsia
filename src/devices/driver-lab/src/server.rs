@@ -75,7 +75,10 @@ impl lab_proxy_core::hardware_backend::Timer for ZxClock {
     }
 }
 
-/// Shared proxy state behind one lock.
+/// Maximum sequence duration in nanoseconds (1 second bound).
+pub const MAX_SEQUENCE_DURATION_NS: i64 = 1_000_000_000;
+
+/// Shared proxy state behind one lock and cancellation token.
 #[derive(Debug)]
 pub struct ProxyState {
     /// Session lifecycle and per-session policy.
@@ -89,8 +92,13 @@ pub struct ProxyState {
     pub resource_digests: std::collections::BTreeMap<u32, String>,
 }
 
-/// Handle to the shared proxy state.
-pub type SharedState = Arc<Mutex<ProxyState>>;
+/// Handle to the shared proxy state and cancellation token.
+pub struct SharedStateData {
+    pub inner: Mutex<ProxyState>,
+    pub abort_token: std::sync::atomic::AtomicBool,
+}
+
+pub type SharedState = Arc<SharedStateData>;
 
 fn now_ns() -> i64 {
     zx::MonotonicInstant::get().into_nanos()
@@ -153,7 +161,7 @@ fn open_error_denial(error: &OpenError) -> Denial {
 }
 
 fn describe(state: &SharedState) -> flab::ProxyDescription {
-    let state = state.lock().unwrap();
+    let state = state.inner.lock().unwrap();
     let identity = state.sessions.identity();
     let resources: Vec<flab::ResourceDescription> = state
         .sessions
@@ -199,6 +207,22 @@ fn open_session(
         plan_digest: context.plan_digest.unwrap_or_default(),
         host_tool_version: context.host_tool_version.unwrap_or_default(),
     };
+    if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+        let mut state = state.inner.lock().unwrap();
+        state.audit.append(AuditRecord {
+            session: None,
+            resource: None,
+            operation: "open_session",
+            offset: None,
+            decision: Decision::Denied(Denial::NotAccepting),
+            status: OpStatus::Rejected,
+            value: None,
+            timestamp_ns: now_ns(),
+            run_id: Some(context.run_id),
+            item_index: None,
+        });
+        return Err(OpenError::NotAccepting);
+    }
     let mode = match mode {
         flab::SessionMode::ReadOnly => SessionMode::ReadOnly,
         flab::SessionMode::Mutating => SessionMode::Mutating,
@@ -206,7 +230,7 @@ fn open_session(
     // Reserved phase 2 expectations fail closed rather than being
     // silently ignored.
     if expectations.topology_generation.is_some() || expectations.bound_driver_url.is_some() {
-        let mut state = state.lock().unwrap();
+        let mut state = state.inner.lock().unwrap();
         state.audit.append(AuditRecord {
             session: None,
             resource: None,
@@ -245,7 +269,7 @@ fn open_session(
         })
         .collect();
 
-    let mut state = state.lock().unwrap();
+    let mut state = state.inner.lock().unwrap();
     let run_id = context.run_id.clone();
     let result = state.sessions.open_session(context, mode, &expectations, rules);
     let record = match &result {
@@ -326,8 +350,12 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
             flab::SessionRequest::Read32 { resource, offset, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
                 let result = {
-                    let guard = &mut *state.lock().unwrap();
+                    let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
                     match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
@@ -343,12 +371,16 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                 let _ = responder.send(result);
             }
             flab::SessionRequest::Snapshot { items, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
                 let items: Vec<SnapshotItem> = items
                     .iter()
                     .map(|item| SnapshotItem { resource: item.resource, offset: item.offset })
                     .collect();
                 let result = {
-                    let guard = &mut *state.lock().unwrap();
+                    let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
                     match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
@@ -395,10 +427,14 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                 readback,
                 responder,
             } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
                 let precondition =
                     precondition.map(|p| WritePrecondition { expected: p.expected, mask: p.mask });
                 let result = {
-                    let guard = &mut *state.lock().unwrap();
+                    let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
                     match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
@@ -434,12 +470,16 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                 timeout_ns,
                 responder,
             } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
                 let start_ts = now_ns();
                 let deadline = start_ts.saturating_add(timeout_ns);
 
                 // Initial lock: validate session and policy.
                 let initial_check = {
-                    let guard = &mut *state.lock().unwrap();
+                    let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, audit, .. } = guard;
                     match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
@@ -480,9 +520,12 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
 
                 let mut last_val = None;
                 let poll_res = loop {
+                    if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                        break Err(flab::OperationError::NotAccepting);
+                    }
                     // Lock to perform one read step
                     let step_res = {
-                        let guard = &mut *state.lock().unwrap();
+                        let guard = &mut *state.inner.lock().unwrap();
                         let ProxyState { sessions, executor, audit, .. } = guard;
                         match sessions.session(id) {
                             None => Err(flab::OperationError::StaleIdentity),
@@ -512,7 +555,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                         Ok(None) => {
                             let now = now_ns();
                             if now >= deadline {
-                                let guard = &mut *state.lock().unwrap();
+                                let guard = &mut *state.inner.lock().unwrap();
                                 let ProxyState { sessions, executor, audit, .. } = guard;
                                 if sessions.session(id).is_none() {
                                     break Err(flab::OperationError::StaleIdentity);
@@ -540,6 +583,9 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                                 ))
                                 .await;
                             }
+                            if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                                break Err(flab::OperationError::NotAccepting);
+                            }
                         }
                     }
                 };
@@ -547,6 +593,10 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                 let _ = responder.send(poll_res);
             }
             flab::SessionRequest::ExecuteSequence { items, responder } => {
+                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = responder.send(Err(flab::OperationError::NotAccepting));
+                    continue;
+                }
                 let mut core_items = Vec::with_capacity(items.len());
                 let mut unknown_item_index = None;
                 for (idx, item) in items.iter().enumerate() {
@@ -561,7 +611,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
 
                 // Initial lock: whole-sequence prevalidation
                 let prevalidation = {
-                    let guard = &mut *state.lock().unwrap();
+                    let guard = &mut *state.inner.lock().unwrap();
                     let ProxyState { sessions, executor, audit, .. } = guard;
                     match sessions.session(id) {
                         None => Err(flab::OperationError::StaleIdentity),
@@ -627,15 +677,56 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                 }
 
                 // Sequence execution loop
+                let seq_start_ts = now_ns();
                 let mut results = Vec::with_capacity(core_items.len());
                 let mut complete = true;
 
                 for (index, item) in core_items.iter().enumerate() {
                     let idx = index as u32;
+
+                    if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                        results.push(flab::SequenceItemResult {
+                            index: idx,
+                            ok: false,
+                            outcome: flab::SequenceItemOutcome::Error(
+                                flab::OperationError::NotAccepting,
+                            ),
+                        });
+                        complete = false;
+                        break;
+                    }
+
+                    if now_ns().saturating_sub(seq_start_ts) > MAX_SEQUENCE_DURATION_NS {
+                        let guard = &mut *state.inner.lock().unwrap();
+                        let ProxyState { audit, .. } = guard;
+                        let record = AuditRecord {
+                            session: Some(id),
+                            resource: None,
+                            operation: "sequence",
+                            offset: None,
+                            decision: Decision::Denied(Denial::Timeout),
+                            status: OpStatus::Rejected,
+                            value: None,
+                            timestamp_ns: now_ns(),
+                            run_id: None,
+                            item_index: Some(idx),
+                        };
+                        audit.append(record);
+                        results.push(flab::SequenceItemResult {
+                            index: idx,
+                            ok: false,
+                            outcome: flab::SequenceItemOutcome::Error(
+                                flab::OperationError::Timeout,
+                            ),
+                        });
+                        complete = false;
+                        break;
+                    }
+
                     match item {
                         CoreSequenceItem::Read32 { resource, offset } => {
                             let step = {
-                                let guard = &mut *state.lock().unwrap();
+                                let guard = &mut *state.inner.lock().unwrap();
                                 let ProxyState { sessions, executor, audit, .. } = guard;
                                 match sessions.session(id) {
                                     None => Err(flab::OperationError::StaleIdentity),
@@ -689,7 +780,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                             readback,
                         } => {
                             let step = {
-                                let guard = &mut *state.lock().unwrap();
+                                let guard = &mut *state.inner.lock().unwrap();
                                 let ProxyState { sessions, executor, audit, .. } = guard;
                                 match sessions.session(id) {
                                     None => Err(flab::OperationError::StaleIdentity),
@@ -740,7 +831,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                         }
                         CoreSequenceItem::Barrier => {
                             let step = {
-                                let guard = &mut *state.lock().unwrap();
+                                let guard = &mut *state.inner.lock().unwrap();
                                 let ProxyState { sessions, executor, audit, .. } = guard;
                                 match sessions.session(id) {
                                     None => Err(flab::OperationError::StaleIdentity),
@@ -790,8 +881,19 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                                 ))
                                 .await;
                             }
+                            if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                                results.push(flab::SequenceItemResult {
+                                    index: idx,
+                                    ok: false,
+                                    outcome: flab::SequenceItemOutcome::Error(
+                                        flab::OperationError::NotAccepting,
+                                    ),
+                                });
+                                complete = false;
+                                break;
+                            }
                             let step = {
-                                let guard = &mut *state.lock().unwrap();
+                                let guard = &mut *state.inner.lock().unwrap();
                                 let ProxyState { sessions, audit, .. } = guard;
                                 match sessions.session(id) {
                                     None => Err(flab::OperationError::StaleIdentity),
@@ -845,8 +947,29 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                             let deadline = start_ts.saturating_add(*timeout_ns);
                             let mut last_val = None;
                             let poll_res = loop {
+                                if state.abort_token.load(std::sync::atomic::Ordering::SeqCst) {
+                                    break Err(flab::OperationError::NotAccepting);
+                                }
+                                if now_ns().saturating_sub(seq_start_ts) > MAX_SEQUENCE_DURATION_NS
+                                {
+                                    let guard = &mut *state.inner.lock().unwrap();
+                                    let ProxyState { sessions, executor, audit, .. } = guard;
+                                    if sessions.session(id).is_none() {
+                                        break Err(flab::OperationError::StaleIdentity);
+                                    } else {
+                                        executor.poll32_timeout(
+                                            audit,
+                                            id,
+                                            *resource,
+                                            *offset,
+                                            last_val,
+                                            Some(idx),
+                                        );
+                                        break Err(flab::OperationError::Timeout);
+                                    }
+                                }
                                 let step = {
-                                    let guard = &mut *state.lock().unwrap();
+                                    let guard = &mut *state.inner.lock().unwrap();
                                     let ProxyState { sessions, executor, audit, .. } = guard;
                                     match sessions.session(id) {
                                         None => Err(flab::OperationError::StaleIdentity),
@@ -891,7 +1014,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                                     Ok(None) => {
                                         let now = now_ns();
                                         if now >= deadline {
-                                            let guard = &mut *state.lock().unwrap();
+                                            let guard = &mut *state.inner.lock().unwrap();
                                             let ProxyState { sessions, executor, audit, .. } =
                                                 guard;
                                             if sessions.session(id).is_none() {
@@ -925,6 +1048,12 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
                                             ))
                                             .await;
                                         }
+                                        if state
+                                            .abort_token
+                                            .load(std::sync::atomic::Ordering::SeqCst)
+                                        {
+                                            break Err(flab::OperationError::NotAccepting);
+                                        }
                                     }
                                 }
                             };
@@ -948,7 +1077,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
             }
             flab::SessionRequest::ReadAudit { cursor, limit, responder } => {
                 let (page, boot_id, proxy_generation) = {
-                    let state = state.lock().unwrap();
+                    let state = state.inner.lock().unwrap();
                     let limit = (limit.min(flab::MAX_AUDIT_PAGE_ENTRIES)) as usize;
                     let identity = state.sessions.identity();
                     (
@@ -1001,7 +1130,7 @@ async fn serve_session(state: SharedState, id: u64, mut stream: flab::SessionReq
 
     // Channel closed: close the session, release the mutation lease, and
     // audit the closure.
-    let mut state = state.lock().unwrap();
+    let mut state = state.inner.lock().unwrap();
     if state.sessions.close_session(id) {
         let mut record = AuditRecord::lifecycle("session_closed", now_ns());
         record.session = Some(id);
