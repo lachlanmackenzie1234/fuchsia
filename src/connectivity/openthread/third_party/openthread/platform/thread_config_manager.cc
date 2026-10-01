@@ -42,12 +42,16 @@ ThreadConfigManager::ThreadConfigManager(const std::string& path) : config_store
     config_.SetObject();
   }
 
-  if (json_parser_.HasError()) {
-    // Report error but don't crash if the file is not a valid json format.
-    // Start from a blank object in that case.
-    otPlatLog(OT_LOG_LEVEL_WARN, otLogRegion::OT_LOG_REGION_PLATFORM,
-              "Failed to load configuration from file: %s with error: %s",
-              config_store_path_.c_str(), json_parser_.error_str().c_str());
+  if (json_parser_.HasError() || !config_.IsObject()) {
+    if (json_parser_.HasError()) {
+      otPlatLog(OT_LOG_LEVEL_WARN, otLogRegion::OT_LOG_REGION_PLATFORM,
+                "Failed to load configuration from file: %s with error: %s",
+                config_store_path_.c_str(), json_parser_.error_str().c_str());
+    } else {
+      otPlatLog(OT_LOG_LEVEL_WARN, otLogRegion::OT_LOG_REGION_PLATFORM,
+                "Configuration file: %s does not contain a JSON object.",
+                config_store_path_.c_str());
+    }
     otPlatLog(OT_LOG_LEVEL_WARN, otLogRegion::OT_LOG_REGION_PLATFORM,
               "Will assume no existing configuration.");
 
