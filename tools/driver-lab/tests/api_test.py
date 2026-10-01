@@ -18,9 +18,15 @@ from driver_lab.api import (
     EXIT_TRANSPORT,
     EXIT_UNSUPPORTED,
     DriverLab,
+    DriverLabError,
 )
 from driver_lab.consent import WRITE_WARNING, ConsentDecision
-from driver_lab.discovery import FakeNodeDiscovery, NodeDescription
+from driver_lab.discovery import (
+    DEFAULT_PROXY_DRIVER_URL,
+    FakeNodeDiscovery,
+    FakeProxyActivator,
+    NodeDescription,
+)
 from driver_lab.evidence import EvidenceError
 from driver_lab.models import AccessClass, Decision, ReadGrant
 from driver_lab.permissions import save_grants
@@ -1015,6 +1021,136 @@ class RunPlanTest(unittest.IsolatedAsyncioTestCase):
             result_seq.failure,
             "direct mode does not provide private MMIO access",
         )
+
+    async def test_bind_unclaimed_activates_and_verifies_teardown(
+        self,
+    ) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        activator = FakeProxyActivator(discovery)
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+            activator=activator,
+        )
+        plan = make_plan()
+        result = await lab.run_plan(plan)
+        self.assertTrue(result.ok, result.failure)
+        self.assertEqual(
+            activator.bind_calls, [(NODE_ID, DEFAULT_PROXY_DRIVER_URL)]
+        )
+        self.assertEqual(
+            activator.end_calls, [(NODE_ID, DEFAULT_PROXY_DRIVER_URL)]
+        )
+        # Verify node is again unclaimed in discovery
+        node = await discovery.describe_node(NODE_ID)
+        self.assertIsNotNone(node)
+        assert node is not None
+        self.assertTrue(node.is_unclaimed)
+        # Verify node.before.json and node.after.json evidence files
+        before_file = result.evidence_dir / "node.before.json"
+        after_file = result.evidence_dir / "node.after.json"
+        self.assertTrue(before_file.exists())
+        self.assertTrue(after_file.exists())
+        before_data = json.loads(before_file.read_text())
+        after_data = json.loads(after_file.read_text())
+        self.assertIsNone(before_data["bound_driver_url"])
+        self.assertIsNone(after_data["bound_driver_url"])
+
+    async def test_bind_unclaimed_verified_teardown_failure_when_still_bound(
+        self,
+    ) -> None:
+        save_grants(self.grants_path, [make_grant()])
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+
+        class BrokenActivator(FakeProxyActivator):
+            async def end_proxy(
+                self,
+                node_id: str,
+                driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+            ) -> None:
+                # Intentionally leave node bound!
+                self.end_calls.append((node_id, driver_url))
+
+        activator = BrokenActivator(discovery)
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+            activator=activator,
+        )
+        plan = make_plan()
+        result = await lab.run_plan(plan)
+        self.assertEqual(result.exit_category, EXIT_ACTIVATION)
+        self.assertIsNotNone(result.failure)
+        assert result.failure is not None
+        self.assertIn("verified teardown failed", result.failure)
+
+    async def test_bind_proxy_and_end_proxy_explicit_methods(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker=NODE_ID,
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        activator = FakeProxyActivator(discovery)
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+            discovery=discovery,
+            activator=activator,
+        )
+        await lab.bind_proxy(NODE_ID)
+        node = await discovery.describe_node(NODE_ID)
+        self.assertIsNotNone(node)
+        assert node is not None
+        self.assertFalse(node.is_unclaimed)
+        self.assertEqual(node.bound_driver_url, DEFAULT_PROXY_DRIVER_URL)
+
+        await lab.end_proxy(NODE_ID)
+        node_after = await discovery.describe_node(NODE_ID)
+        self.assertIsNotNone(node_after)
+        assert node_after is not None
+        self.assertTrue(node_after.is_unclaimed)
+
+    async def test_bind_proxy_raises_when_no_activator(self) -> None:
+        lab = DriverLab(
+            self.fake,
+            grants_path=self.grants_path,
+            evidence_root=self.evidence_root,
+            target_scope=TARGET_SCOPE,
+            node_id=NODE_ID,
+        )
+        with self.assertRaises(DriverLabError):
+            await lab.bind_proxy(NODE_ID)
+        with self.assertRaises(DriverLabError):
+            await lab.end_proxy(NODE_ID)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ detection over FIDL, fulfilling Phase 1 Milestone H0/H1.
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
@@ -63,6 +64,10 @@ class NodeDescription:
     def is_unclaimed(self) -> bool:
         """True if the node has no bound driver."""
         return self.bound_driver_url is None or self.bound_driver_url == ""
+
+    def has_protocol(self, protocol: str) -> bool:
+        """True if the node offers the specified protocol."""
+        return protocol in self.offers
 
 
 def _extract_property_value(val: Any) -> Any:
@@ -346,3 +351,129 @@ def connect_discovery(
     context = Context(config=config, target=target)
     channel = context.connect_device_proxy(moniker, capability)
     return FidlNodeDiscovery(fdd.ManagerClient(channel), context.channel_create)
+
+
+DEFAULT_PROXY_DRIVER_URL = (
+    "fuchsia-pkg://fuchsia.com/lab_proxy#meta/lab_proxy.cm"
+)
+
+
+class ProxyActivator(Protocol):
+    """Interface for activating and deactivating the proxy driver on unclaimed nodes."""
+
+    async def bind_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        """Binds the proxy driver to the specified unclaimed node."""
+        ...
+
+    async def end_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        """Ends proxy access on the specified node."""
+        ...
+
+
+class FakeProxyActivator:
+    """In-memory activator for unit tests that mutates FakeNodeDiscovery state."""
+
+    def __init__(self, discovery: FakeNodeDiscovery) -> None:
+        self._discovery = discovery
+        self.bind_calls: list[tuple[str, str]] = []
+        self.end_calls: list[tuple[str, str]] = []
+
+    async def bind_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        self.bind_calls.append((node_id, driver_url))
+        node = await self._discovery.describe_node(node_id)
+        if node is None:
+            raise NodeNotFoundError(f"node {node_id!r} not found")
+        self._discovery.add_node(
+            NodeDescription(
+                moniker=node.moniker,
+                bound_driver_url=driver_url,
+                driver_host_koid=node.driver_host_koid,
+                properties=node.properties,
+                offers=node.offers,
+                quarantined=node.quarantined,
+                topological_path=node.topological_path,
+            )
+        )
+
+    async def end_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        self.end_calls.append((node_id, driver_url))
+        node = await self._discovery.describe_node(node_id)
+        if node is None:
+            raise NodeNotFoundError(f"node {node_id!r} not found")
+        self._discovery.add_node(
+            NodeDescription(
+                moniker=node.moniker,
+                bound_driver_url=None,
+                driver_host_koid=node.driver_host_koid,
+                properties=node.properties,
+                offers=node.offers,
+                quarantined=node.quarantined,
+                topological_path=node.topological_path,
+            )
+        )
+
+
+class FfxProxyActivator:
+    """Proxy activator communicating via ffx driver subcommands."""
+
+    def __init__(self, target: str | None = None) -> None:
+        self._target = target
+
+    async def bind_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        cmd = ["ffx"]
+        if self._target:
+            cmd.extend(["--target", self._target])
+        cmd.extend(["driver", "register", driver_url])
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise DiscoveryTransportError(
+                f"ffx driver register failed ({proc.returncode}): {stderr.decode().strip()}"
+            )
+
+    async def end_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        cmd = ["ffx"]
+        if self._target:
+            cmd.extend(["--target", self._target])
+        cmd.extend(["driver", "disable", driver_url])
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise DiscoveryTransportError(
+                f"ffx driver disable failed ({proc.returncode}): {stderr.decode().strip()}"
+            )
+
+
+def connect_activator(
+    target: str | None = None,
+) -> ProxyActivator:
+    """Returns a proxy activator for the target."""
+    return FfxProxyActivator(target=target)

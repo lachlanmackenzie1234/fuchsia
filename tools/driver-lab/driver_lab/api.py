@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,10 +28,12 @@ from driver_lab.consent import (
     grant_from_decision,
 )
 from driver_lab.discovery import (
+    DEFAULT_PROXY_DRIVER_URL,
     DiscoveryError,
     NodeDescription,
     NodeDiscovery,
     NodeSummary,
+    ProxyActivator,
 )
 from driver_lab.evidence import EvidenceRecorder
 from driver_lab.models import AccessClass, AccessRequest
@@ -264,6 +266,7 @@ class DriverLab:
         node_id: str,
         consent: ConsentPrompt | None = None,
         discovery: NodeDiscovery | None = None,
+        activator: ProxyActivator | None = None,
     ) -> None:
         self._transport = transport
         self._grants_path = grants_path
@@ -272,6 +275,7 @@ class DriverLab:
         self._node_id = node_id
         self._consent = consent
         self._discovery = discovery
+        self._activator = activator
 
     async def list_nodes(
         self,
@@ -293,6 +297,30 @@ class DriverLab:
             )
         return await self._discovery.describe_node(node_id)
 
+    async def bind_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        """Activates the proxy driver on an unclaimed node."""
+        if self._activator is None:
+            raise DriverLabError(
+                "proxy activator is not configured for this DriverLab instance"
+            )
+        await self._activator.bind_proxy(node_id, driver_url)
+
+    async def end_proxy(
+        self,
+        node_id: str,
+        driver_url: str = DEFAULT_PROXY_DRIVER_URL,
+    ) -> None:
+        """Ends proxy access and unbinds/disables the proxy driver."""
+        if self._activator is None:
+            raise DriverLabError(
+                "proxy activator is not configured for this DriverLab instance"
+            )
+        await self._activator.end_proxy(node_id, driver_url)
+
     @classmethod
     async def connect(
         cls,
@@ -306,6 +334,7 @@ class DriverLab:
         node_id: str | None = None,
         consent: ConsentPrompt | None = None,
         discovery: NodeDiscovery | None = None,
+        activator: ProxyActivator | None = None,
         proxy_transport: ProxyTransport | None = None,
         direct_transport: DirectTransport | None = None,
     ) -> "DriverLab":
@@ -326,6 +355,25 @@ class DriverLab:
                 "Direct transport must be explicitly provided via direct_transport"
             )
 
+        if discovery is None:
+            try:
+                from driver_lab.discovery import connect_discovery
+
+                discovery = connect_discovery(
+                    target=None if target == "default" else target
+                )
+            except Exception:
+                discovery = None
+        if activator is None:
+            try:
+                from driver_lab.discovery import connect_activator
+
+                activator = connect_activator(
+                    target=None if target == "default" else target
+                )
+            except Exception:
+                activator = None
+
         return cls(
             transport=active_transport,
             grants_path=grants_path or Path("grants.toml"),
@@ -334,6 +382,7 @@ class DriverLab:
             node_id=node_id or target,
             consent=consent,
             discovery=discovery,
+            activator=activator,
         )
 
     async def attach(
@@ -738,7 +787,7 @@ class DriverLab:
         canonical: Mapping[str, Any],
         digest: str,
         recorder: EvidenceRecorder,
-        finish: Callable[[int, str | None], RunResult],
+        finish: Callable[[int, str | None], Awaitable[RunResult]],
         calls: list[Mapping[str, Any]],
     ) -> RunResult:
         recorder.mark_not_applicable("permission-resolution.json")
@@ -753,7 +802,9 @@ class DriverLab:
             assert isinstance(self._transport, DirectTransport)
             direct_session = await self._transport.open_direct_session(context)
         except TransportError as error:
-            return finish(EXIT_TRANSPORT, f"direct connection failed: {error}")
+            return await finish(
+                EXIT_TRANSPORT, f"direct connection failed: {error}"
+            )
 
         exit_category = EXIT_SUCCESS
         failure: str | None = None
@@ -812,7 +863,7 @@ class DriverLab:
                 exit_category = EXIT_TRANSPORT
                 failure = f"session close failed: {error}"
 
-        return finish(exit_category, failure)
+        return await finish(exit_category, failure)
 
     async def run_plan(self, plan: Mapping[str, object]) -> RunResult:
         """Runs one validated plan to a finalized evidence bundle.
@@ -836,7 +887,35 @@ class DriverLab:
         sequences: list[SequenceRecord] = []
         calls: list[Mapping[str, Any]] = []
 
-        def finish(exit_category: int, failure: str | None) -> RunResult:
+        was_proxy_activated = False
+        teardown_done = False
+
+        async def finish(exit_category: int, failure: str | None) -> RunResult:
+            nonlocal was_proxy_activated, teardown_done
+            if was_proxy_activated and not teardown_done:
+                teardown_done = True
+                node_id = canonical["node"]["id"]
+                try:
+                    if self._activator is not None:
+                        await self._activator.end_proxy(node_id)
+                    if self._discovery is not None:
+                        post_desc = await self._discovery.describe_node(node_id)
+                        if post_desc is not None:
+                            recorder.write_json(
+                                "node.after.json", dataclasses.asdict(post_desc)
+                            )
+                            if not post_desc.is_unclaimed:
+                                if failure is None:
+                                    exit_category = EXIT_ACTIVATION
+                                    failure = (
+                                        f"verified teardown failed: node {node_id} "
+                                        f"still bound to {post_desc.bound_driver_url}"
+                                    )
+                except Exception as exc:
+                    if failure is None:
+                        exit_category = EXIT_ACTIVATION
+                        failure = f"teardown failed: {exc}"
+
             for name in _DEFERRED_ARTIFACTS + _NOT_APPLICABLE_ARTIFACTS:
                 if not recorder.recorded(name):
                     recorder.mark_not_applicable(name)
@@ -870,20 +949,20 @@ class DriverLab:
 
         if requested_mode == "direct":
             if not is_direct_transport:
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     "transport does not support direct mode; a direct-mode plan must never silently execute over the proxy",
                 )
             capabilities = DIRECT_CAPABILITIES
         elif requested_mode == "proxy":
             if is_direct_transport:
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     "transport does not support proxy mode",
                 )
             capabilities = PROXY_CAPABILITIES
         else:
-            return finish(
+            return await finish(
                 EXIT_UNSUPPORTED,
                 f"access.mode {requested_mode!r} is not implemented",
             )
@@ -896,7 +975,7 @@ class DriverLab:
             ("requires_target_local_timing", "target_local_timing"),
         ):
             if access[flag] and not capabilities[capability]:
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     f"plan requires {capability}, which {requested_mode} mode does not provide",
                 )
@@ -913,49 +992,75 @@ class DriverLab:
                 )
                 for op in canonical["operations"]
             ):
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     "direct mode does not provide private MMIO access",
                 )
         elif requested_mode == "proxy":
             if any(op["kind"] == "fidl_call" for op in canonical["operations"]):
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     "proxy mode in phase 1 does not support fidl_call",
                 )
 
-        if "expected_unclaimed" in canonical["node"]:
+        if "expected_unclaimed" in canonical["node"] or (
+            requested_mode == "proxy"
+            and access.get("activation") == "bind-unclaimed"
+            and self._discovery is not None
+            and self._activator is not None
+        ):
             if self._discovery is None:
                 # Node discovery is not configured, so the assertion cannot be
                 # verified; fail closed rather than running unverified.
-                return finish(
+                return await finish(
                     EXIT_UNSUPPORTED,
                     "node.expected_unclaimed cannot be verified without node discovery",
                 )
-            expected_unclaimed = canonical["node"]["expected_unclaimed"]
+            expected_unclaimed = canonical["node"].get(
+                "expected_unclaimed", True
+            )
             node_id = canonical["node"]["id"]
             try:
                 node_desc = await self._discovery.describe_node(node_id)
             except DiscoveryError as exc:
-                return finish(
+                return await finish(
                     EXIT_ACTIVATION,
                     f"node discovery failed for {node_id}: {exc}",
                 )
             if node_desc is None:
-                return finish(
+                return await finish(
                     EXIT_ACTIVATION,
                     f"node {node_id} not found during discovery",
                 )
             if expected_unclaimed and not node_desc.is_unclaimed:
-                return finish(
+                return await finish(
                     EXIT_ACTIVATION,
                     f"node {node_id} is bound to {node_desc.bound_driver_url}; "
                     "managed takeover is phase 2",
                 )
             if not expected_unclaimed and node_desc.is_unclaimed:
-                return finish(
+                return await finish(
                     EXIT_ACTIVATION,
                     f"node {node_id} is unclaimed, expected bound driver",
+                )
+            recorder.write_json(
+                "node.before.json", dataclasses.asdict(node_desc)
+            )
+
+        if (
+            requested_mode == "proxy"
+            and access.get("activation") == "bind-unclaimed"
+            and self._activator is not None
+            and self._discovery is not None
+        ):
+            node_id = canonical["node"]["id"]
+            try:
+                await self._activator.bind_proxy(node_id)
+                was_proxy_activated = True
+            except Exception as error:
+                return await finish(
+                    EXIT_ACTIVATION,
+                    f"proxy activation failed: {error}",
                 )
 
         # Prepare: describe, freeze expectations, resolve consent. No
@@ -963,7 +1068,7 @@ class DriverLab:
         try:
             description = await self._transport.describe()
         except TransportError as error:
-            return finish(EXIT_TRANSPORT, f"describe failed: {error}")
+            return await finish(EXIT_TRANSPORT, f"describe failed: {error}")
         recorder.write_json(
             "target.description.json", dataclasses.asdict(description)
         )
@@ -973,18 +1078,20 @@ class DriverLab:
             expected_boot_id is not None
             and expected_boot_id != description.boot_id
         ):
-            return finish(EXIT_STALE, "expected_boot_id does not match target")
+            return await finish(
+                EXIT_STALE, "expected_boot_id does not match target"
+            )
 
         expected_digest = canonical["node"].get("expected_resource_digest")
         if expected_digest is not None:
             if requested_mode == "direct":
-                return finish(
+                return await finish(
                     EXIT_STALE,
                     "direct mode target has no proxy resource digest",
                 )
             assert isinstance(description, ProxyDescription)
             if expected_digest != description.resource_digest:
-                return finish(
+                return await finish(
                     EXIT_STALE, "expected_resource_digest does not match target"
                 )
 
@@ -998,12 +1105,12 @@ class DriverLab:
         try:
             operations, requests = self._derive(canonical, description)
         except _StaleResource as error:
-            return finish(EXIT_STALE, str(error))
+            return await finish(EXIT_STALE, str(error))
 
         try:
             grants = load_grants(self._grants_path)
         except GrantStoreError as error:
-            return finish(EXIT_PERMISSION, f"grant store error: {error}")
+            return await finish(EXIT_PERMISSION, f"grant store error: {error}")
 
         resolved: list[tuple[int, AccessRequest, Resolution]] = []
         undecided: dict[
@@ -1043,7 +1150,7 @@ class DriverLab:
                         and access_request.access
                         in (AccessClass.WRITE, AccessClass.SEQUENCE)
                     ):
-                        return finish(
+                        return await finish(
                             EXIT_PERMISSION,
                             f"persistent {access_request.access.value} grants are not supported",
                         )
@@ -1053,7 +1160,7 @@ class DriverLab:
                             grant_from_decision(access_request, decision),
                         )
                     except (GrantStoreError, ValueError) as error:
-                        return finish(
+                        return await finish(
                             EXIT_PERMISSION, f"grant store error: {error}"
                         )
 
@@ -1096,11 +1203,11 @@ class DriverLab:
             )
         recorder.write_json("permission-resolution.json", resolution_rows)
         if persistent_denied:
-            return finish(EXIT_PERMISSION, "denied by persistent grant")
+            return await finish(EXIT_PERMISSION, "denied by persistent grant")
         if operator_denied:
-            return finish(EXIT_PERMISSION, "denied by operator")
+            return await finish(EXIT_PERMISSION, "denied by operator")
         if fail_closed:
-            return finish(
+            return await finish(
                 EXIT_PERMISSION,
                 "consent required; unattended operation fails closed",
             )
@@ -1142,9 +1249,11 @@ class DriverLab:
                 if error.reason in STALE_REJECTIONS
                 else EXIT_ACTIVATION
             )
-            return finish(category, f"session rejected: {error.reason.value}")
+            return await finish(
+                category, f"session rejected: {error.reason.value}"
+            )
         except TransportError as error:
-            return finish(EXIT_TRANSPORT, f"open_session failed: {error}")
+            return await finish(EXIT_TRANSPORT, f"open_session failed: {error}")
 
         exit_category = EXIT_SUCCESS
         failure: str | None = None
@@ -1407,7 +1516,7 @@ class DriverLab:
                 failure = f"audit drain failed: {error}"
         recorder.write_jsonl("target-audit.jsonl", audit_rows)
 
-        return finish(exit_category, failure)
+        return await finish(exit_category, failure)
 
 
 async def connect(

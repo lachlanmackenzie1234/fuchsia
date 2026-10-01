@@ -20,13 +20,26 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
-from driver_lab.api import EXIT_EVIDENCE, EXIT_OPERATION, DriverLab
+from driver_lab.api import (
+    EXIT_ACTIVATION,
+    EXIT_EVIDENCE,
+    EXIT_OPERATION,
+    DriverLab,
+)
 from driver_lab.consent import ConsentDecision
+from driver_lab.discovery import (
+    DEFAULT_PROXY_DRIVER_URL,
+    DiscoveryError,
+    NodeDiscovery,
+    ProxyActivator,
+)
 from driver_lab.evidence import EvidenceError
 from driver_lab.models import AccessClass, AccessRequest, Decision, ReadGrant
 from driver_lab.permissions import (
     GrantStoreError,
+    Outcome,
     add_grant,
     load_grants,
     resolve,
@@ -115,6 +128,189 @@ def _permissions_revoke(args: argparse.Namespace) -> int:
 
 
 def _permissions_explain(args: argparse.Namespace) -> int:
+    grants = load_grants(args.grants)
+    if getattr(args, "plan", None) is not None:
+        plan = _load_plan(args.plan)
+        canonical = validate_plan(plan)
+        target_scope = args.target_scope or canonical["target"]["selector"]
+        node_id = args.node_id or canonical["node"]["id"]
+        resource_digest = args.resource_digest or canonical["node"].get(
+            "expected_resource_digest"
+        )
+        if not resource_digest:
+            print(
+                json.dumps(
+                    {
+                        "error": (
+                            "plan node has no expected_resource_digest; "
+                            "specify --resource-digest or include it in the plan"
+                        )
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+
+        requests: list[tuple[int, AccessRequest]] = []
+        for index, op in enumerate(canonical["operations"]):
+            kind = op["kind"]
+            if kind == "mmio_read32":
+                requests.append(
+                    (
+                        index,
+                        AccessRequest(
+                            target_scope=target_scope,
+                            node_id=node_id,
+                            resource_digest=resource_digest,
+                            resource=op["resource"],
+                            offset=op["offset"],
+                            width=4,
+                            access=AccessClass.READ_ONCE,
+                        ),
+                    )
+                )
+            elif kind == "mmio_snapshot32":
+                for item in op["items"]:
+                    requests.append(
+                        (
+                            index,
+                            AccessRequest(
+                                target_scope=target_scope,
+                                node_id=node_id,
+                                resource_digest=resource_digest,
+                                resource=item["resource"],
+                                offset=item["offset"],
+                                width=4,
+                                access=AccessClass.READ_ONCE,
+                            ),
+                        )
+                    )
+            elif kind == "mmio_write32":
+                requests.append(
+                    (
+                        index,
+                        AccessRequest(
+                            target_scope=target_scope,
+                            node_id=node_id,
+                            resource_digest=resource_digest,
+                            resource=op["resource"],
+                            offset=op["offset"],
+                            width=4,
+                            access=AccessClass.WRITE,
+                        ),
+                    )
+                )
+            elif kind == "mmio_poll32":
+                requests.append(
+                    (
+                        index,
+                        AccessRequest(
+                            target_scope=target_scope,
+                            node_id=node_id,
+                            resource_digest=resource_digest,
+                            resource=op["resource"],
+                            offset=op["offset"],
+                            width=4,
+                            access=AccessClass.POLL,
+                        ),
+                    )
+                )
+            elif kind == "sequence":
+                for item in op["items"]:
+                    item_kind = item["kind"]
+                    if item_kind == "mmio_read32":
+                        requests.append(
+                            (
+                                index,
+                                AccessRequest(
+                                    target_scope=target_scope,
+                                    node_id=node_id,
+                                    resource_digest=resource_digest,
+                                    resource=item["resource"],
+                                    offset=item["offset"],
+                                    width=4,
+                                    access=AccessClass.READ_ONCE,
+                                ),
+                            )
+                        )
+                    elif item_kind == "mmio_write32":
+                        requests.append(
+                            (
+                                index,
+                                AccessRequest(
+                                    target_scope=target_scope,
+                                    node_id=node_id,
+                                    resource_digest=resource_digest,
+                                    resource=item["resource"],
+                                    offset=item["offset"],
+                                    width=4,
+                                    access=AccessClass.WRITE,
+                                ),
+                            )
+                        )
+                    elif item_kind == "mmio_poll32":
+                        requests.append(
+                            (
+                                index,
+                                AccessRequest(
+                                    target_scope=target_scope,
+                                    node_id=node_id,
+                                    resource_digest=resource_digest,
+                                    resource=item["resource"],
+                                    offset=item["offset"],
+                                    width=4,
+                                    access=AccessClass.POLL,
+                                ),
+                            )
+                        )
+
+        resolutions: list[dict[str, Any]] = []
+        all_allowed = True
+        for op_idx, req in requests:
+            res = resolve(req, grants)
+            allowed = res.decided and res.outcome is Outcome.ALLOWED
+            if not allowed:
+                all_allowed = False
+            resolutions.append(
+                {
+                    "operation": op_idx,
+                    "resource": req.resource,
+                    "offset": req.offset,
+                    "access": req.access.value,
+                    "outcome": res.outcome.value,
+                    "grant_id": res.grant.grant_id if res.grant else None,
+                }
+            )
+
+        _emit(
+            {
+                "plan_digest": plan_digest(plan),
+                "all_allowed": all_allowed,
+                "resolutions": resolutions,
+            }
+        )
+        return EXIT_SUCCESS
+
+    if not (
+        args.target_scope
+        and args.node_id
+        and args.resource_digest
+        and args.resource
+        and args.offset is not None
+    ):
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        "either --plan or (--target-scope, --node-id, "
+                        "--resource-digest, --resource, --offset) is required"
+                    )
+                }
+            ),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
     request = AccessRequest(
         target_scope=args.target_scope,
         node_id=args.node_id,
@@ -124,7 +320,7 @@ def _permissions_explain(args: argparse.Namespace) -> int:
         width=args.width,
         access=AccessClass(args.access),
     )
-    resolution = resolve(request, load_grants(args.grants))
+    resolution = resolve(request, grants)
     _emit(
         {
             "outcome": resolution.outcome.value,
@@ -164,9 +360,222 @@ def _connect_transport(moniker: str, target: str | None) -> ProxyTransport:
     return connect_transport(moniker=moniker, target=target)
 
 
+def _connect_discovery(target: str | None = None) -> NodeDiscovery | None:
+    from driver_lab.discovery import connect_discovery
+
+    try:
+        return connect_discovery(target=target)
+    except Exception:
+        return None
+
+
+def _connect_activator(target: str | None = None) -> ProxyActivator | None:
+    from driver_lab.discovery import connect_activator
+
+    try:
+        return connect_activator(target=target)
+    except Exception:
+        return None
+
+
+def _list(args: argparse.Namespace) -> int:
+    discovery = _connect_discovery(target=args.target)
+    if discovery is None:
+        print(
+            json.dumps({"error": "node discovery is not available"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    async def run() -> int:
+        if args.unclaimed:
+            nodes = await discovery.find_unclaimed()
+        else:
+            nodes = await discovery.list_nodes()
+        _emit({"nodes": [dataclasses.asdict(n) for n in nodes]})
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
+def _describe(args: argparse.Namespace) -> int:
+    discovery = _connect_discovery(target=args.target)
+    if discovery is None:
+        print(
+            json.dumps({"error": "node discovery is not available"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    async def run() -> int:
+        node = await discovery.describe_node(args.node)
+        if node is None:
+            print(
+                json.dumps({"error": f"node {args.node!r} not found"}),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        _emit({"node": dataclasses.asdict(node)})
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
+def _direct(args: argparse.Namespace) -> int:
+    discovery = _connect_discovery(target=args.target)
+    if discovery is None:
+        print(
+            json.dumps({"error": "node discovery is not available"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    async def run() -> int:
+        node = await discovery.describe_node(args.node)
+        if node is None:
+            print(
+                json.dumps({"error": f"node {args.node!r} not found"}),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        if not node.has_protocol(args.protocol):
+            print(
+                json.dumps(
+                    {
+                        "error": (
+                            f"node {args.node!r} does not offer protocol {args.protocol!r}; "
+                            f"available: {sorted(node.offers)}"
+                        )
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        _emit(
+            {
+                "node": args.node,
+                "protocol": args.protocol,
+                "status": "verified",
+            }
+        )
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
+def _bind_proxy(args: argparse.Namespace) -> int:
+    discovery = _connect_discovery(target=args.target)
+    activator = _connect_activator(target=args.target)
+    if discovery is None or activator is None:
+        print(
+            json.dumps({"error": "discovery or activator is not available"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    async def run() -> int:
+        node = await discovery.describe_node(args.node)
+        if node is None:
+            print(
+                json.dumps({"error": f"node {args.node!r} not found"}),
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        if not node.is_unclaimed:
+            print(
+                json.dumps(
+                    {
+                        "error": (
+                            f"node {args.node!r} is not unclaimed; bound to "
+                            f"{node.bound_driver_url}"
+                        )
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return EXIT_ACTIVATION
+        driver_url = args.driver_url or DEFAULT_PROXY_DRIVER_URL
+        try:
+            await activator.bind_proxy(args.node, driver_url)
+        except Exception as exc:
+            print(
+                json.dumps({"error": f"bind_proxy failed: {exc}"}),
+                file=sys.stderr,
+            )
+            return EXIT_ACTIVATION
+
+        post_desc = await discovery.describe_node(args.node)
+        is_bound = not post_desc.is_unclaimed if post_desc else True
+        _emit(
+            {
+                "node": args.node,
+                "driver_url": driver_url,
+                "bound": is_bound,
+            }
+        )
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
+def _end_proxy(args: argparse.Namespace) -> int:
+    discovery = _connect_discovery(target=args.target)
+    activator = _connect_activator(target=args.target)
+    if discovery is None or activator is None:
+        print(
+            json.dumps({"error": "discovery or activator is not available"}),
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    async def run() -> int:
+        driver_url = args.driver_url or DEFAULT_PROXY_DRIVER_URL
+        try:
+            await activator.end_proxy(args.node, driver_url)
+        except Exception as exc:
+            print(
+                json.dumps({"error": f"end_proxy failed: {exc}"}),
+                file=sys.stderr,
+            )
+            return EXIT_ACTIVATION
+
+        # Verified teardown: verify the node is again unclaimed.
+        post_desc = await discovery.describe_node(args.node)
+        if post_desc is not None and not post_desc.is_unclaimed:
+            print(
+                json.dumps(
+                    {
+                        "error": (
+                            f"verified teardown failed: node {args.node!r} is "
+                            f"still bound to {post_desc.bound_driver_url}"
+                        )
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return EXIT_ACTIVATION
+
+        _emit(
+            {
+                "node": args.node,
+                "driver_url": driver_url,
+                "unclaimed": True,
+            }
+        )
+        return EXIT_SUCCESS
+
+    return asyncio.run(run())
+
+
 def _run(args: argparse.Namespace) -> int:
     plan = _load_plan(args.plan)
     transport = _connect_transport(moniker=args.moniker, target=args.target)
+    discovery = _connect_discovery(target=args.target)
+    activator = (
+        _connect_activator(target=args.target)
+        if discovery is not None
+        else None
+    )
     lab = DriverLab(
         transport,
         grants_path=args.grants,
@@ -174,6 +583,8 @@ def _run(args: argparse.Namespace) -> int:
         target_scope=args.target_scope,
         node_id=args.node_id,
         consent=_StdinConsent() if args.consent else None,
+        discovery=discovery,
+        activator=activator,
     )
     result = asyncio.run(lab.run_plan(plan))
     _emit(
@@ -183,6 +594,10 @@ def _run(args: argparse.Namespace) -> int:
             "plan_digest": result.plan_digest,
             "failure": result.failure,
             "reads": [dataclasses.asdict(read) for read in result.reads],
+            "writes": [dataclasses.asdict(write) for write in result.writes],
+            "polls": [dataclasses.asdict(poll) for poll in result.polls],
+            "sequences": [dataclasses.asdict(seq) for seq in result.sequences],
+            "calls": list(result.calls),
         }
     )
     return result.exit_category
@@ -226,14 +641,22 @@ def _build_parser() -> argparse.ArgumentParser:
     revoke_parser.set_defaults(handler=_permissions_revoke)
 
     explain_parser = permission_commands.add_parser(
-        "explain", help="resolve one access request against the grants"
+        "explain",
+        help="resolve one access request or a plan against the grants",
     )
     explain_parser.add_argument("--grants", type=Path, required=True)
-    explain_parser.add_argument("--target-scope", required=True)
-    explain_parser.add_argument("--node-id", required=True)
-    explain_parser.add_argument("--resource-digest", required=True)
-    explain_parser.add_argument("--resource", required=True)
-    explain_parser.add_argument("--offset", type=_offset, required=True)
+    explain_parser.add_argument(
+        "--plan", type=Path, default=None, help="probe plan to explain"
+    )
+    explain_parser.add_argument("--target-scope", required=False, default=None)
+    explain_parser.add_argument("--node-id", required=False, default=None)
+    explain_parser.add_argument(
+        "--resource-digest", required=False, default=None
+    )
+    explain_parser.add_argument("--resource", required=False, default=None)
+    explain_parser.add_argument(
+        "--offset", type=_offset, required=False, default=None
+    )
     explain_parser.add_argument("--width", type=int, default=4)
     explain_parser.add_argument(
         "--access",
@@ -263,6 +686,60 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     add_parser.set_defaults(handler=_permissions_add)
+
+    list_cmd = subcommands.add_parser(
+        "list", help="list hardware nodes on target"
+    )
+    list_cmd.add_argument("--target", default=None, help="target nodename")
+    list_cmd.add_argument(
+        "--unclaimed",
+        action="store_true",
+        help="only list unclaimed nodes eligible for proxy activation",
+    )
+    list_cmd.set_defaults(handler=_list)
+
+    describe_cmd = subcommands.add_parser(
+        "describe", help="describe a hardware node"
+    )
+    describe_cmd.add_argument("--node", required=True, help="node ID / moniker")
+    describe_cmd.add_argument("--target", default=None, help="target nodename")
+    describe_cmd.set_defaults(handler=_describe)
+
+    direct_cmd = subcommands.add_parser(
+        "direct", help="verify direct connection to a published protocol"
+    )
+    direct_cmd.add_argument("--node", required=True, help="node ID / moniker")
+    direct_cmd.add_argument(
+        "--protocol",
+        required=True,
+        help="published protocol / service selector",
+    )
+    direct_cmd.add_argument("--target", default=None, help="target nodename")
+    direct_cmd.set_defaults(handler=_direct)
+
+    bind_cmd = subcommands.add_parser(
+        "bind-proxy", help="bind proxy driver to an unclaimed node"
+    )
+    bind_cmd.add_argument("--node", required=True, help="node ID / moniker")
+    bind_cmd.add_argument(
+        "--driver-url",
+        default=DEFAULT_PROXY_DRIVER_URL,
+        help="proxy driver component URL",
+    )
+    bind_cmd.add_argument("--target", default=None, help="target nodename")
+    bind_cmd.set_defaults(handler=_bind_proxy)
+
+    end_cmd = subcommands.add_parser(
+        "end-proxy", help="end proxy access and verify node is unclaimed"
+    )
+    end_cmd.add_argument("--node", required=True, help="node ID / moniker")
+    end_cmd.add_argument(
+        "--driver-url",
+        default=DEFAULT_PROXY_DRIVER_URL,
+        help="proxy driver component URL",
+    )
+    end_cmd.add_argument("--target", default=None, help="target nodename")
+    end_cmd.set_defaults(handler=_end_proxy)
 
     run_parser = subcommands.add_parser(
         "run", help="run one probe plan to a finalized evidence bundle"
@@ -328,6 +805,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (
         GrantStoreError,
         PlanError,
+        DiscoveryError,
         OSError,
         ValueError,
         json.JSONDecodeError,

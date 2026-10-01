@@ -4,6 +4,7 @@
 
 """Tests for the driver-lab CLI."""
 
+import asyncio
 import contextlib
 import io
 import json
@@ -14,6 +15,12 @@ from typing import Any
 from unittest import mock
 
 from driver_lab import cli
+from driver_lab.api import EXIT_ACTIVATION
+from driver_lab.discovery import (
+    FakeNodeDiscovery,
+    FakeProxyActivator,
+    NodeDescription,
+)
 from driver_lab.models import AccessClass, Decision, ReadGrant
 from driver_lab.permissions import load_grants, save_grants
 from driver_lab.plans import plan_digest
@@ -290,6 +297,203 @@ class CliTest(unittest.TestCase):
         code, _, stderr = self.run_cli_run(fake, "run-1")
         self.assertEqual(code, 7)
         self.assertIn("no reuse", stderr)
+
+    def test_permissions_explain_plan(self) -> None:
+        save_grants(self.grants, [make_grant()])
+        plan = make_plan()
+        plan["target"]["selector"] = "scope"
+        plan["node"]["expected_resource_digest"] = DIGEST
+        plan_path = self.base / "explain_plan.json"
+        plan_path.write_text(json.dumps(plan))
+
+        # With grant present:
+        code, payload, _ = self.run_cli(
+            "permissions",
+            "explain",
+            "--grants",
+            str(self.grants),
+            "--plan",
+            str(plan_path),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["all_allowed"])
+        self.assertEqual(len(payload["resolutions"]), 1)
+        self.assertEqual(payload["resolutions"][0]["outcome"], "allowed")
+
+        # With no grants:
+        save_grants(self.grants, [])
+        code, payload, _ = self.run_cli(
+            "permissions",
+            "explain",
+            "--grants",
+            str(self.grants),
+            "--plan",
+            str(plan_path),
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(payload["all_allowed"])
+        self.assertEqual(payload["resolutions"][0]["outcome"], "undecided")
+
+    def test_list_nodes(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(moniker="node-1", bound_driver_url=None),
+                NodeDescription(
+                    moniker="node-2", bound_driver_url="fuchsia-boot:///driver"
+                ),
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ):
+            code, payload, _ = self.run_cli("list")
+            self.assertEqual(code, 0)
+            self.assertEqual(len(payload["nodes"]), 2)
+
+            code, payload_unclaimed, _ = self.run_cli("list", "--unclaimed")
+            self.assertEqual(code, 0)
+            self.assertEqual(len(payload_unclaimed["nodes"]), 1)
+            self.assertEqual(payload_unclaimed["nodes"][0]["moniker"], "node-1")
+
+    def test_describe_node(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="node-1",
+                    bound_driver_url=None,
+                    offers=("fuchsia.examples.Echo",),
+                )
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ):
+            code, payload, _ = self.run_cli("describe", "--node", "node-1")
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["node"]["moniker"], "node-1")
+            self.assertEqual(
+                payload["node"]["offers"], ["fuchsia.examples.Echo"]
+            )
+
+            code, _, stderr = self.run_cli("describe", "--node", "nonexistent")
+            self.assertEqual(code, 2)
+            self.assertIn("not found", stderr)
+
+    def test_direct_mode_cli(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="node-1",
+                    bound_driver_url="fuchsia-boot:///driver",
+                    offers=("fuchsia.examples.Echo",),
+                )
+            ]
+        )
+        with mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ):
+            code, payload, _ = self.run_cli(
+                "direct",
+                "--node",
+                "node-1",
+                "--protocol",
+                "fuchsia.examples.Echo",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["status"], "verified")
+
+            code, _, stderr = self.run_cli(
+                "direct",
+                "--node",
+                "node-1",
+                "--protocol",
+                "fuchsia.hardware.other",
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("does not offer protocol", stderr)
+
+    def test_bind_proxy_and_end_proxy_cli(self) -> None:
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(moniker="node-1", bound_driver_url=None),
+                NodeDescription(
+                    moniker="node-2", bound_driver_url="fuchsia-boot:///driver"
+                ),
+            ]
+        )
+        activator = FakeProxyActivator(discovery)
+        with mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ), mock.patch.object(cli, "_connect_activator", return_value=activator):
+            # Cannot bind already bound node
+            code, _, stderr = self.run_cli("bind-proxy", "--node", "node-2")
+            self.assertEqual(code, EXIT_ACTIVATION)
+            self.assertIn("is not unclaimed", stderr)
+
+            # Bind unclaimed node
+            code, payload, _ = self.run_cli("bind-proxy", "--node", "node-1")
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["bound"])
+            node = asyncio.run(discovery.describe_node("node-1"))
+            self.assertIsNotNone(node)
+            assert node is not None
+            self.assertFalse(node.is_unclaimed)
+
+            # End proxy access
+            code, payload, _ = self.run_cli("end-proxy", "--node", "node-1")
+            self.assertEqual(code, 0)
+            self.assertTrue(payload["unclaimed"])
+            node = asyncio.run(discovery.describe_node("node-1"))
+            self.assertIsNotNone(node)
+            assert node is not None
+            self.assertTrue(node.is_unclaimed)
+
+    def test_run_with_automated_bind_and_verified_teardown(self) -> None:
+        save_grants(self.grants, [make_grant()])
+        fake = self._run_fixture()
+        discovery = FakeNodeDiscovery(
+            [
+                NodeDescription(
+                    moniker="node",
+                    bound_driver_url=None,
+                )
+            ]
+        )
+        activator = FakeProxyActivator(discovery)
+        plan = make_plan()
+        plan_path = self.base / "run_bind.json"
+        plan_path.write_text(json.dumps(plan))
+        with mock.patch.object(
+            cli, "_connect_transport", return_value=fake
+        ), mock.patch.object(
+            cli, "_connect_discovery", return_value=discovery
+        ), mock.patch.object(
+            cli, "_connect_activator", return_value=activator
+        ):
+            code, payload, _ = self.run_cli(
+                "run",
+                "--plan",
+                str(plan_path),
+                "--evidence-dir",
+                str(self.base / "evidence_bind"),
+                "--grants",
+                str(self.grants),
+                "--target-scope",
+                "scope",
+                "--node-id",
+                "node",
+                "--moniker",
+                "bootstrap/driver-lab",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["reads"][0]["value"], 0xDEAD_BEEF)
+            self.assertEqual(len(activator.bind_calls), 1)
+            self.assertEqual(len(activator.end_calls), 1)
+            # Verified teardown left node unclaimed
+            node = asyncio.run(discovery.describe_node("node"))
+            self.assertIsNotNone(node)
+            assert node is not None
+            self.assertTrue(node.is_unclaimed)
 
 
 if __name__ == "__main__":
