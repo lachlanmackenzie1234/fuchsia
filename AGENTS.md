@@ -424,7 +424,7 @@ guide](docs/contribute/commit-message-style-guide.md).
 
 **Example:**
 ```
-Add commit message guidelines to GEMINI.md
+Add commit message guidelines to AGENTS.md
 
 This provides a summary of the commit message style
 guide for quick reference within the agent's primary
