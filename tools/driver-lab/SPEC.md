@@ -1207,7 +1207,7 @@ Changesets continue the global numbering:
       (in //src/devices/driver-lab/SPEC.md).
 - [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
       (in //src/devices/driver-lab/SPEC.md).
-- [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
+- [x] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
       (in //src/devices/driver-lab/SPEC.md).
 - [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
       (in //src/devices/driver-lab/SPEC.md).

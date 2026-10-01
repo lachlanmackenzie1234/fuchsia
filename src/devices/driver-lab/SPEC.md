@@ -983,6 +983,9 @@ src/devices/driver-lab/
                                  contract stabilizes
     src/
         lib.rs                   driver lifecycle and service publication
+        driver_lab_lib.rs        embedded Rust library crate root
+        embedded.rs              EmbeddedLabServer and DriverLabBuilder
+        c_api.rs                 C FFI staticlib shim (driver_lab_c)
         server.rs                FIDL session server
         core.rs                  host-testable core crate root
         access_policy.rs
@@ -994,6 +997,9 @@ src/devices/driver-lab/
         resource_provider.rs           planned: parent adapters (P0/P1)
         protocol_resource_adapter.rs   planned (P4)
         interrupt_tracker.rs           planned (P5)
+    cpp/
+        include/lib/driver_lab/
+            driver_lab_c.h       pure C ABI declarations and global state helpers
     policy/                            planned: schema and generation
     bind/
 
@@ -1299,7 +1305,7 @@ Changesets continue the global numbering from Phase 1:
       (in //tools/driver-lab/SPEC.md).
 - [x] CS34 `[driver-lab] Expose FIDL and debug shard to Bazel`
 - [x] CS35 `[driver-lab] Native Bazel build for driver_lab_rust`
-- [ ] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
+- [x] CS36 `[driver-lab] Add C FFI staticlib shim (driver_lab_c)`
 - [ ] CS37 `[driver-lab] Add C/C++ wrapper and StateVmoBank`
 - [ ] CS38 `[driver-lab] Add C++ embedded server unit tests`
 
@@ -1371,14 +1377,20 @@ both GN and Bazel builds.
   compilation).
 - First reference integration: synthetic platform driver in `testing/` (CS28).
 
-#### 3.2 Phase 2b: Lightweight C++ driver library (`driver_lab_cpp`) (Deferred)
+#### 3.2 Phase 2b: C/C++ embedded driver library (`driver_lab_c` and `driver_lab_cpp`)
 
-Supports DFv2 C++ drivers. Deferred to a future milestone beyond the initial
-Phase 2 scope.
-- Implements `fuchsia_driver_lab::Proxy` and `Session` using the C++ Driver SDK
-  (`@fuchsia_sdk//pkg/driver_component_cpp` and `fdf::MmioBuffer`).
-- Avoids cross-language runtime mismatches, async executor bridging, and linking
-  overhead.
+Supports DFv2 C++ and hybrid C/C++ drivers across both GN and Bazel builds
+by wrapping `driver_lab_rust` in a thin `extern "C"` FFI static library
+(`driver_lab_c`, declared in `cpp/include/lib/driver_lab/driver_lab_c.h`) so all
+SHA-256 resource/policy digest calculation, session allowlist enforcement, audit
+ring buffering, and sequence execution remain single-sourced in Rust:
+- `driver_lab_c` exposes opaque `DriverLabBuilderHandle` and
+  `DriverLabServerHandle` pointers over a pure C ABI, runs a dedicated
+  background `fuchsia_async::LocalExecutor` thread to serve incoming
+  `fuchsia.driver.lab.Proxy` channels without blocking the C++ `fdf::Dispatcher`,
+  and provides process-wide global state/knob helpers
+  (`driver_lab_global_set_state_u32` and `driver_lab_global_get_knob_u32`) for
+  legacy `.c` files.
 
 ### 4. Production absence and security gating
 

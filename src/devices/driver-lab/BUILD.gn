@@ -9,6 +9,7 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_staticlib.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/devices/driver-lab/driver_lab.gni")
 
@@ -92,6 +93,23 @@ rustc_library("driver_lab_rust") {
     "//third_party/rust_crates:log",
   ]
   test_deps = [ "//src/lib/fuchsia" ]
+}
+
+# Pure C ABI staticlib shim wrapping driver_lab_rust for C/C++ DFv2 drivers.
+rustc_staticlib("driver_lab_c") {
+  name = "driver_lab_c"
+  edition = "2024"
+
+  source_root = "src/c_api.rs"
+  sources = [ "src/c_api.rs" ]
+  public = [ "cpp/include/lib/driver_lab/driver_lab_c.h" ]
+  deps = [
+    ":core",
+    ":driver_lab_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:futures",
+  ]
 }
 
 fuchsia_rust_driver("driver") {
