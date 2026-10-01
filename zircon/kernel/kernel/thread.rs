@@ -53,12 +53,14 @@ unsafe extern "C" {
     fn cpp_thread_preempt_disable();
     fn cpp_thread_preempt_enable();
     fn cpp_thread_preempt();
-    fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,
         interruptible: Interruptible,
         now: zx_instant_mono_t,
     ) -> zx_status_t;
+    fn cpp_thread_current_sleep(duration: InstantMono) -> zx_status_t;
+    fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
+    fn cpp_thread_current_sleep_interruptible(duration: InstantMono) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
     fn cpp_thread_get_arch(thread: *mut Thread) -> *mut c_void;
     fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
@@ -437,14 +439,10 @@ impl From<bool> for Interruptible {
     }
 }
 
-/// Sleeps the current thread for the specified relative duration.
-pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
-    // SAFETY: cpp_thread_current_sleep_relative is safe to call at any time in thread context.
-    let status = unsafe { cpp_thread_current_sleep_relative(duration) };
-    Status::ok(status)
-}
-
-/// Sleeps the current thread until the specified deadline with timer slack.
+/// Wait until the deadline has occurred.
+///
+/// If interruptible, may return early with ZX_ERR_INTERNAL_INTR_KILLED if
+/// thread is signaled for kill.
 pub fn sleep_etc(
     deadline: &crate::kernel::deadline::Deadline,
     interruptible: Interruptible,
@@ -452,6 +450,27 @@ pub fn sleep_etc(
 ) -> Result<(), Status> {
     // SAFETY: `deadline` points to a valid `Deadline`.
     let status = unsafe { cpp_thread_current_sleep_etc(deadline as *const _, interruptible, now) };
+    Status::ok(status)
+}
+
+/// Non-interruptible version of sleep_etc.
+pub fn sleep(deadline: InstantMono) -> Result<(), Status> {
+    // SAFETY: FFI function has not requirements.
+    let status = unsafe { cpp_thread_current_sleep(deadline) };
+    Status::ok(status)
+}
+
+/// Sleeps the current thread for the specified relative duration.
+pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
+    // SAFETY: cpp_thread_current_sleep_relative is safe to call at any time in thread context.
+    let status = unsafe { cpp_thread_current_sleep_relative(duration) };
+    Status::ok(status)
+}
+
+/// Interruptible version of sleep.
+pub fn sleep_interruptible(deadline: InstantMono) -> Result<(), Status> {
+    // SAFETY: FFI function has not requirements.
+    let status = unsafe { cpp_thread_current_sleep_interruptible(deadline) };
     Status::ok(status)
 }
 
