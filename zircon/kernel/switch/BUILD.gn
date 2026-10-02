@@ -645,7 +645,6 @@ clippy_lints = [
   "let-unit-value",
   "new-without-default",
   "non-canonical-clone-impl",
-  "suspicious-arithmetic-impl",
   "too-many-arguments",
   "type-complexity",
   "unnecessary-cast",
