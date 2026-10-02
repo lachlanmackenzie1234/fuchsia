@@ -1902,6 +1902,32 @@
             ]
         },
         {
+            "name": "PtraceTest.PtraceExecProcessCheckUsesCurrentCreds",
+            "audit_expectations": [
+                "avc:  denied  { ptrace } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_deny_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "PtraceTest.PtraceExecSelinuxCapCheckUsesCachedCreds",
+            "audit_expectations": [
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "PtraceTest.PtraceExecVanillaCapCheckUsesCachedCreds",
+            "audit_expectations": [
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_ptrace_parent_allow_sys_ptrace_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "PtraceTest.PtraceTraceMeAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",

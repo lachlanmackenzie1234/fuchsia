@@ -68,6 +68,11 @@
                 // TODO: Support reading pre-policy procattrs in Starnix.
                 "ProcAttrTest.PrePolicyAttrs",
 
+                // TODO: https://fxbug.dev/568759264 - Cache tracer credentials at ptrace
+                // attachment time for capability checks on exec.
+                "PtraceTest.PtraceExecVanillaCapCheckUsesCachedCreds",
+                "PtraceTest.PtraceExecSelinuxCapCheckUsesCachedCreds",
+
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API handling of unknown policy class Ids.
                 "SeLinuxFsCreate.InvalidComputeCreateClassId",
                 "SeLinuxFsAccess.UnknownClassIdIsAccepted",
