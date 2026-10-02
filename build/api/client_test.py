@@ -860,8 +860,9 @@ with open(args.out_file, "wt") as f:
 
         export_dir = self._top_dir / "exported_debug_symbols"
 
-        expected_err = """MISSING build-id FOR {'cpu': 'x64', 'debug': 'obj/src/zoo/binary.unstripped', 'label': '//src/zoo:binary', 'os': 'fuchsia'}
-"""
+        # obj/src/zoo/binary.unstripped has no build-id, so it should be
+        # silently skipped.
+        expected_err = ""
 
         expected_out = f"""Creating {export_dir}/build-ids.json
 Creating {export_dir}/build-ids.txt
