@@ -514,7 +514,6 @@ clippy_lints = [
   "doc-lazy-continuation",
   "let-unit-value",
   "new-without-default",
-  "non-canonical-clone-impl",
   "too-many-arguments",
   "unnecessary-cast",
 ]
