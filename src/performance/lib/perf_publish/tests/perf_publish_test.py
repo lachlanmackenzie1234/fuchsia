@@ -795,6 +795,52 @@ class CatapultConverterTest(unittest.TestCase):
             str(exception_context.exception),
         )
 
+    def test_converter_with_per_metric_no_summarize(self) -> None:
+        """Test that per-metric [no-summarize] preserves raw values only for that metric."""
+        expected_metrics_file = self._init_file(
+            "expected_per_metric.txt",
+            "fuchsia.my.benchmark: metric_1\n"
+            "fuchsia.my.benchmark: metric_2 [no-summarize]\n"
+            "fuchsia.my.benchmark: metric_3\n",
+        )
+        subprocess_check_call: mock.Mock = mock.Mock()
+        converter: publish.CatapultConverter = self.make_catapult_converter_for_test(
+            [self._test_fuchsia_perf_json],
+            expected_metrics_file,
+            env={
+                publish.ENV_RELEASE_VERSION: "1",
+                publish.ENV_INTEGRATION_INTERNAL_GIT_COMMIT: "756a290e1a199dd47141f2d4f34eb3539b954306",
+            },
+            subprocess_check_call=subprocess_check_call,
+        )
+        converter.run()
+
+        with open(self._expected_input_path, "r") as f:
+            input_data = json.load(f)
+            self.assertEqual(
+                input_data,
+                [
+                    {
+                        "label": "metric_1",
+                        "test_suite": "fuchsia.my.benchmark",
+                        "unit": "ms",
+                        "values": [3],
+                    },
+                    {
+                        "label": "metric_2",
+                        "test_suite": "fuchsia.my.benchmark",
+                        "unit": "ms",
+                        "values": [5, 6, 7, 8],
+                    },
+                    {
+                        "label": "metric_3",
+                        "test_suite": "fuchsia.my.benchmark",
+                        "unit": "ms",
+                        "values": [11],
+                    },
+                ],
+            )
+
     def _init_file(self, filename: str, contents: str) -> str:
         file_path = os.path.join(self._temp_dir.name, filename)
         with open(file_path, "w") as f:
