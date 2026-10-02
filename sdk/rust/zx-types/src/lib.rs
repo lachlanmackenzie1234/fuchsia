@@ -1130,6 +1130,7 @@ pub type zx_rrec_t = [u8; 64];
 // Ports V2
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
+#[cfg_attr(feature = "zerocopy", derive(Immutable, IntoBytes, KnownLayout))]
 #[non_exhaustive]
 pub enum zx_packet_type_t {
     #[default]
@@ -1171,6 +1172,7 @@ pub type zx_packet_user_t = [u8; 32];
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(Immutable, IntoBytes, KnownLayout))]
 pub struct zx_port_packet_t {
     pub key: u64,
     pub packet_type: zx_packet_type_t,
@@ -1937,6 +1939,7 @@ pub struct zx_restricted_exception_t {
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_vcpu_state_t {
     pub rax: u64,
     pub rcx: u64,
@@ -1961,6 +1964,7 @@ pub struct zx_vcpu_state_t {
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_vcpu_state_t {
     pub x: [u64; 31],
     pub sp: u64,
@@ -1972,12 +1976,14 @@ pub struct zx_vcpu_state_t {
 #[cfg(target_arch = "riscv64")]
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_vcpu_state_t {
     pub empty: u32,
 }
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_vcpu_io_t {
     pub access_size: u8,
     padding1: [PadByte; 3],
@@ -2177,6 +2183,18 @@ pub struct zx_iob_region_info_t {
     pub region: zx_iob_region_t,
     pub koid: zx_koid_t,
 }
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_info_vcpu_t {
+    // Bitwise OR of ZX_INFO_VCPU_FLAG_* values.
+    pub flags: u32,
+}
+
+multiconst!(u32, [
+    ZX_INFO_VCPU_FLAG_KICKED = 1 << 0;
+]);
 
 multiconst!(u32, [
     ZX_INFO_PROCESS_FLAG_STARTED = 1 << 0;
