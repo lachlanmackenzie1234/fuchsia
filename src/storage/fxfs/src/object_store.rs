@@ -1295,6 +1295,7 @@ impl ObjectStore {
         {
             permanent_keys = permanent;
             let cipher = key_to_cipher(&key, &unwrapped_key)?;
+            store.key_manager.insert_fscrypt_file_cipher(&key, cipher.clone());
             transaction.add(
                 store.store_object_id(),
                 Mutation::insert_object(
