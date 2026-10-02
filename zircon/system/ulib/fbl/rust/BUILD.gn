@@ -59,7 +59,6 @@ rustc_library("fbl") {
   if (is_kernel) {
     features = [ "kernel" ]
     configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
-    configs += [ "//zircon/kernel/switch:allow-type-complexity" ]
     configs += [ "//zircon/kernel/switch:allow-new-without-default" ]
   }
 }

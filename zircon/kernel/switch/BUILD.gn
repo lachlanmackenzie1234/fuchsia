@@ -516,7 +516,6 @@ clippy_lints = [
   "new-without-default",
   "non-canonical-clone-impl",
   "too-many-arguments",
-  "type-complexity",
   "unnecessary-cast",
 ]
 foreach(lint, clippy_lints) {

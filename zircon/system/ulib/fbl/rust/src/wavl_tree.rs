@@ -1813,10 +1813,7 @@ where
     /// * `Err((ptr, cursor))` if there was a collision. In this case, the
     ///   passed pointer `ptr` is returned back to the caller (not consumed), along with
     ///   a `CursorMut` positioned at the colliding node already in the tree.
-    pub fn insert_or_find<'a>(
-        &'a mut self,
-        ptr: P,
-    ) -> Result<(), (P, CursorMut<'a, K, P, Tag, S, O>)>
+    pub fn insert_or_find<'a>(&'a mut self, ptr: P) -> InsertOrFindResult<'a, K, P, Tag, S, O>
     where
         P: ManagedPtr,
     {
@@ -1835,7 +1832,7 @@ where
     pub unsafe fn insert_or_find_raw<'a>(
         &'a mut self,
         ptr: P,
-    ) -> Result<(), (P, CursorMut<'a, K, P, Tag, S, O>)> {
+    ) -> InsertOrFindResult<'a, K, P, Tag, S, O> {
         let mut collision = core::ptr::null_mut();
         // SAFETY: The caller guarantees `ptr` is valid and outlives the tree registration.
         // If a collision occurs, `collision` is guaranteed to be a valid pointer to the colliding
@@ -2331,6 +2328,8 @@ where
         self.current
     }
 }
+
+pub type InsertOrFindResult<'a, K, P, Tag, S, O> = Result<(), (P, CursorMut<'a, K, P, Tag, S, O>)>;
 
 /// A cursor over elements in a `WavlTree`.
 pub struct CursorMut<
