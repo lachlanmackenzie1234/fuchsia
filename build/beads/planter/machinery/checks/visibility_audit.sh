@@ -474,6 +474,19 @@ for rel_path in sorted(candidate_files):
                     })
             continue
 
+        if func_name == "exports_files":
+            if not any(kw.arg == "visibility" for kw in node.keywords) and len(node.args) < 2:
+                findings.append({
+                    "source": "visibility_audit",
+                    "category": "exports_files_missing_visibility",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": node.lineno,
+                    "message": "exports_files() omits 'visibility' (Bazel then exports the files publicly).",
+                    "remediation": "Add visibility = [...] to exports_files(), scoped as narrowly as practical to the packages that consume the files (e.g. [\"//<consumer_pkg>:__pkg__\"], or an area rollup like \"//<area>:__subpackages__\" for many consumers), per the determining_bazel_visibility skill."
+                })
+            continue
+
         target_name = None
         vis_kw = None
         for kw in node.keywords:

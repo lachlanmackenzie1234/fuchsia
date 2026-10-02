@@ -161,7 +161,8 @@ def gn_block(code, template, name):
 
 def bazel_test_suites_for(pkg):
     """[(gn_rel, suite, line, param, labels)] for GN bazel_test_suite targets that may list tests
-    of pkg: in pkg's BUILD.gn, its ancestors' BUILD.gn, and any BUILD.gn mentioning //pkg."""
+    of pkg: in pkg's BUILD.gn, its ancestors' BUILD.gn, any BUILD.gn mentioning //pkg, and the
+    BUILD.gn next to any BUILD.bazel mentioning //pkg (whose test_suite may aggregate pkg's tests)."""
     rels = []
     d = pkg
     while True:
@@ -172,10 +173,10 @@ def bazel_test_suites_for(pkg):
     try:
         out = subprocess.run(
             ["git", "-C", workdir, "grep", "-l", "--fixed-strings", "-e", f"//{pkg}:", "-e", f'//{pkg}"',
-             "--", "BUILD.gn", "*/BUILD.gn"],
+             "--", "BUILD.gn", "*/BUILD.gn", "BUILD.bazel", "*/BUILD.bazel"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=300,
         ).stdout
-        rels += [l.strip() for l in out.splitlines() if l.strip()]
+        rels += [re.sub(r"BUILD\.bazel$", "BUILD.gn", l.strip()) for l in out.splitlines() if l.strip()]
     except (OSError, subprocess.SubprocessError):
         pass
     result = []
@@ -201,6 +202,51 @@ def suite_is_wired(gn_rel, suite):
     return bool(parent) and any(
         r in read_gn(parent) for r in (f'"//{d}:{suite}"', f'"{os.path.basename(d)}:{suite}"')
     )
+
+
+def list_strings(node):
+    """String elements of a Bazel list expression, including `a + b` concatenations."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return list_strings(node.left) + list_strings(node.right)
+    return bazel_strings(node)
+
+
+_bazel_suites_cache = {}
+
+
+def bazel_suites_of(pkg):
+    """{test_suite name: [test labels], or None when `tests` is omitted} of pkg's BUILD.bazel."""
+    if pkg not in _bazel_suites_cache:
+        found = {}
+        try:
+            with open(os.path.join(workdir, pkg, "BUILD.bazel"), "r", encoding="utf-8") as f:
+                t = ast.parse(f.read())
+            for node in ast.walk(t):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "test_suite":
+                    kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+                    n = kws.get("name")
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                        found[n.value] = None if kws.get("tests") is None else list_strings(kws["tests"])
+        except Exception:
+            pass
+        _bazel_suites_cache[pkg] = found
+    return _bazel_suites_cache[pkg]
+
+
+def foreign_suite_tests(label, pkg, td, seen):
+    """Names of td's targets that label (written in pkg) runs, following Bazel test_suite targets
+    of other packages (e.g. an ancestor's aggregate suite that a GN bazel_test_suite exports)."""
+    parts = split_label(label, pkg)
+    if not parts or parts in seen:
+        return set()
+    seen.add(parts)
+    l_pkg, l_name = parts
+    if l_pkg == td:
+        return {l_name}
+    out = set()
+    for m in bazel_suites_of(l_pkg).get(l_name) or []:  # Without `tests`: only l_pkg's own tests.
+        out |= foreign_suite_tests(m, l_pkg, td, seen)
+    return out
 
 
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
@@ -367,9 +413,15 @@ for td in target_dirs:
     for s_rel, s_name, s_line, param, labels in bazel_test_suites_for(td):
         for label in labels:
             m = label_target(label, td)
-            if m is None:
+            if m is not None:
+                found = {m}
+            elif re.match(r"^@{0,2}//", label.strip()):
+                found = foreign_suite_tests(label, td, td, set())
+            else:
                 continue
-            names = members(m, set()) if m in suites else {m}
+            names = set()
+            for f_name in found:
+                names |= members(f_name, set()) if f_name in suites else {f_name}
             for n in names:
                 listed_in.setdefault(n, []).append((s_rel, s_name, param, s_line))
 

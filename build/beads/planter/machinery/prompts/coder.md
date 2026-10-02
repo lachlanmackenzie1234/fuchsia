@@ -267,10 +267,8 @@ and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDI
 3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
    0. Planter reuses that passing result when the working tree is unchanged, so do not edit
    anything after it.
-4. Record in `tests_run` (and any commit `Test:` footer) ONLY commands that exited 0, at most 3
-   lines total (copy the exact shell-quoted commands from
-   `PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`; quote GN toolchain
-   parentheses and never pass unconfigured `//<dir>:tests` labels to `fx build`).
+4. Record in `tests_run` (and any commit `Test:` footer) ONLY commands you ran that exited 0,
+   at most 3 lines (`commit_message_format` reports the expected footer form).
 5. Commit messages and `summary` must be ASCII-only with no internal paths/domains/emails/names,
    body/summary lines `<= 72` chars, and commit subject `<= 65` chars. Include the result of your
    final `run_checks.sh` run in `summary`.

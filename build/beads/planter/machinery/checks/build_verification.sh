@@ -631,9 +631,9 @@ if change_base != "HEAD":
             ),
             "remediation": (
                 "Consolidate the commit message `Test:` footers (and `CoderReport.tests_run`) to at most 3 lines: "
-                "combine all migrated `//<dir>:all` targets into a single `fx bazel build --config=fuchsia_platform ...` line "
-                "(and a single `--config=host` line when host targets exist) plus `fx build --host //build:bazel2gn_verifications`, "
-                "and remove redundant per-package `fx build` / `fx bazel build` / `fx bazel query` lines."
+                "one `fx bazel test|build --config=fuchsia_platform @//<dir>:<test>` line for the migrated test targets, "
+                "one `fx bazel test --config=host @//<dir>:<host test>` line when host tests exist, and `fx bazel2gn` last; "
+                "remove redundant per-package `fx build` / `fx bazel build` / `fx bazel query` lines."
             ),
         })
 
