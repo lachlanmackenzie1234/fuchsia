@@ -39,7 +39,6 @@ network_unified_binary("dhcpv6_client") {
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
     "//src/connectivity/lib/net-declare",
     "//third_party/rust_crates:test-case",
   ]
