@@ -1240,7 +1240,8 @@ TEST_F(UsbCdcTest, TrapMissingCancelOnDeconfigure) {
       [&]() {
         bool complete = false;
         driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
-          complete = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).cancel_all_called() &&
+          complete = env.fake_usb_fidl_.fake_endpoint(kBulkInEp).cancel_all_called() &&
+                     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).cancel_all_called() &&
                      env.fake_usb_fidl_.fake_endpoint(kIntrEp).cancel_all_called();
         });
         return complete;
@@ -1249,7 +1250,7 @@ TEST_F(UsbCdcTest, TrapMissingCancelOnDeconfigure) {
 
   // Check the mock endpoints.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
-    EXPECT_FALSE(env.fake_usb_fidl_.fake_endpoint(kBulkInEp).cancel_all_called());
+    EXPECT_TRUE(env.fake_usb_fidl_.fake_endpoint(kBulkInEp).cancel_all_called());
     EXPECT_TRUE(env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).cancel_all_called());
     EXPECT_TRUE(env.fake_usb_fidl_.fake_endpoint(kIntrEp).cancel_all_called());
   });
@@ -2291,6 +2292,51 @@ TEST_F(UsbCdcTest, SetConfiguredFalseClearsPendingNotification) {
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 0u);
   });
+}
+
+// Validates that when NetworkDeviceImpl::Stop() discards pending TX buffers while a USB TX request
+// is still in flight on bulk_in_ep_, the subsequent USB completion for that discarded TX request is
+// cleanly consumed without logging an unexpected TX completion error or corrupting later QueueTx
+// buffer IDs.
+TEST_F(UsbCdcTest, StopWithInFlightTxConsumesSubsequentUsbCompletionWithoutError) {
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  constexpr uint32_t kBufferId1 = 101;
+  constexpr uint32_t kBufferId2 = 102;
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD};
+  ASSERT_OK(vmo.write(data, 0, sizeof(data)));
+  fdf::Arena arena(kArenaTag);
+  auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
+  ASSERT_OK(prepare_result.status());
+  ASSERT_OK(prepare_result->s);
+
+  // 1. Queue first TX buffer and stop netdevice while the USB request is still in flight on
+  // kBulkInEp. Stop() calls DiscardPendingTxBuffers(ZX_ERR_CANCELED), returning kBufferId1 early.
+  auto stop_netdevice = [&]() {
+    auto stop_res = net_impl_client_.buffer(arena)->Stop();
+    ASSERT_OK(stop_res.status());
+  };
+  ASSERT_NO_FATAL_FAILURE(
+      ExecuteMockNetworkTransaction(kBufferId1, sizeof(data), ZX_ERR_CANCELED, stop_netdevice));
+
+  // 2. Restart netdevice and queue a second TX buffer (kBufferId2) while the first USB request from
+  // kBufferId1 is still in flight on kBulkInEp.
+  StartNetworkDevice();
+  auto complete_both_usb_requests = [&]() {
+    driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+      // First completion corresponds to the discarded kBufferId1 request; it must be consumed
+      // silently without popping kBufferId2 from tx_completion_queue_.
+      env.fake_usb_fidl_.fake_endpoint(kBulkInEp).RequestComplete(ZX_ERR_CANCELED, 0);
+      // Second completion corresponds to kBufferId2 and must complete with ZX_OK.
+      env.fake_usb_fidl_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, sizeof(data));
+    });
+  };
+  ASSERT_NO_FATAL_FAILURE(
+      ExecuteMockNetworkTransaction(kBufferId2, sizeof(data), ZX_OK, complete_both_usb_requests));
 }
 
 }  // namespace

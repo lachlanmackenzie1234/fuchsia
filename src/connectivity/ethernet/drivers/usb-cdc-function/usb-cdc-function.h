@@ -19,6 +19,8 @@
 #include <zircon/listnode.h>
 
 #include <array>
+#include <deque>
+#include <optional>
 
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb-inspect/usb-inspect.h>
@@ -215,9 +217,10 @@ class UsbCdcFunction : public fdf::DriverBase2,
   usb::EndpointClient<UsbCdcFunction> bulk_in_ep_{usb::EndpointType::BULK, this,
                                                   std::mem_fn(&UsbCdcFunction::CdcTxComplete)};
 
-  // Queue of buffer IDs that were sent to USB hardware and are awaiting
-  // completion. This mirrors the order of requests submitted to bulk_in_ep_.
-  std::queue<uint32_t> tx_completion_queue_;
+  // Queue of netdevice buffer IDs corresponding 1-to-1 with in-flight USB
+  // requests on bulk_in_ep_. An entry is std::nullopt if its netdevice buffer
+  // ID was already returned early by DiscardPendingTxBuffers().
+  std::deque<std::optional<uint32_t>> tx_completion_queue_;
   std::vector<fuchsia_hardware_usb_endpoint::Completion> rx_completion_queue_;
   void DiscardPendingTxBuffers(zx_status_t status);
   void ReturnPendingRxSpace();
