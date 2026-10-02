@@ -958,7 +958,6 @@
                 "AllInetTests/RawPacketTest.SetSocketRecvBuf/1",
 
                 // utimes_test
-                "FutimesatTest.OnNullPathWithOPath",
                 "UtimensatTest.AtEmptyPath",
 
                 // wait_test - https://fxbug.dev/297461294

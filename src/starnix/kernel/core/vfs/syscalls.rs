@@ -2779,16 +2779,42 @@ pub fn sys_utimensat(
         return Ok(());
     };
 
-    // Non-standard feature: if user_path is null, the timestamps are updated on the file referred
-    // to by dir_fd.
-    // See https://man7.org/linux/man-pages/man2/utimensat.2.html
+    // From `utimensat(2)`:
+    //
+    //   On Linux, futimens() is a library function implemented on top of
+    //   the utimensat() system call.  To support this, the Linux
+    //   utimensat() system call implements a nonstandard feature: if
+    //   pathname is NULL, then the call modifies the timestamps of the
+    //   file referred to by the file descriptor dirfd (which may refer to
+    //   any type of file).
+    //
+    //   EFAULT times pointed to an invalid address; or, dirfd was
+    //          AT_FDCWD, and pathname is NULL or an invalid address.
+    //
+    //   EINVAL Invalid value in flags.
+    //
+    //   EINVAL pathname is NULL, dirfd is not AT_FDCWD, and flags
+    //          contains AT_SYMLINK_NOFOLLOW.
+    //
+    // From `open(2)` (`O_PATH`):
+    //
+    //   The file itself is not opened, and other file operations (e.g.,
+    //   read(2), write(2), fchmod(2), fchown(2), fgetxattr(2), ioctl(2),
+    //   mmap(2)) fail with the error EBADF.
+    //
+    // Because a `NULL` pathname operates directly on the open file referred to by
+    // `dir_fd` rather than performing path resolution relative to `dir_fd`,
+    // look up `dir_fd` via `current_task.files().get` (which rejects `O_PATH` file descriptors
+    // with `EBADF`) instead of `CurrentTask::resolve_dir_fd` (which calls
+    // `get_allowing_opath`).
     let name = if user_path.addr().is_null() {
         if dir_fd == FdNumber::AT_FDCWD {
             return error!(EFAULT);
         }
-        let (node, _) =
-            current_task.resolve_dir_fd(dir_fd, Default::default(), ResolveFlags::empty())?;
-        node
+        if flags != 0 {
+            return error!(EINVAL);
+        }
+        current_task.files().get(dir_fd)?.name.to_passive()
     } else {
         let lookup_flags = LookupFlags::from_bits(flags, AT_SYMLINK_NOFOLLOW)?;
         lookup_at(current_task, dir_fd, user_path, lookup_flags)?
