@@ -87,6 +87,7 @@ test_scripts = [
   "tests/fx-internal/mock_test",
   "tests/fx-internal/optional-features_test",
   "tests/fx-internal/reentry_test",
+  "tests/fx-internal/regenerator_test",
   "tests/fx-internal/vars_test",
   "tests/fx-internal/verify_default_keys_test",
   "tests/subcommands/fx_add_test_test",

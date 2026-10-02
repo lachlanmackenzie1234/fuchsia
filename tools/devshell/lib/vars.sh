@@ -413,8 +413,20 @@ function fx-fail-if-main-pb-is-not-set {
 }
 
 function fx-regenerator {
+  local -a wrapper=(fx-wait-ignoring-signals "fx-regenerator")
+  local arg
+  for arg in "$@"; do
+    if [[ "${arg}" == "--update-args" ]]; then
+      # --update-args is interactive with the user (launching an editor via
+      # `gn args`) and does not use nested wrappers that require signal-managed
+      # cancellation. Running it under fx-wait-ignoring-signals backgrounds the
+      # child (redirecting stdin to /dev/null) and traps SIGINT.
+      wrapper=()
+      break
+    fi
+  done
   PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX}" \
-  fx-wait-ignoring-signals "fx-regenerator" \
+    "${wrapper[@]}" \
     "${FUCHSIA_DIR}/build/regenerator" \
     --fuchsia-dir="${FUCHSIA_DIR}" \
     --fuchsia-build-dir="${FUCHSIA_BUILD_DIR}" \
