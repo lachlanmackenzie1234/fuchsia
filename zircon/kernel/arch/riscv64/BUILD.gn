@@ -334,6 +334,16 @@ if (toolchain_base_environment == "kernel") {
     expect_lints = []
   }
 
+  kernel_bindgen_crate("arch-riscv64-vm-bindings") {
+    headers = [ "include/arch/vm.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    raw_lines = [ "#![no_std]" ]
+    var_allowlist = [ "kRiscv64CanonicalAddressMask" ]
+    expect_lints = [ "non_upper_case_globals" ]
+    notice_year = 2026
+  }
+
   kernel_bindgen_crate("riscv64-aspace-bindings") {
     headers = [
       "include/arch/kernel_aspace.h",
@@ -385,8 +395,10 @@ if (toolchain_base_environment == "kernel") {
       "src/timer.rs",
       "src/user_copy.rs",
       "src/vector.rs",
+      "src/vm.rs",
     ]
     deps = [
+      ":arch-riscv64-vm-bindings",
       ":riscv-sbi-bindings",
       ":riscv64-aspace-bindings",
       ":riscv64-aspace-constants-bindings",

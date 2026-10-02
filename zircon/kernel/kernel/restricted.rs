@@ -41,7 +41,7 @@ pub fn restricted_leave<T>(
     let rs = unsafe { rs_ptr.as_mut() };
 
     debug_assert!(rs.in_restricted());
-    debug_assert!(crate::arch_rs::is_user_accessible(rs.vector_ptr()));
+    debug_assert!(crate::arch_rs::vm::is_user_accessible(rs.vector_ptr()));
 
     rs.set_in_restricted(false);
     crate::arch_rs::set_restricted_flag(false);
@@ -83,7 +83,7 @@ pub fn restricted_leave_syscall(regs: &SyscallRegs, reason: zx_restricted_reason
 pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), Status> {
     ltracef!("vector {:#x} context {:#x}\n", vector_table_ptr, context);
 
-    if !crate::arch_rs::is_user_accessible(vector_table_ptr) {
+    if !crate::arch_rs::vm::is_user_accessible(vector_table_ptr) {
         return Err(Status::INVALID_ARGS);
     }
 

@@ -73,28 +73,28 @@ fn fence_i() {
 /// Using Zicbom instructions, clean the data cache over a range of memory.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_clean_cache_range(start: usize, len: usize) {
-    debug_assert!(super::mmu::is_kernel_address(start));
+    debug_assert!(super::vm::is_kernel_address(start));
     cache_op(start, len, cbo_clean);
 }
 
 /// Using Zicbom instructions, clean and invalidate the data cache over a range of memory.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_clean_invalidate_cache_range(start: usize, len: usize) {
-    debug_assert!(super::mmu::is_kernel_address(start));
+    debug_assert!(super::vm::is_kernel_address(start));
     cache_op(start, len, cbo_flush);
 }
 
 /// Using Zicbom instructions, invalidate the data cache over a range of memory.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_invalidate_cache_range(start: usize, len: usize) {
-    debug_assert!(super::mmu::is_kernel_address(start));
+    debug_assert!(super::vm::is_kernel_address(start));
     cache_op(start, len, cbo_inval);
 }
 
 /// Synchronize the instruction and data cache across all CPUs.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_sync_cache_range(start: usize, len: usize) {
-    if super::mmu::is_kernel_address(start) {
+    if super::vm::is_kernel_address(start) {
         arch_clean_cache_range(start, len);
     }
 

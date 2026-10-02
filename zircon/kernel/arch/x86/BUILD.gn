@@ -305,6 +305,16 @@ source_set("syscall") {
   ]
 }
 
+kernel_bindgen_crate("arch-x86-vm-bindings") {
+  headers = [ "include/arch/vm.h" ]
+  cpp = true
+  non_rust_deps = [ ":headers" ]
+  raw_lines = [ "#![no_std]" ]
+  var_allowlist = [ "kX86CanonicalAddressMask" ]
+  expect_lints = [ "non_upper_case_globals" ]
+  notice_year = 2026
+}
+
 kernel_bindgen_crate("arch-x86-aspace-bindings") {
   headers = [
     "include/arch/kernel_aspace.h",
@@ -343,10 +353,12 @@ kernel_rust_mod("arch-x86-rs") {
     "src/registers.rs",
     "src/suspend.rs",
     "src/system_topology.rs",
+    "src/vm.rs",
     "src/x86.rs",
   ]
   deps = [
     ":arch-x86-aspace-bindings",
+    ":arch-x86-vm-bindings",
     "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",

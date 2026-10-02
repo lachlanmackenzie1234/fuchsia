@@ -10,6 +10,7 @@
 #![allow(clippy::only_used_in_recursion)]
 
 use super::asid_allocator::*;
+use super::vm::is_kernel_address;
 use super::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE};
 use crate::counters;
 use crate::kernel::types::PAddr;
@@ -65,7 +66,6 @@ const NUM_PAGE_TABLE_ENTRIES: usize = 1 << PAGE_TABLE_LEVEL_SHIFT; // 512 entrie
 
 const VIRTUAL_ADDRESS_SIZE: usize = 39;
 const VIRTUAL_ADDRESS_MASK: usize = (1usize << VIRTUAL_ADDRESS_SIZE) - 1;
-const CANONICAL_ADDRESS_MASK: usize = !((1usize << (VIRTUAL_ADDRESS_SIZE - 1)) - 1);
 
 // Constants to assist indexing into the top portion of the kernel top level page table.
 const MMU_PT_KERNEL_BASE_INDEX: usize = NUM_PAGE_TABLE_ENTRIES / 2; // 256
@@ -338,12 +338,6 @@ fn mmu_flags_from_pte(pte: Pte) -> u8 {
     flags
 }
 
-/// Returns whether a virtual address is in the kernel address space (canonical high half of Sv39).
-#[inline(always)]
-pub(crate) const fn is_kernel_address(va: usize) -> bool {
-    (va & CANONICAL_ADDRESS_MASK) == CANONICAL_ADDRESS_MASK
-}
-
 /// Validates that a user address space base and size are page-aligned and entirely within the user half of Sv39.
 const fn is_user_base_size_valid(base: usize, size: usize) -> bool {
     if size == 0 {
@@ -352,11 +346,11 @@ const fn is_user_base_size_valid(base: usize, size: usize) -> bool {
     if (base & PAGE_MASK) != 0 || (size & PAGE_MASK) != 0 {
         return false;
     }
-    if (base & CANONICAL_ADDRESS_MASK) != 0 {
+    if (base & super::vm::RISCV64_CANONICAL_ADDRESS_MASK) != 0 {
         return false;
     }
     match base.checked_add(size) {
-        Some(top) => ((top - 1) & CANONICAL_ADDRESS_MASK) == 0,
+        Some(top) => ((top - 1) & super::vm::RISCV64_CANONICAL_ADDRESS_MASK) == 0,
         None => false,
     }
 }
