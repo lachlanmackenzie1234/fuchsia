@@ -6,9 +6,10 @@
 #
 # This template does not build anything, it emits GN metadata, and targets using
 # this template should be in transitive dependencies of
-# //:bazel_host_test_suites (for `host_tests`) or //:bazel_target_test_suites
-# (for `target_tests`) to ensure that the Bazel tests they reference appear in
-# `tests.json` and thus are visible to `fx test` and infra builders.
+# //:bazel_host_test_suites (for `host_tests`) or
+# //:ungrouped_bazel_target_test_suites (for `target_tests`) to ensure that the
+# Bazel tests they reference appear in `tests.json` and thus are visible to `fx
+# test` and infra builders.
 #
 # See //docs/development/build/bazel_concepts/tests.md for details. In a
 # nutshell:
@@ -52,7 +53,9 @@ template("bazel_test_suite") {
       }
       bazel_host_test_suite_barrier = []
 
-      # Used by //:bazel_target_test_suites target. Target tests are tracked
+      # Used by //:ungrouped_bazel_target_test_suites,
+      # //:bazel_target_test_suites_to_build, and product_bundle_test_group()
+      # targets. Target tests are tracked
       # separately from host tests because they must be queried and built in a
       # different Bazel configuration.
       bazel_target_test_suite = []

@@ -17,7 +17,8 @@ bazel_action("target_tests") {
   # The suites themselves are built as top-level Bazel targets, because they
   # are Bazel test_suite targets: they expose no files to depend on, and are
   # typically private to their own package.
-  extra_bazel_targets_file = "$root_build_dir/bazel_target_test_suites.txt"
+  extra_bazel_targets_file =
+      "$root_build_dir/bazel_target_test_suites_to_build.txt"
 
   deps = [
     # The following are currently needed by `fx_package()`.

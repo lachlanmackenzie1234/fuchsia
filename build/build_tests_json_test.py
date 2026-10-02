@@ -42,7 +42,9 @@ class BuildTestsJsonTest(unittest.TestCase):
             BazelPaths(self.source_dir, self.build_dir).execroot,
             self.build_dir,
         )
-        (self.build_dir / "bazel_target_test_suites.txt").write_text("")
+        (self.build_dir / "ungrouped_bazel_target_test_suites.txt").write_text(
+            ""
+        )
         (self.build_dir / "target_tests.gn_targets_manifest.json").write_text(
             "[]"
         )
@@ -364,7 +366,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertDictEqual(expected_tests_json[1], tests[1])
 
     def test_bazel_device_tests_get_default_environments(self) -> None:
-        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+        (self.build_dir / "ungrouped_bazel_target_test_suites.txt").write_text(
             "//fake/device_tests"
         )
         mock_runner = MockCommandRunner()
@@ -413,7 +415,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
 
     def test_bazel_device_tests_custom_environments(self) -> None:
-        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+        (self.build_dir / "ungrouped_bazel_target_test_suites.txt").write_text(
             "//fake/device_tests"
         )
         mock_runner = MockCommandRunner()
@@ -490,7 +492,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertTrue(tests[1]["build_only"])
 
     def test_bazel_device_tests_invalid_environment(self) -> None:
-        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+        (self.build_dir / "ungrouped_bazel_target_test_suites.txt").write_text(
             "//fake/device_tests"
         )
         mock_runner = MockCommandRunner()
@@ -526,6 +528,82 @@ class BuildTestsJsonTest(unittest.TestCase):
                 with_bazel_tests=True,
                 command_runner=mock_runner,
             )
+
+    def test_bazel_device_tests_in_product_bundle_test_group(self) -> None:
+        pb_tests_json_path = self.build_dir / "pb_tests.json"
+        pb_tests_json_path.write_text("[]")
+        pb_bazel_suites_path = (
+            self.build_dir / "pb_bazel_target_test_suites.txt"
+        )
+        pb_bazel_suites_path.write_text("//fake/pb_device_tests\n")
+
+        mock_runner = MockCommandRunner()
+        # Host test cquery finds no tests.
+        mock_runner.push_result(stdout="")
+        # Device test cquery for the product_bundle_test_group's suite file.
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "arm64",
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        vim3_env = {"dimensions": {"device_type": "Vim3"}}
+        test_groups = [
+            {
+                "product_bundle_name": "my_pb",
+                "environments": [vim3_env],
+                "tests_json": "pb_tests.json",
+                "bazel_target_test_suites": "pb_bazel_target_test_suites.txt",
+            },
+            {
+                "product_bundle_name": "my_build_only_pb",
+                "build_only": True,
+                "tests_json": "pb_tests.json",
+                "bazel_target_test_suites": "pb_bazel_target_test_suites.txt",
+            },
+        ]
+        product_bundles = [{"name": "my_pb"}, {"name": "my_build_only_pb"}]
+
+        _, tests = self._test(
+            [],
+            test_groups,
+            product_bundles,
+            with_bazel_tests=True,
+            command_runner=mock_runner,
+            default_test_environments={
+                "target_cpu": "arm64",
+                "default_environments": [],
+                "allowed_device_types": [],
+                "allowed_host_device_types": [],
+            },
+        )
+
+        self.assertEqual(len(tests), 2)
+        self.assertEqual(
+            tests[0]["test"]["name"],
+            "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm-my_pb",
+        )
+        self.assertEqual(tests[0]["product_bundle"], "my_pb")
+        self.assertEqual(tests[0]["environments"], [vim3_env])
+
+        self.assertEqual(
+            tests[1]["test"]["name"],
+            "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+        )
+        self.assertNotIn("product_bundle", tests[1])
+        self.assertTrue(tests[1]["build_only"])
+        self.assertEqual(tests[1]["environments"], [])
 
     def test_full(self) -> None:
         tests_from_metadata = [

@@ -4,6 +4,8 @@
 
 """Utility functions for working with Bazel test targets."""
 
+import copy
+import dataclasses
 import json
 import os
 import sys
@@ -18,27 +20,43 @@ import build_utils
 import workspace_utils
 from build_utils import BazelLauncher, BazelPaths
 
+# A single tests.json entry.
+TestSpec = dict[str, T.Any]
+
+
+@dataclasses.dataclass(frozen=True)
+class BazelTestsJson:
+    """tests.json entries generated from Bazel test targets."""
+
+    # Tests that aren't in any `product_bundle_test_group()`.
+    tests: list[TestSpec]
+
+    # Maps each extra suite file (e.g. one per `product_bundle_test_group()`)
+    # to the device tests reachable from the suites it lists.
+    grouped_tests: dict[Path, list[TestSpec]]
+
+    # Paths whose changes require regenerating tests.json.
+    inputs: set[Path]
+
 
 def generate_tests_json(
     bazel_paths: BazelPaths,
     command_runner: build_utils.CommandRunner | None = None,
     quiet: bool = True,
-) -> tuple[list[dict[str, T.Any]], set[Path]]:
+    extra_device_suite_files: T.Sequence[Path] = (),
+) -> BazelTestsJson:
     """Generate tests.json entries corresponding to all Bazel test targets.
 
     Args:
         bazel_paths: The BazelPaths object to use for path resolution.
         command_runner: An optional CommandRunner instance.
         quiet: Whether to print status updates.
+        extra_device_suite_files: Additional files listing `bazel_test_suite()`
+            `target_tests` labels (e.g. one per `product_bundle_test_group()`).
 
     Returns:
-        A pair of two values which are:
-
-        - A list of dictionaries, describing each Bazel test reachable from the
-          `bazel_test_suite()` GN targets, according to the tests.json schema.
-
-        - A set of input paths, whose changes would require a regeneration of
-          the tests.json file.
+        The host and device tests.json entries, with `grouped_tests` keyed by
+        the paths in `extra_device_suite_files`.
     """
     if not command_runner:
         command_runner = build_utils.CommandRunner()
@@ -59,10 +77,14 @@ def generate_tests_json(
     host_tests_json, host_inputs = _generate_host_tests_json(
         bazel_paths, command_runner, quiet
     )
-    device_tests_json, device_inputs = _generate_device_tests_json(
-        bazel_paths, command_runner, quiet
+    device_tests = _generate_device_tests_json(
+        bazel_paths, command_runner, quiet, extra_device_suite_files
     )
-    return host_tests_json + device_tests_json, host_inputs | device_inputs
+    return BazelTestsJson(
+        tests=host_tests_json + device_tests.tests,
+        grouped_tests=device_tests.grouped_tests,
+        inputs=host_inputs | device_tests.inputs,
+    )
 
 
 def _execroot_path_to_ninja_path(bazel_paths: BazelPaths, path: str) -> str:
@@ -88,7 +110,7 @@ def _generate_host_tests_json(
     bazel_paths: BazelPaths,
     command_runner: build_utils.CommandRunner | None = None,
     quiet: bool = True,
-) -> tuple[list[dict[str, T.Any]], set[Path]]:
+) -> tuple[list[TestSpec], set[Path]]:
     """Generate a tests.json file corresponding to all Bazel host test targets
 
     Args:
@@ -163,7 +185,7 @@ def _generate_host_tests_json(
         if "target_cpu" in args_json:
             target_cpu = args_json["target_cpu"]
 
-    tests_json: list[dict[str, T.Any]] = []
+    tests_json: list[TestSpec] = []
     host_test_debug_manifests: list[dict[str, str]] = []
     targets_missing_test_info: set[str] = set()
 
@@ -219,7 +241,7 @@ def _generate_host_tests_json(
             cquery_test["os"].capitalize() if cquery_test["os"] else "Linux"
         )
 
-        test_spec: dict[str, T.Any] = {
+        test_spec: TestSpec = {
             "environments": [],
             "expects_ssh": False,
             "test": {
@@ -300,7 +322,8 @@ def _generate_device_tests_json(
     bazel_paths: BazelPaths,
     command_runner: build_utils.CommandRunner,
     quiet: bool = True,
-) -> tuple[list[dict[str, T.Any]], set[Path]]:
+    extra_suite_files: T.Sequence[Path] = (),
+) -> BazelTestsJson:
     """Generate tests.json entries for all Bazel fx_test() targets.
 
     Also writes `bazel_test_packages.list`, which enumerates the package
@@ -310,38 +333,74 @@ def _generate_device_tests_json(
         bazel_paths: The BazelPaths object to use for path resolution.
         command_runner: The CommandRunner instance to run `bazel` with.
         quiet: Whether to print status updates.
+        extra_suite_files: Additional files listing `bazel_test_suite()`
+            `target_tests` labels (e.g. one per `product_bundle_test_group()`).
 
     Returns:
-        A pair of two values which are:
-
-        - A list of dictionaries, one per test component, according to the
-          tests.json schema.
-
-        - A set of input paths, whose changes would require a regeneration of
-          the tests.json file.
+        The device tests.json entries, one per test component, with
+        `grouped_tests` keyed by the paths in `extra_suite_files`.
     """
     bazel_launcher = BazelLauncher(bazel_paths.launcher, runner=command_runner)
     starlark_input = _SCRIPT_DIR / "../starlark/FuchsiaTestInfo.cquery"
 
-    # Read the text file enumerating all the Bazel targets listed in the
-    # `target_tests` of `bazel_test_suite` GN targets.
+    # Read the text files enumerating ungrouped, per-group, and all built
+    # Bazel target test suites. `bazel_target_test_suites_to_build.txt`
+    # includes suites behind a non-PB `tests_barrier` (such as
+    # `//bundles/buildbot/fuchsia:additional_build_targets`) that are built by
+    # `//build/bazel/target_tests` and still need their package manifests in
+    # `bazel_test_packages.list` and their BUILD files tracked as regen inputs.
     bazel_test_suites_file = (
-        bazel_paths.ninja_build_dir / "bazel_target_test_suites.txt"
+        bazel_paths.ninja_build_dir / "ungrouped_bazel_target_test_suites.txt"
     )
-    suites = bazel_test_suites_file.read_text().splitlines()
+    all_bazel_test_suites_file = (
+        bazel_paths.ninja_build_dir / "bazel_target_test_suites_to_build.txt"
+    )
+    top_level_suites = tuple(bazel_test_suites_file.read_text().splitlines())
+    all_build_suites = (
+        tuple(all_bazel_test_suites_file.read_text().splitlines())
+        if all_bazel_test_suites_file.exists()
+        else ()
+    )
+    extra_suites_by_file = {
+        suite_file: tuple(suite_file.read_text().splitlines())
+        for suite_file in extra_suite_files
+    }
+    unique_suite_tuples = list(
+        dict.fromkeys(
+            suites
+            for suites in [top_level_suites, *extra_suites_by_file.values()]
+            if suites
+        )
+    )
+    all_suites = list(
+        dict.fromkeys(
+            suite
+            for suites in [*unique_suite_tuples, all_build_suites]
+            for suite in suites
+        )
+    )
 
-    if not suites:
+    if not all_suites:
         # Skip running `bazel cquery` to get the full list of tests if no Bazel
         # device tests are included in the build graph, to save time on regen.
         write_bazel_test_packages_list(bazel_paths.ninja_build_dir, [])
-        return [], {starlark_input}
+        return BazelTestsJson(
+            tests=[],
+            grouped_tests={suite_file: [] for suite_file in extra_suite_files},
+            inputs={starlark_input},
+        )
 
     if not quiet:
         print(
             f"Running Bazel cquery to populate `tests.json` because there are Bazel device "
-            f"tests ({len(suites)} bazel_test_suite{'' if len(suites) == 1 else 's'}) "
+            f"tests ({len(all_suites)} bazel_test_suite{'' if len(all_suites) == 1 else 's'}) "
             f"in your GN graph."
         )
+
+    all_tests_json: list[TestSpec] = []
+    tests_by_label: dict[str, list[TestSpec]] = {}
+    package_manifests: list[str] = []
+    targets_missing_test_info: set[str] = set()
 
     with tempfile.NamedTemporaryFile(mode="w") as query_file:
         # TODO(https://fxbug.dev/564574581): `tests()` silently discards
@@ -350,7 +409,7 @@ def _generate_device_tests_json(
         # "Wrap them with fx_test()" error below. Report requested labels
         # that are neither `test_suite()`s nor matched by `tests()`. The
         # host test path above has the same gap.
-        query_file.write("tests(set(" + " ".join(suites) + "))")
+        query_file.write("tests(set(" + " ".join(all_suites) + "))")
         query_file.flush()
 
         ret = bazel_launcher.run_query(
@@ -364,10 +423,6 @@ def _generate_device_tests_json(
             False,
         )
     _check_starlark_cquery_result(ret)
-
-    tests_json: list[dict[str, T.Any]] = []
-    package_manifests: list[str] = []
-    targets_missing_test_info: set[str] = set()
 
     for line in ret.stdout.splitlines():
         line = line.strip()
@@ -388,6 +443,7 @@ def _generate_device_tests_json(
 
         # LINT.IfChange(device_cquery_output_schema)
         label = cquery_test["label"]
+        normalized_label = _normalize_label(label)
         package_manifest = _execroot_path_to_ninja_path(
             bazel_paths, cquery_test["package_manifest_execroot_path"]
         )
@@ -400,6 +456,7 @@ def _generate_device_tests_json(
         # An empty `environments` list means build_tests_json.py fills in
         # this build's default environments.
         envs = cquery_test.get("environments", [])
+        target_tests_json: list[TestSpec] = []
         for test_component in cquery_test["test_components"]:
             package_url = test_component["package_url"]
             test_dict = {
@@ -411,7 +468,7 @@ def _generate_device_tests_json(
                     # The source label indicates the location in the tree of
                     # the source code. For labels in the main workspace,
                     # ensure they start with "//".
-                    "source_label": _normalize_label(label),
+                    "source_label": normalized_label,
                     "name": package_url,
                     "os": cquery_test["os"],
                     "package_url": package_url,
@@ -429,8 +486,10 @@ def _generate_device_tests_json(
                 test_dict["build_only"] = True
             else:
                 test_dict["environments"] = envs
-            tests_json.append(test_dict)
+            target_tests_json.append(test_dict)
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaTestInfo.cquery:cquery_output_schema)
+        all_tests_json.extend(target_tests_json)
+        tests_by_label[normalized_label] = target_tests_json
 
     if targets_missing_test_info:
         targets_list = "\n".join(
@@ -454,10 +513,64 @@ def _generate_device_tests_json(
     # BUILD file than its `fx_test()`.
     build_files = _main_workspace_build_files(
         bazel_paths.fuchsia_dir,
-        suites + [test["test"]["label"] for test in tests_json],
+        all_suites + list(tests_by_label.keys()),
     )
 
-    return tests_json, {starlark_input} | build_files
+    all_suites_set = {_normalize_label(s) for s in all_suites}
+    expanded_suites: dict[str, list[str]] = {
+        label: [label] for label in tests_by_label
+    }
+    tests_by_suites: dict[tuple[str, ...], list[TestSpec]] = {}
+    for suites in unique_suite_tuples:
+        if {_normalize_label(s) for s in suites} == all_suites_set:
+            tests_by_suites[suites] = all_tests_json
+            continue
+
+        # When `bazel_test_suite()` lists `fx_test()` labels directly, each
+        # label is already a key in `expanded_suites`. Only run a loading-phase
+        # `bazel query` if a suite label is a `test_suite()` rule that needs
+        # expansion to determine which `fx_test()` targets belong to this group.
+        for suite in suites:
+            normalized_suite = _normalize_label(suite)
+            if normalized_suite not in expanded_suites:
+                ret = bazel_launcher.run_query(
+                    "query", [f"tests({suite})"], False
+                )
+                if ret.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to run bazel query: {ret.stderr}"
+                    )
+                expanded_suites[normalized_suite] = [
+                    _normalize_label(line.strip())
+                    for line in ret.stdout.splitlines()
+                    if line.strip()
+                ]
+
+        suite_test_labels = dict.fromkeys(
+            label
+            for suite in suites
+            for label in expanded_suites[_normalize_label(suite)]
+        )
+        tests_by_suites[suites] = [
+            test
+            for label in suite_test_labels
+            for test in tests_by_label.get(label, [])
+        ]
+
+    # Return independent copies per suite file so in-place mutation of test
+    # entries by `build_tests_json.py` (for environment resolution and
+    # product_bundle_name suffixing) does not bleed across groups.
+    top_level_tests = copy.deepcopy(tests_by_suites.get(top_level_suites, []))
+    extra_tests_by_file = {
+        suite_file: copy.deepcopy(tests_by_suites.get(suites, []))
+        for suite_file, suites in extra_suites_by_file.items()
+    }
+
+    return BazelTestsJson(
+        tests=top_level_tests,
+        grouped_tests=extra_tests_by_file,
+        inputs={starlark_input} | build_files,
+    )
 
 
 def _main_workspace_build_files(

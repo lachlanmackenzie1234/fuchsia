@@ -6,6 +6,7 @@
 Generate tests.json.
 """
 
+import copy
 import json
 import pprint
 import sys
@@ -374,14 +375,21 @@ def build_tests_json(
     validation_errors: list[str] = []
     build_only_test_names: set[str] = set()
 
-    bazel_tests_json: list[dict[str, Any]] = []
-    bazel_inputs: set[Path] = set()
+    bazel_tests = bazel_tests_utils.BazelTestsJson(
+        tests=[], grouped_tests={}, inputs=set()
+    )
     if with_bazel_tests:
         bazel_paths = build_utils.BazelPaths.new(build_dir=build_dir)
-        bazel_tests_json, bazel_inputs = bazel_tests_utils.generate_tests_json(
+        group_suite_files = [
+            build_dir / test_group["bazel_target_test_suites"]
+            for test_group in test_groups
+            if "bazel_target_test_suites" in test_group
+        ]
+        bazel_tests = bazel_tests_utils.generate_tests_json(
             bazel_paths,
             command_runner,
             quiet=quiet,
+            extra_device_suite_files=group_suite_files,
         )
     else:
         # `//build/images/updates:all_package_manifests.list` unconditionally
@@ -389,7 +397,7 @@ def build_tests_json(
         # (`touch`), which would otherwise create an empty non-JSON file.
         bazel_tests_utils.write_bazel_test_packages_list(build_dir, [])
 
-    tests.extend(bazel_tests_json)
+    tests.extend(bazel_tests.tests)
 
     # Resolve, validate, and filter environments for tests from metadata and
     # Bazel.
@@ -467,6 +475,11 @@ def build_tests_json(
         # Read the tests.json that is assigned to this specific product bundle.
         product_bundle_tests_file = build_dir / test_group["tests_json"]
         product_bundle_tests = json.loads(product_bundle_tests_file.read_text())
+        if with_bazel_tests and "bazel_target_test_suites" in test_group:
+            suite_file = build_dir / test_group["bazel_target_test_suites"]
+            product_bundle_tests.extend(
+                copy.deepcopy(bazel_tests.grouped_tests[suite_file])
+            )
 
         # Update the test spec to include the product bundle target and
         # environments.
@@ -532,4 +545,4 @@ def build_tests_json(
         test_groups_path,
         environments_path,
         default_environments_path,
-    } | bazel_inputs
+    } | bazel_tests.inputs
