@@ -6545,6 +6545,21 @@ pub const P_ALL: u32 = 0;
 pub const P_PID: u32 = 1;
 pub const P_PGID: u32 = 2;
 pub const P_PIDFD: u32 = 3;
+pub const O_NOTIFICATION_PIPE: u32 = 128;
+pub const WATCH_INFO_LENGTH: u32 = 127;
+pub const WATCH_INFO_LENGTH__SHIFT: u32 = 0;
+pub const WATCH_INFO_ID: u32 = 65280;
+pub const WATCH_INFO_ID__SHIFT: u32 = 8;
+pub const WATCH_INFO_TYPE_INFO: u32 = 4294901760;
+pub const WATCH_INFO_TYPE_INFO__SHIFT: u32 = 16;
+pub const WATCH_INFO_FLAG_0: u32 = 65536;
+pub const WATCH_INFO_FLAG_1: u32 = 131072;
+pub const WATCH_INFO_FLAG_2: u32 = 262144;
+pub const WATCH_INFO_FLAG_3: u32 = 524288;
+pub const WATCH_INFO_FLAG_4: u32 = 1048576;
+pub const WATCH_INFO_FLAG_5: u32 = 2097152;
+pub const WATCH_INFO_FLAG_6: u32 = 4194304;
+pub const WATCH_INFO_FLAG_7: u32 = 8388608;
 pub const XATTR_CREATE: u32 = 1;
 pub const XATTR_REPLACE: u32 = 2;
 pub const XATTR_OS2_PREFIX: &'static std::ffi::CStr = c"os2.";
@@ -18323,6 +18338,127 @@ pub struct sockaddr_vm {
     pub svm_flags: __u8,
     pub svm_zero: [crate::types::arch32::c_uchar; 3usize],
 }
+pub const watch_notification_type_WATCH_TYPE_META: watch_notification_type = 0;
+pub const watch_notification_type_WATCH_TYPE_KEY_NOTIFY: watch_notification_type = 1;
+pub const watch_notification_type_WATCH_TYPE__NR: watch_notification_type = 2;
+pub type watch_notification_type = crate::types::arch32::c_uint;
+pub const watch_meta_notification_subtype_WATCH_META_REMOVAL_NOTIFICATION:
+    watch_meta_notification_subtype = 0;
+pub const watch_meta_notification_subtype_WATCH_META_LOSS_NOTIFICATION:
+    watch_meta_notification_subtype = 1;
+pub type watch_meta_notification_subtype = crate::types::arch32::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct watch_notification {
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize]>,
+    pub info: __u32,
+}
+impl watch_notification {
+    #[inline]
+    pub fn type_(&self) -> __u32 {
+        self._bitfield_1.get_const::<0usize, 24u8>() as u32 as _
+    }
+    #[inline]
+    pub fn set_type(&mut self, val: __u32) {
+        let val: u32 = val as _;
+        self._bitfield_1.set_const::<0usize, 24u8>(val as u64)
+    }
+    #[inline]
+    pub unsafe fn type__raw(this: *const Self) -> __u32 {
+        unsafe {
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<0usize, 24u8>(
+                ::std::ptr::addr_of!((*this)._bitfield_1),
+            ) as u32 as _
+        }
+    }
+    #[inline]
+    pub unsafe fn set_type_raw(this: *mut Self, val: __u32) {
+        unsafe {
+            let val: u32 = val as _;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<0usize, 24u8>(
+                ::std::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn subtype(&self) -> __u32 {
+        self._bitfield_1.get_const::<24usize, 8u8>() as u32 as _
+    }
+    #[inline]
+    pub fn set_subtype(&mut self, val: __u32) {
+        let val: u32 = val as _;
+        self._bitfield_1.set_const::<24usize, 8u8>(val as u64)
+    }
+    #[inline]
+    pub unsafe fn subtype_raw(this: *const Self) -> __u32 {
+        unsafe {
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_get_const::<24usize, 8u8>(
+                ::std::ptr::addr_of!((*this)._bitfield_1),
+            ) as u32 as _
+        }
+    }
+    #[inline]
+    pub unsafe fn set_subtype_raw(this: *mut Self, val: __u32) {
+        unsafe {
+            let val: u32 = val as _;
+            <__BindgenBitfieldUnit<[u8; 4usize]>>::raw_set_const::<24usize, 8u8>(
+                ::std::ptr::addr_of_mut!((*this)._bitfield_1),
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(type_: __u32, subtype: __u32) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
+        __bindgen_bitfield_unit.set_const::<0usize, 24u8>({
+            let type_: u32 = type_ as _;
+            type_ as u64
+        });
+        __bindgen_bitfield_unit.set_const::<24usize, 8u8>({
+            let subtype: u32 = subtype as _;
+            subtype as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct watch_notification_type_filter {
+    pub type_: __u32,
+    pub info_filter: __u32,
+    pub info_mask: __u32,
+    pub subtype_filter: [__u32; 8usize],
+}
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct watch_notification_filter {
+    pub nr_filters: __u32,
+    pub __reserved: __u32,
+    pub filters: __IncompleteArrayField<watch_notification_type_filter>,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct watch_notification_removal {
+    pub watch: watch_notification,
+    pub id: __u64,
+}
+pub const key_notification_subtype_NOTIFY_KEY_INSTANTIATED: key_notification_subtype = 0;
+pub const key_notification_subtype_NOTIFY_KEY_UPDATED: key_notification_subtype = 1;
+pub const key_notification_subtype_NOTIFY_KEY_LINKED: key_notification_subtype = 2;
+pub const key_notification_subtype_NOTIFY_KEY_UNLINKED: key_notification_subtype = 3;
+pub const key_notification_subtype_NOTIFY_KEY_CLEARED: key_notification_subtype = 4;
+pub const key_notification_subtype_NOTIFY_KEY_REVOKED: key_notification_subtype = 5;
+pub const key_notification_subtype_NOTIFY_KEY_INVALIDATED: key_notification_subtype = 6;
+pub const key_notification_subtype_NOTIFY_KEY_SETATTR: key_notification_subtype = 7;
+pub type key_notification_subtype = crate::types::arch32::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct key_notification {
+    pub watch: watch_notification,
+    pub key_id: __u32,
+    pub aux: __u32,
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union xfrm_address_t {
@@ -21340,6 +21476,7 @@ pub struct xt_target {
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/vesa.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/vm_sockets.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/wait.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/watch_queue.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/xattr.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/xfrm.h
 //)

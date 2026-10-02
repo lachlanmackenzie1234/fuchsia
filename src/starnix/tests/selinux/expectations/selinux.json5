@@ -259,10 +259,6 @@
                 "userfaultfd/007",
                 "userfaultfd/008",
                 "userfaultfd/009",
-
-                // TODO: https://fxbug.dev/398711590
-                "watchkey/001",
-                "watchkey/002",
             ],
         },
         {
