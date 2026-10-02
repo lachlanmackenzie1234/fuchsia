@@ -14,9 +14,10 @@ use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard, RwQueueWriteGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
     CheckAccessReason, DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps,
-    FileSystem, FileSystemHandle, FileWriteGuardState, FsLockDepType, FsStr, FsString,
-    MAX_LFS_FILESIZE, MountInfo, NamespaceNode, OPathOps, OpenAccessCheck, RecordLockCommand,
-    RecordLockOwner, RecordLocks, WeakFileHandle, checked_add_offset_and_length, inotify_hook,
+    FileSystem, FileSystemHandle, FileWriteGuardMode, FileWriteGuardRef, FileWriteGuardState,
+    FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE, MountInfo, NamespaceNode, OPathOps,
+    OpenAccessCheck, RecordLockCommand, RecordLockOwner, RecordLocks, WeakFileHandle,
+    checked_add_offset_and_length, inotify_hook,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -1662,6 +1663,18 @@ impl FsNode {
         Ok(())
     }
 
+    /// Acquires a [`FileWriteGuardMode`] reservation on this node for the lifetime of the returned
+    /// [`FileWriteGuardRef`].
+    ///
+    /// The internal [`FileWriteGuardState`] mutex is locked only for the duration of the counter
+    /// update and is dropped before returning.
+    pub fn create_write_guard(
+        &self,
+        mode: FileWriteGuardMode,
+    ) -> Result<FileWriteGuardRef<'_>, Errno> {
+        FileWriteGuardRef::new(self, mode)
+    }
+
     pub fn truncate(
         &self,
         current_task: &CurrentTask,
@@ -1678,6 +1691,22 @@ impl FsNode {
             CheckAccessReason::InternalPermissionChecks,
             security::Auditable::Location(std::panic::Location::caller()),
         )?;
+
+        // Per `truncate(2)`:
+        // "ETXTBSY: The file is an executable file that is being executed."
+        // And per `open(2)` (`O_TRUNC` / `ETXTBSY`), which routes truncation through here:
+        // "ETXTBSY: pathname refers to an executable image which is currently being executed
+        // and write access was requested."
+        //
+        // Hold a `FileWriteGuardMode::WriteFile` reservation for the duration of the truncation so
+        // that truncating an actively executing file fails with `ETXTBSY`, and any concurrent
+        // `execve(2)` (`FileWriteGuardMode::ExecMapping`) fails with `ETXTBSY` while truncation is
+        // in flight.
+        // `create_write_guard` drops the `write_guard_state` mutex immediately while keeping the
+        // `WriteFile` reservation active until `_write_guard` is dropped, avoiding lock-order
+        // inversion or self-deadlock when filesystem truncate ops lock `write_guard_state` to check
+        // seals (e.g., `check_no_seal`).
+        let _write_guard = self.create_write_guard(FileWriteGuardMode::WriteFile)?;
 
         let guard = self.ops().append_lock_write(self, current_task)?;
         self.truncate_locked(&guard, current_task, length)

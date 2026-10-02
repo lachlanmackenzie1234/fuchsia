@@ -239,9 +239,6 @@
                 // exec_test
                 "ExecveatTest.MemfdScript",
 
-                // TODO(https://fxbug.dev/564606160)
-                "ExecTest.RunningBinaryIsNotWritable",
-
                 // Disable InterpreterScript because the script has the path /bin/bash which is not
                 // where bash is located on the Android system image.
                 "ExecTest.InterpreterScript",
