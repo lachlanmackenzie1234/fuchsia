@@ -24,7 +24,6 @@ group("tests") {
     "build_info:tests",
     "console:tests",
     "debug:tests",
-    "fastboot:tests",
     "ffx:tests",
     "forensics:tests",
     "fuchsia-criterion:tests",

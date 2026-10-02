@@ -53,6 +53,7 @@ bazel2gn_verification_targets = [
   "//src/developer/debug/shared/logging:verify_bazel2gn",
   "//src/developer/debug/shared:verify_bazel2gn",
   "//src/developer/debug/zxdb/common:verify_bazel2gn",
+  "//src/developer/fastboot:verify_bazel2gn",
   "//src/developer/ffx/command/error:verify_bazel2gn",
   "//src/developer/ffx/command:verify_bazel2gn",
   "//src/developer/ffx/config/domain:verify_bazel2gn",
