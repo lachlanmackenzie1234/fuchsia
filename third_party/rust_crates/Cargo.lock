@@ -1576,6 +1576,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "emboss_runtime"
+version = "0.1.0"
+
+[[package]]
 name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1930,6 +1934,7 @@ dependencies = [
  "dyn-clone",
  "ecb",
  "either",
+ "emboss_runtime",
  "enumn",
  "euclid",
  "eui48",
@@ -5084,6 +5089,7 @@ dependencies = [
  "futures",
  "sapphire-async",
  "sapphire-collections",
+ "sapphire-emboss",
  "sapphire-rpc-macro",
  "sapphire-sync",
  "thiserror 2.0.20",

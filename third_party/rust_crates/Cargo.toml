@@ -105,6 +105,7 @@ downcast-rs = "2.0.2"
 dyn-clone = "1.0.20"
 ecb = "0.2"
 either = "1.18.0"
+emboss_runtime = "0.1.0"
 enumn = "0.1.14"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "5.4.2"
@@ -395,6 +396,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 ### In-tree Crates: crates which are on crates.io but which we build from our in-tree copy
 # keep-sorted start
 bssl-sys = { path = "intree/bssl-sys" }
+emboss_runtime = { path = "intree/emboss_runtime" }
 fuchsia-cprng = { path = "intree/fuchsia-cprng" }
 sapphire-async = { path = "intree/sunstone/sapphire-async" }
 sapphire-buffer = { path = "intree/sunstone/sapphire-buffer" }
@@ -664,6 +666,9 @@ rustflags = []
 groups = [
   { name = "der-0.7" }
 ]
+
+[gn.package.emboss_runtime."0.1.0"]
+existing_gn_target = "//third_party/github.com/google/experimental-emboss-rust:emboss_runtime"
 
 [gn.package.euclid."0.22.14"]
 license_files = ["LICENSE-APACHE"]

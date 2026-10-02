@@ -865,6 +865,18 @@ alias(
 )
 
 alias(
+    name = "emboss_runtime-0.1.0",
+    actual = "//third_party/rust_crates/intree/emboss_runtime:emboss_runtime",
+    tags = ["manual"],
+)
+
+alias(
+    name = "emboss_runtime",
+    actual = "//third_party/rust_crates/intree/emboss_runtime:emboss_runtime",
+    tags = ["manual"],
+)
+
+alias(
     name = "enumn-0.1.14",
     actual = "//third_party/rust_crates/vendor/enumn-0.1.14:enumn",
     tags = ["manual"],

@@ -599,6 +599,14 @@ group("either-1.18.0") {
   public_deps = [ ":either-v1_18_0" ]
 }
 
+group("emboss_runtime") {
+  public_deps = [ ":emboss_runtime-v0_1_0" ]
+}
+
+group("emboss_runtime-0.1.0") {
+  public_deps = [ ":emboss_runtime-v0_1_0" ]
+}
+
 group("enumn") {
   public_deps = [ ":enumn-v0_1_14($host_toolchain)" ]
 }
@@ -8844,6 +8852,12 @@ rustc_library("elliptic-curve-v0_14_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":elliptic-curve-v0_14_1.license" ]
+}
+
+group("emboss_runtime-v0_1_0") {
+  public_deps = [
+    "//third_party/github.com/google/experimental-emboss-rust:emboss_runtime",
+  ]
 }
 
 license("encode_unicode-v1_0_0.license") {
@@ -20826,6 +20840,7 @@ rustc_library("sapphire-hci-v0_1_0") {
   deps = []
   deps += [ ":sapphire-async-v0_1_0" ]
   deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-emboss-v0_1_0" ]
   deps += [ ":sapphire-rpc-macro-v0_1_0($host_toolchain)" ]
   deps += [ ":sapphire-sync-v0_1_0" ]
   deps += [ ":futures-v0_3_34" ]
@@ -20856,6 +20871,7 @@ rustc_test("sapphire-hci-v0_1_0.test") {
   deps = []
   deps += [ ":sapphire-async-v0_1_0" ]
   deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-emboss-v0_1_0" ]
   deps += [ ":sapphire-rpc-macro-v0_1_0($host_toolchain)" ]
   deps += [ ":sapphire-sync-v0_1_0" ]
   deps += [ ":futures-v0_3_34" ]
