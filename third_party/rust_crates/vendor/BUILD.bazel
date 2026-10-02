@@ -1141,14 +1141,14 @@ alias(
 )
 
 alias(
-    name = "handlebars-6.4.2",
-    actual = "//third_party/rust_crates/vendor/handlebars-6.4.2:handlebars",
+    name = "handlebars-6.4.4",
+    actual = "//third_party/rust_crates/vendor/handlebars-6.4.4:handlebars",
     tags = ["manual"],
 )
 
 alias(
     name = "handlebars",
-    actual = "//third_party/rust_crates/vendor/handlebars-6.4.2:handlebars",
+    actual = "//third_party/rust_crates/vendor/handlebars-6.4.4:handlebars",
     tags = ["manual"],
 )
 
