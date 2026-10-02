@@ -3442,9 +3442,12 @@ where
     CC: IpLayerEgressContext<I, BC>,
     S: FragmentableIpSerializer<I, Buffer: BufferMut> + MaybeSegmentableIpSerializer<I>,
 {
+    core_ctx.increment_both(device, |c| &c.gso.for_source(S::SOURCE).segmentation_required);
+
     let segmenter = match body.try_segmenter(gso_info) {
         Ok(segmenter) => segmenter,
         Err(error) => {
+            core_ctx.increment_both(device, |c| c.gso.for_source(S::SOURCE).error_counter(&error));
             return Err(SendIpFrameSegmentedError::NotSegmentable(
                 error,
                 device_ip_layer_metadata,
@@ -3478,6 +3481,8 @@ where
         .map_err(|IpSendFrameError { serializer: _, error }| {
             SendIpFrameSegmentedError::Send(error)
         })?;
+
+        core_ctx.increment_both(device, |c| &c.gso.for_source(S::SOURCE).segments);
 
         match remaining {
             Some((m, p)) => {

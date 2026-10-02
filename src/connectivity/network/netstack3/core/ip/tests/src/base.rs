@@ -85,9 +85,10 @@ use netstack3_ip::socket::IpSocketContext;
 use netstack3_ip::testutil::IpCounterExpectations;
 use netstack3_ip::{
     self as ip, AddableEntryEither, AddableMetric, AddressStatus, Destination, DropReason,
-    FragmentTimerId, FragmentationCounters, InternalForwarding, IpDeviceIngressStateContext,
-    IpLayerTimerId, Ipv4PresentAddressStatus, Ipv6PresentAddressStatus, NextHop, RawMetric,
-    ReceivePacketAction, ResolveRouteError, ResolvedRoute, RoutableIpAddr,
+    FragmentTimerId, FragmentationCounters, GsoCounters, GsoSourceCounters, InternalForwarding,
+    IpDeviceIngressStateContext, IpLayerTimerId, Ipv4PresentAddressStatus,
+    Ipv6PresentAddressStatus, NextHop, RawMetric, ReceivePacketAction, ResolveRouteError,
+    ResolvedRoute, RoutableIpAddr,
 };
 
 // Some helper functions
@@ -975,8 +976,20 @@ fn forward_coalesced_gso_tcp<I: TestIpExt + IpExt>() {
     );
 
     // The packet is segmented rather than fragmented.
-    IpCounterExpectations::<I> { receive_ip_packet: 1, forward: 1, ..Default::default() }
-        .assert_counters(&ctx.core_ctx(), &device_id.into());
+    IpCounterExpectations::<I> {
+        receive_ip_packet: 1,
+        forward: 1,
+        gso: GsoCounters {
+            forwarded: GsoSourceCounters {
+                segmentation_required: 1,
+                segments: NUM_SEGMENTS.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device_id.into());
 
     // The packet is forwarded as `NUM_SEGMENTS` discrete segments.
     assert_eq!(ctx.bindings_ctx.take_ethernet_frames().len(), usize::from(NUM_SEGMENTS));
@@ -1038,12 +1051,21 @@ fn forward_coalesced_gso_tcp_oversized_segments<I: TestIpExt + IpExt>() {
                     fragments: 4,
                     ..Default::default()
                 },
+                gso: GsoCounters {
+                    forwarded: GsoSourceCounters {
+                        segmentation_required: 1,
+                        segments: 2,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             4,
         ),
         // Routers don't fragment IPv6 packets (RFC 8200 Section 4.5), so the
-        // first segment fails to send and the packet is dropped.
+        // first segment fails to send and the packet is dropped without
+        // sending any segments.
         IpVersion::V6 => (
             IpCounterExpectations::<I> {
                 receive_ip_packet: 1,
@@ -1052,6 +1074,10 @@ fn forward_coalesced_gso_tcp_oversized_segments<I: TestIpExt + IpExt>() {
                 fragmentation: FragmentationCounters {
                     fragmentation_required: 1,
                     error_not_allowed: 1,
+                    ..Default::default()
+                },
+                gso: GsoCounters {
+                    forwarded: GsoSourceCounters { segmentation_required: 1, ..Default::default() },
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1113,6 +1139,14 @@ fn forward_coalesced_not_segmentable_sent_whole<I: TestIpExt + IpExt>() {
     // Segmentation fails, so the stack falls back to sending the frame whole. IPv4
     // fragments it because it doesn't fit the MTU, but IPv6 packets can't be
     // fragmented when forwarded, so it's dropped.
+    let gso = GsoCounters {
+        forwarded: GsoSourceCounters {
+            segmentation_required: 1,
+            error_not_segmentable: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let (expected_counters, expected_frames) = match I::VERSION {
         IpVersion::V4 => (
             IpCounterExpectations::<I> {
@@ -1123,6 +1157,7 @@ fn forward_coalesced_not_segmentable_sent_whole<I: TestIpExt + IpExt>() {
                     fragments: 2,
                     ..Default::default()
                 },
+                gso,
                 ..Default::default()
             },
             2,
@@ -1137,6 +1172,7 @@ fn forward_coalesced_not_segmentable_sent_whole<I: TestIpExt + IpExt>() {
                     error_not_allowed: 1,
                     ..Default::default()
                 },
+                gso,
                 ..Default::default()
             },
             0,

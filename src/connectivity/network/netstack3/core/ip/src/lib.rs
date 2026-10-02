@@ -254,7 +254,10 @@ pub use internal::base::{
 };
 pub use internal::counters::{IpCounters, Ipv6RxCounters};
 pub use internal::fragmentation::FragmentationCounters;
-pub use internal::gso::{MaybeSegmentableTransportSerializer, SegmentableTransportBuilder};
+pub use internal::gso::{
+    GsoCounters, GsoSourceCounters, MaybeSegmentableTransportSerializer,
+    SegmentableTransportBuilder,
+};
 pub use internal::local_delivery::{
     IpHeaderInfo, LocalDeliveryPacketInfo, ReceiveIpPacketMeta, TransparentLocalDelivery,
 };
