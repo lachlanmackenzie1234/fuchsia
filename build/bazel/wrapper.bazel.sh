@@ -208,8 +208,17 @@ esac
 #       [infra/infra]/cmd/buildproxywrap/main.go.
 # These environment-sensitive modifications to config definitions
 # manifest in the short-lived 'invocation.bazelrc'.
-# Delete after use.
-trap "rm -f ${_INVOCATION_BAZELRC}" EXIT
+# Cleanup handler called on script exit.
+function cleanup {
+  local exit_code=$?
+  rm -f "${_INVOCATION_BAZELRC}"
+  # Preserve the completed invocation's command.log (stdout/stderr stream from Bazel).
+  if [[ -n "${_BAZEL_INVOCATION_LOG_DIR:-}" && -d "${_BAZEL_INVOCATION_LOG_DIR}" && -f "${_BAZEL_OUTPUT_BASE}/command.log" ]]; then
+    cp -f "${_BAZEL_OUTPUT_BASE}/command.log" "${_BAZEL_INVOCATION_LOG_DIR}/command.log" 2>/dev/null || true
+  fi
+  return "$exit_code"
+}
+trap cleanup EXIT
 "${_GENERATE_INVOCATION_BAZELRC}" \
   --sub_builds_link="$RESULTSTORE_SUB_BUILDS_LINK" \
   > "${_INVOCATION_BAZELRC}"

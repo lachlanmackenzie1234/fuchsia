@@ -2447,6 +2447,7 @@ class CollectBazelMetadataTest(unittest.TestCase):
             inv_dir = bazel_logs / "invocation-20261001-143000--uuid"
             main_build.mkdir(inv_dir)
             main_build.write_text(inv_dir / "bazel_invocation", "build")
+            main_build.write_text(inv_dir / "command.log", "console output")
             main_build.write_text(inv_dir / "invocation.bazelrc", "remote")
 
             metadata = main_build._collect_bazel_metadata(log_dir)
@@ -2457,6 +2458,7 @@ class CollectBazelMetadataTest(unittest.TestCase):
                     "invocations": {
                         "invocation-20261001-143000--uuid": [
                             "bazel_invocation",
+                            "command.log",
                             "invocation.bazelrc",
                         ],
                     },
