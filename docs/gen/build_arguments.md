@@ -1644,7 +1644,7 @@ This should never be set as a build argument.
 }
   x86_64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/x86_64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -3541,6 +3541,16 @@ From //build/bazel/remote_services.gni:16
 **Current value (from the default):** `""`
 
 From //BUILD.gn:146
+
+### enable_driver_lab
+
+Enables the embedded driver-lab in-situ debugging library in DFv2 drivers.
+Strictly defaults to is_debug so release/production (user) builds compile
+the embedded server to a no-op and omit outgoing service handlers.
+
+**Current value (from the default):** `false`
+
+From //src/devices/driver-lab/driver_lab.gni:9
 
 ### enable_frame_pointers
 
