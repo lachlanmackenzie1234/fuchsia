@@ -1182,7 +1182,6 @@ struct MethodInspect {
 
 #[derive(Unit, Debug, Default, Clone)]
 struct RegistryMetrics {
-    default_network_id: Option<u32>,
     adds: MethodInspect,
     removes: MethodInspect,
     /// Counts invocations of the `SetDefault` FIDL method. Both setting a
@@ -2018,10 +2017,6 @@ impl NetpolNetworksService {
     pub async fn update(&mut self, update: NetworkRegistryUpdate) {
         let RegistryUpdateResult { event, default_changed } = self.network_registry.apply(update);
 
-        if default_changed.is_some() {
-            self.metrics.delegated.as_mut().default_network_id =
-                self.network_registry.starnix_default.map(|id| id.get().get() as u32);
-        }
         self.update_network_inspect();
 
         if let UpdateApplied::None = event {
@@ -3452,7 +3447,6 @@ mod tests {
                                 successes: 1u64,
                                 errors: 0u64,
                             },
-                            default_network_id: 1u64,
                         }
                     }
                 }
