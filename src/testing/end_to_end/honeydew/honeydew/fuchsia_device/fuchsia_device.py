@@ -138,6 +138,7 @@ _REBOOT_OFFLINE_TIMEOUT_SEC: int = 60
 class FuchsiaDevice(
     device_knobs.DeviceKnobs,
     affordances_capable.RebootCapableDevice,
+    affordances_capable.SuspendResumeCapableDevice,
     affordances_capable.FuchsiaDeviceLogger,
     affordances_capable.FuchsiaDeviceClose,
     affordances_capable.InspectCapableDevice,
@@ -711,6 +712,7 @@ class FuchsiaDevice(
             reboot_affordance=self,
             fuchsia_device_close=self,
             location=self.location,
+            suspend_resume_affordance=self,
         )
 
     @properties.Affordance
@@ -726,6 +728,7 @@ class FuchsiaDevice(
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
             fuchsia_device_close=self,
+            suspend_resume_affordance=self,
         )
 
     @properties.Affordance
@@ -741,6 +744,7 @@ class FuchsiaDevice(
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
             fuchsia_device_close=self,
+            suspend_resume_affordance=self,
         )
 
     @properties.Affordance
@@ -806,6 +810,7 @@ class FuchsiaDevice(
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
+            suspend_resume_affordance=self,
         )
 
     @properties.Affordance
@@ -820,6 +825,7 @@ class FuchsiaDevice(
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
+            suspend_resume_affordance=self,
         )
 
     @properties.Affordance
