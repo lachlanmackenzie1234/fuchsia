@@ -206,9 +206,10 @@ impl InputDevice {
         display_width: i32,
         display_height: i32,
         info: Arc<InputDeviceInfo>,
+        node_name: &str,
         inspect_node: &fuchsia_inspect::Node,
     ) -> Self {
-        let node = inspect_node.create_child("touch_device");
+        let node = inspect_node.create_child(node_name);
         InputDevice {
             device_type: InputDeviceId::Touch(display_width, display_height),
             open_files: Default::default(),
@@ -217,8 +218,12 @@ impl InputDevice {
         }
     }
 
-    pub fn new_keyboard(info: Arc<InputDeviceInfo>, inspect_node: &fuchsia_inspect::Node) -> Self {
-        let node = inspect_node.create_child("keyboard_device");
+    pub fn new_keyboard(
+        info: Arc<InputDeviceInfo>,
+        node_name: &str,
+        inspect_node: &fuchsia_inspect::Node,
+    ) -> Self {
+        let node = inspect_node.create_child(node_name);
         InputDevice {
             device_type: InputDeviceId::Keyboard,
             open_files: Default::default(),
@@ -227,8 +232,12 @@ impl InputDevice {
         }
     }
 
-    pub fn new_mouse(info: Arc<InputDeviceInfo>, inspect_node: &fuchsia_inspect::Node) -> Self {
-        let node = inspect_node.create_child("mouse_device");
+    pub fn new_mouse(
+        info: Arc<InputDeviceInfo>,
+        node_name: &str,
+        inspect_node: &fuchsia_inspect::Node,
+    ) -> Self {
+        let node = inspect_node.create_child(node_name);
         InputDevice {
             device_type: InputDeviceId::Mouse,
             open_files: Default::default(),
@@ -340,14 +349,14 @@ mod test {
 
     use super::*;
     use crate::input_event_relay::{
-        self, EventProxyMode, KEYBOARD_INPUT_ID, MOUSE_INPUT_ID, TOUCH_INPUT_ID,
+        self, EventProxyMode, KEYBOARD_INPUT_ID, MOUSE_INPUT_ID, StartRelaysArgs, TOUCH_INPUT_ID,
     };
     use anyhow::anyhow;
     use assert_matches::assert_matches;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl::endpoints::RequestStream as _;
     use fidl_fuchsia_ui_input::MediaButtonsEvent;
-    use fidl_fuchsia_ui_input3 as fuiinput;
+    use fidl_fuchsia_ui_input3 as fuiinput3;
     use fidl_fuchsia_ui_pointer as fuipointer;
     use fidl_fuchsia_ui_policy as fuipolicy;
     use fuipointer::{
@@ -367,12 +376,12 @@ mod test {
     use starnix_uapi::uapi;
     use starnix_uapi::user_address::UserAddress;
     use starnix_uapi::vfs::FdEvents;
+
     use test_case::test_case;
     use test_util::assert_near;
     use zerocopy::FromBytes as _;
 
     const INPUT_EVENT_SIZE: usize = std::mem::size_of::<uapi::input_event>();
-
     async fn start_touch_input(
         current_task: &CurrentTask,
     ) -> (InputDevice, FileHandle, fuipointer::TouchSourceV2RequestStream) {
@@ -388,10 +397,10 @@ mod test {
     }
 
     async fn init_keyboard_listener(
-        keyboard_stream: &mut fuiinput::KeyboardRequestStream,
-    ) -> fuiinput::KeyboardListenerProxy {
+        keyboard_stream: &mut fuiinput3::KeyboardRequestStream,
+    ) -> fuiinput3::KeyboardListenerProxy {
         let keyboard_listener = match keyboard_stream.next().await {
-            Some(Ok(fuiinput::KeyboardRequest::AddListener {
+            Some(Ok(fuiinput3::KeyboardRequest::AddListener {
                 view_ref: _,
                 listener,
                 responder,
@@ -449,6 +458,7 @@ mod test {
             x_max,
             y_max,
             InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+            "touch_device",
             inspector.root(),
         );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
@@ -460,7 +470,7 @@ mod test {
             fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
         let (keyboard_proxy, mut keyboard_stream) =
-            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
+            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
         let view_ref_pair =
             fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
 
@@ -468,20 +478,22 @@ mod test {
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
 
-        let (relay, _relay_handle) = input_event_relay::new_input_relay();
+        let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
+        relay.add_touch_device(
+            input_event_relay::DEFAULT_TOUCH_DEVICE_ID,
+            input_device.open_files.clone(),
+            Some(input_device.inspect_status.clone()),
+        );
         relay.start_relays(
             &current_task.kernel(),
-            EventProxyMode::None,
-            touch_source_client_end,
-            keyboard_proxy,
-            mouse_source_client_end,
-            view_ref_pair.view_ref,
-            device_registry_proxy,
-            input_device.open_files.clone(),
-            Default::default(),
-            None,
-            Some(input_device.inspect_status.clone()),
-            None,
+            StartRelaysArgs {
+                event_proxy_mode: EventProxyMode::None,
+                touch_source_client_end,
+                keyboard_proxy,
+                mouse_source_client_end,
+                view_ref: view_ref_pair.view_ref,
+                registry_proxy: device_registry_proxy,
+            },
         );
 
         let _ = init_keyboard_listener(&mut keyboard_stream).await;
@@ -492,7 +504,7 @@ mod test {
 
     async fn start_keyboard_input(
         current_task: &CurrentTask,
-    ) -> (InputDevice, FileHandle, fuiinput::KeyboardListenerProxy) {
+    ) -> (InputDevice, FileHandle, fuiinput3::KeyboardListenerProxy) {
         let inspector = fuchsia_inspect::Inspector::default();
         start_keyboard_input_inspect(current_task, &inspector).await
     }
@@ -500,14 +512,15 @@ mod test {
     async fn start_keyboard_input_inspect(
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
-    ) -> (InputDevice, FileHandle, fuiinput::KeyboardListenerProxy) {
+    ) -> (InputDevice, FileHandle, fuiinput3::KeyboardListenerProxy) {
         let input_device = InputDevice::new_keyboard(
             InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+            "keyboard_device",
             inspector.root(),
         );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
         let (keyboard_proxy, mut keyboard_stream) =
-            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
+            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
         let view_ref_pair =
             fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
 
@@ -521,26 +534,28 @@ mod test {
         let (mouse_source_client_end, _mouse_source_stream) =
             fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
-        let (relay, _relay_handle) = input_event_relay::new_input_relay();
-        relay.start_relays(
-            current_task.kernel(),
-            EventProxyMode::None,
-            touch_source_client_end,
-            keyboard_proxy,
-            mouse_source_client_end,
-            view_ref_pair.view_ref,
-            device_registry_proxy,
-            Default::default(),
+        let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
+        relay.add_keyboard_device(
+            input_event_relay::DEFAULT_KEYBOARD_DEVICE_ID,
             input_device.open_files.clone(),
-            None,
-            None,
             Some(input_device.inspect_status.clone()),
         );
+        relay.start_relays(
+            current_task.kernel(),
+            StartRelaysArgs {
+                event_proxy_mode: EventProxyMode::None,
+                touch_source_client_end,
+                keyboard_proxy,
+                mouse_source_client_end,
+                view_ref: view_ref_pair.view_ref,
+                registry_proxy: device_registry_proxy,
+            },
+        );
 
-        let keyboad_listener = init_keyboard_listener(&mut keyboard_stream).await;
+        let keyboard_listener = init_keyboard_listener(&mut keyboard_stream).await;
         let _ = init_button_listeners(&mut device_listener_stream).await;
 
-        (input_device, input_file, keyboad_listener)
+        (input_device, input_file, keyboard_listener)
     }
 
     async fn start_button_input(
@@ -556,6 +571,7 @@ mod test {
     ) -> (InputDevice, FileHandle, fuipolicy::MediaButtonsListenerProxy) {
         let input_device = InputDevice::new_keyboard(
             InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+            "keyboard_device",
             inspector.root(),
         );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
@@ -568,24 +584,26 @@ mod test {
         let (mouse_source_client_end, _mouse_source_stream) =
             fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
         let (keyboard_proxy, mut keyboard_stream) =
-            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
+            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
         let view_ref_pair =
             fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
 
-        let (relay, _relay_handle) = input_event_relay::new_input_relay();
+        let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
+        relay.add_keyboard_device(
+            input_event_relay::DEFAULT_KEYBOARD_DEVICE_ID,
+            input_device.open_files.clone(),
+            Some(input_device.inspect_status.clone()),
+        );
         relay.start_relays(
             current_task.kernel(),
-            EventProxyMode::None,
-            touch_source_client_end,
-            keyboard_proxy,
-            mouse_source_client_end,
-            view_ref_pair.view_ref,
-            device_registry_proxy,
-            Default::default(),
-            input_device.open_files.clone(),
-            None,
-            None,
-            Some(input_device.inspect_status.clone()),
+            StartRelaysArgs {
+                event_proxy_mode: EventProxyMode::None,
+                touch_source_client_end,
+                keyboard_proxy,
+                mouse_source_client_end,
+                view_ref: view_ref_pair.view_ref,
+                registry_proxy: device_registry_proxy,
+            },
         );
 
         let _ = init_keyboard_listener(&mut keyboard_stream).await;
@@ -607,6 +625,7 @@ mod test {
     ) -> (InputDevice, FileHandle, fuipointer::MouseSourceV2RequestStream) {
         let input_device = InputDevice::new_mouse(
             InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+            "mouse_device",
             inspector.root(),
         );
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
@@ -618,7 +637,7 @@ mod test {
             fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
         let (keyboard_proxy, mut keyboard_stream) =
-            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
+            fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
         let view_ref_pair =
             fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
 
@@ -626,20 +645,22 @@ mod test {
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
 
-        let (relay, _relay_handle) = input_event_relay::new_input_relay();
+        let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
+        relay.add_mouse_device(
+            input_event_relay::DEFAULT_MOUSE_DEVICE_ID,
+            input_device.open_files.clone(),
+            Some(input_device.inspect_status.clone()),
+        );
         relay.start_relays(
             &current_task.kernel(),
-            EventProxyMode::None,
-            touch_source_client_end,
-            keyboard_proxy,
-            mouse_source_client_end,
-            view_ref_pair.view_ref,
-            device_registry_proxy,
-            Default::default(),
-            Default::default(),
-            Some(input_device.clone()),
-            None,
-            None,
+            StartRelaysArgs {
+                event_proxy_mode: EventProxyMode::None,
+                touch_source_client_end,
+                keyboard_proxy,
+                mouse_source_client_end,
+                view_ref: view_ref_pair.view_ref,
+                registry_proxy: device_registry_proxy,
+            },
         );
 
         let _ = init_keyboard_listener(&mut keyboard_stream).await;
@@ -725,7 +746,7 @@ mod test {
         fuipointer::MouseEvent {
             timestamp: Some(timestamp),
             pointer_sample: Some(fuipointer::MousePointerSample {
-                device_id: Some(0),
+                device_id: Some(input_event_relay::DEFAULT_MOUSE_DEVICE_ID),
                 scroll_v: Some(ticks),
                 ..Default::default()
             }),
@@ -1611,9 +1632,9 @@ mod test {
             let (_keyboard_device, keyboard_file, keyboard_listener) =
                 start_keyboard_input(&current_task).await;
 
-            let key_event = fuiinput::KeyEvent {
+            let key_event = fuiinput3::KeyEvent {
                 timestamp: Some(0),
-                type_: Some(fuiinput::KeyEventType::Pressed),
+                type_: Some(fuiinput3::KeyEventType::Pressed),
                 key: Some(fkey),
                 ..Default::default()
             };
@@ -1634,9 +1655,9 @@ mod test {
             let (_keyboard_device, keyboard_file, keyboard_listener) =
                 start_keyboard_input_inspect(&current_task, &inspector).await;
 
-            let key_event = fuiinput::KeyEvent {
+            let key_event = fuiinput3::KeyEvent {
                 timestamp: Some(0),
-                type_: Some(fuiinput::KeyEventType::Pressed),
+                type_: Some(fuiinput3::KeyEventType::Pressed),
                 key: Some(fidl_fuchsia_input::Key::AcRefresh),
                 ..Default::default()
             };
@@ -1922,7 +1943,7 @@ mod test {
             let mouse_move_event = fuipointer::MouseEvent {
                 timestamp: Some(0),
                 pointer_sample: Some(fuipointer::MousePointerSample {
-                    device_id: Some(0),
+                    device_id: Some(input_event_relay::DEFAULT_MOUSE_DEVICE_ID),
                     relative_motion: Some([10.0, 20.0]),
                     ..Default::default()
                 }),
@@ -1931,7 +1952,7 @@ mod test {
             let mouse_click_event = fuipointer::MouseEvent {
                 timestamp: Some(0),
                 pointer_sample: Some(fuipointer::MousePointerSample {
-                    device_id: Some(0),
+                    device_id: Some(input_event_relay::DEFAULT_MOUSE_DEVICE_ID),
                     pressed_buttons: Some(vec![1]),
                     ..Default::default()
                 }),
@@ -1972,6 +1993,7 @@ mod test {
                 1200, /* screen width */
                 720,  /* screen height */
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 &inspector.root(),
             );
             let _file_obj = touch_device.open_test(&current_task);
@@ -2124,6 +2146,7 @@ mod test {
                 700,
                 700,
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 inspector.root(),
             );
             let input_file_0 =
@@ -2134,38 +2157,33 @@ mod test {
             let (mouse_source_client_end, _mouse_source_stream) =
                 fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
             let (keyboard_proxy, mut keyboard_stream) =
-                fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
+                fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
             let view_ref_pair =
                 fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
             let (device_registry_proxy, mut device_listener_stream) =
                 fidl::endpoints::create_sync_proxy_and_stream::<
                     fuipolicy::DeviceListenerRegistryMarker,
                 >();
-
-            let (relay, relay_handle) = input_event_relay::new_input_relay();
+            let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
+            relay.add_touch_device(
+                input_event_relay::DEFAULT_TOUCH_DEVICE_ID,
+                input_device.open_files.clone(),
+                Some(input_device.inspect_status.clone()),
+            );
             relay.start_relays(
                 &current_task.kernel(),
-                EventProxyMode::None,
-                touch_source_client_end,
-                keyboard_proxy,
-                mouse_source_client_end,
-                view_ref_pair.view_ref,
-                device_registry_proxy,
-                input_device.open_files.clone(),
-                Default::default(),
-                None,
-                Some(input_device.inspect_status.clone()),
-                None,
+                StartRelaysArgs {
+                    event_proxy_mode: EventProxyMode::None,
+                    touch_source_client_end,
+                    keyboard_proxy,
+                    mouse_source_client_end,
+                    view_ref: view_ref_pair.view_ref,
+                    registry_proxy: device_registry_proxy,
+                },
             );
 
             let _ = init_keyboard_listener(&mut keyboard_stream).await;
             let _ = init_button_listeners(&mut device_listener_stream).await;
-
-            relay_handle.add_touch_device(
-                0,
-                input_device.open_files.clone(),
-                Some(input_device.inspect_status.clone()),
-            );
 
             // Send 2 TouchEvents to proxy that should be counted as `received` by InputFile
             // A TouchEvent::default() has no pointer sample so these events should be discarded.
@@ -2304,6 +2322,7 @@ mod test {
                 700,
                 700,
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 inspector.root(),
             );
             let file_handle =
@@ -2389,6 +2408,7 @@ mod test {
             let inspector = fuchsia_inspect::Inspector::default();
             let keyboard_device = InputDevice::new_keyboard(
                 InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+                "keyboard_device",
                 &inspector.root(),
             );
             let _file_obj = keyboard_device.open_test(&current_task);
@@ -2507,6 +2527,7 @@ mod test {
             let inspector = fuchsia_inspect::Inspector::default();
             let mouse_device = InputDevice::new_mouse(
                 InputDeviceInfo::new(MOUSE_INPUT_ID, "starnix_mouse".to_string()),
+                "mouse_device",
                 &inspector.root(),
             );
             let _file_obj = mouse_device.open_test(&current_task);
@@ -2554,7 +2575,7 @@ mod test {
             let mouse_move_event = fuipointer::MouseEvent {
                 timestamp: Some(0),
                 pointer_sample: Some(fuipointer::MousePointerSample {
-                    device_id: Some(0),
+                    device_id: Some(input_event_relay::DEFAULT_MOUSE_DEVICE_ID),
                     position_in_viewport: Some([50.0, 50.0]),
                     scroll_v: Some(0),
                     ..Default::default()
@@ -2564,7 +2585,7 @@ mod test {
             let mouse_click_event = fuipointer::MouseEvent {
                 timestamp: Some(0),
                 pointer_sample: Some(fuipointer::MousePointerSample {
-                    device_id: Some(0),
+                    device_id: Some(input_event_relay::DEFAULT_MOUSE_DEVICE_ID),
                     scroll_v: Some(0),
                     pressed_buttons: Some(vec![1]),
                     ..Default::default()
@@ -2632,7 +2653,6 @@ mod test {
         })
         .await;
     }
-
     #[::fuchsia::test]
     async fn eviocgname_zero_buffer_length_succeeds() {
         spawn_kernel_and_run(async move |current_task| {
@@ -2641,6 +2661,7 @@ mod test {
                 700,
                 1200,
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 &inspector.root(),
             );
             let file =
@@ -2674,6 +2695,7 @@ mod test {
                 700,
                 1200,
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 &inspector.root(),
             );
             let file =
@@ -2754,6 +2776,7 @@ mod test {
                 700,
                 1200,
                 InputDeviceInfo::new(TOUCH_INPUT_ID, "starnix_touch".to_string()),
+                "touch_device",
                 &inspector.root(),
             );
             let file =
@@ -2794,13 +2817,13 @@ mod test {
         })
         .await;
     }
-
     #[::fuchsia::test]
     async fn keyboard_input_file_ioctls() {
         spawn_kernel_and_run(async move |current_task| {
             let inspector = fuchsia_inspect::Inspector::default();
             let keyboard_device = InputDevice::new_keyboard(
                 InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string()),
+                "keyboard_device",
                 &inspector.root(),
             );
             let file = keyboard_device
@@ -2879,9 +2902,9 @@ mod test {
             let (_keyboard_device, keyboard_file, keyboard_listener) =
                 start_keyboard_input_inspect(&current_task, &inspector).await;
 
-            let key_event = fuiinput::KeyEvent {
+            let key_event = fuiinput3::KeyEvent {
                 timestamp: Some(12345),
-                type_: Some(fuiinput::KeyEventType::Pressed),
+                type_: Some(fuiinput3::KeyEventType::Pressed),
                 key: Some(fidl_fuchsia_input::Key::A),
                 ..Default::default()
             };
