@@ -11,7 +11,7 @@ import re
 
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
-from honeydew.utils import host_shell
+from honeydew.utils import common, host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -24,10 +24,13 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
     and virtual/emulated testbeds where physical power hubs are not available.
 
     Note on permissions:
-        Writing to the authorized file requires write access that a regular
-        user does not have by default. Install the required udev rules with
-        //src/tests/end_to_end/usb/lib/disconnect/udev.sh, which grants
-        access without needing `sudo` at test time.
+        Writing to `/sys/bus/usb/devices/<bus_id>/authorized` requires write
+        access that a regular user does not have by default. Run
+        //src/tests/end_to_end/usb/lib/disconnect/udev.sh (or the at-desk
+        runner //src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh,
+        which invokes `udev.sh`) to install the host udev rules (`sudo` is only
+        prompted on first-time setup) so `power_off()`/`power_on()` can toggle
+        `authorized` at test time without `sudo`.
 
     Args:
         target_serial: The serial number of the Fuchsia device. Used for
@@ -49,6 +52,19 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
 
         if not re.match(r"^[a-zA-Z0-9.-]+$", self._usb_bus_id):
             raise ValueError(f"Invalid usb_bus_id format: {self._usb_bus_id}")
+
+        if not common.is_infra() and not os.access(
+            f"/sys/bus/usb/devices/{self._usb_bus_id}/authorized", os.W_OK
+        ):
+            msg = (
+                "Host udev rules for virtual USB disconnect are not installed "
+                f"or /sys/bus/usb/devices/{self._usb_bus_id}/authorized is not "
+                "writable. Run //src/tests/end_to_end/usb/lib/disconnect/udev.sh "
+                "or //src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh "
+                "first."
+            )
+            _LOGGER.error(msg)
+            raise usb_power_hub.UsbPowerHubError(msg)
 
     def power_off(self, port: int | None = None) -> None:
         """Deauthorizes (virtually unplugs) the USB device.

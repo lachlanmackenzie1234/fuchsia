@@ -6,10 +6,11 @@
 import asyncio
 import inspect
 import logging
+import os
 import signal
 import time
 import types
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
@@ -17,6 +18,16 @@ from honeydew import errors
 from honeydew.utils import decorators
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+def is_infra(environ: Mapping[str, str] | None = None) -> bool:
+    """Returns True if running in a Fuchsia infrastructure environment."""
+    if environ is None:
+        environ = os.environ
+    return (
+        environ.get("BOTANIST_CONFIG") is not None
+        or environ.get("SWARMING_TASK_ID") is not None
+    )
 
 
 def _retry_condition(end_time: float | None = None) -> bool:

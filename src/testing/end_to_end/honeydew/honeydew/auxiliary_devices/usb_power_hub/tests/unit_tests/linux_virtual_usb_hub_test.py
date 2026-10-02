@@ -30,6 +30,12 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         )
         self.platform_patcher.start()
 
+        # Pretend host udev rules are installed so the at-desk permission
+        # check passes against the fake sysfs paths used below.
+        self.access_patcher = mock.patch("os.access", return_value=True)
+        self.access_patcher.start()
+        self.addCleanup(self.access_patcher.stop)
+
     def tearDown(self) -> None:
         self.platform_patcher.stop()
         super().tearDown()
