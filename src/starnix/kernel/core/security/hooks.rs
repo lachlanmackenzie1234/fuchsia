@@ -2,6 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Security hooks mediating operations across the Starnix kernel.
+//!
+//! Hooks in this module are based on the Linux Security Modules (LSM)
+//! documentation. Signatures and semantics follow LSM specifications,
+//! adapted where necessary for Starnix architectural differences:
+//!
+//! - Explicit execution context: Hooks receive explicit [`CurrentTask`] or
+//!   [`Task`] references rather than accessing ambient state.
+//! - Idiomatic error handling: Hooks return [`Result`] (with [`Errno`])
+//!   rather than integer status codes.
+//! - Object lifetimes and ownership: Parameters use Starnix types
+//!   ([`Credentials`], [`FsNode`], [`FileObject`]) integrated with Starnix
+//!   ownership, locking, and reference counting.
+//!
+//! ## Hook Composition Patterns
+//!
+//! Hooks dispatch to security modules using four common LSM patterns:
+//!
+//! - **Sequential fail-closed**: Access checks query each active module in turn
+//!   ([`yama`], [`common_cap`], [`selinux_hooks`]), denying on first error
+//!   (e.g., [`ptrace_access_check`], [`ptrace_traceme`]).
+//! - **Primary LSM**: Labeling, policy decisions, and lifecycle dispatch only
+//!   to the primary module (SELinux), defaulting to a permissive no-op when
+//!   unconfigured (e.g., [`binder_transaction`], [`bprm_creds_for_exec`]).
+//! - **First-responder matching**: Attribute-specific hooks (such as security
+//!   xattrs) query modules until one claims the prefix, falling back to VFS
+//!   operations (e.g., [`fs_node_getsecurity`], [`fs_node_setsecurity`]).
+//! - **Lifecycle broadcasts**: State initialization and cleanup notify all
+//!   active modules unconditionally (e.g., [`socket_post_create`]).
+
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
