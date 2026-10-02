@@ -1055,6 +1055,93 @@ TEST_F(UsbCdcTest, UnconfigureReturnsRxSpace) {
   });
 }
 
+TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsOnStop) {
+  // Start the device. In this default state, the device is _not_ online.
+  constexpr uint8_t kRxBufferId = 42;
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  fdf::Arena arena(kArenaTag);
+  StartNetworkDevice();
+  auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
+  ASSERT_OK(prepare_result.status());
+  ASSERT_OK(prepare_result->s);
+
+  // In this offline state, queue an RX buffer. Then synchronize with the driver
+  // runtime to ensure QueueRxSpace() has been fully processed.
+  fnetdev::wire::RxSpaceBuffer rx_buffer = {
+      .id = kRxBufferId,
+      .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
+  };
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueRxSpace(
+                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
+                .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  // Verify that the driver did _not_ call CompleteRx().
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+
+  // Stop the network device. Then synchronize with the driver runtime to give
+  // Stop() and CompleteRx() a chance to execute.
+  auto stop_result = net_impl_client_.buffer(arena)->Stop();
+  ASSERT_OK(stop_result.status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  // Verify that, as part of Stop()-ing, the driver returned the RX buffer to
+  // the interface.
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    auto rx = env.fake_ifc_.PopCompleteRx();
+    ASSERT_TRUE(rx.has_value());
+    ASSERT_EQ(rx->data().size(), 1u);
+    EXPECT_EQ(rx->data()[0].id(), kRxBufferId);
+    EXPECT_EQ(rx->data()[0].length(), 0u);
+  });
+}
+
+TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsWhenOnlined) {
+  // Start the device. In this default state, the device is _not_ online.
+  constexpr uint8_t kRxBufferId = 42;
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  fdf::Arena arena(kArenaTag);
+  StartNetworkDevice();
+  auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
+  ASSERT_OK(prepare_result.status());
+  ASSERT_OK(prepare_result->s);
+
+  // In this offline state, queue an RX buffer. Then synchronize with the driver
+  // runtime to ensure QueueRxSpace() has been fully processed.
+  fnetdev::wire::RxSpaceBuffer rx_buffer = {
+      .id = kRxBufferId,
+      .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
+  };
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueRxSpace(
+                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
+                .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  // Verify that the driver did _not_ call CompleteRx().
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+
+  // Bring the device online. Then synchronize with the driver runtime to give tasks
+  // a chance to execute.
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  // Verify that, as part of transitioning to online, the driver returned the RX buffer
+  // to the interface.
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    auto rx = env.fake_ifc_.PopCompleteRx();
+    ASSERT_TRUE(rx.has_value());
+    ASSERT_EQ(rx->data().size(), 1u);
+    EXPECT_EQ(rx->data()[0].id(), kRxBufferId);
+    EXPECT_EQ(rx->data()[0].length(), 0u);
+  });
+}
+
 // Validates that reconfiguring the device re-enables and configures the Interrupt IN endpoint
 // across configuration sessions. Requires driver to reset completed endpoint tracking on
 // re-configuration.

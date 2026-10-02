@@ -1709,7 +1709,7 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
 
 void UsbCdcFunction::QueueRxSpace(fnetdev::wire::NetworkDeviceImplQueueRxSpaceRequest *request,
                                   fdf::Arena &arena, QueueRxSpaceCompleter::Sync &completer) {
-  if (unbound_.load() || !online_) {
+  if (unbound_.load()) {
     const size_t count = request->buffers.size();
     fidl::VectorView<fnetdev::wire::RxBuffer> rx_buffers(arena, count);
     fidl::VectorView<fnetdev::wire::RxBufferPart> rx_buffers_parts(arena, count);
