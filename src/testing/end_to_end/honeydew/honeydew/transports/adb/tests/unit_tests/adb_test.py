@@ -586,9 +586,58 @@ class AdbTests(unittest.TestCase):
         autospec=True,
     )
     def test_run_timeout(self, mock_host_shell_run: mock.Mock) -> None:
-        """Test run timeout path."""
+        """Test run timeout path divides timeout by attempts."""
         with self.assertRaises(adb_errors.AdbTimeoutError):
-            self.adb_obj.run(["shell", "long_running"], timeout=0.1)
+            self.adb_obj.run(["shell", "long_running"], timeout=30.0)
+
+        mock_host_shell_run.assert_called_once_with(
+            cmd=[
+                "/custom/adb",
+                "-s",
+                _SERIAL_NUMBER,
+                "shell",
+                "long_running",
+            ],
+            capture_output=True,
+            capture_error_in_output=True,
+            timeout=10.0,
+            env=mock.ANY,
+        )
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=errors.HostCmdError("error: device not found"),
+        autospec=True,
+    )
+    def test_run_custom_attempts(self, mock_host_shell_run: mock.Mock) -> None:
+        """Test run with custom attempts=1 does not retry and uses full timeout."""
+        mock_server = mock.Mock()
+        mock_server.host.return_value = "127.0.0.1"
+        mock_server.port.return_value = 12345
+        self.adb_obj._adb_server = mock_server
+
+        with self.assertRaises(adb_errors.AdbCommandError):
+            self.adb_obj.run(["shell", "some_cmd"], timeout=15.0, attempts=1)
+
+        mock_host_shell_run.assert_called_once_with(
+            cmd=[
+                "/custom/adb",
+                "-H",
+                "127.0.0.1",
+                "-P",
+                "12345",
+                "-s",
+                _SERIAL_NUMBER,
+                "shell",
+                "some_cmd",
+            ],
+            capture_output=True,
+            capture_error_in_output=True,
+            timeout=15.0,
+            env=mock.ANY,
+        )
+        mock_server.restart.assert_not_called()
 
     @mock.patch.object(host_shell, "run", autospec=True)
     @mock.patch("time.sleep", autospec=True)
