@@ -6,6 +6,7 @@
 
 pub mod error;
 pub mod receiver;
+pub mod sender;
 pub mod serial;
 
 pub use error::Result;
