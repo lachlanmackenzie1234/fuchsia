@@ -176,7 +176,6 @@
                 "Cgroup.ControllersMustBeInUniqueHierarchy",
                 "Cgroup.Create",
                 "Cgroup.CrossDirRenameNotAllowed",
-                "Cgroup.DirSetStat",
                 "Cgroup.DuplicateUnlinkOnDirFD",
                 "Cgroup.MigrateInvalidPID",
                 "Cgroup.MigrateToSubcontainer",
