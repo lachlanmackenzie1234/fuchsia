@@ -2361,7 +2361,11 @@ group("default") {
 # an alternative to '//:default' when performing sub-builds.
 group("build_only") {
   testonly = true
-  deps = build_only_labels
+  deps = [ ":args" ] + build_only_labels
+  if (define_ninja_implicit_inputs &&
+      ninja_implicit_inputs_root_labels != [ "//:default" ]) {
+    deps += [ "//build/ninja_implicit_inputs:manifest" ]
+  }
 }
 
 ###
