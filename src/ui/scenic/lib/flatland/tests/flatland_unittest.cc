@@ -187,6 +187,57 @@ class FlatlandDisplayTest : public FlatlandTest {
     EXPECT_TRUE(parent_viewport_watcher_status.has_value());
     EXPECT_EQ(parent_viewport_watcher_status.value(), ParentViewportStatus::kConnectedToDisplay);
   }
+
+  struct CommonTopologyState {
+    flatland::UberStructSnapshot snapshot;
+    GlobalTopologyData topology_data;
+    flatland::GlobalMatrixVector global_matrices;
+    flatland::GlobalTransformClipRegionVector clip_regions;
+  };
+
+  CommonTopologyState ComputeCommonTopologyState(TransformHandle root_transform) {
+    auto snapshot = uber_struct_system_->Snapshot();
+    auto links = link_system_->GetResolvedTopologyLinks();
+    auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
+        snapshot.map, links, link_system_->GetInstanceId(), root_transform);
+
+    flatland::GlobalMatrixVector global_matrices;
+    ComputeGlobalMatrices(global_matrices, topology_data.topology_vector,
+                          topology_data.parent_indices, snapshot.map);
+
+    flatland::GlobalTransformClipRegionVector clip_regions;
+    ComputeGlobalTransformClipRegions(clip_regions, topology_data.topology_vector,
+                                      topology_data.parent_indices, global_matrices, snapshot.map);
+
+    return {
+        .snapshot = std::move(snapshot),
+        .topology_data = std::move(topology_data),
+        .global_matrices = std::move(global_matrices),
+        .clip_regions = std::move(clip_regions),
+    };
+  }
+
+  std::vector<flatland::ResolvedLayer> ComputeResolvedLayers(TransformHandle root_transform) {
+    auto [snapshot, topology_data, global_matrices, clip_regions] =
+        ComputeCommonTopologyState(root_transform);
+
+    flatland::GlobalOpacityVector inherited_opacities;
+    ComputeGlobalOpacityValues(inherited_opacities, topology_data.topology_vector,
+                               topology_data.parent_indices, snapshot.map);
+
+    return flatland::ComputeGlobalResolvedLayers(topology_data, snapshot.map, global_matrices,
+                                                 clip_regions, inherited_opacities);
+  }
+
+  std::unique_ptr<view_tree::SubtreeSnapshot> ComputeViewTreeSnapshot(
+      TransformHandle root_transform) {
+    auto [snapshot, topology_data, global_matrices, clip_regions] =
+        ComputeCommonTopologyState(root_transform);
+
+    return GlobalTopologyData::GenerateViewTreeSnapshot(
+        topology_data, snapshot.map, {}, clip_regions, global_matrices,
+        link_system_->GetLinkChildToParentTransformMap().first);
+  }
 };
 
 template <typename T>
@@ -5682,6 +5733,130 @@ TEST_F(FlatlandDisplayTest, SimpleSetContent) {
   // Verify that previously-connected Flatland sessions can re-connect to the display.
   ConnectChildViewToDisplayThenValidate(display, child2, kWidth, kHeight);
   ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+}
+
+// Content that extends past the display's edges is clipped to the display.
+TEST_F(FlatlandDisplayTest, ContentClippedToDisplay) {
+  constexpr uint32_t kWidth = 800;
+  constexpr uint32_t kHeight = 600;
+
+  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
+
+  std::shared_ptr<Flatland> child = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+
+  const TransformId kRootId{1};
+  child->CreateTransform(kRootId);
+  child->SetRootTransform(kRootId);
+
+  // Content extending past the right and bottom edges.
+  const TransformId kTransformId1{2};
+  const ContentId kFilledRectId1{3};
+  child->CreateTransform(kTransformId1);
+  child->SetTranslation(kTransformId1, {700, 500});
+  child->AddChild(kRootId, kTransformId1);
+  child->CreateFilledRect(kFilledRectId1);
+  child->SetSolidFill(kFilledRectId1, {1.f, 0.f, 0.f, 1.f}, {200, 200});
+  child->SetContent(kTransformId1, kFilledRectId1);
+
+  // Content extending past the left and top edges.
+  const TransformId kTransformId2{4};
+  const ContentId kFilledRectId2{5};
+  child->CreateTransform(kTransformId2);
+  child->SetTranslation(kTransformId2, {-100, -100});
+  child->AddChild(kRootId, kTransformId2);
+  child->CreateFilledRect(kFilledRectId2);
+  child->SetSolidFill(kFilledRectId2, {0.f, 1.f, 0.f, 1.f}, {200, 200});
+  child->SetContent(kTransformId2, kFilledRectId2);
+
+  Present(child, true);
+
+  auto resolved_layers = ComputeResolvedLayers(display->root_transform());
+  ASSERT_EQ(resolved_layers.size(), 2u);
+  EXPECT_EQ(resolved_layers[0].geometry.dest, types::RectangleF({700, 500, 100, 100}));
+  EXPECT_EQ(resolved_layers[1].geometry.dest, types::RectangleF({0, 0, 100, 100}));
+}
+
+// At a device pixel ratio above 1, content is still clipped to the display's physical size,
+// although the transform that links the display to its content scales by that ratio.
+TEST_F(FlatlandDisplayTest, ContentClippedToDisplayAtDevicePixelRatio) {
+  constexpr uint32_t kWidth = 800;
+  constexpr uint32_t kHeight = 600;
+
+  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
+  display->SetDevicePixelRatio({2.f, 2.f});
+
+  std::shared_ptr<Flatland> child = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child, 400, 300);
+
+  const TransformId kRootId{1};
+  const TransformId kTransformId{2};
+  const ContentId kFilledRectId{3};
+
+  child->CreateTransform(kRootId);
+  child->SetRootTransform(kRootId);
+
+  child->CreateTransform(kTransformId);
+  child->SetTranslation(kTransformId, {300, 200});
+  child->AddChild(kRootId, kTransformId);
+
+  child->CreateFilledRect(kFilledRectId);
+  child->SetSolidFill(kFilledRectId, {1.f, 0.f, 0.f, 1.f}, {200, 200});
+  child->SetContent(kTransformId, kFilledRectId);
+
+  Present(child, true);
+
+  auto resolved_layers = ComputeResolvedLayers(display->root_transform());
+  ASSERT_EQ(resolved_layers.size(), 1u);
+  EXPECT_EQ(resolved_layers[0].geometry.dest, types::RectangleF({600, 400, 200, 200}));
+}
+
+// The root view's bounds are the display's logical size.
+TEST_F(FlatlandDisplayTest, ViewBoundsAreLogicalSize) {
+  constexpr uint32_t kWidth = 800;
+  constexpr uint32_t kHeight = 600;
+
+  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
+
+  std::shared_ptr<Flatland> child = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
+
+  auto snapshot = ComputeViewTreeSnapshot(display->root_transform());
+  ASSERT_NE(snapshot, nullptr);
+  auto child_uber_struct = GetUberStruct(child.get());
+  ASSERT_NE(child_uber_struct, nullptr);
+  ASSERT_NE(child_uber_struct->view_ref, nullptr);
+  const zx_koid_t child_koid = child_uber_struct->view_ref->koid();
+
+  EXPECT_EQ(snapshot->root, child_koid);
+  ASSERT_TRUE(snapshot->view_tree.contains(child_koid));
+  EXPECT_EQ(snapshot->view_tree.at(child_koid).bounding_box,
+            (view_tree::BoundingBox{.min = {0, 0}, .max = {kWidth, kHeight}}));
+}
+
+// At a device pixel ratio above 1, the root view's bounds are the logical size the child was
+// given, not the display's physical size.
+TEST_F(FlatlandDisplayTest, ViewBoundsAreLogicalSizeAtDevicePixelRatio) {
+  constexpr uint32_t kWidth = 800;
+  constexpr uint32_t kHeight = 600;
+
+  std::shared_ptr<FlatlandDisplay> display = CreateFlatlandDisplay(kWidth, kHeight);
+  display->SetDevicePixelRatio({2.f, 2.f});
+
+  std::shared_ptr<Flatland> child = CreateFlatland();
+  ConnectChildViewToDisplayThenValidate(display, child, 400, 300);
+
+  auto snapshot = ComputeViewTreeSnapshot(display->root_transform());
+  ASSERT_NE(snapshot, nullptr);
+  auto child_uber_struct = GetUberStruct(child.get());
+  ASSERT_NE(child_uber_struct, nullptr);
+  ASSERT_NE(child_uber_struct->view_ref, nullptr);
+  const zx_koid_t child_koid = child_uber_struct->view_ref->koid();
+
+  EXPECT_EQ(snapshot->root, child_koid);
+  ASSERT_TRUE(snapshot->view_tree.contains(child_koid));
+  EXPECT_EQ(snapshot->view_tree.at(child_koid).bounding_box,
+            (view_tree::BoundingBox{.min = {0, 0}, .max = {400, 300}}));
 }
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
