@@ -150,6 +150,7 @@ class Dwc3TestHelper {
     }
   }
   static bool GetPowerOn(Dwc3& drv) { return drv.power_on_; }
+  static void HandleIrq(Dwc3& drv) { drv.HandleIrq(nullptr, nullptr, ZX_OK, nullptr); }
   static bool IsActive(Dwc3& drv) { return drv.is_active(); }
   static zx_status_t EpSetStall(Dwc3& drv, Dwc3::Endpoint& ep, bool stall) {
     return drv.EpSetStall(ep, stall);

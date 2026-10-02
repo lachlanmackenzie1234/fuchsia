@@ -1124,6 +1124,10 @@ zx_status_t Dwc3::ResetHw() {
     }
   }
 
+  // Mask event interrupts immediately after reset to prevent level interrupt storms
+  // while the controller is unconfigured or stopped.
+  GEVNTSIZ::Get(0).FromValue(0).set_EVNTINTRPTMASK(1).WriteTo(mmio);
+
   // Fuchsia's dwc3.cc doesn't parse snps,incr-burst-type-adjustment yet.
   GSBUSCFG0::Get().FromValue(0).set_INCR4BRSTENA(1).WriteTo(mmio);
 
@@ -1999,6 +2003,9 @@ void Dwc3::OnConnectStatusChanged(
       if (zx_status_t status = ResetHw(); status != ZX_OK) {
         fdf::warn("Failed to reset hardware on disconnect: {}", zx_status_get_string(status));
       }
+      // As defensive cleanup, ensure event queue is stopped and masked even if
+      // ResetHw() hit an error or timeout before masking GEVNTSIZ.
+      StopEvents();
     }
 
     connection_speed_ = fdescriptor::UsbSpeed::kUndefined;

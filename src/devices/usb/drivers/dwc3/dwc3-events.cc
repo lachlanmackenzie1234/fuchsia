@@ -203,12 +203,19 @@ void Dwc3::HandleEvent(uint32_t event) {
 void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                      const zx_packet_interrupt_t* interrupt) {
   TRACE_DURATION("dwc3", "Dwc3::HandleIrq", "status", status);
-  irq_.ack();
 
   if (!controller_started_ || !power_on_) {
     // Ack but otherwise ignore interrupts that arrive while client has stopped us or the core is
-    // powered down. A limited number of interrupts may be triggered while things are settling, and
-    // we need to ack them to avoid blocking system suspend.
+    // powered down. If the core is still powered on, ensure event interrupts are masked to
+    // prevent level-triggered interrupts from continuously re-triggering. If power_on_ is false,
+    // MMIO cannot be safely accessed because the core's power domain/clocks may be disabled.
+    if (power_on_) {
+      auto* mmio = get_mmio();
+      GEVNTSIZ::Get(0).ReadFrom(mmio).set_EVNTINTRPTMASK(1).WriteTo(mmio);
+    }
+    if (irq_.is_valid()) {
+      irq_.ack();
+    }
     return;
   }
 
@@ -237,6 +244,12 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
   // per IRQ.
   for (auto& uep : user_endpoints_) {
     uep.server->SendCompletions();
+  }
+
+  // Acknowledge the interrupt after clearing pending events to avoid immediately
+  // re-triggering on level-triggered interrupt lines while events are being processed.
+  if (irq_.is_valid()) {
+    irq_.ack();
   }
 }
 
