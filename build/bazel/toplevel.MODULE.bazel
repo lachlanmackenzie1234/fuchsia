@@ -72,16 +72,18 @@ single_version_override(
 #
 # LINT.IfChange(rules_rust_version)
 #
-# @rules_rust needs to be patched to work-around https://github.com/bazelbuild/bazel/issues/28286
-bazel_dep(name = "rules_rust", version = "0.69.0")
+# @rules_rust needs to be patched to:
+# - add the riscv64gc-unknown-fuchsia triple.
+# - pass toolchain-wide `-Zallow-features=` through to rustc.
+bazel_dep(name = "rules_rust", version = "0.74.0")
 single_version_override(
     module_name = "rules_rust",
     patch_strip = 4,
     patches = [
-        "//build/bazel:vendor_patches/rules_rust-0.69.0/0001-rules_rust-workaround-bazelbuild-issues-28286.patch",
-        "//build/bazel:vendor_patches/rules_rust-0.69.0/0002-rules_rust-add-riscv64gc-unknown-fuchsia-triple.patch",
+        "//build/bazel:vendor_patches/rules_rust-0.74.0/0001-rules_rust-add-riscv64gc-unknown-fuchsia-triple.patch",
+        "//build/bazel:vendor_patches/rules_rust-0.74.0/0002-rules_rust-pass-through-toolchain-allow-features.patch",
     ],
-    version = "0.69.0",
+    version = "0.74.0",
 )
 # LINT.ThenChange(//build/bazel/scripts/bazel_rust_analyzer_utils.py)
 
