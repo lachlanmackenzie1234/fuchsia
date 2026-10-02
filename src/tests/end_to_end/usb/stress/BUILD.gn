@@ -114,7 +114,10 @@ if (is_host) {
       disconnect_duration_sec = 5
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
-    environments = [ sorrel_env ]
+    environments = [
+      sorrel_env,
+      iris_env,
+    ]
     timeout_secs = 900
   }
 

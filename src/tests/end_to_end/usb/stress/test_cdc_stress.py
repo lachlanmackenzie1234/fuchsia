@@ -52,6 +52,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """Called once before running test cases in the class."""
         await super().setup_class()
+        self._cdc_iface_name: str | None = None
         await self._wait_for_network_settled()
 
     async def _wait_for_ssh_ready(self, timeout_sec: float = 60.0) -> None:
@@ -107,6 +108,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         await self.dut.wait_for_online()
         cdc_ips: list[str] = []
         wlan_ips: list[str] = []
+        cdc_iface_name: str | None = None
         start_time = asyncio.get_running_loop().time()
         while (
             asyncio.get_running_loop().time() - start_time
@@ -115,6 +117,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
             interfaces = await self.dut.netstack.list_interfaces()
             cdc_ips = []
             wlan_ips = []
+            cdc_iface_name = None
             for iface in interfaces:
                 if iface.name != "lo":
                     ip_strs = [
@@ -123,6 +126,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                     ]
                     if iface.port_class == PortClass.ETHERNET:
                         cdc_ips.extend(ip_strs)
+                        cdc_iface_name = iface.name
                         _LOGGER.info(
                             "Verified CDC Ethernet interface '%s' (ID: %s, MAC: %s, IPs: %s)",
                             iface.name,
@@ -141,6 +145,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
             bool(cdc_ips),
             "Pre-flight check failed: No active CDC USB Ethernet IP addresses detected via FIDL.",
         )
+        self._cdc_iface_name = cdc_iface_name
 
         ssh_addr = self.dut.ffx.get_target_ssh_address()
         asserts.assert_is_not_none(
@@ -159,7 +164,9 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_in(
             raw_ssh_ip,
             cdc_ips,
-            f"Pre-flight check failed: SSH IP '{raw_ssh_ip}' does not match CDC Ethernet ({cdc_ips}). Traffic might be leaking over WLAN ({wlan_ips})!",
+            f"Pre-flight check failed: SSH IP '{raw_ssh_ip}' does not match "
+            f"CDC Ethernet ({cdc_ips}). Traffic might be leaking over WLAN "
+            f"({wlan_ips})!",
         )
 
     # TODO(b/528457918): Add `test_vsock_sustained_packet_transfer` suite once FFX and
@@ -377,10 +384,14 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         # Execute ICMP bursts across all block sizes in a single SSH session on target
         # to avoid repeated connection setup/teardown overhead while stressing CDC-NCM MTU/aggregation.
         sizes_str = " ".join(str(bs) for bs in packet_sizes)
+        iface_flag = (
+            f"-I {self._cdc_iface_name} " if self._cdc_iface_name else ""
+        )
         batch_script = (
             'host_ip="${SSH_CONNECTION%% *}"\n'
             f"for bs in {sizes_str}; do\n"
-            f'    out=$(ping -c {burst_count} -i 200 -s $bs -t 5000 "$host_ip" 2>&1)\n'
+            f"    out=$(ping -c {burst_count} -i 200 -s $bs -t 5000 "
+            f'{iface_flag}"$host_ip" 2>&1)\n'
             "    status=$?\n"
             "    if [ $status -ne 0 ]; then\n"
             '        echo "FAIL: bs=$bs status=$status output=$out"\n'
@@ -520,6 +531,8 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         disconnect_duration = int(
             self.user_params.get("disconnect_duration_sec", 5)
         )
+
+        await self._verify_cdc_routing()
 
         _LOGGER.info(
             "Starting CDC USB power cycle stress test across %d iterations.",
