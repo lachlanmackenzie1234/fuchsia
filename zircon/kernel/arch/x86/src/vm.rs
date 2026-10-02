@@ -27,7 +27,7 @@ zr::static_assert!(X86_CANONICAL_ADDRESS_MASK == vm_bindings::kX86CanonicalAddre
 /// canonical addresses (i.e., if all of the bits in the canonical address
 /// mask are zero).
 #[inline]
-pub fn is_user_accessible(va: usize) -> bool {
+pub const fn is_user_accessible(va: usize) -> bool {
     // See [intel/vol1]: 3.3.7.1 Canonical Addressing, and
     // [amd/vol1]: 2.1.3 Canonical Address Form.
     (va & X86_CANONICAL_ADDRESS_MASK) == 0
@@ -38,7 +38,7 @@ pub fn is_user_accessible(va: usize) -> bool {
 /// An address is canonical if bits [N - 1, 63] are all either 0 (the low half of
 /// canonical addresses) or all 1 (the high half of canonical addresses).
 #[inline]
-pub fn is_vaddr_canonical(va: usize) -> bool {
+pub const fn is_vaddr_canonical(va: usize) -> bool {
     // See [intel/vol1]: 3.3.7.1 Canonical Addressing, and
     // [amd/vol1]: 2.1.3 Canonical Address Form.
     //
@@ -51,7 +51,7 @@ pub fn is_vaddr_canonical(va: usize) -> bool {
 
 /// Returns whether `va` is within the kernel address space.
 #[inline]
-pub fn is_kernel_address(va: usize) -> bool {
+pub const fn is_kernel_address(va: usize) -> bool {
     va >= KERNEL_ASPACE_BASE && va.wrapping_sub(KERNEL_ASPACE_BASE) < KERNEL_ASPACE_SIZE
 }
 
@@ -60,6 +60,6 @@ pub fn is_kernel_address(va: usize) -> bool {
 ///
 /// See docs/concepts/kernel/sysret_problem.md for more details.
 #[inline]
-pub fn is_valid_user_pc(pc: usize) -> bool {
+pub const fn is_valid_user_pc(pc: usize) -> bool {
     (pc == 0) || (is_user_accessible(pc) && is_vaddr_canonical(pc))
 }

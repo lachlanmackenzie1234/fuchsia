@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE};
+use super::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_ASPACE_BASE, USER_ASPACE_SIZE};
 use arch_riscv64_vm_bindings as vm_bindings;
 
 /// Canonical address mask for RISC-V 64 Sv39 virtual addresses; a set bit above
@@ -28,7 +28,7 @@ zr::static_assert!(!RISCV64_CANONICAL_ADDRESS_MASK == KERNEL_ASPACE_SIZE - 1);
 
 /// Check if a virtual address is in the user-accessible address space.
 #[inline]
-pub fn is_user_accessible(va: usize) -> bool {
+pub const fn is_user_accessible(va: usize) -> bool {
     // This address refers to userspace if it is in the lower half of the
     // canonical addresses.  IOW - if all of the bits in the canonical address
     // mask are zero.
@@ -37,7 +37,7 @@ pub fn is_user_accessible(va: usize) -> bool {
 
 /// Check that the continuous range of addresses in `[va, va + len)` are all user-accessible.
 #[inline]
-pub fn is_user_accessible_range(va: usize, len: usize) -> bool {
+pub const fn is_user_accessible_range(va: usize, len: usize) -> bool {
     // Check for normal overflow which implies the range is not continuous.
     let Some(end) = va.checked_add(len) else {
         return false;
@@ -46,15 +46,19 @@ pub fn is_user_accessible_range(va: usize, len: usize) -> bool {
     is_user_accessible(va) && (len == 0 || is_user_accessible(end - 1))
 }
 
+// Assert that user space also lines up with the canonical mask calculation.
+zr::static_assert!(is_user_accessible_range(USER_ASPACE_BASE, USER_ASPACE_SIZE));
+zr::static_assert!(!is_user_accessible_range(USER_ASPACE_BASE, USER_ASPACE_SIZE + 1));
+
 /// Returns whether `va` is within the kernel address space.
 #[inline]
-pub fn is_kernel_address(va: usize) -> bool {
+pub const fn is_kernel_address(va: usize) -> bool {
     va >= KERNEL_ASPACE_BASE && va.wrapping_sub(KERNEL_ASPACE_BASE) < KERNEL_ASPACE_SIZE
 }
 
 /// Userspace threads can only set an entry point to userspace addresses, or
 /// the null pointer (for testing a thread that will always fail).
 #[inline]
-pub fn is_valid_user_pc(pc: usize) -> bool {
+pub const fn is_valid_user_pc(pc: usize) -> bool {
     (pc == 0) || (is_user_accessible(pc) && !is_kernel_address(pc))
 }

@@ -14,20 +14,20 @@ zr::static_assert!(USER_BIT_MASK == vm_bindings::kUserBitMask as usize);
 ///
 /// [arm/v8]: D5.2.6 Virtual address splits / TTBR0_EL1 selection bit (VA[55] == 0).
 #[inline]
-pub fn is_user_accessible(va: usize) -> bool {
+pub const fn is_user_accessible(va: usize) -> bool {
     // This address refers to userspace if bit 55 is zero.
     (va & USER_BIT_MASK) == 0
 }
 
 /// Returns whether `va` is within the kernel address space.
 #[inline]
-pub fn is_kernel_address(va: usize) -> bool {
+pub const fn is_kernel_address(va: usize) -> bool {
     va >= KERNEL_ASPACE_BASE && va.wrapping_sub(KERNEL_ASPACE_BASE) < KERNEL_ASPACE_SIZE
 }
 
 /// Userspace threads can only set an entry point to userspace addresses, or
 /// the null pointer (for testing a thread that will always fail).
 #[inline]
-pub fn is_valid_user_pc(pc: usize) -> bool {
+pub const fn is_valid_user_pc(pc: usize) -> bool {
     (pc == 0) || (is_user_accessible(pc) && !is_kernel_address(pc))
 }
