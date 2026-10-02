@@ -220,7 +220,7 @@ class CpuBreakdownTest(unittest.TestCase):
             trace_model.CounterEvent.consume_dict(
                 {
                     "cat": "kernel:power",
-                    "name": "Processing Rate:2",
+                    "name": "Rate:2",
                     "id": "2",
                     "pid": 0,
                     "tid": 0,

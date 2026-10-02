@@ -24,7 +24,7 @@ from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _CPU_USAGE_EVENT_NAME = "cpu_usage"
-_PROCESSING_RATE_EVENT_NAME = "Processing Rate"
+_RATE_EVENT_NAME = "Rate"
 # The kernel reports processing rates where 1000 represents 100% capacity.
 # This constant is used as a default value when rate events are missing.
 _DEFAULT_PROCESSING_RATE = 1000.0
@@ -186,7 +186,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
     @property
     def event_patterns(self) -> set[str]:
-        return {_CPU_USAGE_EVENT_NAME, f"{_PROCESSING_RATE_EVENT_NAME}.*"}
+        return {_CPU_USAGE_EVENT_NAME, f"{_RATE_EVENT_NAME}.*"}
 
     def process_metrics(
         self, model: trace_model.Model
@@ -401,12 +401,12 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                 model.all_events(),
                 type=trace_model.CounterEvent,
             )
-            if e.name and e.name.startswith(_PROCESSING_RATE_EVENT_NAME)
+            if e.name and e.name.startswith(_RATE_EVENT_NAME)
         )
 
         rates_by_cpu: dict[int, list[ProcessingRateSample]] = {}
         for event in power_events:
-            # For "Processing Rate" events, the CPU index is encoded in `event.id`.
+            # For "Rate" events, the CPU index is encoded in `event.id`.
             # When the CPU index is 0, the `event.id` field is omitted from the trace.
             cpu_idx = event.id if event.id is not None else 0
             rate = event.args.get("CPU", _DEFAULT_PROCESSING_RATE)
