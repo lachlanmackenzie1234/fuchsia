@@ -8,7 +8,6 @@ import collections
 import logging
 import os
 import pathlib
-import statistics
 from collections.abc import Iterable, Mapping, MutableSequence, Sequence
 
 from reporting import metrics
@@ -66,7 +65,7 @@ def get_available_rails(model: trace_model.Model) -> list[str]:
 
 
 class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
-    """Computes aggregate power consumption metrics from ODPM trace events.
+    """Computes power consumption metrics from ODPM trace events.
 
     Given a trace containing ODPM power samples (CounterEvents named
     "<rail>_odpm_rail" with power readings in "mW" args), computes per-rail
@@ -76,7 +75,6 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
     def __init__(
         self,
         rails: Iterable[str] = (),
-        aggregates_only: bool = True,
         sum_rails: Mapping[str, Iterable[str]] | None = None,
         all_rails: bool = False,
     ) -> None:
@@ -86,9 +84,6 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
             rails: Iterable of ODPM rail names to report metrics for (e.g.,
                 ["cpu_big", "cpu_mid", "cpu_little", "gpu"]). Can be empty if
                 `all_rails` or `sum_rails` is specified.
-            aggregates_only: When True, generates MinPower_<rail>,
-                MeanPower_<rail>, and MaxPower_<rail> in Watts. When False,
-                generates Power_<rail> with all sample values in Watts.
             sum_rails: Optional mapping from metric suffix name to an iterable
                 of ODPM rail names to sum sample-by-sample across each poll
                 cycle (e.g., {"cpu_total": ["cpu_big", "cpu_mid",
@@ -123,7 +118,6 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
             raise ValueError(
                 "Must specify at least one ODPM rail, all_rails=True, or sum_rails to report."
             )
-        self._aggregates_only: bool = aggregates_only
 
     @staticmethod
     def list_rails(trace_path: str | os.PathLike[str]) -> list[str]:
@@ -170,28 +164,7 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
         samples_w: list[float],
         target_description: str,
     ) -> list[metrics.TestCaseResult]:
-        """Builds aggregate or raw series TestCaseResults for a power series."""
-        if self._aggregates_only:
-            return [
-                metrics.TestCaseResult(
-                    label=f"MinPower_{metric_suffix}",
-                    unit=metrics.Unit.watts,
-                    values=[min(samples_w)],
-                    doc=f"ODPM power usage sampled for {target_description}, minimum",
-                ),
-                metrics.TestCaseResult(
-                    label=f"MeanPower_{metric_suffix}",
-                    unit=metrics.Unit.watts,
-                    values=[statistics.mean(samples_w)],
-                    doc=f"ODPM power usage sampled for {target_description}, mean",
-                ),
-                metrics.TestCaseResult(
-                    label=f"MaxPower_{metric_suffix}",
-                    unit=metrics.Unit.watts,
-                    values=[max(samples_w)],
-                    doc=f"ODPM power usage sampled for {target_description}, maximum",
-                ),
-            ]
+        """Builds TestCaseResults for a power series."""
         return [
             metrics.TestCaseResult(
                 label=f"Power_{metric_suffix}",
