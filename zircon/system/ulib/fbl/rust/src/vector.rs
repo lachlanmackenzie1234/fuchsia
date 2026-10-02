@@ -263,7 +263,8 @@ impl<T, A: Allocator> Vector<T, A> {
     fn consider_shrinking(&mut self) {
         if self.size * CAPACITY_SHRINK_FACTOR < self.buf.len() && self.buf.len() > CAPACITY_MINIMUM
         {
-            let new_capacity = self.buf.len() / CAPACITY_SHRINK_FACTOR;
+            let new_capacity =
+                core::cmp::max(CAPACITY_MINIMUM, self.buf.len() / CAPACITY_SHRINK_FACTOR);
             // If reallocation fails, we just keep the old capacity.
             let _ = self.reallocate(new_capacity);
         }
@@ -329,7 +330,8 @@ impl<T, A: Allocator> DerefMut for Vector<T, A> {
 
 impl<T, A: Allocator> Drop for Vector<T, A> {
     fn drop(&mut self) {
-        self.clear();
+        // SAFETY: Vector maintains the invariant that elements from 0 to self.size are initialized.
+        unsafe { core::ptr::drop_in_place(self.buf[..self.size].assume_init_mut()) }
     }
 }
 
