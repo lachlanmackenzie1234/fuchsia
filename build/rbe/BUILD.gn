@@ -335,10 +335,11 @@ if (current_toolchain == default_toolchain) {
         # The following is used by lib/vars.sh to auto-startup reproxy.
         needs_reproxy = cxx_enable || link_enable || rust_enable
 
-        # Set the following to true if any remote build service is used.
-        needs_auth =
-            needs_reproxy || bazel_enable || bazel_upload_build_events != "" ||
-            ninja_upload_build_events != ""
+        # Set the following to true if any remote build service is used. Note:
+        # authentication for ResultStore is managed dynamically at runtime by
+        # build/scripts/main_build.py, so we only need to specify RBE-specific
+        # auth requirements here.
+        needs_auth = needs_reproxy || bazel_enable
       }
 
       # LINT.ThenChange(//build/rbe/rbe_settings.py:RbeSettings)
