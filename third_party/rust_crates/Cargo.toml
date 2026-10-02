@@ -95,7 +95,7 @@ criterion = { version = "0.8.2", default-features = false, features = ["csv_outp
 crossbeam = "0.8.5"
 crossbeam-utils = "0.8.23"
 csv = "1.4.0"
-darling = "0.23.0"
+darling = "0.24.1"
 data-encoding = "2.11.1"
 derivative = { version = "2.2.0", features = ["use_core"] }
 derive_builder = "0.20.2"
@@ -376,7 +376,7 @@ serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-liby
 serial_test = "4.0.1" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.4.4"
-syn = { version = "2.0.119", features = ["full", "visit", "visit-mut", "extra-traits"] }
+syn = { version = "3.0.6", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.14.0"
 tar = "0.4.46"
 term_grid = "0.2.0"

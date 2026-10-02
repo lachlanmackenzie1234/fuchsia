@@ -715,14 +715,14 @@ alias(
 )
 
 alias(
-    name = "darling-0.23.0",
-    actual = "//third_party/rust_crates/vendor/darling-0.23.0:darling",
+    name = "darling-0.24.1",
+    actual = "//third_party/rust_crates/vendor/darling-0.24.1:darling",
     tags = ["manual"],
 )
 
 alias(
     name = "darling",
-    actual = "//third_party/rust_crates/vendor/darling-0.23.0:darling",
+    actual = "//third_party/rust_crates/vendor/darling-0.24.1:darling",
     tags = ["manual"],
 )
 
@@ -3085,14 +3085,14 @@ alias(
 )
 
 alias(
-    name = "syn-2.0.119",
-    actual = "//third_party/rust_crates/vendor/syn-2.0.119:syn",
+    name = "syn-3.0.6",
+    actual = "//third_party/rust_crates/vendor/syn-3.0.6:syn",
     tags = ["manual"],
 )
 
 alias(
     name = "syn",
-    actual = "//third_party/rust_crates/vendor/syn-2.0.119:syn",
+    actual = "//third_party/rust_crates/vendor/syn-3.0.6:syn",
     tags = ["manual"],
 )
 
