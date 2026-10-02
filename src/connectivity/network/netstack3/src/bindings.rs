@@ -404,6 +404,7 @@ pub(crate) struct GlobalConfig {
     pub(crate) sampled_stats_enabled: bool,
     pub(crate) multi_vmo: bool,
     pub(crate) max_rolling_capture_buffer_size: u32,
+    pub(crate) tcp_gro_enabled: bool,
 }
 
 impl Default for GlobalConfig {
@@ -413,6 +414,7 @@ impl Default for GlobalConfig {
             sampled_stats_enabled: false,
             multi_vmo: false,
             max_rolling_capture_buffer_size: 16777216,
+            tcp_gro_enabled: false,
         }
     }
 }
