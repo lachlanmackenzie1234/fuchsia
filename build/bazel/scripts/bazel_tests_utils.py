@@ -72,6 +72,18 @@ def _execroot_path_to_ninja_path(bazel_paths: BazelPaths, path: str) -> str:
     )
 
 
+def _check_starlark_cquery_result(ret: build_utils.CommandResult) -> None:
+    """Raise if a `cquery --output=starlark` invocation failed.
+
+    When the Starlark output function fails for a target (e.g. because it
+    reads a provider field that wasn't set), Bazel logs an error, emits no
+    output line for that target, and still exits 0. Without this check, such
+    targets would silently disappear from tests.json.
+    """
+    if ret.returncode != 0 or "ERROR: Starlark evaluation error" in ret.stderr:
+        raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
+
+
 def _generate_host_tests_json(
     bazel_paths: BazelPaths,
     command_runner: build_utils.CommandRunner | None = None,
@@ -142,8 +154,7 @@ def _generate_host_tests_json(
             ],
             False,
         )
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
+    _check_starlark_cquery_result(ret)
 
     target_cpu = "x64"
     args_json_path = bazel_paths.ninja_build_dir / "args.json"
@@ -352,8 +363,7 @@ def _generate_device_tests_json(
             ],
             False,
         )
-    if ret.returncode != 0:
-        raise RuntimeError(f"Failed to run bazel query: {ret.stderr}")
+    _check_starlark_cquery_result(ret)
 
     tests_json: list[dict[str, T.Any]] = []
     package_manifests: list[str] = []
@@ -386,39 +396,40 @@ def _generate_device_tests_json(
         # Unlike the host path above, no CPU remapping is needed here:
         # `CurrentPlatformInfo` already reports Fuchsia's names (x64, arm64,
         # riscv64) rather than Bazel's (k8, aarch64).
+        #
+        # An empty `environments` list means build_tests_json.py fills in
+        # this build's default environments.
+        envs = cquery_test.get("environments", [])
         for test_component in cquery_test["test_components"]:
             package_url = test_component["package_url"]
-            tests_json.append(
-                {
-                    # Left empty so that `build_tests_json.py` fills in this
-                    # build's default environments, as it does for GN tests
-                    # that don't specify any.
+            test_dict = {
+                "expects_ssh": True,
+                "test": {
+                    "build_rule": "fx_test",
+                    "cpu": cquery_test["cpu"],
+                    "label": label,
+                    # The source label indicates the location in the tree of
+                    # the source code. For labels in the main workspace,
+                    # ensure they start with "//".
+                    "source_label": _normalize_label(label),
+                    "name": package_url,
+                    "os": cquery_test["os"],
+                    "package_url": package_url,
+                    "package_manifests": [package_manifest],
                     # TODO(https://fxbug.dev/564574581): Support overriding
-                    # environments per test.
-                    "environments": [],
-                    "expects_ssh": True,
-                    "test": {
-                        "build_rule": "fx_test",
-                        "cpu": cquery_test["cpu"],
-                        "label": label,
-                        # The source label indicates the location in the tree of
-                        # the source code. For labels in the main workspace,
-                        # ensure they start with "//".
-                        "source_label": _normalize_label(label),
-                        "name": package_url,
-                        "os": cquery_test["os"],
-                        "package_url": package_url,
-                        "package_manifests": [package_manifest],
-                        # TODO(https://fxbug.dev/564574581): Support overriding
-                        # other test spec fields.
-                        "log_settings": {
-                            "max_severity": cquery_test.get(
-                                "max_log_severity", "WARN"
-                            )
-                        },
+                    # other test spec fields.
+                    "log_settings": {
+                        "max_severity": cquery_test.get(
+                            "max_log_severity", "WARN"
+                        )
                     },
-                }
-            )
+                },
+            }
+            if cquery_test.get("build_only"):
+                test_dict["build_only"] = True
+            else:
+                test_dict["environments"] = envs
+            tests_json.append(test_dict)
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaTestInfo.cquery:cquery_output_schema)
 
     if targets_missing_test_info:

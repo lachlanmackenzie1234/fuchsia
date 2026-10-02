@@ -225,6 +225,10 @@ if (is_host) {
 
   python_build_time_tests("bazel_tests_utils_test") {
     tests = [ "bazel_tests_utils_test.py" ]
+    inputs = [
+      "//build/bazel/rules/testing/fx_test.bzl",
+      "//build/bazel/starlark/FuchsiaTestInfo.cquery",
+    ]
     deps = [ ":bazel_tests_utils" ]
   }
 

@@ -33,6 +33,8 @@ def format(target):
         "package_manifest_execroot_path": test_info.package_manifest.path,
         "os": test_info.os,
         "cpu": test_info.cpu,
+        "environments": test_info.environments,
+        "build_only": test_info.build_only,
         "max_log_severity": test_info.max_log_severity,
         "test_components": [
             {

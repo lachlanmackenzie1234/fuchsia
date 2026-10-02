@@ -86,6 +86,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "platforms": [
                     {"device_type": "AEMU", "cpu": "x64"},
                     {"device_type": "QEMU", "cpu": "x64"},
+                    {"device_type": "Intel NUC Kit NUC11TNHv5", "cpu": "x64"},
                     {"device_type": "QEMU", "cpu": "arm64"},
                     {
                         "device_type": "QEMU",
@@ -410,6 +411,121 @@ class BuildTestsJsonTest(unittest.TestCase):
         self.assertEqual(
             tests[0]["environments"], [{"dimensions": {"device_type": "Vim3"}}]
         )
+
+    def test_bazel_device_tests_custom_environments(self) -> None:
+        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+            "//fake/device_tests"
+        )
+        mock_runner = MockCommandRunner()
+        # Host test cquery, which finds no tests.
+        mock_runner.push_result(stdout="")
+        # Device test cquery returning two tests:
+        # 1) A test specifying AEMU, QEMU (with 1cpu emulator config), NUC11
+        #    (x64, filtered out by allowed_device_types = ["AEMU", "QEMU"]),
+        #    and Astro (arm64, filtered out by target_cpu = "x64").
+        # 2) A test specifying only NUC11 (x64, not in allowed_device_types)
+        #    and Vim3 (arm64), which should become build_only.
+        test1 = {
+            "label": "@@//src/my_test:my_test",
+            "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+            "os": "fuchsia",
+            "cpu": "x64",
+            "environments": [
+                {"dimensions": {"device_type": "AEMU"}},
+                {
+                    "dimensions": {"device_type": "QEMU"},
+                    "emulator": {"name": "1cpu", "device": "x64-emu-min"},
+                },
+                {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}},
+                {"dimensions": {"device_type": "Astro"}},
+            ],
+            "test_components": [
+                {
+                    "component_name": "my_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/my-test#meta/my_test.cm",
+                },
+            ],
+        }
+        test2 = {
+            "label": "@@//src/hw_only_test:hw_only_test",
+            "package_manifest_execroot_path": "bazel-out/hw_only_test/package_manifest.json",
+            "os": "fuchsia",
+            "cpu": "x64",
+            "environments": [
+                {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}},
+                {"dimensions": {"device_type": "Vim3"}},
+            ],
+            "test_components": [
+                {
+                    "component_name": "hw_only_test",
+                    "package_url": "fuchsia-pkg://fuchsia.com/hw-only-test#meta/hw_only_test.cm",
+                },
+            ],
+        }
+        mock_runner.push_result(
+            stdout=json.dumps(test1) + "\n" + json.dumps(test2)
+        )
+
+        _, tests = self._test(
+            [],
+            [],
+            [],
+            with_bazel_tests=True,
+            command_runner=mock_runner,
+        )
+
+        self.assertEqual(len(tests), 2)
+        self.assertEqual(
+            tests[0]["environments"],
+            [
+                {"dimensions": {"device_type": "AEMU"}},
+                {
+                    "dimensions": {"device_type": "QEMU"},
+                    "emulator": {"name": "1cpu", "device": "x64-emu-min"},
+                },
+            ],
+        )
+        self.assertNotIn("build_only", tests[0])
+        self.assertEqual(tests[1]["environments"], [])
+        self.assertTrue(tests[1]["build_only"])
+
+    def test_bazel_device_tests_invalid_environment(self) -> None:
+        (self.build_dir / "bazel_target_test_suites.txt").write_text(
+            "//fake/device_tests"
+        )
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(stdout="")
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/bad_test:bad_test",
+                    "package_manifest_execroot_path": "bazel-out/bad_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "x64",
+                    "environments": [
+                        {"dimensions": {"device_type": "NonExistent"}},
+                    ],
+                    "test_components": [
+                        {
+                            "component_name": "bad_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/bad-test#meta/bad_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"fuchsia-pkg://fuchsia.com/bad-test#meta/bad_test\.cm \(@@//src/bad_test:bad_test\): Could not match environment specifications",
+        ):
+            self._test(
+                [],
+                [],
+                [],
+                with_bazel_tests=True,
+                command_runner=mock_runner,
+            )
 
     def test_full(self) -> None:
         tests_from_metadata = [

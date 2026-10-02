@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -198,6 +199,23 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 self.bazel_paths, command_runner=mock_runner
             )
 
+    def test_generate_tests_json_starlark_evaluation_error(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            returncode=0,
+            stderr="ERROR: Starlark evaluation error for //foo:bar: "
+            "'FuchsiaTestInfo' value has no field or method 'baz'",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError, "Starlark evaluation error for //foo:bar"
+        ):
+            bazel_tests_utils.generate_tests_json(
+                self.bazel_paths, command_runner=mock_runner
+            )
+
     def test_generate_tests_json_missing_fuchsia_host_test_info(self) -> None:
         mock_runner = MockCommandRunner()
         missing_info = {
@@ -347,6 +365,34 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.assertIn("--config=fuchsia_platform", query_command)
         self.assertIn("FuchsiaTestInfo.cquery", query_command)
 
+    def test_generate_device_tests_json_build_only(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "x64",
+                    "build_only": True,
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+        self.assertTrue(tests_json[0]["build_only"])
+        self.assertNotIn("environments", tests_json[0])
+
     def test_generate_device_tests_json_max_log_severity(self) -> None:
         self._setUpDeviceTests(["//fake/device_tests"])
 
@@ -381,6 +427,44 @@ class BazelTestsUtilsTest(unittest.TestCase):
         # Environments are resolved later by build_tests_json.py, for any CPU.
         self.assertEqual(tests_json[0]["environments"], [])
         self.assertEqual(tests_json[0]["test"]["cpu"], "riscv64")
+
+    def test_generate_device_tests_json_environments(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        custom_envs = [
+            {"dimensions": {"device_type": "AEMU"}},
+            {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}},
+        ]
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "x64",
+                    "environments": custom_envs,
+                    "test_components": [
+                        {
+                            "component_name": "my_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
+                        },
+                        {
+                            "component_name": "my_other_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_other_test.cm",
+                        },
+                    ],
+                }
+            )
+        )
+
+        tests_json, _ = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        self.assertEqual(len(tests_json), 2)
+        self.assertEqual(tests_json[0]["environments"], custom_envs)
+        self.assertEqual(tests_json[1]["environments"], custom_envs)
 
     def test_generate_device_tests_json_build_file_inputs(self) -> None:
         self._setUpDeviceTests(["//fake/device_tests:suite"])
@@ -561,6 +645,46 @@ class BazelTestsUtilsTest(unittest.TestCase):
         )
         self.assertTrue(module_bazel.is_file())
         self.assertTrue((gn_targets_dir / "all_licenses.spdx.json").exists())
+
+
+class FuchsiaTestInfoCqueryTest(unittest.TestCase):
+    """Checks that FuchsiaTestInfo.cquery only reads declared provider fields.
+
+    Reading an undeclared field makes `bazel cquery` skip the target while
+    still exiting 0. Bazel doesn't allow load() in cquery formatter files, so
+    the formatter can't be exercised against the real provider at build time;
+    compare the field names textually instead. The provider's `init` already
+    guarantees that every declared field is set.
+
+    This is admittedly a hack: it regex-matches source text rather than
+    parsing Starlark, so it only sees direct `test_info.<field>` reads. It
+    misses aliases (`info = test_info; info.foo`), `getattr()` calls, and
+    fields of the nested `test_components` structs, and it depends on the
+    formatting of `_FUCHSIA_TEST_INFO_FIELDS`. The cquery stderr check in
+    `bazel_tests_utils._check_starlark_cquery_result()` is the backstop for
+    anything this test can't see.
+    """
+
+    def test_cquery_reads_only_declared_fields(self) -> None:
+        fx_test_bzl = (_SCRIPT_DIR / "../rules/testing/fx_test.bzl").read_text()
+        fields_block = re.search(
+            r"^_FUCHSIA_TEST_INFO_FIELDS = \{\n(.*?)^\}",
+            fx_test_bzl,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert fields_block, "_FUCHSIA_TEST_INFO_FIELDS not found"
+        declared = set(
+            re.findall(r'^    "(\w+)":', fields_block.group(1), re.MULTILINE)
+        )
+        self.assertIn("test_label", declared)
+
+        cquery = (
+            _SCRIPT_DIR / "../starlark/FuchsiaTestInfo.cquery"
+        ).read_text()
+        read = set(re.findall(r"\btest_info\.(\w+)", cquery))
+        self.assertIn("test_label", read)
+
+        self.assertEqual(read - declared, set())
 
 
 if __name__ == "__main__":

@@ -18,9 +18,10 @@ Fuchsia also supports Bazel **device tests**, declared with `fx_test()` and
 run on a Fuchsia device or emulator. These have the same requirement of
 being buildable exclusively with Bazel, and additionally:
 
-- Aside from `max_log_severity` (which defaults to `WARN`), test spec fields
-  (environments, timeouts, realms, etc.) cannot be customized per test yet.
-  Tests run in the build's default target environments.
+- Aside from `environments` (which defaults to the build's default test
+  environments), `build_only`, and `max_log_severity` (which defaults to
+  `WARN`), test spec fields (timeouts, realms, etc.) cannot be customized per
+  test yet.
 
 [fxbug.dev/564574581](https://fxbug.dev/564574581) tracks the remaining work for
 target tests in Bazel.
@@ -161,6 +162,7 @@ Declare the test component with `fx_test_component()`, package it with
 `//src/foo/bar/BUILD.bazel`:
 
 ```bazel
+load("@fuchsia_build_info//:environments.bzl", "aemu_env", "nuc11_env")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
@@ -201,11 +203,25 @@ fx_package(
 fx_test(
     name = "bar_tests",
     package = ":bar_tests_package",
+    # Optional: defaults to the build's default test environments when omitted.
+    environments = [
+        aemu_env,
+        nuc11_env,
+    ],
 )
 ```
 
 Every component in `test_components` becomes a separate test, whose name is its
 package URL, e.g. `fuchsia-pkg://fuchsia.com/bar_tests#meta/bar_test.cm`.
+
+To customize which target environments a test runs in, pass `environments` to
+`fx_test()` using the environment definitions in
+`@fuchsia_build_info//:environments.bzl` (generated from
+`//build/testing/environments.gni`). When `environments` is omitted, the test
+runs in the build's default test environments, exactly like a GN test that
+doesn't set `environments`. `environments` must be a plain list (not a
+`select()`) and must not be empty; to build a test without running it, set
+`build_only = True` instead.
 
 Note: components marked as tests **MUST** be listed in `test_components`, and
 non-test components **MUST** be listed in `components`. Packaging fails

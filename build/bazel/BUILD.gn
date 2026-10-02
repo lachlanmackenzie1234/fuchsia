@@ -363,9 +363,25 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/rust/config.gni)
+
+  deps = [ ":test_environments_for_bazel($default_toolchain)" ]
 }
 
 if (current_toolchain == default_toolchain) {
+  # Generates a JSON file containing all Fuchsia target test environment
+  # definitions from //build/testing/environments.gni. It is used by
+  # `generate_fuchsia_build_info()` to generate
+  # `@fuchsia_build_info//:environments.bzl`.
+  generated_file("test_environments_for_bazel") {
+    # LINT.IfChange(test_environments_for_bazel_path)
+    outputs = [ "$root_build_dir/test_environments_for_bazel.json" ]
+
+    # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:test_environments_for_bazel_path)
+    output_conversion = "json"
+    contents = {
+      import("//build/testing/environments.gni")
+    }
+  }
   group("bazel_args_json") {
     deps = [
       "//build/bazel/config:bazel_args_json($default_toolchain)",

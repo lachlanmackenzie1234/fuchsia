@@ -4,6 +4,13 @@
 
 """Tests for the platform Bazel package and device test rules."""
 
+load(
+    "@fuchsia_build_info//:environments.bzl",
+    "aemu_env",
+    "basic_envs",
+    "nuc11_env",
+    "qemu_1cpu_env",
+)
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
@@ -13,6 +20,7 @@ load(
 )
 load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/testing:defs.bzl", "verify_fx_test_environments")
 load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -85,5 +93,83 @@ fx_package(
 fx_test(
     name = "example_test",
     package = ":example_test_package",
+)
+
+# Each `verify_fx_test_environments()` target below is an analysis-time
+# assertion on the `FuchsiaTestInfo` provider of the `fx_test()` it points at:
+# building it fails if the test's `environments` or `build_only` don't match
+# the expected values. They have no outputs and only need to be built (via
+# `build_only_tests`) to take effect. This guards `fx_test()`'s JSON
+# encode/decode round trip of `environments`; it does not check what the
+# tests.json cquery extracts from the provider, which is covered by
+# `FuchsiaTestInfoCqueryTest` in //build/bazel/scripts/bazel_tests_utils_test.py.
+verify_fx_test_environments(
+    name = "verify_example_test_default_environments",
+    testonly = True,
+    expected_environments = [],
+    test = ":example_test",
+)
+
+fx_test(
+    name = "example_test_with_environments",
+    environments = [
+        aemu_env,
+        nuc11_env,
+        qemu_1cpu_env,
+    ],
+    package = ":example_test_package",
+)
+
+verify_fx_test_environments(
+    name = "verify_example_test_with_environments",
+    testonly = True,
+    expected_environments = [
+        aemu_env,
+        nuc11_env,
+        qemu_1cpu_env,
+    ],
+    test = ":example_test_with_environments",
+)
+
+fx_test(
+    name = "example_test_with_basic_envs",
+    environments = basic_envs,
+    package = ":example_test_package",
+)
+
+verify_fx_test_environments(
+    name = "verify_example_test_with_basic_envs",
+    testonly = True,
+    expected_environments = basic_envs,
+    test = ":example_test_with_basic_envs",
+)
+
+fx_test(
+    name = "example_build_only_test",
+    build_only = True,
+    package = ":example_test_package",
+)
+
+verify_fx_test_environments(
+    name = "verify_example_build_only_test",
+    testonly = True,
+    expected_build_only = True,
+    expected_environments = [],
+    test = ":example_build_only_test",
+)
+
+filegroup(
+    name = "build_only_tests",
+    testonly = True,
+    srcs = [
+        ":example_build_only_test",
+        ":example_test",
+        ":example_test_with_basic_envs",
+        ":example_test_with_environments",
+        ":verify_example_build_only_test",
+        ":verify_example_test_default_environments",
+        ":verify_example_test_with_basic_envs",
+        ":verify_example_test_with_environments",
+    ],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
 )
