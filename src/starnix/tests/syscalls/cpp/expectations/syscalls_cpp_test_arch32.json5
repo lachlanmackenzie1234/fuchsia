@@ -13,9 +13,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/566334394): FPSCR is not preserved across fork on arch32.
-                "ExtendedPstate.ForkPreservesAllRegisters",
-
                 // fgetxattr is not implemented on arch32.
                 "XattrTest.FsetxattrValueLengthLimits",
             ],
