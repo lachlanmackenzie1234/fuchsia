@@ -5,6 +5,7 @@
 //! Target-side FDomain UART driver daemon for Fuchsia devices.
 
 pub mod error;
+pub mod receiver;
 pub mod serial;
 
 pub use error::Result;
