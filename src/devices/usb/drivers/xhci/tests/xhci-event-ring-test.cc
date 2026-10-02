@@ -485,6 +485,45 @@ TEST_F(EventRingHarness, BadHubStallOnDtDeviceQualifier) {
   ASSERT_EQ(descriptor.b_device_protocol, 0);
 }
 
+TEST_F(EventRingHarness, BadHubStallOnDtDeviceQualifierShortLength) {
+  InitSlot(1);
+  TRB* start = trb();
+  TRB trb;
+  trb.ptr = kFakeTrb;
+  Control::FromTRB(&trb).set_Type(Control::TransferEvent).ToTrb(&trb);
+  TransferEvent* evt = static_cast<TransferEvent*>(&trb);
+  evt->set_SlotID(1);
+  evt->set_EndpointID(2);
+  evt->set_CompletionCode(CommandCompletionEvent::StallError);
+  evt->set_TransferLength(0);
+  AddTRB(trb);
+  auto ctx = AllocateContext();
+  size_t transfer_len;
+  zx_status_t transfer_status;
+  ctx->trb = start;
+  std::optional<TestRequest> request;
+  AllocateRequest(&request, 1, sizeof(usb_device_qualifier_descriptor_t), 0,
+                  [&](TestRequest request) {
+                    transfer_status = request.request()->response.status;
+                    transfer_len = request.request()->response.actual;
+                  });
+  request->request()->setup.b_request =
+      fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor);
+  request->request()->setup.w_index = 0;
+  request->request()->setup.w_value =
+      usb_descriptor_w_value(fdescriptor::DescriptorType::kDeviceQualifier);
+  request->request()->header.length =
+      8;  // Short length (8 < sizeof(usb_device_qualifier_descriptor_t))
+
+  ctx->request = Borrow(std::move(*request));
+  AddContext(std::move(ctx));
+  SetCompletion(reinterpret_cast<TRB*>(kFakeTrbVirt));
+  Interrupt();
+
+  ASSERT_EQ(transfer_status, ZX_ERR_IO_REFUSED);
+  ASSERT_EQ(transfer_len, 0UL);
+}
+
 TEST_F(EventRingHarness, USB2DeviceAttach) {
   ConnectDevice();
   InsertPortStatusChangeEvent();

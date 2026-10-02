@@ -430,7 +430,10 @@ bool EventRing::StallWorkaroundForDefectiveHubs(std::unique_ptr<TRBContext>& con
        usb_descriptor_w_value(fdescriptor::DescriptorType::kDeviceQualifier))) {
     usb_device_qualifier_descriptor_t* desc;
     if ((std::get<Request>(*context->request).Mmap(reinterpret_cast<void**>(&desc)) == ZX_OK) &&
-        (request->header.length >= sizeof(desc))) {
+        (request->header.length >= sizeof(*desc))) {
+      memset(desc, 0, sizeof(*desc));
+      desc->b_length = sizeof(*desc);
+      desc->b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDeviceQualifier);
       desc->b_device_protocol =
           0;  // Don't support multi-TT unless we're sure the device supports it.
       ScheduleTask(
