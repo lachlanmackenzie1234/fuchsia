@@ -584,6 +584,39 @@ rustc_library(
 		"//third_party/rust_crates:lock_api",
 	]
 }`,
+		}, {
+			name: "rustc_dylib",
+			bazel: `
+rustc_dylib(
+	name = "foo_dylib",
+	srcs = ["src/lib.rs"],
+	build_flags = ["//build/config/rust:bootfs"],
+	crate_features = ["bar"],
+	crate_name = "foo",
+	output_name = "foo_rust",
+	target_compatible_with = ["@platforms//os:fuchsia"],
+	with_unit_tests = True,
+	deps = ["//third_party/rust_crates/vendor:anyhow"],
+)`,
+			wantGN: `if (is_fuchsia) {
+	rustc_dylib("foo_dylib") {
+		sources = [
+			"src/lib.rs",
+		]
+		configs += [
+			"//build/config/rust:bootfs",
+		]
+		features = [
+			"bar",
+		]
+		crate_name = "foo"
+		output_name = "foo_rust"
+		with_unit_tests = true
+		deps = [
+			"//third_party/rust_crates:anyhow",
+		]
+	}
+}`,
 		},
 	} {
 		f := toSyntaxFile(t, tc.bazel)
