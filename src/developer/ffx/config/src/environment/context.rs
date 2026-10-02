@@ -727,6 +727,18 @@ impl EnvironmentContext {
     }
 }
 
+impl From<&EnvironmentContext> for serde_json::Value {
+    fn from(ctx: &EnvironmentContext) -> Self {
+        serde_json::Value::from(&ctx.config)
+    }
+}
+
+impl From<EnvironmentContext> for serde_json::Value {
+    fn from(ctx: EnvironmentContext) -> Self {
+        serde_json::Value::from(&ctx.config)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
