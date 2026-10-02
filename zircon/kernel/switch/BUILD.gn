@@ -584,16 +584,6 @@ config("jtrace_config") {
   }
 }
 
-# See kernel.ld where KERNEL_GOT_TOLERANCE is used.
-if (current_cpu == "arm64" && is_gcc) {
-  # Each slot is 8 bytes.  The first two special slots are always there if
-  # .got is there at all, per psABI.  GNU (BFD) ld seems to emit two more
-  # unused slots with no associated relocs to explain their existence.
-  got_tolerance = 32
-} else {
-  got_tolerance = 0
-}
-
 # This is implicitly added last to configs in kernel_executable().
 compiler_config("kernel_executable.config") {
   visibility = [ "//zircon/kernel/bin/*" ]
@@ -609,8 +599,6 @@ compiler_config("kernel_executable.config") {
   }
 
   assignments = kernel_defines + [
-                  "KERNEL_GOT_TOLERANCE=$got_tolerance",
-
                   # This symbol is used by gdb python to know the base of the
                   # kernel module
                   #
