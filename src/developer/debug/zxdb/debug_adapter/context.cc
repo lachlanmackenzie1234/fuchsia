@@ -19,6 +19,7 @@
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/client/system_observer.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_async_backtrace.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_attach.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_continue.h"
@@ -286,6 +287,13 @@ void DebugAdapterContext::Init() {
     DEBUG_LOG(DebugAdapter) << "ZxdbProcessRequest received";
     return OnRequestZxdbProcess(this, req);
   });
+
+  dap_->registerHandler(
+      [this](const dap::ZxdbAsyncBacktraceRequest& req,
+             std::function<void(dap::ResponseOrError<dap::ZxdbAsyncBacktraceResponse>)> callback) {
+        DEBUG_LOG(DebugAdapter) << "ZxdbAsyncBacktraceRequest received";
+        OnRequestZxdbAsyncBacktrace(this, req, std::move(callback));
+      });
 
   dap_->registerHandler([this](const dap::DisconnectRequest& req) {
     DEBUG_LOG(DebugAdapter) << "DisconnectRequest received";
