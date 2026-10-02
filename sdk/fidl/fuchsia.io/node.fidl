@@ -373,7 +373,7 @@ open protocol Node {
     @available(removed=32)
     @selector("fuchsia.io1/Node.OnOpen")
     flexible -> OnOpen(resource struct {
-        s zx.Status;
+        s zx.Result;
         info
                 @generated_name("NodeInfoDeprecated")
                 @strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
@@ -414,7 +414,7 @@ open protocol Node {
     @available(replaced=28, renamed="DeprecatedGetAttr")
     @selector("fuchsia.io1/Node.GetAttr")
     strict GetAttr() -> (struct {
-        s zx.Status;
+        s zx.Result;
         attributes NodeAttributes;
     });
 
@@ -427,7 +427,7 @@ open protocol Node {
     @available(added=28, deprecated=HEAD, note="Use fuchsia.io/Node.GetAttributes instead.")
     @selector("fuchsia.io1/Node.GetAttr")
     strict DeprecatedGetAttr() -> (struct {
-        s zx.Status;
+        s zx.Result;
         attributes NodeAttributes;
     });
 
@@ -443,7 +443,7 @@ open protocol Node {
         flags NodeAttributeFlags;
         attributes NodeAttributes;
     }) -> (struct {
-        s zx.Status;
+        s zx.Result;
     });
 
 
@@ -457,7 +457,7 @@ open protocol Node {
         flags NodeAttributeFlags;
         attributes NodeAttributes;
     }) -> (struct {
-        s zx.Status;
+        s zx.Result;
     });
 
     /// Acquires the `Directory.Open` rights and flags used to access this file.
@@ -466,7 +466,7 @@ open protocol Node {
     @available(replaced=27, renamed="DeprecatedGetFlags")
     @selector("fuchsia.io1/Node.NodeGetFlags")
     strict GetFlags() -> (struct {
-        s zx.Status;
+        s zx.Result;
         flags OpenFlags;
     });
 
@@ -477,7 +477,7 @@ open protocol Node {
     @available(added=27, deprecated=HEAD)
     @selector("fuchsia.io1/Node.NodeGetFlags")
     strict DeprecatedGetFlags() -> (struct {
-        s zx.Status;
+        s zx.Result;
         flags OpenFlags;
     });
 
@@ -491,7 +491,7 @@ open protocol Node {
     strict SetFlags(struct {
         flags OpenFlags;
     }) -> (struct {
-        s zx.Status;
+        s zx.Result;
     });
 
     /// [DEPRECATED - Use new SetFlags method instead.]
@@ -503,7 +503,7 @@ open protocol Node {
     strict DeprecatedSetFlags(struct {
         flags OpenFlags;
     }) -> (struct {
-        s zx.Status;
+        s zx.Result;
     });
 
     /// Queries the flags that apply to this node after it has been opened/created. This method does
@@ -540,7 +540,7 @@ open protocol Node {
     /// filesystem that may be reported instead of filesystem-wide details.
     @selector("fuchsia.io.admin/DirectoryAdmin.QueryFilesystem")
     strict QueryFilesystem() -> (struct {
-        s zx.Status;
+        s zx.Result;
         info box<@generated_name("FilesystemInfo") struct {
             /// The number of data bytes which may be stored in a filesystem. This does not count
             /// metadata or other filesystem overhead like block rounding.

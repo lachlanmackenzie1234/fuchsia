@@ -240,9 +240,9 @@ type DriverResult = flexible resource union {
     /// The token that belongs to the node that a driver has started successfully on.
     1: driver_started_node_token zx.Handle:EVENT;
     /// The node failed to find a matching driver or composite spec.
-    2: match_error zx.Status;
+    2: match_error zx.Result;
     /// The driver that bound to the node failed to start successfully.
-    3: start_error zx.Status;
+    3: start_error zx.Result;
 };
 
 /// Protocol through which a parent node controls one of its children.
