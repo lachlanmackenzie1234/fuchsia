@@ -344,7 +344,7 @@ class Adb:
                         vendor_keys_path=self._vendor_keys_path,
                     )
                     self._adb_server.start()
-                except Exception as err:
+                except errors.HoneydewError as err:
                     raise adb_errors.InitializationError(
                         f"Failed to start isolated ADB server for {self._device_name}: {err}"
                     ) from err
@@ -425,7 +425,7 @@ class Adb:
                     self._device_name,
                     self._cached_adbd_pid,
                 )
-        except Exception as err:
+        except errors.HoneydewError as err:
             _LOGGER.debug(
                 "Failed to cache remote adbd PID for %s: %s",
                 self._device_name,
@@ -450,7 +450,7 @@ class Adb:
                 ["starnix", "kill", "-p", self._cached_adbd_pid, "-s", "9"],
                 timeout=10.0,
             )
-        except Exception as err:
+        except errors.HoneydewError as err:
             _LOGGER.warning(
                 "Failed to kill remote adbd (pid=%s) on %s via FFX: %s",
                 self._cached_adbd_pid,
@@ -476,7 +476,7 @@ class Adb:
                 timeout=10.0,
                 env=self._get_command_env(),
             )
-        except Exception as err:
+        except errors.HoneydewError as err:
             _LOGGER.warning(
                 "`adb reconnect offline` failed for %s: %s",
                 self._device_name,
@@ -503,7 +503,7 @@ class Adb:
                         timeout=30.0,
                         env=self._get_command_env(),
                     )
-            except Exception as err:
+            except errors.HoneydewError as err:
                 _LOGGER.warning(
                     "Failed to restore root privileges on %s after ADB recovery: %s",
                     self._device_name,
@@ -566,7 +566,7 @@ class Adb:
             )
         except adb_errors.AdbConnectionError:
             raise
-        except Exception as err:
+        except errors.HoneydewError as err:
             raise adb_errors.AdbConnectionError(
                 f"ADB connection check failed for {self._device_name} with err: {err}"
             ) from err
@@ -681,7 +681,7 @@ class Adb:
                         continue
                 raise adb_errors.AdbCommandError(str(err)) from err
 
-            except Exception as err:
+            except errors.HoneydewError as err:
                 raise adb_errors.AdbCommandError(
                     f"Failed to run ADB command '{adb_cmd}': {err}"
                 ) from err

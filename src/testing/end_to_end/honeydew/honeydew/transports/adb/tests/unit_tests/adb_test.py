@@ -19,6 +19,7 @@ from honeydew import errors
 from honeydew.transports.adb import adb
 from honeydew.transports.adb import errors as adb_errors
 from honeydew.utils import host_shell
+from mobly import signals
 
 _DEVICE_NAME = "fuchsia-mock-device"
 _SERIAL_NUMBER = "12345678"
@@ -498,6 +499,46 @@ class AdbTests(unittest.TestCase):
             self.adb_obj.run(["shell", "bad_command"])
 
         self.assertIn("error_text", str(context.exception))
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=signals.TestAbortAll("abort"),
+        autospec=True,
+    )
+    def test_run_does_not_wrap_unexpected_exceptions(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test run propagates non-host-command exceptions (e.g. Mobly signals) as-is."""
+        with self.assertRaises(signals.TestAbortAll):
+            self.adb_obj.run(["shell", "id"])
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=signals.TestAbortAll("abort"),
+        autospec=True,
+    )
+    def test_cache_adbd_pid_does_not_swallow_unexpected_exceptions(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test _cache_adbd_pid propagates non-host-command exceptions."""
+        with self.assertRaises(signals.TestAbortAll):
+            self.adb_obj._cache_adbd_pid()
+
+    @mock.patch.object(
+        adb.Adb, "run", side_effect=signals.TestAbortAll("abort"), autospec=True
+    )
+    def test_check_connection_does_not_wrap_unexpected_exceptions(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test check_connection propagates non-host-command exceptions as-is."""
+        self._check_connection_patcher.stop()
+        try:
+            with self.assertRaises(signals.TestAbortAll):
+                self.adb_obj.check_connection()
+        finally:
+            self._check_connection_patcher.start()
 
     @mock.patch.object(
         host_shell,
