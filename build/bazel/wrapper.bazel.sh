@@ -220,11 +220,15 @@ trap "rm -f ${_INVOCATION_BAZELRC}" EXIT
 readonly _BAZEL_INVOCATION_DATE="$(date +%Y%m%d-%H%M%S)"
 readonly _BAZEL_INVOCATION_LOG_DIR_NAME="invocation-${_BAZEL_INVOCATION_DATE}--${RESULTSTORE_invocation_id}"
 
+# LINT.IfChange(bazel_logs_dir)
+readonly _BAZEL_LOGS_DIRNAME="bazel_logs"
+# LINT.ThenChange(//build/scripts/main_build.py:bazel_logs_dir)
+
 if [[ -n "$FX_BUILD_LOGDIR" ]]; then
-  readonly _BAZEL_INVOCATION_LOG_PARENT="$FX_BUILD_LOGDIR/bazel_logs"
+  readonly _BAZEL_INVOCATION_LOG_PARENT="$FX_BUILD_LOGDIR/${_BAZEL_LOGS_DIRNAME}"
 else
   # This can happen if this script is run outside of `fx build`.
-  readonly _BAZEL_INVOCATION_LOG_PARENT="${_NINJA_BUILD_DIR}/bazel_logs"
+  readonly _BAZEL_INVOCATION_LOG_PARENT="${_NINJA_BUILD_DIR}/${_BAZEL_LOGS_DIRNAME}"
   echo >&2 "WARNING: FX_BUILD_LOGDIR is not set. Using fallback log directory: ${_BAZEL_INVOCATION_LOG_PARENT}"
 fi
 readonly _BAZEL_INVOCATION_LOG_DIR="${_BAZEL_INVOCATION_LOG_PARENT}/${_BAZEL_INVOCATION_LOG_DIR_NAME}"

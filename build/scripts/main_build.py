@@ -314,6 +314,62 @@ def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
     return resultstore_metadata
 
 
+def _iter_directory_file_map(
+    root_dir: pathlib.Path,
+) -> Iterable[tuple[str, list[str]]]:
+    """Walks root_dir and yields (relative_subdir, list_of_filenames) tuples.
+
+    Args:
+        root_dir: Base directory on disk.
+
+    Yields:
+        Tuples of (relative_subdir_path, list_of_filenames) for each subdirectory
+        containing non-symlink regular files.
+    """
+    if not root_dir.exists():
+        return
+
+    for root, dirnames, filenames in os.walk(root_dir, followlinks=False):
+        dirnames.sort()  # Ensures deterministic, chronological traversal
+        dir_path = pathlib.Path(root)
+        if dir_path == root_dir:
+            continue
+        try:
+            rel_dir = str(dir_path.relative_to(root_dir))
+            real_files = [
+                f
+                for f in sorted(filenames)
+                if not os.path.islink(os.path.join(root, f))
+            ]
+            if real_files:
+                yield rel_dir, real_files
+        except (OSError, ValueError):
+            continue
+
+
+def _collect_bazel_metadata(log_dir: pathlib.Path) -> JSONObject:
+    """Scans the active build invocation's log directory for Bazel diagnostic logs.
+
+    Args:
+        log_dir: Path to the active build invocation's log directory.
+
+    Returns:
+        A dictionary containing the bazel log_dir and a mapping of invocation
+        directory names to the list of artifact filenames present in each invocation.
+    """
+    # LINT.IfChange(bazel_logs_dir)
+    bazel_log_dir = log_dir / "bazel_logs"
+    # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:bazel_logs_dir)
+    invocations = dict(_iter_directory_file_map(bazel_log_dir))
+    if not invocations:
+        return {}
+
+    return {
+        "log_dir": str(bazel_log_dir.resolve()),
+        "invocations": invocations,
+    }
+
+
 def exists(path: pathlib.Path) -> bool:
     """Checks if a path exists."""
     return path.exists()
@@ -1200,6 +1256,10 @@ class BuildInvocation(object):
         resultstore_metadata = _collect_resultstore_metadata(log_dir)
         if resultstore_metadata:
             metadata["resultstore"] = resultstore_metadata
+
+        bazel_metadata = _collect_bazel_metadata(log_dir)
+        if bazel_metadata:
+            metadata["bazel"] = bazel_metadata
 
         try:
             mkdir(output_path.parent)

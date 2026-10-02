@@ -2321,6 +2321,148 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 self.assertIn("system_profile", data["build_profile"])
                 self.assertIn("hardware_profile", data["build_profile"])
 
+    def test_write_metadata_json_with_bazel_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            log_dir = tmp_path / "logs"
+            out_dir = tmp_path / "out"
+            build_dir = tmp_path / "out/default"
+            output_json_path = tmp_path / "metadata.json"
+
+            main_build.mkdir(log_dir)
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+
+            bazel_logs_dir = log_dir / "bazel_logs"
+            inv_dir = bazel_logs_dir / "invocation-20261001-143000--uuid"
+            main_build.mkdir(inv_dir)
+            main_build.write_text(inv_dir / "bazel_invocation", "bazel build")
+
+            context = self.create_context(
+                env={"USER": "fake-user"},
+                rbe=False,
+                resultstore="none",
+                profile=False,
+                tui=False,
+                verbose=False,
+                dry_run=False,
+                output_metadata_json=output_json_path,
+            )
+            context.out_dir = out_dir
+            context.build_dir = build_dir
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ):
+                invocation.write_metadata_json(output_json_path)
+                with open(output_json_path, "r") as f:
+                    data = json.load(f)
+                self.assertIn("bazel", data)
+                self.assertEqual(
+                    data["bazel"]["log_dir"], str(bazel_logs_dir.resolve())
+                )
+                self.assertIn(
+                    "invocation-20261001-143000--uuid",
+                    data["bazel"]["invocations"],
+                )
+                self.assertEqual(
+                    data["bazel"]["invocations"][
+                        "invocation-20261001-143000--uuid"
+                    ],
+                    ["bazel_invocation"],
+                )
+
+
+class IterDirectoryFileMapTest(unittest.TestCase):
+    def test_iter_directory_file_map_nonexistent_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nonexistent = pathlib.Path(tmpdir) / "does_not_exist"
+            entries = list(main_build._iter_directory_file_map(nonexistent))
+            self.assertEqual(entries, [])
+
+    def test_iter_directory_file_map_empty_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_dir = pathlib.Path(tmpdir) / "empty"
+            main_build.mkdir(empty_dir)
+            entries = list(main_build._iter_directory_file_map(empty_dir))
+            self.assertEqual(entries, [])
+
+    def test_iter_directory_file_map_with_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = pathlib.Path(tmpdir) / "root"
+            main_build.mkdir(root_dir)
+
+            # Files in root directory should be skipped
+            main_build.write_text(root_dir / "root_file.txt", "root")
+
+            # Subdirectory with files
+            sub1 = root_dir / "invocation-1"
+            main_build.mkdir(sub1)
+            main_build.write_text(sub1 / "bazel_invocation", "cmd")
+            main_build.write_text(sub1 / "command.profile.gz", "profile")
+
+            # Another subdirectory
+            sub2 = root_dir / "invocation-2"
+            main_build.mkdir(sub2)
+            main_build.write_text(sub2 / "invocation.bazelrc", "rc")
+
+            # Symlink to sub1 should be ignored
+            (root_dir / "recent").symlink_to(sub1.name)
+
+            entries = dict(main_build._iter_directory_file_map(root_dir))
+            self.assertNotIn("recent", entries)
+            self.assertEqual(
+                entries["invocation-1"],
+                ["bazel_invocation", "command.profile.gz"],
+            )
+            self.assertEqual(
+                entries["invocation-2"],
+                ["invocation.bazelrc"],
+            )
+
+
+class CollectBazelMetadataTest(unittest.TestCase):
+    def test_collect_bazel_metadata_nonexistent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            metadata = main_build._collect_bazel_metadata(log_dir)
+            self.assertEqual(metadata, {})
+
+    def test_collect_bazel_metadata_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            bazel_logs = log_dir / "bazel_logs"
+            main_build.mkdir(bazel_logs)
+            metadata = main_build._collect_bazel_metadata(log_dir)
+            self.assertEqual(metadata, {})
+
+    def test_collect_bazel_metadata_with_invocations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            bazel_logs = log_dir / "bazel_logs"
+            inv_dir = bazel_logs / "invocation-20261001-143000--uuid"
+            main_build.mkdir(inv_dir)
+            main_build.write_text(inv_dir / "bazel_invocation", "build")
+            main_build.write_text(inv_dir / "invocation.bazelrc", "remote")
+
+            metadata = main_build._collect_bazel_metadata(log_dir)
+            self.assertEqual(
+                metadata,
+                {
+                    "log_dir": str(bazel_logs.resolve()),
+                    "invocations": {
+                        "invocation-20261001-143000--uuid": [
+                            "bazel_invocation",
+                            "invocation.bazelrc",
+                        ],
+                    },
+                },
+            )
+
 
 class CollectResultStoreMetadataTest(unittest.TestCase):
     def test_collect_resultstore_metadata_empty(self) -> None:
