@@ -2822,7 +2822,7 @@ pub fn sys_utimensat(
         }
         current_task.files().get(dir_fd)?.name.to_passive()
     } else {
-        let lookup_flags = LookupFlags::from_bits(flags, AT_SYMLINK_NOFOLLOW)?;
+        let lookup_flags = LookupFlags::from_bits(flags, AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)?;
         lookup_at(current_task, dir_fd, user_path, lookup_flags)?
     };
     name.entry.node.update_atime_mtime(current_task, &name.mount, atime, mtime)?;

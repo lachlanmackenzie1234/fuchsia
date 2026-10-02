@@ -957,9 +957,6 @@
                 "AllInetTests/RawPacketTest.SetSocketRecvBuf/0",
                 "AllInetTests/RawPacketTest.SetSocketRecvBuf/1",
 
-                // utimes_test
-                "UtimensatTest.AtEmptyPath",
-
                 // wait_test - https://fxbug.dev/297461294
                 "Waiters/WaitAnyChildTest.IgnoredChildRusage/*",
                 "Waiters/WaitSpecificChildTest.SiblingChildrenWNOTHREAD/0",
