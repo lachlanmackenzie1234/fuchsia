@@ -9,9 +9,8 @@ import dataclasses
 import itertools
 import logging
 import sys
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Mapping, MutableSequence, Sequence
 from typing import (
-    MutableSequence,
     NotRequired,
     Self,
     TypeAlias,

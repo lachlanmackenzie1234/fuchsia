@@ -5,7 +5,6 @@
 """Unit tests for trace_utils.py."""
 
 import unittest
-from typing import List
 
 import test_utils
 from reporting import metrics
@@ -58,7 +57,7 @@ class TraceUtilsTest(unittest.TestCase):
         )
 
     def test_filter_events(self) -> None:
-        events: List[trace_model.Event] = [
+        events: list[trace_model.Event] = [
             trace_model.DurationEvent(
                 duration=None,
                 parent=None,
@@ -118,7 +117,7 @@ class TraceUtilsTest(unittest.TestCase):
         self.assertEqual(filtered2, [])
 
     def test_filter_events_with_name_collection(self) -> None:
-        events: List[trace_model.Event] = [
+        events: list[trace_model.Event] = [
             trace_model.DurationEvent(
                 duration=None,
                 parent=None,
@@ -184,7 +183,7 @@ class TraceUtilsTest(unittest.TestCase):
         self.assertEqual(filtered2, [events[1], events[2]])
 
     def test_filter_events_with_type(self) -> None:
-        events: List[trace_model.Event] = [
+        events: list[trace_model.Event] = [
             trace_model.DurationEvent(
                 duration=None,
                 parent=None,
@@ -223,7 +222,7 @@ class TraceUtilsTest(unittest.TestCase):
             ),
         ]
 
-        filtered: List[trace_model.Event] = list(
+        filtered: list[trace_model.Event] = list(
             trace_utils.filter_events(
                 iter(events),
                 category="cat_a",
@@ -233,7 +232,7 @@ class TraceUtilsTest(unittest.TestCase):
         )
         self.assertEqual(filtered, [events[0]])
 
-        filtered2: List[trace_model.Event] = list(
+        filtered2: list[trace_model.Event] = list(
             trace_utils.filter_events(
                 iter(events),
                 category="cat_c",
@@ -243,7 +242,7 @@ class TraceUtilsTest(unittest.TestCase):
         )
         self.assertEqual(filtered2, [])
 
-        filtered3: List[trace_model.Event] = list(
+        filtered3: list[trace_model.Event] = list(
             trace_utils.filter_events(
                 iter(events),
                 category="cat_a",

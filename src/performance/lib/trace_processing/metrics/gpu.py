@@ -5,7 +5,7 @@
 
 import itertools
 import logging
-from typing import MutableSequence
+from collections.abc import MutableSequence
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_utils

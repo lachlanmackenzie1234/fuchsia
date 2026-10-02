@@ -16,16 +16,18 @@ import inspect as py_inspect
 import json
 import logging
 import pathlib
-from collections.abc import Collection
-from typing import (
-    Any,
-    Callable,
+from collections.abc import (
+    Collection,
     Mapping,
     MutableMapping,
     MutableSequence,
+    Sequence,
+)
+from typing import (
+    Any,
+    Callable,
     NotRequired,
     Self,
-    Sequence,
     TypeAlias,
     TypedDict,
 )
