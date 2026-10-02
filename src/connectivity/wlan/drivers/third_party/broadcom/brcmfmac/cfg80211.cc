@@ -62,6 +62,7 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/fwil_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/inspect/device_inspect.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/linuxisms.h"
+#include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/locks.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/proto.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/stats.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/workqueue.h"
@@ -3697,6 +3698,10 @@ static fuchsia_wlan_fullmac_wire::StopResult brcmf_cfg80211_stop_ap(struct net_d
   struct brcmf_join_params join_params;
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
+  // Stop the timer and cancel pending timeout work.
+  cfg->ap_start_timer->Stop();
+  cfg->ap_start_timeout_work.Cancel();
+
   if (!brcmf_test_bit(brcmf_vif_status_bit_t::AP_CREATED, &ifp->vif->sme_state) &&
       !brcmf_test_bit(brcmf_vif_status_bit_t::AP_START_PENDING, &ifp->vif->sme_state)) {
     BRCMF_INFO("attempt to stop already stopped AP");
@@ -4412,8 +4417,17 @@ static void brcmf_if_start_conf(net_device* ndev, fuchsia_wlan_fullmac_wire::Sta
 static void brcmf_ap_start_timeout_worker(WorkItem* work) {
   struct brcmf_cfg80211_info* cfg =
       containerof(work, struct brcmf_cfg80211_info, ap_start_timeout_work);
+  ScopedSharedReadLock lock(cfg->pub->if_mutex);
   struct net_device* ndev = cfg_to_softap_ndev(cfg);
+  if (ndev == nullptr) {
+    BRCMF_ERR("AP interface already deleted, ignoring AP start timeout.");
+    return;
+  }
   struct brcmf_if* ifp = ndev_to_if(ndev);
+  if (!ifp) {
+    BRCMF_ERR("ifp is null in ap_start_timeout_worker, interface may already be deleted.");
+    return;
+  }
 
   // Indicate status only if AP start pending is set
   if (brcmf_test_and_clear_bit(brcmf_vif_status_bit_t::AP_START_PENDING, &ifp->vif->sme_state)) {
