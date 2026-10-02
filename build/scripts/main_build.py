@@ -281,6 +281,11 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
 def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
     """Scans the active build invocation's log directory for rsproxy diagnostic logs.
 
+    Collects direct top-level rsproxy logs as well as recursively discovered sub-build
+    rsproxy logs. Note: Sub-build log isolation assumes that sub-build directory basenames
+    do not collide across different paths in the build graph (as structured by
+    build/resultstore/fuchsia-rsproxy-wrap.sh).
+
     Args:
         log_dir: Path to the active build invocation's log directory.
 
@@ -295,22 +300,13 @@ def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
         return resultstore_metadata
 
     diagnostic_logs = {}
-    rsproxy_names = ["rsproxy.INFO", "rsproxy.WARNING", "rsproxy.ERROR"]
+    rsproxy_names = {"rsproxy.INFO", "rsproxy.WARNING", "rsproxy.ERROR"}
 
-    # 1. Collect direct logs under rsproxy_logs.
-    for name in rsproxy_names:
-        candidate = rsproxy_log_dir / name
-        if candidate.exists():
-            diagnostic_logs[name] = str(candidate.resolve())
-
-    # 2. Collect nested subbuild-specific logs under subdirectories.
-    for item in rsproxy_log_dir.iterdir():
-        if item.is_dir():
-            for name in rsproxy_names:
-                candidate = item / name
-                if candidate.exists():
-                    rel_path = candidate.relative_to(rsproxy_log_dir)
-                    diagnostic_logs[str(rel_path)] = str(candidate.resolve())
+    # Recursively collect direct and nested sub-build rsproxy logs.
+    for candidate in sorted(rsproxy_log_dir.rglob("rsproxy.*")):
+        if candidate.is_file() and candidate.name in rsproxy_names:
+            rel_path = candidate.relative_to(rsproxy_log_dir)
+            diagnostic_logs[str(rel_path)] = str(candidate.resolve())
 
     if diagnostic_logs:
         resultstore_metadata["diagnostic_logs"] = diagnostic_logs

@@ -2329,6 +2329,14 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
             metadata = main_build._collect_resultstore_metadata(log_dir)
             self.assertEqual(metadata, {})
 
+    def test_collect_resultstore_metadata_empty_rsproxy_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = pathlib.Path(tmpdir)
+            rsproxy_log_dir = log_dir / "rsproxy_logs"
+            main_build.mkdir(rsproxy_log_dir)
+            metadata = main_build._collect_resultstore_metadata(log_dir)
+            self.assertEqual(metadata, {})
+
     def test_collect_resultstore_metadata_with_logs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = pathlib.Path(tmpdir)
@@ -2347,6 +2355,19 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
             subbuild_rsproxy_info = subbuild_dir / "rsproxy.INFO"
             main_build.write_text(subbuild_rsproxy_info, "subbuild info")
 
+            # Create multi-level deeply nested subbuild rsproxy files
+            deep_subbuild_dir = rsproxy_log_dir / "nested" / "deep_subbuild"
+            main_build.mkdir(deep_subbuild_dir)
+            deep_subbuild_rsproxy_info = deep_subbuild_dir / "rsproxy.INFO"
+            main_build.write_text(
+                deep_subbuild_rsproxy_info, "deep subbuild info"
+            )
+
+            # Create unrelated file matching rsproxy.* pattern that should be ignored
+            main_build.write_text(
+                rsproxy_log_dir / "rsproxy.other.log", "unrelated"
+            )
+
             metadata = main_build._collect_resultstore_metadata(log_dir)
 
             self.assertIn("diagnostic_logs", metadata)
@@ -2361,11 +2382,17 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
                 str(rsproxy_err.resolve()),
             )
             self.assertNotIn("rsproxy.WARNING", diagnostic_logs)
+            self.assertNotIn("rsproxy.other.log", diagnostic_logs)
 
-            # Verify subbuild nested logs are captured via path-joining and iterdir
+            # Verify subbuild nested logs are captured
             self.assertEqual(
                 diagnostic_logs["my_subbuild/rsproxy.INFO"],
                 str(subbuild_rsproxy_info.resolve()),
+            )
+            # Verify multi-level nested subbuild logs are captured recursively
+            self.assertEqual(
+                diagnostic_logs["nested/deep_subbuild/rsproxy.INFO"],
+                str(deep_subbuild_rsproxy_info.resolve()),
             )
 
 
