@@ -99,12 +99,6 @@ source_set("vm") {
     "LZ4_STATIC_LINKING_ONLY",
     "LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
   ]
-
-  # GCC figures out some cases where we have a global variable that's used as a
-  # RefPtr and so appears like it might be passed to delete.  We always leak
-  # the reference so it will never actually be called, but the compiler can't
-  # figure that out statically so we must disable its warning.
-  configs += [ ":suppress-nonheap-warning" ]
 }
 
 kernel_bindgen_crate("scanner-bindings") {
@@ -1694,13 +1688,6 @@ kernel_rust_mod("vm-rs-unittests") {
     ":test-helper-bindings",
     "//zircon/kernel/lib/unittest:unittest-rs",
   ]
-}
-
-config("suppress-nonheap-warning") {
-  visibility = [ ":*" ]
-  if (is_gcc) {
-    cflags = [ "-Wno-free-nonheap-object" ]
-  }
 }
 
 source_set("tests") {

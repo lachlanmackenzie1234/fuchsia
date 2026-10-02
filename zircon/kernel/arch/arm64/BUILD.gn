@@ -79,17 +79,7 @@ if (toolchain_environment == "kernel.phys" ||
   # must be told to also disable it.
   compiler_config("shadow-call-stack-abi") {
     if (is_gcc) {
-      if (toolchain_environment == "kernel") {
-        rust_target_edits = [
-          {
-            key = "default-sanitizers"
-            action = "erase"
-            value = [ "shadow-call-stack" ]
-          },
-        ]
-      } else {
-        rustflags = [ "-Zsanitizer=no-shadow-call-stack" ]
-      }
+      rustflags = [ "-Zsanitizer=no-shadow-call-stack" ]
     }
   }
 
