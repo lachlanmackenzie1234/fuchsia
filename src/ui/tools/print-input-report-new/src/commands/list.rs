@@ -158,23 +158,29 @@ mod tests {
     fn setup_fake_service_directory() -> fidl_legacy_io::DirectoryProxy {
         let service_dir = vfs::pseudo_directory! {
             "instance1" => vfs::pseudo_directory! {
-                "input_device" => FakeInputDevice::new(fidl_input_report::DeviceInformation {
-                    vendor_id: Some(0x1234),
-                    product_id: Some(0x5678),
-                    manufacturer_name: Some("Manuf1".to_string()),
-                    product_name: Some("Prod1".to_string()),
-                    serial_number: Some("Ser1".to_string()),
+                "input_device" => FakeInputDevice::new(fidl_input_report::DeviceDescriptor {
+                    device_information: Some(fidl_input_report::DeviceInformation {
+                        vendor_id: Some(0x1234),
+                        product_id: Some(0x5678),
+                        manufacturer_name: Some("Manuf1".to_string()),
+                        product_name: Some("Prod1".to_string()),
+                        serial_number: Some("Ser1".to_string()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 })
                 .serve(),
             },
             "instance2" => vfs::pseudo_directory! {
-                "input_device" => FakeInputDevice::new(fidl_input_report::DeviceInformation {
-                    vendor_id: Some(0xaaaa),
-                    product_id: Some(0xbbbb),
-                    manufacturer_name: Some("Manuf2".to_string()),
-                    product_name: Some("Prod2".to_string()),
-                    serial_number: Some("Ser2".to_string()),
+                "input_device" => FakeInputDevice::new(fidl_input_report::DeviceDescriptor {
+                    device_information: Some(fidl_input_report::DeviceInformation {
+                        vendor_id: Some(0xaaaa),
+                        product_id: Some(0xbbbb),
+                        manufacturer_name: Some("Manuf2".to_string()),
+                        product_name: Some("Prod2".to_string()),
+                        serial_number: Some("Ser2".to_string()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 })
                 .serve(),
