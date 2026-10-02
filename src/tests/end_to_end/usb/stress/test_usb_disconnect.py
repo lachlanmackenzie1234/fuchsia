@@ -12,6 +12,7 @@ from honeydew import errors
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.typing import custom_types
 from mobly import asserts, signals, test_runner
+from usb_lib.link_speed import assert_link_speed
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
         mdns_timeout_sec (int, optional): How long each mDNS check waits for
             the device to be discovered. Defaults to 12, which allows one
             retry, since ffx re-sends its mDNS query every 10s.
+        expected_usb_link_speed (str, optional): When set, e.g. to "high",
+            assert the USB link negotiated this speed after every reconnect.
     """
 
     USB_POWER_HUB_REQUIRED: bool = True
@@ -151,10 +154,16 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             _LOGGER.info("Device is successfully back online.")
             self.dut.health_check()
 
-        # Outside the `finally` block so that an mDNS failure cannot mask a
-        # disconnect failure.
+        # Outside the `finally` block so that an mDNS or link speed failure
+        # cannot mask a disconnect failure.
         if self.user_params.get("verify_mdns", False):
             self._verify_mdns_advertisement(f"iteration {iteration}")
+        if expected_speed := self.user_params.get("expected_usb_link_speed"):
+            assert_link_speed(
+                self.dut,
+                expected=expected_speed,
+                phase=f"iteration {iteration}",
+            )
 
         _LOGGER.info(
             "Successfully ended the Usb Disconnect test iteration# %s",
