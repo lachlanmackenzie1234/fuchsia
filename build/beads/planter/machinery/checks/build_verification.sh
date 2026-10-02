@@ -772,6 +772,48 @@ if skip_build:
     print(json.dumps(findings, indent=2))
     sys.exit(0)
 
+FROM_TARGET = re.compile(r"\(from target (?:@@?[\w.~+-]*)?(//[^\s)]+)\)")
+
+
+def unrelated_bazel_failure(output):
+    """Returns a note when `fx build` failed only in Bazel actions of targets that live in another git
+    repository than the change and have no Bazel dependency path to any changed package (typically a
+    checkout whose repositories are out of sync), else None. Any native Ninja failure, unparsable
+    output, change to shared .bzl/MODULE.bazel files, or query error keeps the failure an ERROR."""
+    targets = sorted(set(FROM_TARGET.findall(output)))
+    if not targets or not bazel_dirs:
+        return None
+    if any(p.endswith((".bzl", "MODULE.bazel")) for p in changed):
+        return None
+    lines = output.splitlines()
+    for i, l in enumerate(lines):
+        if l.startswith("FAILED:") and not (i + 1 < len(lines) and "bazel_ninja_delayed_actions.py" in lines[i + 1]):
+            return None
+    main_top = "".join(git_lines(["rev-parse", "--show-toplevel"]))
+    for t in targets:
+        path = os.path.join(workdir, t[2:].split(":")[0])
+        if not os.path.isdir(path):
+            return None
+        try:
+            top = subprocess.check_output(["git", "-C", path, "rev-parse", "--show-toplevel"],
+                                          stderr=subprocess.DEVNULL, text=True).strip()
+        except Exception:
+            return None
+        if not top or top == main_top:
+            return None
+    expr = "somepath(set({}), set({}))".format(" ".join(targets), " ".join(f"//{d}:*" for d in bazel_dirs))
+    try:
+        proc = subprocess.run([fx, "bazel", "query", expr], cwd=workdir, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return None
+    if proc.returncode != 0 or proc.stdout.strip():
+        return None
+    return (f"the failing Bazel targets ({' '.join(targets)}) are in another git repository and have no "
+            "dependency path to a changed package, so the failure predates the change (out-of-sync checkout). "
+            "Do not edit them; the changed packages are still verified by the remaining steps.")
+
+
 failed = set()
 step_findings_start = len(findings)
 for name, cmd in steps:
@@ -819,6 +861,19 @@ for name, cmd in steps:
         output += f"\n(timed out after {timeout}s)"
     if code == 0:
         continue
+    if name == "gn_build":
+        note = unrelated_bazel_failure(output)
+        if note:
+            text, file, line = summarize(output, LOCATION)
+            findings.append({
+                "source": "build_verification",
+                "category": "preexisting_failure_gn_build",
+                "severity": "INFO",
+                "file": file,
+                "line": line,
+                "message": f"`{fmt_cmd(cmd)}` failed ({code}) outside the change: {note}\n{text}",
+            })
+            continue
     failed.add(name)
     text, file, line = summarize(output, BUILD_FILE_LOCATION if name == "gn_build_dependents" else LOCATION)
     findings.append({

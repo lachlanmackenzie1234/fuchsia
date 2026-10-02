@@ -153,6 +153,13 @@ def is_allowed_scope(path: str) -> bool:
             return True
     if norm in ("tools/BUILD.gn", "src/BUILD.gn", "sdk/BUILD.gn"):
         return True
+    # Build files under bundles/ wire migrated targets and tests into CQ (test groups,
+    # tests_barrier / bazel_target_test_suite_barrier of builder groups), which migrations
+    # may need so exported bazel_test_suite tests reach tests.json only with their bundle.
+    if norm.startswith("bundles/") and (
+        os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel") or norm.endswith(".gni")
+    ):
+        return True
     return is_rust_crates_build_file(norm)
 
 

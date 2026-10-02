@@ -24,7 +24,9 @@ set -euo pipefail
 #    builds in Bazel but breaks GN links. Pure forwarding groups are exempt.
 # 2. dep_link_settings_dropped (error): a removed dependency carries
 #    link-affecting settings (public_configs, all_dependent_configs, ldflags,
-#    libs, rustflags, complete_static_lib).
+#    libs, rustflags, complete_static_lib). A removed test_deps entry of a
+#    target that no longer sets with_unit_tests (its unit test moved to Bazel)
+#    is exempt: only GN's generated <name>_test executable linked it.
 # 3. public_dep_forwarding_lost (error): a dependency with public_configs was a
 #    public_deps edge and is now reached only through private edges, and no
 #    group the target newly depends on re-exports those configs as
@@ -370,7 +372,10 @@ for pkg in sorted(candidate_dirs):
         # BUILD.gn deleted (full removal): no GN target can depend on this package anymore.
         continue
     new_file = gn_rel
-    new_targets = {n: {"line": t["line"], "tmpl": t["tmpl"], "deps": gn_deps(t, pkg)} for n, t in gn_targets(after).items()}
+    new_targets = {
+        n: {"line": t["line"], "tmpl": t["tmpl"], "deps": gn_deps(t, pkg), "bodies": t["bodies"]}
+        for n, t in gn_targets(after).items()
+    }
     package_now = set().union(*[set().union(*t["deps"].values()) for t in new_targets.values() if t["deps"]])
 
     for name, old_t in sorted(old_targets.items()):
@@ -397,6 +402,11 @@ for pkg in sorted(candidate_dirs):
             kinds = [a for a in GN_DEP_ATTRS if label in old_deps.get(a, ())]
             if kinds == ["test_deps"] and label in package_now:
                 continue  # Moved to another target, e.g. `with_unit_tests` replaced by an explicit test target.
+            # test_deps only reach GN's generated `<name>_test` executable; if GN no longer builds it (the
+            # unit test moved to Bazel), no GN link can lose the dependency's link settings.
+            gn_unit_test_gone = kinds == ["test_deps"] and not any(
+                re.search(r"\bwith_unit_tests\s*=\s*true\b", b) for b in new_targets[name]["bodies"]
+            )
             info, exists_now = resolve(label)
             subs = sorted(l for l in added if split(l)[0] == dep_pkg)
             public = "public_deps" in kinds
@@ -432,7 +442,7 @@ for pkg in sorted(candidate_dirs):
                         f"`fx bazel2gn -d {pkg}`."
                     ),
                 })
-            elif info and info["link"] and exists_now and not subs:
+            elif info and info["link"] and exists_now and not subs and not gn_unit_test_gone:
                 findings.append({
                     "source": "gn_dep_parity",
                     "category": "dep_link_settings_dropped",

@@ -43,6 +43,7 @@ gn_file = os.path.join(workdir, target_pkg, "BUILD.gn")
 
 bazel_targets = []
 package_targets = set()
+fidl_targets = set()
 alias_map = {}
 if os.path.isfile(bazel_file):
     try:
@@ -66,6 +67,8 @@ if os.path.isfile(bazel_file):
                     bazel_targets.append(tname)
                     if func in ("fx_package", "fuchsia_package"):
                         package_targets.add(tname)
+                    if func == "fidl_library":
+                        fidl_targets.add(tname)
                     if func == "alias" and actual and actual.startswith(":"):
                         alias_map[tname] = actual[1:]
     except Exception:
@@ -224,6 +227,12 @@ for fpath in sorted(set(files)):
             per_target_rdeps[sub].add(caller_pkg)
         elif sub == default_target and len(bazel_targets) == 1:
             per_target_rdeps[bazel_targets[0]].add(caller_pkg)
+        else:
+            # GN fidl() callers depend on generated binding sub-targets
+            # (<name>_rust, <name>_cpp, <name>_hlcpp, ...) of the fidl_library.
+            owners = [t for t in fidl_targets if sub.startswith(t + "_")]
+            if owners:
+                per_target_rdeps[max(owners, key=len)].add(caller_pkg)
 
 for alias_name, actual_name in alias_map.items():
     if alias_name in per_target_rdeps and actual_name in per_target_rdeps:

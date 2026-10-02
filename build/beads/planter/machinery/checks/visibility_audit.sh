@@ -278,7 +278,7 @@ for fpath in sorted(matched_files):
     except Exception:
         pass
 
-def compute_package_rdeps(pkg_path, bazel_targets, package_targets, alias_map):
+def compute_package_rdeps(pkg_path, bazel_targets, package_targets, alias_map, fidl_targets=None):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
     gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
@@ -360,6 +360,12 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, alias_map):
                 per_target_rdeps[sub].add(norm_caller)
             elif sub == default_target and len(bazel_targets) == 1:
                 per_target_rdeps[bazel_targets[0]].add(norm_caller)
+            else:
+                # GN fidl() callers depend on generated binding sub-targets
+                # (<name>_rust, <name>_cpp, <name>_hlcpp, ...) of the fidl_library.
+                owners = [t for t in (fidl_targets or ()) if sub.startswith(t + "_")]
+                if owners:
+                    per_target_rdeps[max(owners, key=len)].add(norm_caller)
 
     for alias_name, actual_name in alias_map.items():
         if alias_name in per_target_rdeps and actual_name in per_target_rdeps:
@@ -407,6 +413,7 @@ for rel_path in sorted(candidate_files):
     var_table = {}
     bazel_targets = []
     package_targets = set()
+    fidl_targets = set()
     alias_map = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -432,11 +439,13 @@ for rel_path in sorted(candidate_files):
                 bazel_targets.append(tname)
                 if func in ("fx_package", "fuchsia_package"):
                     package_targets.add(tname)
+                if func == "fidl_library":
+                    fidl_targets.add(tname)
                 if func == "alias" and actual and actual.startswith(":"):
                     alias_map[tname] = actual[1:]
 
     true_rdeps, per_target_rdeps, vis_only_pkgs, gn_only_pkgs, has_macro_injected_rdeps = compute_package_rdeps(
-        pkg_path, bazel_targets, package_targets, alias_map
+        pkg_path, bazel_targets, package_targets, alias_map, fidl_targets
     )
 
     has_pkg_default_vis = False

@@ -14,7 +14,8 @@ set -euo pipefail
 # the task's commit, plus uncommitted changes) plus untracked files.
 #
 # Allowed paths (build-definition surface):
-#   - BUILD.gn, BUILD.bazel, BUILD (any directory)
+#   - BUILD.gn, BUILD.bazel, BUILD, *.BUILD.bazel, *.BUILD (any directory, including
+#     workspace/repo root build files such as build/bazel/toplevel.BUILD.bazel)
 #   - *.gni, *.bzl (build registration lists / macros, e.g. verification lists)
 #   - MODULE.bazel, WORKSPACE*, *.bazelrc
 #   - a newly added (not modified) test component manifest `.cml` that an
@@ -37,7 +38,7 @@ workdir = os.path.abspath(sys.argv[1])
 target_dir = sys.argv[2].strip().strip("/")
 
 ALLOWED_BASENAMES = {"BUILD.gn", "BUILD.bazel", "BUILD", "MODULE.bazel"}
-ALLOWED_SUFFIXES = (".gni", ".bzl", ".bazelrc")
+ALLOWED_SUFFIXES = (".gni", ".bzl", ".bazelrc", ".BUILD.bazel", ".BUILD")
 ALLOWED_PREFIX_BASENAMES = ("WORKSPACE",)
 
 

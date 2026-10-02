@@ -9,8 +9,14 @@
         },
         {
             "name": "gn_dep_parity",
-            "description": "Compares every migrated GN target's dependency labels and edge kinds with its BUILD.gn at $PLANTER_CHANGE_BASE, in every changed package that keeps a BUILD.gn (following GN groups the target newly depends on): errors when a dependency was swapped for a sibling target of the same package (e.g. a GN-only *_static wrapper carrying link settings replaced by the library it wraps), when a removed dependency carried link-affecting settings, or when a public_deps edge with public_configs became private without the configs being re-exported as all_dependent_configs (bazel2gn emits Rust deps as private GN deps); reports dependencies no target of the package uses anymore as INFO.",
+            "description": "Compares every migrated GN target's dependency labels and edge kinds with its BUILD.gn at $PLANTER_CHANGE_BASE, in every changed package that keeps a BUILD.gn (following GN groups the target newly depends on): errors when a dependency was swapped for a sibling target of the same package (e.g. a GN-only *_static wrapper carrying link settings replaced by the library it wraps), when a removed dependency carried link-affecting settings (except a test_deps entry of a target whose GN unit test moved to Bazel, i.e. that no longer sets with_unit_tests), or when a public_deps edge with public_configs became private without the configs being re-exported as all_dependent_configs (bazel2gn emits Rust deps as private GN deps); reports dependencies no target of the package uses anymore as INFO.",
             "script_file": "gn_dep_parity.sh",
+            "enabled": true
+        },
+        {
+            "name": "gn_attr_parity",
+            "description": "Errors when a GN target of a changed package had a GN-only attribute that bazel2gn cannot emit (exclude_toolchain_tags, configs -=, disable_syslog_backend) at $PLANTER_CHANGE_BASE and the target in the current BUILD.gn lost it (converted by bazel2gn, removed, or BUILD.gn deleted): such targets stay hand-written above the BAZEL2GN SENTINEL (migration_sanity accepts the Bazel # @bazel2gn:skip for them), otherwise coverage builders fail to link or excluded tests run in sanitizer builders. Exception: rustc_library/rustc_staticlib pass exclude_toolchain_tags only to their with_unit_tests test and rustc_macro ignores it, so for them losing it is accepted when the base target had no with_unit_tests or a hand-written GN <name>_test keeps the same values.",
+            "script_file": "gn_attr_parity.sh",
             "enabled": true
         },
         {
@@ -27,7 +33,7 @@
         },
         {
             "name": "build_only_scope",
-            "description": "Fails if the migration change (HEAD commit, uncommitted, or untracked files) modifies any non-build file (anything other than BUILD.gn/BUILD.bazel/BUILD/*.gni/*.bzl/MODULE.bazel). Migrations must not edit source code. A newly added non-shard .cml file is allowed when the nearest BUILD.bazel declares an fx_test_component whose manifest points at it (hand-written test manifest replacing the one GN's fuchsia_unittest_package generated, for C++ and Rust tests alike).",
+            "description": "Fails if the migration change (HEAD commit, uncommitted, or untracked files) modifies any non-build file (anything other than BUILD.gn/BUILD.bazel/BUILD/*.BUILD.bazel/*.BUILD/*.gni/*.bzl/MODULE.bazel). Migrations must not edit source code. A newly added non-shard .cml file is allowed when the nearest BUILD.bazel declares an fx_test_component whose manifest points at it (hand-written test manifest replacing the one GN's fuchsia_unittest_package generated, for C++ and Rust tests alike).",
             "script_file": "build_only_scope.sh",
             "enabled": true
         },
@@ -62,8 +68,14 @@
             "enabled": true
         },
         {
+            "name": "gn_format",
+            "description": "Mirrors the CQ static-checks gn_format step: runs `gn format --dry-run` on every GN file (BUILD.gn, *.gni, *.gn) the change adds or modifies anywhere in the checkout (including verification .gni lists and parent groups edited by hand) and errors when one is unformatted or unparsable.",
+            "script_file": "gn_format.sh",
+            "enabled": true
+        },
+        {
             "name": "build_verification",
-            "description": "Builds the change: `fx build` (the configured product graph, which can leave out the migrated packages' tests and many GN dependents), then `fx build <labels>` for GN targets the product graph may leave out (the changed packages' :tests groups and test binaries, and GN tests, binaries and libraries in other packages that depend on a changed package, limited to labels in the GN graph; catches GN-only link failures such as undefined operator new after a dependency label or edge changed), `fx build --host //build:bazel2gn_verifications` (BUILD.gn/BUILD.bazel drift), and `fx bazel build --config=fuchsia_platform` / `--config=host` of `//<dir>:all` for every changed directory with a BUILD.bazel (excluding `_validate_json_action` targets such as `<fidl>_validate_ir_json` from top-level `:all` so `assert_no_deps_aspect` does not crash on their scalar `data` attribute), plus commit `Test:` footer validation for consolidating to `<= 3` `Test:` lines, unconfigured GN labels, bash syntax errors (unquoted toolchain parentheses), and unexcluded `_validate_json_action` targets. Set PLANTER_SKIP_BUILD=1 to skip builds, PLANTER_BUILD_DRY_RUN=1 to list the shell-quoted commands. Also runs `fx bazel test --config=host` on the changed packages' Bazel host tests (host_rustc_test, wrap_host_rust_test, host_go_test, host_py_test, host_test), and after the GN build reports as INFO whether each exported bazel_test_suite test reached <build dir>/tests.json (fx_test is only built, never run with fx bazel test).",
+            "description": "Builds the change: `fx build` (the configured product graph, which can leave out the migrated packages' tests and many GN dependents), then `fx build <labels>` for GN targets the product graph may leave out (the changed packages' :tests groups and test binaries, and GN tests, binaries and libraries in other packages that depend on a changed package, limited to labels in the GN graph; catches GN-only link failures such as undefined operator new after a dependency label or edge changed), `fx build --host //build:bazel2gn_verifications` (BUILD.gn/BUILD.bazel drift), and `fx bazel build --config=fuchsia_platform` / `--config=host` of `//<dir>:all` for every changed directory with a BUILD.bazel (excluding `_validate_json_action` targets such as `<fidl>_validate_ir_json` from top-level `:all` so `assert_no_deps_aspect` does not crash on their scalar `data` attribute), plus commit `Test:` footer validation for consolidating to `<= 3` `Test:` lines, unconfigured GN labels, bash syntax errors (unquoted toolchain parentheses), and unexcluded `_validate_json_action` targets. Set PLANTER_SKIP_BUILD=1 to skip builds, PLANTER_BUILD_DRY_RUN=1 to list the shell-quoted commands. Also runs `fx bazel test --config=host` on the changed packages' Bazel host tests (host_rustc_test, wrap_host_rust_test, host_go_test, host_py_test, host_test), and after the GN build reports as INFO whether each exported bazel_test_suite test reached <build dir>/tests.json (fx_test is only built, never run with fx bazel test). When `fx build` fails only in Bazel actions of targets in another git repository than the change that have no Bazel dependency path (fx bazel query somepath) to any changed package, and the change touches no .bzl/MODULE.bazel, the failure is reported as INFO preexisting_failure_gn_build (out-of-sync checkout) and the remaining steps still verify the change.",
             "script_file": "build_verification.sh",
             "enabled": true
         }

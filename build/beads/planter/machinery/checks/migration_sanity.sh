@@ -231,6 +231,10 @@ def parse_bazel_targets(bazel_path):
     return targets
 
 
+# GN-only target attributes bazel2gn cannot emit; such a target stays hand-written above the sentinel.
+GN_ONLY_ATTR_RE = re.compile(r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=)")
+
+
 def has_skip_comment(lines, lineno):
     """Whether the 1-based line has a trailing `# @bazel2gn:skip` or the line above is one."""
     if 0 < lineno <= len(lines) and "#" in lines[lineno - 1]:
@@ -326,6 +330,8 @@ for pkg_dir in sorted(candidate_dirs):
             )
             if tname in packaged_binaries and not in_pre_gn and not ref_in_pre_gn:
                 continue
+            if in_pre_gn and GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2]):
+                continue  # bazel2gn cannot emit its GN-only attributes (see gn_attr_parity).
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
             ):
@@ -353,7 +359,7 @@ for pkg_dir in sorted(candidate_dirs):
                 })
 
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
-            if gtmpl in CONVERTIBLE_GN_TEMPLATES:
+            if gtmpl in CONVERTIBLE_GN_TEMPLATES and not GN_ONLY_ATTR_RE.search(gbody):
                 if (
                     gtmpl == "executable"
                     and re.search(r"\btestonly\s*=\s*true\b", gbody)
@@ -656,6 +662,11 @@ for pkg_dir in sorted(candidate_dirs):
             labels = []
             for lm in re.finditer(r"\b(?:deps|test_components)\s*\+?=\s*\[([^\]]*)\]", gbody):
                 labels += re.findall(r'"([^"]+)"', lm.group(1))
+            for l in labels:
+                local = l[1:] if l.startswith(":") else ""
+                owner = gn_info["pre_targets"].get(local) or gn_info["pre_targets"].get(re.sub(r"_test$", "", local))
+                if owner and GN_ONLY_ATTR_RE.search(owner[2]):
+                    blockers.append("GN-only attributes (see gn_attr_parity)")
             # Unknown or unbuildable tests never trigger it.
             langs = {test_language(l) for l in labels}
             if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
@@ -846,7 +857,18 @@ for pkg_dir in sorted(candidate_dirs):
             if gn_info and gn_info["post_text"]:
                 for pm in re.finditer(r'^\s*[a-zA-Z0-9_]+\(\s*"([^"]+)"\s*\)\s*\{', gn_info["post_text"], re.M):
                     gn_now_targets.add(pm.group(1))
-            if parent_info:
+            base_gn_targets = set()
+            try:
+                base_gn_text = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{change_base}:{gn_rel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                for bm in re.finditer(r'^\s*[a-zA-Z0-9_]+\(\s*"([^"]+)"\s*\)\s*\{', base_gn_text, re.M):
+                    base_gn_targets.add(bm.group(1))
+            except Exception:
+                pass
+            if parent_info and base_gn_targets:
                 ref_re = re.compile(
                     r'"((?://' + re.escape(pkg_dir) + r'|' + re.escape(child_name) + r')(?::([A-Za-z0-9_.-]+))?)"'
                 )
@@ -854,7 +876,7 @@ for pkg_dir in sorted(candidate_dirs):
                     for rm in ref_re.finditer(pbody):
                         raw_ref = rm.group(1)
                         sub_t = rm.group(2) or child_name
-                        if sub_t not in gn_now_targets:
+                        if sub_t in base_gn_targets and sub_t not in gn_now_targets:
                             findings.append({
                                 "source": "migration_sanity",
                                 "category": "dangling_parent_gn_package_dep",
