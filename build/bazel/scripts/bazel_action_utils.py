@@ -86,7 +86,6 @@ class BazelTargetInfo(object):
     gn_targets_manifest: str
     stamp_path: str
     update_rust_project: bool = False
-    copy_debug_symbols: bool = False
     extra_bazel_targets_file: str | None = None
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
@@ -120,7 +119,6 @@ class BazelTargetInfosMap(object):
             gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
             update_rust_project = entry["update_rust_project"]
-            copy_debug_symbols = entry.get("copy_debug_symbols", False)
             extra_bazel_targets_file = entry.get("extra_bazel_targets_file")
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
@@ -132,7 +130,6 @@ class BazelTargetInfosMap(object):
                     gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,
                     update_rust_project=update_rust_project,
-                    copy_debug_symbols=copy_debug_symbols,
                     extra_bazel_targets_file=extra_bazel_targets_file,
                 ),
             )
