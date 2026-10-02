@@ -26,6 +26,7 @@ use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_reachability as freachability;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fuchsia_inspect::Property as _;
 use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect as _};
 pub use reachability::ReachabilityWatcherConnectionId;
 use reachability::{ReachabilityHandler, ReachabilityStream};
@@ -1234,6 +1235,9 @@ impl OperationsMetrics {
     }
 }
 
+/// Name of the Inspect property recording how many networks are registered.
+const NETWORK_COUNT_PROPERTY_NAME: &str = "network_count";
+
 #[derive(Default)]
 pub struct NetpolNetworksService {
     // The current generation
@@ -1263,6 +1267,10 @@ pub struct NetpolNetworksService {
     metrics: OperationsMetrics,
     // Inspect node for network topology & DNS servers
     networks_inspect_node: Option<fuchsia_inspect::Node>,
+    // The number of registered networks. Recorded alongside the network
+    // registry node rather than within it so that a registry that holds no
+    // networks can be told apart from one whose contents are missing.
+    network_count: Option<fuchsia_inspect::UintProperty>,
 }
 
 impl NetpolNetworksService {
@@ -1280,10 +1288,20 @@ impl NetpolNetworksService {
         parent: &fuchsia_inspect::Node,
         name: impl AsRef<str>,
     ) -> Self {
-        let network_registry_node = parent.create_child(name.as_ref());
-        self.network_registry.update_inspect(&network_registry_node);
-        self.networks_inspect_node = Some(network_registry_node);
+        self.networks_inspect_node = Some(parent.create_child(name.as_ref()));
+        self.network_count = Some(parent.create_uint(NETWORK_COUNT_PROPERTY_NAME, 0));
+        self.update_network_inspect();
         self
+    }
+
+    /// Records the current contents of the network registry to Inspect.
+    fn update_network_inspect(&self) {
+        if let Some(networks_node) = &self.networks_inspect_node {
+            self.network_registry.update_inspect(networks_node);
+        }
+        if let Some(network_count) = &self.network_count {
+            network_count.set(self.network_registry.networks.len() as u64);
+        }
     }
 
     pub fn with_inspect(
@@ -2004,9 +2022,7 @@ impl NetpolNetworksService {
             self.metrics.delegated.as_mut().default_network_id =
                 self.network_registry.starnix_default.map(|id| id.get().get() as u32);
         }
-        if let Some(networks_node) = &self.networks_inspect_node {
-            self.network_registry.update_inspect(networks_node);
-        }
+        self.update_network_inspect();
 
         if let UpdateApplied::None = event {
             if default_changed.is_none() {
@@ -3548,12 +3564,14 @@ mod tests {
             .expect("failed to initialize inspect");
         inspector.root().record(telemetry_node);
 
-        // Initial check: empty network_registry node
+        // Initial check: no networks, reported both as a zero count and as an
+        // empty network_registry node.
         let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
         assert_data_tree!(
             hierarchy,
             root: contains {
                 telemetry: contains {
+                    network_count: 0u64,
                     network_registry: {}
                 }
             }
@@ -3603,6 +3621,7 @@ mod tests {
             hierarchy,
             root: contains {
                 telemetry: contains {
+                    network_count: 2u64,
                     network_registry: {
                         default_network: "fuchsia:2",
                         starnix_default: "delegated:100",
@@ -3641,6 +3660,7 @@ mod tests {
             hierarchy,
             root: contains {
                 telemetry: contains {
+                    network_count: 2u64,
                     network_registry: {
                         default_network: "fuchsia:2",
                         starnix_default: "delegated:100",
@@ -3670,6 +3690,7 @@ mod tests {
             hierarchy,
             root: contains {
                 telemetry: contains {
+                    network_count: 1u64,
                     network_registry: {
                         default_network: "delegated:100",
                         starnix_default: "delegated:100",
@@ -3695,6 +3716,7 @@ mod tests {
             hierarchy,
             root: contains {
                 telemetry: contains {
+                    network_count: 0u64,
                     network_registry: {}
                 }
             }
