@@ -261,59 +261,61 @@ impl ThermalLoadDriver {
             loop {
                 // Read a new temperature value. Errors are logged but the polling loop will
                 // continue on the next iteration.
-                let (time, temperature) = match temperature_input
+                match temperature_input
                     .get_temperature(&sensor_name, &mut count, log_for_test)
                     .await
                 {
-                    Ok(load) => load,
+                    Ok((time, temperature)) => {
+                        if let Some(h) = history_inspect.as_ref() {
+                            h.borrow_mut().process_measurement(time, temperature);
+                        }
+
+                        // Compute the thermal load using the filtered temperature.
+                        let new_thermal_load =
+                            temperature_input.temperature_to_thermal_load(temperature.filtered);
+
+                        fuchsia_trace::counter!(
+                            c"power_manager",
+                            c"ThermalLoadDriver thermal_load",
+                            0,
+                            "sensor" => sensor_name.as_str(),
+                            "thermal_load" => new_thermal_load.0
+                        );
+
+                        input_inspect.log_thermal_load(new_thermal_load);
+
+                        if new_thermal_load >= ThermalLoad(100) {
+                            log_if_err!(
+                                this.initiate_thermal_shutdown(
+                                    &sensor_name,
+                                    temperature,
+                                    temperature_input.reboot_temperature,
+                                )
+                                .await,
+                                "Failed to initiate thermal shutdown"
+                            );
+                        } else {
+                            log_if_err!(
+                                this.send_message_to_many(
+                                    &this.thermal_load_notify_nodes,
+                                    &Message::UpdateThermalLoad(
+                                        new_thermal_load,
+                                        sensor_name.clone()
+                                    )
+                                )
+                                .await
+                                .into_iter()
+                                .collect::<Result<Vec<_>, _>>(),
+                                "Failed to send thermal load update"
+                            );
+                        }
+                    }
                     Err(e) => {
                         error!(
                             "Failed to get updated temperature for {} (err = {})",
                             sensor_name, e
                         );
-                        continue;
                     }
-                };
-
-                if let Some(h) = history_inspect.as_ref() {
-                    h.borrow_mut().process_measurement(time, temperature);
-                }
-
-                // Compute the thermal load using the filtered temperature.
-                let new_thermal_load =
-                    temperature_input.temperature_to_thermal_load(temperature.filtered);
-
-                fuchsia_trace::counter!(
-                    c"power_manager",
-                    c"ThermalLoadDriver thermal_load",
-                    0,
-                    "sensor" => sensor_name.as_str(),
-                    "thermal_load" => new_thermal_load.0
-                );
-
-                input_inspect.log_thermal_load(new_thermal_load);
-
-                if new_thermal_load >= ThermalLoad(100) {
-                    log_if_err!(
-                        this.initiate_thermal_shutdown(
-                            &sensor_name,
-                            temperature,
-                            temperature_input.reboot_temperature,
-                        )
-                        .await,
-                        "Failed to initiate thermal shutdown"
-                    );
-                } else {
-                    log_if_err!(
-                        this.send_message_to_many(
-                            &this.thermal_load_notify_nodes,
-                            &Message::UpdateThermalLoad(new_thermal_load, sensor_name.clone())
-                        )
-                        .await
-                        .into_iter()
-                        .collect::<Result<Vec<_>, _>>(),
-                        "Failed to send thermal load update"
-                    );
                 }
 
                 // Wait at the end of the loop to ensure early temperatures are captured.
@@ -938,6 +940,67 @@ mod tests {
         expect_thermal_load(&mock_thermal_load_receiver, 10, "fake_driver_1");
         expect_thermal_load(&mock_thermal_load_receiver, 20, "fake_driver_2");
         node_runner.iterate_with_temperature_inputs(&[5.0, 20.0]);
+    }
+
+    /// Tests that when reading temperature fails during polling, the polling loop logs the error
+    /// and waits for the poll interval before retrying, rather than busy-looping.
+    #[fuchsia::test]
+    fn test_polling_error_waits_for_interval() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+
+        let mut mock_maker = MockNodeMaker::new();
+        let system_shutdown_node = create_dummy_node();
+        let platform_metrics_node = create_dummy_node();
+        let mock_thermal_load_receiver = mock_maker.make("mock_thermal_load_receiver", vec![]);
+        let mock_temperature_handler = mock_maker.make("temperature_handler", vec![]);
+
+        expect_get_sensor_name(&mock_temperature_handler, "fake_driver");
+        expect_read_temperature(&mock_temperature_handler, 0.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver");
+
+        let build_fut = ThermalLoadDriverBuilder {
+            temperature_input_configs: vec![TemperatureInputConfig {
+                temperature_handler_node: mock_temperature_handler.clone(),
+                onset_temperature: Celsius(0.0),
+                reboot_temperature: Celsius(100.0),
+                poll_interval: Seconds(30.0),
+                polls_per_history_entry: 0,
+                num_history_entries: 0,
+                filter_time_constant: Seconds(1.0),
+                log_for_test: false,
+            }],
+            system_shutdown_node,
+            platform_metrics_node,
+            thermal_load_notify_nodes: vec![mock_thermal_load_receiver.clone()],
+            inspector: None,
+        }
+        .build();
+
+        futures::pin_mut!(build_fut);
+        let node = match exec.run_until_stalled(&mut build_fut) {
+            Ready(n) => n.unwrap(),
+            _ => panic!("ThermalLoadDriver not built"),
+        };
+
+        let mut node_runner =
+            NodeTestRunner::new(exec, node, vec![mock_temperature_handler.clone()]);
+
+        // Inject a read error from the temperature handler for the next poll.
+        mock_temperature_handler.add_msg_response_pair((
+            msg_eq!(ReadTemperature),
+            Err(format_err!("Driver read failed").into()),
+        ));
+
+        // Advance to the timer and run the polling task. If the polling loop were to
+        // busy-loop on error, it would immediately attempt another read on the mock node
+        // (which has no further expected messages) and panic. With proper interval waiting,
+        // it logs the error and stalls on the next timer.
+        node_runner.wake_and_run_polling_tasks();
+
+        // Advance time by another interval with a successful reading.
+        expect_read_temperature(&mock_temperature_handler, 50.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 50, "fake_driver");
+        node_runner.wake_and_run_polling_tasks();
     }
 
     /// Tests that when any of the temperature handler input nodes exceed `reboot_temperature`, then
