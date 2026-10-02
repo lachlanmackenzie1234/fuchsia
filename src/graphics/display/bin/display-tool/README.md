@@ -129,24 +129,40 @@ background.
 Test the display engine driver's support for multi-layer hardware composition,
 layer z-ordering, and hardware alpha blending modes.
 
+Start with two layers, to test basic blender configuration.
+
 ```posix-terminal
-ffx target ssh -- display-tool multilayer-squares
+ffx target ssh -- display-tool multilayer-squares --layer-count 2
 ```
+
+Follow-up with a test covering the maximum layer count supported by the
+hardware, to catch DRAM bandwidth configuration issues.
 
 #### Expected visuals
 
+Each layer displays one square. The layers are described below, from the bottom
+of the Z-order to the top.
+
 * **Bottom layer**: Bouncing **fuchsia square** (`#ff00ff`), four times as large
-  as the smaller squares described below. Fully opaque (alpha blending
+  as the smaller square described below. Fully opaque (alpha blending
   disabled).
-* **Top layer**: Three bouncing squares. Premultiplied alpha blending.
-    * **Orange square** (`#ff6400`): opaque
-    * **Green square** (`#64ff00`): semi-transparent (alpha set to 150)
-    * **Blue square** (`#0064ff`): opaque
+* Bouncing **green square** (`#00ff64`), semi-transparent (alpha set to 150).
+  Premultiplied alpha blending.
+* Bouncing **blue square** (`#0064ff`), 4x size, fully opaque.
+* Bouncing **orange square** (`#ff6400`), semi-transparent (alpha set to 150).
+  Premultiplied alpha blending.
+* Bouncing **cyan square** (`#00ffff`), 4x size, fully opaque.
+* Bouncing **yellow square** (`#ffff00`), semi-transparent (alpha set to 150).
+  Premultiplied alpha blending.
+* Bouncing **white square** (`#ffffff`), 4x size, fully opaque.
+* Bouncing **gray square** (`#808080`), semi-transparent (alpha set to 150).
+  Premultiplied alpha blending.
 
 #### Verification
 
 * The semi-transparent green square blends correctly with the bottom layer.
-* Opaque areas in the top layer properly occlude the bottom layer.
+* The squares on the lower layers show through the transparent areas of the
+  upper layers.
 * The terminal outputs a steady frame rate.
 
 ### Step 6: Frame rate

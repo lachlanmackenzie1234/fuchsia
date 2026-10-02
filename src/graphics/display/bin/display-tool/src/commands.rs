@@ -137,7 +137,11 @@ pub async fn frame_rate_test(
     frame_rate_test::run(coordinator, display, grid_width, grid_height).await
 }
 
-pub async fn multilayer_squares(coordinator: &Coordinator, id: Option<DisplayId>) -> Result<()> {
+pub async fn multilayer_squares(
+    coordinator: &Coordinator,
+    id: Option<DisplayId>,
+    layer_count: usize,
+) -> Result<()> {
     let displays = coordinator.displays();
     if displays.is_empty() {
         return Err(format_err!("no displays found"));
@@ -152,5 +156,5 @@ pub async fn multilayer_squares(coordinator: &Coordinator, id: Option<DisplayId>
             .ok_or_else(|| format_err!("display with id '{:?}' not found", id))?,
     };
 
-    multilayer_squares::run(coordinator, display).await
+    multilayer_squares::run(coordinator, display, layer_count).await
 }

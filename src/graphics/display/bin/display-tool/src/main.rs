@@ -107,6 +107,11 @@ struct MultiLayerSquaresArgs {
     /// ID of the display to play the animation on
     #[argh(positional)]
     id: Option<u64>,
+
+    /// number of full-screen layers to composite, from 2 to the display's
+    /// maximum layer count. Defaults to 2.
+    #[argh(option, default = "2")]
+    layer_count: usize,
 }
 
 /// Test the display's actual frame rate.
@@ -176,7 +181,8 @@ async fn main() -> Result<(), Error> {
                     .await
             }
             SubCommands::MultiLayerSquares(args) => {
-                commands::multilayer_squares(&coordinator, args.id.map(DisplayId)).await
+                commands::multilayer_squares(&coordinator, args.id.map(DisplayId), args.layer_count)
+                    .await
             }
             SubCommands::FrameRateTest(args) => {
                 commands::frame_rate_test(
