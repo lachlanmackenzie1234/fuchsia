@@ -615,6 +615,11 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     /// Find multiple children nodes in sequence.
     ///
     /// This can be used to pipeline lookups in filesystems that support it.
+    ///
+    /// Each name in `names` is looked up in the node found for the previous name, starting with
+    /// `node`, and the results are returned in the same order as `names`. Lookups stop at the
+    /// first error, so fewer results than `names` may be returned, but at least one result must
+    /// be returned if `names` is not empty.
     fn lookup_pipelined(
         &self,
         _node: &FsNode,

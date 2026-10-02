@@ -2381,7 +2381,7 @@ mod test {
     use flyweights::FlyByteStr;
     use fuchsia_async as fasync;
     use fuchsia_runtime::UtcDuration;
-    use futures::StreamExt;
+    use futures::{FutureExt, StreamExt};
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_sync::{FsNodeInfoLevel, Mutex};
     use starnix_uapi::auth::Credentials;
@@ -4036,6 +4036,7 @@ mod test {
         get_attrs_count: AtomicU32,
         file_size: AtomicUsize,
         write_offsets: Mutex<Vec<u64>>,
+        open_paths: Mutex<Vec<String>>,
         data: Mutex<Vec<u8>>,
         get_attrs_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
         write_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
@@ -4150,46 +4151,64 @@ mod test {
             }
         }
 
-        async fn handle_directory_requests(
+        fn handle_directory_requests(
             self: Arc<Self>,
             mut stream: fio::DirectoryRequestStream,
             control_handle: fio::DirectoryControlHandle,
-        ) {
-            let info = fio::DirectoryInfo {
-                attributes: Some(fio::NodeAttributes2 {
-                    mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
-                    immutable_attributes: fio::ImmutableNodeAttributes {
-                        id: Some(1),
-                        link_count: Some(1),
-                        ..Default::default()
-                    },
-                }),
-                ..Default::default()
-            };
-            let _ = control_handle.send_on_representation(fio::Representation::Directory(info));
-            let mut file_tasks = Vec::new();
-            while let Some(Ok(request)) = stream.next().await {
-                match request {
-                    fio::DirectoryRequest::Open { path, object, .. } => {
-                        if path == "file" {
-                            let self_clone = Arc::clone(&self);
-                            file_tasks.push(fasync::Task::spawn(async move {
-                                let (stream, control_handle) =
-                                    ServerEnd::<fio::FileMarker>::new(object)
-                                        .into_stream_and_control_handle();
-                                self_clone.handle_file_requests(stream, control_handle).await;
-                            }));
+        ) -> futures::future::BoxFuture<'static, ()> {
+            async move {
+                let info = fio::DirectoryInfo {
+                    attributes: Some(fio::NodeAttributes2 {
+                        mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
+                        immutable_attributes: fio::ImmutableNodeAttributes {
+                            id: Some(1),
+                            link_count: Some(1),
+                            protocols: Some(fio::NodeProtocolKinds::DIRECTORY),
+                            ..Default::default()
+                        },
+                    }),
+                    ..Default::default()
+                };
+                let _ = control_handle.send_on_representation(fio::Representation::Directory(info));
+                let mut sub_tasks = Vec::new();
+                while let Some(Ok(request)) = stream.next().await {
+                    match request {
+                        fio::DirectoryRequest::Open { path, object, .. } => {
+                            self.open_paths.lock().push(path.clone());
+                            if path == "file" {
+                                let self_clone = Arc::clone(&self);
+                                sub_tasks.push(fasync::Task::spawn(async move {
+                                    let (stream, control_handle) =
+                                        ServerEnd::<fio::FileMarker>::new(object)
+                                            .into_stream_and_control_handle();
+                                    self_clone.handle_file_requests(stream, control_handle).await;
+                                }));
+                            } else if path == "dir" || path == "dir2" || path == "sub" {
+                                let self_clone = Arc::clone(&self);
+                                sub_tasks.push(fasync::Task::spawn(async move {
+                                    let (stream, control_handle) =
+                                        ServerEnd::<fio::DirectoryMarker>::new(object)
+                                            .into_stream_and_control_handle();
+                                    self_clone
+                                        .handle_directory_requests(stream, control_handle)
+                                        .await;
+                                }));
+                            } else {
+                                let _ = ServerEnd::<fio::NodeMarker>::new(object)
+                                    .close_with_epitaph(zx::Status::NOT_FOUND);
+                            }
                         }
+                        fio::DirectoryRequest::Close { responder } => {
+                            responder.send(Ok(())).unwrap();
+                        }
+                        _ => {}
                     }
-                    fio::DirectoryRequest::Close { responder } => {
-                        responder.send(Ok(())).unwrap();
-                    }
-                    _ => {}
+                }
+                for task in sub_tasks {
+                    let _ = task.await;
                 }
             }
-            for task in file_tasks {
-                let _ = task.await;
-            }
+            .boxed()
         }
 
         async fn run(self: Arc<Self>, mut stream: fio::DirectoryRequestStream) {
@@ -4220,6 +4239,78 @@ mod test {
                 let _ = sub_task.await;
             }
         }
+    }
+
+    #[::fuchsia::test]
+    async fn test_lookup_open_counts() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        spawn_kernel_and_run(async move |current_task| {
+            let fs = RemoteFs::new_fs(
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            // 1. Non-existent component_lookup sends only 1 Open request (not 2).
+            let mut context = LookupContext::default();
+            assert_eq!(
+                root.lookup_child(current_task, &mut context, "nonexistent".into())
+                    .expect_err("lookup should fail with ENOENT"),
+                errno!(ENOENT)
+            );
+            assert_eq!(*state.open_paths.lock(), vec!["nonexistent"]);
+            state.open_paths.lock().clear();
+
+            // 2. Multi-component get_children_pipelined sends 1 pipelined Open per component.
+            let results = root.entry.get_children_pipelined(
+                current_task,
+                &root.mount,
+                &["dir".into(), "sub".into(), "file".into()],
+            );
+            assert_eq!(results.len(), 3);
+            for res in &results {
+                assert!(res.is_ok(), "expected Ok, got {res:?}");
+            }
+            assert_eq!(*state.open_paths.lock(), vec!["dir", "sub", "file"]);
+            state.open_paths.lock().clear();
+
+            // 3. Pipelined lookup encountering ENOENT does not send duplicate Open requests.
+            let results = root.entry.get_children_pipelined(
+                current_task,
+                &root.mount,
+                &["dir2".into(), "missing".into()],
+            );
+            assert_eq!(results.len(), 2);
+            assert!(results[0].is_ok());
+            assert_eq!(results[1].as_ref().expect_err("expected ENOENT"), &errno!(ENOENT));
+            assert_eq!(*state.open_paths.lock(), vec!["dir2", "missing"]);
+            state.open_paths.lock().clear();
+
+            // 4. Re-querying a previously resolved path is served from the cache and sends no Open
+            // requests.
+            let results = root.entry.get_children_pipelined(
+                current_task,
+                &root.mount,
+                &["dir".into(), "sub".into(), "file".into()],
+            );
+            assert_eq!(results.len(), 3);
+            for res in &results {
+                assert!(res.is_ok(), "expected Ok, got {res:?}");
+            }
+            assert_eq!(*state.open_paths.lock(), Vec::<String>::new());
+        })
+        .await;
+
+        server_task.await;
     }
 
     #[::fuchsia::test]
