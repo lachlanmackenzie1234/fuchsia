@@ -26,6 +26,10 @@ const clearAnnotation = "# @bazel2gn:clear"
 // skipAnnotation is a comment annotation that indicates the statement should be skipped.
 const skipAnnotation = "# @bazel2gn:skip"
 
+// noGNEquivalent is the value in bazelRuleToGNTemplate for Bazel rules that
+// have no GN counterpart, so bazel2gn skips them instead of failing.
+const noGNEquivalent = "__NO_GN_EQUIVALENT__"
+
 // pathOverwriteAnnotationPrefix is a comment annotation prefix that indicates a path should be
 // overwritten in GN. In this case bazel2gn will ignore the value set in the BUILD.bazel file
 // and use the value specified in the annotation in the BUILD.gn file instead. The value specified
@@ -127,7 +131,17 @@ var bazelRuleToGNTemplate = map[string]string{
 	"stamp_group":         "group",
 
 	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
-	"exports_files": "__NO_GN_EQUIVALENT__",
+	"exports_files": noGNEquivalent,
+
+	// Bazel-only Fuchsia component, package, and test rules. Any GN wrapper
+	// targets (such as `bazel_fuchsia_package()` or `bazel_test_suite()`) are
+	// maintained by hand above the bazel2gn sentinel in BUILD.gn.
+	"fx_component":          noGNEquivalent,
+	"fx_component_manifest": noGNEquivalent,
+	"fx_package":            noGNEquivalent,
+	"fx_packaged_binary":    noGNEquivalent,
+	"fx_test":               noGNEquivalent,
+	"fx_test_component":     noGNEquivalent,
 }
 
 // attrsToOmitByRules stores a mapping from known Bazel rules to attributes to

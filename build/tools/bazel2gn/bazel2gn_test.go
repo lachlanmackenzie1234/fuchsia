@@ -237,6 +237,49 @@ python_binary("generate_version_history_bin") {
 	}
 }`,
 		},
+		{
+			name: "Bazel-only rules with no GN equivalent",
+			bazel: `exports_files(["meta/foo.cml"])
+
+fx_packaged_binary(
+	name = "foo_packaged_bin",
+	binary = ":foo_bin",
+	binary_name = "foo",
+)
+
+fx_component_manifest(
+	name = "foo-manifest",
+	component_name = "foo",
+	manifest = "meta/foo.cml",
+)
+
+fx_component(
+	name = "foo-component",
+	compiled_manifest = ":foo-manifest",
+	component_name = "foo",
+	deps = [":foo_packaged_bin"],
+)
+
+fx_test_component(
+	name = "foo-test-component",
+	compiled_manifest = ":foo-manifest",
+	component_name = "foo-test",
+	deps = [":foo_packaged_bin"],
+)
+
+fx_package(
+	name = "foo-package",
+	package_name = "foo",
+	components = [":foo-component"],
+	test_components = [":foo-test-component"],
+)
+
+fx_test(
+	name = "foo-test",
+	package = ":foo-package",
+)`,
+			wantGN: "",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
