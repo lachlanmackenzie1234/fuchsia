@@ -79,7 +79,7 @@ fuchsia_test_with_expectations_package("dhcpv6-client-test-with-err-logs") {
   deps = [
     # The DHCPv6 client creates sockets so it depends on an implementation of
     # `fuchsia.posix.socket.Provider`.
-    "//src/connectivity/network/netstack:component-debug",
+    "//src/connectivity/network/netstack3:component-debug",
   ]
 }
 
@@ -90,7 +90,7 @@ fuchsia_test_with_expectations_package("dhcpv6-client-test-no-err-logs") {
   deps = [
     # The DHCPv6 client creates sockets so it depends on an implementation of
     # `fuchsia.posix.socket.Provider`.
-    "//src/connectivity/network/netstack:component-debug",
+    "//src/connectivity/network/netstack3:component-debug",
   ]
 }
 
