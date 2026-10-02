@@ -191,6 +191,7 @@ struct TestEnvBuilder {
     ota_manifest: Option<Vec<u8>>,
     blobs: HashMap<Hash, Vec<u8>>,
     verify_existing_blobs: bool,
+    excessive_update_duration_seconds: Option<u32>,
     blob_reader_mock:
         Option<Box<dyn FnMut(ffxfs::BlobReaderRequestStream) + Send + Sync + 'static>>,
     blob_implementation: Option<blobfs_ramdisk::Implementation>,
@@ -208,6 +209,7 @@ impl TestEnvBuilder {
             ota_manifest: None,
             blobs: HashMap::new(),
             verify_existing_blobs: false,
+            excessive_update_duration_seconds: None,
             blob_reader_mock: None,
             blob_implementation: None,
         }
@@ -265,6 +267,11 @@ impl TestEnvBuilder {
         self
     }
 
+    fn excessive_update_duration_seconds(mut self, excessive_update_duration_seconds: u32) -> Self {
+        self.excessive_update_duration_seconds = Some(excessive_update_duration_seconds);
+        self
+    }
+
     fn mock_blob_reader(
         mut self,
         mock: impl FnMut(ffxfs::BlobReaderRequestStream) + Send + Sync + 'static,
@@ -290,6 +297,7 @@ impl TestEnvBuilder {
             ota_manifest,
             blobs,
             verify_existing_blobs,
+            excessive_update_duration_seconds,
             blob_reader_mock,
             blob_implementation,
         } = self;
@@ -692,6 +700,38 @@ impl TestEnvBuilder {
             )
             .await
             .unwrap();
+        if let Some(excessive_update_duration_seconds) = excessive_update_duration_seconds {
+            builder
+                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                    name: "fuchsia.system-updater.ExcessiveUpdateDurationSeconds".parse().unwrap(),
+                    value: excessive_update_duration_seconds.into(),
+                }))
+                .await
+                .unwrap();
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ExcessiveUpdateDurationSeconds",
+                        ))
+                        .from(Ref::self_())
+                        .to(&system_updater),
+                )
+                .await
+                .unwrap();
+        } else {
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ExcessiveUpdateDurationSeconds",
+                        ))
+                        .from(Ref::void())
+                        .to(&system_updater),
+                )
+                .await
+                .unwrap();
+        }
 
         let realm_instance = builder.build().await.unwrap();
 
@@ -890,15 +930,20 @@ impl TestEnv {
 
 struct MockCacheService {
     sync_response: Mutex<Option<Result<(), Status>>>,
+    sync_delay: Mutex<Option<std::time::Duration>>,
     interactions: SystemUpdaterInteractions,
 }
 impl MockCacheService {
     fn new(interactions: SystemUpdaterInteractions) -> Self {
-        Self { sync_response: Mutex::new(None), interactions }
+        Self { sync_response: Mutex::new(None), sync_delay: Mutex::new(None), interactions }
     }
 
     fn set_sync_response(&self, response: Result<(), Status>) {
         self.sync_response.lock().replace(response);
+    }
+
+    fn set_sync_delay(&self, delay: std::time::Duration) {
+        self.sync_delay.lock().replace(delay);
     }
 
     async fn run_cache_service(
@@ -909,6 +954,10 @@ impl MockCacheService {
             match event {
                 fidl_fuchsia_pkg::PackageCacheRequest::Sync { responder } => {
                     self.interactions.lock().push(BlobfsSync);
+                    let delay = *self.sync_delay.lock();
+                    if let Some(delay) = delay {
+                        fasync::Timer::new(delay).await;
+                    }
                     responder.send(
                         self.sync_response.lock().unwrap_or(Ok(())).map_err(|s| s.into_raw()),
                     )?;

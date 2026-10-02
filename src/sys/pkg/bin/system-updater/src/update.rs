@@ -26,6 +26,7 @@ use http_uri_ext::HttpUriExt as _;
 use include_str_from_working_dir::include_str_from_working_dir_env;
 use log::{error, info, warn};
 use std::collections::HashSet;
+use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -309,6 +310,9 @@ impl Updater for RealUpdater {
                 }
             })
             .collect();
+        let excessive_update_duration =
+            NonZeroU32::new(self.structured_config.excessive_update_duration_seconds)
+                .map(|d| Duration::from_secs(d.get().into()));
         let (attempt_id, attempt) = update(
             config,
             env,
@@ -318,6 +322,7 @@ impl Updater for RealUpdater {
             self.structured_config.concurrent_blob_fetches.into(),
             self.structured_config.verify_existing_blobs,
             manifest_public_keys,
+            excessive_update_duration,
             cancel_receiver,
             self.crash_reporter.clone(),
         )
@@ -344,6 +349,7 @@ async fn update(
     concurrent_blob_fetches: usize,
     verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
+    excessive_update_duration: Option<Duration>,
     mut cancel_receiver: oneshot::Receiver<()>,
     crash_reporter: crash_report::CrashReporter,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
@@ -419,8 +425,22 @@ async fn update(
         };
 
         let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
+        // TODO(https://fxbug.dev/568366644): account for suspend duration.
+        let update_duration = config.start_time_mono.elapsed();
         let attempt_res = match attempt_res {
-            Ok(ok) => Some(ok),
+            Ok(ok) => {
+                if let Some(threshold) = excessive_update_duration
+                    && update_duration > threshold
+                {
+                    warn!(
+                        "system update duration ({}s) exceeded threshold ({}s), filing crash report",
+                        update_duration.as_secs(),
+                        threshold.as_secs()
+                    );
+                    crash_reporter.excessive_update_duration();
+                }
+                Some(ok)
+            }
             Err(e) => {
                 if let AttemptError::UpdateCanceled = e {
                     co.yield_(fupdate_installer_ext::State::Canceled).await;
@@ -431,7 +451,7 @@ async fn update(
             }
         };
 
-        info!("system update attempt completed, logging metrics");
+        info!("system update attempt completed in {}s, logging metrics", update_duration.as_secs());
         cobalt.log_ota_result_attempt(
             config.initiator,
             history.lock().attempts_for(&source_version, &target_version) + 1,
@@ -442,7 +462,7 @@ async fn update(
             config.initiator,
             phase,
             status_code,
-            config.start_time_mono.elapsed(),
+            update_duration,
         );
         drop(cobalt);
 

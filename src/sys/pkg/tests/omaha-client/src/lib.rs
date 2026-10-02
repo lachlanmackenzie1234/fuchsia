@@ -682,6 +682,9 @@ impl TestEnvBuilder {
                             "fuchsia.system-updater.ConcurrentPackageResolves",
                         ))
                         .capability(Capability::configuration(
+                            "fuchsia.system-updater.ExcessiveUpdateDurationSeconds",
+                        ))
+                        .capability(Capability::configuration(
                             "fuchsia.system-updater.VerifyExistingBlobs",
                         ))
                         .from(Ref::void())

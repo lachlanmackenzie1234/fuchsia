@@ -15,7 +15,7 @@ const TWENTY_FOUR_HOURS: zx::MonotonicDuration = zx::MonotonicDuration::from_hou
 
 #[derive(Clone, Default)]
 pub(crate) struct CrashReporter {
-    previous_report_filed_timestamp: Arc<Mutex<Option<zx::MonotonicInstant>>>,
+    previous_installation_error_report_timestamp: Arc<Mutex<Option<zx::MonotonicInstant>>>,
 }
 
 impl CrashReporter {
@@ -23,22 +23,27 @@ impl CrashReporter {
         Self::default()
     }
 
+    fn connect_proxy() -> Option<CrashReporterProxy> {
+        match fuchsia_component::client::connect_to_protocol::<CrashReporterMarker>() {
+            Ok(p) => Some(p),
+            Err(e) => {
+                error!("Failed to connect to fuchsia.feedback/CrashReporter: {:#}", anyhow!(e));
+                None
+            }
+        }
+    }
+
     /// Files an installation error crash report in a background task if one has not already been
     /// filed in the past 24 hours. Logs on error because crash-reporting is best-effort.
     pub(crate) fn installation_error(&self) {
-        let proxy = match fuchsia_component::client::connect_to_protocol::<CrashReporterMarker>() {
-            Ok(p) => p,
-            Err(e) => {
-                error!("Failed to connect to fuchsia.feedback/CrashReporter: {:#}", anyhow!(e));
-                return;
-            }
-        };
-        self.installation_error_impl(proxy, zx::MonotonicInstant::get());
+        if let Some(proxy) = Self::connect_proxy() {
+            self.installation_error_impl(proxy, zx::MonotonicInstant::get());
+        }
     }
 
     fn installation_error_impl(&self, proxy: CrashReporterProxy, now: zx::MonotonicInstant) {
         {
-            let mut prev = self.previous_report_filed_timestamp.lock();
+            let mut prev = self.previous_installation_error_report_timestamp.lock();
             if let Some(prev) = *prev
                 && now < prev + TWENTY_FOUR_HOURS
             {
@@ -49,10 +54,26 @@ impl CrashReporter {
             }
             *prev = Some(now);
         }
+        Self::file_report(proxy, "fuchsia-installation-error", now);
+    }
+
+    /// Files an excessive update duration crash report in a background task. Logs on error because
+    /// crash-reporting is best-effort.
+    pub(crate) fn excessive_update_duration(&self) {
+        if let Some(proxy) = Self::connect_proxy() {
+            Self::file_report(
+                proxy,
+                "fuchsia-excessive-update-duration",
+                zx::MonotonicInstant::get(),
+            );
+        }
+    }
+
+    fn file_report(proxy: CrashReporterProxy, signature: &'static str, now: zx::MonotonicInstant) {
         fasync::Task::spawn(async move {
             match proxy
                 .file_report(CrashReport {
-                    crash_signature: Some("fuchsia-installation-error".to_owned()),
+                    crash_signature: Some(signature.to_owned()),
                     program_name: Some("system".to_owned()),
                     program_uptime: Some(now.into_nanos()),
                     is_fatal: Some(false),
@@ -100,9 +121,15 @@ mod tests {
         let (proxy, _crash_report_server) = mock.spawn_crash_reporter_service();
         let crash_reporter = CrashReporter::new();
 
-        crash_reporter.installation_error_impl(proxy, zx::MonotonicInstant::get());
-
+        crash_reporter.installation_error_impl(proxy.clone(), zx::MonotonicInstant::get());
         assert_signature(recv.next().await.unwrap(), "fuchsia-installation-error");
+
+        CrashReporter::file_report(
+            proxy,
+            "fuchsia-excessive-update-duration",
+            zx::MonotonicInstant::get(),
+        );
+        assert_signature(recv.next().await.unwrap(), "fuchsia-excessive-update-duration");
     }
 
     #[fuchsia::test]

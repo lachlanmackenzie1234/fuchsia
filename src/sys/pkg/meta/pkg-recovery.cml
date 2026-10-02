@@ -139,6 +139,7 @@
             config: [
                 "fuchsia.system-updater.ConcurrentBlobFetches",
                 "fuchsia.system-updater.ConcurrentPackageResolves",
+                "fuchsia.system-updater.ExcessiveUpdateDurationSeconds",
             ],
             from: "void",
             to: "#system-updater",
