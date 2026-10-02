@@ -924,6 +924,228 @@ fn test_ip_reassembly_when_forwarding<I: TestIpExt + IpExt>() {
     assert!(net.step().is_idle());
 }
 
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+fn forward_coalesced_gso_tcp<I: TestIpExt + IpExt>() {
+    const GSO_SIZE: u16 = 1000;
+    const NUM_SEGMENTS: u16 = 2;
+    const SEQ_NUM: u32 = 1;
+    const PAYLOAD_BYTE: u8 = 0xAB;
+
+    let TestAddrs { subnet: _, local_ip: _, local_mac, remote_ip, remote_mac } = I::TEST_ADDRS;
+    // The packet comes from a host off the local link and is forwarded to
+    // `remote_ip`, which is on-link.
+    let src_ip = I::get_other_remote_ip_address(1);
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
+    let device_id = assert_matches!(<[_; 1]>::try_from(device_ids), Ok([id]) => id);
+    ctx.test_api().set_unicast_forwarding_enabled::<I>(&device_id.clone().into(), true);
+
+    // Construct a coalesced TCP segment carrying `NUM_SEGMENTS` segments'
+    // worth of payload.
+    let payload = vec![PAYLOAD_BYTE; usize::from(NUM_SEGMENTS * GSO_SIZE)];
+    let frame = Buf::new(payload, ..)
+        .wrap_in(packet_formats::tcp::TcpSegmentBuilder::new(
+            *src_ip,
+            *remote_ip,
+            NonZeroU16::new(1234).unwrap(),
+            NonZeroU16::new(80).unwrap(),
+            SEQ_NUM,
+            Some(1),
+            65535,
+        ))
+        .wrap_in(I::PacketBuilder::new(*src_ip, *remote_ip, 64, IpProto::Tcp.into()))
+        .wrap_in(EthernetFrameBuilder::new(*remote_mac, *local_mac, I::ETHER_TYPE, 0))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
+
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: device_id.clone(),
+            parsing_context: NetworkParsingContext::default(),
+            gso_info: Some(netstack3_base::GsoInfo {
+                gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                ipv4_id_mode: match I::VERSION {
+                    IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
+                    IpVersion::V6 => None,
+                },
+            }),
+        },
+        frame,
+    );
+
+    // The packet is segmented rather than fragmented.
+    IpCounterExpectations::<I> { receive_ip_packet: 1, forward: 1, ..Default::default() }
+        .assert_counters(&ctx.core_ctx(), &device_id.into());
+
+    // The packet is forwarded as `NUM_SEGMENTS` discrete segments.
+    assert_eq!(ctx.bindings_ctx.take_ethernet_frames().len(), usize::from(NUM_SEGMENTS));
+}
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+fn forward_coalesced_gso_tcp_oversized_segments<I: TestIpExt + IpExt>() {
+    let fake_config = I::TEST_ADDRS;
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(fake_config.swap()).build();
+    let TestAddrs { subnet: _, local_ip, local_mac, remote_ip, remote_mac } = fake_config;
+    let device_id = assert_matches!(<[_; 1]>::try_from(device_ids), Ok([id]) => id);
+    ctx.test_api().set_unicast_forwarding_enabled::<I>(&device_id.clone().into(), true);
+
+    // Construct a coalesced TCP segment whose segments don't fit the MTU of the
+    // device they're forwarded to: 4000 bytes of payload with gso_size = 2000.
+    const GSO_SIZE: u16 = 2000;
+    let payload = vec![0xABu8; 2 * usize::from(GSO_SIZE)];
+    let frame = packet::Buf::new(payload, ..)
+        .wrap_in(packet_formats::tcp::TcpSegmentBuilder::new(
+            *remote_ip,
+            *local_ip,
+            NonZeroU16::new(1234).unwrap(),
+            NonZeroU16::new(80).unwrap(),
+            1,
+            Some(1),
+            65535,
+        ))
+        .wrap_in(I::PacketBuilder::new(*remote_ip, *local_ip, 64, IpProto::Tcp.into()))
+        .wrap_in(EthernetFrameBuilder::new(*local_mac, *remote_mac, I::ETHER_TYPE, 0))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
+
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: device_id.clone(),
+            parsing_context: NetworkParsingContext::default(),
+            gso_info: Some(netstack3_base::GsoInfo {
+                gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                ipv4_id_mode: match I::VERSION {
+                    IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
+                    IpVersion::V6 => None,
+                },
+            }),
+        },
+        frame,
+    );
+
+    let (expected_counters, expected_frames) = match I::VERSION {
+        // Each of the two segments is larger than the MTU, so they're
+        // each fragmented in two after segmenting.
+        IpVersion::V4 => (
+            IpCounterExpectations::<I> {
+                receive_ip_packet: 1,
+                forward: 1,
+                fragmentation: FragmentationCounters {
+                    fragmentation_required: 2,
+                    fragments: 4,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            4,
+        ),
+        // Routers don't fragment IPv6 packets (RFC 8200 Section 4.5), so the
+        // first segment fails to send and the packet is dropped.
+        IpVersion::V6 => (
+            IpCounterExpectations::<I> {
+                receive_ip_packet: 1,
+                forward: 1,
+                mtu_exceeded: 1,
+                fragmentation: FragmentationCounters {
+                    fragmentation_required: 1,
+                    error_not_allowed: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            0,
+        ),
+    };
+    expected_counters.assert_counters(&ctx.core_ctx(), &device_id.into());
+    assert_eq!(ctx.bindings_ctx.take_ethernet_frames().len(), expected_frames);
+}
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+// Unsegmentable frames carrying GSO metadata are a GRO/GSO bug, which debug
+// builds assert on. Release builds fall back to sending the frame whole.
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "GRO or GSO produced a packet that can't be resegmented")
+)]
+fn forward_coalesced_not_segmentable_sent_whole<I: TestIpExt + IpExt>() {
+    let fake_config = I::TEST_ADDRS;
+    let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(fake_config.swap()).build();
+    let TestAddrs { subnet: _, local_ip, local_mac, remote_ip, remote_mac } = fake_config;
+    let device_id = assert_matches!(<[_; 1]>::try_from(device_ids), Ok([id]) => id);
+    ctx.test_api().set_unicast_forwarding_enabled::<I>(&device_id.clone().into(), true);
+
+    // Construct a frame carrying GSO metadata whose transport protocol can't be
+    // segmented in software, and whose payload doesn't fit the MTU.
+    const GSO_SIZE: u16 = 1000;
+    let payload = vec![0xABu8; 2 * usize::from(GSO_SIZE)];
+    let frame = packet::Buf::new(payload, ..)
+        .wrap_in(UdpPacketBuilder::new(
+            *remote_ip,
+            *local_ip,
+            Some(NonZeroU16::new(1234).unwrap()),
+            NonZeroU16::new(80).unwrap(),
+        ))
+        .wrap_in(I::PacketBuilder::new(*remote_ip, *local_ip, 64, IpProto::Udp.into()))
+        .wrap_in(EthernetFrameBuilder::new(*local_mac, *remote_mac, I::ETHER_TYPE, 0))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
+
+    ctx.core_api().device::<EthernetLinkDevice>().receive_frame(
+        RecvEthernetFrameMeta {
+            device_id: device_id.clone(),
+            parsing_context: NetworkParsingContext::default(),
+            gso_info: Some(netstack3_base::GsoInfo {
+                gso_size: NonZeroU16::new(GSO_SIZE).unwrap(),
+                ipv4_id_mode: match I::VERSION {
+                    IpVersion::V4 => Some(netstack3_base::Ipv4IdMode::Incrementing),
+                    IpVersion::V6 => None,
+                },
+            }),
+        },
+        frame,
+    );
+
+    // Segmentation fails, so the stack falls back to sending the frame whole. IPv4
+    // fragments it because it doesn't fit the MTU, but IPv6 packets can't be
+    // fragmented when forwarded, so it's dropped.
+    let (expected_counters, expected_frames) = match I::VERSION {
+        IpVersion::V4 => (
+            IpCounterExpectations::<I> {
+                receive_ip_packet: 1,
+                forward: 1,
+                fragmentation: FragmentationCounters {
+                    fragmentation_required: 1,
+                    fragments: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            2,
+        ),
+        IpVersion::V6 => (
+            IpCounterExpectations::<I> {
+                receive_ip_packet: 1,
+                forward: 1,
+                mtu_exceeded: 1,
+                fragmentation: FragmentationCounters {
+                    fragmentation_required: 1,
+                    error_not_allowed: 1,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            0,
+        ),
+    };
+    expected_counters.assert_counters(&ctx.core_ctx(), &device_id.into());
+    assert_eq!(ctx.bindings_ctx.take_ethernet_frames().len(), expected_frames);
+}
+
 enum WhichLinkLocalAddr {
     Source,
     Destination,

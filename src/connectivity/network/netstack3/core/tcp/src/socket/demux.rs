@@ -1297,7 +1297,7 @@ pub(super) fn tcp_serialize_segment<'a, I, P>(
 + 'a
 where
     I: FilterIpExt,
-    P: InnerPacketBuilder + Debug + Payload + 'a,
+    P: InnerPacketBuilder + Copy + Debug + Payload + 'a,
 {
     let SegmentHeader { seq, ack, wnd, control, options, push } = header;
     let ConnIpAddr { local: (local_ip, local_port), remote: (remote_ip, remote_port) } = conn_addr;
