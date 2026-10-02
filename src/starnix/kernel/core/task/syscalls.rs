@@ -1844,8 +1844,8 @@ pub fn sys_kcmp(
             Ok(encode_ordering(obfuscate_value(files1.raw()).cmp(&obfuscate_value(files2.raw()))))
         }
         KcmpResource::FS => {
-            let fs1 = task1.running_state()?.fs();
-            let fs2 = task2.running_state()?.fs();
+            let fs1 = task1.fs()?;
+            let fs2 = task2.fs()?;
             Ok(encode_ordering(obfuscate_arc(&fs1).cmp(&obfuscate_arc(&fs2))))
         }
         KcmpResource::SIGHAND => Ok(encode_ordering(

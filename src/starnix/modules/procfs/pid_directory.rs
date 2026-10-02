@@ -183,7 +183,7 @@ impl FsNodeOps for TaskDirectoryNode {
         let ops: Box<dyn FsNodeOps> = match &**name {
             b"cgroup" => Box::new(CgroupFile::new_node(tid)),
             b"cwd" => Box::new(CallbackSymlinkNode::new(move || {
-                Ok(SymlinkTarget::Node(tid.get_task()?.running_state()?.fs().cwd()))
+                Ok(SymlinkTarget::Node(tid.get_task()?.fs()?.cwd()))
             })),
             b"exe" => Box::new(CallbackSymlinkNode::new(move || {
                 let task = tid.get_task()?;
@@ -204,7 +204,7 @@ impl FsNodeOps for TaskDirectoryNode {
             }
             b"mem" => Box::new(MemFile::new_node(tid)),
             b"root" => Box::new(CallbackSymlinkNode::new(move || {
-                Ok(SymlinkTarget::Node(tid.get_task()?.running_state()?.fs().root()))
+                Ok(SymlinkTarget::Node(tid.get_task()?.fs()?.root()))
             })),
             b"sched" => Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893980"))),
             b"schedstat" => {
@@ -1351,8 +1351,8 @@ impl DynamicFileSource for StatusFile {
         writeln!(sink)?;
 
         if let Some(task) = task {
-            if let Ok(running_state) = task.running_state() {
-                writeln!(sink, "Umask:\t0{:03o}", running_state.fs().umask().bits())?;
+            if let Ok(fs) = task.fs() {
+                writeln!(sink, "Umask:\t0{:03o}", fs.umask().bits())?;
             }
             let task_state = task.read();
             writeln!(sink, "SigBlk:\t{:016x}", task_state.signal_mask().0)?;

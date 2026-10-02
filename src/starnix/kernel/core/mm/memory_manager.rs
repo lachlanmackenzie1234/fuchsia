@@ -3974,11 +3974,11 @@ impl MemoryManager {
 
             let name_str = match &map.name() {
                 MappingNameRef::File(file) => {
-                    let Ok(running_state) = task.running_state() else {
+                    let Ok(fs) = task.fs() else {
                         log_warn!("Task {} is not running", task.get_tid());
                         continue;
                     };
-                    String::from_utf8_lossy(&file.name().path(&running_state.fs())).into_owned()
+                    String::from_utf8_lossy(&file.name().path(&fs)).into_owned()
                 }
                 MappingNameRef::None | MappingNameRef::AioContext(_) => {
                     if map.flags().contains(MappingFlags::SHARED)
@@ -4560,7 +4560,7 @@ fn write_map(
             let path = if let Some(fs_context) = fs_context {
                 file.name().path(fs_context)
             } else {
-                file.name().path(&task.running_state()?.fs())
+                file.name().path(&*task.fs()?)
             };
             sink.write_iter(
                 path.iter()
@@ -4633,7 +4633,7 @@ impl SequenceFileSource for ProcMapsFile {
         };
         let state = mm.state.read();
         if let Some((range, map)) = state.mappings.find_at_or_after(cursor) {
-            let fs_context = task.running_state().ok().map(|rs| rs.fs());
+            let fs_context = task.fs().ok();
             write_map(&task, fs_context.as_deref(), sink, &state, range, map)?;
             return Ok(Some(range.end));
         }
@@ -4732,7 +4732,7 @@ impl DynamicFileSource for ProcSmapsFile {
             Ok(committed_bytes_vec)
         })?;
 
-        let fs_context = task.running_state().ok().map(|rs| rs.fs());
+        let fs_context = task.fs().ok();
         let fs_context_ref = fs_context.as_deref();
         for ((mm_range, mm_mapping), committed_bytes) in
             state.mappings.iter().zip(committed_bytes_vec.into_iter())

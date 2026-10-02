@@ -1064,7 +1064,7 @@ impl DynamicFileSource for ProcMountsFileSource {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = self.tid.get_task()?;
-        let task_fs = task.running_state()?.fs();
+        let task_fs = task.fs()?;
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
@@ -1164,7 +1164,7 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = self.tid.get_task()?;
-        let task_fs = task.running_state()?.fs();
+        let task_fs = task.fs()?;
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {

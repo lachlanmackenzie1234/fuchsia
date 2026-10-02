@@ -232,17 +232,27 @@ impl CurrentTask {
         //
         // Specifically, the following resources require explicit release:
         //
-        // 1. `running_state`: Transitively releases `fs` and `proc_pid_directory_cache`
+        // 1. `running_state`: Transitively releases `proc_pid_directory_cache`
         // 2. `files`: Drops `FileHandle` to close open file descriptors
         // 3. `mm`: Drops `FsNodeHandle` to remove memory-mapped filesystem nodes and drops
         //    `FileWriteGuard` for executable mappings
         // 4. `fs`: Drops `MountClientMarker` to allow unmounting and drops `FsNodeHandle` to remove
         //    namespace filesystem nodes
         // 5. `proc_pid_directory_cache`: Drops `FsNodeHandle` to remove /proc/<pid> nodes
+        //
+        // `files`, `mm` and `fs` are released explicitly here rather than by dropping
+        // `running_state`. Other threads may transiently hold a strong reference to
+        // `TaskRunningState` (e.g. `Task::interrupt()`), and if such a thread ends up dropping the
+        // last reference, it runs the destructors of everything still owned by the
+        // `TaskRunningState`, possibly while holding locks. Dropping `fs` in particular may tear
+        // down an entire mount namespace, which acquires `DirEntry` locks, so it must happen here
+        // on the exiting thread, where no locks are held. `proc_pid_directory_cache` only holds an
+        // `FsNodeHandle`, whose release is already deferred to the delayed releaser.
 
         if let Some(running_state) = self.running_state.take() {
             *running_state.files.lock() = None;
             running_state.mm.update(None);
+            running_state.fs.update(None);
         }
 
         *self.files.borrow_mut() = None;
@@ -294,8 +304,15 @@ impl CurrentTask {
         self.files.borrow().as_ref().expect("CurrentTask must have FdTable").clone()
     }
 
+    /// Returns the [`FsContext`] for the [`Task`].
+    ///
+    /// # Panics
+    ///
+    /// Calling `fs()` on a [`CurrentTask`] for which the [`Task`] has no file system context
+    /// (i.e. exited tasks) panics. However, such tasks should not have a `CurrentTask`.
+    #[track_caller]
     pub fn fs(&self) -> Arc<FsContext> {
-        self.running_state().fs()
+        self.running_state().fs().expect("CurrentTask must have FsContext")
     }
 
     pub fn has_shared_fs(&self) -> bool {
@@ -2214,8 +2231,9 @@ fn split_path(path: &FsStr) -> LookupVec<&FsStr> {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::spawn_kernel_and_run;
+    use crate::testing::{create_task, spawn_kernel_and_run};
     use starnix_uapi::auth::Credentials;
+    use std::sync::Arc;
 
     // This test will run `override_creds` and check it doesn't crash. This ensures that the
     // delegation to `override_creds_async` is correct.
@@ -2223,6 +2241,26 @@ mod tests {
     async fn test_override_creds_can_delegate_to_async_version() {
         spawn_kernel_and_run(async move |current_task| {
             assert_eq!(current_task.override_creds(Credentials::root(), || 0), 0);
+        })
+        .await;
+    }
+
+    // Another thread may hold a transient strong reference to the `TaskRunningState` of a task
+    // while it exits (e.g. `Task::interrupt()`). The `FsContext` must still be released by
+    // `exit()` itself rather than by whoever drops the last `TaskRunningState` reference, since
+    // dropping it can tear down a whole mount namespace and acquire `DirEntry` locks.
+    #[::fuchsia::test]
+    async fn test_exit_releases_fs_while_running_state_is_referenced() {
+        spawn_kernel_and_run(async move |current_task| {
+            let task = create_task(current_task.kernel(), "task");
+            let running_state = task.task.running_state().expect("task should be running");
+            let fs = Arc::downgrade(&task.fs());
+
+            // Releasing the `AutoReleasableTask` calls `CurrentTask::exit()`.
+            std::mem::drop(task);
+
+            assert!(running_state.fs().is_err());
+            assert!(fs.upgrade().is_none(), "FsContext should be dropped by exit()");
         })
         .await;
     }
