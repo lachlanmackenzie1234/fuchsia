@@ -878,11 +878,7 @@ pub struct SignalEventValue(pub u64);
 
 impl From<sigval_t> for SignalEventValue {
     fn from(value: sigval_t) -> Self {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        SignalEventValue(zerocopy::transmute!(unsafe { value._bindgen_opaque_blob }))
+        SignalEventValue(zerocopy::transmute!(value))
     }
 }
 
@@ -936,6 +932,17 @@ mod test {
     use crate::task::PidEntry;
     use starnix_uapi::CLD_EXITED;
     use starnix_uapi::signals::{SIGCHLD, SIGPWR};
+
+    #[test]
+    fn test_signal_event_value_conversion() {
+        for value in
+            [0, u64::MAX, 0x0123_4567_89ab_cdef].into_iter().chain((0..64).map(|bit| 1u64 << bit))
+        {
+            let native: sigval_t = SignalEventValue(value).into();
+            assert_eq!(native.as_bytes(), value.to_ne_bytes());
+            assert_eq!(SignalEventValue::from(native), SignalEventValue(value));
+        }
+    }
 
     #[::fuchsia::test]
     fn test_signal() {
