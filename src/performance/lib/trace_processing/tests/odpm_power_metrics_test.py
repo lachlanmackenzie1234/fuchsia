@@ -228,13 +228,13 @@ class OdpmPowerMetricsTest(unittest.TestCase):
 
         expected = [
             TestCaseResult(
-                label="Power_gpu",
+                label="Power_rail_gpu",
                 unit=U.watts,
                 values=[0.5, 1.5],
                 doc="ODPM power usage samples for rail gpu",
             ),
             TestCaseResult(
-                label="Power_cpu_big",
+                label="Power_rail_cpu_big",
                 unit=U.watts,
                 values=[1.0, 3.0],
                 doc="ODPM power usage samples for rail cpu_big",
@@ -250,19 +250,19 @@ class OdpmPowerMetricsTest(unittest.TestCase):
 
         expected = [
             TestCaseResult(
-                label="Power_cpu_big",
+                label="Power_rail_cpu_big",
                 unit=U.watts,
                 values=[1.0, 3.0],
                 doc="ODPM power usage samples for rail cpu_big",
             ),
             TestCaseResult(
-                label="Power_gpu",
+                label="Power_rail_gpu",
                 unit=U.watts,
                 values=[0.5, 1.5],
                 doc="ODPM power usage samples for rail gpu",
             ),
             TestCaseResult(
-                label="Power_wlan_bt",
+                label="Power_rail_wlan_bt",
                 unit=U.watts,
                 values=[0.25, 0.75],
                 doc="ODPM power usage samples for rail wlan_bt",

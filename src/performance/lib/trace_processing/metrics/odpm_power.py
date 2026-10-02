@@ -70,6 +70,9 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
     Given a trace containing ODPM power samples (CounterEvents named
     "<rail>_odpm_rail" with power readings in "mW" args), computes per-rail
     power usage metrics in Watts for the selected rails.
+
+    Metrics for individual rails are labeled `Power_rail_<rail>`, and metrics
+    for `sum_rails` groups are labeled `Power_<group_name>`.
     """
 
     def __init__(
@@ -272,7 +275,7 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
 
             results.extend(
                 self._results_for_series(
-                    metric_suffix=rail,
+                    metric_suffix=f"rail_{rail}",
                     samples_w=samples_w,
                     target_description=f"rail {rail}",
                 )
