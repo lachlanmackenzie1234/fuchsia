@@ -65,6 +65,11 @@ bazel_content_hash_definitions = [
     cipd_name = "clang"
   },
   {
+    repo_name = "prebuilt_llvm"
+    source_paths = [ "//prebuilt/third_party/llvm/${host_os}-${host_cpu}" ]
+    cipd_name = "llvm"
+  },
+  {
     repo_name = "prebuilt_python"
     source_paths = [ "//prebuilt/third_party/python3/${host_os}-${host_cpu}" ]
     cipd_name = "cpython3"
