@@ -566,11 +566,10 @@ void PlatformBus::GetFirmware(GetFirmwareRequestView request, fdf::Arena& arena,
     return;
   }
   fidl::VectorView<fhpb::wire::FirmwareBlob> ret(arena, result->size());
-  for (size_t i = 0; i < result->size(); i++) {
-    auto& [vmo, length] = result.value()[i];
+  for (auto const& [i, item] : std::views::enumerate(result.value())) {
     ret[i] = fhpb::wire::FirmwareBlob{
-        .vmo = std::move(vmo),
-        .length = length,
+        .vmo = std::move(item.vmo),
+        .length = item.length,
     };
   }
   completer.buffer(arena).ReplySuccess(ret);
