@@ -454,36 +454,36 @@ TEST(ExtendedPstate, Syscall) {
 TEST(ExtendedPstate, ForkPreservesAllRegisters) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
-    RegistersValue kTestRegisters;
-#if defined(__x86_64__)
-    for (int i = 0; i < 16; ++i) {
-      kTestRegisters.xmm[i] =
-          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    RegistersValue test_registers;
+#ifdef __x86_64__
+    for (size_t i = 0; i < 16; ++i) {
+      test_registers.xmm[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+                              (0x0901020304050607ULL + i);
     }
-#elif defined(__arm__)
-    for (int i = 0; i < 32; ++i) {
-      kTestRegisters.d[i] = 0x0102030405060708ULL + i;
+#elifdef __arm__
+    for (size_t i = 0; i < 32; ++i) {
+      test_registers.d[i] = 0x0102030405060708ULL + i;
     }
-    constexpr uint32_t kTestFpscr = 1u << 24;  // FZ (Flush-to-zero) bit
-#elif defined(__aarch64__)
-    for (int i = 0; i < 32; ++i) {
-      kTestRegisters.q[i] =
-          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x090a0b0c0d0e0f10ULL + i);
+    constexpr uint32_t kTestFpscr = 1u << 24u;  // FZ (Flush-to-zero) bit
+#elifdef __aarch64__
+    for (size_t i = 0; i < 32; ++i) {
+      test_registers.q[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+                            (0x090a0b0c0d0e0f10ULL + i);
     }
-    constexpr uint64_t kTestFpcr = 1ull << 24;  // FZ (Flush-to-zero) bit
-#elif defined(__riscv)
-    for (int i = 0; i < 32; ++i) {
-      kTestRegisters.f[i] = 0x0102030405060708ULL + i;
-      kTestRegisters.v[i] =
-          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    constexpr uint64_t kTestFpcr = 1ull << 24u;  // FZ (Flush-to-zero) bit
+#elifdef __riscv
+    for (size_t i = 0; i < 32; ++i) {
+      test_registers.f[i] = 0x0102030405060708ULL + i;
+      test_registers.v[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+                            (0x0901020304050607ULL + i);
     }
 #endif
 
-    SetTestRegisters(&kTestRegisters);
-#if defined(__arm__)
+    SetTestRegisters(&test_registers);
+#ifdef __arm__
     // Set the AArch32 Floating-Point Status and Control Register (FPSCR).
     __asm__ volatile("vmsr fpscr, %0" : : "r"(kTestFpscr));
-#elif defined(__aarch64__)
+#elifdef __aarch64__
     // Set the AArch64 Floating-Point Control Register (FPCR).
     __asm__ volatile("msr fpcr, %0" : : "r"(kTestFpcr));
 #endif
@@ -495,19 +495,19 @@ TEST(ExtendedPstate, ForkPreservesAllRegisters) {
     pid_t pid = static_cast<pid_t>(syscall(SYS_clone, SIGCHLD, 0, nullptr, nullptr, 0));
     if (pid == 0) {
       RegistersValue child_registers = GetTestRegisters();
-#if defined(__arm__)
+#ifdef __arm__
       // Read back the AArch32 Floating-Point Status and Control Register (FPSCR).
       uint32_t fpscr = 0;
       __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
-#elif defined(__aarch64__)
+#elifdef __aarch64__
       // Read back the AArch64 Floating-Point Control Register (FPCR).
       uint64_t fpcr = 0;
       __asm__ volatile("mrs %0, fpcr" : "=r"(fpcr));
 #endif
-      EXPECT_EQ(child_registers, kTestRegisters);
-#if defined(__arm__)
+      EXPECT_EQ(child_registers, test_registers);
+#ifdef __arm__
       EXPECT_EQ(fpscr, kTestFpscr);
-#elif defined(__aarch64__)
+#elifdef __aarch64__
       EXPECT_EQ(fpcr, kTestFpcr);
 #endif
       _exit(testing::Test::HasFailure() ? 1 : 0);
