@@ -341,11 +341,11 @@ func execute(
 			if err := t.RunSnapshot(cleanupCtx, opts.SnapshotFile); err != nil {
 				// This error usually has a different root cause that gets masked when we
 				// return this error. Log it so we can keep track of it, but don't fail.
-				logger.Errorf(cleanupCtx, err.Error())
+				logger.Errorf(cleanupCtx, "%s", err)
 			}
 			if err := t.EnsureSinks(cleanupCtx, sinks, outputs); err != nil {
 				// Same story, log it but don't fail.
-				logger.Errorf(cleanupCtx, err.Error())
+				logger.Errorf(cleanupCtx, "%s", err)
 			}
 			if ctx.Err() != nil {
 				// If the original context was cancelled, just return the context error.

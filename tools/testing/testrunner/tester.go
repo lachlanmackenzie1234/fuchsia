@@ -1345,7 +1345,7 @@ func (t *FFXTester) RunSnapshot(ctx context.Context, snapshotFile string) error 
 		return t.ffx.Snapshot(ctx, t.localOutputDir, snapshotFile)
 	}, nil)
 	if err != nil {
-		logger.Errorf(ctx, "%s: %s", constants.FailedToRunSnapshotMsg, err)
+		err = fmt.Errorf("%s: %w", constants.FailedToRunSnapshotMsg, err)
 	}
 	logger.Debugf(ctx, "ran snapshot in %s", clock.Now(ctx).Sub(startTime))
 	return err
