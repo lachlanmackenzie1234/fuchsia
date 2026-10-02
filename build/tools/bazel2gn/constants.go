@@ -210,6 +210,12 @@ var rustCommonAttrMap = map[string]string{
 	"rustc_flags":          "rustflags",
 	"crate_root":           "source_root",
 	"rustc_env":            "rustenv",
+	// The `build_flags` attribute on `rustc_*()` targets lists `build_flags()`
+	// target labels, which use the same labels as their corresponding GN
+	// `config()` targets (converted to `configs += [...]` in GN; note that
+	// `build_flags()` definitions themselves are hand-ported rather than
+	// converted by bazel2gn).
+	"build_flags": "configs",
 }
 
 // rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
@@ -425,6 +431,10 @@ var coptToConfig = map[string]string{
 	":ring-config": ":ring-config",
 	"//build/config/fuchsia:no_cpp_standard_library": "//build/config/fuchsia:no_cpp_standard_library",
 	"//build/config:all_source":                      "//build/config:all_source",
+
+	// The following are Bazel build_flags() targets, which have GN config()
+	// equivalents with the same label.
+	"//build/config/rust:bootfs": "//build/config/rust:bootfs",
 }
 
 // attrGNAssignmentOps maps from GN attribute names to the assignment operators to use in GN.
