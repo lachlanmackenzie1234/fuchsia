@@ -1,9 +1,11 @@
-// Cmpyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use crate::mm::memory::MemoryObject;
-use crate::mm::{DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags};
+use crate::mm::{
+    DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags, VMEX_RESOURCE,
+};
 use crate::power::OnWakeOps;
 use crate::security;
 use crate::task::{
@@ -1103,7 +1105,17 @@ pub fn default_mmap(
             clone_flags |= zx::VmoChildOptions::NO_WRITE;
         }
         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
-        Arc::new(memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?)
+        let mut child =
+            memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?;
+        // Zircon removes `Rights::EXECUTE` from snapshot children created without `NO_WRITE`
+        // (see `zx_vmo_create_child`). If the parent memory was executable, restore the right on
+        // the writable child so that `PROT_WRITE | PROT_EXEC` private mappings can be created.
+        if prot_flags.contains(ProtectionFlags::WRITE | ProtectionFlags::EXEC)
+            && memory.get_rights().contains(zx::Rights::EXECUTE)
+        {
+            child = child.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?;
+        }
+        Arc::new(child)
     };
 
     // Write guard is necessary only for shared mappings. Note that this doesn't depend on
