@@ -200,7 +200,7 @@ zx_status_t UsbCdcEcm::SetPacketFilterMode(uint16_t mode, bool on) {
 
   status = usb_.ControlOut(kClassInterfaceOut,
                            fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
-                           bits, 0, ZX_TIME_INFINITE, nullptr, 0);
+                           bits, comm_intf_num_, ZX_TIME_INFINITE, nullptr, 0);
 
   if (status != ZX_OK) {
     fdf::error("Set packet filter failed: {}", status);
@@ -303,22 +303,24 @@ void UsbCdcEcm::TaskHandler(async_dispatcher_t* dispatcher, async::WaitBase* wai
 zx_status_t UsbCdcEcm::Init() {
   fdf::debug("Starting {}", __FUNCTION__);
 
-  // Initialize context
-  zx_status_t status = usb_.ControlOut(
-      kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
-      kEthernetInitialPacketFilter, 0, ZX_TIME_INFINITE, nullptr, 0);
-  if (status != ZX_OK) {
-    fdf::error("Failed to set initial packet filter: {}", zx_status_get_string(status));
-    return status;
-  }
-  rx_packet_filter_ = kEthernetInitialPacketFilter;
-
   // Find the CDC descriptors and endpoints
   auto parser = UsbCdcDescriptorParser::Parse(usb_);
   if (parser.is_error()) {
     fdf::error("Failed to parse usb descriptor: {}", parser);
     return parser.error_value();
   }
+
+  comm_intf_num_ = parser->GetCommInterface().number;
+
+  // Initialize context
+  zx_status_t status = usb_.ControlOut(
+      kClassInterfaceOut, fidl::ToUnderlying(fdescriptor::CdcRequest::kSetEthernetPacketFilter),
+      kEthernetInitialPacketFilter, comm_intf_num_, ZX_TIME_INFINITE, nullptr, 0);
+  if (status != ZX_OK) {
+    fdf::error("Failed to set initial packet filter: {}", zx_status_get_string(status));
+    return status;
+  }
+  rx_packet_filter_ = kEthernetInitialPacketFilter;
 
   // Parse endpoint information
   int_endpoint_ = parser->GetInterruptEndpoint();

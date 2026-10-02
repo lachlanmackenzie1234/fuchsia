@@ -22,7 +22,6 @@
 #include <usb/usb.h>
 
 namespace usb_cdc_ecm {
-namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 class EcmEndpoint {
  public:
@@ -53,19 +52,21 @@ class UsbCdcDescriptorParser {
 
   EcmInterface GetDefaultInterface() const { return default_ifc_; }
   EcmInterface GetDataInterface() const { return data_ifc_; }
+  EcmInterface GetCommInterface() const { return comm_ifc_; }
 
   uint16_t GetMtu() const { return mtu_; }
   MacAddress GetMacAddress() const { return mac_addr_; }
 
  private:
   explicit UsbCdcDescriptorParser(EcmEndpoint int_ep, EcmEndpoint tx_ep, EcmEndpoint rx_ep,
-                                  EcmInterface default_ifc, EcmInterface data_ifc, uint16_t mtu,
-                                  MacAddress mac_addr)
+                                  EcmInterface default_ifc, EcmInterface data_ifc,
+                                  EcmInterface comm_ifc, uint16_t mtu, MacAddress mac_addr)
       : int_ep_(int_ep),
         tx_ep_(tx_ep),
         rx_ep_(rx_ep),
         default_ifc_(default_ifc),
         data_ifc_(data_ifc),
+        comm_ifc_(comm_ifc),
         mtu_(mtu),
         mac_addr_(mac_addr) {}
 
@@ -85,6 +86,7 @@ class UsbCdcDescriptorParser {
 
   EcmInterface default_ifc_;
   EcmInterface data_ifc_;
+  EcmInterface comm_ifc_;
 
   uint16_t mtu_;
   MacAddress mac_addr_;

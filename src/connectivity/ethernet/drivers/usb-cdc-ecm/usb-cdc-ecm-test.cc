@@ -4,6 +4,7 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -34,6 +35,8 @@
 
 #include "src/connectivity/lib/network-device/cpp/network_device_client.h"
 #include "src/lib/testing/predicates/status.h"
+
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace usb_virtual_bus {
 namespace {
@@ -268,9 +271,8 @@ class UsbCdcEcmTest : public ::testing::Test {
     device_desc.id_product = htole16(0x8152);
 
     usb_peripheral::wire::FunctionDescriptor usb_cdc_ecm_function_desc = {
-        .interface_class = fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::UsbClass::kComm),
-        .interface_subclass =
-            fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::CdcSubclass::kEthernet),
+        .interface_class = fidl::ToUnderlying(fdescriptor::UsbClass::kComm),
+        .interface_subclass = fidl::ToUnderlying(fdescriptor::CdcSubclass::kEthernet),
         .interface_protocol = 0,
     };
 

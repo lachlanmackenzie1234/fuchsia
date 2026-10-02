@@ -120,6 +120,7 @@ class UsbCdcEcm : public fdf::DriverBase2, public ddk::EthernetImplProtocol<UsbC
   usb::RequestPool<void> rx_request_pool_ TA_GUARDED(mutex_);
   uint64_t rx_endpoint_delay_;  // wait time between 2 recv requests
   uint16_t rx_packet_filter_;
+  uint8_t comm_intf_num_ = 0;
 };
 
 }  // namespace usb_cdc_ecm

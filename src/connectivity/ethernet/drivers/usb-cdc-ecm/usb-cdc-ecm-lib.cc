@@ -10,10 +10,15 @@
 #include "fuchsia/hardware/usb/descriptor/c/banjo.h"
 #include "usb/usb.h"
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
 namespace usb_cdc_ecm {
 
 zx::result<MacAddress> UsbCdcDescriptorParser::ParseMacAddress(
     usb::UsbDevice& usb, const usb_cs_ethernet_interface_descriptor_t* desc) {
+  if (desc->iMACAddress == 0) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
   // Read string descriptor for MAC address (string index is in iMACAddress field)
   size_t out_length;
   uint8_t str_desc_buf[kExpectedStringSize];
@@ -76,6 +81,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
   std::optional<EcmEndpoint> rx_ep;
   std::optional<EcmInterface> default_ifc;
   std::optional<EcmInterface> data_ifc;
+  std::optional<EcmInterface> comm_ifc;
 
   // Find default interface.
   for (const usb::Interface& interface : *interfaces) {
@@ -139,6 +145,11 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
         fidl::ToUnderlying(fdescriptor::UsbClass::kComm)) {
       continue;
     }
+    if (comm_ifc.has_value()) {
+      fdf::error("Multiple communications interfaces found");
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
+    comm_ifc = EcmInterface(interface.descriptor());
 
     for (auto& descriptor : interface.GetDescriptorList()) {
       if (descriptor.b_descriptor_type !=
@@ -210,6 +221,10 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
     fdf::error("Unable to find CDC data interface");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
+  if (!comm_ifc.has_value()) {
+    fdf::error("Unable to find CDC comm interface");
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
 
   // Parse the information in the CDC descriptors. The temporary is used because the bcdCDC field
   // resides in a packed struct and is not 2-byte aligned. The alignment trips up ubsan when passing
@@ -231,7 +246,7 @@ zx::result<UsbCdcDescriptorParser> UsbCdcDescriptorParser::Parse(usb::UsbDevice&
   }
 
   return zx::ok(UsbCdcDescriptorParser(int_ep.value(), tx_ep.value(), rx_ep.value(),
-                                       default_ifc.value(), data_ifc.value(), mtu,
+                                       default_ifc.value(), data_ifc.value(), comm_ifc.value(), mtu,
                                        mac_addr.value()));
 }
 
