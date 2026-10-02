@@ -1601,10 +1601,10 @@ static bool brcmf_valid_wpa_oui(uint8_t* oui, bool is_rsn_ie) {
 }
 
 static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcmf_vs_tlv* wpa_ie,
-                                         bool is_rsn_ie, bool is_ap) {
+                                         size_t max_len, bool is_rsn_ie, bool is_ap) {
   uint16_t count;
   zx_status_t err = ZX_OK;
-  int32_t len;
+  uint32_t len;
   uint32_t i;
   uint32_t wsec;
   uint32_t pval = 0;
@@ -1620,7 +1620,19 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
   if (wpa_ie == nullptr) {
     goto exit;
   }
+  // First make sure we can even access the len field.
+  if (max_len < TLV_HDR_LEN) {
+    BRCMF_ERR("no TLV header, need %d bytes, got %zu", TLV_HDR_LEN, max_len);
+    err = ZX_ERR_BUFFER_TOO_SMALL;
+    goto exit;
+  }
   len = wpa_ie->len + TLV_HDR_LEN;
+  // Then check that the value in the len field is within bounds.
+  if (len > max_len) {
+    BRCMF_ERR("invalid len field %u in TLV, max_len %zu", len, max_len);
+    err = ZX_ERR_BUFFER_TOO_SMALL;
+    goto exit;
+  }
   data = (uint8_t*)wpa_ie;
   offset = TLV_HDR_LEN;
   if (!is_rsn_ie) {
@@ -1630,7 +1642,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
   }
 
   /* check for multicast cipher suite */
-  if ((int32_t)offset + WPA_IE_MIN_OUI_LEN > len) {
+  if (offset + WPA_IE_MIN_OUI_LEN > len) {
     err = ZX_ERR_INVALID_ARGS;
     BRCMF_ERR("no multicast cipher suite");
     goto exit;
@@ -1669,11 +1681,17 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
   }
 
   offset++;
+  if (offset + WPA_IE_SUITE_COUNT_LEN > len) {
+    err = ZX_ERR_INVALID_ARGS;
+    BRCMF_ERR("no multicast cipher suite count, offset %u > len %u",
+              offset + WPA_IE_SUITE_COUNT_LEN, len);
+    goto exit;
+  }
   /* walk thru unicast cipher list and pick up what we recognize */
   count = data[offset] + (data[offset + 1] << 8);
   offset += WPA_IE_SUITE_COUNT_LEN;
   /* Check for unicast suite(s) */
-  if ((int32_t)(offset + (WPA_IE_MIN_OUI_LEN * count)) > len) {
+  if (offset + (WPA_IE_MIN_OUI_LEN * count) > len) {
     err = ZX_ERR_INVALID_ARGS;
     BRCMF_ERR("no unicast cipher suite");
     goto exit;
@@ -1707,11 +1725,18 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
     }
     offset++;
   }
+
+  if (offset + WPA_IE_SUITE_COUNT_LEN > len) {
+    err = ZX_ERR_INVALID_ARGS;
+    BRCMF_ERR("no auth key mgmt suite count, offset %u > len %u", offset + WPA_IE_SUITE_COUNT_LEN,
+              len);
+    goto exit;
+  }
   /* walk thru auth management suite list and pick up what we recognize */
   count = data[offset] + (data[offset + 1] << 8);
   offset += WPA_IE_SUITE_COUNT_LEN;
   /* Check for auth key management suite(s) */
-  if ((int32_t)(offset + (WPA_IE_MIN_OUI_LEN * count)) > len) {
+  if (offset + (WPA_IE_MIN_OUI_LEN * count) > len) {
     err = ZX_ERR_INVALID_ARGS;
     BRCMF_ERR("no auth key mgmt suite");
     goto exit;
@@ -1769,7 +1794,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
   if (is_rsn_ie) {
     if (is_ap) {
       wme_bss_disable = 1;
-      if (((int32_t)offset + RSN_CAP_LEN) <= len) {
+      if (offset + RSN_CAP_LEN <= len) {
         rsn_cap = data[offset] + (data[offset + 1] << 8);
         if (rsn_cap & RSN_CAP_PTK_REPLAY_CNTR_MASK) {
           wme_bss_disable = 0;
@@ -1811,8 +1836,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
       offset += RSN_PMKID_COUNT_LEN;
 
       /* See if there is BIP wpa suite left for MFP */
-      if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP) &&
-          ((int32_t)(offset + WPA_IE_MIN_OUI_LEN) <= len)) {
+      if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP) && (offset + WPA_IE_MIN_OUI_LEN <= len)) {
         err = brcmf_fil_bsscfg_data_set(ifp, "bip", &data[offset], WPA_IE_MIN_OUI_LEN);
         if (err != ZX_OK) {
           BRCMF_ERR("bip error %d", err);
@@ -1823,7 +1847,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
       // Client path: honour the RSN-capabilities word SME placed in
       // security_ie (MFPR/MFPC) so the firmware "mfp" knob matches what the
       // host actually negotiated. Mirrors bcmdhd wl_set_key_mgmt().
-      if ((static_cast<int32_t>(offset) + RSN_CAP_LEN) <= len) {
+      if ((offset + RSN_CAP_LEN) <= len) {
         rsn_cap = data[offset] + (data[offset + 1] << 8);
         if (rsn_cap & RSN_CAP_MFPR_MASK) {
           mfp = BRCMF_MFP_REQUIRED;
@@ -2258,7 +2282,7 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
 
   if (req->security_ie().has_value() && req->security_ie()->size() > 0) {
     struct brcmf_vs_tlv* tmp_ie = (struct brcmf_vs_tlv*)req->security_ie()->data();
-    err = brcmf_configure_wpaie(ifp, tmp_ie, is_rsn_ie, false);
+    err = brcmf_configure_wpaie(ifp, tmp_ie, req->security_ie()->size(), is_rsn_ie, false);
     if (err != ZX_OK) {
       BRCMF_ERR("Failed to install RSNE: %s", zx_status_get_string(err));
       goto fail;
@@ -3836,7 +3860,7 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
   // Configure RSN IE
   if (req->has_rsne() && req->rsne().size() != 0) {
     struct brcmf_vs_tlv* tmp_ie = (struct brcmf_vs_tlv*)req->rsne().data();
-    status = brcmf_configure_wpaie(ifp, tmp_ie, true, true);
+    status = brcmf_configure_wpaie(ifp, tmp_ie, req->rsne().size(), true, true);
     if (status != ZX_OK) {
       BRCMF_ERR("Failed to install RSNE: %s", zx_status_get_string(status));
       goto fail;
