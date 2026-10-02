@@ -308,7 +308,6 @@ class BazelRbeSettings(object):
 
 @dataclasses.dataclass
 class BazelGlobalArguments(object):
-    upload_build_events: str | None
     quiet: bool
     sandbox_debug: bool
     auto_refresh_compdb: bool
@@ -329,7 +328,6 @@ class BazelGlobalArguments(object):
         # Load settings specified by GN metadata.
         with (build_dir / "bazel_args" / "global_args.json").open("rb") as f:
             content = json.load(f)
-            upload_build_events = content["upload_build_events"]
             auto_refresh_compdb = content["auto_refresh_compdb"]
             rust_sysroot = (build_dir / content["rust_sysroot"]).resolve()
 
@@ -338,9 +336,6 @@ class BazelGlobalArguments(object):
         sandbox_debug = os.environ.get("FUCHSIA_DEBUG_BAZEL_SANDBOX") == "1"
 
         return BazelGlobalArguments(
-            upload_build_events=(
-                upload_build_events if upload_build_events != "" else None
-            ),
             quiet=quiet,
             sandbox_debug=sandbox_debug,
             auto_refresh_compdb=auto_refresh_compdb,

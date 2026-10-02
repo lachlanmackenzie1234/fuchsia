@@ -238,10 +238,6 @@ class BazelActionRunner(object):
         # args.
         cmd_args = []
 
-        # if build-event uploading is enabled in global args, then append the config for that
-        if self.global_args.upload_build_events:
-            cmd_args += [f"--config={self.global_args.upload_build_events}"]
-
         # This returns an empty list of there's nothing for it to set, otherwise it sets all the
         # params appropriately based on the number of cores and the ENV vars.
         cmd_args += calculate_jobs_params(self.rbe_settings)
