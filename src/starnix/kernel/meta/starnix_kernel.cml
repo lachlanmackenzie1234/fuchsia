@@ -84,6 +84,11 @@
             from: "parent",
         },
         {
+            service: "fuchsia.hardware.power.stats.Service",
+            from: "parent",
+            availability: "optional",
+        },
+        {
             // This service replaces the directory capability above.
             service: "fuchsia.gpu.magma.Service",
             availability: "optional",
