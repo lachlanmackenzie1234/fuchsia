@@ -937,15 +937,6 @@ pub mod test {
         Ok(config_file)
     }
 
-    // This test has a race condition, which I (slgrady) have spent hours trying to find.
-    // Apparently the notify crate in emulator_instance is for some reason not producing
-    // the Create event for the new emulator file. The event is created in a separate
-    // thread, so it's not an async issue. The watcher is not being dropped at that point.
-    // The file is in fact created and placed on the filesystem; the watcher thread
-    // is running at the point we are waiting for the event.  Giving up, since I believe
-    // the race-condition only comes up in the artificial environment of a test case.
-    // Normally, emulators are extended events, not just a fast creation of a single file.
-    #[ignore]
     #[fuchsia::test]
     async fn test_target_stream_produces_emulator() {
         use tempfile::tempdir;
@@ -960,8 +951,7 @@ pub mod test {
         let config_file = build_instance_file(&instance_dir, "emu-data-instance").unwrap();
 
         // Before waiting on devices, let's make sure we're actually getting the
-        // emulator. (This shouldn't be necessary, but I've seen this test flake
-        // by timing out, so this is a validity check.)
+        // emulator.
         let existing = emulator_instance::get_all_targets(&emu_instances).unwrap();
         assert_eq!(existing.len(), 1);
 
@@ -997,9 +987,6 @@ pub mod test {
 
         // Add a new (different) emulator
         let config_file2 = build_instance_file(&instance_dir, "emu-data-instance2").unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        // let existing = emulator_instance::get_all_targets().await?;
-        // assert_eq!(existing.len(), 2);
 
         // Assert that the newly-created emulator is discovered
         let next =
@@ -1021,23 +1008,18 @@ pub mod test {
 
         drop(config_file);
         drop(config_file2);
-        std::fs::remove_dir_all(&instance_dir).unwrap();
-        // TODO(325325761) -- re-enable when emulator Remove events are generated
-        // correctly.
-        // let next = stream
-        //     .next()
-        //     .await
-        //     .unwrap();
-        // let next = next.expect("Getting emulator event failed");
-        // assert_eq!(
-        //     next,
-        //     // The node_name and the state both have to match the contents of the emu_config above.
-        //     TargetEvent::Removed(TargetHandle {
-        //         // Name must correspond to "runtime:name" value in config
-        //         node_name: Some("fuchsia-emulator".to_string()),
-        //         // Addr must correspond to "host:port_map:sh:host" value in config
-        //         state: TargetState::Product(TargetAddr::from_str("127.0.0.1:33881")?),
-        //     })
-        // );
+        std::fs::remove_dir_all(instance_dir.join("emu-data-instance2")).unwrap();
+        let next = stream.next().await.expect("No event was waiting after removing emulator");
+        assert_eq!(
+            next,
+            TargetEvent::Removed(TargetHandle {
+                node_name: Some("emu-data-instance2".to_string()),
+                state: TargetState::Product {
+                    addrs: vec![TargetAddr::from_str("127.0.0.1:3322").unwrap()],
+                    serial: None,
+                },
+                manual: false,
+            })
+        );
     }
 }
