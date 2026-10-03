@@ -3,7 +3,7 @@
     "checks": [
         {
             "name": "gn_secondary_tree",
-            "description": "Errors when the change adds or edits a Bazel build file (BUILD.bazel, BUILD, .bzl) under build/secondary/ (GN-only overlay tree for third-party code) or adds a bazel2gn third_party_target_map.json entry pointing into build/secondary/; such code must move to the //third_party/<name>/src layout with BUILD.gn and BUILD.bazel in //third_party/<name>/.",
+            "description": "Errors when the change adds or edits a Bazel build file (BUILD.bazel, BUILD, .bzl) under build/secondary/ (GN-only overlay tree for third-party code), adds a //build/secondary/... dependency to a Bazel file elsewhere, or adds a bazel2gn third_party_target_map.json entry pointing into build/secondary/; such code must move (in a separate CL below the migration) to the //third_party/<name>/src layout with BUILD.gn and BUILD.bazel in //third_party/<name>/, using new_local_repository with a Fuchsia build file when upstream's own BUILD/WORKSPACE makes src/ a separate Bazel package.",
             "script_file": "gn_secondary_tree.sh",
             "enabled": true
         },
