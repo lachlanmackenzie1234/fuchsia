@@ -901,7 +901,7 @@ failure_mode_checks:
   string: "FFX Library Error: NoFDomainClient"
   log_types: ["swarmingOutputType"]
   skip_all_passed_tests: true
-# LINT.ThenChange(//src/developer/ffx/lib/fuchsia-controller/src/lib_context.rs:no_fdomain_client)
+# LINT.ThenChange(//src/developer/fuchsia-controller/src/lib_context.rs:no_fdomain_client)
 
 # For https://fxbug.dev/505825178
 - kind: "string_in_log"
