@@ -439,8 +439,7 @@ async fn main_inner() -> Result<(), Error> {
         inspector.root().create_child("package_fetcher"),
     );
     let package_fetcher_fut = Task::spawn(package_fetcher_fut);
-    let tuf_authority = fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
-        .context("error connecting to fuchsia.pkg/Authority")?;
+    let tuf_authority = fidl_connector::ServiceReconnector::<fpkg::AuthorityMarker>::new();
     {
         let resolver = ota_resolver::Resolver::new(
             tuf_authority.clone(),
