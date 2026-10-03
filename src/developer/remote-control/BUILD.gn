@@ -110,13 +110,16 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
+  test_deps = [
+    "//sdk/fidl/fuchsia.hardware.vsock:fuchsia.hardware.vsock_rust",
+    "//src/lib/fuchsia",
+  ]
+
   sources = [
     "src/fdomain.rs",
     "src/main.rs",
     "src/vsock.rs",
   ]
-
-  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_test_component("lib_test-test-driver") {
