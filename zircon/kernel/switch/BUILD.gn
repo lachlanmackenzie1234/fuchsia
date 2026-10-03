@@ -509,7 +509,6 @@ variant("unit-tests-enabled") {
 
 # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
 clippy_lints = [
-  "assertions-on-constants",
   "crate-in-macro-def",
   "doc-lazy-continuation",
   "new-without-default",
