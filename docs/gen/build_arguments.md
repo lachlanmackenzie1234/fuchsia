@@ -934,7 +934,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -7545,7 +7545,7 @@ public config (which may -include a file or add defines directly).
 
 **Current value (from the default):** `"//third_party/pigweed/src/pw_build:empty"`
 
-From //third_party/pigweed/src/pw_status/BUILD.gn:25
+From //third_party/pigweed/src/pw_status/BUILD.gn:26
 
 ### pw_string_CONFIG
 
