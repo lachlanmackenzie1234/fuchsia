@@ -115,6 +115,30 @@ void BootProperties::GetPropertiesOrEmptyImpl(std::span<std::string_view> keys,
   FromCmdline(cmdline_, keys, results, flags);
 }
 
+zx::result<std::string_view> BootProperties::JoinProperty(std::string_view key,
+                                                          std::span<char> buffer) const {
+  std::optional<size_t> size;
+
+  EnumerateProperty(key, [&](std::string_view val, linux_boot_config::Value::Action action) {
+    // An append extends the current value after a ','. Anything else (a define or override)
+    // replaces it, so writing starts over at the beginning of the buffer.
+    if (size.has_value() && action == linux_boot_config::Value::Action::kAppend) {
+      if (*size < buffer.size()) {
+        buffer[(*size)++] = ',';
+      }
+    } else {
+      size = 0;
+    }
+    // Copies as much as fits; the rest is truncated.
+    *size += val.copy(buffer.data() + *size, buffer.size() - *size);
+  });
+
+  if (size.has_value()) {
+    return zx::ok(std::string_view(buffer.data(), *size));
+  }
+  return zx::error(ZX_ERR_NOT_FOUND);
+}
+
 zx::result<std::string_view> BootProperties::GetFromCmdline(std::string_view key) const {
   std::optional<std::string_view> result;
   bool flag = false;

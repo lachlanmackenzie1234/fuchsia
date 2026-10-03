@@ -58,6 +58,17 @@ class BootProperties {
     return result;
   }
 
+  // Joins all values of a property with ',' into buffer and returns a view of
+  // the result. Precedence is the same as GetProperty(), and a define or
+  // override resets the value.
+  //
+  // BootConfig may contain unquoted values like "key:=a,b,c", which BootConfig
+  // syntax parses as an array of values. Joining the elements recovers the full
+  // value ("a,b,c").
+  //
+  // Values that do not fit in buffer are truncated.
+  zx::result<std::string_view> JoinProperty(std::string_view key, std::span<char> buffer) const;
+
   // Invokes a callback for all matching property definitions/appends for a key.
   //
   // BootConfig is small enough that it's worthwhile to parse the entirety for
