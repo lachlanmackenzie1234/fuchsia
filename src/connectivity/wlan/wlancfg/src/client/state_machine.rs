@@ -723,6 +723,7 @@ async fn connected_state(
                             );
                             false
                         }
+                        fidl_sme::ConnectTransactionEvent::OnRssiThresholdBreached { .. } => false,
                         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info } => {
                             info!(
                                 "OnChannelSwitch received. Previous channel: {:?}, new channel: {:?}.",

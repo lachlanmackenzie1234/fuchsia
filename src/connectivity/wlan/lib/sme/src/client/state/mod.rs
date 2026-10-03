@@ -1381,6 +1381,14 @@ impl ClientState {
                     }
                     state.into()
                 }
+                MlmeEvent::OnRssiThresholdBreached { cur_rssi_dbm } => {
+                    state
+                        .connect_txn_sink
+                        .send(ConnectTransactionEvent::OnRssiThresholdBreached { cur_rssi_dbm });
+                    state.latest_ap_state.rssi_dbm = cur_rssi_dbm;
+                    state.last_signal_report_time = now();
+                    state.into()
+                }
                 MlmeEvent::EapolInd { ind } => {
                     let (transition, associated) = state.release_data();
                     match associated.on_eapol_ind(ind, &mut state_change_ctx, context) {
@@ -5920,6 +5928,25 @@ mod tests {
         assert_eq!(wmm_param.ac_vo_params.ecw_min_max.ecw_min(), 14);
         assert_eq!(wmm_param.ac_vo_params.ecw_min_max.ecw_max(), 15);
         assert_eq!({ wmm_param.ac_vo_params.txop_limit }, 16);
+    }
+
+    #[test]
+    fn on_rssi_threshold_breached_while_associated() {
+        let mut h = TestHelper::new();
+        let (cmd, mut connect_txn_stream) = connect_command_one();
+        let state = link_up_state(cmd);
+
+        let state = state.on_mlme_event(
+            MlmeEvent::OnRssiThresholdBreached { cur_rssi_dbm: -77 },
+            &mut h.context,
+        );
+        assert_matches!(
+            connect_txn_stream.try_recv(),
+            Ok(ConnectTransactionEvent::OnRssiThresholdBreached { cur_rssi_dbm: -77 })
+        );
+        let status = state.status();
+        let ap_info = assert_matches!(status, ClientSmeStatus::Connected(info) => info);
+        assert_eq!(ap_info.rssi_dbm, -77);
     }
 
     // Helper functions and data structures for tests

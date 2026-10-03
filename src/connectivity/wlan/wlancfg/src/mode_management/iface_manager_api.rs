@@ -378,6 +378,9 @@ fn connect_txn_event_name(event: &fidl_sme::ConnectTransactionEvent) -> &'static
         fidl_sme::ConnectTransactionEvent::OnRoamResult { .. } => "OnRoamResult",
         fidl_sme::ConnectTransactionEvent::OnDisconnect { .. } => "OnDisconnect",
         fidl_sme::ConnectTransactionEvent::OnSignalReport { .. } => "OnSignalReport",
+        fidl_sme::ConnectTransactionEvent::OnRssiThresholdBreached { .. } => {
+            "OnRssiThresholdBreached"
+        }
         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { .. } => "OnChannelSwitched",
     }
 }

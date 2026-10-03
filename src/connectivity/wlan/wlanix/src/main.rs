@@ -1246,6 +1246,7 @@ async fn handle_client_connect_transactions<C: ClientIface + 'static, P: PowerMa
                 }
                 iface.on_signal_report(ind);
             }
+            Ok(fidl_sme::ConnectTransactionEvent::OnRssiThresholdBreached { .. }) => {}
             Ok(fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info }) => {
                 ctx.current_channel.primary = info.new_primary_channel.number;
                 ctx.current_channel.band = info.new_primary_channel.band;

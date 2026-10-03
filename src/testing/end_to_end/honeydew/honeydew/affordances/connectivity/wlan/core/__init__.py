@@ -550,6 +550,7 @@ class ConnectTransactionContext:
         | f_wlan_sme.ConnectTransactionOnRoamResultRequest
         | f_wlan_sme.ConnectTransactionOnSignalReportRequest
         | f_wlan_sme.ConnectTransactionOnChannelSwitchedRequest
+        | f_wlan_sme.ConnectTransactionOnRssiThresholdBreachedRequest
     ]
 
 
@@ -565,6 +566,7 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
             | f_wlan_sme.ConnectTransactionOnRoamResultRequest
             | f_wlan_sme.ConnectTransactionOnSignalReportRequest
             | f_wlan_sme.ConnectTransactionOnChannelSwitchedRequest
+            | f_wlan_sme.ConnectTransactionOnRssiThresholdBreachedRequest
         ] = asyncio.Queue()
         self.server_task: asyncio.Task[None] | None = None
 
@@ -605,6 +607,16 @@ class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):
     ) -> None:
         logger.debug(
             "ConnectTransaction.OnChannelSwitched() called with %s", request
+        )
+        self.txn_queue.put_nowait(request)
+
+    def on_rssi_threshold_breached(
+        self,
+        request: f_wlan_sme.ConnectTransactionOnRssiThresholdBreachedRequest,
+    ) -> None:
+        logger.debug(
+            "ConnectTransaction.OnRssiThresholdBreached() called with %s",
+            request,
         )
         self.txn_queue.put_nowait(request)
 

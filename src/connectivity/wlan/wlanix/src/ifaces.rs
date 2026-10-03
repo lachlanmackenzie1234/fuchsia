@@ -207,6 +207,7 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         self.monitor_svc
             .query_iface_capabilities(iface_id)
             .await?
+            .map(|resp| resp.apf_support.unwrap_or_default())
             .map_err(zx::Status::err_from_raw)
             .context("Could not query iface device capabilities")
     }
@@ -1173,6 +1174,9 @@ fn connect_txn_event_name(event: &fidl_sme::ConnectTransactionEvent) -> &'static
         fidl_sme::ConnectTransactionEvent::OnRoamResult { .. } => "OnRoamResult",
         fidl_sme::ConnectTransactionEvent::OnDisconnect { .. } => "OnDisconnect",
         fidl_sme::ConnectTransactionEvent::OnSignalReport { .. } => "OnSignalReport",
+        fidl_sme::ConnectTransactionEvent::OnRssiThresholdBreached { .. } => {
+            "OnRssiThresholdBreached"
+        }
         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { .. } => "OnChannelSwitched",
     }
 }
@@ -2022,7 +2026,12 @@ mod tests {
             max_filter_length: Some(1024),
             ..Default::default()
         };
-        responder.send(Ok(&apf_support)).expect("Failed to respond to QueryIfaceCapabilities");
+        responder
+            .send(Ok(&fidl_device_service::DeviceMonitorQueryIfaceCapabilitiesResponse {
+                apf_support: Some(apf_support.clone()),
+                ..Default::default()
+            }))
+            .expect("Failed to respond to QueryIfaceCapabilities");
 
         let result =
             assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);
