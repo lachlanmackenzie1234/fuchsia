@@ -90,7 +90,7 @@ impl<Encoding: ControlAndStatusRegisterEncoding> CsrIo<Encoding> {
     pub const fn new() -> Self {
         // Associated constants are evaluated lazily, so force an evaluation
         // now.
-        let _ = Encoding::VALID;
+        const { Encoding::VALID };
         Self(PhantomData)
     }
 }

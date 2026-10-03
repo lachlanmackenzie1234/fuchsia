@@ -512,7 +512,6 @@ clippy_lints = [
   "assertions-on-constants",
   "crate-in-macro-def",
   "doc-lazy-continuation",
-  "let-unit-value",
   "new-without-default",
   "too-many-arguments",
   "unnecessary-cast",
