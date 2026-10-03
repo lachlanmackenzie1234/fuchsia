@@ -168,6 +168,37 @@ def compute_sources_by_owner(
     return sources_by_owner
 
 
+def should_update_stamp(
+    stamp_exists: bool,
+    declared_outputs: T.Sequence[str],
+    updated_outputs: T.AbstractSet[Path],
+    has_extra_targets: bool,
+) -> bool:
+    """Returns whether a delayed action's stamp file must be rewritten.
+
+    The stamp is normally left untouched when none of the action's declared
+    outputs changed, so that Ninja's restat can prune downstream dependents.
+
+    Args:
+        stamp_exists: Whether the stamp file already exists.
+        declared_outputs: The action's Ninja outputs, excluding the stamp.
+        updated_outputs: The outputs that Bazel rewrote in this build.
+        has_extra_targets: Whether the action also builds the targets listed
+            in an `extra_bazel_targets_file`.
+    """
+    if not stamp_exists:
+        return True
+    # Targets from an `extra_bazel_targets_file` (e.g. Bazel test packages)
+    # write outputs that no Ninja edge declares, so their changes are
+    # invisible here. Downstream actions that read those outputs through
+    # depfiles (e.g. `//build/bazel/target_tests:debug_symbols` and the
+    # amber-files publish) only rerun if the stamp changes, so assume they
+    # changed.
+    if has_extra_targets:
+        return True
+    return any(Path(output) in updated_outputs for output in declared_outputs)
+
+
 def main() -> int:
     time_profile = build_utils.TimeProfile()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -539,12 +570,11 @@ def main() -> int:
                 with open(action.ninja_depfile, "w") as f:
                     depfile.write_to(f)
 
-                # Only update the stamp file if it does not exist yet or if at
-                # least one of the action's outputs was updated, so that Ninja's
-                # restat can prune downstream dependents when outputs are unchanged.
-                if not stamp_path.exists() or any(
-                    Path(output) in updated_outputs
-                    for output in action.ninja_outputs[1:]
+                if should_update_stamp(
+                    stamp_exists=stamp_path.exists(),
+                    declared_outputs=action.ninja_outputs[1:],
+                    updated_outputs=updated_outputs,
+                    has_extra_targets=bool(extra_targets_file),
                 ):
                     timestamp = datetime.datetime.now().timestamp()
                     stamp_path.parent.mkdir(parents=True, exist_ok=True)

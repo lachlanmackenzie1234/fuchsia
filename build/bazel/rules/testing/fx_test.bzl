@@ -130,9 +130,8 @@ def _fx_test_impl(ctx):
                 for component in test_components
             ],
         ),
-        # TODO(https://fxbug.dev/564574581): Export these debug symbols to the
-        # GN build, like Bazel host tests do, so that test failures can be
-        # symbolized and coverage can be collected.
+        # Found by //build/bazel/debug_symbols:aspects.bzl so that
+        # //build/bazel/target_tests can export the symbols to the GN build.
         ctx.attr.package[FuchsiaDebugSymbolInfo],
     ]
 

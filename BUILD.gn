@@ -2255,6 +2255,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #     - Optional: Whether this target should trigger updating rust-project.json
 #     - Type: bool
 #
+#   copy_debug_symbols:
+#     - Optional: Whether to copy the debug symbols of all ELF binaries built by the Bazel
+#                 invocation that includes this target to ${root_build_dir}/.build-id/
+#     - Type: bool
+#
 #   extra_bazel_targets_file:
 #     - Optional: Path to a file listing extra Bazel targets, one label per line, to pass to
 #                 Bazel as top-level command line targets alongside 'bazel_target'.
@@ -2414,7 +2419,10 @@ group("target_tests") {
   testonly = true
   visibility = [ ":*" ]
 
-  deps = [ "//build/bazel/target_tests" ]
+  deps = [
+    "//build/bazel/target_tests",
+    "//build/bazel/target_tests:debug_symbols",
+  ]
 }
 
 # Can be any test-type. This is for local-developer use only.  It is not for use
