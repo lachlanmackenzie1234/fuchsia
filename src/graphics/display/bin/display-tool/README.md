@@ -120,7 +120,10 @@ background.
 
 * Smooth animation. No screen tearing, jitter, or display corruption.
 * The terminal outputs continuous FPS updates matching the display refresh rate.
-  Example: `Display 60.00 fps (16.66667 ms)`.
+  Example: `Display 60.00 fps (16.66667 ms) render 2.104 ms clean 1.302 ms`.
+  `render` is the CPU time spent drawing a frame, and `clean` is the CPU time
+  spent cleaning caches so the frame reaches memory. All values are moving
+  averages over recent frames.
 * No `Timed out while waiting` output. See `--vsync-timeout-ms <ms>` for tuning
   the timeout value.
 
