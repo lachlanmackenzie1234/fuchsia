@@ -6,6 +6,7 @@
 #include <lib/zx/msi.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
+#include <lib/zx/time.h>
 #include <lib/zx/vmar.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
@@ -98,8 +99,11 @@ TEST_F(MsiTest, AllocatedHandleRights) {
   ASSERT_OK(zx::msi::allocate(msi_resource(), 1, &msi));
   zx_info_handle_basic_t info = {};
   ASSERT_OK(msi.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-  // MSI objects are not waitable, so their handles lack ZX_RIGHT_WAIT.
-  EXPECT_EQ(ZX_DEFAULT_MSI_RIGHTS & ~ZX_RIGHT_WAIT, info.rights);
+  EXPECT_EQ(ZX_DEFAULT_MSI_RIGHTS, info.rights);
+
+  // MSI objects are waitable, though nothing ever asserts a signal on one.
+  EXPECT_STATUS(ZX_ERR_TIMED_OUT,
+                msi.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), nullptr));
 }
 
 struct MsiCreateTestCase {

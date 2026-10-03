@@ -9,16 +9,13 @@ use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
-use zx_types::{ZX_DEFAULT_MSI_RIGHTS, ZX_OBJ_TYPE_MSI, ZX_RIGHT_WAIT, zx_rights_t};
+use zx_types::{ZX_DEFAULT_MSI_RIGHTS, ZX_OBJ_TYPE_MSI, zx_rights_t};
 
 use super::KernelHandle;
 use super::msi_allocation::MsiAllocation;
 use super::msi_dispatcher_ffi::cpp_msi_dispatcher_create;
 
 use object_constants_rs as object_constants;
-
-/// Default rights assigned to an MsiDispatcher handle.
-pub const DEFAULT_RIGHTS: zx_rights_t = ZX_DEFAULT_MSI_RIGHTS & !ZX_RIGHT_WAIT;
 
 zr::static_assert_size_and_align!(
     MsiDispatcherState,
@@ -82,7 +79,7 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 impl MsiDispatcher {
     /// Returns default rights for an MsiDispatcher handle.
     pub fn default_rights() -> zx_rights_t {
-        DEFAULT_RIGHTS
+        ZX_DEFAULT_MSI_RIGHTS
     }
 
     /// Creates a new MsiDispatcher wrapping an MsiAllocation and returns its handle and rights.
@@ -96,7 +93,7 @@ impl MsiDispatcher {
                 cpp_msi_dispatcher_create(RefPtr::into_raw(msi_alloc).cast_mut(), out)
             })
         }?;
-        Ok((handle, DEFAULT_RIGHTS))
+        Ok((handle, ZX_DEFAULT_MSI_RIGHTS))
     }
 
     /// Returns `zx_info_msi_t` for this MSI dispatcher.
