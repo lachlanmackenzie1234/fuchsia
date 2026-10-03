@@ -7,6 +7,7 @@
 bazel2gn_verification_targets = [
   # keep-sorted start
 
+  "//build/rust/docs/rustdoc-index:verify_bazel2gn",
   "//build/sdk/generate_version_history:verify_bazel2gn",
   "//build/sdk/meta:verify_bazel2gn",
   "//examples/fidl/fuchsia.examples.docs:verify_bazel2gn",
