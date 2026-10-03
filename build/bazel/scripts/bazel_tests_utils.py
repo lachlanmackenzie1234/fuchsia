@@ -459,28 +459,29 @@ def _generate_device_tests_json(
         target_tests_json: list[TestSpec] = []
         for test_component in cquery_test["test_components"]:
             package_url = test_component["package_url"]
-            test_dict = {
-                "expects_ssh": True,
-                "test": {
-                    "build_rule": "fx_test",
-                    "cpu": cquery_test["cpu"],
-                    "label": label,
-                    # The source label indicates the location in the tree of
-                    # the source code. For labels in the main workspace,
-                    # ensure they start with "//".
-                    "source_label": normalized_label,
-                    "name": package_url,
-                    "os": cquery_test["os"],
-                    "package_url": package_url,
-                    "package_manifests": [package_manifest],
-                    # TODO(https://fxbug.dev/564574581): Support overriding
-                    # other test spec fields.
-                    "log_settings": {
-                        "max_severity": cquery_test.get(
-                            "max_log_severity", "WARN"
-                        )
-                    },
+            test_entry: dict[str, T.Any] = {
+                "build_rule": "fx_test",
+                "cpu": cquery_test["cpu"],
+                "label": label,
+                # The source label indicates the location in the tree of
+                # the source code. For labels in the main workspace,
+                # ensure they start with "//".
+                "source_label": normalized_label,
+                "name": package_url,
+                "os": cquery_test["os"],
+                "package_url": package_url,
+                "package_manifests": [package_manifest],
+                # TODO(https://fxbug.dev/564574581): Support overriding
+                # other test spec fields.
+                "log_settings": {
+                    "max_severity": cquery_test.get("max_log_severity", "WARN")
                 },
+            }
+            if test_component.get("realm"):
+                test_entry["realm"] = test_component["realm"]
+            test_dict: TestSpec = {
+                "expects_ssh": True,
+                "test": test_entry,
             }
             if cquery_test.get("build_only"):
                 test_dict["build_only"] = True

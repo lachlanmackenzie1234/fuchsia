@@ -642,6 +642,44 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.assertEqual(tests_json[0]["environments"], custom_envs)
         self.assertEqual(tests_json[1]["environments"], custom_envs)
 
+    def test_generate_device_tests_json_realm(self) -> None:
+        self._setUpDeviceTests(["//fake/device_tests"])
+
+        mock_runner = MockCommandRunner()
+        mock_runner.push_result(
+            stdout=json.dumps(
+                {
+                    "label": "@@//src/my_test:my_test",
+                    "package_manifest_execroot_path": "bazel-out/my_test/package_manifest.json",
+                    "os": "fuchsia",
+                    "cpu": "x64",
+                    "test_components": [
+                        {
+                            "component_name": "starnix_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/starnix_test.cm",
+                            "realm": "/core/testing/starnix-tests",
+                        },
+                        {
+                            "component_name": "hermetic_test",
+                            "package_url": "fuchsia-pkg://fuchsia.com/my-test-package#meta/hermetic_test.cm",
+                            "realm": None,
+                        },
+                    ],
+                }
+            )
+        )
+
+        tests_json = bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        ).tests
+
+        self.assertEqual(len(tests_json), 2)
+        self.assertEqual(
+            tests_json[0]["test"].get("realm"),
+            "/core/testing/starnix-tests",
+        )
+        self.assertNotIn("realm", tests_json[1]["test"])
+
     def test_generate_device_tests_json_build_file_inputs(self) -> None:
         self._setUpDeviceTests(["//fake/device_tests:suite"])
         suite_build = self.fuchsia_dir / "fake" / "device_tests" / "BUILD.bazel"

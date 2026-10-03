@@ -13,6 +13,49 @@ load(
     "fuchsia_component_common",
 )
 
+# Maps `test_type` values to the realm moniker the test component runs in.
+# LINT.IfChange(type_moniker_map)
+_TYPE_MONIKER_MAP = {
+    # keep-sorted start
+    "bootstrap_driver_system": "/bootstrap/testing/driver-system-tests",
+    "chromium": "/core/testing/chromium-tests",
+    "component_framework": "/core/testing/component-framework-tests",
+    "ctf": "/core/testing/ctf-tests",
+    "device": "/core/testing/devices-tests",
+    "driver_system": "/core/testing/driver-system-tests",
+    "drm": "/core/testing/drm-tests",
+    "starnix": "/core/testing/starnix-tests",
+    "storage": "/core/testing/storage-tests",
+    "system": "/core/testing/system-tests",
+    "system_validation": "/core/testing/system-validation-tests",
+    "test_arch": "/core/testing/test-arch-tests",
+    "vfs_compliance": "/core/testing/vfs-compliance-tests",
+    "vulkan": "/core/testing/vulkan-tests",
+    # keep-sorted end
+}
+# LINT.ThenChange(//build/components/fuchsia_test_component.gni:type_moniker_map)
+
+def resolve_test_type_realm(test_type):
+    """Maps a `test_type` string to its test realm moniker.
+
+    Args:
+        test_type: A key of `_TYPE_MONIKER_MAP`, or an empty string or `None`
+            for the default hermetic test realm.
+
+    Returns:
+        The test realm moniker, or `None` if `test_type` is not set.
+    """
+    if not test_type:
+        return None
+    if test_type not in _TYPE_MONIKER_MAP:
+        fail(
+            "Invalid `test_type` {}. Valid values are: {}".format(
+                repr(test_type),
+                ", ".join(sorted(_TYPE_MONIKER_MAP.keys())),
+            ),
+        )
+    return _TYPE_MONIKER_MAP[test_type]
+
 def _fx_component_manifest_impl(ctx):
     manifest_in = ctx.file.manifest
     component_name = ctx.attr.component_name or ctx.label.name
@@ -94,7 +137,7 @@ _COMMON_COMPONENT_ATTRS = {
         mandatory = False,
     ),
 
-    # Set by the macro itself: use `fx_test_component()` for test components.
+    # This inherited attribute is set by the individual macros. Prevent callers from setting it.
     "is_test": None,
 
     # TODO(https://fxbug.dev/520207779): Determine whether we need these attributes for platform
@@ -120,6 +163,7 @@ def _fx_test_component_impl(
         component_name,
         compiled_manifest,
         deps,
+        test_type,
         testonly,
         visibility,
         **kwargs):
@@ -145,6 +189,7 @@ def _fx_test_component_impl(
         # `fx_package(test_components = ...)` and used by `fx_test()` to
         # distinguish test components from other components in the package.
         is_test = True,
+        test_realm = resolve_test_type_realm(test_type),
 
         # Forward extra attributes.
         **kwargs
@@ -160,5 +205,20 @@ listed in the `test_components` attribute of `fx_package()` (and not in
 """,
     implementation = _fx_test_component_impl,
     inherit_attrs = fuchsia_component_common,
-    attrs = _COMMON_COMPONENT_ATTRS,
+    attrs = _COMMON_COMPONENT_ATTRS | {
+        # Set from `test_type`.
+        "test_realm": None,
+        "test_type": attr.string(
+            doc = """The non-hermetic test realm type to run the test component in (e.g. `"starnix"` or `"system"`).
+
+            Must be a key of `_TYPE_MONIKER_MAP` in
+            //build/bazel/rules/components/fx_component.bzl, which maps it to
+            the test realm moniker. If omitted, the test runs in the default
+            hermetic test realm.
+            See https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#non-hermetic_tests
+            for valid types.
+            """,
+            configurable = False,
+        ),
+    },
 )

@@ -19,9 +19,10 @@ run on a Fuchsia device or emulator. These have the same requirement of
 being buildable exclusively with Bazel, and additionally:
 
 - Aside from `environments` (which defaults to the build's default test
-  environments), `build_only`, and `max_log_severity` (which defaults to
-  `WARN`), test spec fields (timeouts, realms, etc.) cannot be customized per
-  test yet.
+  environments), `build_only`, `max_log_severity` (which defaults to `WARN`),
+  and `test_type` (for running in a non-hermetic test realm such as
+  `"starnix"` or `"system"`), test spec fields (timeouts, etc.) cannot be
+  customized per test yet.
 
 [fxbug.dev/564574581](https://fxbug.dev/564574581) tracks the remaining work for
 target tests in Bazel.
@@ -222,6 +223,11 @@ runs in the build's default test environments, exactly like a GN test that
 doesn't set `environments`. `environments` must be a plain list (not a
 `select()`) and must not be empty; to build a test without running it, set
 `build_only = True` instead.
+
+To run a test in a non-hermetic test realm (such as `"starnix"`, `"system"`, or
+`"vulkan"`), pass `test_type` to `fx_test_component()` (or to `fx_test()` to
+apply to all test components in the package). Valid `test_type` values match
+`type_moniker_map` in `//build/components/fuchsia_test_component.gni`.
 
 Note: components marked as tests **MUST** be listed in `test_components`, and
 non-test components **MUST** be listed in `components`. Packaging fails

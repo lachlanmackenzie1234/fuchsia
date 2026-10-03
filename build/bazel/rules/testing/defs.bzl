@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Rules for verifying the outputs and providers of Bazel test rules."""
+
 load("//build/bazel/rules/testing:fx_test.bzl", "FuchsiaTestInfo")
 
 def _verify_file_path_impl(ctx):
@@ -73,3 +75,33 @@ def verify_fx_test_environments(name, test, expected_environments, expected_buil
         expected_build_only = expected_build_only,
         **kwargs
     )
+
+def _verify_fx_test_realms_impl(ctx):
+    test_info = ctx.attr.test[FuchsiaTestInfo]
+    actual_realms = {
+        c.component_name: c.realm or ""
+        for c in test_info.test_components
+    }
+    if actual_realms != ctx.attr.expected_realms:
+        fail(
+            "Expected test component realms {}, got {}.".format(
+                ctx.attr.expected_realms,
+                actual_realms,
+            ),
+        )
+    return []
+
+verify_fx_test_realms = rule(
+    doc = "Verifies the `realm` values on `FuchsiaTestInfo.test_components` of an `fx_test()` target.",
+    implementation = _verify_fx_test_realms_impl,
+    attrs = {
+        "test": attr.label(
+            providers = [FuchsiaTestInfo],
+            mandatory = True,
+        ),
+        "expected_realms": attr.string_dict(
+            doc = "Map of `component_name` to expected `realm` moniker (or empty string if hermetic).",
+            mandatory = True,
+        ),
+    },
+)

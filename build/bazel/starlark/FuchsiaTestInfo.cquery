@@ -40,6 +40,7 @@ def format(target):
             {
                 "component_name": component.component_name,
                 "package_url": component.package_url,
+                "realm": component.realm,
             }
             for component in test_info.test_components
         ],
