@@ -4255,3 +4255,98 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         # Invalid JSON raises JSONDecodeError
         with self.assertRaises(json.JSONDecodeError):
             main._is_fuchsia_repo_registered("not json")
+
+    async def test_no_preflight_skips_device_discovery_and_binding(
+        self,
+    ) -> None:
+        """Test that --no-preflight skips device discovery and binding while checking package server."""
+        command_mock = self._mock_run_command(0)
+        self._mock_has_tests_in_base([])
+
+        mock_has_active = mock.AsyncMock(return_value=True)
+        mock_bind = mock.AsyncMock()
+        mock_pkg_server = mock.AsyncMock(return_value=True)
+        mock_wait_repo = mock.AsyncMock(return_value=True)
+
+        with (
+            mock.patch.object(
+                main.AsyncMain, "_has_active_device", mock_has_active
+            ),
+            mock.patch.object(
+                main.AsyncMain, "_bind_to_active_device", mock_bind
+            ),
+            mock.patch(
+                "main.has_package_server_connected_to_device", mock_pkg_server
+            ),
+            mock.patch.object(
+                main.AsyncMain,
+                "_wait_for_repository_registration",
+                mock_wait_repo,
+            ),
+        ):
+            ret = await main.async_main_wrapper(
+                args.parse_args(
+                    ["--simple", "--no-build", "--device", "--no-preflight"]
+                )
+            )
+            self.assertEqual(ret, 0)
+            mock_has_active.assert_not_awaited()
+            mock_bind.assert_not_awaited()
+            mock_pkg_server.assert_awaited_once()
+            mock_wait_repo.assert_not_awaited()
+
+            # Verify the device test itself still ran.
+            call_prefixes = self._make_call_args_prefix_set(
+                command_mock.call_args_list
+            )
+            self.assertIsSubset(
+                {("fx", "--dir", self.out_dir, "ffx", "test", "run")},
+                call_prefixes,
+            )
+
+    async def test_present_package_server_skips_duplicate_repo_registration_wait(
+        self,
+    ) -> None:
+        """Test that _wait_for_repository_registration is skipped when package server is already present."""
+        self._mock_run_command(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        mock_wait_repo = mock.AsyncMock(return_value=True)
+        with mock.patch.object(
+            main.AsyncMain, "_wait_for_repository_registration", mock_wait_repo
+        ):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build", "--device"])
+            )
+            self.assertEqual(ret, 0)
+            mock_wait_repo.assert_not_awaited()
+
+    async def test_device_environment_only_queried_for_e2e_or_test_pilot(
+        self,
+    ) -> None:
+        """Test that get_device_environment_from_exec_env is skipped for standard device tests."""
+        self._mock_run_command(0)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        mock_get_dev_env = self._mock_get_device_environment(
+            environment.DeviceEnvironment(
+                "localhost", "8080", "foo", "/foo.key"
+            )
+        )
+
+        # Standard device test (no e2e, no test-pilot) should not query DeviceEnvironment.
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--device"])
+        )
+        self.assertEqual(ret, 0)
+        mock_get_dev_env.assert_not_awaited()
+
+        # E2E test run should query DeviceEnvironment.
+        mock_get_dev_env.reset_mock()
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--only-e2e"])
+        )
+        self.assertEqual(ret, 0)
+        mock_get_dev_env.assert_awaited_once()
