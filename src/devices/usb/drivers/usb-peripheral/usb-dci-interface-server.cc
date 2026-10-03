@@ -66,10 +66,10 @@ void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sy
 void UsbDciInterfaceServer::SetConnected(SetConnectedRequestView req,
                                          SetConnectedCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  drv_->OnHostConnectionChanged(req->is_connected);
   drv_->dci_inspect().RecordEvent(
       std::format("host connection changed: {}", req->is_connected ? "connected" : "disconnected"));
-  completer.ReplySuccess();
+  drv_->OnHostConnectionChanged(
+      req->is_connected, [completer = completer.ToAsync()]() mutable { completer.ReplySuccess(); });
 }
 
 void UsbDciInterfaceServer::SetSpeed(SetSpeedRequestView req, SetSpeedCompleter::Sync& completer) {
