@@ -40,30 +40,16 @@ use page;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_IOB_ACCESS_EP0_CAN_MAP_READ, ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
+    ZX_DEFAULT_IOB_RIGHTS, ZX_IOB_ACCESS_EP0_CAN_MAP_READ, ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
     ZX_IOB_ACCESS_EP0_CAN_MEDIATED_READ, ZX_IOB_ACCESS_EP0_CAN_MEDIATED_WRITE,
     ZX_IOB_ACCESS_EP1_CAN_MAP_READ, ZX_IOB_ACCESS_EP1_CAN_MAP_WRITE,
     ZX_IOB_ACCESS_EP1_CAN_MEDIATED_READ, ZX_IOB_ACCESS_EP1_CAN_MEDIATED_WRITE,
     ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR, ZX_IOB_DISCIPLINE_TYPE_MEDIATED_WRITE_RING_BUFFER,
     ZX_IOB_DISCIPLINE_TYPE_NONE, ZX_IOB_MAX_REGIONS, ZX_IOB_PEER_CLOSED,
     ZX_IOB_REGION_TYPE_PRIVATE, ZX_IOB_REGION_TYPE_SHARED, ZX_MAX_NAME_LEN, ZX_OBJ_TYPE_IOB,
-    ZX_RIGHT_DUPLICATE, ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_INSPECT, ZX_RIGHT_MAP, ZX_RIGHT_NONE,
-    ZX_RIGHT_READ, ZX_RIGHT_SET_PROPERTY, ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER,
-    ZX_RIGHT_WAIT, ZX_RIGHT_WRITE, ZX_USER_SIGNAL_ALL, zx_info_iob_t, zx_iob_region_info_t,
-    zx_iob_region_t, zx_iovec_t, zx_koid_t, zx_rights_t,
+    ZX_RIGHT_MAP, ZX_RIGHT_NONE, ZX_RIGHT_READ, ZX_RIGHT_WRITE, ZX_USER_SIGNAL_ALL, zx_info_iob_t,
+    zx_iob_region_info_t, zx_iob_region_t, zx_iovec_t, zx_koid_t, zx_rights_t,
 };
-
-const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
-    | ZX_RIGHT_DUPLICATE
-    | ZX_RIGHT_INSPECT
-    | ZX_RIGHT_WAIT
-    | ZX_RIGHT_READ
-    | ZX_RIGHT_WRITE
-    | ZX_RIGHT_GET_PROPERTY
-    | ZX_RIGHT_SET_PROPERTY
-    | ZX_RIGHT_MAP
-    | ZX_RIGHT_SIGNAL
-    | ZX_RIGHT_SIGNAL_PEER;
 
 const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL;
 
@@ -496,7 +482,7 @@ impl_peered_dispatcher_facade_with_state!(
 
 impl IoBufferDispatcher {
     pub fn default_rights() -> zx_rights_t {
-        DEFAULT_RIGHTS
+        ZX_DEFAULT_IOB_RIGHTS
     }
 
     /// Performs the C++ multiple-inheritance upcast from `IoBufferDispatcher*` to
@@ -559,7 +545,7 @@ impl IoBufferDispatcher {
         handle0.dispatcher().init_peer(handle1.dispatcher().clone());
         handle1.dispatcher().init_peer(handle0.dispatcher().clone());
 
-        Ok((handle0, handle1, DEFAULT_RIGHTS))
+        Ok((handle0, handle1, ZX_DEFAULT_IOB_RIGHTS))
     }
 
     fn create_regions(
@@ -1303,8 +1289,8 @@ mod tests {
 
         let (h0, h1, rights) =
             IoBufferDispatcher::create(0, &[r0, r1]).expect("failed to create iob");
-        expect_eq!(rights, super::DEFAULT_RIGHTS);
-        expect_eq!(IoBufferDispatcher::default_rights(), super::DEFAULT_RIGHTS);
+        expect_eq!(rights, ZX_DEFAULT_IOB_RIGHTS);
+        expect_eq!(IoBufferDispatcher::default_rights(), ZX_DEFAULT_IOB_RIGHTS);
 
         let d0 = h0.dispatcher();
         let d1 = h1.dispatcher();
@@ -1330,18 +1316,18 @@ mod tests {
 
         // Map rights
         expect_eq!(
-            d0.get_map_rights(super::DEFAULT_RIGHTS, 0),
+            d0.get_map_rights(ZX_DEFAULT_IOB_RIGHTS, 0),
             ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP
         );
-        expect_eq!(d1.get_map_rights(super::DEFAULT_RIGHTS, 0), ZX_RIGHT_READ | ZX_RIGHT_MAP);
-        expect_eq!(d0.get_map_rights(super::DEFAULT_RIGHTS, 1), ZX_RIGHT_READ | ZX_RIGHT_MAP);
+        expect_eq!(d1.get_map_rights(ZX_DEFAULT_IOB_RIGHTS, 0), ZX_RIGHT_READ | ZX_RIGHT_MAP);
+        expect_eq!(d0.get_map_rights(ZX_DEFAULT_IOB_RIGHTS, 1), ZX_RIGHT_READ | ZX_RIGHT_MAP);
         expect_eq!(
-            d1.get_map_rights(super::DEFAULT_RIGHTS, 1),
+            d1.get_map_rights(ZX_DEFAULT_IOB_RIGHTS, 1),
             ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP
         );
         // Masking with limited rights
         expect_eq!(d0.get_map_rights(ZX_RIGHT_READ, 0), ZX_RIGHT_READ);
-        expect_eq!(d0.get_map_rights(super::DEFAULT_RIGHTS, 2), 0);
+        expect_eq!(d0.get_map_rights(ZX_DEFAULT_IOB_RIGHTS, 2), 0);
 
         // Region info swapping
         let rinfo0_ep0 = d0.get_region_info(0);

@@ -41,21 +41,10 @@ use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::{
-    ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_CHANNEL_WRITABLE,
-    ZX_EXCP_POLICY_CODE_CHANNEL_FULL_WRITE, ZX_OBJ_TYPE_CHANNEL, ZX_RIGHT_INSPECT, ZX_RIGHT_READ,
-    ZX_RIGHT_SIGNAL, ZX_RIGHT_SIGNAL_PEER, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_RIGHT_WRITE,
-    ZX_TASK_RETCODE_VDSO_KILL, ZX_USER_SIGNAL_ALL, zx_koid_t, zx_obj_type_t, zx_rights_t,
-    zx_txid_t,
+    ZX_CHANNEL_PEER_CLOSED, ZX_CHANNEL_READABLE, ZX_CHANNEL_WRITABLE, ZX_DEFAULT_CHANNEL_RIGHTS,
+    ZX_EXCP_POLICY_CODE_CHANNEL_FULL_WRITE, ZX_OBJ_TYPE_CHANNEL, ZX_TASK_RETCODE_VDSO_KILL,
+    ZX_USER_SIGNAL_ALL, zx_koid_t, zx_obj_type_t, zx_rights_t, zx_txid_t,
 };
-
-/// Default rights assigned to a newly created ChannelDispatcher handle.
-const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
-    | ZX_RIGHT_READ
-    | ZX_RIGHT_WRITE
-    | ZX_RIGHT_SIGNAL
-    | ZX_RIGHT_SIGNAL_PEER
-    | ZX_RIGHT_WAIT
-    | ZX_RIGHT_INSPECT;
 
 /// Signals that can be asserted on a ChannelDispatcher by userspace.
 const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL | ZX_CHANNEL_READABLE | ZX_CHANNEL_WRITABLE;
@@ -355,7 +344,7 @@ impl ChannelDispatcher {
         handle0.dispatcher().init_peer(handle1.dispatcher().clone());
         handle1.dispatcher().init_peer(handle0.dispatcher().clone());
 
-        Ok((handle0, handle1, DEFAULT_RIGHTS))
+        Ok((handle0, handle1, ZX_DEFAULT_CHANNEL_RIGHTS))
     }
 
     /// Read from this endpoint's message queue. `owner` is the handle table koid of the process

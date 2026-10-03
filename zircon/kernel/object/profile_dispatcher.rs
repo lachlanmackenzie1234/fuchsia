@@ -10,9 +10,9 @@ use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_PROFILE, ZX_PRIORITY_DEFAULT, ZX_PRIORITY_HIGH, ZX_PROFILE_INFO_FLAG_CPU_MASK,
-    ZX_PROFILE_INFO_FLAG_DEADLINE, ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY,
-    ZX_PROFILE_INFO_FLAG_PRIORITY, ZX_RIGHT_APPLY_PROFILE, ZX_RIGHT_DUPLICATE, ZX_RIGHT_TRANSFER,
+    ZX_DEFAULT_PROFILE_RIGHTS, ZX_OBJ_TYPE_PROFILE, ZX_PRIORITY_DEFAULT, ZX_PRIORITY_HIGH,
+    ZX_PROFILE_INFO_FLAG_CPU_MASK, ZX_PROFILE_INFO_FLAG_DEADLINE,
+    ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY, ZX_PROFILE_INFO_FLAG_PRIORITY, ZX_RIGHT_INSPECT,
     zx_cpu_set_t, zx_profile_info_t, zx_rights_t,
 };
 
@@ -29,8 +29,7 @@ use crate::kernel::types::cpu_mask_t;
 use object_constants_rs as object_constants;
 
 /// Default rights for a ProfileDispatcher handle.
-pub const DEFAULT_RIGHTS: zx_rights_t =
-    ZX_RIGHT_TRANSFER | ZX_RIGHT_DUPLICATE | ZX_RIGHT_APPLY_PROFILE;
+pub const DEFAULT_RIGHTS: zx_rights_t = ZX_DEFAULT_PROFILE_RIGHTS & !ZX_RIGHT_INSPECT;
 
 zr::static_assert_size_and_align!(
     ProfileDispatcherState,

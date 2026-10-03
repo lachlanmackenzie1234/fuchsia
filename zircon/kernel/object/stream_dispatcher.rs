@@ -11,9 +11,8 @@ use ksync::{KMutex, RawCriticalMutex, RawMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_STREAM, ZX_RIGHT_DUPLICATE, ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_INSPECT, ZX_RIGHT_READ,
-    ZX_RIGHT_SET_PROPERTY, ZX_RIGHT_SIGNAL, ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, ZX_RIGHT_WRITE,
-    zx_info_stream_t, zx_off_t, zx_rights_t, zx_stream_seek_origin_t,
+    ZX_DEFAULT_STREAM_RIGHTS, ZX_OBJ_TYPE_STREAM, ZX_RIGHT_READ, ZX_RIGHT_WRITE, zx_info_stream_t,
+    zx_off_t, zx_rights_t, zx_stream_seek_origin_t,
 };
 
 use crate::user_copy::{UserInIovec, UserOutIovec};
@@ -57,14 +56,6 @@ impl StreamOptions {
         self.bits() & Self::MODE_MASK
     }
 }
-
-const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_DUPLICATE
-    | ZX_RIGHT_TRANSFER
-    | ZX_RIGHT_WAIT
-    | ZX_RIGHT_INSPECT
-    | ZX_RIGHT_GET_PROPERTY
-    | ZX_RIGHT_SET_PROPERTY
-    | ZX_RIGHT_SIGNAL;
 
 zr::static_assert_size_and_align!(
     StreamDispatcherState,
@@ -165,7 +156,7 @@ impl StreamDispatcher {
         vmo_dispatcher: &VmObjectDispatcher,
         seek: zx_off_t,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut rights = DEFAULT_RIGHTS;
+        let mut rights = ZX_DEFAULT_STREAM_RIGHTS;
         if options.read() {
             rights |= ZX_RIGHT_READ;
         }

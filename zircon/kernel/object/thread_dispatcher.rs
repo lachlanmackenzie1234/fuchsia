@@ -58,22 +58,9 @@ impl core::ops::Deref for CurrentMessageWaiter {
 }
 
 impl ThreadDispatcher {
-    /// Default rights assigned to a newly created ThreadDispatcher handle.
-    pub const DEFAULT_RIGHTS: zx_rights_t = zx_types::ZX_RIGHT_TRANSFER
-        | zx_types::ZX_RIGHT_DUPLICATE
-        | zx_types::ZX_RIGHT_WAIT
-        | zx_types::ZX_RIGHT_INSPECT
-        | zx_types::ZX_RIGHT_READ
-        | zx_types::ZX_RIGHT_WRITE
-        | zx_types::ZX_RIGHT_GET_PROPERTY
-        | zx_types::ZX_RIGHT_SET_PROPERTY
-        | zx_types::ZX_RIGHT_DESTROY
-        | zx_types::ZX_RIGHT_SIGNAL
-        | zx_types::ZX_RIGHT_MANAGE_THREAD;
-
     /// Returns default rights for a thread handle.
     pub const fn default_rights() -> zx_rights_t {
-        Self::DEFAULT_RIGHTS
+        zx_types::ZX_DEFAULT_THREAD_RIGHTS
     }
 
     /// Returns a wrapper that dereferences to the current thread's [`MessageWaiter`].

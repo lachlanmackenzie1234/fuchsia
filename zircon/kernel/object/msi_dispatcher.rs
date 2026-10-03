@@ -9,9 +9,7 @@ use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
-use zx_types::{
-    ZX_OBJ_TYPE_MSI, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_TRANSFER, zx_rights_t,
-};
+use zx_types::{ZX_DEFAULT_MSI_RIGHTS, ZX_OBJ_TYPE_MSI, ZX_RIGHT_WAIT, zx_rights_t};
 
 use super::KernelHandle;
 use super::msi_allocation::MsiAllocation;
@@ -20,7 +18,7 @@ use super::msi_dispatcher_ffi::cpp_msi_dispatcher_create;
 use object_constants_rs as object_constants;
 
 /// Default rights assigned to an MsiDispatcher handle.
-pub const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER | ZX_RIGHT_DUPLICATE | ZX_RIGHT_INSPECT;
+pub const DEFAULT_RIGHTS: zx_rights_t = ZX_DEFAULT_MSI_RIGHTS & !ZX_RIGHT_WAIT;
 
 zr::static_assert_size_and_align!(
     MsiDispatcherState,
@@ -116,6 +114,8 @@ impl MsiDispatcher {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+    #[allow(unused_imports)]
+    use zx_types::{ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_TRANSFER};
 
     #[test]
     fn test_default_rights() {

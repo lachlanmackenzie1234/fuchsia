@@ -10,8 +10,6 @@
 #include <stddef.h>
 #include <zircon/types.h>
 
-constexpr uint32_t kVmCachePolicyMask = ZX_CACHE_POLICY_MASK;
-
 // Size and alignment constants for Rust VM states stored in C++ OpaqueStorage.
 // These values must match the exact size and alignment of their corresponding Rust structs,
 // which is enforced by static_asserts in both Rust and C++.

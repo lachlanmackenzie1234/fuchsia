@@ -9,10 +9,7 @@ use fbl::{Canary, RefPtr, UniquePtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
-use zx_types::{
-    ZX_OBJ_TYPE_GUEST, ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_MANAGE_THREAD,
-    ZX_RIGHT_TRANSFER, ZX_RIGHT_WRITE, zx_rights_t, zx_vaddr_t,
-};
+use zx_types::{ZX_DEFAULT_GUEST_RIGHTS, ZX_OBJ_TYPE_GUEST, zx_rights_t, zx_vaddr_t};
 
 use super::KernelHandle;
 use super::guest::Guest;
@@ -21,13 +18,6 @@ use super::port_dispatcher::PortDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
 
 use object_constants_rs as object_constants;
-
-/// Default rights assigned to a GuestDispatcher handle (`ZX_DEFAULT_GUEST_RIGHTS`).
-pub const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
-    | ZX_RIGHT_DUPLICATE
-    | ZX_RIGHT_WRITE
-    | ZX_RIGHT_INSPECT
-    | ZX_RIGHT_MANAGE_THREAD;
 
 zr::static_assert_size_and_align!(
     GuestDispatcherState,
@@ -92,7 +82,7 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 impl GuestDispatcher {
     /// Returns default rights for a `GuestDispatcher` handle.
     pub const fn default_rights() -> zx_rights_t {
-        DEFAULT_RIGHTS
+        ZX_DEFAULT_GUEST_RIGHTS
     }
 
     /// Creates a new `GuestDispatcher` and its root `VmAddressRegionDispatcher`.

@@ -111,7 +111,7 @@ pub use resource::{
     StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
     validate_resource_kind_base, validate_system_resource,
 };
-pub use resource_dispatcher::{ResourceDispatcher, ZX_RSRC_FLAGS_MASK, is_valid_kind};
+pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use stream_dispatcher::*;

@@ -307,24 +307,9 @@ impl ProcessDispatcher {
         Status::ok(status)
     }
 
-    /// Default rights assigned to a newly created ProcessDispatcher handle.
-    pub const DEFAULT_RIGHTS: zx_rights_t = zx_types::ZX_RIGHT_TRANSFER
-        | zx_types::ZX_RIGHT_DUPLICATE
-        | zx_types::ZX_RIGHT_WAIT
-        | zx_types::ZX_RIGHT_INSPECT
-        | zx_types::ZX_RIGHT_READ
-        | zx_types::ZX_RIGHT_WRITE
-        | zx_types::ZX_RIGHT_GET_PROPERTY
-        | zx_types::ZX_RIGHT_SET_PROPERTY
-        | zx_types::ZX_RIGHT_ENUMERATE
-        | zx_types::ZX_RIGHT_DESTROY
-        | zx_types::ZX_RIGHT_SIGNAL
-        | zx_types::ZX_RIGHT_MANAGE_PROCESS
-        | zx_types::ZX_RIGHT_MANAGE_THREAD;
-
     /// Returns the default rights for a process handle.
     pub const fn default_rights() -> zx_rights_t {
-        Self::DEFAULT_RIGHTS
+        zx_types::ZX_DEFAULT_PROCESS_RIGHTS
     }
 
     /// Creates a new `ProcessDispatcher`.

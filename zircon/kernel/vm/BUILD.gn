@@ -232,7 +232,6 @@ kernel_bindgen_crate("vm-constants-rs") {
   var_allowlist = [
     "kVmObjectPhysicalState.*",
     "kVmDebugCompressor.*",
-    "kVmCachePolicyMask",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
   ]

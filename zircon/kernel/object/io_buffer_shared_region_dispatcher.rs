@@ -32,18 +32,9 @@ use object_constants_rs::{
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_IOB_SHARED_REGION_UPDATED, ZX_OBJ_TYPE_IOB_SHARED_REGION, ZX_RIGHT_DUPLICATE,
-    ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_INSPECT, ZX_RIGHT_SET_PROPERTY, ZX_RIGHT_SIGNAL,
-    ZX_RIGHT_TRANSFER, ZX_RIGHT_WAIT, zx_iovec_t, zx_rights_t, zx_status_t,
+    ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS, ZX_IOB_SHARED_REGION_UPDATED,
+    ZX_OBJ_TYPE_IOB_SHARED_REGION, zx_iovec_t, zx_rights_t, zx_status_t,
 };
-
-pub const DEFAULT_RIGHTS: zx_rights_t = ZX_RIGHT_TRANSFER
-    | ZX_RIGHT_DUPLICATE
-    | ZX_RIGHT_INSPECT
-    | ZX_RIGHT_GET_PROPERTY
-    | ZX_RIGHT_SET_PROPERTY
-    | ZX_RIGHT_WAIT
-    | ZX_RIGHT_SIGNAL;
 
 zr::static_assert_size_and_align!(
     IoBufferSharedRegionDispatcherState,
@@ -127,7 +118,7 @@ unsafe extern "C" {
 impl IoBufferSharedRegionDispatcher {
     /// Returns default rights for `IoBufferSharedRegionDispatcher`.
     pub fn default_rights() -> zx_rights_t {
-        DEFAULT_RIGHTS
+        ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS
     }
 
     /// Creates a new `IoBufferSharedRegionDispatcher`.
@@ -167,7 +158,7 @@ impl IoBufferSharedRegionDispatcher {
         }?;
         handle.dispatcher().state().vmo.set_user_id(handle.dispatcher().get_koid());
 
-        Ok((handle, DEFAULT_RIGHTS))
+        Ok((handle, ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS))
     }
 
     /// Returns the underlying `VmObject` of the shared region.
@@ -340,7 +331,7 @@ impl IoBufferSharedRegionDispatcher {
 #[cfg(ktest)]
 #[unittest::suite(name = "io_buffer_shared_region_dispatcher_rust_tests")]
 mod tests {
-    use super::{DEFAULT_RIGHTS, IoBufferSharedRegionDispatcher};
+    use super::{IoBufferSharedRegionDispatcher, ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS};
     use unittest::{expect_eq, expect_ok, expect_true};
 
     /// Tests creating and querying an `IoBufferSharedRegionDispatcher`.
@@ -349,7 +340,7 @@ mod tests {
         let size = (page::SIZE * 2) as u64;
         let (handle, rights) =
             IoBufferSharedRegionDispatcher::create(size).expect("failed to create shared region");
-        expect_eq!(rights, DEFAULT_RIGHTS);
+        expect_eq!(rights, ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS);
 
         let disp = handle.dispatcher();
         expect_true!(disp.get_koid() != 0);
