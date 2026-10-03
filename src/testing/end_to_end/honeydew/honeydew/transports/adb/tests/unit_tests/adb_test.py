@@ -4,11 +4,13 @@
 """Unit tests for adb.py."""
 
 import asyncio
+import concurrent.futures
 import io
 import os
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 from importlib import resources
 from pathlib import Path
@@ -768,6 +770,112 @@ class AdbTests(unittest.TestCase):
         self.assertEqual(output, "success_output")
         self.assertEqual(mock_host_shell_run.call_count, 5)
         mock_server.restart.assert_called_once()
+
+    @mock.patch.object(host_shell, "run", autospec=True)
+    @mock.patch("time.sleep", autospec=True)
+    def test_run_retry_offline_reconnect_failure_escalates_to_server_restart(
+        self, mock_sleep: mock.Mock, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test run still retries and escalates to server restart when 'adb reconnect offline' fails."""
+        mock_server = mock.Mock()
+        mock_server.host.return_value = "127.0.0.1"
+        mock_server.port.return_value = 12345
+        self.adb_obj._adb_server = mock_server
+
+        # 1. Main command attempt 1 -> fails with "error: device offline"
+        # 2. Attempt 1 recovery -> "adb reconnect offline" itself fails
+        # 3. Main command attempt 2 -> still fails with "error: device offline"
+        # 4. Attempt 2 recovery -> _recover_adb_server() restarts server & runs _cache_adbd_pid()
+        # 5. Main command attempt 3 -> succeeds
+        mock_host_shell_run.side_effect = [
+            errors.HostCmdError("error: device offline"),
+            errors.HostCmdError("error: reconnect failed"),
+            errors.HostCmdError("error: device offline"),
+            "5555\n",
+            "success_output",
+        ]
+
+        output = self.adb_obj.run(["shell", "some_cmd"])
+
+        self.assertEqual(output, "success_output")
+        self.assertEqual(mock_host_shell_run.call_count, 5)
+        mock_server.restart.assert_called_once()
+
+    def test_run_chains_underlying_error(self) -> None:
+        """Test run chains the underlying error as __cause__ of the raised ADB error."""
+        cases: list[tuple[Exception, type[adb_errors.AdbError]]] = [
+            (errors.HostCmdError("error_text"), adb_errors.AdbCommandError),
+            (
+                errors.HostCmdError("error: device unauthorized."),
+                adb_errors.AdbUnauthorizedError,
+            ),
+            (
+                errors.HoneydewTimeoutError("timed out"),
+                adb_errors.AdbTimeoutError,
+            ),
+        ]
+        for underlying_err, expected_err_type in cases:
+            with self.subTest(underlying_err=underlying_err):
+                with mock.patch.object(
+                    host_shell, "run", side_effect=underlying_err, autospec=True
+                ):
+                    with self.assertRaises(expected_err_type) as context:
+                        self.adb_obj.run(["shell", "id"])
+
+                self.assertIs(context.exception.__cause__, underlying_err)
+
+    @mock.patch.object(adb.Adb, "run", autospec=True)
+    def test_check_connection_chains_underlying_error(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test check_connection chains the underlying error as __cause__ of AdbConnectionError."""
+        underlying_err = adb_errors.AdbCommandError("wait-for-device failed")
+        mock_run.side_effect = underlying_err
+        self._check_connection_patcher.stop()
+        try:
+            with self.assertRaises(adb_errors.AdbConnectionError) as context:
+                self.adb_obj.check_connection()
+        finally:
+            self._check_connection_patcher.start()
+
+        self.assertIs(context.exception.__cause__, underlying_err)
+
+    @mock.patch.object(host_shell, "run", autospec=True)
+    def test_run_concurrent_calls_return_own_output(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test concurrent run calls from multiple threads each get their own output."""
+        num_threads = 2
+        mock_server = mock.Mock()
+        mock_server.host.return_value = "127.0.0.1"
+        mock_server.port.return_value = 12345
+        self.adb_obj._adb_server = mock_server
+
+        # Hold every call until all threads are inside host_shell.run so the
+        # calls overlap.
+        barrier = threading.Barrier(num_threads)
+
+        def _fake_run(cmd: list[str], **unused_kwargs: Any) -> str:
+            barrier.wait(timeout=5)
+            return f"output_{cmd[-1]}"
+
+        mock_host_shell_run.side_effect = _fake_run
+
+        with concurrent.futures.ThreadPoolExecutor(num_threads) as executor:
+            futures = {
+                i: executor.submit(self.adb_obj.run, ["shell", "echo", str(i)])
+                for i in range(num_threads)
+            }
+            outputs = {i: f.result(timeout=10) for i, f in futures.items()}
+
+        self.assertEqual(
+            outputs, {i: f"output_{i}" for i in range(num_threads)}
+        )
+        self.assertEqual(mock_host_shell_run.call_count, num_threads)
+        mock_server.restart.assert_not_called()
+        self.assertEqual(
+            mock_server.reset_restart_count.call_count, num_threads
+        )
 
     @mock.patch.object(host_shell, "run", autospec=True)
     @mock.patch("time.sleep", autospec=True)
