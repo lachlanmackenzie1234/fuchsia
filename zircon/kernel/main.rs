@@ -14,6 +14,7 @@
 #![allow(clippy::new_without_default)]
 #![feature(atomic_volatile)]
 #![feature(cfg_sanitize)]
+#![cfg_attr(target_arch = "x86_64", feature(sanitize))]
 
 #[allow(unused_imports)]
 #[macro_use]
