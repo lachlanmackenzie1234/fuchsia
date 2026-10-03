@@ -411,8 +411,7 @@ async fn main_inner() -> Result<(), Error> {
             .download_resumption_attempts_limit(blob_download_resumption_attempts_limit)
             .build(),
         blobfs.clone(),
-        fuchsia_component::client::connect_to_protocol::<fpkg_http::ClientMarker>()
-            .context("error connecting to fuchsia.pkg.http/Client")?,
+        fidl_connector::ServiceReconnector::<fpkg_http::ClientMarker>::new(),
     );
     let blob_fetcher_fut = Task::spawn(blob_fetcher_fut);
     {

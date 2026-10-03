@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_connector::Connect as _;
 use fidl_fuchsia_pkg_ext as pkg;
 use fidl_fuchsia_pkg_http as fpkg_http;
 use http_uri_ext::HttpUriExt as _;
@@ -64,7 +65,7 @@ impl BlobFetcher {
         max_concurrency: usize,
         params: Params,
         blobfs_client: blobfs::Client,
-        http_client: fpkg_http::ClientProxy,
+        http_client: fidl_connector::ServiceReconnector<fpkg_http::ClientMarker>,
     ) -> (impl Future<Output = ()>, Self) {
         let (queue, sender) = work_queue::work_queue(
             max_concurrency,
@@ -120,7 +121,7 @@ async fn fetch_blob_with_retry(
         download_resumption_attempts_limit,
     }: Params,
     blobfs_client: &blobfs::Client,
-    http_client: &fpkg_http::ClientProxy,
+    http_client: &fidl_connector::ServiceReconnector<fpkg_http::ClientMarker>,
 ) -> Result<Option<u64>, FetchError> {
     match conflict_behavior {
         ConflictBehavior::AskBlobfs => {
@@ -140,6 +141,8 @@ async fn fetch_blob_with_retry(
             .await
             .map_err(FetchError::CreateBlob)?;
         let bytes_downloaded = http_client
+            .connect()
+            .map_err(FetchError::ConnectToHttpClient)?
             .download_blob(
                 &blob_url.to_string(),
                 blob,
@@ -183,6 +186,9 @@ pub(crate) enum FetchError {
         blob_id: pkg::BlobId,
     },
 
+    #[error("connecting to fuchsia.pkg.http.Client")]
+    ConnectToHttpClient(#[source] anyhow::Error),
+
     #[error("FIDL error while calling fuchsia.pkg.http.Client.DownloadBlob")]
     DownloadBlobFidl(#[source] fidl::Error),
 
@@ -211,6 +217,7 @@ impl FetchError {
             },
             CreateBlob { .. }
             | BlobUrl { .. }
+            | ConnectToHttpClient(_)
             | DownloadBlobFidl { .. }
             | PostWriteStatusCheck { .. }
             | BlobAbsentAfterWrite => FetchErrorKind::Other,
@@ -233,6 +240,7 @@ impl From<&FetchError> for fidl_fuchsia_pkg::ResolveError {
         match err {
             CreateBlob { .. } => Err::Io,
             BlobUrl { .. } => Err::Internal,
+            ConnectToHttpClient(_) => Err::Io,
             DownloadBlobFidl { .. } => Err::Internal,
             DownloadBlob(e) => {
                 use fidl_fuchsia_pkg_http::ClientDownloadBlobError::*;

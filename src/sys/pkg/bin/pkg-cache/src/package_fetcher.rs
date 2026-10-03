@@ -308,6 +308,7 @@ fn fetch_to_component_resolve_err(
     match err {
         CreateBlob { .. } => Err::Io,
         BlobUrl { .. } => Err::Internal,
+        ConnectToHttpClient(_) => Err::Io,
         DownloadBlobFidl { .. } => Err::Internal,
         DownloadBlob(e) => {
             use fidl_fuchsia_pkg_http::ClientDownloadBlobError::*;
