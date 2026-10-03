@@ -88,9 +88,14 @@ class VsockUsb : public fdf::DriverBase2,
   // Unconfigured state.
   zx_status_t ConfigureEndpoints();
 
+  // Creates a new datagram socket pair, transitions state to Running, queues any available
+  // RX requests, and notifies the registered callback if present.
+  zx_status_t StartSocketSession();
+
   // Disables the device's endpoints, cancels any outstanding requests, and moves the device
   // into the Unconfigured state if it's not already there.
-  zx_status_t UnconfigureEndpoints();
+  zx_status_t UnconfigureEndpoints(bool disable_immediately = true);
+  zx_status_t DisableEndpoints();
 
   // Cancels all pending requests on bulk IN and OUT endpoints.
   void CancelAllEndpoints();
@@ -151,7 +156,7 @@ class VsockUsb : public fdf::DriverBase2,
         : socket_(std::move(socket)),
           read_waiter_(
               std::make_unique<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketReadable>>(
-                  owner, socket_.get(), ZX_SOCKET_READABLE)),
+                  owner, socket_.get(), ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED)),
           write_waiter_(
               std::make_unique<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketWritable>>(
                   owner, socket_.get(), ZX_SOCKET_WRITABLE)),
@@ -228,6 +233,8 @@ class VsockUsb : public fdf::DriverBase2,
     }
     // Called when a socket is writable. Shouldn't happen.
     State Writable() && { return std::move(*this); }
+    bool IsFinished() const { return finished_; }
+
     // Called when shutdown has been successful.
     void FinishWithCallback() {
       if (finished_) {
@@ -438,6 +445,12 @@ class VsockUsb : public fdf::DriverBase2,
   // lifecycle (which resets to Unconfigured when a client socket disconnects while hardware
   // endpoints remain configured).
   bool endpoints_configured_ = false;
+  bool bulk_out_cancelled_ = false;
+  bool bulk_in_cancelled_ = false;
+  std::optional<SetConfiguredCompleter::Async> unconfigure_completer_;
+
+  void CheckUnconfigureComplete();
+
   async_dispatcher_t* dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 };
 
