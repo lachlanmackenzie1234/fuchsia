@@ -5,6 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 #![no_std]
+// These macros are designed to expand in the kernel root crate where `crate::ktrace_rs`
+// refers to the kernel's tracing module.
+#![allow(clippy::crate_in_macro_def)]
 
 /// Resolves a string parameter to a reference to an `InternedString`.
 /// If a string literal is provided, it is statically interned at compile-time.
