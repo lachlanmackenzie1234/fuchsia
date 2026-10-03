@@ -442,11 +442,17 @@ async fn update(
                 Some(ok)
             }
             Err(e) => {
-                if let AttemptError::UpdateCanceled = e {
-                    co.yield_(fupdate_installer_ext::State::Canceled).await;
+                use crate::update::AttemptError::*;
+                match e {
+                    Prepare(_) | Stage(_) | Fetch(_) | Commit(_) | CancelSenderDropped(_) => {
+                        error!("system update failed: {:#}", anyhow!(e));
+                        crash_reporter.installation_error();
+                    }
+                    UpdateCanceled => {
+                        co.yield_(fupdate_installer_ext::State::Canceled).await;
+                        info!("system update canceled");
+                    }
                 }
-                error!("system update failed: {:#}", anyhow!(e));
-                crash_reporter.installation_error();
                 None
             }
         };
