@@ -109,19 +109,3 @@ impl MsiDispatcher {
         self.state().msi_allocation()
     }
 }
-
-#[cfg(ktest)]
-mod tests {
-    #[allow(unused_imports)]
-    use super::*;
-    #[allow(unused_imports)]
-    use zx_types::{ZX_RIGHT_DUPLICATE, ZX_RIGHT_INSPECT, ZX_RIGHT_TRANSFER};
-
-    #[test]
-    fn test_default_rights() {
-        assert_eq!(
-            MsiDispatcher::default_rights(),
-            ZX_RIGHT_TRANSFER | ZX_RIGHT_DUPLICATE | ZX_RIGHT_INSPECT
-        );
-    }
-}

@@ -8,6 +8,7 @@
 #include <lib/zx/result.h>
 #include <lib/zx/vmar.h>
 #include <zircon/errors.h>
+#include <zircon/rights.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 
@@ -86,6 +87,19 @@ TEST_F(MsiTest, AllocateSyscall) {
     EXPECT_EQ(test.first, zx::msi::allocate(msi_resource(), test.second, &msi),
               "irq_cnt = %u failed.", test.second);
   }
+}
+
+TEST_F(MsiTest, AllocatedHandleRights) {
+  if (!MsiTestsSupported()) {
+    return;
+  }
+
+  zx::msi msi;
+  ASSERT_OK(zx::msi::allocate(msi_resource(), 1, &msi));
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(msi.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+  // MSI objects are not waitable, so their handles lack ZX_RIGHT_WAIT.
+  EXPECT_EQ(ZX_DEFAULT_MSI_RIGHTS & ~ZX_RIGHT_WAIT, info.rights);
 }
 
 struct MsiCreateTestCase {
