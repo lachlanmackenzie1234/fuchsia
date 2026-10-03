@@ -19,6 +19,31 @@ pub const fn is_user_accessible(va: usize) -> bool {
     (va & USER_BIT_MASK) == 0
 }
 
+/// Check that the continuous range of addresses in `[va, va+len)` are all
+/// accessible to the user.
+#[inline]
+pub const fn is_user_accessible_range(va: usize, len: usize) -> bool {
+    // Check for normal overflow which implies the range is not continuous.
+    let Some(end) = va.checked_add(len) else {
+        return false;
+    };
+
+    // Check that the start and end are accessible to userspace.
+    if !is_user_accessible(va) || (len != 0 && !is_user_accessible(end - 1)) {
+        return false;
+    }
+
+    // Cover the corner case where the start and end are accessible
+    // (bit 55 == 0), but there could be a value within the range that could have
+    // bit 55 == 1. In this case, the difference between start and end must be
+    // at least 2^55.
+    if len >= USER_BIT_MASK {
+        return false;
+    }
+
+    true
+}
+
 /// Returns whether `va` is within the kernel address space.
 #[inline]
 pub const fn is_kernel_address(va: usize) -> bool {

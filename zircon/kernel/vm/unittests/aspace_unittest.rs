@@ -15,6 +15,7 @@ mod sizes {
 #[unittest::suite]
 mod aspace_rs {
     use super::sizes::GB;
+    use crate::arch_rs::vm::is_user_accessible_range;
     use crate::arch_rs::{
         KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_ASPACE_BASE, USER_ASPACE_SIZE,
     };
@@ -23,6 +24,7 @@ mod aspace_rs {
     use crate::kernel::thread;
     use crate::kernel::types::VAddr;
     use crate::platform_rs::timer::InstantMono;
+    use crate::user_copy::internal::validate_user_accessible_range;
     use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ArchMmuFlags, NonTerminalAction,
@@ -1115,6 +1117,170 @@ mod aspace_rs {
 
         let force_result = mapping_result.mapping.force_writable();
         expect_ok!(force_result.map(|_| ()));
+    }
+
+    /// Check if a range of addresses is accessible to the user. If `spectre_validation` is true, this is
+    /// done by checking if `validate_user_accessible_range` returns `{0,0}`. Otherwise, check using
+    /// `is_user_accessible_range`.
+    fn check_user_accessible_range(
+        mut vaddr: usize,
+        mut len: usize,
+        spectre_validation: bool,
+    ) -> bool {
+        if spectre_validation {
+            // If the address and length were not modified, then the pair is valid.
+            let old_vaddr = vaddr;
+            let old_len = len;
+            validate_user_accessible_range(&mut vaddr, &mut len);
+            return vaddr == old_vaddr && len == old_len;
+        }
+
+        is_user_accessible_range(vaddr, len)
+    }
+
+    fn check_user_accessible_range_test(spectre_validation: bool) -> bool {
+        let run = subtest!(|spectre_validation: bool| {
+            use crate::arch_rs::USER_ASPACE_BASE;
+
+            let mut va: usize;
+            let mut len: usize;
+
+            // Test address of zero.
+            va = 0;
+            len = PAGE_SIZE_USIZE;
+            expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+            // Test address and length of zero (both are valid).
+            va = 0;
+            len = 0;
+            expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+            // Test very end of address space and zero length (this is invalid since the start has bit 55 set
+            // despite zero length).
+            va = usize::MAX;
+            len = 0;
+            expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+            // Test a regular user address.
+            va = USER_ASPACE_BASE;
+            len = PAGE_SIZE_USIZE;
+            expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+            // Test zero-length on a regular user address.
+            va = USER_ASPACE_BASE;
+            len = 0;
+            expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+            // Test overflow past 64 bits.
+            va = USER_ASPACE_BASE;
+            len = (usize::MAX - va).wrapping_add(1);
+            expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                use crate::arch_rs::vm::is_user_accessible;
+
+                // On aarch64, an address is accessible to the user if bit 55 is zero.
+
+                // Test starting on a bad user address.
+                let bad_addr_mask = 1usize << 55;
+                va = bad_addr_mask | USER_ASPACE_BASE;
+                len = PAGE_SIZE_USIZE;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test zero-length on a bad user address.
+                va = bad_addr_mask | USER_ASPACE_BASE;
+                len = 0;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test 2^55 is in the range of `[va, va+len)`, ending on a bad user address.
+                va = USER_ASPACE_BASE;
+                len = bad_addr_mask;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test this returns false if any address within the range of `[va, va+len)`
+                // contains a value where bit 55 is set. This also implies there are many
+                // gaps in ranges above 2^56.
+                //
+                // Here both the start and end values are valid, but this range contains an
+                // address that is invalid.
+                va = 0;
+                len = 0x017f_ffff_ffff_ffff; // Bits 0-56 (except 55) are set.
+                assert_true!(is_user_accessible(va));
+                assert_true!(is_user_accessible(va + len));
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test the range of the largest value less than 2^55 and the smallest value
+                // greater than 2^55 where bit 55 == 0.
+                va = (1usize << 55) - 1;
+                len = 0x0080_0000_0000_0001; // End = `va` + `len` = 2^56.
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Be careful not to just check that 2^55 is in the range. We really want to
+                // check whenever bit 55 is flipped in the range.
+                va = 0x017f_ffff_ffff_ffff; // Start above 2^56. Bit 55 is not set.
+                // End = `va` + `len` = `0x200_0000_0000_0000`. This is above 2^56 and bit 55 also is not set.
+                len = 0x0080_0000_0000_0001;
+                assert_true!(is_user_accessible(va));
+                assert_true!(is_user_accessible(va + len));
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                va = USER_ASPACE_BASE;
+                len = (1usize << 57) + 1;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test a range above 2^56 where bit 55 is never set.
+                va = 0x0170_0000_0000_0000;
+                len = 0x000f_ffff_ffff_ffff;
+                expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test a range right below 2^55 where bit 55 is never set.
+                va = 0x0070_0000_0000_0000;
+                len = 0x000f_ffff_ffff_ffff;
+                expect_true!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test the last valid user space address with a tag of 0.
+                va = usize::MAX;
+                va &= !(0xffusize << 56); // Set tag to zero.
+                va &= !bad_addr_mask; // Ensure valid user address.
+                len = 0;
+                expect_true!(check_user_accessible_range(va, len, spectre_validation));
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                // On x86_64, an address is accessible to the user if bits 48-63 are zero.
+
+                // Test a bad user address.
+                let bad_addr_mask = 1usize << 48;
+                va = bad_addr_mask | USER_ASPACE_BASE;
+                len = PAGE_SIZE_USIZE;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test zero-length on a bad user address.
+                va = bad_addr_mask | USER_ASPACE_BASE;
+                len = 0;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+
+                // Test ending on a bad user address.
+                va = USER_ASPACE_BASE;
+                len = bad_addr_mask;
+                expect_false!(check_user_accessible_range(va, len, spectre_validation));
+            }
+        });
+        run(spectre_validation)
+    }
+
+    /// Tests `is_user_accessible_range`.
+    #[test]
+    fn arch_is_user_accessible_range() {
+        expect_true!(check_user_accessible_range_test(false));
+    }
+
+    /// Tests `validate_user_accessible_range`.
+    #[test]
+    fn validate_user_address_range() {
+        expect_true!(check_user_accessible_range_test(true));
     }
 
     /// Doesn't do anything, just prints all aspaces.

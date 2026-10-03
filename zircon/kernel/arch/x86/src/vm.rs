@@ -33,6 +33,18 @@ pub const fn is_user_accessible(va: usize) -> bool {
     (va & X86_CANONICAL_ADDRESS_MASK) == 0
 }
 
+/// Check that the continuous range of addresses in `[va, va+len)` are all
+/// accessible to the user.
+#[inline]
+pub const fn is_user_accessible_range(va: usize, len: usize) -> bool {
+    // Check for normal overflow which implies the range is not continuous.
+    let Some(end) = va.checked_add(len) else {
+        return false;
+    };
+
+    is_user_accessible(va) && (len == 0 || is_user_accessible(end - 1))
+}
+
 /// Checks if a virtual address is in canonical form on x86_64.
 ///
 /// An address is canonical if bits [N - 1, 63] are all either 0 (the low half of
