@@ -40,8 +40,24 @@ class EndpointBuilder {
         EpIndexToAddress(endpoint_index + (in ? kInEndpointStart : kOutEndpointStart));
   }
 
+  explicit EndpointBuilder(uint8_t config_num, fdescriptor::EndpointType endpoint_type,
+                           uint8_t endpoint_index, fdescriptor::EndpointDirection direction)
+      : EndpointBuilder(config_num, static_cast<uint8_t>(endpoint_type), endpoint_index,
+                        direction == fdescriptor::EndpointDirection::kIn) {}
+
   void set_max_packet_size(uint16_t max_packet_size) {
     base_desc_.w_max_packet_size = max_packet_size;
+  }
+
+  void AddSsCompanion(const usb_ss_ep_comp_descriptor_t& comp) { VectorAppend(descriptors_, comp); }
+  void AddSsCompanion(const void* desc, size_t desc_length) {
+    VectorAppend(descriptors_, desc, desc_length);
+  }
+  void AddSsIsochCompanion(const usb_ss_isoch_ep_comp_descriptor_t& comp) {
+    VectorAppend(descriptors_, comp);
+  }
+  void AddSsIsochCompanion(const void* desc, size_t desc_length) {
+    VectorAppend(descriptors_, desc, desc_length);
   }
 
   std::vector<uint8_t> Generate() const {

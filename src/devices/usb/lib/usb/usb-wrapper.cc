@@ -98,17 +98,41 @@ EndpointList::const_iterator EndpointList::cend() const {
 Endpoint EndpointList::iterator::ReadEp(usb_desc_iter_t* iter) {
   usb_endpoint_descriptor_t* descriptor = usb_desc_iter_next_endpoint(iter);
   std::optional<const usb_ss_ep_comp_descriptor_t*> ss_companion = std::nullopt;
+  std::optional<const usb_ss_isoch_ep_comp_descriptor_t*> ss_isoch_companion = std::nullopt;
   if (descriptor == nullptr) {
     // If there's no descriptor, don't check for a SuperSpeed companion.
-    return Endpoint(descriptor, ss_companion);
+    return Endpoint(descriptor, ss_companion, ss_isoch_companion);
   }
 
-  // A SuperSpeed companion descriptor may optionally follow.
-  const usb_descriptor_header_t* header = usb_desc_iter_peek(iter);
-  if (header && header->b_descriptor_type == fdescriptor::DescriptorType::kSsEpCompanion) {
-    ss_companion = usb_desc_iter_next_ss_ep_comp(iter);
+  // SuperSpeed companion descriptors (0x30/0x31) may optionally follow in either order.
+  for (int i = 0; i < 2; ++i) {
+    const usb_descriptor_header_t* header = usb_desc_iter_peek(iter);
+    if (!header) {
+      break;
+    }
+    if (header->b_descriptor_type == fdescriptor::DescriptorType::kSsEpCompanion) {
+      if (ss_companion.has_value()) {
+        break;
+      }
+      auto* comp = usb_desc_iter_next_ss_ep_comp(iter);
+      if (!comp) {
+        break;
+      }
+      ss_companion = comp;
+    } else if (header->b_descriptor_type == fdescriptor::DescriptorType::kSsIsochEpCompanion) {
+      if (!usb_ep_is_isoch(descriptor) || ss_isoch_companion.has_value()) {
+        break;
+      }
+      auto* comp = usb_desc_iter_next_ss_isoch_ep_comp(iter);
+      if (!comp) {
+        break;
+      }
+      ss_isoch_companion = comp;
+    } else {
+      break;
+    }
   }
-  return Endpoint(descriptor, ss_companion);
+  return Endpoint(descriptor, ss_companion, ss_isoch_companion);
 }
 
 EndpointList Interface::GetEndpointList() const { return EndpointList(iter_, descriptor_); }

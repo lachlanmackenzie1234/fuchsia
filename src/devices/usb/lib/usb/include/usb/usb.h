@@ -24,7 +24,10 @@ zx_status_t usb_claim_additional_interfaces(
   void* arg);
 // clang-format on
 
-// Utilities for iterating through descriptors within a device's USB configuration descriptor
+// Utilities for iterating through descriptors within a device's USB configuration descriptor.
+// Note: Driver developers should prefer the C++ Endpoint::ReadEp wrapper or explicitly inspect
+// headers via usb_desc_iter_peek before advancing, preventing accidental irreversible forward-only
+// stream consumption in legacy C parsing loops.
 typedef struct {
   uint8_t* desc;      // start of configuration descriptor
   uint8_t* desc_end;  // end of configuration descriptor
@@ -62,17 +65,25 @@ bool usb_desc_iter_advance(usb_desc_iter_t* iter);
 // NULL would be returned, user is expected to handle the error case.
 void* usb_desc_iter_get_structure(usb_desc_iter_t* iter, size_t structure_size);
 
-// returns the next interface descriptor, optionally skipping alternate interfaces. The last
+// Returns the next interface descriptor, optionally skipping alternate interfaces. The last
 // association descriptor pointer is filled in at assoc. If none are seen, assoc does not change.
+// To guard against malformed multi-IAD device streams, *assoc strictly binds to the immediately
+// preceding association descriptor of the returned interface (ignoring subsequent duplicate IADs).
 usb_interface_descriptor_t* usb_desc_iter_next_interface_with_assoc(
     usb_desc_iter_t* iter, bool skip_alt, usb_interface_assoc_descriptor_t** assoc);
 usb_interface_descriptor_t* usb_desc_iter_next_interface(usb_desc_iter_t* iter, bool skip_alt);
 
-// returns the next endpoint descriptor within the current interface
+// returns the next endpoint descriptor within the current interface. Note: Driver developers
+// should prefer the C++ Endpoint::ReadEp wrapper or explicitly inspect headers via
+// usb_desc_iter_peek before advancing, preventing accidental irreversible forward-only
+// stream consumption in legacy C parsing loops.
 usb_endpoint_descriptor_t* usb_desc_iter_next_endpoint(usb_desc_iter_t* iter);
 
 // returns the next ss-companion descriptor within the current interface
 usb_ss_ep_comp_descriptor_t* usb_desc_iter_next_ss_ep_comp(usb_desc_iter_t* iter);
+
+// returns the next ss-isochronous-companion descriptor within the current interface
+usb_ss_isoch_ep_comp_descriptor_t* usb_desc_iter_next_ss_isoch_ep_comp(usb_desc_iter_t* iter);
 
 static inline zx_status_t usb_get_descriptor(const usb_protocol_t* usb, uint8_t request_type,
                                              uint16_t type, uint16_t index, uint8_t* data,
@@ -253,18 +264,26 @@ class DescriptorList {
 // EndpointList documentation below.)
 class Endpoint {
  public:
-  Endpoint(const usb_endpoint_descriptor_t* descriptor,
-           std::optional<const usb_ss_ep_comp_descriptor_t*> ss_companion)
-      : descriptor_(descriptor), ss_companion_(ss_companion) {}
+  Endpoint(
+      const usb_endpoint_descriptor_t* descriptor,
+      std::optional<const usb_ss_ep_comp_descriptor_t*> ss_companion,
+      std::optional<const usb_ss_isoch_ep_comp_descriptor_t*> ss_isoch_companion = std::nullopt)
+      : descriptor_(descriptor),
+        ss_companion_(ss_companion),
+        ss_isoch_companion_(ss_isoch_companion) {}
 
   const usb_endpoint_descriptor_t* descriptor() const { return descriptor_; }
 
   std::optional<const usb_ss_ep_comp_descriptor_t*> ss_companion() const { return ss_companion_; }
+  std::optional<const usb_ss_isoch_ep_comp_descriptor_t*> ss_isoch_companion() const {
+    return ss_isoch_companion_;
+  }
   bool has_companion() const { return ss_companion_.has_value(); }
 
  private:
   const usb_endpoint_descriptor_t* descriptor_;
   std::optional<const usb_ss_ep_comp_descriptor_t*> ss_companion_;
+  std::optional<const usb_ss_isoch_ep_comp_descriptor_t*> ss_isoch_companion_;
 };
 
 // EndpointList is used to iterate all of the USB endpoint descriptors of an Interface. It is
