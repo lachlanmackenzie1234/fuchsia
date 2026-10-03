@@ -787,9 +787,11 @@ using TwoAssociationCompositeTest = UsbCompositeTest<&kTestTwoAssociation>;
 
 template <>
 void TwoAssociationCompositeTest::ExpectConfigureEndpoints() {
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_2, {}, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_1, {}, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_1, {}, true);
+  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_2, kTestTwoAssociation.ss_companion2,
+                            true);
+  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_1, kTestTwoAssociation.ss_companion1,
+                            true);
+  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep2_1, {}, true);
 }
 
 TEST_F(TwoAssociationCompositeTest, InitTest) {
