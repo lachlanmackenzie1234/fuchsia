@@ -343,24 +343,13 @@ From //build/bazel/remote_services.gni:25
 
 ### bazel_upload_build_events
 
-Configure bazel to stream build events and results to a service.
-This is useful for sharing build results and invocation details
-for reproducing and triaging issues.
-This option uses direct network access and requires authentication.
-The _infra variants are intended for use in build infrastructure.
-More information can be found at:
-https://bazel.build/remote/bep#build-event-service
-
-Valid options:
-  "": do not stream (default)
-  "sponge": uploads to Sponge2 (for users)
-  "sponge_infra": uploads to Sponge2 (for infra)
-  "resultstore": uploads to ResultStore (for users)
-  "resultstore_infra": uploads to ResultStore (for infra)
+DEPRECATED: Configure bazel to stream build events and results to a service.
+This option is now deprecated and ignored. Use '--resultstore' or 'fx
+resultstore' instead.
 
 **Current value (from the default):** `""`
 
-From //build/bazel/remote_services.gni:48
+From //build/bazel/remote_services.gni:37
 
 ### blobfs_num_pager_threads
 
@@ -945,7 +934,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -4033,7 +4022,7 @@ configuration / Rust custom target definition.
 
 **Current value (from the default):** `["//build/config:cpu_baseline"]`
 
-From //zircon/kernel/switch/BUILD.gn:34
+From //zircon/kernel/switch/BUILD.gn:31
 
 ### experimental_mem_enabled
 
@@ -5032,7 +5021,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:29
+From //zircon/kernel/switch/BUILD.gn:26
 
 ### kernel_no_userabi
 
@@ -5570,22 +5559,13 @@ From //build/ninja_implicit_inputs/config.gni:11
 
 ### ninja_upload_build_events
 
-Configure ninja to stream build events and results to a service.
-This is useful for sharing build results and invocation details
-for reproducing and triaging issues.
-This option uses direct network access and requires authentication.
-The _infra variants are intended for use in build infrastructure.
-Similar configuration for bazel lives in //build/bazel/remote_services.gni.
-Note: uploading to Sponge is not yet supported.
-
-Valid options:
-  "": do not stream (default)
-  "resultstore": uploads to ResultStore (for users)
-  "resultstore_infra": uploads to ResultStore (for infra)
+DEPRECATED: Configure ninja to stream build events and results to a service.
+This option is now deprecated and ignored. Use '--resultstore' or 'fx
+resultstore' instead.
 
 **Current value (from the default):** `""`
 
-From //build/toolchain/resultstore.gni:18
+From //build/toolchain/resultstore.gni:9
 
 ### openthread_config_anycast_locator_enable
 
@@ -9629,19 +9609,6 @@ Controls whether the build runs the depfile verifier
 **Current value (from the default):** `true`
 
 From //build/rust/build.gni:25
-
-### vfs_rust_uses_log
-
-Set this to true to enable some additional logs in the vfs crate and have it
-depend on the log crate. This should not be enabled in general for non-host
-builds because it causes the vfs crate, which is built as a dylib, to be the
-source of the global logger, which can cause problems for things that
-dynamically link rust libraries (like drivers) and cause link errors at
-worst, or incorrect log attribution at best.
-
-**Current value (from the default):** `false`
-
-From //src/storage/lib/vfs/rust/BUILD.gn:17
 
 ### vim3_mcu_fan_default_level
 
