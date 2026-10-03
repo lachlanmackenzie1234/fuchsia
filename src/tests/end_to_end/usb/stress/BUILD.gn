@@ -26,6 +26,11 @@ if (is_host) {
 
       # Assert the link comes back at HighSpeed after every reconnect.
       expected_usb_link_speed = "high"
+
+      # Retry the virtual hub's USB bus ID lookup before each unplug in case
+      # the DUT is still re-enumerating after the previous reconnect.
+      bus_id_lookup_attempts = 10
+      bus_id_lookup_timeout_sec = 15
     }
 
     environments = [ sorrel_env ]
