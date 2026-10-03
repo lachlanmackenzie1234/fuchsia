@@ -139,7 +139,7 @@ async fn fetch_blob_with_retry(
             .open_blob_for_write(&blob_id.into(), true)
             .await
             .map_err(FetchError::CreateBlob)?;
-        http_client
+        let bytes_downloaded = http_client
             .download_blob(
                 &blob_url.to_string(),
                 blob,
@@ -149,8 +149,23 @@ async fn fetch_blob_with_retry(
             )
             .await
             .map_err(FetchError::DownloadBlobFidl)?
-            .map_err(FetchError::DownloadBlob)
-            .map(Some)
+            .map_err(FetchError::DownloadBlob)?;
+        // Recheck presence to catch the client lying about writing the blob, but accept
+        // NeedsOverwrite (unlike in the pre-write check) because the incoming blob may not have
+        // been intended by the remote blobstore to pass blobfs' up-to-date requirements. This
+        // check can be tightened to UpToDate if we implement more thorough blob format negotiation.
+        use blobfs::BlobStatus::*;
+        match blobfs_client
+            .blob_status(&blob_id.into())
+            .await
+            .map_err(FetchError::PostWriteStatusCheck)?
+        {
+            UpToDate | NeedsOverwrite => (),
+            Absent => {
+                return Err(FetchError::BlobAbsentAfterWrite);
+            }
+        }
+        Ok(Some(bytes_downloaded))
     })
     .await
 }
@@ -173,6 +188,12 @@ pub(crate) enum FetchError {
 
     #[error("error while calling fuchsia.pkg.http.Client.DownloadBlob {0:?}")]
     DownloadBlob(fpkg_http::ClientDownloadBlobError),
+
+    #[error("checking blob status after write")]
+    PostWriteStatusCheck(#[source] blobfs::BlobfsError),
+
+    #[error("blob was not in blobfs after successful write")]
+    BlobAbsentAfterWrite,
 }
 
 impl FetchError {
@@ -188,7 +209,11 @@ impl FetchError {
                 fpkg_http::ClientDownloadBlobError::NoSpace
                 | fpkg_http::ClientDownloadBlobError::Other => FetchErrorKind::Other,
             },
-            CreateBlob { .. } | BlobUrl { .. } | DownloadBlobFidl { .. } => FetchErrorKind::Other,
+            CreateBlob { .. }
+            | BlobUrl { .. }
+            | DownloadBlobFidl { .. }
+            | PostWriteStatusCheck { .. }
+            | BlobAbsentAfterWrite => FetchErrorKind::Other,
         }
     }
 }
@@ -219,6 +244,8 @@ impl From<&FetchError> for fidl_fuchsia_pkg::ResolveError {
                     Other => Err::Io,
                 }
             }
+            PostWriteStatusCheck { .. } => Err::Internal,
+            BlobAbsentAfterWrite => Err::Internal,
         }
     }
 }

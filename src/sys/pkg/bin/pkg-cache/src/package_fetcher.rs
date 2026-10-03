@@ -319,5 +319,7 @@ fn fetch_to_component_resolve_err(
                 Other => Err::Io,
             }
         }
+        PostWriteStatusCheck { .. } => Err::Internal,
+        BlobAbsentAfterWrite => Err::Internal,
     }
 }
