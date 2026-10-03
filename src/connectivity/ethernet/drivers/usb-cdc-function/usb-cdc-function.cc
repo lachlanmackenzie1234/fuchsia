@@ -592,7 +592,6 @@ struct UsbCdcFunction::SetConfiguredSharedState
               return;
             }
             self_shared->self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
-            self_shared->self->ReturnPendingRxSpace();
             self_shared->self->DrainRxCompletionQueue();
             self_shared->self->speed_ = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
             self_shared->self->configured_ = false;
@@ -605,7 +604,6 @@ struct UsbCdcFunction::SetConfiguredSharedState
       // Host-initiated soft reset (true -> true):
       // All pending requests from the previous session have returned. Discard remaining buffers.
       self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
-      self->ReturnPendingRxSpace();
       self->DrainRxCompletionQueue();
 
       if (!self->async_function_.is_valid()) {
@@ -900,7 +898,6 @@ struct UsbCdcFunction::SetInterfaceSharedState
               disable_state->pending_calls--;
               if (disable_state->pending_calls == 0) {
                 self_shared->self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
-                self_shared->self->ReturnPendingRxSpace();
                 self_shared->self->DrainRxCompletionQueue();
                 zx_status_t reply_status = disable_state->status;
                 if (self_shared->self->set_interface_state_ == self_shared) {
@@ -912,7 +909,6 @@ struct UsbCdcFunction::SetInterfaceSharedState
       }
     } else {
       self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
-      self->ReturnPendingRxSpace();
       self->DrainRxCompletionQueue();
 
       StepDisableBulkOut();
@@ -1413,6 +1409,7 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
 
   DrainRxCompletionQueue();
   online_ = false;
+  netdevice_started_ = false;
 
   DiscardPendingTxBuffers(ZX_ERR_CANCELED);
   ReturnPendingRxSpace();
@@ -1569,11 +1566,13 @@ void UsbCdcFunction::Init(fnetdev::wire::NetworkDeviceImplInitRequest *request, 
 }
 
 void UsbCdcFunction::Start(fdf::Arena &arena, StartCompleter::Sync &completer) {
+  netdevice_started_ = true;
   UpdatePortStatus();
   completer.buffer(arena).Reply(ZX_OK);
 }
 
 void UsbCdcFunction::Stop(fdf::Arena &arena, StopCompleter::Sync &completer) {
+  netdevice_started_ = false;
   DiscardPendingTxBuffers(ZX_ERR_CANCELED);
   ReturnPendingRxSpace();
   completer.buffer(arena).Reply();
@@ -1709,7 +1708,7 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
 
 void UsbCdcFunction::QueueRxSpace(fnetdev::wire::NetworkDeviceImplQueueRxSpaceRequest *request,
                                   fdf::Arena &arena, QueueRxSpaceCompleter::Sync &completer) {
-  if (unbound_.load()) {
+  if (unbound_.load() || !netdevice_started_) {
     const size_t count = request->buffers.size();
     fidl::VectorView<fnetdev::wire::RxBuffer> rx_buffers(arena, count);
     fidl::VectorView<fnetdev::wire::RxBufferPart> rx_buffers_parts(arena, count);

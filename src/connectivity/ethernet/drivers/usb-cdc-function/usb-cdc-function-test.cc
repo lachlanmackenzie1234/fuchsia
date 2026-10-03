@@ -997,10 +997,10 @@ TEST_F(UsbCdcTest, VerifySafeTeardownSequence) {
   test_active->store(false);
 }
 
-// Validates that transitioning to alternate setting 0 (deconfigured/idle) returns all queued RX
-// space buffers to the network device. Requires driver support to drain rx_space_buffers_ on
-// unconfigure.
-TEST_F(UsbCdcTest, UnconfigureReturnsRxSpace) {
+// Validates that unconfiguring the USB function (SetConfigured(false)) while NetworkDeviceImpl is
+// started retains queued RX space buffers rather than bouncing them back to netdevice, and only
+// returns them with length 0 when NetworkDeviceImpl::Stop() is called.
+TEST_F(UsbCdcTest, UnconfigureRetainsRxSpaceUntilStop) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1033,7 +1033,8 @@ TEST_F(UsbCdcTest, UnconfigureReturnsRxSpace) {
 
   EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
-  // Unconfigure USB. This should trigger immediate return of RX space.
+  // Unconfigure USB. Because NetworkDeviceImpl is still started, the RX space buffer should be
+  // retained across link transitions and NOT bounced back with length 0.
   {
     ASSERT_TRUE(function_client_.is_valid());
     fidl::Result result = function_client_->SetConfigured({{
@@ -1042,8 +1043,14 @@ TEST_F(UsbCdcTest, UnconfigureReturnsRxSpace) {
     }});
     ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   }
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
 
-  // Wait for completion. In the buggy version, this will timeout because they are not returned.
+  // Stopping NetworkDeviceImpl must return the retained RX space buffer with length 0.
+  auto stop_result = net_impl_client_.buffer(arena)->Stop();
+  ASSERT_OK(stop_result.status());
   ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
 
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
@@ -1099,9 +1106,10 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsOnStop) {
   });
 }
 
-TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsWhenOnlined) {
+TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndUsesWhenOnlined) {
   // Start the device. In this default state, the device is _not_ online.
   constexpr uint8_t kRxBufferId = 42;
+  constexpr size_t kRxPacketSize = 64;
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
   fdf::Arena arena(kArenaTag);
@@ -1126,18 +1134,80 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsWhenOnlined) {
   driver_test_.RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
 
-  // Bring the device online. Then synchronize with the driver runtime to give tasks
-  // a chance to execute.
+  // Bring the device online. The held RX space buffer should be retained across
+  // SetConfigured(true) and SetInterface(1) without being bounced back empty.
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
   driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
 
-  // Verify that, as part of transitioning to online, the driver returned the RX buffer
-  // to the interface.
+  // Complete a USB RX packet on kBulkOutEp and verify the retained RX buffer is immediately used.
+  auto rx_completed = std::make_shared<libsync::Completion>();
+  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+    env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, kRxPacketSize);
+  });
+  ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
+
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
     ASSERT_TRUE(rx.has_value());
     ASSERT_EQ(rx->data().size(), 1u);
     EXPECT_EQ(rx->data()[0].id(), kRxBufferId);
+    EXPECT_EQ(rx->data()[0].length(), kRxPacketSize);
+  });
+}
+
+TEST_F(UsbCdcTest, QueueRxSpaceBeforeStartOrAfterStopReturnsImmediately) {
+  constexpr uint8_t kRxBufferId1 = 43;
+  constexpr uint8_t kRxBufferId2 = 44;
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  fdf::Arena arena(kArenaTag);
+  auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
+  ASSERT_OK(prepare_result.status());
+  ASSERT_OK(prepare_result->s);
+
+  // 1. Before NetworkDeviceImpl::Start(), QueueRxSpace must immediately complete with length 0.
+  fnetdev::wire::RxSpaceBuffer rx_buffer1 = {
+      .id = kRxBufferId1,
+      .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
+  };
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueRxSpace(
+                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer1, 1))
+                .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    auto rx = env.fake_ifc_.PopCompleteRx();
+    ASSERT_TRUE(rx.has_value());
+    ASSERT_EQ(rx->data().size(), 1u);
+    EXPECT_EQ(rx->data()[0].id(), kRxBufferId1);
+    EXPECT_EQ(rx->data()[0].length(), 0u);
+  });
+
+  // 2. Start and then Stop NetworkDeviceImpl; QueueRxSpace after Stop() must also complete
+  // immediately with length 0.
+  StartNetworkDevice();
+  auto stop_result = net_impl_client_.buffer(arena)->Stop();
+  ASSERT_OK(stop_result.status());
+
+  fnetdev::wire::RxSpaceBuffer rx_buffer2 = {
+      .id = kRxBufferId2,
+      .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
+  };
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueRxSpace(
+                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer2, 1))
+                .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    auto rx = env.fake_ifc_.PopCompleteRx();
+    ASSERT_TRUE(rx.has_value());
+    ASSERT_EQ(rx->data().size(), 1u);
+    EXPECT_EQ(rx->data()[0].id(), kRxBufferId2);
     EXPECT_EQ(rx->data()[0].length(), 0u);
   });
 }

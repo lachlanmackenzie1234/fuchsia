@@ -242,6 +242,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   std::array<uint8_t, ETH_MAC_SIZE> mac_addr_;
   // Guarded by the synchronized driver dispatcher.
   bool online_ = false;
+  bool netdevice_started_ = false;
   bool configured_ = false;
   bool pending_notification_ = false;
   fdescriptor::UsbSpeed speed_ = fdescriptor::UsbSpeed::kUndefined;
