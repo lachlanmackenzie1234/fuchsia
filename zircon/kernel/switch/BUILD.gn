@@ -514,7 +514,6 @@ clippy_lints = [
   "doc-lazy-continuation",
   "new-without-default",
   "too-many-arguments",
-  "unnecessary-cast",
 ]
 foreach(lint, clippy_lints) {
   config("allow-$lint") {
