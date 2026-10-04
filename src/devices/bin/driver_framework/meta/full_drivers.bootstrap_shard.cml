@@ -155,7 +155,6 @@
                 "fuchsia.input.report.Service",
                 "fuchsia.power.battery.ChargerService",
                 "fuchsia.power.battery.InfoService",
-                "google.powerstats.Service",
             ],
             from: "#full-drivers",
             to: "self/driver-services-for-session",

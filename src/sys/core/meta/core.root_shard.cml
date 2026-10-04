@@ -460,7 +460,6 @@
                 "fuchsia.services.test.Device",
                 "fuchsia.tpm.Service",
                 "fuchsia.wlan.phy.Service",
-                "google.powerstats.Service",
             ],
             from: "#bootstrap",
             to: "#core",
