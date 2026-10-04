@@ -7,7 +7,7 @@ use crate::policy::{AccessVector, KernelAccessDecision, XpermsKind};
 use crate::{ClassPermission, KernelClass, KernelPermission, PolicySeqNo, SecurityId};
 use std::cell::Cell;
 
-/// A simple allow decision (allowed, not audited, not permissive, no TODO bug).
+/// Simple allow decision (allowed, not audited, not permissive, no TODO bug).
 const SIMPLE_ALLOW: PermissionCheckResult =
     PermissionCheckResult { granted: true, audit: false, permissive: false, todo_bug: None };
 
@@ -115,7 +115,7 @@ impl XpermCacheKey {
 /// Per-thread cache for SELinux policy decisions.
 #[derive(Debug)]
 pub struct PerThreadCache {
-    /// The policy version for which this cache is valid.
+    /// Policy version for which this cache is valid.
     policy_seqno: Cell<PolicySeqNo>,
     /// fd_use cache. Stores "simple allow" decisions (allowed, not audited, not permissive, no TODO bug).
     fd_use_cache: [Cell<SidPair>; FD_USE_CACHE_SIZE],
@@ -171,7 +171,7 @@ impl PerThreadCache {
 
     /// Looks up a fd use decision in cache, or falls back to using `compute`.
     #[inline]
-    pub fn lookup_fd_use<F>(
+    pub(crate) fn lookup_fd_use<F>(
         &self,
         policy_seqno: PolicySeqNo,
         source_sid: SecurityId,

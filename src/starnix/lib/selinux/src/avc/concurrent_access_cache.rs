@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::concurrent_cache::{LockFreeQueryCache, StorageStrategy};
+use super::{AccessQueryArgs, KernelXpermsAccessDecision, XpermsAccessQueryArgs};
 use crate::SecurityId;
-use crate::access_vector_cache::{
-    AccessQueryArgs, KernelXpermsAccessDecision, XpermsAccessQueryArgs,
-};
-use crate::concurrent_cache::{LockFreeQueryCache, StorageStrategy};
 use crate::kernel_permissions::ClassPermission;
 use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use std::hash::{Hash, Hasher};
@@ -14,15 +12,15 @@ use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use zerocopy::IntoBytes;
 
 /// Cache for access decisions.
-/// This cache has 4 slots per bucket, with 25 bytes of inline storage. A bucket is 64 bytes.
+/// This cache has 4 slots per bucket, with 25 bytes of inline storage. A bucket is 128 bytes.
 pub type ConcurrentAccessCache = LockFreeQueryCache<
     AccessCacheStorage,
-    /*ways4*/ 1,
-    /*u64*/ 3,
-    /*u32*/ 0,
-    /*u16*/ 0,
-    /*u8*/ 1,
-    /*out_of_line_u64s*/ 0,
+    /* ways4 = */ 1,
+    /* u64 = */ 3,
+    /* u32 = */ 0,
+    /* u16 = */ 0,
+    /* u8 = */ 1,
+    /* out_of_line_u64s = */ 0,
 >;
 
 /// Cache for extended access decisions.
@@ -30,24 +28,24 @@ pub type ConcurrentAccessCache = LockFreeQueryCache<
 /// storage. A bucket is 64 bytes.
 pub(super) type ConcurrentXpermsCache = LockFreeQueryCache<
     XpermsAccessCacheStorage,
-    /*ways4*/ 1,
-    /*u64*/ 1,
-    /*u32*/ 0,
-    /*u16*/ 1,
-    /*u8*/ 1,
-    /*out_of_line_u64s*/ 8,
+    /* ways4 = */ 1,
+    /* u64 = */ 1,
+    /* u32 = */ 0,
+    /* u16 = */ 1,
+    /* u8 = */ 1,
+    /* out_of_line_u64s = */ 8,
 >;
 
 /// Cache for computed SIDs.
 /// This cache has 8 slots per bucket, with 13 bytes of inline storage. A bucket is 128 bytes.
 pub(super) type ConcurrentSidCache = LockFreeQueryCache<
     SidCacheStorage,
-    /*ways4*/ 2,
-    /*u64*/ 1,
-    /*u32*/ 1,
-    /*u16*/ 0,
-    /*u8*/ 1,
-    /*out_of_line_u64s*/ 0,
+    /* ways4 = */ 2,
+    /* u64 = */ 1,
+    /* u32 = */ 1,
+    /* u16 = */ 0,
+    /* u8 = */ 1,
+    /* out_of_line_u64s = */ 0,
 >;
 
 #[derive(Default)]
@@ -57,11 +55,11 @@ pub struct AccessCacheStorage;
 /// allow and audit AccessVectors in another u64, and the class in a u8.
 impl
     StorageStrategy<
-        /*u64*/ 3,
-        /*u32*/ 0,
-        /*u16*/ 0,
-        /*u8*/ 1,
-        /*out_of_line_u64s*/ 0,
+        /* u64 = */ 3,
+        /* u32 = */ 0,
+        /* u16 = */ 0,
+        /* u8 = */ 1,
+        /* out_of_line_u64s = */ 0,
     > for AccessCacheStorage
 {
     type Key = AccessQueryArgs;
@@ -167,11 +165,11 @@ impl XpermsAccessCacheStorage {
 /// (64 bytes in total) are stored out of line.
 impl
     StorageStrategy<
-        /*u64*/ 1,
-        /*u32*/ 0,
-        /*u16*/ 1,
-        /*u8*/ 1,
-        /*out_of_line_u64s*/ 8,
+        /* u64 = */ 1,
+        /* u32 = */ 0,
+        /* u16 = */ 1,
+        /* u8 = */ 1,
+        /* out_of_line_u64s = */ 8,
     > for XpermsAccessCacheStorage
 {
     type Key = XpermsAccessQueryArgs;
@@ -281,11 +279,11 @@ pub(super) struct SidCacheStorage;
 /// u8, and the resulting SID in an u32.
 impl
     StorageStrategy<
-        /*u64*/ 1,
-        /*u32*/ 1,
-        /*u16*/ 0,
-        /*u8*/ 1,
-        /*out_of_line_u64s*/ 0,
+        /* u64 = */ 1,
+        /* u32 = */ 1,
+        /* u16 = */ 0,
+        /* u8 = */ 1,
+        /* out_of_line_u64s = */ 0,
     > for SidCacheStorage
 {
     type Key = AccessQueryArgs;

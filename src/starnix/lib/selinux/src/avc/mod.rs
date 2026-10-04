@@ -2,24 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::concurrent_access_cache::{
-    ConcurrentAccessCache, ConcurrentSidCache, ConcurrentXpermsCache,
-};
+mod cache_stats;
+mod concurrent_access_cache;
+mod concurrent_cache;
+mod local_cache;
+
 use crate::kernel_permissions::KernelPermission;
 use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use crate::security_server::SecurityServerBackend;
 use crate::{KernelClass, SecurityId};
-use std::hash::Hash;
+use concurrent_access_cache::{ConcurrentSidCache, ConcurrentXpermsCache};
 use std::sync::Arc;
 
-pub use crate::cache_stats::CacheStats;
+pub use cache_stats::CacheStats;
+pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
+pub use local_cache::PerThreadCache;
 
-/// An xperm access decision as seen from the kernel.
+/// Extended permission access decision as seen from the kernel.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct KernelXpermsAccessDecision {
-    /// The set of xperms that are allowed.
+    /// Set of xperms that are allowed.
     pub allow: XpermsBitmap,
-    /// The set of xperms that should be audited (as allowed or denials depending on `allow`)
+    /// Set of xperms that should be audited (as allowed or denials depending on `allow`)
     pub audit: XpermsBitmap,
     /// Whether the domain is permissive.
     pub permissive: bool,
@@ -27,15 +31,15 @@ pub struct KernelXpermsAccessDecision {
     pub has_todo: bool,
 }
 
-/// Interface used internally by the `SecurityServer` implementation to implement policy queries
-/// such as looking up the set of permissions to grant, or the Security Context to apply to new
-/// files, etc.
+/// Interface used internally by the [`SecurityServer`](crate::SecurityServer) implementation to
+/// implement policy queries such as looking up the set of permissions to grant, or the Security
+/// Context to apply to new files, etc.
 ///
 /// This trait allows layering of caching, delegation, and thread-safety between the policy-backed
 /// calculations, and the caller-facing permission-check interface.
 pub(super) trait Query {
-    /// Computes the [`AccessDecision`] permitted to `source_sid` for accessing `target_sid`, an
-    /// object of type `target_class`.
+    /// Computes the [`KernelAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
+    /// an object of type `target_class`.
     fn compute_access_decision(
         &self,
         source_sid: SecurityId,
@@ -55,8 +59,8 @@ pub(super) trait Query {
         name: &[u8],
     ) -> Result<SecurityId, anyhow::Error>;
 
-    /// Computes the [`XpermsAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
-    /// an object of type `target_class`, for xperms of kind `xperms_kind` with high byte
+    /// Computes the [`KernelXpermsAccessDecision`] permitted to `source_sid` for accessing
+    /// `target_sid` with base `permission`, for xperms of kind `xperms_kind` with high byte
     /// `xperms_prefix`.
     fn compute_xperms_access_decision(
         &self,
@@ -77,16 +81,16 @@ pub struct AccessQueryArgs {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub(super) struct XpermsAccessQueryArgs {
-    pub(super) xperms_kind: XpermsKind,
-    pub(super) source_sid: SecurityId,
-    pub(super) target_sid: SecurityId,
-    pub(super) permission: KernelPermission,
-    pub(super) xperms_prefix: u8,
+struct XpermsAccessQueryArgs {
+    xperms_kind: XpermsKind,
+    source_sid: SecurityId,
+    target_sid: SecurityId,
+    permission: KernelPermission,
+    xperms_prefix: u8,
 }
 
 /// Concurrent set-associative cache with capacity defined at construction and CLOCK eviction.
-pub(super) struct FifoQueryCache {
+struct FifoQueryCache {
     access_cache: ConcurrentAccessCache,
     create_sid_cache: ConcurrentSidCache,
     xperms_access_cache: ConcurrentXpermsCache,
@@ -103,7 +107,7 @@ pub struct QueryCacheCapacity {
 
 impl FifoQueryCache {
     /// Constructs a fixed-size access vector cache.
-    pub fn new(capacity: QueryCacheCapacity) -> Self {
+    fn new(capacity: QueryCacheCapacity) -> Self {
         Self {
             access_cache: ConcurrentAccessCache::new(capacity.access_cache_capacity),
             create_sid_cache: ConcurrentSidCache::new(capacity.sid_cache_capacity),
@@ -111,12 +115,12 @@ impl FifoQueryCache {
         }
     }
 
-    pub fn cache_stats(&self) -> CacheStats {
+    fn cache_stats(&self) -> CacheStats {
         let stats = &self.access_cache.cache_stats() + &self.create_sid_cache.cache_stats();
         &stats + &self.xperms_access_cache.cache_stats()
     }
 
-    pub fn compute_kernel_access_decision(
+    fn compute_kernel_access_decision(
         &self,
         delegate: &impl Query,
         source_sid: SecurityId,
@@ -129,7 +133,7 @@ impl FifoQueryCache {
         })
     }
 
-    pub fn compute_create_sid(
+    fn compute_create_sid(
         &self,
         delegate: &impl Query,
         source_sid: SecurityId,
@@ -147,7 +151,7 @@ impl FifoQueryCache {
         }
     }
 
-    pub fn compute_kernel_xperms_access_decision(
+    fn compute_kernel_xperms_access_decision(
         &self,
         delegate: &impl Query,
         xperms_kind: XpermsKind,
@@ -174,7 +178,7 @@ impl FifoQueryCache {
         })
     }
 
-    pub fn reset(&self) {
+    fn reset(&self) {
         self.access_cache.reset();
         self.create_sid_cache.reset();
         self.xperms_access_cache.reset();
@@ -196,7 +200,7 @@ pub const DEFAULT_SHARED_SIZE: QueryCacheCapacity = QueryCacheCapacity {
     xperms_cache_capacity: 512,
 };
 
-/// An access vector cache.
+/// Access vector cache.
 #[derive(Clone)]
 pub(super) struct AccessVectorCache {
     cache: Arc<FifoQueryCache>,
@@ -268,7 +272,7 @@ impl Query for AccessVectorCache {
     }
 }
 
-/// Test constants and helpers shared by `tests` and `starnix_tests`.
+/// Test constants and helpers for `tests`.
 #[cfg(test)]
 mod testing {
     use super::*;
@@ -288,7 +292,7 @@ mod testing {
         xperms_cache_capacity: 4,
     };
 
-    /// Returns a new `SecurityId` with unique id.
+    /// Returns a new [`SecurityId`] with unique id.
     pub(super) fn unique_sid() -> SecurityId {
         static NEXT_ID: AtomicU32 = AtomicU32::new(1000);
         SecurityId(NonZeroU32::new(NEXT_ID.fetch_add(1, Ordering::AcqRel)).unwrap())
@@ -347,7 +351,7 @@ mod tests {
             _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: KernelPermission,
+            _permission: KernelPermission,
             _xperms_prefix: u8,
         ) -> KernelXpermsAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);

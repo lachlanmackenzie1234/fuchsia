@@ -4,21 +4,19 @@
 
 #![warn(variant_size_differences)]
 
-pub mod local_cache;
+mod avc;
 pub mod permission_check;
 pub mod policy;
 pub mod security_server;
 
 mod new_policy;
 
-pub use access_vector_cache::{AccessQueryArgs, DEFAULT_SHARED_SIZE, QueryCacheCapacity};
-pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
+pub use avc::{
+    AccessCacheStorage, AccessQueryArgs, CacheStats, ConcurrentAccessCache, DEFAULT_SHARED_SIZE,
+    QueryCacheCapacity,
+};
 pub use security_server::{PolicySeqNo, SecurityServer};
 
-mod access_vector_cache;
-mod cache_stats;
-mod concurrent_access_cache;
-mod concurrent_cache;
 mod exceptions_config;
 mod kernel_permissions;
 mod sid_table;

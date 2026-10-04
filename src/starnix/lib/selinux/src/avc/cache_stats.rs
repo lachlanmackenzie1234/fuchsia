@@ -5,7 +5,7 @@
 use crossbeam_utils::CachePadded;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Describes the performance statistics of a cache implementation.
+/// Performance statistics of a cache implementation.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CacheStats {
     /// Cumulative count of lookups performed on the cache.
@@ -39,17 +39,17 @@ impl std::ops::Add for &CacheStats {
 }
 
 #[derive(Default, Debug)]
-pub struct AtomicCacheStats {
+pub(super) struct AtomicCacheStats {
     pub lookups: AtomicU64,
     pub hits: AtomicU64,
     pub misses: AtomicU64,
     pub allocs: AtomicU64,
     pub reclaims: AtomicU64,
-    pub frees: AtomicU64,
+    frees: AtomicU64,
 }
 
 impl AtomicCacheStats {
-    pub fn snapshot(&self) -> CacheStats {
+    fn snapshot(&self) -> CacheStats {
         CacheStats {
             lookups: self.lookups.load(Ordering::Relaxed),
             hits: self.hits.load(Ordering::Relaxed),
@@ -60,7 +60,7 @@ impl AtomicCacheStats {
         }
     }
 
-    pub fn reset(&self) {
+    fn reset(&self) {
         self.lookups.store(0, Ordering::Relaxed);
         self.hits.store(0, Ordering::Relaxed);
         self.misses.store(0, Ordering::Relaxed);
@@ -70,7 +70,7 @@ impl AtomicCacheStats {
     }
 }
 
-/// The number of shards to use for the cache stats.
+/// Number of shards to use for the cache stats.
 // TODO: https://fxbug.dev/483629131 - Do per-CPU sharding using rseq.
 fn num_shards() -> usize {
     8
@@ -80,31 +80,35 @@ unsafe extern "C" {
     fn thrd_current() -> std::ffi::c_ulong;
 }
 
-/// A sharded accumulator for cache statistics.
-pub struct ShardedCacheStats(Vec<CachePadded<AtomicCacheStats>>);
+/// Sharded accumulator for cache statistics.
+pub(super) struct ShardedCacheStats {
+    shards: Vec<CachePadded<AtomicCacheStats>>,
+}
 
 impl ShardedCacheStats {
     pub fn new() -> ShardedCacheStats {
-        ShardedCacheStats(
-            (0..num_shards()).map(|_| CachePadded::new(AtomicCacheStats::default())).collect(),
-        )
+        ShardedCacheStats {
+            shards: (0..num_shards())
+                .map(|_| CachePadded::new(AtomicCacheStats::default()))
+                .collect(),
+        }
     }
 
     pub fn shard(&self) -> &AtomicCacheStats {
         // SAFETY: there's nothing unsafe about this, we're just calling a C function.
         let index = (rapidhash::rapidhash(&unsafe { thrd_current() }.to_ne_bytes()) as usize)
             % num_shards();
-        &self.0[index]
+        &self.shards[index]
     }
 
     pub fn reset(&self) {
-        for shard in &self.0 {
+        for shard in &self.shards {
             shard.reset();
         }
     }
 
     // TODO: https://fxbug.dev/483629131 - Report per-CPU stats.
     pub fn read(&self) -> CacheStats {
-        self.0.iter().fold(CacheStats::default(), |acc, stats| &acc + &stats.snapshot())
+        self.shards.iter().fold(CacheStats::default(), |acc, stats| &acc + &stats.snapshot())
     }
 }

@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::cache_stats::{AtomicCacheStats, CacheStats, ShardedCacheStats};
+use super::cache_stats::{AtomicCacheStats, CacheStats, ShardedCacheStats};
 use crate::sync::{LockDepRwLock, SeLinuxQueryCacheResetLock};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::arch::asm;
@@ -67,9 +67,9 @@ pub trait StorageStrategy<
     const OUT_OF_LINE_U64S: usize,
 >
 {
-    /// The type to be used as cache key.
+    /// Type to be used as cache key.
     type Key;
-    /// The type of values to be stored in the cache.
+    /// Type of values to be stored in the cache.
     type Value;
 
     /// Computes a hash of `key`.
@@ -109,7 +109,7 @@ pub trait StorageStrategy<
     );
 }
 
-/// A bucket in the `LockFreeQueryCache`, with 4*WAYS4 associativity, and each entry storing
+/// Bucket in the [`LockFreeQueryCache`], with `4*WAYS4` associativity, and each entry storing
 /// inline data in the form of `INLINE_U64S` u64s, `INLINE_U32S` u32s, `INLINE_U16S` u16s, and
 /// `INLINE_U8S` u8s.
 #[repr(align(64))]
@@ -120,7 +120,7 @@ struct Bucket<
     const INLINE_U16S: usize,
     const INLINE_U8S: usize,
 > {
-    /// The seqlock state of this bucket.
+    /// Seqlock state of this bucket.
     /// Bits 0..15: write_mask (1 if the way is currently being written to).
     /// Bits 16..63: seqlock counter.
     /// Writes always increase this, either by setting a bit of the write mask before writing, or
@@ -139,15 +139,15 @@ struct Bucket<
     inline_u64s: [[[AtomicU64; INLINE_U64S]; 4]; WAYS4],
 }
 
-/// Eviction state for a up-to-16-way cache, using a CLOCK eviction strategy.
+/// Eviction state for an up-to-16-way cache, using a CLOCK eviction strategy.
 ///
 /// When evicting, we look at the entry pointed by the clock hand. If the entry is cold, it is
 /// evicted and the hand moves to the next entry. If the entry is hot, we mark it as cold and
 /// move to the next entry.
 /// Accessed entries are marked as hot if not already hot. On insertion, entries are left cold,
 /// but are far away from the hand: this ensures that rarely used entries do not pollute the cache.
-pub struct ClockState {
-    /// The CLOCK state, encoded as a 32-bit integer to allow a direct atomic load.
+struct ClockState {
+    /// CLOCK state, encoded as a 32-bit integer to allow a direct atomic load.
     /// - Bits 0..ways : "hot" bits for ways 0 to ways.
     /// - Bits 16..31: Clock hand pointer (values 0 to ways - 1).
     state: AtomicU32,
@@ -155,18 +155,18 @@ pub struct ClockState {
 
 impl ClockState {
     /// Initializes a new clock state.
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self { state: AtomicU32::new(0) }
     }
 
     /// Resets the clock to the initial state.
-    pub fn reset(&self) {
+    fn reset(&self) {
         self.state.store(0, Ordering::Relaxed);
     }
 
     /// Records an access to the given way.
     #[inline(always)]
-    pub fn record_access(&self, way_index: usize) {
+    fn record_access(&self, way_index: usize) {
         assert!(way_index < 16, "way_index must be less than 16");
 
         let way_bit = 1 << (way_index as u32);
@@ -199,7 +199,7 @@ impl ClockState {
     /// Returns `None` in case of contention: the caller should reload the write mask as it is
     /// likely to have changed.
     #[inline(always)]
-    pub fn find_eviction(&self, write_mask: u16, ways: usize) -> Option<usize> {
+    fn find_eviction(&self, write_mask: u16, ways: usize) -> Option<usize> {
         assert!(ways <= 16, "ways must be less than or equal to 16");
 
         if write_mask as u32 & ((1u32 << ways) - 1) == (1u32 << ways) - 1 {

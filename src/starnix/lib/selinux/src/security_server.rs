@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{
-    AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query,
-};
+use crate::avc::{AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{HandleUnknown, NewPolicy};

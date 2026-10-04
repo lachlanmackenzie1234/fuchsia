@@ -9,14 +9,14 @@ rustc_library("selinux") {
   with_unit_tests = true
   edition = "2024"
   sources = [
-    "src/access_vector_cache.rs",
-    "src/cache_stats.rs",
-    "src/concurrent_access_cache.rs",
-    "src/concurrent_cache.rs",
+    "src/avc/cache_stats.rs",
+    "src/avc/concurrent_access_cache.rs",
+    "src/avc/concurrent_cache.rs",
+    "src/avc/local_cache.rs",
+    "src/avc/mod.rs",
     "src/exceptions_config.rs",
     "src/kernel_permissions.rs",
     "src/lib.rs",
-    "src/local_cache.rs",
     "src/new_policy/access_vector.rs",
     "src/new_policy/bitmap.rs",
     "src/new_policy/booleans.rs",
