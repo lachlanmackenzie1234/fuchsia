@@ -118,67 +118,49 @@ class UsbPeripheral : public fdf::DriverBase2,
   //   Transitions:
   //     -> kWaitForFunctionBind: Occurs when a configuration is committed (SetConfiguration()
   //        or SetDefaultConfig()). Child nodes are published.
-  //     -> kClearingFunctions: Occurs on ClearFunctions().
-  //     -> kStoppingDriver: Occurs on Stop().
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
   //
   // kWaitForFunctionBind:
   //   Configuration committed. Child nodes are published. Waiting for function drivers to bind.
   //   Transitions:
   //     -> kStarting: Occurs when all functions have registered.
-  //     -> kClearingFunctions: Occurs on ClearFunctions().
-  //     -> kStoppingDriver: Occurs on Stop().
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //     -> kWaitForFunctionBind: Occurs when a function is unregistered (node unbound).
   //
   // kStarting:
   //   All functions have registered. Starting the DCI controller.
   //   Transitions:
   //     -> kPeripheralReady: Occurs when StartController() succeeds.
   //     -> kWaitForFunctionBind: Occurs if StartController() fails.
-  //     -> kClearingFunctions: Occurs on ClearFunctions().
-  //     -> kStoppingDriver: Occurs on Stop().
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
   //
   // kPeripheralReady:
   //   All functions have registered. DCI is active. Ready for a USB host to connect.
   //   Transitions:
   //     -> kHostConnected: Occurs when a USB host connects.
-  //     -> kUnregisteringFunction: Occurs if a function is unregistered (`Deconfigure` / unbind).
-  //     -> kClearingFunctions: Occurs on ClearFunctions().
-  //     -> kStoppingDriver: Occurs on Stop().
+  //     -> kWaitForFunctionBind: Occurs if a function is unregistered.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
   //
   // kHostConnected:
   //   USB host has performed enumeration and selected a configuration. Data paths are active.
   //   Transitions:
-  //     -> kPeripheralReady: Occurs when the host disconnects and all functions finish
-  //     unconfiguring.
-  //     -> kUnregisteringFunction: Occurs if a function is unregistered (`Deconfigure` / unbind).
-  //     -> kClearingFunctions: Occurs on ClearFunctions().
-  //     -> kStoppingDriver: Occurs on Stop().
+  //     -> kPeripheralReady: Occurs when the host disconnects.
+  //     -> kWaitForFunctionBind: Occurs if a function is unregistered.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
   //
-  // kUnregisteringFunction:
-  //   A single function unregistered while the controller was active. Unconfiguring remaining
-  //   functions and stopping the controller before returning to `kWaitForFunctionBind`.
+  // kStopping:
+  //   Teardown in progress (either a configuration clear or a full driver shutdown).
   //   Transitions:
-  //     -> kWaitForFunctionBind: Once remaining functions finish unconfiguring and DCI stops.
-  //     -> kClearingFunctions: Occurs if ClearFunctions() is called during unregistration.
-  //     -> kStoppingDriver: Occurs if Stop() is called during unregistration.
-  //
-  // kClearingFunctions:
-  //   Configuration clear in progress (`ClearFunctions()`). Unconfiguring all functions, stopping
-  //   the controller, and removing child nodes.
-  //   Transitions:
-  //     -> kNoConfiguration: When all functions are cleared.
-  //     -> kStoppingDriver: Occurs if Stop() is called while clearing functions.
-  //
-  // kStoppingDriver:
-  //   Terminal driver shutdown in progress (`Stop()`).
+  //     -> Terminates: When all functions are cleared and the driver is stopping.
+  //     -> kNoConfiguration: When all functions are cleared and we are just clearing functions
+  //        (not stopping the driver).
   enum class DeviceState : uint8_t {
     kNoConfiguration,
     kWaitForFunctionBind,
     kStarting,
     kPeripheralReady,
     kHostConnected,
-    kUnregisteringFunction,
-    kClearingFunctions,
-    kStoppingDriver,
+    kStopping,
   };
 
   static constexpr std::string_view kDriverName = "usb_device";
@@ -223,13 +205,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   zx_status_t CheckAndStartController();
   zx_status_t StartController();
   zx_status_t StopController();
-  // Handles unregistration of a single USB function (`Deconfigure` or channel closure).
-  //
-  // Callback Semantics (`on_complete`, optional):
-  // - Invocation: If non-null, invoked on `dispatcher()` exactly once after remaining functions
-  //   have finished unconfiguring and the DCI controller has stopped (or synchronously if the
-  //   controller was not active).
-  zx_status_t FunctionUnregistered(fit::callback<void()> on_complete = nullptr);
+  zx_status_t FunctionUnregistered();
   void FunctionCleared(size_t function_index, uint64_t config_generation);
 
   DeviceState SnapshotState() const {
@@ -316,15 +292,7 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
   void SetBcdUsbForTesting(uint16_t bcd_usb) { device_desc_.bcd_usb = htole16(bcd_usb); }
-
-  // Updates host connection status and, on disconnect, drains `UsbFunction::Unconfigure()` across
-  // all functions before transitioning back to `kPeripheralReady`.
-  //
-  // Callback Semantics (`on_complete`, optional):
-  // - Invocation: If non-null, invoked on `dispatcher()` exactly once: synchronously on connect
-  //   (or if no functions need unconfiguring), or asynchronously after all functions finish
-  //   unconfiguring (or clearing) on disconnect.
-  void OnHostConnectionChanged(bool connected, fit::callback<void()> on_complete = nullptr);
+  void OnHostConnectionChanged(bool connected);
   inspect::Node& inspect_node() { return usb_peripheral_node_; }
   const inspect::Inspector& inspector() const { return inspector_->inspector(); }
 
@@ -485,6 +453,8 @@ class UsbPeripheral : public fdf::DriverBase2,
   bool set_interface_in_init_ __TA_GUARDED(lock_) = false;
   // True if we are connected to a host,
   bool connected_ __TA_GUARDED(lock_) = false;
+  // True if we are under the Stop() codepath.
+  bool stopping_driver_ __TA_GUARDED(lock_) = false;
   // Current configuration number selected via StandardRequest::SET_CONFIGURATION
   // (will be 0 or 1 since we currently do not support multiple configurations).
   // 0 indicates that the device is unconfigured and should not accept USB requests
@@ -503,41 +473,16 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   UsbMonitor usb_monitor_;
 
-  // Returns true if the peripheral is undergoing teardown or stopping.
-  //
-  // Includes `kUnregisteringFunction` because when a single function unbinds or calls
-  // `Deconfigure()`, the peripheral takes the controller offline: it unconfigures remaining
-  // functions cleanly while hardware is live, stops the DCI controller, and returns to
-  // `kWaitForFunctionBind`. While this hardware teardown is in flight, the peripheral is actively
-  // decommissioning endpoints and must reject incoming `SetConfiguration()` or `SetInterface()`
-  // requests from the host.
-  bool IsStoppingOrClearingLocked() const __TA_REQUIRES(lock_) {
-    return state_ == DeviceState::kUnregisteringFunction ||
-           state_ == DeviceState::kClearingFunctions || state_ == DeviceState::kStoppingDriver;
-  }
-
-  // Waits for all child function driver nodes to complete asynchronous removal (`FunctionCleared`).
-  //
-  // Callback Semantics:
-  // - Invocation: Invoked on `dispatcher()` exactly once when `functions_` is empty and
-  //   `clear_in_progress_` is false. If all functions are already cleared, invoked synchronously.
+  // Wait for all functions to be cleared. Call the callback when all functions are gone.
+  // If no functions are pending clearance, the callback is called immediately.
   void WaitForFunctionsCleared(fit::callback<void()> callback) __TA_EXCLUDES(lock_);
-
-  // Coordinates unconfiguring all active functions in parallel via `UsbFunction::Unconfigure()`.
-  // Concurrent callers (`OnHostConnectionChanged(false)`, `FunctionUnregistered`, `ClearFunctions`)
-  // coalesce onto the single in-flight batch via `pending_unconfigure_callbacks_`.
-  //
-  // Callback Semantics:
-  // - Invocation: Invoked on `dispatcher()` exactly once after every active function has completed
-  //   its `UsbFunction::Unconfigure()` call. If no functions are active, invoked synchronously.
-  // - Does not pass an error code because function deconfiguration on teardown/disconnect is
-  //   best-effort (errors on individual functions are logged and ignored).
-  void UnconfigureAllFunctionsThen(fit::callback<void()> on_complete) __TA_EXCLUDES(lock_);
 
   std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
   std::set<uint8_t> stalled_eps_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
+
+  std::optional<async::Executor> executor_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
@@ -558,24 +503,16 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   size_t active_functions_count_ __TA_GUARDED(lock_) = 0;
   uint64_t config_generation_ __TA_GUARDED(lock_) = 0;
-  // True while a batch of parallel `UsbFunction::Unconfigure()` FIDL calls is in flight.
-  // Prevents re-entrant unconfiguration batches during disconnect storms or concurrent teardowns.
-  bool unconfiguring_functions_ __TA_GUARDED(lock_) = false;
-  // Queue of completion callbacks from concurrent callers (`OnHostConnectionChanged(false)`,
-  // `FunctionUnregistered()`, and `ClearFunctions()`) waiting for the in-flight unconfiguration
-  // batch to finish before executing their post-unconfigure logic (e.g. stopping DCI or replying).
-  std::vector<fit::callback<void()>> pending_unconfigure_callbacks_ __TA_GUARDED(lock_);
+  size_t in_flight_disconnect_unconfigures_ __TA_GUARDED(lock_) = 0;
 
   struct PendingSetConfiguration {
     uint8_t configuration;
     fit::callback<void(zx_status_t)> completer;
   };
   std::optional<PendingSetConfiguration> pending_set_configuration_ __TA_GUARDED(lock_);
-  bool clear_in_progress_ __TA_GUARDED(lock_) = false;
+  bool clearing_functions_ __TA_GUARDED(lock_) = false;
 
-  // Must be declared last so that `scope_` and `executor_` are destroyed first, abandoning any
-  // in-flight promises (and their `fit::defer` cleanups) while all other members remain valid.
-  std::optional<async::Executor> executor_;
+  // Must be last so promises bound to this scope are destroyed before other members.
   fpromise::scope scope_;
 };
 
@@ -602,14 +539,8 @@ struct std::formatter<usb_peripheral::UsbPeripheral::DeviceState>
       case usb_peripheral::UsbPeripheral::DeviceState::kHostConnected:
         name = "kHostConnected";
         break;
-      case usb_peripheral::UsbPeripheral::DeviceState::kUnregisteringFunction:
-        name = "kUnregisteringFunction";
-        break;
-      case usb_peripheral::UsbPeripheral::DeviceState::kClearingFunctions:
-        name = "kClearingFunctions";
-        break;
-      case usb_peripheral::UsbPeripheral::DeviceState::kStoppingDriver:
-        name = "kStoppingDriver";
+      case usb_peripheral::UsbPeripheral::DeviceState::kStopping:
+        name = "kStopping";
         break;
     }
     return std::formatter<std::string_view>::format(name, ctx);
