@@ -534,15 +534,15 @@ zx::result<std::vector<uint8_t>> UsbHubDevice::ControlIn(uint8_t request_type, u
   usb_request->request()->setup.w_length = static_cast<uint16_t>(read_size);
 
   std::vector<uint8_t> data;
-  zx_status_t status;
+  std::atomic<zx_status_t> status = ZX_OK;
   sync_completion_t completion;
   executor_->schedule_task(
       RequestQueue(*std::move(usb_request)).then([&](fpromise::result<Request, void>& value) {
         auto request = std::move(value.take_ok_result().value);
-        auto rq_status = request.request()->response.status;
-        if (rq_status != ZX_OK) {
+        auto request_status = request.request()->response.status;
+        if (request_status != ZX_OK) {
           request_pool_.Add(std::move(request));
-          status = rq_status;
+          status = request_status;
         } else {
           if (read_size != 0) {
             data.resize(request.request()->response.actual);
@@ -554,6 +554,9 @@ zx::result<std::vector<uint8_t>> UsbHubDevice::ControlIn(uint8_t request_type, u
         sync_completion_signal(&completion);
       }));
   sync_completion_wait(&completion, ZX_TIME_INFINITE);
+  if (status != ZX_OK) {
+    return zx::error(status.load());
+  }
   return zx::ok(data);
 }
 

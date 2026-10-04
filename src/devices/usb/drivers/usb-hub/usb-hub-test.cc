@@ -497,17 +497,42 @@ TEST_F(SyntheticHarness, BadDescriptorTest) {
     usb_request_complete(request, ZX_OK, sizeof(usb_descriptor_header_t), &completion);
   });
   auto result = dev->GetUsbHubDescriptor(0);
-  ASSERT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
+  ASSERT_EQ(result.error_value(), ZX_ERR_IO_REFUSED);
 
   SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
     usb_device_descriptor_t* devdesc;
     usb_request_mmap(request, reinterpret_cast<void**>(&devdesc));
     devdesc->b_length = sizeof(usb_device_descriptor_t);
-    usb_request_complete(request, ZX_OK, sizeof(usb_device_descriptor_t), &completion);
+    usb_request_complete(request, ZX_OK, sizeof(usb_hub_descriptor_t), &completion);
   });
-  result =
-      dev->GetUsbHubDescriptor(fidl::ToUnderlying(fdescriptor::DescriptorType::kHubSuperSpeed));
-  ASSERT_EQ(result.error_value(), ZX_ERR_NO_MEMORY);
+  result = dev->GetUsbHubDescriptor(0);
+  ASSERT_EQ(result.error_value(), ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST_F(SyntheticHarness, ExceedsStructCapacityTest) {
+  auto dev = device();
+  SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
+    usb_hub_descriptor_t* hubdesc;
+    usb_request_mmap(request, reinterpret_cast<void**>(&hubdesc));
+    hubdesc->b_desc_length = 30;
+    hubdesc->b_nbr_ports = 128;
+    usb_request_complete(request, ZX_OK, 30, &completion);
+  });
+  auto result = dev->GetUsbHubDescriptor(0);
+  ASSERT_EQ(result.error_value(), ZX_ERR_BUFFER_TOO_SMALL);
+}
+
+TEST_F(SyntheticHarness, MismatchedHubDescriptorLengthTest) {
+  auto dev = device();
+  SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
+    usb_hub_descriptor_t* hubdesc;
+    usb_request_mmap(request, reinterpret_cast<void**>(&hubdesc));
+    hubdesc->b_desc_length = 20;  // Claims 20 bytes, but request_size is 9 bytes
+    hubdesc->b_nbr_ports = 4;
+    usb_request_complete(request, ZX_OK, 9, &completion);
+  });
+  auto result = dev->GetUsbHubDescriptor(0);
+  ASSERT_EQ(result.error_value(), ZX_ERR_BUFFER_TOO_SMALL);
 }
 
 TEST_F(SyntheticHarness, GoodDescriptorTest) {
@@ -515,12 +540,32 @@ TEST_F(SyntheticHarness, GoodDescriptorTest) {
   SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
     usb_device_descriptor_t* devdesc;
     usb_request_mmap(request, reinterpret_cast<void**>(&devdesc));
-    devdesc->b_length = sizeof(usb_descriptor_header_t);
-    usb_request_complete(request, ZX_OK, sizeof(usb_descriptor_header_t), &completion);
+    devdesc->b_length = sizeof(usb_hub_descriptor_t);
+    usb_request_complete(request, ZX_OK, sizeof(usb_hub_descriptor_t), &completion);
   });
   auto result =
       dev->GetUsbHubDescriptor(fidl::ToUnderlying(fdescriptor::DescriptorType::kHubSuperSpeed));
   ASSERT_OK(result);
+
+  SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
+    usb_hub_descriptor_t* hubdesc;
+    usb_request_mmap(request, reinterpret_cast<void**>(&hubdesc));
+    hubdesc->b_desc_length = 9;
+    hubdesc->b_nbr_ports = 4;
+    usb_request_complete(request, ZX_OK, 9, &completion);
+  });
+  result = dev->GetUsbHubDescriptor(0);
+  ASSERT_OK(result);
+}
+
+TEST_F(SyntheticHarness, ControlInErrorPropagationTest) {
+  auto dev = device();
+  SetRequestCallback([&](usb_request_t* request, usb_request_complete_callback_t completion) {
+    usb_request_complete(request, ZX_ERR_IO, 0, &completion);
+  });
+  auto result = dev->GetUsbHubDescriptor(0);
+  ASSERT_TRUE(result.is_error());
+  ASSERT_EQ(result.error_value(), ZX_ERR_IO);
 }
 
 }  // namespace
