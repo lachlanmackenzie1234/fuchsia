@@ -155,12 +155,12 @@ rustc_library("flex_fidl") {
   ]
   with_unit_tests = true
   deps = []
-  deps += [
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-  ]
+  deps += [ "//src/lib/fidl/rust/fidl" ]
   if (is_fuchsia) {
-    deps += [ "//sdk/rust/zx" ]
+    deps += [
+      "//sdk/rust/zx",
+      "//src/lib/fuchsia-async",
+    ]
   } else {
     deps += [ "//src/lib/fuchsia-emulated-handle" ]
   }

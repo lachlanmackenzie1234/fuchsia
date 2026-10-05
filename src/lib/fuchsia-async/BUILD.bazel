@@ -84,7 +84,6 @@ rustc_library(
             "//third_party/rust_crates/vendor:zerocopy",
         ],
         "//conditions:default": [
-            "//src/lib/fuchsia-emulated-handle",
             "//third_party/rust_crates/vendor:futures-lite",
             "//third_party/rust_crates/vendor:tokio",
         ],

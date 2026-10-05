@@ -27,6 +27,16 @@ pub fn socket_to_async(s: Socket) -> AsyncSocket {
     AsyncSocket::from_socket(s)
 }
 
+#[cfg(feature = "fdomain")]
+pub fn channel_to_async(s: AsyncChannel) -> AsyncChannel {
+    s
+}
+
+#[cfg(not(feature = "fdomain"))]
+pub fn channel_to_async(s: Channel) -> AsyncChannel {
+    AsyncChannel::from_channel(s)
+}
+
 #[cfg(not(feature = "fdomain"))]
 pub use ::fidl::endpoints::ProxyHasDomain;
 
@@ -62,7 +72,11 @@ pub async fn wait_for_signals(
     handle: &impl AsHandleRef,
     signals: ::fidl::Signals,
 ) -> Result<::fidl::Signals, ::fidl::Status> {
-    fuchsia_async::OnSignalsRef::new(handle.as_handle_ref(), signals).await
+    #[cfg(target_os = "fuchsia")]
+    return fuchsia_async::OnSignalsRef::new(handle.as_handle_ref(), signals).await;
+    #[cfg(not(target_os = "fuchsia"))]
+    return fuchsia_emulated_handle::on_signals::OnSignalsRef::new(handle.as_handle_ref(), signals)
+        .await;
 }
 
 #[cfg(feature = "fdomain")]

@@ -146,7 +146,6 @@ rustc_library("fuchsia-async") {
     ]
   } else {
     deps += [
-      "//src/lib/fuchsia-emulated-handle",
       "//third_party/rust_crates:futures-lite",
       "//third_party/rust_crates:tokio",
     ]
