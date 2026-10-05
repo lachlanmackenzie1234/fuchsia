@@ -2258,14 +2258,14 @@ alias(
 )
 
 alias(
-    name = "rand-0.10.2",
-    actual = "//third_party/rust_crates/vendor/rand-0.10.2:rand",
+    name = "rand-0.10.3",
+    actual = "//third_party/rust_crates/vendor/rand-0.10.3:rand",
     tags = ["manual"],
 )
 
 alias(
     name = "rand",
-    actual = "//third_party/rust_crates/vendor/rand-0.10.2:rand",
+    actual = "//third_party/rust_crates/vendor/rand-0.10.3:rand",
     tags = ["manual"],
 )
 
