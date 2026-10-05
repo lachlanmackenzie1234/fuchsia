@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import types
+from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
 
@@ -333,6 +334,7 @@ class Adb:
         ) = _resolve_vendor_keys_path(vendor_keys_path)
         self._adb_server: AdbServer | None = None
         self._is_root: bool = False
+        self._is_su_root: bool = False
         self._cached_adbd_pid: str | None = None
         self._root_lock: threading.Lock = threading.Lock()
         self._root_ref_count: int = 0
@@ -377,6 +379,7 @@ class Adb:
         """
         with self._root_lock:
             self._is_root = False
+            self._is_su_root = False
             self._rooted_by_context = False
             self._root_ref_count = 0
             self._cached_adbd_pid = None
@@ -401,6 +404,17 @@ class Adb:
             )
         if include_serial:
             adb_cmd.extend(["-s", self._serial_number])
+
+        # TODO(b/564946370): Remove once 'root' operations are stable. When
+        # using a USB-based connection, use 'su root' instead of 'root', which
+        # prevents flapping the ADBD instance on-device.
+        if self._is_su_root and "shell" in cmd:
+            shell_index = cmd.index("shell")
+            # Make a copy of the command line passed in. The list type is mutable, so if the
+            # same list is used to run a command in a loop, 'su','root' will appear multiple times.
+            cmd = cmd.copy()
+            cmd.insert(shell_index + 1, "root")
+            cmd.insert(shell_index + 1, "su")
         adb_cmd.extend(cmd)
         return adb_cmd
 
@@ -736,6 +750,11 @@ class Adb:
         """Whether the ADB daemon on the device is currently running as root."""
         return self._is_root
 
+    @property
+    def is_su_root(self) -> bool:
+        """Whether su_root mode is currently enabled on the ADB transport."""
+        return self._is_su_root
+
     def root(
         self,
         timeout: float | None = None,
@@ -824,6 +843,69 @@ class Adb:
             A context manager enabling root on enter and restoring previous root state on exit.
         """
         return _AdbRootContextManager(self, timeout=timeout, attempts=attempts)
+
+    @contextlib.contextmanager
+    def use_su_root(
+        self,
+        timeout: float | None = None,
+        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+    ) -> Iterator[None]:
+        """Temporarily enables running adb as root within a context using su_root.
+
+        Does not attempt to root/unroot if ADB daemon is already running as the root user.
+
+        Args:
+            timeout: Maximum amount of time in seconds to wait for root/unroot commands.
+            attempts: Maximum number of attempts to run the root/unroot commands. Defaults to 3.
+
+        Usage:
+        ```
+        with self.use_su_root():
+            ... do something ...
+        ```
+        """
+        adbd_was_root = self._is_su_root
+        if not adbd_was_root:
+            self.su_root(timeout=timeout, attempts=attempts)
+
+        try:
+            yield
+        finally:
+            if not adbd_was_root:
+                self.su_unroot(timeout=timeout, attempts=attempts)
+
+    def su_root(
+        self,
+        timeout: float | None = None,
+        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+    ) -> None:
+        """Restarts ADB daemon on device as the root user.
+
+        Args:
+            timeout: Maximum amount of time in seconds to wait for the command to finish.
+            attempts: Maximum number of attempts to run the command. Defaults to 3.
+        """
+        _LOGGER.info("Enabling root-privileges on %s.", self._device_name)
+        # When using a USB-based connection, use 'su root' instead of 'root',
+        # which prevents flapping the ADBD instance on-device. This is
+        # handled internally by _build_adb_cmd.
+        _LOGGER.debug("Using 'su root' instead of 'root'.")
+        self._is_su_root = True
+
+    def su_unroot(
+        self,
+        timeout: float | None = None,
+        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+    ) -> None:
+        """Restarts ADB daemon on device as the shell user.
+
+        Args:
+            timeout: Maximum amount of time in seconds to wait for the command to finish.
+            attempts: Maximum number of attempts to run the command. Defaults to 3.
+        """
+        _LOGGER.info("Disabling root-privileges on %s.", self._device_name)
+        _LOGGER.debug("No longer using 'su root'.")
+        self._is_su_root = False
 
     def setprop(
         self,

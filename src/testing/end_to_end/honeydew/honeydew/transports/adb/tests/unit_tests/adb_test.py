@@ -1162,6 +1162,78 @@ class AdbTests(unittest.TestCase):
         )
         self.assertFalse(self.adb_obj.is_root)
 
+    @mock.patch.object(adb.Adb, "su_unroot", autospec=True)
+    @mock.patch.object(adb.Adb, "su_root", autospec=True)
+    def test_use_su_root_when_not_root(
+        self, mock_su_root: mock.Mock, mock_su_unroot: mock.Mock
+    ) -> None:
+        """Test use_su_root roots on enter and unroots on exit when not root initially."""
+        self.assertFalse(self.adb_obj.is_su_root)
+
+        with self.adb_obj.use_su_root(timeout=5.0):
+            mock_su_root.assert_called_once_with(
+                self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+            )
+            mock_su_unroot.assert_not_called()
+
+        mock_su_unroot.assert_called_once_with(
+            self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+        )
+
+    @mock.patch.object(adb.Adb, "su_unroot", autospec=True)
+    @mock.patch.object(adb.Adb, "su_root", autospec=True)
+    def test_use_su_root_when_already_root(
+        self, mock_su_root: mock.Mock, mock_su_unroot: mock.Mock
+    ) -> None:
+        """Test use_su_root does not root or unroot when already root."""
+        self.adb_obj._is_su_root = True
+
+        with self.adb_obj.use_su_root(timeout=5.0):
+            mock_su_root.assert_not_called()
+            mock_su_unroot.assert_not_called()
+
+        mock_su_root.assert_not_called()
+        mock_su_unroot.assert_not_called()
+
+    def test_su_root_and_su_unroot(self) -> None:
+        """Test su_root and su_unroot toggle su root injection in _build_adb_cmd."""
+        cmd = ["shell", "setprop", "foo", "bar"]
+        self.assertFalse(self.adb_obj.is_su_root)
+
+        self.adb_obj.su_root(timeout=10.0)
+        self.assertTrue(self.adb_obj.is_su_root)
+        self.assertEqual(
+            self.adb_obj._build_adb_cmd(cmd),
+            [
+                "/custom/adb",
+                "-s",
+                _SERIAL_NUMBER,
+                "shell",
+                "su",
+                "root",
+                "setprop",
+                "foo",
+                "bar",
+            ],
+        )
+        # Ensure original cmd list was not mutated
+        self.assertEqual(cmd, ["shell", "setprop", "foo", "bar"])
+
+        self.adb_obj.su_unroot(timeout=10.0)
+        self.assertFalse(self.adb_obj.is_su_root)
+        self.assertEqual(
+            self.adb_obj._build_adb_cmd(cmd),
+            [
+                "/custom/adb",
+                "-s",
+                _SERIAL_NUMBER,
+                "shell",
+                "setprop",
+                "foo",
+                "bar",
+            ],
+        )
+
     @mock.patch.object(adb.Adb, "run", autospec=True)
     def test_setprop(self, mock_run: mock.Mock) -> None:
         """Test setprop runs adb shell setprop command."""
