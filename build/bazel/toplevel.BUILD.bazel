@@ -120,6 +120,9 @@ exports_files(
         "integration/MILESTONE",
     ] +
 
+    # Unicode data, used in //src/storage/fxfs/unicode.
+    ["prebuilt/third_party/ucd/UCD.zip"] +
+
     # end of list.
     [],
 )
