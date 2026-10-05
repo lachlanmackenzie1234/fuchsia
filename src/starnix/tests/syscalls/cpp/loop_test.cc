@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <ftw.h>
+#include <lib/fit/defer.h>
 #include <lib/stdcompat/string_view.h>
 #include <stdio.h>
 #include <string.h>
@@ -77,6 +78,39 @@ class LoopTest : public ::testing::Test {
     return ioctl(loop_control_.get(), LOOP_CTL_ADD, loop_device_num);
   }
 
+  // Adds a loop device with the lowest unused minor number >= kFirstPrivateMinor and returns that
+  // number. LOOP_CTL_GET_FREE hands out the lowest unbound device, so starting well above it keeps
+  // other tests, which may run concurrently, from picking up this device. Records a test failure
+  // and returns -1 if LOOP_CTL_ADD fails with anything but EEXIST.
+  int AddUnusedLoopDevice() {
+    constexpr int kFirstPrivateMinor = 64;
+    for (int minor = kFirstPrivateMinor;; ++minor) {
+      if (AddLoopDevice(minor) >= 0) {
+        return minor;
+      }
+      if (errno != EEXIST) {
+        ADD_FAILURE() << "LOOP_CTL_ADD(" << minor << ") failed: " << strerror(errno);
+        return -1;
+      }
+    }
+  }
+
+  // Issues LOOP_CTL_REMOVE, retrying while it fails with EBUSY. On Linux, the backing file is
+  // detached on last close after LOOP_CLR_FD, and udev may briefly hold a new device open, so
+  // removal can transiently fail with EBUSY. Does not record test failures.
+  int RemoveLoopDeviceRetryingOnBusy(int loop_device_num) {
+    constexpr int kMaxAttempts = 50;
+    int result = -1;
+    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+      result = ioctl(loop_control_.get(), LOOP_CTL_REMOVE, loop_device_num);
+      if (result >= 0 || errno != EBUSY) {
+        break;
+      }
+      usleep(100'000);
+    }
+    return result;
+  }
+
   // RAII helper to manage the lifecycle of a bound loop device.
   class ActiveLoopDevice {
    public:
@@ -146,11 +180,8 @@ TEST_F(LoopTest, ReopeningDevicePreservesOffset) {
 }
 
 TEST_F(LoopTest, RemoveLoopDeviceFromKernelDeviceRegistry) {
-  // Use a high minor number to isolate this test from others using the "free" pool.
-  int test_minor = 64;
-  while (AddLoopDevice(test_minor) < 0 && errno == EEXIST) {
-    test_minor++;
-  }
+  int test_minor = AddUnusedLoopDevice();
+  ASSERT_GE(test_minor, 0);
   int removed_loop_device_num = RemoveLoopDevice(test_minor);
   EXPECT_EQ(removed_loop_device_num, test_minor);
   std::string devfs_path = "/dev/";
@@ -165,6 +196,46 @@ TEST_F(LoopTest, RemoveLoopDeviceFromKernelDeviceRegistry) {
     }
   }
   closedir(dir);
+}
+
+TEST_F(LoopTest, RemoveAfterClearFd) {
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
+  ASSERT_TRUE(backing_file.is_valid());
+
+  int test_minor = AddUnusedLoopDevice();
+  ASSERT_GE(test_minor, 0);
+
+  std::string device_path = "/dev/loop" + std::to_string(test_minor);
+  fbl::unique_fd loop_fd;
+  bool device_registered = true;
+  // Detach the backing file, remove the loop device and unlink its node on every exit path,
+  // including early returns from failed assertions. The unlink cleans up a leaked /dev/loop<N>
+  // node (e.g. when removal fails) so that subsequent tests scanning /dev do not fail; it is
+  // expected to fail with ENOENT after a successful removal.
+  auto cleanup = fit::defer([&] {
+    if (loop_fd.is_valid()) {
+      ioctl(loop_fd.get(), LOOP_CLR_FD, 0);
+      loop_fd.reset();
+    }
+    if (device_registered) {
+      RemoveLoopDeviceRetryingOnBusy(test_minor);
+    }
+    unlink(device_path.c_str());
+  });
+
+  loop_fd.reset(open(device_path.c_str(), O_RDWR));
+  ASSERT_TRUE(loop_fd.is_valid()) << strerror(errno);
+
+  ASSERT_SUCCESS(ioctl(loop_fd.get(), LOOP_SET_FD, backing_file.get()));
+  ASSERT_SUCCESS(ioctl(loop_fd.get(), LOOP_CLR_FD, 0));
+  loop_fd.reset();
+
+  ASSERT_SUCCESS(RemoveLoopDeviceRetryingOnBusy(test_minor));
+  device_registered = false;
+  ASSERT_SUCCESS(AddLoopDevice(test_minor));
+  device_registered = true;
+  ASSERT_SUCCESS(RemoveLoopDeviceRetryingOnBusy(test_minor));
+  device_registered = false;
 }
 
 TEST_F(LoopTest, BackingFile) {
