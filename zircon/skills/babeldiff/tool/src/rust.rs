@@ -10,18 +10,12 @@ use tree_sitter::Node;
 pub fn extract(path: &str, src: &str) -> Vec<Function> {
     let tree = ts::parse(Lang::Rust, src);
     let lines = crate::extract::split_lines(src);
-    let ctx = Ctx {
-        path,
-        src: src.as_bytes(),
-        lines: &lines,
-    };
+    let ctx = Ctx { path, src: src.as_bytes(), lines: &lines };
     let mut out = Vec::new();
     ctx.walk_scope(tree.root_node(), None, &mut out);
     let tests = ctx.test_ranges(tree.root_node());
     for f in &mut out {
-        f.test_only = tests
-            .iter()
-            .any(|(a, b)| *a <= f.start_line && f.end_line <= *b);
+        f.test_only = tests.iter().any(|(a, b)| *a <= f.start_line && f.end_line <= *b);
     }
     out
 }
@@ -32,10 +26,18 @@ struct Ctx<'a> {
     lines: &'a [String],
 }
 
+fn is_result_type(ty: &str) -> bool {
+    static RESULT_TYPE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?:^|::)\s*Result\b").unwrap());
+    let ty = ty.strip_prefix("->").unwrap_or(ty).trim();
+    RESULT_TYPE.is_match(ty)
+}
+
 /// Per-function state threaded through the statement walk.
 #[derive(Clone, Copy)]
 struct FnCtx {
     returns_value: bool,
+    returns_result: bool,
 }
 
 impl<'a> Ctx<'a> {
@@ -101,9 +103,7 @@ impl<'a> Ctx<'a> {
                     }
                 }
                 "trait_item" => {
-                    let name = child
-                        .child_by_field_name("name")
-                        .map(|t| self.text(t).to_string());
+                    let name = child.child_by_field_name("name").map(|t| self.text(t).to_string());
                     if let Some(body) = child.child_by_field_name("body") {
                         self.walk_scope(body, name.as_deref(), out);
                     }
@@ -162,10 +162,11 @@ impl<'a> Ctx<'a> {
         let sig = acc.finish(Lang::Rust);
         b.push(UnitKind::Signature, ts::line(n), ts::line(body), 0, sig);
 
-        let returns_value = n
-            .child_by_field_name("return_type")
-            .is_some_and(|t| self.text(t).trim() != "()");
-        let fcx = FnCtx { returns_value };
+        let returns_value =
+            n.child_by_field_name("return_type").is_some_and(|t| self.text(t).trim() != "()");
+        let returns_result =
+            n.child_by_field_name("return_type").is_some_and(|t| is_result_type(self.text(t)));
+        let fcx = FnCtx { returns_value, returns_result };
         self.block(body, 1, true, fcx, &mut b);
         relocate_closures(&mut b.units, self.lines);
         let ends_ok_unit = b.units.last().is_some_and(|u| {
@@ -190,18 +191,12 @@ impl<'a> Ctx<'a> {
         }
 
         let end = ts::end_line(n);
-        let mut calls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.calls.clone())
-            .collect();
+        let mut calls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.calls.clone()).collect();
         calls.sort();
         calls.dedup();
-        let mut qcalls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.qcalls.clone())
-            .collect();
+        let mut qcalls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.qcalls.clone()).collect();
         qcalls.sort();
         qcalls.dedup();
         let name = match class {
@@ -243,10 +238,7 @@ impl<'a> Ctx<'a> {
                 if let Some(m) = n.child_by_field_name("macro") {
                     acc.call(self.text(m));
                 }
-                for tt in ts::named_children(n)
-                    .into_iter()
-                    .filter(|c| c.kind() == "token_tree")
-                {
+                for tt in ts::named_children(n).into_iter().filter(|c| c.kind() == "token_tree") {
                     // Words in a message string (`"copy_(to|from)_user ..."`)
                     // are not calls.
                     let t = ts::text_without(tt, self.src, skip);
@@ -286,10 +278,7 @@ impl<'a> Ctx<'a> {
             if c.kind() == "attribute_item" {
                 let t = self.text(*c);
                 if t.trim_start().starts_with("#[cfg(") {
-                    let f = Features {
-                        idents: normalize::cfg_words(t),
-                        ..Features::default()
-                    };
+                    let f = Features { idents: normalize::cfg_words(t), ..Features::default() };
                     b.push(UnitKind::Cfg, ts::line(*c), ts::end_line(*c), depth, f);
                     cfg = true;
                 }
@@ -325,9 +314,7 @@ impl<'a> Ctx<'a> {
             }
             "let_declaration" => self.let_declaration(n, depth, fcx, b),
             "expression_statement" => {
-                let inner = ts::named_children(n)
-                    .into_iter()
-                    .find(|c| !ts::is_comment(*c));
+                let inner = ts::named_children(n).into_iter().find(|c| !ts::is_comment(*c));
                 if let Some(e) = inner {
                     self.expression(e, n, depth, tail, fcx, b)
                 }
@@ -355,20 +342,14 @@ impl<'a> Ctx<'a> {
                 let body = e.child_by_field_name("body");
                 let header_end = body.map_or(end, |bd| ts::line(bd));
                 let skip: Vec<Node> = body.into_iter().collect();
-                b.push(
-                    UnitKind::Loop,
-                    line,
-                    header_end,
-                    depth,
-                    self.features(e, &skip),
-                );
+                b.push(UnitKind::Loop, line, header_end, depth, self.features(e, &skip));
                 if let Some(bd) = body {
                     self.block(bd, depth + 1, false, fcx, b);
                 }
             }
             "return_expression" => {
                 let inner = ts::named_children(e).into_iter().next();
-                self.return_unit(inner, line, end, depth, b);
+                self.return_unit(inner, line, end, depth, fcx, b);
             }
             "break_expression" => b.push(UnitKind::Break, line, end, depth, Features::default()),
             "continue_expression" => {
@@ -376,9 +357,7 @@ impl<'a> Ctx<'a> {
             }
             "unsafe_block" | "block" => {
                 let inner = if e.kind() == "unsafe_block" {
-                    ts::named_children(e)
-                        .into_iter()
-                        .find(|c| c.kind() == "block")
+                    ts::named_children(e).into_iter().find(|c| c.kind() == "block")
                 } else {
                     Some(e)
                 };
@@ -397,16 +376,10 @@ impl<'a> Ctx<'a> {
                 // closure's statements with the statements after it, at
                 // the same depth.
                 let body = self.lock_callback(e).unwrap();
-                b.push(
-                    UnitKind::Stmt,
-                    line,
-                    ts::line(body),
-                    depth,
-                    self.features(e, &[body]),
-                );
+                b.push(UnitKind::Stmt, line, ts::line(body), depth, self.features(e, &[body]));
                 self.block(body, depth, tail, fcx, b);
             }
-            _ if tail && fcx.returns_value => self.return_unit(Some(e), line, end, depth, b),
+            _ if tail && fcx.returns_value => self.return_unit(Some(e), line, end, depth, fcx, b),
             _ => self.plain(stmt, depth, b),
         }
     }
@@ -420,9 +393,8 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let args = call.child_by_field_name("arguments")?;
-        let closure = ts::named_children(args)
-            .into_iter()
-            .rfind(|c| c.kind() == "closure_expression")?;
+        let closure =
+            ts::named_children(args).into_iter().rfind(|c| c.kind() == "closure_expression")?;
         let body = closure.child_by_field_name("body")?;
         (body.kind() == "block" && ts::end_line(body) > ts::line(body)).then_some(body)
     }
@@ -433,6 +405,7 @@ impl<'a> Ctx<'a> {
         line: usize,
         end: usize,
         depth: usize,
+        fcx: FnCtx,
         b: &mut UnitBuilder,
     ) {
         // `return Err(if c { A } else { B })` reads as
@@ -444,14 +417,12 @@ impl<'a> Ctx<'a> {
                 inner.child_by_field_name("consequence"),
                 inner.child_by_field_name("alternative"),
             ) {
-                let alt_block = ts::named_children(a)
-                    .into_iter()
-                    .find(|x| x.kind() == "block");
+                let alt_block = ts::named_children(a).into_iter().find(|x| x.kind() == "block");
                 if let Some(e) = alt_block {
                     b.push(UnitKind::If, line, end, depth, self.features(c, &[]));
-                    self.return_unit(Some(t), line, end, depth + 1, b);
+                    self.return_unit(Some(t), line, end, depth + 1, fcx, b);
                     b.push(UnitKind::Else, line, end, depth, Features::default());
-                    self.return_unit(Some(e), line, end, depth + 1, b);
+                    self.return_unit(Some(e), line, end, depth + 1, fcx, b);
                     return;
                 }
             }
@@ -464,6 +435,12 @@ impl<'a> Ctx<'a> {
             Some(e) => ts::classify_return(self.text(e)),
             None => Ret::Value,
         });
+        if fcx.returns_result
+            && matches!(f.ret, Some(Ret::Value) | Some(Ret::Status))
+            && !f.calls.is_empty()
+        {
+            f.ret = Some(Ret::Status);
+        }
         b.push(UnitKind::Return, line, end, depth, f);
     }
 
@@ -471,17 +448,13 @@ impl<'a> Ctx<'a> {
     fn plain(&self, n: Node, depth: usize, b: &mut UnitBuilder) {
         let mut bodies = Vec::new();
         find_closure_bodies(n, &mut bodies);
-        let bodies: Vec<Node> = bodies
-            .into_iter()
-            .filter(|x| ts::end_line(*x) > ts::line(*x))
-            .collect();
+        let bodies: Vec<Node> =
+            bodies.into_iter().filter(|x| ts::end_line(*x) > ts::line(*x)).collect();
         let f = self.features(n, &bodies);
         let end = bodies.first().map_or(ts::end_line(n), |x| ts::line(*x));
         b.push(UnitKind::Stmt, ts::line(n), end, depth, f);
         for body in bodies {
-            let fcx = FnCtx {
-                returns_value: false,
-            };
+            let fcx = FnCtx { returns_value: false, returns_result: false };
             if body.kind() == "block" {
                 self.block(body, depth + 1, false, fcx, b);
             } else {
@@ -497,13 +470,7 @@ impl<'a> Ctx<'a> {
             // `let Some(x) = foo() else { return ... };` is a failure check,
             // like the C++ `if (!x) { return ...; }` it replaces.
             let skip = [alt];
-            b.push(
-                UnitKind::If,
-                line,
-                ts::line(alt),
-                depth,
-                self.features(n, &skip),
-            );
+            b.push(UnitKind::If, line, ts::line(alt), depth, self.features(n, &skip));
             self.block(alt, depth + 1, false, fcx, b);
             return;
         }
@@ -520,9 +487,7 @@ impl<'a> Ctx<'a> {
                     f.propagates = false;
                 }
                 b.push(UnitKind::Stmt, line, ts::line(v), depth, f);
-                let inner_fcx = FnCtx {
-                    returns_value: false,
-                };
+                let inner_fcx = FnCtx { returns_value: false, returns_result: false };
                 match v.kind() {
                     "if_expression" => self.if_expression(v, depth + 1, false, false, inner_fcx, b),
                     "match_expression" => self.match_expression(v, depth + 1, false, inner_fcx, b),
@@ -610,10 +575,7 @@ impl<'a> Ctx<'a> {
             c.kind() == "macro_invocation" && self.text(c).trim_start().starts_with("cfg!")
         });
         if let (true, Some(c)) = (cfg, cond) {
-            f = Features {
-                idents: normalize::cfg_words(self.text(c)),
-                ..Features::default()
-            };
+            f = Features { idents: normalize::cfg_words(self.text(c)), ..Features::default() };
         }
         let kind = if cfg {
             UnitKind::Cfg
@@ -627,22 +589,14 @@ impl<'a> Ctx<'a> {
             self.block(c, d + 1, tail, fcx, b);
         }
         if let Some(a) = alt {
-            let inner = ts::named_children(a)
-                .into_iter()
-                .find(|x| !ts::is_comment(*x));
+            let inner = ts::named_children(a).into_iter().find(|x| !ts::is_comment(*x));
             match inner {
                 Some(i) if i.kind() == "if_expression" => {
                     self.if_expression(i, d + 1, tail, true, fcx, b)
                 }
                 Some(i) => {
                     // The `else` keyword sits on the line where the else clause starts.
-                    b.push(
-                        UnitKind::Else,
-                        ts::line(a),
-                        ts::line(i),
-                        d,
-                        Features::default(),
-                    );
+                    b.push(UnitKind::Else, ts::line(a), ts::line(i), d, Features::default());
                     self.block(i, d + 1, tail, fcx, b);
                 }
                 None => {}
@@ -663,14 +617,11 @@ impl<'a> Ctx<'a> {
         }
         match n.kind() {
             "binary_expression" => {
-                let op = n
-                    .child_by_field_name("operator")
-                    .map_or("", |o| self.text(o));
+                let op = n.child_by_field_name("operator").map_or("", |o| self.text(o));
                 if matches!(op, "&&" | "||") {
-                    if let (Some(l), Some(r)) = (
-                        n.child_by_field_name("left"),
-                        n.child_by_field_name("right"),
-                    ) {
+                    if let (Some(l), Some(r)) =
+                        (n.child_by_field_name("left"), n.child_by_field_name("right"))
+                    {
                         self.conjuncts(l, out);
                         self.conjuncts(r, out);
                         return;
@@ -686,11 +637,7 @@ impl<'a> Ctx<'a> {
             _ => {}
         }
         out.push(crate::model::Conjunct {
-            text: self
-                .text(n)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" "),
+            text: self.text(n).split_whitespace().collect::<Vec<_>>().join(" "),
             names: self.features(n, &[]).names,
         });
     }
@@ -720,20 +667,15 @@ impl<'a> Ctx<'a> {
         if !err_let && is_err_var(self.text(cond)).is_none() {
             return false;
         }
-        let stmts: Vec<Node> = ts::named_children(cons)
-            .into_iter()
-            .filter(|c| !ts::is_comment(*c))
-            .collect();
+        let stmts: Vec<Node> =
+            ts::named_children(cons).into_iter().filter(|c| !ts::is_comment(*c)).collect();
         if stmts.len() != 1 {
             return false;
         }
         let t = self.text(stmts[0]);
         t.trim_start().starts_with("return")
             && ts::classify_return(
-                t.trim_start()
-                    .trim_start_matches("return")
-                    .trim()
-                    .trim_end_matches(';'),
+                t.trim_start().trim_start_matches("return").trim().trim_end_matches(';'),
             ) == Ret::Status
     }
 
@@ -767,10 +709,7 @@ impl<'a> Ctx<'a> {
             for a in ts::named_children(arm) {
                 let t = self.text(a);
                 if a.kind() == "attribute_item" && t.trim_start().starts_with("#[cfg(") {
-                    let cf = Features {
-                        idents: normalize::cfg_words(t),
-                        ..Features::default()
-                    };
+                    let cf = Features { idents: normalize::cfg_words(t), ..Features::default() };
                     b.push(UnitKind::Cfg, ts::line(a), ts::end_line(a), depth + 1, cf);
                 }
             }
@@ -807,10 +746,7 @@ impl<'a> Ctx<'a> {
 /// zero-argument accessor (`self.state()`).
 fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
     fn calls<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
-        if matches!(
-            n.kind(),
-            "call_expression" | "macro_invocation" | "try_expression"
-        ) {
+        if matches!(n.kind(), "call_expression" | "macro_invocation" | "try_expression") {
             out.push(n);
         }
         for c in ts::named_children(n) {
@@ -863,20 +799,15 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
             // No arguments, or just the object it reads from
             // (`thread::get_arch(thread)` for C++ `thread->arch()`).
             let no_args = c.child_by_field_name("arguments").is_some_and(|a| {
-                let args: Vec<Node> = ts::named_children(a)
-                    .into_iter()
-                    .filter(|x| !ts::is_comment(*x))
-                    .collect();
+                let args: Vec<Node> =
+                    ts::named_children(a).into_iter().filter(|x| !ts::is_comment(*x)).collect();
                 match args.as_slice() {
                     [] => true,
                     [one] => one.kind() == "identifier" || one.kind() == "self",
                     _ => false,
                 }
             });
-            let name = c
-                .child_by_field_name("function")
-                .map(|f| ts::text(f, src))
-                .unwrap_or("");
+            let name = c.child_by_field_name("function").map(|f| ts::text(f, src)).unwrap_or("");
             no_args && !crate::normalize::is_mutating(name)
         }
         _ => false,
@@ -892,9 +823,7 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
 fn is_err_var(cond: &str) -> Option<&str> {
     static IS_ERR: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\(?\s*(\w+)\.is_err\(\)\s*\)?$").unwrap());
-    IS_ERR
-        .captures(cond.trim())
-        .map(|c| c.get(1).unwrap().as_str())
+    IS_ERR.captures(cond.trim()).map(|c| c.get(1).unwrap().as_str())
 }
 
 fn relocate_closures(units: &mut [Unit], lines: &[String]) {
@@ -912,10 +841,7 @@ fn relocate_closures(units: &mut [Unit], lines: &[String]) {
         if units[i].kind != UnitKind::Stmt {
             continue;
         }
-        let Some(name) = LET_CLOSURE
-            .captures(&text(&units[i]))
-            .map(|c| c[1].to_string())
-        else {
+        let Some(name) = LET_CLOSURE.captures(&text(&units[i])).map(|c| c[1].to_string()) else {
             continue;
         };
         let depth = units[i].depth;
@@ -926,11 +852,9 @@ fn relocate_closures(units: &mut [Unit], lines: &[String]) {
         if end == i + 1 {
             continue;
         }
-        let used = Regex::new(&format!(
-            r"[(,]\s*(?:&\s*(?:mut\s+)?)?{}\s*[),]",
-            regex::escape(&name)
-        ))
-        .unwrap();
+        let used =
+            Regex::new(&format!(r"[(,]\s*(?:&\s*(?:mut\s+)?)?{}\s*[),]", regex::escape(&name)))
+                .unwrap();
         let user = (end..units.len()).find(|&k| {
             units[k].kind != UnitKind::Comment
                 && !units[k].features.locks.is_empty()
@@ -1026,4 +950,34 @@ fn fold_status_tail(units: &mut Vec<Unit>, lines: &[String]) {
     prev.end_line = last.end_line;
     prev.features.propagates = false;
     prev.features.ret = Some(Ret::Status);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_result_types() {
+        assert!(is_result_type("Result<(), Status>"));
+        assert!(is_result_type("Result<u32, Status>"));
+        assert!(is_result_type("zx::Result<u32>"));
+        assert!(is_result_type("zx_status::Result"));
+        assert!(is_result_type("core::result::Result<(), Status>"));
+        assert!(is_result_type("Result"));
+        assert!(!is_result_type("()"));
+        assert!(!is_result_type("u32"));
+        assert!(!is_result_type("Option<u32>"));
+        assert!(!is_result_type("Status"));
+    }
+
+    #[test]
+    fn classifies_tail_call_in_result_fn_as_status_return() {
+        let src = "pub fn sys_test(handle: HandleValue) -> Result<(), Status> {\n    user_packet.copy_to_user(&packet)\n}\n";
+        let fns = extract("test.rs", src);
+        assert_eq!(fns.len(), 1);
+        let ret_units: Vec<_> =
+            fns[0].units.iter().filter(|u| u.kind == UnitKind::Return).collect();
+        assert_eq!(ret_units.len(), 1);
+        assert_eq!(ret_units[0].features.ret, Some(Ret::Status));
+    }
 }

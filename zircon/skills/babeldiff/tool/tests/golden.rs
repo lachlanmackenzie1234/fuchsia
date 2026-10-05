@@ -8,14 +8,12 @@ use babeldiff::analyze::{CppOrigin, Link, NoFinder, Options, Report};
 use babeldiff::check::{Category, Severity};
 use babeldiff::git::{Git, RepoFinder};
 use babeldiff::input::ChangeSet;
-use babeldiff::render::{render, Layout, RenderOptions};
+use babeldiff::render::{Layout, RenderOptions, render};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
 }
 
 fn check_golden(path: &Path, actual: &str) {
@@ -42,12 +40,7 @@ fn check_golden(path: &Path, actual: &str) {
 }
 
 fn opts(layout: Layout) -> RenderOptions {
-    RenderOptions {
-        layout,
-        width: 160,
-        context: None,
-        summary_only: false,
-    }
+    RenderOptions { layout, width: 160, context: None, summary_only: false }
 }
 
 /// A synthetic port with no planted differences, read from a patch.
@@ -61,10 +54,7 @@ fn beacon_report() -> Report {
 #[test]
 fn beacon_golden() {
     let report = beacon_report();
-    check_golden(
-        &fixture("beacon/expected.txt"),
-        &render(&report, &opts(Layout::SideBySide)),
-    );
+    check_golden(&fixture("beacon/expected.txt"), &render(&report, &opts(Layout::SideBySide)));
 }
 
 #[test]
@@ -83,54 +73,31 @@ fn beacon_follows_ffi_shims_without_false_positives() {
     assert_eq!(report.pairs.len(), 7);
     for p in &report.pairs {
         assert_eq!(p.issues(), 0, "{}: {:#?}", p.cpp.name, p.findings);
-        assert_eq!(
-            p.summary.cpp_errors, p.summary.rust_errors,
-            "{}",
-            p.cpp.name
-        );
+        assert_eq!(p.summary.cpp_errors, p.summary.rust_errors, "{}", p.cpp.name);
     }
     assert!(report.unmatched_cpp.is_empty());
     assert!(report.unmatched_rust.is_empty());
     // Safety comments and `# Safety` docs are expected in Rust: no finding.
-    for name in [
-        "BeaconDispatcher::FindLocked",
-        "BeaconDispatcher::GetSubscriber",
-    ] {
+    for name in ["BeaconDispatcher::FindLocked", "BeaconDispatcher::GetSubscriber"] {
         let p = report.pairs.iter().find(|p| p.cpp.name == name).unwrap();
-        let safety: Vec<usize> = p
-            .rust
-            .units
-            .iter()
-            .filter(|u| u.features.safety)
-            .map(|u| u.start_line)
-            .collect();
+        let safety: Vec<usize> =
+            p.rust.units.iter().filter(|u| u.features.safety).map(|u| u.start_line).collect();
         assert!(!safety.is_empty(), "{name}");
         for f in &p.findings {
-            assert!(
-                f.rust_line.is_none_or(|l| !safety.contains(&l)),
-                "{name}: {f:?}"
-            );
+            assert!(f.rust_line.is_none_or(|l| !safety.contains(&l)), "{name}: {f:?}");
         }
     }
     // ksync token plumbing has no C++ counterpart and is not a finding, and
     // the lock is still compared as a lock.
-    let fc = report
-        .pairs
-        .iter()
-        .find(|p| p.cpp.name == "BeaconDispatcher::FlashCount")
-        .unwrap();
+    let fc = report.pairs.iter().find(|p| p.cpp.name == "BeaconDispatcher::FlashCount").unwrap();
     assert!(fc.rust.units.iter().any(|u| u.features.lock_plumbing));
-    assert!(fc
-        .findings
-        .iter()
-        .all(|f| f.severity == Severity::Note && f.category == Category::Comment));
+    assert!(
+        fc.findings.iter().all(|f| f.severity == Severity::Note && f.category == Category::Comment)
+    );
     assert_eq!(fc.summary.cpp_locks, fc.summary.rust_locks);
     // Shims are reported as shims, not as unpaired Rust.
-    assert!(report
-        .shims
-        .iter()
-        .any(|s| s.shim.name == "rust_beacon_dispatcher_flash"
-            && s.target.as_deref() == Some("BeaconDispatcher::flash")));
+    assert!(report.shims.iter().any(|s| s.shim.name == "rust_beacon_dispatcher_flash"
+        && s.target.as_deref() == Some("BeaconDispatcher::flash")));
 }
 
 /// Builds a git repository with the fixture's `before` and `after` trees as
@@ -147,11 +114,7 @@ fn two_commit_repo(fixture_name: &str, name: &str) -> PathBuf {
             .args(args)
             .output()
             .expect("git is installed");
-        assert!(
-            out.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     };
     let copy = |from: &Path| {
         for entry in walk(from) {
@@ -204,14 +167,8 @@ fn fifo_report(name: &str) -> Report {
 #[test]
 fn fifo_golden() {
     let report = fifo_report("fifo-golden");
-    check_golden(
-        &fixture("fifo/expected.txt"),
-        &render(&report, &opts(Layout::SideBySide)),
-    );
-    check_golden(
-        &fixture("fifo/expected-stacked.txt"),
-        &render(&report, &opts(Layout::Stacked)),
-    );
+    check_golden(&fixture("fifo/expected.txt"), &render(&report, &opts(Layout::SideBySide)));
+    check_golden(&fixture("fifo/expected-stacked.txt"), &render(&report, &opts(Layout::Stacked)));
 }
 
 #[test]
@@ -238,10 +195,7 @@ fn fifo_finds_planted_differences() {
     // The lock is taken before the argument checks in Rust, after in C++.
     assert!(has("FifoDispatcher::ReadToUser", "order may differ"));
     // Comments carried over from the header's declaration comments.
-    assert_eq!(
-        pair("FifoDispatcher::WriteFromUser").summary.comments_same,
-        2
-    );
+    assert_eq!(pair("FifoDispatcher::WriteFromUser").summary.comments_same, 2);
     // C++ the change left alone is found in the repository.
     let full = pair("FifoDispatcher::IsFullLocked");
     assert_eq!(full.origin, CppOrigin::Unchanged);
@@ -254,42 +208,23 @@ fn cli_exit_status_reflects_issues() {
     let bin = env!("CARGO_BIN_EXE_babeldiff");
     let before = fixture("fifo/before/zircon/kernel/object/fifo_dispatcher.cc");
     let after = fixture("fifo/after/zircon/kernel/object/fifo_dispatcher.rs");
-    let out = Command::new(bin)
-        .args(["--summary", "files"])
-        .arg(&before)
-        .arg(&after)
-        .output()
-        .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(1),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let out =
+        Command::new(bin).args(["--summary", "files"]).arg(&before).arg(&after).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(
         text.contains("FifoDispatcher::WriteSelfLocked  <->  FifoDispatcher::write_self_locked")
     );
 
-    let same = Command::new(bin)
-        .args(["files"])
-        .arg(&before)
-        .arg(&before)
-        .output()
-        .unwrap();
+    let same = Command::new(bin).args(["files"]).arg(&before).arg(&before).output().unwrap();
     assert_eq!(same.status.code(), Some(0));
 }
 
 #[test]
 fn html_report_is_self_contained() {
-    use babeldiff::html::{render_html, HtmlOptions};
+    use babeldiff::html::{HtmlOptions, render_html};
     let report = fifo_report("fifo-html");
-    let html = render_html(
-        &report,
-        &HtmlOptions {
-            title: "fifo <test>".into(),
-        },
-    );
+    let html = render_html(&report, &HtmlOptions { title: "fifo <test>".into() });
     assert!(html.starts_with("<!doctype html>"));
     assert!(html.contains("<title>babeldiff: fifo &lt;test&gt;</title>"));
     // Nothing is loaded from elsewhere.
@@ -297,10 +232,7 @@ fn html_report_is_self_contained() {
         assert!(!html.contains(needle), "found {needle:?}");
     }
     // One section per pair, and a row for the planted error-code change.
-    assert_eq!(
-        html.matches("<section class=\"pair ").count(),
-        report.pairs.len()
-    );
+    assert_eq!(html.matches("<section class=\"pair ").count(), report.pairs.len());
     assert!(html.contains("error code differs: C++ returns PEER_CLOSED, Rust returns BAD_STATE"));
     assert!(html.contains("data-k=\"e:PEER_CLOSED\""));
     assert!(html.contains("data-k=\"e:BAD_STATE\""));
@@ -332,12 +264,7 @@ fn cli_writes_html() {
         .arg(fixture("beacon/beacon.patch"))
         .output()
         .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
     let html = std::fs::read_to_string(&out_path).unwrap();
     let _ = std::fs::remove_file(&out_path);
     assert!(html.contains(
@@ -357,10 +284,7 @@ fn doorbell_report(name: &str) -> Report {
 #[test]
 fn doorbell_golden() {
     let report = doorbell_report("doorbell-golden");
-    check_golden(
-        &fixture("doorbell/expected.txt"),
-        &render(&report, &opts(Layout::Stacked)),
-    );
+    check_golden(&fixture("doorbell/expected.txt"), &render(&report, &opts(Layout::Stacked)));
 }
 
 #[test]
@@ -404,11 +328,8 @@ fn doorbell_finds_exactly_the_planted_mistakes() {
         ]
     );
     // The dropped comment is the Buzzer override's.
-    let lost = ring.overrides[0]
-        .findings
-        .iter()
-        .find(|f| f.message == "comment only in C++")
-        .unwrap();
+    let lost =
+        ring.overrides[0].findings.iter().find(|f| f.message == "comment only in C++").unwrap();
     assert_eq!(
         ring.overrides[0].cpp.line(lost.cpp_line.unwrap()).trim(),
         "// A buzzer rings once, however long it buzzes."
@@ -419,11 +340,8 @@ fn doorbell_finds_exactly_the_planted_mistakes() {
 
     // The one C++ change that stays C++ is listed; the forwarders into Rust
     // and the FFI declarations are not.
-    let changes: Vec<(usize, &str)> = report
-        .cpp_changes
-        .iter()
-        .map(|c| (c.start_line, c.text.as_str()))
-        .collect();
+    let changes: Vec<(usize, &str)> =
+        report.cpp_changes.iter().map(|c| (c.start_line, c.text.as_str())).collect();
     assert_eq!(
         changes,
         [(
@@ -483,10 +401,7 @@ fn lantern_report(name: &str) -> Report {
 #[test]
 fn lantern_golden() {
     let report = lantern_report("lantern-golden");
-    check_golden(
-        &fixture("lantern/expected.txt"),
-        &render(&report, &opts(Layout::Stacked)),
-    );
+    check_golden(&fixture("lantern/expected.txt"), &render(&report, &opts(Layout::Stacked)));
 }
 
 /// The lantern fixture plants the mistakes found reviewing a large
@@ -532,11 +447,7 @@ fn lantern_finds_the_planted_mistakes() {
         .collect();
     assert_eq!(copies, ["lantern.rs", "glow.rs"]);
     // The lock the closure runs under lines up with the C++ guard.
-    let state = report
-        .pairs
-        .iter()
-        .find(|p| p.cpp.name == "lantern_get_state")
-        .unwrap();
+    let state = report.pairs.iter().find(|p| p.cpp.name == "lantern_get_state").unwrap();
     assert_eq!(state.summary.cpp_locks, state.summary.rust_locks);
 
     let lints: Vec<(&str, usize, &str)> = report
@@ -565,20 +476,15 @@ fn lantern_finds_the_planted_mistakes() {
             )
         })
         .collect();
-    assert_eq!(
-        placement,
-        [("lantern.cc", vec![("lantern.rs", true), ("glow.rs", false)])]
-    );
+    assert_eq!(placement, [("lantern.cc", vec![("lantern.rs", true), ("glow.rs", false)])]);
 }
 
 #[test]
 fn chain_lock_callback_lines_up_with_a_guard() {
     let cpp = "zx_status_t lamp_get(Lamp* lamp, uint32_t* out) {\n  SingleChainLockGuard guard{IrqSaveOption, lamp->get_lock(), CLT_TAG(\"lamp_get\")};\n  // Only a lit lamp has a color.\n  if (!lamp->lit()) {\n    return ZX_ERR_BAD_STATE;\n  }\n  *out = lamp->color();\n  return ZX_OK;\n}\n";
     let rust = "pub unsafe fn lamp_get(lamp: *mut Lamp, out: &mut u32) -> zx_status_t {\n    // SAFETY: `lamp` is valid.\n    unsafe {\n        lamp::with_chain_lock(lamp, |lamp| {\n            // Only a lit lamp has a color.\n            if !lamp::lit(lamp) {\n                return ZX_ERR_BAD_STATE;\n            }\n            *out = lamp::color(lamp);\n            ZX_OK\n        })\n    }\n}\n";
-    let cs = ChangeSet::from_files(&[
-        ("lamp.cc".into(), cpp.into()),
-        ("lamp.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     let p = &report.pairs[0];
@@ -597,26 +503,15 @@ fn unchanged_cpp_comes_from_the_same_architecture() {
     // Rust under arch/x86 with no removed C++ must not be paired with a
     // same-named method under arch/riscv64.
     let report = git_report("compass", "compass");
-    let names: Vec<(&str, &str)> = report
-        .pairs
-        .iter()
-        .map(|p| (p.cpp.path.as_str(), p.rust.base.as_str()))
-        .collect();
-    assert!(
-        names.contains(&("zircon/kernel/arch/x86/compass.cc", "heading")),
-        "{names:?}"
-    );
-    assert!(
-        !names.iter().any(|(c, _)| c.contains("riscv64")),
-        "{names:?}"
-    );
+    let names: Vec<(&str, &str)> =
+        report.pairs.iter().map(|p| (p.cpp.path.as_str(), p.rust.base.as_str())).collect();
+    assert!(names.contains(&("zircon/kernel/arch/x86/compass.cc", "heading")), "{names:?}");
+    assert!(!names.iter().any(|(c, _)| c.contains("riscv64")), "{names:?}");
 }
 
 fn only_issues(cpp: &str, rust: &str) -> Vec<String> {
-    let cs = ChangeSet::from_files(&[
-        ("lamp.cc".into(), cpp.into()),
-        ("lamp.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     report.pairs[0]
@@ -649,17 +544,11 @@ fn conditional_compilation_must_stay_conditional() {
 }
 
 fn all_findings(cpp: &str, rust: &str) -> Vec<String> {
-    let cs = ChangeSet::from_files(&[
-        ("lamp.cc".into(), cpp.into()),
-        ("lamp.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
-    report.pairs[0]
-        .findings
-        .iter()
-        .map(|f| f.message.clone())
-        .collect()
+    report.pairs[0].findings.iter().map(|f| f.message.clone()).collect()
 }
 
 #[test]
@@ -684,13 +573,29 @@ fn is_err_early_return_matches_cpp_is_error_check() {
 }
 
 #[test]
+fn implicit_result_return_matches_cpp_status_check() {
+    let cpp = "zx_status_t lamp_transmit(Lamp& lamp, Packet* packet) {\n  zx_status_t status = lamp.Enter(packet);\n  if (status != ZX_OK) {\n    return status;\n  }\n  status = copy_to_user(packet);\n  if (status != ZX_OK) {\n    return status;\n  }\n  return ZX_OK;\n}\n";
+    let rust = "pub fn lamp_transmit(lamp: &mut Lamp, packet: &mut Packet) -> Result<(), Status> {\n    lamp.enter(packet)?;\n    copy_to_user(packet)\n}\n";
+    let found = all_findings(cpp, rust);
+    assert!(found.is_empty(), "{found:?}");
+
+    // An explicit return of a Result expression also matches.
+    let rust_ret = "pub fn lamp_transmit(lamp: &mut Lamp, packet: &mut Packet) -> Result<(), Status> {\n    lamp.enter(packet)?;\n    return copy_to_user(packet);\n}\n";
+    let found_ret = all_findings(cpp, rust_ret);
+    assert!(found_ret.is_empty(), "{found_ret:?}");
+
+    // Dropping the tail call is reported as an issue.
+    let dropped = "pub fn lamp_transmit(lamp: &mut Lamp, packet: &mut Packet) -> Result<(), Status> {\n    lamp.enter(packet)?;\n    Ok(())\n}\n";
+    let found_dropped = all_findings(cpp, dropped);
+    assert!(found_dropped.iter().any(|m| m.contains("write_user")), "{found_dropped:?}");
+}
+
+#[test]
 fn do_while_matches_loop_break() {
     let cpp = "void wait_for_event(Lamp* lamp, uint32_t prev_seq, uint32_t prev_idx) {\n  do {\n    lamp->poll();\n  } while (prev_seq != lamp->seq() || lamp->idx() != prev_idx);\n}\n";
     let rust = "pub fn wait_for_event(lamp: &mut Lamp, prev_seq: u32, prev_idx: u32) {\n    loop {\n        lamp.poll();\n        if prev_seq == lamp.seq() && lamp.idx() == prev_idx {\n            break;\n        }\n    }\n}\n";
-    let cs = ChangeSet::from_files(&[
-        ("lamp.cc".into(), cpp.into()),
-        ("lamp.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     let p = &report.pairs[0];
@@ -698,13 +603,8 @@ fn do_while_matches_loop_break() {
     for (_, a, b) in &p.summary.flow {
         assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
     }
-    let rendered = render(
-        &report,
-        &RenderOptions {
-            layout: Layout::Stacked,
-            ..RenderOptions::default()
-        },
-    );
+    let rendered =
+        render(&report, &RenderOptions { layout: Layout::Stacked, ..RenderOptions::default() });
     assert!(
         rendered.contains("} while (prev_seq != lamp->seq() || lamp->idx() != prev_idx);"),
         "stacked output should include trailing while line:\n{rendered}"
@@ -713,18 +613,11 @@ fn do_while_matches_loop_break() {
     // Dropping one of the loop-exit checks is still reported as an issue.
     let dropped = "pub fn wait_for_event(lamp: &mut Lamp, prev_seq: u32, prev_idx: u32) {\n    loop {\n        lamp.poll();\n        if prev_seq == lamp.seq() {\n            break;\n        }\n    }\n}\n";
     let issues = only_issues(cpp, dropped);
-    assert!(
-        issues.iter().any(|m| m.contains("condition tests")),
-        "{issues:?}"
-    );
+    assert!(issues.iter().any(|m| m.contains("condition tests")), "{issues:?}");
 }
 
 fn version(path: &str, text: &str) -> babeldiff::input::Version {
-    babeldiff::input::Version {
-        path: path.into(),
-        text: text.into(),
-        changed: None,
-    }
+    babeldiff::input::Version { path: path.into(), text: text.into(), changed: None }
 }
 
 const LAMP_OLD_CC: &str = r#"
@@ -846,24 +739,15 @@ fn pairs_follow_names_types_and_real_bodies() {
         .collect();
     let has = |c: &str, r: &str| pairs.iter().any(|(pc, _, pr)| pc == c && pr == r);
     // Overloads go to the Rust function named for their parameter type.
-    let read: Vec<&str> = pairs
-        .iter()
-        .filter(|(c, _, _)| c == "Panel::Read")
-        .map(|(_, _, r)| r.as_str())
-        .collect();
+    let read: Vec<&str> =
+        pairs.iter().filter(|(c, _, _)| c == "Panel::Read").map(|(_, _, r)| r.as_str()).collect();
     assert_eq!(read, ["Panel::read_16", "Panel::read_32"], "{pairs:?}");
     // A placeholder returning a constant is not the port.
-    assert!(
-        !pairs.iter().any(|(c, _, _)| c == "Lamp::Traps"),
-        "{pairs:?}"
-    );
+    assert!(!pairs.iter().any(|(c, _, _)| c == "Lamp::Traps"), "{pairs:?}");
     // A wrapper that only passes its arguments on stands in for its callee.
     assert!(has("lamp_xsetbv", "xsetbv"), "{pairs:?}");
     // C++ that moved into a header is not ported by a test double.
-    assert!(
-        !pairs.iter().any(|(c, _, _)| c == "Lamp::Init"),
-        "{pairs:?}"
-    );
+    assert!(!pairs.iter().any(|(c, _, _)| c == "Lamp::Init"), "{pairs:?}");
     // The shim calls `LampId::new(..).stepping()`: its target is `stepping`.
     assert!(has("LampId::stepping", "LampId::stepping"), "{pairs:?}");
 }

@@ -1,7 +1,7 @@
 //! Compares aligned units and reports where the Rust does something
 //! different from the C++.
 
-use crate::align::{similarity, Pair};
+use crate::align::{Pair, similarity};
 use crate::model::{Function, Lang, Ret, Unit, UnitKind};
 use crate::normalize::lcs_len;
 
@@ -133,11 +133,7 @@ pub struct Note {
 
 impl Note {
     pub fn new(severity: Severity, category: Category, message: impl Into<String>) -> Note {
-        Note {
-            severity,
-            category,
-            message: message.into(),
-        }
+        Note { severity, category, message: message.into() }
     }
 }
 
@@ -204,16 +200,10 @@ pub fn check_with(
     let (cpp_names, rust_names) = (Tokens::of(cpp), Tokens::of(rust));
     let vc = ValueCtx::new(ctx);
     let mut rows = Vec::new();
-    let unmatched_c: Vec<usize> = pairs
-        .iter()
-        .filter(|p| p.rust.is_none())
-        .filter_map(|p| p.cpp)
-        .collect();
-    let unmatched_r: Vec<usize> = pairs
-        .iter()
-        .filter(|p| p.cpp.is_none())
-        .filter_map(|p| p.rust)
-        .collect();
+    let unmatched_c: Vec<usize> =
+        pairs.iter().filter(|p| p.rust.is_none()).filter_map(|p| p.cpp).collect();
+    let unmatched_r: Vec<usize> =
+        pairs.iter().filter(|p| p.cpp.is_none()).filter_map(|p| p.rust).collect();
 
     for p in pairs {
         let mut notes: Vec<Note> = Vec::new();
@@ -284,10 +274,7 @@ pub fn check_with(
                     notes.push(Note::new(
                         Severity::Note,
                         Category::Comment,
-                        format!(
-                            "comment only in C++; it is in {}, which the Rust calls",
-                            g.base
-                        ),
+                        format!("comment only in C++; it is in {}, which the Rust calls", g.base),
                     ));
                 } else if u.kind == UnitKind::Comment && words_kept(u, rust) {
                     notes.push(Note::new(
@@ -296,18 +283,28 @@ pub fn check_with(
                         "comment only in C++, but the Rust comments carry its words (merged or reworded)",
                     ));
                 } else if !u.features.plumbing && u.kind != UnitKind::Signature {
-                    let n = soften_if_called(only_in(u, "C++", "Rust", moved), u, rust);
-                    let n = soften_balanced(n, u, flow_balanced(u.kind));
-                    notes.push(soften_moved(n, u, ctx.elsewhere));
+                    // C++ `status = foo(); if (status != ZX_OK) return status; return ZX_OK;`
+                    // is `foo()` in Rust when returning Result.
+                    let ok_after_status = u.kind == UnitKind::Return
+                        && u.features.ret == Some(Ret::Ok)
+                        && rows.last().is_some_and(|r: &Row| {
+                            r.rust.is_some_and(|j| {
+                                rust.units[j].features.ret == Some(Ret::Status)
+                                    || rust.units[j].features.propagates
+                            })
+                        });
+                    if !ok_after_status {
+                        let n = soften_if_called(only_in(u, "C++", "Rust", moved), u, rust);
+                        let n = soften_balanced(n, u, flow_balanced(u.kind));
+                        notes.push(soften_moved(n, u, ctx.elsewhere));
+                    }
                 }
                 // The Rust holds the same lock over a scope of its own.
                 if !u.features.locks.is_empty() {
-                    let same = rust.units.iter().find(|r| {
-                        u.features
-                            .locks
-                            .iter()
-                            .all(|l| r.features.locks.contains(l))
-                    });
+                    let same = rust
+                        .units
+                        .iter()
+                        .find(|r| u.features.locks.iter().all(|l| r.features.locks.contains(l)));
                     if let Some(r) = same {
                         for n in notes.iter_mut().filter(|n| n.severity == Severity::Issue) {
                             n.severity = Severity::Note;
@@ -338,8 +335,7 @@ pub fn check_with(
                 let ok_after_status = u.kind == UnitKind::Return
                     && u.features.ret == Some(Ret::Ok)
                     && rows.last().is_some_and(|r: &Row| {
-                        r.cpp
-                            .is_some_and(|i| cpp.units[i].features.ret == Some(Ret::Status))
+                        r.cpp.is_some_and(|i| cpp.units[i].features.ret == Some(Ret::Status))
                     });
                 // One note per doc block, though a blank `///` line splits
                 // it into several comment units.
@@ -348,9 +344,7 @@ pub fn check_with(
                 // whose words aren't in the C++ is new text.
                 let carried = u.kind == UnitKind::Comment
                     && (words_kept(u, cpp)
-                        || ctx
-                            .values
-                            .is_some_and(|v| v.in_cpp_comments(&u.features.comment)));
+                        || ctx.values.is_some_and(|v| v.in_cpp_comments(&u.features.comment)));
                 if added_doc && !expected {
                     if block_start {
                         notes.push(if carried {
@@ -391,12 +385,7 @@ pub fn check_with(
             }
             (None, None) => continue,
         };
-        rows.push(Row {
-            cpp: p.cpp,
-            rust: p.rust,
-            marker,
-            notes,
-        });
+        rows.push(Row { cpp: p.cpp, rust: p.rust, marker, notes });
     }
     one_finding_per_check(&mut rows, cpp, rust);
     switch_as_if_chain(&mut rows, cpp, rust);
@@ -461,9 +450,8 @@ fn exhaustive_match(rows: &mut [Row], cpp: &Function, rust: &Function) {
     }
     let mut k = 0;
     while k < rows.len() {
-        let Some(u) = (rows[k].marker == Marker::CppOnly)
-            .then(|| row_unit(&rows[k], cpp, true))
-            .flatten()
+        let Some(u) =
+            (rows[k].marker == Marker::CppOnly).then(|| row_unit(&rows[k], cpp, true)).flatten()
         else {
             k += 1;
             continue;
@@ -486,18 +474,12 @@ fn exhaustive_match(rows: &mut [Row], cpp: &Function, rust: &Function) {
             row_unit(&rows[m], cpp, true).is_some_and(|v| {
                 v.kind == UnitKind::Comment
                     || v.kind == UnitKind::Break
-                    || v.features
-                        .calls
-                        .iter()
-                        .any(|c| c == "panic" || c == "assert")
+                    || v.features.calls.iter().any(|c| c == "panic" || c == "assert")
             })
         });
         if panics {
             for r in &mut rows[k..end] {
-                demote(
-                    r,
-                    "the Rust match covers every case, so it needs no default",
-                );
+                demote(r, "the Rust match covers every case, so it needs no default");
             }
         }
         k = end;
@@ -549,10 +531,7 @@ fn conditional_compilation(rows: &mut [Row], cpp: &Function, rust: &Function) {
             .filter_map(|v| {
                 let t = directive(rust, v);
                 let flat = t.replace('_', "").to_ascii_lowercase();
-                words
-                    .iter()
-                    .any(|w| flat.contains(w.as_str()))
-                    .then_some((v.start_line, t))
+                words.iter().any(|w| flat.contains(w.as_str())).then_some((v.start_line, t))
             })
             .min_by_key(|(line, _)| line.abs_diff(near))
     };
@@ -655,9 +634,7 @@ fn rescue(pairs: &[Pair], cpp: &Function, rust: &Function) -> Vec<Pair> {
                 .any(|x| !generic(x) && b.features.calls.iter().any(|y| call_like(x, y)))
     };
     let aligned = |p: &Pair| {
-        p.cpp
-            .is_some_and(|i| cpp.units[i].kind != UnitKind::Comment)
-            && p.rust.is_some()
+        p.cpp.is_some_and(|i| cpp.units[i].kind != UnitKind::Comment) && p.rust.is_some()
     };
     for i in 0..out.len() {
         let (Some(c), None) = (out[i].cpp, out[i].rust) else {
@@ -674,9 +651,7 @@ fn rescue(pairs: &[Pair], cpp: &Function, rust: &Function) -> Vec<Pair> {
         }
         let found = (lo..=hi).find(|&j| {
             out[j].cpp.is_none()
-                && out[j]
-                    .rust
-                    .is_some_and(|r| shares(&cpp.units[c], &rust.units[r]))
+                && out[j].rust.is_some_and(|r| shares(&cpp.units[c], &rust.units[r]))
         });
         if let Some(j) = found {
             out[i].rust = out[j].rust.take();
@@ -723,11 +698,8 @@ fn switch_as_if_chain(rows: &mut [Row], cpp: &Function, rust: &Function) {
             _ => None,
         };
         // The branches of the chain name what the cases test.
-        let (other, other_cases) = if r.marker == Marker::CppOnly {
-            (rust, false)
-        } else {
-            (cpp, true)
-        };
+        let (other, other_cases) =
+            if r.marker == Marker::CppOnly { (rust, false) } else { (cpp, true) };
         let case_names: Vec<&String> = other
             .units
             .iter()
@@ -746,21 +718,14 @@ fn switch_as_if_chain(rows: &mut [Row], cpp: &Function, rust: &Function) {
             _ => false,
         };
         if u.is_some_and(part_of_chain) {
-            demote(
-                r,
-                "the switch and the if/else-if chain dispatch the same way",
-            );
+            demote(r, "the switch and the if/else-if chain dispatch the same way");
         }
     }
 }
 
 /// The error an `if` returns: the error of the return right after it.
 fn if_returns(f: &Function, k: usize) -> Option<String> {
-    let next = f
-        .units
-        .get(k + 1..)?
-        .iter()
-        .find(|u| u.kind != UnitKind::Comment)?;
+    let next = f.units.get(k + 1..)?.iter().find(|u| u.kind != UnitKind::Comment)?;
     match (&next.kind, &next.features.ret) {
         (UnitKind::Return, Some(Ret::Error(e))) if next.depth > f.units[k].depth => Some(e.clone()),
         _ => None,
@@ -815,9 +780,7 @@ fn merged_checks(rows: &mut [Row], cpp: &Function, rust: &Function) {
         // And the C++ return that goes with it.
         if let Some(next) = rows[k + 1..].iter_mut().find(|r| r.cpp.is_some()) {
             if next.rust.is_none()
-                && next
-                    .cpp
-                    .is_some_and(|i| cpp.units[i].kind == UnitKind::Return)
+                && next.cpp.is_some_and(|i| cpp.units[i].kind == UnitKind::Return)
             {
                 demote(next, &why);
             }
@@ -833,11 +796,7 @@ fn condition_text(f: &Function, u: &Unit) -> String {
     let t = t.trim_start_matches("} ").trim_start_matches("else ");
     let t = t.strip_prefix("if").unwrap_or(t).trim();
     let t = t.trim_end_matches('{').trim();
-    let t = if t.starts_with('(') && t.ends_with(')') {
-        &t[1..t.len() - 1]
-    } else {
-        t
-    };
+    let t = if t.starts_with('(') && t.ends_with(')') { &t[1..t.len() - 1] } else { t };
     let t = t.trim();
     if t.chars().count() > 80 {
         format!("{}...", t.chars().take(77).collect::<String>())
@@ -876,19 +835,11 @@ fn one_finding_per_check(rows: &mut [Row], cpp: &Function, rust: &Function) {
         let Some(v) = row_unit(&rows[next], f, cpp_side) else {
             continue;
         };
-        let vi = if cpp_side {
-            rows[next].cpp
-        } else {
-            rows[next].rust
-        }
-        .unwrap();
+        let vi = if cpp_side { rows[next].cpp } else { rows[next].rust }.unwrap();
         if rows[next].marker != marker
             || v.kind != UnitKind::Return
             || v.depth <= u.depth
-            || vi != idx + 1
-                && f.units[idx + 1..vi]
-                    .iter()
-                    .any(|w| w.kind != UnitKind::Comment)
+            || vi != idx + 1 && f.units[idx + 1..vi].iter().any(|w| w.kind != UnitKind::Comment)
         {
             continue;
         }
@@ -909,9 +860,7 @@ fn one_finding_per_check(rows: &mut [Row], cpp: &Function, rust: &Function) {
             Category::ControlFlow
         };
         rows[k].notes.retain(|n| n.severity != Severity::Issue);
-        rows[k]
-            .notes
-            .insert(0, Note::new(Severity::Issue, category, msg));
+        rows[k].notes.insert(0, Note::new(Severity::Issue, category, msg));
         rows[next].notes.retain(|n| n.severity != Severity::Issue);
     }
 }
@@ -938,15 +887,9 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
     static RUST_PANIC: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"\b(?:panic|unreachable|todo|unimplemented)!|\bassert!\s*\(\s*false\b|\.expect\(|\.unwrap\(\)").unwrap()
     });
-    let rust_code: Vec<(usize, String)> = rust
-        .units
-        .iter()
-        .enumerate()
-        .map(|(j, u)| (j, unit_text(rust, u)))
-        .collect();
-    let rust_panics = rust_code
-        .iter()
-        .any(|(_, t)| RUST_PANIC.is_match(&code_only(t)));
+    let rust_code: Vec<(usize, String)> =
+        rust.units.iter().enumerate().map(|(j, u)| (j, unit_text(rust, u))).collect();
+    let rust_panics = rust_code.iter().any(|(_, t)| RUST_PANIC.is_match(&code_only(t)));
     for k in 0..rows.len() {
         let Some(i) = rows[k].cpp else { continue };
         let u = &cpp.units[i];
@@ -956,10 +899,8 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
         let text = code_only(&unit_text(cpp, u));
         if text.trim_start().starts_with("DEBUG_ASSERT") {
             for c in u.features.calls.iter().filter(|c| c.as_str() != "assert") {
-                let elsewhere_in_cpp = cpp
-                    .units
-                    .iter()
-                    .any(|v| !v.features.asserts && v.features.calls.contains(c));
+                let elsewhere_in_cpp =
+                    cpp.units.iter().any(|v| !v.features.asserts && v.features.calls.contains(c));
                 let in_rust_assert = rust.units.iter().any(|v| {
                     v.features.asserts && v.features.calls.iter().any(|d| call_like(c, d))
                 });
@@ -970,9 +911,7 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
                     let v = &rust.units[j];
                     // The Rust statement making the call is this finding,
                     // not one of its own.
-                    if let Some(m) = rows
-                        .iter()
-                        .position(|r| r.rust == Some(j) && r.cpp.is_none())
+                    if let Some(m) = rows.iter().position(|r| r.rust == Some(j) && r.cpp.is_none())
                     {
                         demote(
                             &mut rows[m],
@@ -982,9 +921,7 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
                             ),
                         );
                     }
-                    rows[k]
-                        .notes
-                        .retain(|n| !n.message.starts_with("only C++ asserts"));
+                    rows[k].notes.retain(|n| !n.message.starts_with("only C++ asserts"));
                     rows[k].notes.push(Note::new(
                         Severity::Issue,
                         Category::Assert,
@@ -1000,11 +937,7 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
         if PANIC.is_match(&text) && !rust_panics {
             // The Rust error return nearest after the aligned position.
             let after = rows[k..].iter().filter_map(|r| r.rust).next().unwrap_or(0);
-            let before = rows[..k]
-                .iter()
-                .filter_map(|r| r.rust)
-                .next_back()
-                .unwrap_or(0);
+            let before = rows[..k].iter().filter_map(|r| r.rust).next_back().unwrap_or(0);
             let ret = rows
                 .iter()
                 .enumerate()
@@ -1024,10 +957,7 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
                     Category::Assert,
                     format!(
                         "C++ panics here ({}); the Rust returns {e} instead (line {line})",
-                        text.split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                            .trim_end_matches(';')
+                        text.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(';')
                     ),
                 ));
                 demote(&mut rows[m], "it stands in for a C++ panic");
@@ -1120,11 +1050,8 @@ fn group_runs(rows: &mut [Row], cpp: &Function, rust: &Function) {
             })
             .collect();
         if noted.len() >= 3 {
-            let (side, other) = if m == Marker::CppOnly {
-                ("C++", "Rust")
-            } else {
-                ("Rust", "C++")
-            };
+            let (side, other) =
+                if m == Marker::CppOnly { ("C++", "Rust") } else { ("Rust", "C++") };
             let units: Vec<&Unit> = noted.iter().filter_map(|&k| unit(&rows[k], m)).collect();
             let mut counts: Vec<(&'static str, usize)> = Vec::new();
             for u in &units {
@@ -1161,10 +1088,8 @@ fn group_runs(rows: &mut [Row], cpp: &Function, rust: &Function) {
                     }
                 }
             }
-            let mut msg = format!(
-                "{span} only in {side}, with no {other} counterpart: {}",
-                what.join(", ")
-            );
+            let mut msg =
+                format!("{span} only in {side}, with no {other} counterpart: {}", what.join(", "));
             if !did.is_empty() {
                 did.truncate(8);
                 msg.push_str(&format!(" ({})", did.join(", ")));
@@ -1197,9 +1122,7 @@ pub(crate) fn find_moved(u: &Unit, others: &[Unit], candidates: &[usize]) -> Opt
 /// A statement that only traces or prints.
 fn trace_only(f: &crate::model::Features) -> bool {
     !f.calls.is_empty()
-        && f.calls
-            .iter()
-            .all(|c| matches!(c.as_str(), "trace" | "print"))
+        && f.calls.iter().all(|c| matches!(c.as_str(), "trace" | "print"))
         && f.locks.is_empty()
         && f.errors.is_empty()
         && !f.propagates
@@ -1263,10 +1186,7 @@ fn soften_balanced(n: Note, u: &Unit, balanced: bool) -> Note {
     Note::new(
         Severity::Note,
         n.category,
-        format!(
-            "{}; both sides have as many, so it was probably rewritten",
-            n.message
-        ),
+        format!("{}; both sides have as many, so it was probably rewritten", n.message),
     )
 }
 
@@ -1279,12 +1199,8 @@ fn soften_moved(n: Note, u: &Unit, elsewhere: &[&Function]) -> Note {
     // A bare `else` or a generic status check matches too much to prove
     // anything moved; a test must name something specific.
     const GENERIC: &[&str] = &["status", "result", "ok", "err", "res", "rc"];
-    let specific: Vec<&String> = u
-        .features
-        .names
-        .iter()
-        .filter(|n| !GENERIC.contains(&n.as_str()))
-        .collect();
+    let specific: Vec<&String> =
+        u.features.names.iter().filter(|n| !GENERIC.contains(&n.as_str())).collect();
     let test = matches!(u.kind, UnitKind::If | UnitKind::ElseIf | UnitKind::Else);
     if test && specific.is_empty() {
         return n;
@@ -1301,10 +1217,7 @@ fn soften_moved(n: Note, u: &Unit, elsewhere: &[&Function]) -> Note {
         Some(f) => Note::new(
             Severity::Note,
             n.category,
-            format!(
-                "{}; it appears in {}, which the Rust calls",
-                n.message, f.name
-            ),
+            format!("{}; it appears in {}, which the Rust calls", n.message, f.name),
         ),
         None => n,
     }
@@ -1324,10 +1237,7 @@ fn soften_if_called(n: Note, u: &Unit, other: &Function) -> Note {
     Note::new(
         Severity::Note,
         Category::Call,
-        format!(
-            "{}; the other side makes the same calls elsewhere",
-            n.message
-        ),
+        format!("{}; the other side makes the same calls elsewhere", n.message),
     )
 }
 
@@ -1376,10 +1286,7 @@ fn words_kept(u: &Unit, rust: &Function) -> bool {
         .filter(|r| r.kind == UnitKind::Comment)
         .flat_map(|r| r.features.comment.iter().map(String::as_str))
         .collect();
-    let kept = words
-        .iter()
-        .filter(|w| rust_words.contains(w.as_str()))
-        .count();
+    let kept = words.iter().filter(|w| rust_words.contains(w.as_str())).count();
     kept as f64 >= 0.8 * words.len() as f64
 }
 
@@ -1463,17 +1370,11 @@ fn only_in(u: &Unit, here: &str, there: &str, moved: Option<usize>) -> Note {
         UnitKind::Case => (from_cpp, Category::ControlFlow),
         _ => (true, Category::ControlFlow),
     };
-    let sev = if significant {
-        Severity::Issue
-    } else {
-        Severity::Note
-    };
+    let sev = if significant { Severity::Issue } else { Severity::Note };
     let mut msg = format!("{what} only in {here}");
     let mut category = category;
     if let Some(line) = moved {
-        msg.push_str(&format!(
-            "; resembles {there} line {line}, so the order may differ"
-        ));
+        msg.push_str(&format!("; resembles {there} line {line}, so the order may differ"));
         if category != Category::Comment {
             category = Category::Order;
         }
@@ -1493,7 +1394,10 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
         notes.push(Note::new(Severity::Issue, Category::ErrorPath, msg));
         return;
     }
-    if a.kind != b.kind && !equivalent_kinds(a.kind, b.kind) {
+    if a.kind != b.kind
+        && !equivalent_kinds(a.kind, b.kind)
+        && !crate::align::is_return_vs_propagated(a, b)
+    {
         notes.push(Note::new(
             Severity::Note,
             Category::ControlFlow,
@@ -1521,10 +1425,7 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
                     format!(
                         "{}; only one side says {}",
                         comment_diff(&fa.comment, &fb.comment),
-                        lost.iter()
-                            .map(|w| format!("\"{w}\""))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        lost.iter().map(|w| format!("\"{w}\"")).collect::<Vec<_>>().join(", ")
                     ),
                 )
             };
@@ -1590,11 +1491,7 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
             notes.push(Note::new(
                 Severity::Issue,
                 Category::ErrorPath,
-                format!(
-                    "error codes differ: C++ [{}], Rust [{}]",
-                    ea.join(", "),
-                    eb.join(", ")
-                ),
+                format!("error codes differ: C++ [{}], Rust [{}]", ea.join(", "), eb.join(", ")),
             ));
         }
     }
@@ -1603,11 +1500,7 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
         // lock spelled two ways; a lock taken on one side only is not.
         let renamed = fa.locks.len() == fb.locks.len();
         notes.push(Note::new(
-            if renamed {
-                Severity::Note
-            } else {
-                Severity::Issue
-            },
+            if renamed { Severity::Note } else { Severity::Issue },
             Category::Lock,
             format!(
                 "locks differ: C++ acquires [{}], Rust acquires [{}]",
@@ -1617,11 +1510,7 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
         ));
     }
     if fa.propagates != fb.propagates && !propagation_is_implied(a, b) {
-        let (who, other) = if fa.propagates {
-            ("C++", "Rust")
-        } else {
-            ("Rust", "C++")
-        };
+        let (who, other) = if fa.propagates { ("C++", "Rust") } else { ("Rust", "C++") };
         notes.push(Note::new(
             Severity::Issue,
             Category::ErrorPath,
@@ -1639,11 +1528,7 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
     if fa.asserts != fb.asserts {
         let who = if fa.asserts { "C++" } else { "Rust" };
         notes.push(Note::new(
-            if fa.asserts {
-                Severity::Issue
-            } else {
-                Severity::Note
-            },
+            if fa.asserts { Severity::Issue } else { Severity::Note },
             Category::Assert,
             format!("only {who} asserts here"),
         ));
@@ -1726,10 +1611,7 @@ fn propagation_is_implied(a: &Unit, b: &Unit) -> bool {
 fn nearby_conjuncts(f: &Function, k: usize) -> Vec<&crate::model::Conjunct> {
     let lo = k.saturating_sub(3);
     let hi = (k + 4).min(f.units.len());
-    f.units[lo..hi]
-        .iter()
-        .flat_map(|u| u.features.conjuncts.iter())
-        .collect()
+    f.units[lo..hi].iter().flat_map(|u| u.features.conjuncts.iter()).collect()
 }
 
 /// Whether two normalized names are the same, or one contains the other
@@ -1756,26 +1638,16 @@ fn condition_diff(i: usize, j: usize, cpp: &Function, rust: &Function, notes: &m
     }
     // Status tests (`status != ZX_OK`) have no names left once noise is
     // dropped; they are compared as error checks instead.
-    if fa
-        .conjuncts
-        .iter()
-        .chain(&fb.conjuncts)
-        .any(|c| c.names.is_empty())
-    {
+    if fa.conjuncts.iter().chain(&fb.conjuncts).any(|c| c.names.is_empty()) {
         return;
     }
     // A C++ `do { ... } while (cond);` continues when `cond` holds, while
     // Rust's `loop { ... if !cond { break; } }` breaks when `!cond` holds;
     // De Morgan's law flips each comparison unless `!(` wraps the whole test.
-    let do_while = unit_text(cpp, a)
-        .trim_start()
-        .trim_start_matches('}')
-        .trim_start()
-        .starts_with("while");
-    let breaks = rust
-        .units
-        .get(j + 1)
-        .is_some_and(|u| u.kind == UnitKind::Break && u.depth > b.depth);
+    let do_while =
+        unit_text(cpp, a).trim_start().trim_start_matches('}').trim_start().starts_with("while");
+    let breaks =
+        rust.units.get(j + 1).is_some_and(|u| u.kind == UnitKind::Break && u.depth > b.depth);
     let flip = do_while && breaks && !condition_text(rust, b).starts_with("!(");
     // Tests of the same names with different comparisons (`x == 0` and
     // `x > MAX`) are different tests.
@@ -1792,10 +1664,7 @@ fn condition_diff(i: usize, j: usize, cpp: &Function, rust: &Function, notes: &m
     let (near_a, near_b) = (nearby_conjuncts(cpp, i), nearby_conjuncts(rust, j));
     let missing =
         |xs: &[crate::model::Conjunct], near: &[&crate::model::Conjunct]| -> Vec<String> {
-            xs.iter()
-                .filter(|x| !near.iter().any(|y| same(x, y)))
-                .map(|x| x.text.clone())
-                .collect()
+            xs.iter().filter(|x| !near.iter().any(|y| same(x, y))).map(|x| x.text.clone()).collect()
         };
     let only_b = missing(&fb.conjuncts, &near_a);
     let only_a = missing(&fa.conjuncts, &near_b);
@@ -1817,30 +1686,16 @@ fn condition_diff(i: usize, j: usize, cpp: &Function, rust: &Function, notes: &m
     }
     if !only_b.is_empty() {
         notes.push(Note::new(
-            if nb > na {
-                Severity::Issue
-            } else {
-                Severity::Note
-            },
+            if nb > na { Severity::Issue } else { Severity::Note },
             Category::ControlFlow,
-            format!(
-                "Rust's condition adds a test that C++ doesn't make: {}",
-                only_b.join("; ")
-            ),
+            format!("Rust's condition adds a test that C++ doesn't make: {}", only_b.join("; ")),
         ));
     }
     if !only_a.is_empty() {
         notes.push(Note::new(
-            if na > nb {
-                Severity::Issue
-            } else {
-                Severity::Note
-            },
+            if na > nb { Severity::Issue } else { Severity::Note },
             Category::ControlFlow,
-            format!(
-                "C++'s condition tests {}, which the Rust doesn't",
-                only_a.join("; ")
-            ),
+            format!("C++'s condition tests {}, which the Rust doesn't", only_a.join("; ")),
         ));
     }
 }
@@ -1896,11 +1751,8 @@ fn comment_diff(a: &[String], b: &[String]) -> String {
     let mut dp = vec![vec![0usize; m + 1]; n + 1];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
-            dp[i][j] = if a[i] == b[j] {
-                dp[i + 1][j + 1] + 1
-            } else {
-                dp[i + 1][j].max(dp[i][j + 1])
-            };
+            dp[i][j] =
+                if a[i] == b[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
         }
     }
     let (mut i, mut j) = (0, 0);
@@ -1919,11 +1771,7 @@ fn comment_diff(a: &[String], b: &[String]) -> String {
     }
     let common = lcs_len(a, b);
     let clip = |v: &[&str]| {
-        if v.len() > 12 {
-            format!("{} ...", v[..12].join(" "))
-        } else {
-            v.join(" ")
-        }
+        if v.len() > 12 { format!("{} ...", v[..12].join(" ")) } else { v.join(" ") }
     };
     let mut parts = vec![format!("comment differs ({common} words shared)")];
     if !only_a.is_empty() {
@@ -1966,10 +1814,7 @@ pub fn summarize(cpp: &Function, rust: &Function, rows: &[Row]) -> Summary {
             .collect()
     };
     let locks = |f: &Function| -> Vec<String> {
-        f.units
-            .iter()
-            .flat_map(|u| u.features.locks.clone())
-            .collect()
+        f.units.iter().flat_map(|u| u.features.locks.clone()).collect()
     };
     let mut s = Summary {
         cpp_errors: errs(cpp),
@@ -2013,10 +1858,7 @@ fn unit_text(f: &Function, u: &Unit) -> String {
     if u.file.is_some() {
         return u.ext_lines.join("\n");
     }
-    (u.start_line..=u.end_line)
-        .map(|l| f.line(l))
-        .collect::<Vec<_>>()
-        .join("\n")
+    (u.start_line..=u.end_line).map(|l| f.line(l)).collect::<Vec<_>>().join("\n")
 }
 
 /// Source text with comments and string literals blanked, so only code is
@@ -2208,11 +2050,8 @@ fn mask_op(code: &str, c: &Constant) -> Option<&'static str> {
     .ok()?;
     let m = re.captures(code)?;
     // `& !(A | B)` clears B as well as A.
-    let group = regex::Regex::new(&format!(
-        r"&=?\s*[!~]\s*\([^()]*\b{}\b",
-        regex::escape(&c.name)
-    ))
-    .ok()?;
+    let group =
+        regex::Regex::new(&format!(r"&=?\s*[!~]\s*\([^()]*\b{}\b", regex::escape(&c.name))).ok()?;
     if group.is_match(code) {
         return Some("clears");
     }
@@ -2246,8 +2085,7 @@ impl ValueCtx<'_> {
     }
 
     fn canonical(&self, c: &Constant) -> String {
-        self.values
-            .map_or_else(|| c.name.clone(), |v| v.canonical(&c.name))
+        self.values.map_or_else(|| c.name.clone(), |v| v.canonical(&c.name))
     }
 
     fn defined(&self, c: &Constant) -> bool {
@@ -2277,15 +2115,9 @@ impl ValueCtx<'_> {
         let text = text.split_once("=>").map_or(text, |(_, r)| r);
         let code = code_only(text);
         let t = code.trim_start();
-        let assert = [
-            "ASSERT",
-            "DEBUG_ASSERT",
-            "ZX_ASSERT",
-            "ZX_DEBUG_ASSERT",
-            "assert",
-        ]
-        .iter()
-        .any(|a| t.starts_with(a))
+        let assert = ["ASSERT", "DEBUG_ASSERT", "ZX_ASSERT", "ZX_DEBUG_ASSERT", "assert"]
+            .iter()
+            .any(|a| t.starts_with(a))
             || t.starts_with("debug_assert");
         if assert {
             return Vec::new();
@@ -2295,9 +2127,7 @@ impl ValueCtx<'_> {
             .filter(|c| !self.values.is_some_and(|v| v.is_static(&c.name)))
             .filter(|c| {
                 let stmt = t.trim_end().trim_end_matches(';').trim_end();
-                let path = stmt
-                    .chars()
-                    .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == ':');
+                let path = stmt.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == ':');
                 !(stmt == c.name || path && stmt.ends_with(&format!("::{}", c.name)))
             })
             .collect()
@@ -2315,11 +2145,7 @@ fn extracts_field(code: &str, c: &Constant) -> bool {
 }
 
 fn show(v: u64) -> String {
-    if v > 9 {
-        format!("{v:#x}")
-    } else {
-        v.to_string()
-    }
+    if v > 9 { format!("{v:#x}") } else { v.to_string() }
 }
 
 /// A constant with its value, when it is known: `X86_DR7_MASK (0x700)`.
@@ -2352,21 +2178,11 @@ fn one_sided(
         } else {
             format!("Rust also {op} {}, which the C++ doesn't", c.name)
         };
-        let severity = if extracts_field(code, c) {
-            Severity::Note
-        } else {
-            Severity::Issue
-        };
+        let severity = if extracts_field(code, c) { Severity::Note } else { Severity::Issue };
         return Some(Note::new(severity, Category::Value, msg));
     }
-    let literal = vc
-        .value(c)
-        .is_some_and(|v| other_literals.contains(&u128::from(v)));
-    let severity = if vc.defined(c) && !literal {
-        Severity::Issue
-    } else {
-        Severity::Note
-    };
+    let literal = vc.value(c).is_some_and(|v| other_literals.contains(&u128::from(v)));
+    let severity = if vc.defined(c) && !literal { Severity::Issue } else { Severity::Note };
     Some(Note::new(
         severity,
         Category::Value,
@@ -2417,12 +2233,8 @@ fn value_diff(
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let names = |v: &[&Constant]| {
-        v.iter()
-            .map(|c| with_value(c, vc))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let names =
+        |v: &[&Constant]| v.iter().map(|c| with_value(c, vc)).collect::<Vec<_>>().join(", ");
     let (code_a, code_b) = (masks_only(&code_only(a)), masks_only(&code_only(b)));
     if explained {
         let masked = only_a.iter().any(|c| mask_op(&code_a, c).is_some())
@@ -2448,11 +2260,7 @@ fn value_diff(
         notes.push(Note::new(
             severity,
             Category::Value,
-            format!(
-                "C++ uses {} where Rust uses {}",
-                names(&only_a),
-                names(&only_b)
-            ),
+            format!("C++ uses {} where Rust uses {}", names(&only_a), names(&only_b)),
         ));
         return;
     }
@@ -2460,11 +2268,7 @@ fn value_diff(
     // different number.
     let literal_vs = |lits: &[u128], consts: &[&Constant]| -> Option<Severity> {
         let v = values(consts)?;
-        if v.iter().any(|x| lits.contains(&u128::from(*x))) {
-            None
-        } else {
-            Some(Severity::Issue)
-        }
+        if v.iter().any(|x| lits.contains(&u128::from(*x))) { None } else { Some(Severity::Issue) }
     };
     if !only_b.is_empty() && !lit_a.is_empty() {
         let severity = match values(&only_b) {
@@ -2477,11 +2281,7 @@ fn value_diff(
         notes.push(Note::new(
             severity,
             Category::Value,
-            format!(
-                "C++ uses {} where Rust uses {}",
-                shown(&lit_a),
-                names(&only_b)
-            ),
+            format!("C++ uses {} where Rust uses {}", shown(&lit_a), names(&only_b)),
         ));
         return;
     }
@@ -2490,11 +2290,7 @@ fn value_diff(
         notes.push(Note::new(
             severity,
             Category::Value,
-            format!(
-                "C++ uses {} where Rust uses {}",
-                names(&only_a),
-                shown(&lit_b)
-            ),
+            format!("C++ uses {} where Rust uses {}", names(&only_a), shown(&lit_b)),
         ));
         return;
     }
@@ -2547,9 +2343,7 @@ fn one_sided_constant(
     let names: Vec<&str> = found
         .iter()
         .filter_map(|n| {
-            n.message
-                .strip_prefix(&format!("only {side} uses "))
-                .and_then(|m| m.split(';').next())
+            n.message.strip_prefix(&format!("only {side} uses ")).and_then(|m| m.split(';').next())
         })
         .collect();
     let rest = first.message.split_once(';').map_or("", |(_, r)| r);
@@ -2612,10 +2406,7 @@ fn orderings(text: &str, lang: Lang) -> Vec<String> {
         Lang::Rust => &RUST_ORDER,
         Lang::Cpp => &CPP_ORDER,
     };
-    let mut out: Vec<String> = re
-        .captures_iter(text)
-        .map(|c| c[1].to_ascii_lowercase())
-        .collect();
+    let mut out: Vec<String> = re.captures_iter(text).map(|c| c[1].to_ascii_lowercase()).collect();
     if lang == Lang::Cpp && out.is_empty() && CPP_OP.is_match(text) {
         out.push("seq_cst".to_string());
     }
@@ -2646,11 +2437,7 @@ fn ordering_diff(cpp: &str, rust: &str, asserts: bool, notes: &mut Vec<Note>) {
     notes.push(Note::new(
         severity,
         Category::Atomic,
-        format!(
-            "Rust uses a {word} memory ordering ({}) than C++ ({})",
-            show(&b),
-            show(&a)
-        ),
+        format!("Rust uses a {word} memory ordering ({}) than C++ ({})", show(&b), show(&a)),
     ));
 }
 
@@ -2666,10 +2453,7 @@ mod ordering_tests {
 
     #[test]
     fn default_cpp_ordering_is_seq_cst() {
-        let n = diff(
-            "state_.exchange(0);",
-            "self.state.swap(0, Ordering::Relaxed);",
-        );
+        let n = diff("state_.exchange(0);", "self.state.swap(0, Ordering::Relaxed);");
         assert_eq!(n.len(), 1);
         assert_eq!(n[0].severity, Severity::Issue);
         assert!(n[0].message.contains("weaker"), "{}", n[0].message);
@@ -2677,15 +2461,8 @@ mod ordering_tests {
 
     #[test]
     fn same_or_stronger_ordering() {
-        assert!(diff(
-            "x.load(ktl::memory_order_acquire);",
-            "x.load(Ordering::Acquire)"
-        )
-        .is_empty());
-        let n = diff(
-            "x.store(1, std::memory_order_relaxed);",
-            "x.store(1, Ordering::SeqCst)",
-        );
+        assert!(diff("x.load(ktl::memory_order_acquire);", "x.load(Ordering::Acquire)").is_empty());
+        let n = diff("x.store(1, std::memory_order_relaxed);", "x.store(1, Ordering::SeqCst)");
         assert_eq!(n[0].severity, Severity::Note);
     }
 
