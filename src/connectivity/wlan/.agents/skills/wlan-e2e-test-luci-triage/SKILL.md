@@ -190,6 +190,10 @@ When debugging a failure, follow this specific order of operations:
 5. **Consult Fuchsia Source Code:**
    When you find suspicious logs (e.g. `AP Rejection status: 2` or `wlanif: interface destroyed`), use local Fuchsia code or `code_search` to find the relevant code in the Fuchsia platform to understand exactly what triggers that log.
 
+#### Guiding Principles for Fix Recommendations
+*   **Avoid Knee-Jerk Timeout Bumps**: Do not simply recommend increasing a timeout. Investigate *why* the operation took longer: check whether device-side behavior changed (e.g. regressions in scan, association, or DHCP latency, or retry loops) or if the test setup changed. Address the behavioral regression rather than masking it with longer timeouts.
+*   **Prefer Higher-Level Stack Changes Over Driver Fixes**: If proposing a change in a driver (e.g. `brcmfmac`, `iwlwifi`), consider whether the behavior should be shared across drivers. If it represents general Wi-Fi protocol handling, state management, or policy, address it higher up in the stack (`wlansoftmac`, `wlanif`, `wlancfg`) rather than duplicating driver-specific logic.
+
 ## Helper Scripts
 A Python script (`scripts/luci_triage.py`) automates extracting failure distributions by `swarming_bot_id`. It fetches both total runs and failures to accurately compute the failure rate.
 Run it as follows (use `--test-pattern ".*"` if you want all variants; default bucket is `global.ci`, or specify `--bucket smart.ci` for smart-display builders):
