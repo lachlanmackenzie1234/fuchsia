@@ -29,6 +29,7 @@ load("./readme_fuchsia.star", "register_readme_fuchsia_checks")
 load("./rust.star", "register_rust_checks")
 load("./skills.star", "register_skills_checks")
 load("./starlark.star", "register_starlark_checks")
+load("./third_party_readme.star", "register_third_party_readme_checks")
 load("./underscore_vs_dash.star", "register_underscore_vs_dash_checks")
 # keep-sorted end
 
@@ -181,5 +182,6 @@ def register_all_checks():
     register_rust_checks()
     register_skills_checks()
     register_starlark_checks()
+    register_third_party_readme_checks()
     register_underscore_vs_dash_checks()
     # keeps-sorted end
