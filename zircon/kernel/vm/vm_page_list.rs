@@ -1342,6 +1342,17 @@ impl VmPageList {
         self.nodes().all(|node| node.has_no_page_ref_or_marker())
     }
 
+    /// Returns the number of bytes of heap allocated by this page list.
+    ///
+    /// This walks the entire tree and so is not a constant time operation.
+    pub fn heap_allocation_bytes(&self) -> u64 {
+        // SAFETY: `self.list.get()` is a valid initialized VmPageListBtree pointer.
+        let utilization =
+            unsafe { bindings::cpp_vm_page_list_btree_calculate_utilization_slow(self.list.get()) };
+        utilization.nodes_in_bytes
+            + utilization.stored_values * core::mem::size_of::<VmPageListNode>() as u64
+    }
+
     /// Clears the tree of any remaining slots, leaving it in the initially allocated state. It is
     /// an error, and will trigger a panic, for any of the slots to hold pages or references, as
     /// clearing them would otherwise result in a memory leak.
@@ -3248,11 +3259,11 @@ impl VmPageList {
         // checking for in_interval is not sufficient, as it is possible to have started the
         // traversal partway into an interval, in which case we would not have seen the interval
         // start and in_interval would be false. So we perform a quick check for in_interval first
-        // and if that fails perform the more expensive IsOffsetInInterval() check. The
-        // IsOffsetInInterval() call is further gated by whether we encountered any page at all in
-        // the traversal above. If we saw at least one page in the traversal, we know that we could
-        // not be in an interval without in_interval being true because we would have seen the
-        // interval start.
+        // and if that fails perform the more expensive is_offset_in_interval_helper() check. The
+        // is_offset_in_interval_helper() call is further gated by whether we encountered any page
+        // at all in the traversal above. If we saw at least one page in the traversal, we know that
+        // we could not be in an interval without in_interval being true because we would have seen
+        // the interval start.
         if expected_next_off != end_offset {
             // Traversal ended in an interval if in_interval was true, OR if the traversal did not
             // see any page at all and the start_offset is in an interval (Note that in this latter
@@ -3270,6 +3281,127 @@ impl VmPageList {
                     .is_some());
             if !ended_in_interval {
                 let status = func(PageOrGap::Gap(expected_next_off, end_offset));
+                if status != Status::NEXT && status != Status::STOP {
+                    return Err(status);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Similar to `for_every_page_and_gap_in_range`, but the `per_page_func` gets called with a
+    /// `VmPageOrMarkerRef` instead of a `&VmPageOrMarker`, allowing for limited mutation.
+    pub fn for_every_page_and_gap_in_range_ref<PageFunc, GapFunc>(
+        &mut self,
+        start_offset: u64,
+        end_offset: u64,
+        mut per_page_func: PageFunc,
+        per_gap_func: GapFunc,
+    ) -> Result<(), Status>
+    where
+        PageFunc: FnMut(VmPageOrMarkerRef<'_>, u64) -> Status,
+        GapFunc: FnMut(u64, u64) -> Status,
+    {
+        self.for_every_page_and_gap_in_range_internal_mut::<SkipNodeCheck, _, _>(
+            start_offset,
+            end_offset,
+            |slot, off| per_page_func(VmPageOrMarkerRef::new(slot), off),
+            per_gap_func,
+        )
+    }
+
+    /// Mutable version of `for_every_page_and_gap_in_range`, which calls `per_page_func` with a
+    /// `&mut VmPageOrMarker`.
+    ///
+    /// If `N::CLEANUP_EMPTY` is true, then it is assumed the `per_page_func` may remove pages and
+    /// page nodes will be checked to see if they are empty and can be cleaned up.
+    fn for_every_page_and_gap_in_range_internal_mut<N: NodeCheck, PageFunc, GapFunc>(
+        &mut self,
+        start_offset: u64,
+        end_offset: u64,
+        mut per_page_func: PageFunc,
+        mut per_gap_func: GapFunc,
+    ) -> Result<(), Status>
+    where
+        PageFunc: FnMut(&mut VmPageOrMarker, u64) -> Status,
+        GapFunc: FnMut(u64, u64) -> Status,
+    {
+        let page_size = page::SIZE as u64;
+        let mut expected_next_off = start_offset;
+        // Set to true when we encounter an interval start but haven't yet encountered the end.
+        let mut in_interval = false;
+
+        let status = self.for_every_page_in_range_internal_mut::<N, _>(
+            start_offset,
+            end_offset,
+            |p, off| {
+                // Update our interval tracking first. Should the callbacks later request an early
+                // exit then this work is wasted, but doing it first, and unconditionally, lets the
+                // compiler perform better common expression elimination with the per_gap_func check
+                // next.
+                if p.is_interval_start() {
+                    // We should not already have been tracking an interval.
+                    debug_assert!(!in_interval);
+                    // Start and end sentinel interval types should match. Since we only support
+                    // zero intervals currently, we can simply check for that.
+                    debug_assert!(p.is_interval_zero());
+                    in_interval = true;
+                } else if p.is_interval_end() {
+                    // If this is not the first populated slot we encountered, we should have been
+                    // tracking a valid interval.
+                    debug_assert!(in_interval || expected_next_off == start_offset);
+                    // Start and end sentinel interval types should match. Since we only support
+                    // zero intervals currently, we can simply check for that.
+                    debug_assert!(p.is_interval_zero());
+                    // Reset interval tracking.
+                    in_interval = false;
+                }
+
+                let mut status = Status::NEXT;
+                // We can move ahead of expected_next_off in the case of an interval too, which
+                // represents a run of pages. Make sure this is not an interval before calling the
+                // per_gap_func.
+                if expected_next_off != off && !p.is_interval_end() {
+                    status = per_gap_func(expected_next_off, off);
+                }
+                expected_next_off = off + page_size;
+                if status == Status::NEXT {
+                    status = per_page_func(p, off);
+                }
+                status
+            },
+        );
+
+        if status != Status::NEXT {
+            if status == Status::STOP {
+                return Ok(());
+            }
+            return Err(status);
+        }
+
+        // Handle the last gap after checking that we are not in an interval. Note that simply
+        // checking for in_interval is not sufficient, as it is possible to have started the
+        // traversal partway into an interval, in which case we would not have seen the interval
+        // start and in_interval would be false. So we perform a quick check for in_interval first
+        // and if that fails perform the more expensive is_offset_in_interval() check. The
+        // is_offset_in_interval() call is further gated by whether we encountered any page at all
+        // in the traversal above. If we saw at least one page in the traversal, we know that we
+        // could not be in an interval without in_interval being true because we would have seen the
+        // interval start.
+        //
+        // `for_every_page_in_range_internal_mut` does not expose the node the traversal started
+        // from, so is_offset_in_interval() performs its own lookup. It is only reached if no
+        // callback ran, in which case the page list is unchanged since the traversal started.
+        if expected_next_off != end_offset {
+            // Traversal ended in an interval if in_interval was true, OR if the traversal did not
+            // see any page at all and the start_offset is in an interval (Note that in this latter
+            // case all offsets in the range [start_offset, end_offset) would lie in the same
+            // interval, so we can just check one of them).
+            let ended_in_interval = in_interval
+                || (expected_next_off == start_offset && self.is_offset_in_interval(start_offset));
+            if !ended_in_interval {
+                let status = per_gap_func(expected_next_off, end_offset);
                 if status != Status::NEXT && status != Status::STOP {
                     return Err(status);
                 }
@@ -3602,11 +3734,18 @@ impl VmPageList {
     where
         F: FnMut(&mut VmPageOrMarker, u64) -> Status,
     {
-        self.for_every_page_in_range_internal_mut::<SkipNodeCheck, _>(
+        let status = self.for_every_page_in_range_internal_mut::<SkipNodeCheck, _>(
             start_offset,
             end_offset,
             per_page_func,
-        )
+        );
+        if status != Status::NEXT {
+            if status == Status::STOP {
+                return Ok(());
+            }
+            return Err(status);
+        }
+        Ok(())
     }
 
     /// Internal helper for mutable range traversals with optional empty-node cleanup.
@@ -3614,12 +3753,15 @@ impl VmPageList {
     /// Calls the provided callback for every page in the given range. If `N::CLEANUP_EMPTY` is
     /// true, then it is assumed the `per_page_func` may remove pages and page nodes will be checked
     /// to see if they are empty and can be cleaned up.
+    ///
+    /// Returns `Status::NEXT` if the whole range was traversed, otherwise the first status other
+    /// than `Status::NEXT` returned by `per_page_func`.
     fn for_every_page_in_range_internal_mut<N: NodeCheck, F>(
         &mut self,
         start_offset: u64,
         end_offset: u64,
         mut per_page_func: F,
-    ) -> Result<(), Status>
+    ) -> Status
     where
         F: FnMut(&mut VmPageOrMarker, u64) -> Status,
     {
@@ -3663,13 +3805,13 @@ impl VmPageList {
                 let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
             }
             if status != Status::NEXT {
-                return if status == Status::STOP { Ok(()) } else { Err(status) };
+                return status;
             }
             // Peek at the new node after step or erase.
             // SAFETY: `cursor.get()` is a valid pointer.
             entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
         }
-        Ok(())
+        Status::NEXT
     }
 
     /// Calls the provided callback for every page or marker in the range
@@ -3686,11 +3828,184 @@ impl VmPageList {
     where
         F: FnMut(&mut VmPageOrMarker, u64) -> Status,
     {
-        self.for_every_page_in_range_internal_mut::<CleanupEmptyNodeCheck, _>(
+        let status = self.for_every_page_in_range_internal_mut::<CleanupEmptyNodeCheck, _>(
             start_offset,
             end_offset,
             per_page_fn,
+        );
+        if status != Status::NEXT {
+            if status == Status::STOP {
+                return Ok(());
+            }
+            return Err(status);
+        }
+        Ok(())
+    }
+
+    /// Similar to `remove_pages` but also takes a `per_gap_fn` callback to allow for iterating over
+    /// any gaps encountered as well. This can be used when the intent is to modify the underlying
+    /// pages and/or gaps, while checking any intermediate data structures to potentially free ones
+    /// that are no longer needed.
+    pub fn remove_pages_and_iterate_gaps<PageFunc, GapFunc>(
+        &mut self,
+        start_offset: u64,
+        end_offset: u64,
+        per_page_fn: PageFunc,
+        per_gap_fn: GapFunc,
+    ) -> Result<(), Status>
+    where
+        PageFunc: FnMut(&mut VmPageOrMarker, u64) -> Status,
+        GapFunc: FnMut(u64, u64) -> Status,
+    {
+        self.for_every_page_and_gap_in_range_internal_mut::<CleanupEmptyNodeCheck, _, _>(
+            start_offset,
+            end_offset,
+            per_page_fn,
+            per_gap_fn,
         )
+    }
+
+    /// Merges the pages in the specified range in `self` onto `other`, with `offset` in `self`
+    /// mapping to the offset of 0 in `other`.
+    ///
+    /// For any offset in `self` that is not empty then the given `migrate_fn` is called with a
+    /// reference to `self` and the corresponding slot in `other` and has the signature of:
+    /// `fn(this_slot: &mut VmPageOrMarker, other_slot: &mut VmPageOrMarker, other_offset: u64)`.
+    ///
+    /// If this returns true then `migrate_fn` was called on everything in range of `offset` to
+    /// `end_offset`. If false is returned then merging did not complete due to inability to
+    /// allocate nodes in `other`. The partial merge is not rolled back and is up to the caller to
+    /// deal with.
+    pub fn merge_range_onto<F>(
+        &mut self,
+        mut migrate_fn: F,
+        other: &mut VmPageList,
+        offset: u64,
+        end_offset: u64,
+    ) -> bool
+    where
+        F: FnMut(&mut VmPageOrMarker, &mut VmPageOrMarker, u64),
+    {
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // Iterate the range in `self` we are merging.
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let mut entry = unsafe {
+            bindings::cpp_vm_page_list_btree_lower_bound(
+                self.list.get(),
+                VmPageListNode::node_offset(offset),
+                cursor.get(),
+            )
+        };
+        while !entry.node.is_null() && entry.offset < end_offset {
+            let node_obj_offset = entry.offset;
+            // SAFETY: `entry.node` is non-null and points to a valid `VmPageListNode` owned by
+            // `self`'s tree. `self` is exclusively borrowed, and the node is only erased after the
+            // last use of `node`, at the end of this iteration.
+            let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+            debug_assert!(node.has_no_interval_sentinel());
+
+            // Calculate start and end in `node`.
+            let mut node_start_off = core::cmp::max(node_obj_offset, offset);
+            let node_end_off =
+                core::cmp::min(VmPageListNode::end_offset(node_obj_offset), end_offset);
+
+            // If offset is not a multiple of `VmPageListNode::NODE_SPAN_BYTES` then items in this
+            // node will need to be split across two different nodes in `other`.
+            while node_start_off < node_end_off {
+                // Translate the start in `node` to an offset in `other`.
+                let other_start_off = node_start_off - offset;
+
+                // Find the node in `other` that contains the start address.
+                let other_obj_offset = VmPageListNode::node_offset(other_start_off);
+                let other_cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+                // SAFETY: `other.list.get()` and `other_cursor.get()` are valid pointers.
+                let other_entry = unsafe {
+                    bindings::cpp_vm_page_list_btree_lower_bound(
+                        other.list.get(),
+                        other_obj_offset,
+                        other_cursor.get(),
+                    )
+                };
+
+                // Allocate a new node if none was found.
+                let other_node_ptr =
+                    if other_entry.node.is_null() || other_entry.offset != other_obj_offset {
+                        // SAFETY: `other.list.get()` and `other_cursor.get()` are valid pointers.
+                        // `cpp_vm_page_list_btree_insert` uses the cursor as an insertion hint and
+                        // updates it to point at the newly inserted node.
+                        let new_node = unsafe {
+                            bindings::cpp_vm_page_list_btree_insert(
+                                other.list.get(),
+                                other_obj_offset,
+                                other_cursor.get(),
+                            )
+                        };
+                        if new_node.is_null() {
+                            return false;
+                        }
+                        new_node
+                    } else {
+                        other_entry.node
+                    };
+                // SAFETY: `other_node_ptr` is non-null and points to a valid `VmPageListNode` owned
+                // by `other`'s tree, which is exclusively borrowed. It is distinct from `node`, as
+                // `self` and `other` are distinct `&mut` borrows, and it is only erased after the
+                // last use of `other_node` below.
+                let other_node =
+                    unsafe { other_node_ptr.cast::<VmPageListNode>().as_mut_unchecked() };
+
+                // Cap the range to the end of `other_node`, which could be less than length of the
+                // range in `node`.
+                let other_end_off = core::cmp::min(
+                    VmPageListNode::end_offset(other_obj_offset),
+                    node_end_off - offset,
+                );
+                let len = other_end_off - other_start_off;
+
+                node.merge_range_onto(
+                    node_obj_offset,
+                    other_obj_offset,
+                    &mut migrate_fn,
+                    other_node,
+                    node_start_off,
+                    node_start_off + len,
+                    other_start_off,
+                );
+
+                // If either nothing was transferred, or all existing content was removed, then
+                // remove `other_node`.
+                if other_node.is_empty() {
+                    // SAFETY: `other.list.get()` is valid and `other_cursor` is positioned at the
+                    // node being erased, either by the `lower_bound` above or by the insert.
+                    unsafe {
+                        bindings::cpp_vm_page_list_btree_erase_at(
+                            other.list.get(),
+                            other_cursor.get(),
+                        );
+                    }
+                }
+
+                node_start_off += len;
+            }
+            // If all the content was moved out of `node` then remove it. `node` could still have
+            // content if `migrate_fn` chose to leave it, or if the range being processed only
+            // partially covered `node`.
+            if node.is_empty() {
+                // SAFETY: `self.list.get()` is valid and `cursor` is positioned at this node.
+                // `cpp_vm_page_list_btree_erase_at` erases the node and updates `cursor` to point
+                // to the next node in the tree.
+                unsafe {
+                    bindings::cpp_vm_page_list_btree_erase_at(self.list.get(), cursor.get());
+                }
+            } else {
+                // SAFETY: `cursor.get()` is a valid pointer.
+                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(cursor.get()) };
+            }
+            // Peek at the new node after the step or erase.
+            // SAFETY: `cursor.get()` is a valid pointer.
+            entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(cursor.get()) };
+        }
+        true
     }
 
     /// Returns true if any pages (actual pages, references, or markers) are in the given range, or

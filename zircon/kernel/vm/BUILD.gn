@@ -1059,6 +1059,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_page_list_btree_calculate_utilization_slow",
     "cpp_vm_page_list_btree_clear",
     "cpp_vm_page_list_btree_const_cursor_init",
     "cpp_vm_page_list_btree_const_cursor_next",
@@ -1087,6 +1088,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
     "VmPageListBtreeConstNodeEntry",
     "VmPageListBtreeCursor",
     "VmPageListBtreeNodeEntry",
+    "VmPageListBtreeUtilization",
     "VmPageSpliceList",
   ]
   type_blocklist = [
