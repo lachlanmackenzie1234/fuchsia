@@ -374,7 +374,10 @@ class AdbTests(unittest.TestCase):
         try:
             self.adb_obj.check_connection(timeout=10.0)
             mock_run.assert_called_once_with(
-                self.adb_obj, ["wait-for-device"], timeout=10.0
+                self.adb_obj,
+                ["wait-for-device"],
+                timeout=10.0,
+                attempts=adb._DEFAULT_RUN_ATTEMPTS,
             )
             mock_wait_for_boot.assert_called_once_with(
                 self.adb_obj, timeout=7.0
@@ -396,7 +399,10 @@ class AdbTests(unittest.TestCase):
         try:
             self.adb_obj.check_connection()
             mock_run.assert_called_once_with(
-                self.adb_obj, ["wait-for-device"], timeout=300.0
+                self.adb_obj,
+                ["wait-for-device"],
+                timeout=300.0,
+                attempts=adb._DEFAULT_RUN_ATTEMPTS,
             )
             mock_wait_for_boot.assert_called_once_with(
                 self.adb_obj, timeout=300.0
@@ -416,7 +422,9 @@ class AdbTests(unittest.TestCase):
         """Test check_connection raises AdbConnectionError if timeout expires during wait-for-device."""
         self._check_connection_patcher.stop()
         try:
-            with self.assertRaises(adb_errors.AdbConnectionError):
+            with self.assertRaisesRegex(
+                adb_errors.AdbConnectionError, "check_connection"
+            ):
                 self.adb_obj.check_connection(timeout=10.0)
             mock_wait_for_boot.assert_not_called()
         finally:
@@ -961,33 +969,91 @@ class AdbTests(unittest.TestCase):
         """Test is_root returns False by default."""
         self.assertFalse(self.adb_obj.is_root)
 
+    @mock.patch("time.time", side_effect=[100.0, 103.0], autospec=True)
     @mock.patch.object(adb.Adb, "run", autospec=True)
-    def test_root(self, mock_run: mock.Mock) -> None:
-        """Test root runs root and wait-for-device commands and updates is_root."""
+    def test_root(self, mock_run: mock.Mock, mock_time: mock.Mock) -> None:
+        """Test root runs root and wait-for-device commands, deducting elapsed timeout."""
         self.adb_obj.root(timeout=10.0)
 
         mock_run.assert_has_calls(
             [
-                mock.call(self.adb_obj, ["root"], timeout=10.0),
-                mock.call(self.adb_obj, ["wait-for-device"], timeout=10.0),
+                mock.call(
+                    self.adb_obj,
+                    ["root"],
+                    timeout=10.0,
+                    attempts=adb._DEFAULT_RUN_ATTEMPTS,
+                ),
+                mock.call(
+                    self.adb_obj,
+                    ["wait-for-device"],
+                    timeout=7.0,
+                    attempts=adb._DEFAULT_RUN_ATTEMPTS,
+                ),
             ]
         )
         self.assertTrue(self.adb_obj.is_root)
 
+    @mock.patch("time.time", side_effect=[100.0, 110.0], autospec=True)
     @mock.patch.object(adb.Adb, "run", autospec=True)
-    def test_unroot(self, mock_run: mock.Mock) -> None:
-        """Test unroot runs unroot and wait-for-device commands and updates is_root."""
+    def test_root_timeout_expired(
+        self, mock_run: mock.Mock, mock_time: mock.Mock
+    ) -> None:
+        """Test root raises AdbTimeoutError if timeout expires during root command."""
+        with self.assertRaisesRegex(adb_errors.AdbTimeoutError, "root"):
+            self.adb_obj.root(timeout=10.0)
+
+        mock_run.assert_called_once_with(
+            self.adb_obj,
+            ["root"],
+            timeout=10.0,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
+        )
+        self.assertFalse(self.adb_obj.is_root)
+
+    @mock.patch("time.time", side_effect=[100.0, 104.0], autospec=True)
+    @mock.patch.object(adb.Adb, "run", autospec=True)
+    def test_unroot(self, mock_run: mock.Mock, mock_time: mock.Mock) -> None:
+        """Test unroot runs unroot and wait-for-device commands, deducting elapsed timeout."""
         self.adb_obj._is_root = True
 
         self.adb_obj.unroot(timeout=10.0)
 
         mock_run.assert_has_calls(
             [
-                mock.call(self.adb_obj, ["unroot"], timeout=10.0),
-                mock.call(self.adb_obj, ["wait-for-device"], timeout=10.0),
+                mock.call(
+                    self.adb_obj,
+                    ["unroot"],
+                    timeout=10.0,
+                    attempts=adb._DEFAULT_RUN_ATTEMPTS,
+                ),
+                mock.call(
+                    self.adb_obj,
+                    ["wait-for-device"],
+                    timeout=6.0,
+                    attempts=adb._DEFAULT_RUN_ATTEMPTS,
+                ),
             ]
         )
         self.assertFalse(self.adb_obj.is_root)
+
+    @mock.patch("time.time", side_effect=[100.0, 110.0], autospec=True)
+    @mock.patch.object(adb.Adb, "run", autospec=True)
+    def test_unroot_timeout_expired(
+        self, mock_run: mock.Mock, mock_time: mock.Mock
+    ) -> None:
+        """Test unroot raises AdbTimeoutError if timeout expires during unroot command."""
+        self.adb_obj._is_root = True
+
+        with self.assertRaisesRegex(adb_errors.AdbTimeoutError, "unroot"):
+            self.adb_obj.unroot(timeout=10.0)
+
+        mock_run.assert_called_once_with(
+            self.adb_obj,
+            ["unroot"],
+            timeout=10.0,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
+        )
+        self.assertTrue(self.adb_obj.is_root)
 
     @mock.patch.object(adb.Adb, "unroot", autospec=True)
     @mock.patch.object(adb.Adb, "root", autospec=True)
@@ -998,10 +1064,14 @@ class AdbTests(unittest.TestCase):
         self.assertFalse(self.adb_obj.is_root)
 
         with self.adb_obj.use_adb_root(timeout=5.0):
-            mock_root.assert_called_once_with(self.adb_obj, timeout=5.0)
+            mock_root.assert_called_once_with(
+                self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+            )
             mock_unroot.assert_not_called()
 
-        mock_unroot.assert_called_once_with(self.adb_obj, timeout=5.0)
+        mock_unroot.assert_called_once_with(
+            self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+        )
 
     @mock.patch.object(adb.Adb, "unroot", autospec=True)
     @mock.patch.object(adb.Adb, "root", autospec=True)
@@ -1028,11 +1098,17 @@ class AdbTests(unittest.TestCase):
 
         async def run_async() -> None:
             async with self.adb_obj.use_adb_root(timeout=5.0):
-                mock_root.assert_called_once_with(self.adb_obj, timeout=5.0)
+                mock_root.assert_called_once_with(
+                    self.adb_obj,
+                    timeout=5.0,
+                    attempts=adb._DEFAULT_RUN_ATTEMPTS,
+                )
                 mock_unroot.assert_not_called()
 
         asyncio.run(run_async())
-        mock_unroot.assert_called_once_with(self.adb_obj, timeout=5.0)
+        mock_unroot.assert_called_once_with(
+            self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+        )
 
     @mock.patch.object(adb.Adb, "unroot", autospec=True)
     @mock.patch.object(adb.Adb, "root", autospec=True)
@@ -1043,12 +1119,16 @@ class AdbTests(unittest.TestCase):
         self.assertFalse(self.adb_obj.is_root)
 
         def side_effect_root(
-            inst: adb.Adb, timeout: float | None = None
+            inst: adb.Adb,
+            timeout: float | None = None,
+            attempts: int = adb._DEFAULT_RUN_ATTEMPTS,
         ) -> None:
             inst._is_root = True
 
         def side_effect_unroot(
-            inst: adb.Adb, timeout: float | None = None
+            inst: adb.Adb,
+            timeout: float | None = None,
+            attempts: int = adb._DEFAULT_RUN_ATTEMPTS,
         ) -> None:
             inst._is_root = False
 
@@ -1060,7 +1140,9 @@ class AdbTests(unittest.TestCase):
 
         # Task A enters -> roots device (depth 1)
         ctx_a.__enter__()
-        mock_root.assert_called_once_with(self.adb_obj, timeout=5.0)
+        mock_root.assert_called_once_with(
+            self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+        )
         mock_unroot.assert_not_called()
 
         # Task B enters while A is active -> does not re-root (depth 2)
@@ -1075,7 +1157,9 @@ class AdbTests(unittest.TestCase):
 
         # Task B exits -> unroots device as depth returns to 0
         ctx_b.__exit__(None, None, None)
-        mock_unroot.assert_called_once_with(self.adb_obj, timeout=5.0)
+        mock_unroot.assert_called_once_with(
+            self.adb_obj, timeout=5.0, attempts=adb._DEFAULT_RUN_ATTEMPTS
+        )
         self.assertFalse(self.adb_obj.is_root)
 
     @mock.patch.object(adb.Adb, "run", autospec=True)
@@ -1087,6 +1171,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             ["shell", "setprop", "persist.test.prop", "val123"],
             timeout=5.0,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
         )
 
     @mock.patch.object(adb.Adb, "run", autospec=True)
@@ -1101,6 +1186,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             ["shell", "getprop", "persist.test.prop"],
             timeout=5.0,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
         )
 
     @mock.patch.object(adb.Adb, "run", autospec=True)
@@ -1114,6 +1200,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             ["shell", "setprop", "'debug.foo bar; echo $HOME'", "''"],
             timeout=None,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
         )
 
     @mock.patch.object(adb.Adb, "run", autospec=True)
@@ -1129,6 +1216,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             ["shell", "getprop", "'debug.foo bar; echo $HOME'"],
             timeout=None,
+            attempts=adb._DEFAULT_RUN_ATTEMPTS,
         )
 
     @mock.patch.object(adb.Adb, "getprop", autospec=True)
@@ -1144,6 +1232,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             "sys.boot_completed",
             timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+            attempts=1,
         )
 
     @mock.patch("time.sleep", autospec=True)
@@ -1195,6 +1284,7 @@ class AdbTests(unittest.TestCase):
                     self.adb_obj,
                     "sys.boot_completed",
                     timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+                    attempts=1,
                 )
             ]
             * 2
@@ -1221,6 +1311,7 @@ class AdbTests(unittest.TestCase):
             self.adb_obj,
             "sys.boot_completed",
             timeout=adb._BOOT_COMPLETED_GETPROP_TIMEOUT_SECS,
+            attempts=1,
         )
         mock_sleep.assert_called_once_with(1.0)
 
