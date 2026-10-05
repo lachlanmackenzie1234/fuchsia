@@ -7,6 +7,7 @@ description: >
   tests or target logs (Mode C). Use when diagnosing, fixing, or verifying
   hardware, register-level, concurrency, state-machine, or logic bugs in
   existing Fuchsia drivers.
+version: 1.1.0
 ---
 
 # Skill: AutoDA Fix (`autoda-fix`)
@@ -39,28 +40,30 @@ or hermetic tests/logs):
 
 ## 1. Subagent-Centric Architecture (Hub & Spokes)
 
-The primary agent acts as the **Bug Orchestrator (Hub)** and coordinates four
-specialized, fit-for-purpose subagents:
+The primary agent acts as a lightweight **Bug Orchestrator (Hub)** and preserves
+its context window throughout the session by delegating reconnaissance, deep
+source/log inspection, hardware probing, and code editing to five specialized,
+fit-for-purpose subagents:
 
 ```text
-                      ┌────────────────────────────────────┐
-                      │       Bug Orchestrator (Hub)       │
-                      │ • Owns bug_spec.md & bug_devlog.md │
-                      │ • Selects Mode A / Mode B / Mode C │
-                      │ • Front-loads user alignment       │
-                      │ • Drives Investigate → Fix ↔ Verify│
-                      └──────┬──────────┬───────────┬──────┘
-                             │          │           │
-        ┌────────────────────┘          │           └────────────────────┐
-        ▼                               ▼                                ▼
-┌──────────────────────┐     ┌──────────────────────┐     ┌──────────────────────────┐
-│ Static Triangulation │     │   hardware-prober    │     │   fuchsia-driver-fixer   │
-│ • linux-driver-expert│◄───►│ (In-Situ Driver-Lab) │◄───►│ (Surgical Driver Fixer)  │
-│ • datasheet-         │     │ • Mode A: MMIO / IRQ │     │ • Minimal diff bias      │
-│   researcher         │     │ • Mode B: StateBank  │     │ • Proxy-as-lib &         │
-│ • Comparative delta  │     │   knobs & triggers   │     │   StateBank wiring       │
-│   vs Fuchsia driver  │     │ • Hashed evidence    │     │ • Targeted bug patches   │
-└──────────────────────┘     └──────────────────────┘     └──────────────────────────┘
+                             ┌────────────────────────────────────┐
+                             │       Bug Orchestrator (Hub)       │
+                             │ • Owns bug_spec.md & bug_devlog.md │
+                             │ • Selects Mode A / Mode B / Mode C │
+                             │ • Front-loads user alignment       │
+                             │ • Drives Investigate → Fix ↔ Verify│
+                             └──┬─────────────┬─────────────┬─────┘
+                                │             │             │
+        ┌───────────────────────┘             │             └───────────────────────┐
+        ▼                                     ▼                                     ▼
+┌──────────────────────────┐       ┌──────────────────────┐       ┌──────────────────────────┐
+│ Recon & Static Analysis  │       │   hardware-prober    │       │   fuchsia-driver-fixer   │
+│ • bug-investigator       │◄─────►│ (In-Situ Driver-Lab) │◄─────►│ (Surgical Driver Fixer)  │
+│   (Phase 0 ToT recon &   │       │ • Mode A: MMIO / IRQ │       │ • Minimal diff & sweep   │
+│    Mode C repro/logs)    │       │ • Mode B: StateBank  │       │ • Proxy-as-lib &         │
+│ • linux-driver-expert    │       │   knobs & triggers   │       │   StateBank wiring       │
+│ • datasheet-researcher   │       │ • Hashed evidence    │       │ • Atomic CLs / CL stacks │
+└──────────────────────────┘       └──────────────────────┘       └──────────────────────────┘
 ```
 
 ### Subagent Setup & Execution Modes
@@ -71,15 +74,19 @@ Upon starting the workflow, establish the subagent execution mode:
     `invoke_subagent` are available:
    * Read [`scripts/register_subagents.py`](scripts/register_subagents.py) and
      the role specifications under `references/`:
+     - [`references/bug-investigator.md`](references/bug-investigator.md)
      - [`references/fuchsia-driver-fixer.md`](references/fuchsia-driver-fixer.md)
      - [`references/hardware-prober.md`](references/hardware-prober.md)
      - [`references/linux-driver-expert.md`](references/linux-driver-expert.md)
      - [`references/datasheet-researcher.md`](references/datasheet-researcher.md)
    * Define any missing subagents via `define_subagent` using the configurations
      in `scripts/register_subagents.py`.
-   * Delegate tasks via `invoke_subagent` (and follow up with existing subagent
-     instances via `send_message` across iterations of the Fix $\leftrightarrow$
-     Verify loop to preserve context).
+   * Delegate Phase 0.2 reconnaissance and Mode C reproduction to
+     `bug-investigator`, Modes A & B probing to `hardware-prober`, comparative
+     triangulation to `linux-driver-expert` / `datasheet-researcher`, and code
+     changes to `fuchsia-driver-fixer` via `invoke_subagent` (following up with
+     existing subagent instances via `send_message` across iterations of the Fix
+     $\leftrightarrow$ Verify loop to preserve context).
 2.  **Single-Agent Progressive Mode:** If subagent tools are unavailable,
     execute each phase directly while strictly adopting the role constraints in
     `references/*.md` and maintaining the dual artifacts.
@@ -99,10 +106,12 @@ session; do not upload these artifacts to external trackers):
 ```yaml
 ---
 skill: autoda-fix
+skill_version: "1.1.0"
+model: "<session_model_and_version>"
 conversation_id: "<root_orchestrator_conversation_id>"
 trajectory_id: "<trajectory_id_or_empty>"
 bug_id: "<buganizer_issue_id>"
-gerrit_change_id: "<I..._or_pending>"
+gerrit_change_id: "<I..._or_comma_separated_list_or_pending>"
 target_driver: "<driver_name_or_package>"
 verification_mode: "<Mode A | Mode B | Mode C>"
 outcome: "<IN_PROGRESS | VERIFIED_FIXED | DIAGNOSED_ONLY | BLOCKED>"
@@ -112,12 +121,17 @@ verify_manifest_sha256: "<sha256_or_n/a>"
 ---
 ```
 
+* **`skill_version` & `model`**: Populated automatically by running
+  `scripts/log_invocation.py` in Phase 0 Step 0.1.
 * **`conversation_id`**: Always record the **root Bug Orchestrator's**
   conversation ID from the session context (never a child subagent's
   conversation ID).
 * **`trajectory_id`**: Populate if available in the environment (for example,
   via `/google/bin/releases/gemini-agents-reflection/reflection_cli info -c
   <conversation_id> --trajectory_id_only`); otherwise leave as `""`.
+* **`gerrit_change_id`**: Record the single Gerrit `Change-Id` (or a
+  comma-separated list of `Change-Id`s when the fix is split into a multi-CL
+  stack across drivers or repositories).
 
 ### 2.1 `bug_spec.md` (Living Diagnosis, Fix & Verification Contract)
 
@@ -172,23 +186,39 @@ frontmatter block as `bug_spec.md`):
 
 ## 3. Workflow Protocol
 
-### Phase 0: Eager Artifact Initialization, Reconnaissance, Mode Selection & Upfront User Alignment
+### Phase 0: Eager Telemetry & Artifact Initialization, Delegated Reconnaissance, Mode Selection & Upfront User Alignment
 
-> **Core Autonomy & Live Observability Principle:** Eagerly create `bug_spec.md` and `bug_devlog.md` and surface the `AutoDA: Fix & Verify` sidecar pane (if installed) **immediately at the start of Phase 0** -- before running reconnaissance or blocking on `ask_question` -- so the sidecar immediately has an active source to select and displays live progress from the very beginning. Then perform a fast, read-only reconnaissance, classify the bug into the right verification mode (Mode A, B, or C), formulate concrete recommendations based on the actual target and driver packaging, and ask the user **all** alignment questions upfront in one consolidated step.
+> **Core Autonomy, Context Preservation & Live Observability Principle:** Eagerly log the skill invocation (`scripts/log_invocation.py`), create `bug_spec.md` and `bug_devlog.md`, and surface the `AutoDA: Fix & Verify` sidecar pane (if installed) **immediately at the start of Phase 0** -- before running reconnaissance or blocking on `ask_question` -- so the sidecar and evaluation dashboard immediately record the active session, bug linkage, skill version, and model from the very beginning. Next, **delegate Phase 0.2 reconnaissance and Tip-of-Tree (ToT) re-validation to the `bug-investigator` subagent** so the Bug Orchestrator does not exhaust its context window on raw bug comments, git history, code searches, or log dumps. Finally, classify the bug into the right verification mode (Mode A, B, or C), formulate concrete recommendations, and ask the user **all** alignment questions upfront in one consolidated step.
 
-#### Step 0.1: Eager Artifact Initialization & Sidecar Pane Popup (MUST Execute First)
-1.  **Eagerly Create `bug_spec.md` and `bug_devlog.md` Immediately:**
-   * As your **very first tool calls** upon invoking `/autoda-fix` (before
-     reconnaissance commands or `ask_question`), create `bug_spec.md` and
-     `bug_devlog.md` in the active conversation artifact directory
-     (`<appDataDir>/brain/<conversation-id>/`) using `write_to_file` (with
-     `ArtifactMetadata`: `UserFacing: true`, `RequestFeedback: false`).
+#### Step 0.1: Eager Telemetry Logging, Artifact Initialization & Sidecar Pane Popup (MUST Execute First)
+1.  **Record Skill Invocation Telemetry & Resolve `skill_version` + `model`:**
+   * Run `scripts/log_invocation.py` (located alongside this `SKILL.md`) passing
+     the bug ID from the user's prompt and the root orchestrator's
+     `conversation_id`:
+     ```bash
+     python3 <path_to_autoda_fix_skill>/scripts/log_invocation.py \
+       --bug-id "<bug_id>" \
+       --conversation-id "<root_orchestrator_conversation_id>"
+     ```
+   * This script resolves the active session's `skill_version`, `model` /
+     `model_version`, and `trajectory_id`, appends the invocation record to the
+     shared telemetry log when Fuchsia metrics collection (`fx metrics` / `ffx
+     config analytics`) is enabled (so the `/autoda-fix` dashboard can join the
+     bug to all resulting Gerrit CLs even if the human author later edits,
+     splits, or pushes the patches manually), and always prints the resolved
+     JSON metadata to `stdout`.
+2.  **Eagerly Create `bug_spec.md` and `bug_devlog.md` Immediately:**
+   * Immediately create `bug_spec.md` and `bug_devlog.md` in the active
+     conversation artifact directory (`<appDataDir>/brain/<conversation-id>/`)
+     using `write_to_file` (with `ArtifactMetadata`: `UserFacing: true`,
+     `RequestFeedback: false`).
    * Prefix both files with the structured YAML frontmatter block (`skill:
-     autoda-fix`, root `conversation_id`, `trajectory_id`, `bug_id` extracted
-     from the user prompt, `gerrit_change_id: "pending"`, `target_driver:
-     "investigating"`, `verification_mode: "Pending Phase 0 Selection"`,
-     `outcome: "IN_PROGRESS"`, `fix_verify_iterations: 0`,
-     `diag_manifest_sha256: "n/a"`, `verify_manifest_sha256: "n/a"`).
+     autoda-fix`, `skill_version`, `model`, root `conversation_id`,
+     `trajectory_id`, `bug_id` extracted from the user prompt,
+     `gerrit_change_id: "pending"`, `target_driver: "investigating"`,
+     `verification_mode: "Pending Phase 0 Selection"`, `outcome: "IN_PROGRESS"`,
+     `fix_verify_iterations: 0`, `diag_manifest_sha256: "n/a"`,
+     `verify_manifest_sha256: "n/a"`).
    * In `bug_spec.md`, populate the initial Bug ID, title/symptom summary, and
      skeleton sections (`## 1. Bug & Target Context`, `## 2. Standing Autonomy &
      Deployment Policy`, `## 3. Suspect Register / StateBank Model`, `## 4.
@@ -197,7 +227,7 @@ frontmatter block as `bug_spec.md`):
    * In `bug_devlog.md`, append the initial `## Phase 0: Bug Intake &
      Reconnaissance` entry noting that artifacts are initialized and
      reconnaissance is starting.
-2.  **Pop Up / Surface the AutoDA Sidecar Pane (if installed):**
+3.  **Pop Up / Surface the AutoDA Sidecar Pane (if installed):**
    * If the `autoda` UI plugin sidecar (`autoda/autoda_control`) is
      installed/running (e.g.
      `~/.gemini/config/plugins/_autoda/sidecars/autoda_control/sidecar.json` or
@@ -207,16 +237,39 @@ frontmatter block as `bug_spec.md`):
      message so the user can pop open the live observability pane right away
      with the current conversation already populated in the `Source:` selector.
 
-#### Step 0.2: Fast Read-Only Reconnaissance
-1.  **Read the Bug & Locate the Fuchsia Driver:**
-   * Inspect the bug report or user symptom description.
-   * Locate the suspect driver in the Fuchsia tree (`BUILD.gn` or `BUILD.bazel`,
-     `meta/*.cml`, and Rust or C/C++ source files).
-   * Check whether the driver is packaged in `bootfs` / `bootstrap/base-drivers`
-     or as a reloadable non-bootfs package, and whether it already imports
-     `driver_lab_rust` / `driver_lab_cpp` and
+#### Step 0.2: Delegated Reconnaissance & ToT Re-Validation (`bug-investigator`)
+To preserve the Bug Orchestrator's context window across the session, **delegate
+Step 0.2 to the `bug-investigator` subagent** (see
+[`references/bug-investigator.md`](references/bug-investigator.md)). Instruct
+`bug-investigator` to perform the following read-only checks and return a
+concise **Reconnaissance Brief** ($\le 60$ lines):
+
+1.  **Re-Validate Bug Data Against Current ToT State (Never Over-Index on Stale
+    Logs):**
+   * Treat the bug report and attached failure logs as **initial leads to
+     re-validate**, never as unquestioned current ground truth.
+   * Compare the timestamp of the bug's logs against recent commit history (`git
+     log --since="<log_date>" -n 20 -- <suspect_paths>`) on the suspect
+     driver(s), parent bus drivers, and test harness.
+   * Query open and recently merged Gerrit CLs (`fx gh pr list`) for the bug ID
+     or suspect driver directory to check whether a fix has already landed or
+     whether another engineer has an in-flight CL addressing the issue.
+   * For recurring CI or stress-test failures, inspect the **most recent**
+     failure log or verify against current ToT state, discarding hypotheses
+     derived from stale logs whose code paths have already been patched.
+2.  **Locate Suspect Drivers & Map Subsystem Scope (Do Not Assume 1 Bug = 1
+    CL):**
+   * Locate all implicated drivers, board/devicetree bindings, boot-shim items,
+     or test harnesses in the Fuchsia tree (`BUILD.gn` or `BUILD.bazel`,
+     `meta/*.cml`, `*.bind`, and Rust or C/C++ source files).
+   * Assess whether the resolution maps to a **single atomic CL** or a **stack /
+     set of independent CLs** across multiple drivers, subsystems, or
+     repositories.
+   * Check whether each suspect driver is packaged in `bootfs` /
+     `bootstrap/base-drivers` or as a reloadable non-bootfs package, and whether
+     it already imports `driver_lab_rust` / `driver_lab_cpp` and
      `//src/devices/driver-lab/meta/debug.shard.cml`.
-2.  **Inspect Build & Target State:**
+3.  **Inspect Build & Target State:**
    * Check `fx status`, `fx get-device`, `ffx target list`, and `$(fx
      get-build-dir)/args.gn` (verifying `//src/devices/driver-lab:pkg`,
      `//tools/driver-lab:host`, and `enable_driver_lab`).
@@ -227,11 +280,13 @@ frontmatter block as `bug_spec.md`):
      ```
      to check if the suspect driver node is already active and exposing
      `fuchsia.driver.lab.Service`.
-3.  **Update `bug_spec.md` & `bug_devlog.md` with Reconnaissance Baseline:**
-   * Immediately update `target_driver`, `verification_mode` (recommended),
-     component moniker, and reconnaissance findings in `bug_spec.md` and
-     `bug_devlog.md` before calling `ask_question` so the sidecar reflects the
-     discovered driver and recommended mode while awaiting user alignment.
+4.  **Update `bug_spec.md` & `bug_devlog.md` with Reconnaissance Baseline:**
+   * Using the concise brief returned by `bug-investigator`, immediately update
+     `target_driver`, `verification_mode` (recommended), component moniker, ToT
+     validity status, planned CL topology (single CL vs. stack), and initial
+     hypotheses (`H1..Hn`) in `bug_spec.md` and `bug_devlog.md` before calling
+     `ask_question` so the sidecar reflects the discovered baseline while
+     awaiting user alignment.
 
 #### Step 0.3: Adaptive Verification Mode Selection & Upfront User Alignment
 
@@ -241,7 +296,7 @@ Classify the bug and select one of the three **Verification Modes**:
 | :--- | :--- | :--- | :--- |
 | **Mode A: Hardware Register / Interrupt Loop (`in-situ` MMIO/IRQ)** | Hardware register programming, bitfields, clocks, FIFOs, power/reset sequencing, or interrupts | `driver-lab` `in-situ` MMIO (`mmio_read32`, `mmio_write32`, `mmio_poll32`) and interrupt tapping (`wait_for_interrupt`) | Bug depends on real hardware registers or IRQ delivery on target silicon. |
 | **Mode B: In-Situ Software State & Knob Loop (`in-situ` `StateBank` / `StateVmoBank`)** | Concurrency/race conditions, lock ordering, state-machine transitions, teardown guards, or retry/timeout tuning | `driver-lab` `in-situ` `StateBank` (Rust) or `StateVmoBank` / `driver_lab_global_*` (C/C++) (`state_read32`, `state_poll32`, `knob_write32`, `trigger_write32`) | Bug involves in-driver software state or timing windows on live hardware where a **single instrumentation build** + runtime knobs avoids repeated OTA/reboot cycles. |
-| **Mode C: Hermetic Test & Log Verification Loop (No `driver-lab` Required)** | Pure logic bugs, protocol/message parsing bugs, FIDL error mapping, or deterministic lifecycle bugs | `fx test` (unit/driver realm tests) and/or `ffx log` on target | Bug can be deterministically reproduced and verified via a unit/realm test or log assertion. **Never shoe-horn `driver-lab` into Mode C bugs** when a unit test or log check is faster and more direct. |
+| **Mode C: Hermetic Test & Log Verification Loop (No `driver-lab` Required)** | Pure logic bugs, protocol/message parsing bugs, FIDL error mapping, board/devicetree/bind wiring, DFv2 power topology, or deterministic lifecycle/restart bugs | `fx test` (unit/driver realm/stress tests) and/or `ffx log` on target (executed via `bug-investigator` / `fuchsia-driver-fixer`) | Bug can be deterministically reproduced and verified via a unit/realm test, host stress test, or log assertion. **Never shoe-horn `driver-lab` into Mode C bugs** when a unit test or log check is faster and more direct. |
 
 Based on Step 0.2 and the selected mode, use `ask_question` (or a single
 structured prompt) with `(Recommended)` prefixed on the best-fit option for each
@@ -249,11 +304,12 @@ decision needed to run unblocked (and include the `[AutoDA: Fix &
 Verify](sidecar://autoda/autoda_control/)` pill in your accompanying message if
 the sidecar is installed):
 
-1.  **Verification Mode & Strategy:**
+1.  **Verification Mode, ToT Status & CL Topology:**
    * Recommend **Mode A** (`in-situ` MMIO/IRQ), **Mode B** (`in-situ`
      `StateBank` / `StateVmoBank` single-build loop), or **Mode C** (hermetic
      `fx test` / `ffx log` loop) with a brief explanation of why it fits the
-     bug.
+     bug, and note whether the fix will be structured as a single CL or a
+     multi-CL stack across subsystems.
 2.  **Driver Deployment / Fast Reload Mechanism & Standing Loop Authorization:**
    * For reloadable non-bootfs drivers, recommend **fast in-place reload** via
      `ffx driver restart <driver_url>` (or `ffx driver disable <driver_url>` +
@@ -280,9 +336,17 @@ the sidecar is installed):
    * Confirm whether an out-of-band power-cycle/serial command is available if a
      probe wedges the target, or if recovery should rely on `ffx target reboot`.
 
-#### Step 0.4: Record Standing Policies in Artifacts
+#### Step 0.4: Record Standing Policies & Verification Mode Telemetry
 Update `bug_spec.md` and `bug_devlog.md` with the user's confirmed verification
-mode and standing policies before entering Phase 1.
+mode (`Mode A`, `Mode B`, or `Mode C`) and standing policies, and immediately
+upsert the confirmed mode into the invocation telemetry log before entering
+Phase 1:
+```bash
+python3 <path_to_autoda_fix_skill>/scripts/log_invocation.py \
+  --bug-id "<bug_id>" \
+  --conversation-id "<root_orchestrator_conversation_id>" \
+  --verification-mode "<Mode A | Mode B | Mode C>"
+```
 
 ---
 
@@ -334,11 +398,25 @@ repeated compile/OTA cycles by instrumenting once with `StateBank` (Rust) or
 3.  Task `hardware-prober` to run `driver-lab describe` and confirm `"state0"`
     is listed in `resources` with its per-resource digest.
 
-#### Mode C: Hermetic Test & Log Analysis (No `driver-lab`)
-* Inspect the suspect logic, parser, or lifecycle handler directly in the driver
-  source and existing unit/realm tests.
-* Formulate the root-cause hypothesis in `bug_spec.md` and design a
-  deterministic failing unit or driver realm test case (`fx test`).
+#### Mode C: Delegated Hermetic Test, Contract & Lifecycle Analysis (No `driver-lab`)
+* Delegate deep source/test inspection to `bug-investigator` (and
+  `linux-driver-expert` if comparing against a Linux reference driver) so the
+  Bug Orchestrator's context stays clean:
+  - **Lifecycle & Restart Teardown Symmetry:** Trace both `Start`/`Init` and
+    `PrepareStop`/`Stop`/`Disable` across the driver and parent bus to verify
+    that teardown does not wipe parent bus windows or shared resources needed on
+    subsequent re-binds, and verify that callees propagate error status codes to
+    callers.
+  - **Bind, Devicetree & Metadata Wiring:** Trace properties from producer
+    (boot-shim or devicetree visitor) to consumer (`.bind` rules and driver init
+    code), comparing against sibling drivers and bus variants to identify which
+    side is the outlier vs. established convention.
+  - **DFv2 Power Topology & Host Test Harnesses:** Verify power element
+    registration/tokens against sibling drivers, and ensure any host test
+    queries `ffx` using `--machine json` structured output rather than brittle
+    regexes.
+* Record the refined hypotheses (`H1..Hn`) and reproduction test design in
+  `bug_spec.md`.
 
 ---
 
@@ -380,9 +458,13 @@ recompiling:
    * Record both the reproduction audit trail and the fix-proof audit trail from
      `target-audit.jsonl` in `bug_spec.md` and `bug_devlog.md`.
 
-#### Mode C: Reproduce via Hermetic Unit/Realm Test
-* Run `fx test <test_target>` (or inspect `ffx log dump`) to confirm the
-  deterministic reproduction before applying the production fix.
+#### Mode C: Reproduce via Hermetic Unit/Realm Test or Target Logs (`bug-investigator` / `fuchsia-driver-fixer`)
+* Delegate test execution (`fx test <test_target>`) or target log/state capture
+  (`ffx log dump`, `ffx driver list --machine json`) to `bug-investigator` or
+  `fuchsia-driver-fixer` to confirm deterministic reproduction on ToT before
+  applying the production fix.
+* Update each hypothesis in `bug_spec.md` as `[VERIFIED]` or `[CONTRADICTED]`
+  based on the reproduction evidence.
 
 ---
 
@@ -392,40 +474,50 @@ Execute the closed loop for the active mode until verification passes:
 
 ```mermaid
 flowchart TD
-    A["Step 3a: Author Minimal Fix\n(fuchsia-driver-fixer)"] --> B{"Verification Mode?"}
+    A["Step 3a: Author Minimal Fix & Sweep\n(fuchsia-driver-fixer)"] --> B{"Verification Mode?"}
     B -- "Mode A (MMIO/IRQ)\nor Mode B (Final Clean Patch)" --> C["Step 3b: Build & Reload/Deploy\n(prefer ffx driver restart)"]
     C --> D["Step 3c: In-Situ Hardware Verification\n(hardware-prober via driver-lab)"]
-    B -- "Mode C (Hermetic)" --> E["Step 3c: Run fx test / ffx log\n(No driver-lab needed)"]
+    B -- "Mode C (Hermetic)" --> E["Step 3c: Run fx test / ffx log\n(fuchsia-driver-fixer / bug-investigator)"]
     D --> F{"All Verification Criteria\nPassed?"}
     E --> F
-    F -- "Yes" --> G["Phase 4: Cleanup & Sign-off"]
+    F -- "Yes" --> G["Phase 4: Final Sweep, CL Stack & Sign-off"]
     F -- "No / Secondary Quirk" --> H["Log Evidence in bug_devlog.md\n& Reconcile Discrepancy"]
     H --> A
 ```
 
 #### Step 3a: Write Surgical Fix (`fuchsia-driver-fixer`)
 * Instruct `fuchsia-driver-fixer` to implement the **smallest, most localized
-  code change** that genuinely fixes the verified root cause, checking all four
+  code change** that genuinely fixes the verified root cause, checking all five
   items in the **Critical Driver Bug & Hardware Invariants Checklist** in
   [`references/fuchsia-driver-fixer.md`](references/fuchsia-driver-fixer.md)
-  (FIFO `TXFLR` shift-register headroom `(FIFO_SIZE -
-  tx_words).saturating_sub(1)`, moving premature bring-up interrupt arming to
-  the start of the async IRQ consumer task rather than clearing overflow before
-  a check, extracting and dispatching completed RX ring buffers *before*
-  awaiting `pop_wait_available().await`, and committing `is_connected = true`
-  *inside* the attach debounce task after the timer expires):
+  (hardware pipeline/shift-register depth vs. FIFO SRAM occupancy, root-cause
+  interrupt/init ordering vs. symptom masking, extracting and delivering
+  completed RX buffers before awaiting pool replenishment across `.await`
+  points, debounced state-machine and driver `Stop()`/`Disable()` restart
+  symmetry with callee error propagation, and normalizing the outlier to match
+  established convention in cross-file contract mismatches):
   - **Mode A:** Apply the exact register/bitfield/sequence/interrupt fix.
   - **Mode B (Phase 3  --  Clean Final Patch):** Replace the temporary
     `KNOB_RACE_DELAY_US` and `KNOB_FIX_ENABLED` runtime knobs with the clean,
     unconditional production synchronization/state fix proven in Phase 2, and
     add a permanent unit/realm regression test.
-  - **Mode C:** Apply the minimal logic/protocol/lifecycle fix and add/update
-    the unit/realm regression test.
-* Pass the root orchestrator's `conversation_id` and `bug_id` when delegating to
-  `fuchsia-driver-fixer` so any git commit created or amended includes the
-  required `/autoda-fix` commit trailers (see Phase 4 Step 3).
-* **Anti-Refactor Guardrail:** Do not reorganize unrelated structs, rename
-  existing APIs, or refactor surrounding code.
+  - **Mode C:** Apply the minimal logic/protocol/lifecycle/wiring fix and
+    add/update the unit/realm or host regression test.
+* **Decouple Bug $\leftrightarrow$ Patch (Atomic CLs & CL Stacks):** Do not
+  assume a 1:1 relationship between the source bug and a single patch. When
+  verified root causes span multiple distinct drivers, board/devicetree configs,
+  or repositories, instruct `fuchsia-driver-fixer` to split the changes into
+  separate atomic commits in a **CL stack** (or independent CLs per repo),
+  verifying a clean upstream base (`git status`, `origin/main` or `jiri/head`)
+  first so unrelated commits are never chained together.
+* **Anti-Refactor & No-Escape-Hatch Guardrails:** Do not reorganize unrelated
+  structs, rename existing APIs, or refactor surrounding code. Never add
+  `__TA_NO_THREAD_SAFETY_ANALYSIS`, `NOLINT`, or unnecessary `unsafe` blocks to
+  silence compiler or lock-analysis warnings caused by a candidate fix.
+* Pass the root orchestrator's `conversation_id`, `bug_id`, `skill_version`,
+  `model`, and `verification_mode` (`Mode A`, `Mode B`, or `Mode C`) when
+  delegating to `fuchsia-driver-fixer` so every git commit created or amended
+  includes the required `/autoda-fix` commit trailers (see Phase 4 Step 4).
 * Verify clean compilation (`fx build`, `fx clippy` for Rust) and run local
   unit/realm tests (`fx test`).
 
@@ -451,11 +543,11 @@ flowchart TD
        and clean device logs (`serial.log` / `ffx log dump`).
      - **Evidence Integrity:** Verify `exit_category == 0` and all artifact
        hashes in `manifest.json`.
-* **Mode C:**
+* **Mode C (`fuchsia-driver-fixer` / `bug-investigator`):**
   1.  Run `fx test <test_target>` to confirm the new regression test and all
       existing suite tests pass.
-  2.  If on-target log verification applies, check `ffx log dump` to confirm the
-      symptom is resolved.
+  2.  If on-target log or stress-test verification applies, check `ffx log dump`
+      or run the target stress test to confirm the symptom is resolved.
 
 #### Step 3d: Evaluate Iteration & Loop
 * Log the iteration's diff, run ID / test output, plan digest, `manifest.json`
@@ -467,42 +559,69 @@ flowchart TD
 
 ---
 
-### Phase 4: Post-Verification Cleanup, Commit Attribution & Final Audit
+### Phase 4: Post-Verification Cleanup, Final Diff Sweep, Self-Contained CLs & Final Audit
 
-1.  **Apply Instrumentation Retention Policy:**
-   * Follow the user's Phase 0 decision regarding `driver_lab_rust::embedded`
-     instrumentation (always remove temporary fault-injection/fix-toggle knobs
-     from Mode B, and either keep clean `enable_driver_lab = is_debug` read-only
-     observability or strip instrumentation and rebuild/verify).
-2.  **Verify Formatting:**
-   * Run `fx format-code` from the appropriate repository root.
-3.  **Commit / CL Trailer Attribution:**
-   * When creating or amending the git commit / Gerrit CL for the driver fix,
-     include the following trailers in the commit message footer so CLs
-     generated by `/autoda-fix` can be enumerated and joined back to the
-     associated bug and root session:
+1.  **Apply Instrumentation Retention Policy (Modes A & B):**
+   * Follow the user's Phase 0 decision regarding `driver_lab_rust::embedded` /
+     `driver_lab_cpp` instrumentation (always remove temporary
+     fault-injection/fix-toggle knobs from Mode B, and either keep clean
+     `enable_driver_lab = is_debug` read-only observability or strip
+     instrumentation and rebuild/verify).
+2.  **Mandatory Final Diff Sweep (Remove All Stray Testing/Investigation
+    Code):**
+   * Inspect `git diff` hunk-by-hunk across every modified repository and
+     commit:
+     - Ask for each hunk: *"Does the verified bug return if this hunk is
+       reverted?"*
+     - Strip any stray debug prints, temporary test scaffolding, speculative
+       defensive checks, or leftover edits from contradicted/unverified
+       hypotheses (`H1..Hn`) that should not remain in the final CL.
+     - Confirm no `__TA_NO_THREAD_SAFETY_ANALYSIS`, `NOLINT`, or unnecessary
+       `unsafe` annotations were introduced.
+3.  **Verify Formatting:**
+   * Run `fx format-code` from each modified repository root.
+4.  **Self-Contained, Self-Explanatory CLs, CL Stacks & Trailer Attribution:**
+   * **Subsystem-Scoped Commit Messages:** Ensure every CL's commit message is
+     self-contained and explains **why** the change is needed in terms of that
+     subsystem's own invariants. Do **not** write a mechanical per-function
+     summary of the diff, and do **not** over-index on the source bug by pasting
+     distracting stories about unrelated layers or external E2E test harnesses.
+   * **Self-Contained Code Comments:** Ensure any added code comments explain
+     the technical hardware or lifecycle invariant directly in prose rather than
+     citing a bug ID (`// See b/...`).
+   * **Commit / CL Trailer Attribution (Required on Every CL in a Stack):** When
+     creating or amending each git commit / Gerrit CL (whether a single CL or
+     every commit in a multi-CL stack), include a valid `Test:` footer and the
+     following trailers in the commit message footer so all CLs generated by
+     `/autoda-fix` can be enumerated and joined back to the associated bug, root
+     session, skill version, model, and verification mode:
      ```text
      Bug: <bug_id>
      Test: <verification summary>
      TAG=agy
      TAG: autoda-fix
+     SKILL-VERSION: <skill_version>
+     MODEL: <model>
+     MODE: <Mode A | Mode B | Mode C>
      CONV: <root_orchestrator_conversation_id>
      Change-Id: I...
      ```
      (Use `Fixed: <bug_id>` instead of `Bug: <bug_id>` when the commit
      completely resolves the issue.)
-   * Always include both `TAG=agy` (with `=`) and `TAG: autoda-fix` on separate
-     lines alongside `CONV: <root_orchestrator_conversation_id>` (the root Bug
-     Orchestrator's conversation ID, not a child subagent's conversation ID).
-4.  **Finalize Artifacts:**
+   * Always include `TAG=agy` (with `=`), `TAG: autoda-fix`, `SKILL-VERSION:
+     <skill_version>`, `MODEL: <model>`, `MODE: <Mode A | Mode B | Mode C>`, and
+     `CONV: <root_orchestrator_conversation_id>` (the root Bug Orchestrator's
+     conversation ID, not a child subagent's conversation ID) on separate lines.
+5.  **Finalize Artifacts:**
    * Update the YAML frontmatter block in both `bug_spec.md` and `bug_devlog.md`
      (`outcome: "VERIFIED_FIXED"` or `"DIAGNOSED_ONLY"` / `"BLOCKED"`,
-     `gerrit_change_id`, final `fix_verify_iterations` count,
-     `diag_manifest_sha256`, and `verify_manifest_sha256`).
+     `gerrit_change_id` with all generated `Change-Id`s, final
+     `fix_verify_iterations` count, `diag_manifest_sha256`, and
+     `verify_manifest_sha256`).
    * Append the final summary to `bug_spec.md` and `bug_devlog.md` linking:
      - Selected Verification Mode (`Mode A`, `Mode B`, or `Mode C`)
      - Pre-fix diagnostic/reproduction evidence
        (`evidence/<diag_run_id>/manifest.json` or failing test log)
-     - Surgical driver code fix diff and Gerrit `Change-Id`
+     - Surgical driver code fix diff(s) and Gerrit `Change-Id`(s)
      - Post-fix verification evidence (`evidence/<verify_run_id>/manifest.json`
        and/or passing `fx test` results)
