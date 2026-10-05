@@ -284,28 +284,19 @@ failure_mode_checks:
   string: "Full node removal hanging"
   log_types: ["serialLogType"]
   always_flake: true
-  # Ignore driver removal hangs as reboot_hang_test starts until device finishes shutdown
-  # or test ends.
-  except_blocks:
-  - start_string: "Started executing 'test_reboot_to_bootloader_on_hang'"
-    end_string: "Shutting down debuglog"
-  - start_string: "Started executing 'test_reboot_to_bootloader_on_hang'"
-    end_string: "Finished executing 'test_reboot_to_bootloader_on_hang'"
+  # Ignore driver removal hangs caused by hang-on-stop in reboot_hang_test.
+  except_strings: ["hang-on-stop"]
 - kind: "string_in_log"
   string: "Package node removal hanging"
   log_types: ["serialLogType"]
   always_flake: true
+  except_strings: ["hang-on-stop"]
 - kind: "string_in_log"
   string: "waiting for driver's Stop() function and destructor finish running"
   log_types: ["serialLogType"]
   always_flake: true
-  # Ignore driver removal hangs as reboot_hang_test starts until device finishes shutdown
-  # or test ends.
-  except_blocks:
-  - start_string: "Started executing 'test_reboot_to_bootloader_on_hang'"
-    end_string: "Shutting down debuglog"
-  - start_string: "Started executing 'test_reboot_to_bootloader_on_hang'"
-    end_string: "Finished executing 'test_reboot_to_bootloader_on_hang'"
+  # Ignore driver removal hangs caused by hang-on-stop in reboot_hang_test.
+  except_strings: ["hang-on-stop"]
 - kind: "string_in_log"
   string: "Deadline exceeded in the bootup tracker with:"
   log_types: ["serialLogType"]
