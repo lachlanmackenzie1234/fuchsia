@@ -522,7 +522,7 @@ class BazelActionRunner(object):
         #   target:  "@@<the bazel target>""
         #   archive_path: "<path to the archive file>""
         results: dict[str, str] = {
-            p["target"].removeprefix("@@"): p["archive_path"]
+            build_utils.normalize_label(p["target"]): p["archive_path"]
             for p in [json.loads(line) for line in query_result]
         }
 
@@ -700,7 +700,7 @@ class BazelActionRunner(object):
                 assert label.startswith(
                     "@@//"
                 ), f"Invalid target label in source file manifest (should start with @@//): {label}"
-                label = label.removeprefix("@@")
+                label = build_utils.normalize_label(label)
                 # The aspect also walked about out buildfiles_genquery files, ignore them.
                 if label.startswith("//buildfiles_genquery"):
                     continue
