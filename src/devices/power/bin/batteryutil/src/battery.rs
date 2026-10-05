@@ -17,22 +17,6 @@ use futures::stream::{self, BoxStream};
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
-pub struct DisplayChargeStatus(pub fbattery::ChargeStatus);
-
-impl fmt::Display for DisplayChargeStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self.0 {
-            fbattery::ChargeStatus::NotCharging => "Not Charging",
-            fbattery::ChargeStatus::Charging => "Charging",
-            fbattery::ChargeStatus::Discharging => "Discharging",
-            fbattery::ChargeStatus::Full => "Full",
-            _ => "Unknown",
-        };
-        f.write_str(s)
-    }
-}
-
-#[derive(Debug, PartialEq)]
 pub struct DisplayHealthStatus(pub fbattery::HealthStatus);
 
 impl fmt::Display for DisplayHealthStatus {
@@ -81,9 +65,6 @@ impl fmt::Display for DisplayBatterySpec<'_> {
                 if s.level_percent.is_some() {
                     triggers.push("level_percent");
                 }
-                if s.charge_status.is_some() {
-                    triggers.push("charge_status");
-                }
                 if s.remaining_capacity_uah.is_some() {
                     triggers.push("remaining_capacity");
                 }
@@ -125,9 +106,6 @@ impl fmt::Display for DisplayBatteryStatus<'_> {
         let info = self.0;
         if let Some(present) = info.present {
             writeln!(f, "Present: {present}")?;
-        }
-        if let Some(charge_status) = info.charge_status {
-            writeln!(f, "Charge Status: {}", DisplayChargeStatus(charge_status))?;
         }
         if let Some(level_percent) = info.level_percent {
             writeln!(f, "Level: {:.1}%", level_percent)?;
@@ -513,20 +491,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_display_charge_status() {
-        assert_eq!(
-            DisplayChargeStatus(fbattery::ChargeStatus::NotCharging).to_string(),
-            "Not Charging"
-        );
-        assert_eq!(DisplayChargeStatus(fbattery::ChargeStatus::Charging).to_string(), "Charging");
-        assert_eq!(
-            DisplayChargeStatus(fbattery::ChargeStatus::Discharging).to_string(),
-            "Discharging"
-        );
-        assert_eq!(DisplayChargeStatus(fbattery::ChargeStatus::Full).to_string(), "Full");
-    }
-
-    #[test]
     fn test_display_health_status() {
         assert_eq!(DisplayHealthStatus(fbattery::HealthStatus::Good).to_string(), "Good");
         assert_eq!(DisplayHealthStatus(fbattery::HealthStatus::Hot).to_string(), "Hot");
@@ -536,7 +500,6 @@ mod tests {
     #[test]
     fn test_display_battery_status() {
         let status = fbattery::Status {
-            charge_status: Some(fbattery::ChargeStatus::Charging),
             level_percent: Some(85.5),
             remaining_capacity_uah: Some(4_200_000),
             full_charge_capacity_uah: Some(5_000_000),
@@ -548,7 +511,6 @@ mod tests {
             ..Default::default()
         };
         let output = DisplayBatteryStatus(&status).to_string();
-        assert!(output.contains("Charge Status: Charging"));
         assert!(output.contains("Level: 85.5%"));
         assert!(output.contains("Remaining Capacity: 4.200 Ah"));
         assert!(output.contains("Full Charge Capacity: 5.000 Ah"));
@@ -570,7 +532,6 @@ mod tests {
                 interest: Some(fbattery::Status {
                     present: Some(true),
                     level_percent: Some(0.0),
-                    charge_status: Some(fbattery::ChargeStatus::Charging),
                     cycle_count: Some(0),
                     ..Default::default()
                 }),
@@ -583,7 +544,7 @@ mod tests {
         assert!(output.contains("Chemistry: Li-Ion"));
         assert!(output.contains("Design Capacity: 5.000 Ah"));
         assert!(output.contains("Design Voltage: 3.850 V"));
-        let expected = "Supported Triggers: present, level_percent, charge_status, cycle_count";
+        let expected = "Supported Triggers: present, level_percent, cycle_count";
         assert!(output.contains(expected));
         assert!(output.contains("Supported Wake Triggers: None"));
     }

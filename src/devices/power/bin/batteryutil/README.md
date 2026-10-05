@@ -41,10 +41,9 @@ Model: MAX77779
 Chemistry: Li-Ion
 Design Capacity: 4.947 Ah
 Design Voltage: 3.850 V
-Supported Triggers: level_percent, charge_status, cycle_count
+Supported Triggers: level_percent, cycle_count
 Supported Wake Triggers: None
 Present: true
-Charge Status: Charging
 Level: 26.1%
 Remaining Capacity: 1.295 Ah
 Full Charge Capacity: 4.947 Ah
@@ -64,7 +63,6 @@ Watching battery and charger events on all instances (press Ctrl+C to exit)...
 
 === Battery Telemetry Update (/svc/fuchsia.hardware.power.battery.Service/default) ===
 Present: true
-Charge Status: Charging
 Level: 26.1%
 Remaining Capacity: 1.295 Ah
 Full Charge Capacity: 4.947 Ah
@@ -76,7 +74,6 @@ Time Remaining: 20m 44s (1244.6s)
 
 === Battery Telemetry Update (/svc/fuchsia.hardware.power.battery.Service/default) ===
 Present: true
-Charge Status: Charging
 Level: 27.0%
 Remaining Capacity: 1.335 Ah
 Full Charge Capacity: 4.947 Ah
