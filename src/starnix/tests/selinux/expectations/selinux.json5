@@ -12,7 +12,7 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO: https://fxbug.dev/398662840
+                // See https://fxbug.dev/398662840: Starnix doesn't support cgroup-seclabel.
                 "cgroupfs_label/001",
                 "cgroupfs_label/002",
 
