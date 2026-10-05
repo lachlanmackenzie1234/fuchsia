@@ -4,6 +4,7 @@
 
 //! Target-side FDomain UART driver daemon for Fuchsia devices.
 
+pub mod coordinator;
 pub mod error;
 pub mod receiver;
 pub mod sender;
