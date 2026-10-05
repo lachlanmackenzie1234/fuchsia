@@ -503,12 +503,33 @@ class FuchsiaDevice(
         Raises:
             FuchsiaDeviceError: Failed to instantiate.
         """
+        fastboot_node_id: str | None = (
+            self._device_info.fastboot_node_id
+            or self._device_info.serial_number
+        )
+        if fastboot_node_id is None:
+            try:
+                fastboot_node_id = self.ffx.serial_number
+            except Exception as err:
+                _LOGGER.debug(
+                    "Failed to get serial number from FFX for %s: %s",
+                    self.device_name,
+                    err,
+                )
+                fastboot_node_id = None
+
+        if fastboot_node_id is None:
+            raise errors.FuchsiaDeviceError(
+                f"Failed to get the fastboot node id of '{self.device_name}' as "
+                f"'fastboot_node_id' and 'serial_number' were not provided and "
+                f"could not be retrieved via FFX"
+            )
+
         fastboot_obj: fastboot.Fastboot = fastboot.Fastboot(
             device_name=self.device_name,
             reboot_affordance=self,
             ffx_transport=self.ffx,
-            fastboot_node_id=self._device_info.fastboot_node_id
-            or self._device_info.serial_number,
+            fastboot_node_id=fastboot_node_id,
         )
         return fastboot_obj
 

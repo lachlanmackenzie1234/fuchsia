@@ -462,11 +462,107 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     def test_fastboot_transport(self, mock_fastboot_init: mock.Mock) -> None:
         """Test case to make sure fuchsia_device supports fastboot
         transport."""
+        device_info: custom_types.DeviceInfo = self.fd_fc_obj._device_info
+
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            ip_port=None,
+            serial_socket=None,
+            fastboot_node_id="12345678",
+        )
+
         self.assertIsInstance(
             self.fd_fc_obj.fastboot,
             fastboot.Fastboot,
         )
-        mock_fastboot_init.assert_called_once()
+        mock_fastboot_init.assert_called_once_with(
+            mock.ANY,
+            device_name=self.fd_fc_obj.device_name,
+            reboot_affordance=self.fd_fc_obj,
+            ffx_transport=self.fd_fc_obj.ffx,
+            fastboot_node_id="12345678",
+        )
+
+        self.fd_fc_obj.__dict__.pop("fastboot", None)
+        self.fd_fc_obj._device_info = device_info
+
+    @mock.patch.object(
+        fastboot.Fastboot,
+        "__init__",
+        autospec=True,
+        return_value=None,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+        return_value="ffx-serial-1234",
+    )
+    def test_fastboot_transport_fallback_ffx_serial(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+        mock_fastboot_init: mock.Mock,
+    ) -> None:
+        """Test case to make sure fuchsia_device falls back to FFX serial_number
+        for fastboot when fastboot_node_id and serial_number are not in device_info.
+        """
+        device_info: custom_types.DeviceInfo = self.fd_fc_obj._device_info
+
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            ip_port=None,
+            serial_socket=None,
+            fastboot_node_id=None,
+        )
+
+        self.assertIsInstance(
+            self.fd_fc_obj.fastboot,
+            fastboot.Fastboot,
+        )
+        mock_ffx_serial_number.assert_called_once()
+        mock_fastboot_init.assert_called_once_with(
+            mock.ANY,
+            device_name=self.fd_fc_obj.device_name,
+            reboot_affordance=self.fd_fc_obj,
+            ffx_transport=self.fd_fc_obj.ffx,
+            fastboot_node_id="ffx-serial-1234",
+        )
+
+        self.fd_fc_obj.__dict__.pop("fastboot", None)
+        self.fd_fc_obj._device_info = device_info
+
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+        side_effect=ffx_errors.FfxCommandError("FFX error"),
+    )
+    def test_fastboot_transport_error(
+        self,
+        mock_ffx_serial_number: mock.Mock,
+    ) -> None:
+        """Test case to make sure fuchsia_device raises FuchsiaDeviceError when
+        accessing fastboot without fastboot_node_id/serial_number and FFX fails.
+        """
+        device_info: custom_types.DeviceInfo = self.fd_fc_obj._device_info
+
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            ip_port=None,
+            serial_socket=None,
+            fastboot_node_id=None,
+        )
+
+        with self.assertRaises(errors.FuchsiaDeviceError):
+            _: fastboot.Fastboot = self.fd_fc_obj.fastboot
+
+        mock_ffx_serial_number.assert_called_once()
+
+        self.fd_fc_obj.__dict__.pop("fastboot", None)
+        self.fd_fc_obj._device_info = device_info
 
     def test_ffx_transport(self) -> None:
         """Test case to make sure fuchsia_device supports ffx transport."""
