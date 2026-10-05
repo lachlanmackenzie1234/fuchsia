@@ -303,6 +303,27 @@ static bool ZirconVBootSlotVerifyInternal(ZirconBootOps* zb_ops, zbi_header_t* i
     return false;
   }
 
+  // libavb returns OK if everything *described* in the signed vbmeta verified;
+  // it does not guarantee that everything we *requested* was described. Assert
+  // that the preloaded 'zircon' image was actually hashed, otherwise a
+  // PSK-signed vbmeta lacking a 'zircon' hash descriptor would let an
+  // arbitrary on-flash ZBI through on a locked device.
+  bool zircon_verified = false;
+  for (size_t i = 0; i < verify_data->num_loaded_partitions; ++i) {
+    const AvbPartitionData* p = &verify_data->loaded_partitions[i];
+    if (strcmp(p->partition_name, GPT_ZIRCON_SLOTLESS_NAME) == 0 && p->data == (uint8_t*)image) {
+      zircon_verified = true;
+      break;
+    }
+  }
+  if (!zircon_verified) {
+    zircon_boot_dlog(
+        "vbmeta verified but contained no 'zircon' hash descriptor; "
+        "rejecting slot: %s\n",
+        ab_suffix);
+    return false;
+  }
+
   // Increase rollback index values to match the verified slot only if
   // it has already successfully booted.
   if (has_successfully_booted) {
