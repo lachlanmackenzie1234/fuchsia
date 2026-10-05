@@ -3,5 +3,6 @@
 // found in the LICENSE file.
 
 mod rcu_array;
+mod rcu_intrusive_list;
 mod rcu_list;
 mod rcu_raw_hash_map;

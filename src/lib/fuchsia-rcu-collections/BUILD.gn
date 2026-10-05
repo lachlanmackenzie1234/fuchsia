@@ -53,6 +53,7 @@ rustc_library("fuchsia-rcu-collections") {
     "src/rcu_raw_hash_map.rs",
     "src/tests/mod.rs",
     "src/tests/rcu_array.rs",
+    "src/tests/rcu_intrusive_list.rs",
     "src/tests/rcu_list.rs",
     "src/tests/rcu_raw_hash_map.rs",
   ]
