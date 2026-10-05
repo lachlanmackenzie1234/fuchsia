@@ -136,6 +136,7 @@ if (is_host) {
     library_deps = [
       ":bazel_build_flags",
       ":build_utils",
+      ":starlark_utils",
     ]
   }
 

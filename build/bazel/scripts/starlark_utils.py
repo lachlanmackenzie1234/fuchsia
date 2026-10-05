@@ -107,7 +107,8 @@ class StarlarkFormatter(object):
             return
 
         if len(v) == 1:
-            key, value = v.popitem()
+            # Don't popitem(): that would mutate the caller's dict.
+            key, value = next(iter(v.items()))
             self._result += "{"
             self._format_value(key)
             self._result += ": "

@@ -553,11 +553,7 @@ platform_flags_map = {
 
 """Fuchsia target test environments exported from //build/testing/environments.gni."""
 
-aemu_env = {{
-    "dimensions": {{
-        "device_type": "AEMU",
-    }},
-}}
+aemu_env = {{"dimensions": {{"device_type": "AEMU"}}}}
 
 device_types = struct(
     aemu = "AEMU",
@@ -647,24 +643,14 @@ device_types = struct(
 """Fuchsia target test environments exported from //build/testing/environments.gni."""
 
 aemu_env = {{
-    "dimensions": {{
-        "device_type": "AEMU",
-    }},
-    "tags": [
-        "emulated",
-    ],
+    "dimensions": {{"device_type": "AEMU"}},
+    "tags": ["emulated"]
 }}
 
-basic_envs = [
-    {{
-        "dimensions": {{
-            "device_type": "AEMU",
-        }},
-        "tags": [
-            "emulated",
-        ],
-    }},
-]
+basic_envs = [{{
+    "dimensions": {{"device_type": "AEMU"}},
+    "tags": ["emulated"]
+}}]
 
 device_types = struct(
     aemu = "AEMU",
@@ -675,17 +661,11 @@ host_device_types = struct(
     gce = "GCE",
 )
 
-nuc11_env_prototype = {{
-    "dimensions": {{
-        "device_type": "Intel NUC Kit NUC11TNHv5",
-    }},
-}}
+nuc11_env_prototype = {{"dimensions": {{"device_type": "Intel NUC Kit NUC11TNHv5"}}}}
 
 nuc11_netboot_env = {{
-    "dimensions": {{
-        "device_type": "Intel NUC Kit NUC11TNHv5",
-    }},
-    "netboot": True,
+    "dimensions": {{"device_type": "Intel NUC Kit NUC11TNHv5"}},
+    "netboot": True
 }}
 '''
         self.maxDiff = None

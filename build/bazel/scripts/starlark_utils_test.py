@@ -61,6 +61,11 @@ class ToStarlarkExprTest(unittest.TestCase):
                 f"from {repr(input)}",
             )
 
+    def test_does_not_mutate_input(self) -> None:
+        value = {"outer": {"inner": [{"key": "value"}]}}
+        starlark_utils.to_starlark_expr(value)
+        self.assertEqual(value, {"outer": {"inner": [{"key": "value"}]}})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,7 @@ load(
     "verify_fx_test_realms",
 )
 load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load(":fx_test_validation_tests.bzl", "fx_test_validation_tests")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -229,6 +230,12 @@ verify_fx_test_realms(
     test = ":example_multi_component_test",
 )
 
+# Checks that invalid `fx_test()` arguments fail analysis with a helpful error.
+fx_test_validation_tests(
+    name = "fx_test_validation_tests",
+    package = ":example_test_package",
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
@@ -237,6 +244,7 @@ filegroup(
         ":example_test",
         ":example_test_with_basic_envs",
         ":example_test_with_environments",
+        ":fx_test_validation_tests",
         ":verify_example_build_only_test",
         ":verify_example_test_default_environments",
         ":verify_example_test_with_basic_envs",

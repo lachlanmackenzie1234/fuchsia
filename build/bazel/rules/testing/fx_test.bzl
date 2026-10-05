@@ -65,6 +65,63 @@ FuchsiaTestInfo, _new_fuchsia_test_info = provider(
     init = _fuchsia_test_info_init,
 )
 
+_ALLOWED_ENV_KEYS = (
+    "dimensions",
+    "emulator",
+    "netboot",
+    "service_account",
+    "tags",
+)
+
+def _validate_environment(env):
+    if type(env) != type({}):
+        fail("Each entry in 'environments' must be a dict, got {}.".format(type(env)))
+    for key in env:
+        if key not in _ALLOWED_ENV_KEYS:
+            fail(
+                "Unknown environment field '{}'; allowed fields are {}.".format(
+                    key,
+                    ", ".join(_ALLOWED_ENV_KEYS),
+                ),
+            )
+    dimensions = env.get("dimensions")
+    if type(dimensions) != type({}) or not dimensions:
+        fail("Each environment must specify a non-empty 'dimensions' dict.")
+    if "tags" in dimensions:
+        fail("'tags' are only valid in an environment dict, not in 'dimensions'.")
+    if "dimensions" in dimensions:
+        fail(
+            "Found nested 'dimensions' field in environment dimensions. " +
+            "Did you set `dimensions = some_env` instead of `dimensions = some_env[\"dimensions\"]`?",
+        )
+    emulator = env.get("emulator")
+    if emulator != None:
+        if type(emulator) != type({}):
+            fail("Environment 'emulator' field must be a dict, got {}.".format(type(emulator)))
+        if not emulator.get("name"):
+            fail("The 'emulator' dict requires a unique 'name'.")
+        if emulator.get("uefi") and (
+            not emulator.get("vbmeta_key") or not emulator.get("vbmeta_key_metadata")
+        ):
+            fail(
+                "Emulator environments with 'uefi' set to True must provide " +
+                "'vbmeta_key' and 'vbmeta_key_metadata'.",
+            )
+
+def _decode_environments(ctx):
+    environments = json.decode(ctx.attr.environments_json)
+    if environments == None:
+        return []
+    if type(environments) != type([]):
+        fail("Test 'environments' must be a list of environment dicts, got {}.".format(type(environments)))
+    if not environments:
+        fail("Test 'environments' must not be empty. Build-only tests should use 'build_only = True' instead of specifying an empty set of environments.")
+    if ctx.attr.build_only:
+        fail("build_only tests should not specify environments")
+    for env in environments:
+        _validate_environment(env)
+    return environments
+
 def _fx_test_impl(ctx):
     # Test rules default to `testonly = True`, so this only rejects an explicit
     # `testonly = False`, which would let non-test targets depend on this one.
@@ -143,7 +200,7 @@ def _fx_test_impl(ctx):
             test_label = ctx.label,
             os = current_platform.os,
             cpu = current_platform.cpu,
-            environments = [json.decode(env) for env in ctx.attr.environments],
+            environments = _decode_environments(ctx),
             build_only = ctx.attr.build_only,
             max_log_severity = ctx.attr.max_log_severity,
             package_name = package_info.package_name,
@@ -164,9 +221,9 @@ _fx_test = rule(
             providers = [FuchsiaPackageInfo],
             mandatory = True,
         ),
-        "environments": attr.string_list(
-            doc = "JSON-encoded environment dicts describing the target environments in which the test should run.",
-            default = [],
+        "environments_json": attr.string(
+            doc = "The JSON-encoded `environments` argument of the `fx_test()` macro, or `null` if it was omitted.",
+            default = "null",
         ),
         "build_only": attr.bool(
             doc = "True if the test should only be built, not run.",
@@ -191,49 +248,6 @@ _fx_test = rule(
         ),
     },
 )
-
-_ALLOWED_ENV_KEYS = (
-    "dimensions",
-    "emulator",
-    "netboot",
-    "service_account",
-    "tags",
-)
-
-def _validate_environment(env):
-    if type(env) != type({}):
-        fail("Each entry in 'environments' must be a dict, got {}.".format(type(env)))
-    for key in env:
-        if key not in _ALLOWED_ENV_KEYS:
-            fail(
-                "Unknown environment field '{}'; allowed fields are {}.".format(
-                    key,
-                    ", ".join(_ALLOWED_ENV_KEYS),
-                ),
-            )
-    dimensions = env.get("dimensions")
-    if type(dimensions) != type({}) or not dimensions:
-        fail("Each environment must specify a non-empty 'dimensions' dict.")
-    if "tags" in dimensions:
-        fail("'tags' are only valid in an environment dict, not in 'dimensions'.")
-    if "dimensions" in dimensions:
-        fail(
-            "Found nested 'dimensions' field in environment dimensions. " +
-            "Did you set `dimensions = some_env` instead of `dimensions = some_env[\"dimensions\"]`?",
-        )
-    emulator = env.get("emulator")
-    if emulator != None:
-        if type(emulator) != type({}):
-            fail("Environment 'emulator' field must be a dict, got {}.".format(type(emulator)))
-        if not emulator.get("name"):
-            fail("The 'emulator' dict requires a unique 'name'.")
-        if emulator.get("uefi") and (
-            not emulator.get("vbmeta_key") or not emulator.get("vbmeta_key_metadata")
-        ):
-            fail(
-                "Emulator environments with 'uefi' set to True must provide " +
-                "'vbmeta_key' and 'vbmeta_key_metadata'.",
-            )
 
 def fx_test(
         name,
@@ -307,25 +321,21 @@ def fx_test(
     # Bazel has no attribute type for a list of dicts, and its dict-typed
     # attributes (`attr.string_dict`, `attr.string_list_dict`) only hold flat
     # string values, which can't represent nested fields like `dimensions` or
-    # `emulator`. So serialize each environment to a JSON string here and
-    # decode it again in `_fx_test_impl`. This happens in the macro, at
-    # loading time, which is also why `environments` can't be a `select()`.
-    encoded_environments = []
-    if environments != None:
-        if type(environments) != type([]):
-            fail("Test 'environments' must be a list of environment dicts, got {}.".format(type(environments)))
-        if not environments:
-            fail("Test 'environments' must not be empty. Build-only tests should use 'build_only = True' instead of specifying an empty set of environments.")
-        if build_only:
-            fail("build_only tests should not specify environments")
-        for env in environments:
-            _validate_environment(env)
-            encoded_environments.append(json.encode(env))
+    # `emulator`. So serialize `environments` to a JSON string here and decode
+    # it again in `_fx_test_impl`. This happens in the macro, at loading time,
+    # which is also why `environments` can't be a `select()`.
+    #
+    # Validation is deliberately left to `_fx_test_impl`: a `fail()` at
+    # loading time would break every target in the package, and couldn't be
+    # covered by analysis failure tests. The impl only sees the JSON-decoded
+    # value, so tuples and structs are accepted as lists and dicts.
+    if type(environments) == "select":
+        fail("`fx_test()` does not support select() for 'environments'.")
 
     _fx_test(
         name = name,
         package = package,
-        environments = encoded_environments,
+        environments_json = json.encode(environments),
         build_only = build_only,
         max_log_severity = max_log_severity,
         test_type = test_type,

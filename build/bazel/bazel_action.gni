@@ -680,6 +680,9 @@ template("bazel_action") {
         #   //build/bazel/scripts/bazel_ninja_delayed_actions.py:imports,
         #   //build/bazel/scripts/BUILD.gn:delayed_action_imports)
 
+        # Imported by workspace_utils.py
+        "//build/bazel/scripts/starlark_utils.py",
+
         # Imported by bazel_action_impl.py
         # LINT.IfChange(bazel_action_impl_imports)
         "//build/api/debug_symbols.py",

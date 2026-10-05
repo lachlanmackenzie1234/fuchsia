@@ -17,6 +17,7 @@ from textwrap import dedent
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
+import starlark_utils
 from bazel_build_flags import DefaultBuildFlagsMap
 
 # LINT.IfChange(gn_targets_dir_symlink)
@@ -697,41 +698,12 @@ def generate_fuchsia_workspace(
     return input_files | generated.input_files
 
 
-def _format_starlark_value(value: T.Any, indent: int = 0) -> str:
-    """Format a JSON-decoded value as a Starlark literal."""
-    if isinstance(value, bool):
-        return "True" if value else "False"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, str):
-        return json.dumps(value)
-    if isinstance(value, list):
-        if not value:
-            return "[]"
-        inner_indent = " " * (indent + 4)
-        items = [
-            f"{inner_indent}{_format_starlark_value(v, indent + 4)},"
-            for v in value
-        ]
-        return "[\n" + "\n".join(items) + f"\n{' ' * indent}]"
-    if isinstance(value, dict):
-        if not value:
-            return "{}"
-        inner_indent = " " * (indent + 4)
-        items = [
-            f"{inner_indent}{json.dumps(k)}: {_format_starlark_value(v, indent + 4)},"
-            for k, v in sorted(value.items())
-        ]
-        return "{\n" + "\n".join(items) + f"\n{' ' * indent}}}"
-    raise TypeError(f"Unsupported Starlark value type: {type(value)}")
-
-
 def _format_starlark_struct(fields: dict[str, T.Any]) -> str:
     """Format a dictionary of fields as a Starlark `struct(...)` call."""
     if not fields:
         return "struct()"
     items = [
-        f"    {k} = {_format_starlark_value(v, 4)},"
+        f"    {k} = {starlark_utils.to_starlark_expr(v, '    ')},"
         for k, v in sorted(fields.items())
     ]
     return "struct(\n" + "\n".join(items) + "\n)"
@@ -993,7 +965,9 @@ platform_flags_map = {
                     )
                 lines.append(f"{name} = {_format_starlark_struct(value)}")
             else:
-                lines.append(f"{name} = {_format_starlark_value(value)}")
+                lines.append(
+                    f"{name} = {starlark_utils.to_starlark_expr(value)}"
+                )
         return "\n".join(lines) + "\n"
 
     @staticmethod
