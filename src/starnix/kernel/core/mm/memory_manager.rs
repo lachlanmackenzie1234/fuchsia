@@ -654,7 +654,7 @@ impl MemoryManagerState {
 
     fn add_memory_mapping(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: DesiredAddress,
         memory: Arc<MemoryObject>,
         memory_offset: u64,
@@ -700,7 +700,7 @@ impl MemoryManagerState {
 
     fn map_private_anonymous(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: DesiredAddress,
         length: usize,
         prot_flags: ProtectionFlags,
@@ -739,7 +739,7 @@ impl MemoryManagerState {
 
     fn map_anonymous(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: DesiredAddress,
         length: usize,
         prot_flags: ProtectionFlags,
@@ -884,7 +884,7 @@ impl MemoryManagerState {
     fn remap(
         &mut self,
         _current_task: &CurrentTask,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         old_addr: UserAddress,
         old_length: usize,
         new_length: usize,
@@ -970,7 +970,7 @@ impl MemoryManagerState {
     /// successful. Returns `Ok(None)` if there was no space to grow.
     fn try_remap_in_place(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         old_addr: UserAddress,
         old_length: usize,
         new_length: usize,
@@ -1053,7 +1053,7 @@ impl MemoryManagerState {
     /// Grows or shrinks the mapping while moving it to a new destination.
     fn remap_move(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         src_addr: UserAddress,
         src_length: usize,
         dst_addr: Option<UserAddress>,
@@ -1233,7 +1233,7 @@ impl MemoryManagerState {
     /// Unmaps the specified range. Unmapped mappings are placed in `released_mappings`.
     fn unmap(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: UserAddress,
         length: usize,
         released_mappings: &mut ReleasedMappings,
@@ -1283,7 +1283,7 @@ impl MemoryManagerState {
     // Unmapped mappings are placed in `released_mappings`.
     fn update_after_unmap(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: UserAddress,
         length: usize,
         released_mappings: &mut ReleasedMappings,
@@ -1942,15 +1942,17 @@ impl MemoryManagerState {
     /// and extends it if possible. Returns true if the given address is covered by a mapping.
     fn extend_growsdown_mapping_to_address(
         &mut self,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: UserAddress,
         is_write: bool,
     ) -> Result<bool, Error> {
         let Some((mapping_low_addr, mapping_to_grow)) = self.find_growsdown_mapping(addr) else {
             return Ok(false);
         };
-        if is_write && !mapping_to_grow.can_write() {
-            // Don't grow a read-only GROWSDOWN mapping for a write fault, it won't work.
+        if (is_write && !mapping_to_grow.can_write()) || (!is_write && !mapping_to_grow.can_read())
+        {
+            // Don't grow a GROWSDOWN mapping if it doesn't have the required permissions for the
+            // access.
             return Ok(false);
         }
         if !mapping_to_grow.flags().contains(MappingFlags::ANONYMOUS) {
@@ -1958,6 +1960,9 @@ impl MemoryManagerState {
             return Ok(false);
         }
         let low_addr = (addr - (addr.ptr() as u64 % *PAGE_SIZE))?;
+        if low_addr < mm.base_addr {
+            return Ok(false);
+        }
         let high_addr = mapping_low_addr;
 
         let length = high_addr
@@ -1995,30 +2000,9 @@ impl MemoryManagerState {
         bytes: &'a mut [MaybeUninit<u8>],
         context: &MappingContext,
     ) -> Result<&'a mut [u8], Errno> {
-        let mut bytes_read = 0;
-        for (mapping, len) in self.get_contiguous_mappings_at(addr, bytes.len(), context)? {
-            let next_offset = bytes_read + len;
-            self.read_mapping_memory(
-                (addr + bytes_read)?,
-                mapping,
-                &mut bytes[bytes_read..next_offset],
-                context,
-            )?;
-            bytes_read = next_offset;
-        }
-
-        if bytes_read != bytes.len() {
-            error!(EFAULT)
-        } else {
-            // SAFETY: The created slice is properly aligned/sized since it
-            // is a subset of the `bytes` slice. Note that `MaybeUninit<T>` has
-            // the same layout as `T`. Also note that `bytes_read` bytes have
-            // been properly initialized.
-            let bytes = unsafe {
-                std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut u8, bytes_read)
-            };
-            Ok(bytes)
-        }
+        let total_len = bytes.len();
+        let bytes_read = self.read_memory_partial(addr, bytes, context)?;
+        if bytes_read.len() != total_len { error!(EFAULT) } else { Ok(bytes_read) }
     }
 
     /// Reads exactly `bytes.len()` bytes of memory from `addr`.
@@ -2074,19 +2058,17 @@ impl MemoryManagerState {
             bytes_read = next_offset;
         }
 
-        // If at least one byte was requested but we got none, it means that `addr` was invalid.
-        if !bytes.is_empty() && bytes_read == 0 {
-            error!(EFAULT)
-        } else {
-            // SAFETY: The created slice is properly aligned/sized since it
-            // is a subset of the `bytes` slice. Note that `MaybeUninit<T>` has
-            // the same layout as `T`. Also note that `bytes_read` bytes have
-            // been properly initialized.
-            let bytes = unsafe {
-                std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut u8, bytes_read)
-            };
-            Ok(bytes)
-        }
+        let initialized = &mut bytes[..bytes_read];
+        // SAFETY: `initialized` is an exclusive `&'a mut [MaybeUninit<u8>]` subslice of `bytes` of
+        // length `bytes_read`, which guarantees a non-null, aligned pointer with exclusive
+        // provenance over a single live allocation of size `bytes_read <= bytes.len() <= isize::MAX`.
+        // `MaybeUninit<u8>` has the same layout as `u8`, and each succeeded `read_mapping_memory`
+        // call initialized its contiguous segment via `MemoryObject::read_uninit`
+        // (`zx::Vmo::read_uninit`), so all `bytes_read` bytes in `initialized` are initialized.
+        let bytes = unsafe {
+            std::slice::from_raw_parts_mut(initialized.as_mut_ptr() as *mut u8, bytes_read)
+        };
+        Ok(bytes)
     }
 
     /// Like `read_memory_partial` but only returns the bytes up to and including
@@ -2116,18 +2098,7 @@ impl MemoryManagerState {
         bytes: &[u8],
         context: &MappingContext,
     ) -> Result<usize, Errno> {
-        let mut bytes_written = 0;
-        for (mapping, len) in self.get_contiguous_mappings_at(addr, bytes.len(), context)? {
-            let next_offset = bytes_written + len;
-            self.write_mapping_memory(
-                (addr + bytes_written)?,
-                mapping,
-                &bytes[bytes_written..next_offset],
-                context,
-            )?;
-            bytes_written = next_offset;
-        }
-
+        let bytes_written = self.write_memory_partial(addr, bytes, context)?;
         if bytes_written != bytes.len() { error!(EFAULT) } else { Ok(bytes.len()) }
     }
 
@@ -2181,10 +2152,10 @@ impl MemoryManagerState {
             bytes_written = next_offset;
         }
 
-        if !bytes.is_empty() && bytes_written == 0 { error!(EFAULT) } else { Ok(bytes.len()) }
+        Ok(bytes_written)
     }
 
-    fn zero(
+    fn zero_partial(
         &self,
         addr: UserAddress,
         length: usize,
@@ -2199,6 +2170,16 @@ impl MemoryManagerState {
             bytes_written = next_offset;
         }
 
+        Ok(bytes_written)
+    }
+
+    fn zero(
+        &self,
+        addr: UserAddress,
+        length: usize,
+        context: &MappingContext,
+    ) -> Result<usize, Errno> {
+        let bytes_written = self.zero_partial(addr, length, context)?;
         if length != bytes_written { error!(EFAULT) } else { Ok(length) }
     }
 
@@ -2433,7 +2414,7 @@ impl MemoryManagerState {
     fn set_brk(
         &mut self,
         current_task: &CurrentTask,
-        mm: &Arc<MemoryManager>,
+        mm: &MemoryManager,
         addr: UserAddress,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<UserAddress, Errno> {
@@ -2775,6 +2756,7 @@ impl MemoryManager {
         &self,
         addr: UserAddress,
         len: usize,
+        is_write: bool,
         mut transfer_fn: F,
     ) -> Result<usize, Errno>
     where
@@ -2798,9 +2780,17 @@ impl MemoryManager {
                         // for now, but this could be tuned in the future.
                         if self.ensure_range_mapped_in_user_vmar(fault_addr, None)? {
                             continue;
-                        } else {
-                            break;
                         }
+                        // A failed transfer can also be resolved by extending a GROWSDOWN mapping
+                        // above, if there is one.
+                        match self.extend_growsdown_mapping_to_address(fault_addr, is_write) {
+                            Ok(true) => continue,
+                            Ok(false) => {}
+                            Err(e) => {
+                                log_warn!("Error extending growsdown mapping: {e}");
+                            }
+                        }
+                        break;
                     }
                     copied += num_copied;
                 }
@@ -2813,30 +2803,82 @@ impl MemoryManager {
         Ok(copied)
     }
 
+    /// Finalizes a partially-initialized `MaybeUninit<u8>` buffer after reading `copied` bytes.
+    ///
+    /// Returns `error!(EFAULT)` if `copied == 0` and `!bytes.is_empty()`.
+    ///
+    /// # Safety
+    /// The caller must guarantee that the first `copied` bytes of `bytes` (`bytes[..copied]`)
+    /// have been initialized, and `copied <= bytes.len()`.
+    unsafe fn finalize_partial_read<'a>(
+        bytes: &'a mut [MaybeUninit<u8>],
+        copied: usize,
+    ) -> Result<&'a mut [u8], Errno> {
+        if copied == 0 && !bytes.is_empty() {
+            return error!(EFAULT);
+        }
+        let initialized = &mut bytes[..copied];
+        // SAFETY: `initialized` is an exclusive `&'a mut [MaybeUninit<u8>]` subslice of `bytes` of
+        // length `copied`, which guarantees a non-null, aligned pointer with exclusive provenance
+        // over a single live allocation of size `copied <= bytes.len() <= isize::MAX`.
+        // `MaybeUninit<u8>` has the same layout as `u8`, and the caller guarantees that all
+        // `copied` bytes in `initialized` are initialized.
+        Ok(unsafe { std::slice::from_raw_parts_mut(initialized.as_mut_ptr() as *mut u8, copied) })
+    }
+
     pub fn unified_read_memory<'a>(
         &self,
         current_task: &CurrentTask,
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
+        let total_len = bytes.len();
+        let bytes_read = self.unified_read_memory_partial(current_task, addr, bytes)?;
+        if bytes_read.len() < total_len { error!(EFAULT) } else { Ok(bytes_read) }
+    }
 
-        let buf_ptr = bytes.as_mut_ptr();
-        let buf_len = bytes.len();
-
-        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-            let current_bytes =
-                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
-            let (read_bytes, _unread_bytes) = usercopy().copyin(cur_addr.ptr(), current_bytes);
-            Ok(ControlFlow::Continue(read_bytes.len()))
-        })?;
-        if copied < bytes.len() {
-            error!(EFAULT)
-        } else {
-            // SAFETY: All bytes up to `buf_len` have been initialized.
-            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, buf_len) })
+    fn syscall_transfer_loop<F>(
+        &self,
+        addr: UserAddress,
+        len: usize,
+        is_write: bool,
+        mut transfer_fn: F,
+    ) -> Result<usize, Errno>
+    where
+        F: FnMut(
+            &MemoryManagerState,
+            UserAddress,
+            usize,
+        ) -> Result<ControlFlow<usize, usize>, Errno>,
+    {
+        let mut copied = 0;
+        while copied < len {
+            let cur_addr = (addr + copied)?;
+            let flow = {
+                let state = self.state.read();
+                transfer_fn(&state, cur_addr, copied)?
+            };
+            match flow {
+                ControlFlow::Continue(num_copied) => {
+                    if num_copied == 0 {
+                        match self.extend_growsdown_mapping_to_address(cur_addr, is_write) {
+                            Ok(true) => continue,
+                            Ok(false) => {}
+                            Err(e) => {
+                                log_warn!("Error extending growsdown mapping: {e}");
+                            }
+                        }
+                        break;
+                    }
+                    copied += num_copied;
+                }
+                ControlFlow::Break(num_copied) => {
+                    copied += num_copied;
+                    break;
+                }
+            }
         }
+        Ok(copied)
     }
 
     pub fn syscall_read_memory<'a>(
@@ -2844,7 +2886,9 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.state.read().read_memory(addr, bytes, &self.mapping_context)
+        let total_len = bytes.len();
+        let bytes_read = self.syscall_read_memory_partial(addr, bytes)?;
+        if bytes_read.len() < total_len { error!(EFAULT) } else { Ok(bytes_read) }
     }
 
     pub fn unified_read_memory_partial_until_null_byte<'a>(
@@ -2855,29 +2899,26 @@ impl MemoryManager {
     ) -> Result<&'a mut [u8], Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        let buf_ptr = bytes.as_mut_ptr();
-        let buf_len = bytes.len();
+        let copied = self.unified_transfer_loop(
+            addr,
+            bytes.len(),
+            /*is_write=*/ false,
+            |cur_addr, offset| {
+                let (read_bytes, _unread_bytes) =
+                    usercopy().copyin_until_null_byte(cur_addr.ptr(), &mut bytes[offset..]);
 
-        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-            let current_bytes =
-                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
-            let (read_bytes, _unread_bytes) =
-                usercopy().copyin_until_null_byte(cur_addr.ptr(), current_bytes);
-
-            let num_copied = read_bytes.len();
-            if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
-                Ok(ControlFlow::Break(num_copied))
-            } else {
-                Ok(ControlFlow::Continue(num_copied))
-            }
-        })?;
-        if copied == 0 && !bytes.is_empty() {
-            error!(EFAULT)
-        } else {
-            // SAFETY: Bytes up to `copied` have been initialized.
-            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
-        }
+                let num_copied = read_bytes.len();
+                if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
+                    Ok(ControlFlow::Break(num_copied))
+                } else {
+                    Ok(ControlFlow::Continue(num_copied))
+                }
+            },
+        )?;
+        // SAFETY: Each iteration of `unified_transfer_loop` initializes `read_bytes.len()`
+        // contiguous bytes starting at `offset` via `usercopy().copyin_until_null_byte`, so the
+        // first `copied` bytes of `bytes` are initialized and `copied <= bytes.len()`.
+        unsafe { Self::finalize_partial_read(bytes, copied) }
     }
 
     pub fn syscall_read_memory_partial_until_null_byte<'a>(
@@ -2885,7 +2926,29 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.state.read().read_memory_partial_until_null_byte(addr, bytes, &self.mapping_context)
+        let copied = self.syscall_transfer_loop(
+            addr,
+            bytes.len(),
+            /*is_write=*/ false,
+            |state, cur_addr, offset| {
+                let read_bytes = state.read_memory_partial_until_null_byte(
+                    cur_addr,
+                    &mut bytes[offset..],
+                    &self.mapping_context,
+                )?;
+                let num_copied = read_bytes.len();
+                if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
+                    Ok(ControlFlow::Break(num_copied))
+                } else {
+                    Ok(ControlFlow::Continue(num_copied))
+                }
+            },
+        )?;
+        // SAFETY: Each iteration of `syscall_transfer_loop` initializes `read_bytes.len()`
+        // contiguous bytes starting at `offset` via `read_memory_partial_until_null_byte`
+        // (`MemoryObject::read_uninit`), so the first `copied` bytes of `bytes` are initialized
+        // and `copied <= bytes.len()`.
+        unsafe { Self::finalize_partial_read(bytes, copied) }
     }
 
     pub fn unified_read_memory_partial<'a>(
@@ -2896,22 +2959,20 @@ impl MemoryManager {
     ) -> Result<&'a mut [u8], Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        let buf_ptr = bytes.as_mut_ptr();
-        let buf_len = bytes.len();
-
-        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-            let current_bytes =
-                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
-            let (read_bytes, _unread_bytes) = usercopy().copyin(cur_addr.ptr(), current_bytes);
-            Ok(ControlFlow::Continue(read_bytes.len()))
-        })?;
-        if copied == 0 && !bytes.is_empty() {
-            error!(EFAULT)
-        } else {
-            // SAFETY: Bytes up to `copied` have been initialized.
-            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
-        }
+        let copied = self.unified_transfer_loop(
+            addr,
+            bytes.len(),
+            /*is_write=*/ false,
+            |cur_addr, offset| {
+                let (read_bytes, _unread_bytes) =
+                    usercopy().copyin(cur_addr.ptr(), &mut bytes[offset..]);
+                Ok(ControlFlow::Continue(read_bytes.len()))
+            },
+        )?;
+        // SAFETY: Each iteration of `unified_transfer_loop` initializes `read_bytes.len()`
+        // contiguous bytes starting at `offset` via `usercopy().copyin`, so the first `copied`
+        // bytes of `bytes` are initialized and `copied <= bytes.len()`.
+        unsafe { Self::finalize_partial_read(bytes, copied) }
     }
 
     pub fn syscall_read_memory_partial<'a>(
@@ -2919,7 +2980,24 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.state.read().read_memory_partial(addr, bytes, &self.mapping_context)
+        let copied = self.syscall_transfer_loop(
+            addr,
+            bytes.len(),
+            /*is_write=*/ false,
+            |state, cur_addr, offset| {
+                let read_bytes = state.read_memory_partial(
+                    cur_addr,
+                    &mut bytes[offset..],
+                    &self.mapping_context,
+                )?;
+                Ok(ControlFlow::Continue(read_bytes.len()))
+            },
+        )?;
+        // SAFETY: Each iteration of `syscall_transfer_loop` initializes `read_bytes.len()`
+        // contiguous bytes starting at `offset` via `read_memory_partial`
+        // (`MemoryObject::read_uninit`), so the first `copied` bytes of `bytes` are initialized
+        // and `copied <= bytes.len()`.
+        unsafe { Self::finalize_partial_read(bytes, copied) }
     }
 
     pub fn unified_write_memory(
@@ -2928,12 +3006,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &[u8],
     ) -> Result<usize, Errno> {
-        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
-
-        let len = bytes.len();
-        let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
-            Ok(ControlFlow::Continue(usercopy().copyout(&bytes[offset..], cur_addr.ptr())))
-        })?;
+        let copied = self.unified_write_memory_partial(current_task, addr, bytes)?;
         if copied < bytes.len() { error!(EFAULT) } else { Ok(copied) }
     }
 
@@ -2952,7 +3025,8 @@ impl MemoryManager {
     }
 
     pub fn syscall_write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.state.read().write_memory(addr, bytes, &self.mapping_context)
+        let copied = self.syscall_write_memory_partial(addr, bytes)?;
+        if copied < bytes.len() { error!(EFAULT) } else { Ok(copied) }
     }
 
     pub fn unified_write_memory_partial(
@@ -2964,9 +3038,10 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         let len = bytes.len();
-        let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
-            Ok(ControlFlow::Continue(usercopy().copyout(&bytes[offset..], cur_addr.ptr())))
-        })?;
+        let copied =
+            self.unified_transfer_loop(addr, len, /*is_write=*/ true, |cur_addr, offset| {
+                Ok(ControlFlow::Continue(usercopy().copyout(&bytes[offset..], cur_addr.ptr())))
+            })?;
         if copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(copied) }
     }
 
@@ -2975,7 +3050,20 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &[u8],
     ) -> Result<usize, Errno> {
-        self.state.read().write_memory_partial(addr, bytes, &self.mapping_context)
+        let len = bytes.len();
+        let copied = self.syscall_transfer_loop(
+            addr,
+            len,
+            /*is_write=*/ true,
+            |state, cur_addr, offset| {
+                Ok(ControlFlow::Continue(state.write_memory_partial(
+                    cur_addr,
+                    &bytes[offset..],
+                    &self.mapping_context,
+                )?))
+            },
+        )?;
+        if copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(copied) }
     }
 
     pub fn unified_zero(
@@ -3005,14 +3093,31 @@ impl MemoryManager {
             }
         }
 
-        let copied = self.unified_transfer_loop(addr, length, |cur_addr, offset| {
-            Ok(ControlFlow::Continue(usercopy().zero(cur_addr.ptr(), length - offset)))
-        })?;
+        let copied = self.unified_transfer_loop(
+            addr,
+            length,
+            /*is_write=*/ true,
+            |cur_addr, offset| {
+                Ok(ControlFlow::Continue(usercopy().zero(cur_addr.ptr(), length - offset)))
+            },
+        )?;
         if copied == 0 && length > 0 { error!(EFAULT) } else { Ok(copied) }
     }
 
     pub fn syscall_zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.state.read().zero(addr, length, &self.mapping_context)
+        let copied = self.syscall_transfer_loop(
+            addr,
+            length,
+            /*is_write=*/ true,
+            |state, cur_addr, offset| {
+                Ok(ControlFlow::Continue(state.zero_partial(
+                    cur_addr,
+                    length - offset,
+                    &self.mapping_context,
+                )?))
+            },
+        )?;
+        if copied == 0 && length > 0 { error!(EFAULT) } else { Ok(copied) }
     }
 
     /// Performs a data and instruction cache flush over the given address range.
@@ -4284,7 +4389,7 @@ impl MemoryManager {
     }
 
     pub fn extend_growsdown_mapping_to_address(
-        self: &Arc<Self>,
+        &self,
         addr: UserAddress,
         is_write: bool,
     ) -> Result<bool, Error> {
@@ -6116,6 +6221,7 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
+            let task_ma: &Task = &current_task.task;
 
             let addr = mm.state.read().find_next_unused_range(2 * *PAGE_SIZE as usize).unwrap();
             let addr = map_memory(&current_task, addr, *PAGE_SIZE);
@@ -6139,6 +6245,58 @@ mod tests {
                 ma.read_memory_partial_to_vec(addr, bytes.len()).unwrap().len(),
                 *PAGE_SIZE as usize,
             );
+            assert_eq!(
+                task_ma.read_memory_partial_to_vec(addr, bytes.len()).unwrap().len(),
+                *PAGE_SIZE as usize,
+            );
+            assert_eq!(ma.read_memory_partial_to_vec(second_map, bytes.len()), error!(EFAULT));
+            assert_eq!(task_ma.read_memory_partial_to_vec(second_map, bytes.len()), error!(EFAULT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_partial_write() {
+        spawn_kernel_and_run(async |current_task| {
+            let mm = current_task.mm().unwrap();
+            let ma = current_task.deref();
+            let task_ma: &Task = &current_task.task;
+
+            let addr = mm.state.read().find_next_unused_range(2 * *PAGE_SIZE as usize).unwrap();
+            let addr = map_memory(&current_task, addr, *PAGE_SIZE);
+            let second_map = map_memory(&current_task, (addr + *PAGE_SIZE).unwrap(), *PAGE_SIZE);
+
+            let mut state = mm.state.write();
+            let mut released_mappings = ReleasedMappings::default();
+            state
+                .protect(
+                    ma,
+                    second_map,
+                    *PAGE_SIZE as usize,
+                    ProtectionFlags::empty(),
+                    &mut released_mappings,
+                )
+                .unwrap();
+            released_mappings.finalize(state);
+
+            let bytes = vec![0xab; (*PAGE_SIZE * 2) as usize];
+            assert_eq!(ma.write_memory_partial(addr, &bytes), Ok(*PAGE_SIZE as usize));
+            assert_eq!(
+                ma.read_memory_to_vec(addr, *PAGE_SIZE as usize).unwrap(),
+                &bytes[..*PAGE_SIZE as usize]
+            );
+
+            let bytes2 = vec![0xcd; (*PAGE_SIZE * 2) as usize];
+            assert_eq!(task_ma.write_memory_partial(addr, &bytes2), Ok(*PAGE_SIZE as usize));
+            assert_eq!(
+                task_ma.read_memory_to_vec(addr, *PAGE_SIZE as usize).unwrap(),
+                &bytes2[..*PAGE_SIZE as usize]
+            );
+
+            assert_eq!(ma.write_memory_partial(second_map, &bytes), error!(EFAULT));
+            assert_eq!(task_ma.write_memory_partial(second_map, &bytes), error!(EFAULT));
+            assert_eq!(ma.write_memory_partial(second_map, &[]), Ok(0));
+            assert_eq!(task_ma.write_memory_partial(second_map, &[]), Ok(0));
         })
         .await;
     }
@@ -6263,6 +6421,105 @@ mod tests {
             );
 
             assert_eq!(mm.get_mapping_count(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_grow_fault_below_prot_none_mapping() {
+        spawn_kernel_and_run(async |current_task| {
+            let mm = current_task.mm().unwrap();
+
+            let mapped_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+
+            mm.protect(&current_task, mapped_addr, *PAGE_SIZE as usize, ProtectionFlags::empty())
+                .unwrap();
+
+            assert_matches!(
+                mm.extend_growsdown_mapping_to_address((mapped_addr - *PAGE_SIZE).unwrap(), false),
+                Ok(false)
+            );
+            assert_matches!(
+                mm.extend_growsdown_mapping_to_address((mapped_addr - *PAGE_SIZE).unwrap(), true),
+                Ok(false)
+            );
+
+            assert_eq!(mm.get_mapping_count(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usercopy_growsdown_write_and_read() {
+        spawn_kernel_and_run(async |current_task| {
+            let mapped_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+            let read_addr = (mapped_addr - 100usize).unwrap();
+
+            // Reading below a growsdown mapping should grow it and yield zeroes.
+            let mut read_buf = [std::mem::MaybeUninit::uninit(); 24];
+            let read_data = current_task.read_memory(read_addr, &mut read_buf).unwrap();
+            assert_eq!(read_data, &[0u8; 24]);
+
+            // Writing further down below the expanded mapping should grow it again.
+            let write_addr = (read_addr - *PAGE_SIZE).unwrap();
+            let test_data = b"hello growsdown usercopy";
+            assert_matches!(
+                current_task.write_memory(write_addr, test_data),
+                Ok(len) if len == test_data.len()
+            );
+
+            let mut read_buf = [std::mem::MaybeUninit::uninit(); 24];
+            let read_data = current_task.read_memory(write_addr, &mut read_buf).unwrap();
+            assert_eq!(read_data, test_data);
+
+            // Accessing an address below `mm.base_addr` should not grow the mapping and should
+            // return EFAULT.
+            let mm = current_task.mm().unwrap();
+            assert_matches!(
+                mm.extend_growsdown_mapping_to_address(UserAddress::NULL, false),
+                Ok(false)
+            );
+            assert_eq!(current_task.read_memory(UserAddress::NULL, &mut read_buf), error!(EFAULT));
+            assert_eq!(current_task.write_memory(UserAddress::NULL, test_data), error!(EFAULT));
+            assert_eq!(current_task.zero(UserAddress::NULL, 16), error!(EFAULT));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_syscall_growsdown_write_and_read() {
+        spawn_kernel_and_run(async |current_task| {
+            let task_ma: &Task = &current_task.task;
+            let mapped_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+            let read_addr = (mapped_addr - 100usize).unwrap();
+
+            // Reading below a growsdown mapping via syscall_read_memory should grow it and yield zeroes.
+            let mut read_buf = [std::mem::MaybeUninit::uninit(); 24];
+            let read_data = task_ma.read_memory(read_addr, &mut read_buf).unwrap();
+            assert_eq!(read_data, &[0u8; 24]);
+
+            // Writing further down below the expanded mapping via syscall_write_memory should grow it again.
+            let write_addr = (read_addr - *PAGE_SIZE).unwrap();
+            let test_data = b"hello growsdown syscall\0";
+            assert_matches!(
+                task_ma.write_memory(write_addr, test_data),
+                Ok(len) if len == test_data.len()
+            );
+
+            let mut read_buf = [std::mem::MaybeUninit::uninit(); 32];
+            let read_cstr =
+                task_ma.read_memory_partial_until_null_byte(write_addr, &mut read_buf).unwrap();
+            assert_eq!(read_cstr, test_data);
+
+            // Zeroing further down below the expanded mapping via syscall_zero should grow it again.
+            let zero_addr = (write_addr - *PAGE_SIZE).unwrap();
+            assert_eq!(task_ma.zero(zero_addr, 16), Ok(16));
+
+            // Accessing an address below `mm.base_addr` should not grow the mapping and should
+            // return EFAULT.
+            assert_eq!(task_ma.read_memory(UserAddress::NULL, &mut read_buf), error!(EFAULT));
+            assert_eq!(task_ma.write_memory(UserAddress::NULL, test_data), error!(EFAULT));
+            assert_eq!(task_ma.zero(UserAddress::NULL, 16), error!(EFAULT));
         })
         .await;
     }

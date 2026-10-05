@@ -664,7 +664,9 @@ impl FileOps for InputFile {
                         return Ok(SUCCESS);
                     }
                     // Zero out the entire user buffer in case the user reads too much.
-                    current_task.zero(user_addr, buffer_bytes_count)?;
+                    if current_task.zero(user_addr, buffer_bytes_count)? != buffer_bytes_count {
+                        return error!(EFAULT);
+                    }
                     let to_copy = std::cmp::min(bits.len(), buffer_bytes_count);
                     current_task.write_memory(user_addr, &bits[..to_copy])?;
                     Ok(SUCCESS)
@@ -677,7 +679,9 @@ impl FileOps for InputFile {
                         return Ok(SUCCESS);
                     }
                     // Zero out the entire user buffer in case the user reads too much.
-                    current_task.zero(user_addr, buffer_bytes_count)?;
+                    if current_task.zero(user_addr, buffer_bytes_count)? != buffer_bytes_count {
+                        return error!(EFAULT);
+                    }
                     let to_copy = std::cmp::min(bytes.len(), buffer_bytes_count.saturating_sub(1));
                     current_task.write_memory(user_addr, &bytes[..to_copy])?;
                     // String queries (EVIOCGNAME, EVIOCGPHYS) return the number of bytes written,

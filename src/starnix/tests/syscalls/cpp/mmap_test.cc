@@ -788,6 +788,17 @@ class MapGrowsdownTest : public testing::Test {
     fprintf(stderr, "%s\n", maps.c_str());
   }
 
+  void ResetPartialTransferMappings() {
+    std::byte* page_a = OffsetToAddress(initial_grows_down_low_offset() - 2 * page_size());
+    std::byte* page_c = OffsetToAddress(initial_grows_down_low_offset());
+    SAFE_SYSCALL(munmap(page_a, 2 * page_size()));
+    ASSERT_EQ(MapRelative(initial_grows_down_low_offset() - 2 * page_size(), page_size(),
+                          PROT_READ | PROT_WRITE, MAP_GROWSDOWN),
+              page_a);
+    memset(page_a, 'a', page_size());
+    memset(page_c, 'c', page_size());
+  }
+
   size_t page_size() const { return page_size_; }
   size_t playground_size() const { return playground_size_; }
 
@@ -1075,6 +1086,159 @@ TEST_F(MapGrowsdownTest, SyscallWritesBelowGrowsdown) {
   // pipe.
   SAFE_SYSCALL(read(fds[0], address_below_growsdown, 1));
   EXPECT_EQ(std::to_integer<char>(*address_below_growsdown), 'a');
+}
+
+TEST_F(MapGrowsdownTest, PartialReadBelowGrowsdown) {
+  // Layout:
+  // Page A: [initial_grows_down_low_offset() - 2 * page_size(), ...) -> MAP_GROWSDOWN mapping
+  // Page B: [initial_grows_down_low_offset() - 1 * page_size(), ...) -> Unmapped (empty)
+  // Page C: [initial_grows_down_low_offset(), ...)                   -> MAP_GROWSDOWN mapping
+  std::byte* page_a = OffsetToAddress(initial_grows_down_low_offset() - 2 * page_size());
+  std::byte* page_b = OffsetToAddress(initial_grows_down_low_offset() - page_size());
+  std::byte* last_growsdown_page = OffsetToAddress(grows_down_high_offset() - page_size());
+
+  // Read /proc/self/mem from a forked child so Starnix uses syscall_read_memory_partial.
+  fbl::unique_fd mem_fd(open("/proc/self/mem", O_RDONLY));
+  ASSERT_TRUE(mem_fd.is_valid()) << strerror(errno);
+
+  auto check_pread_in_child = [&](std::byte* addr, size_t len, std::string_view expected) {
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      std::string buf(len, '\0');
+      const off64_t offset = static_cast<off64_t>(reinterpret_cast<uintptr_t>(addr));
+      ASSERT_EQ(pread64(mem_fd.get(), buf.data(), len, offset),
+                static_cast<ssize_t>(expected.size()));
+      buf.resize(expected.size());
+      EXPECT_EQ(buf, expected);
+    });
+    EXPECT_TRUE(helper.WaitForChildren());
+  };
+
+  const std::string a_page(page_size(), 'a');
+  const std::string zero_page(page_size(), '\0');
+  const std::string c_page(page_size(), 'c');
+
+  // Reading 2 pages starting at the last mapped page (followed by an unmapped page) reads 1 page.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  memset(last_growsdown_page, 'z', page_size());
+  check_pread_in_child(last_growsdown_page, 2 * page_size(), std::string(page_size(), 'z'));
+
+  // Reading [A, B, C] extends C into B mid-read and reads all 3 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  check_pread_in_child(page_a, 3 * page_size(), a_page + zero_page + c_page);
+
+  // Reading [B, C] extends C into B and reads 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  check_pread_in_child(page_b, 2 * page_size(), zero_page + c_page);
+
+  // Reading [A, B] extends C into B and reads 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  check_pread_in_child(page_a, 2 * page_size(), a_page + zero_page);
+}
+
+TEST_F(MapGrowsdownTest, PartialWriteBelowGrowsdown) {
+  std::byte* page_a = OffsetToAddress(initial_grows_down_low_offset() - 2 * page_size());
+  std::byte* page_b = OffsetToAddress(initial_grows_down_low_offset() - page_size());
+  std::byte* last_growsdown_page = OffsetToAddress(grows_down_high_offset() - page_size());
+
+  // Write /proc/self/mem from a forked child so Starnix uses syscall_write_memory_partial.
+  fbl::unique_fd mem_fd(open("/proc/self/mem", O_RDWR));
+  ASSERT_TRUE(mem_fd.is_valid()) << strerror(errno);
+
+  auto check_pwrite_in_child = [&](std::byte* addr, std::string_view data, ssize_t expected_res) {
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      const off64_t offset = static_cast<off64_t>(reinterpret_cast<uintptr_t>(addr));
+      EXPECT_EQ(pwrite64(mem_fd.get(), data.data(), data.size(), offset), expected_res);
+    });
+    EXPECT_TRUE(helper.WaitForChildren());
+  };
+
+  // Writing 2 pages starting at the last mapped page (followed by an unmapped page) writes 1 page.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  std::string two_pages(2 * page_size(), 'w');
+  check_pwrite_in_child(last_growsdown_page, two_pages, page_size());
+  EXPECT_EQ(memcmp(last_growsdown_page, two_pages.data(), page_size()), 0);
+
+  // Writing [A, B, C] extends C into B mid-write and writes all 3 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  std::string three_pages(3 * page_size(), 'x');
+  check_pwrite_in_child(page_a, three_pages, 3 * page_size());
+  EXPECT_EQ(memcmp(page_a, three_pages.data(), 3 * page_size()), 0);
+
+  // Writing [B, C] extends C into B and writes 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  check_pwrite_in_child(page_b, two_pages, 2 * page_size());
+  EXPECT_EQ(memcmp(page_b, two_pages.data(), 2 * page_size()), 0);
+
+  // Writing [A, B] extends C into B and writes 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  check_pwrite_in_child(page_a, two_pages, 2 * page_size());
+  EXPECT_EQ(memcmp(page_a, two_pages.data(), 2 * page_size()), 0);
+}
+
+TEST_F(MapGrowsdownTest, PartialZeroBelowGrowsdown) {
+  std::byte* page_a = OffsetToAddress(initial_grows_down_low_offset() - 2 * page_size());
+  std::byte* page_b = OffsetToAddress(initial_grows_down_low_offset() - page_size());
+  std::byte* last_growsdown_page = OffsetToAddress(grows_down_high_offset() - page_size());
+
+  fbl::unique_fd zero_fd(open("/dev/zero", O_RDONLY));
+  ASSERT_TRUE(zero_fd.is_valid()) << strerror(errno);
+
+  const std::string zero_page(page_size(), '\0');
+
+  // Reading 2 pages from /dev/zero into the last mapped page (followed by an unmapped page).
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  memset(last_growsdown_page, 'z', page_size());
+  EXPECT_EQ(read(zero_fd.get(), last_growsdown_page, 2 * page_size()),
+            static_cast<ssize_t>(page_size()));
+  EXPECT_EQ(memcmp(last_growsdown_page, zero_page.data(), page_size()), 0);
+
+  // Reading < 1 page across the boundary between mapped and unmapped page.
+  memset(last_growsdown_page, 'z', page_size());
+  EXPECT_EQ(read(zero_fd.get(), last_growsdown_page + page_size() - 16, 32), 16);
+  EXPECT_EQ(memcmp(last_growsdown_page + page_size() - 16, zero_page.data(), 16), 0);
+
+  // Reading [A, B, C] from /dev/zero extends C into B and zeroes all 3 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  EXPECT_EQ(read(zero_fd.get(), page_a, 3 * page_size()), static_cast<ssize_t>(3 * page_size()));
+  EXPECT_EQ(memcmp(page_a, zero_page.data(), page_size()), 0);
+  EXPECT_EQ(memcmp(page_b, zero_page.data(), page_size()), 0);
+  EXPECT_EQ(memcmp(page_b + page_size(), zero_page.data(), page_size()), 0);
+
+  // Reading [B, C] from /dev/zero extends C into B and zeroes 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  EXPECT_EQ(read(zero_fd.get(), page_b, 2 * page_size()), static_cast<ssize_t>(2 * page_size()));
+  EXPECT_EQ(memcmp(page_b, zero_page.data(), page_size()), 0);
+  EXPECT_EQ(memcmp(page_b + page_size(), zero_page.data(), page_size()), 0);
+
+  // Reading [A, B] from /dev/zero extends C into B and zeroes 2 pages.
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  EXPECT_EQ(read(zero_fd.get(), page_a, 2 * page_size()), static_cast<ssize_t>(2 * page_size()));
+  EXPECT_EQ(memcmp(page_a, zero_page.data(), page_size()), 0);
+  EXPECT_EQ(memcmp(page_b, zero_page.data(), page_size()), 0);
+
+  // waitid with WNOHANG zeroes the initial fields of siginfo_t: fails with EFAULT if straddling
+  // into an unmapped page, and succeeds by extending C into B if straddling [A, B].
+  ASSERT_NO_FATAL_FAILURE(ResetPartialTransferMappings());
+  test_helper::ForkHelper helper;
+  pid_t child = helper.RunInForkedProcess([] { pause(); });
+  helper.ExpectSignal(SIGKILL);
+  auto* partial_unmapped_siginfo =
+      reinterpret_cast<siginfo_t*>(last_growsdown_page + page_size() - 8);
+  EXPECT_THAT(
+      syscall(SYS_waitid, P_PID, child, partial_unmapped_siginfo, WEXITED | WNOHANG, nullptr),
+      SyscallFailsWithErrno(EFAULT));
+
+  auto* growsdown_siginfo = reinterpret_cast<siginfo_t*>(page_a + page_size() - 8);
+  EXPECT_THAT(syscall(SYS_waitid, P_PID, child, growsdown_siginfo, WEXITED | WNOHANG, nullptr),
+              SyscallSucceeds());
+  EXPECT_EQ(growsdown_siginfo->si_signo, 0);
+  EXPECT_EQ(growsdown_siginfo->si_code, 0);
+  EXPECT_EQ(growsdown_siginfo->si_pid, 0);
+
+  kill(child, SIGKILL);
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST(Mprotect, ProtGrowsdownOnNonGrowsdownMapping) {

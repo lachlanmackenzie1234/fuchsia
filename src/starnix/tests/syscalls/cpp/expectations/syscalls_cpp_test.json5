@@ -92,10 +92,6 @@
                 // TODO(https://fxbug.dev/297438799)
                 "MmapTest.CanMprotectNonExecMmapToExecutable",
 
-                // TODO(https://fxbug.dev/42179751): Make these tests pass in Starnix.
-                "MapGrowsdownTest.SyscallReadsBelowGrowsdown",
-                "MapGrowsdownTest.SyscallWritesBelowGrowsdown",
-
                 // TODO(https://fxbug.dev/297438799)
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/____and_rwx",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r___and_rwx",
