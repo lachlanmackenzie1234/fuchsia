@@ -61,6 +61,7 @@ wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:wlan_bss_transition_management_test",
   "//src/connectivity/wlan/tests/wlancfg:reboot_soft_test",
   "//src/connectivity/wlan/tests/wlancfg:reboot_hard_test",
+  "//src/connectivity/wlan/tests/wlancfg:suspend_resume_test",
 ]
 
 # Tests longer than ~20 minutes consume significant resources and significantly
