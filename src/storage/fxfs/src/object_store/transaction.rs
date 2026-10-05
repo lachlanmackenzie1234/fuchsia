@@ -55,6 +55,15 @@ pub struct Options<'a> {
     /// no free space.  The intention is that this should be used for things like the journal which
     /// require guaranteed space.
     pub allocator_reservation: Option<&'a Reservation>,
+
+    /// If set, indicates that this transaction is nested within `parent_transaction` and shares
+    /// its in-flight transaction slot.  The use case for this is a nested transaction, where a
+    /// separate transaction must be committed while constructing another transaction (for example,
+    /// when rolling the object ID cipher).
+    ///
+    /// NOTE: The locks acquired by the nested transaction do not cooperate in any way with the
+    /// locks already held by parent_transaction, so care must still be taken to avoid deadlocks.
+    pub parent_transaction: Option<&'a Transaction<'a>>,
 }
 
 // This is the amount of space that we reserve for metadata when we are creating a new transaction.
@@ -674,6 +683,10 @@ pub struct Transaction<'a> {
 
     /// Set if this transaction contains data (i.e. includes any extent mutations).
     includes_write: bool,
+
+    /// If set, indicates that this transaction is nested within `parent_transaction` and shares
+    /// its in-flight transaction slot.
+    parent_transaction: Option<&'a Transaction<'a>>,
 }
 
 impl<'a> Transaction<'a> {
@@ -684,9 +697,13 @@ impl<'a> Transaction<'a> {
         options: Options<'a>,
         txn_locks: LockKeys,
     ) -> Result<Transaction<'a>, Error> {
-        fs.add_transaction(options.skip_journal_checks).await;
-        let fs_clone = fs.clone();
-        let guard = scopeguard::guard((), |_| fs_clone.sub_transaction());
+        let guard = if options.parent_transaction.is_none() {
+            fs.add_transaction(options.skip_journal_checks).await;
+            let fs_clone = fs.clone();
+            Some(scopeguard::guard((), move |_| fs_clone.sub_transaction()))
+        } else {
+            None
+        };
         let (metadata_reservation, allocator_reservation, hold) =
             fs.reservation_for_transaction(options).await?;
 
@@ -704,9 +721,12 @@ impl<'a> Transaction<'a> {
             new_objects: BTreeSet::new(),
             checksums: Vec::new(),
             includes_write: false,
+            parent_transaction: options.parent_transaction,
         };
 
-        ScopeGuard::into_inner(guard);
+        if let Some(guard) = guard {
+            ScopeGuard::into_inner(guard);
+        }
         hold.map(|h| h.forget()); // Transaction takes ownership from here on.
         transaction.allocator_reservation = allocator_reservation;
         Ok(transaction)
@@ -1039,6 +1059,9 @@ impl Drop for Transaction<'_> {
         // Call the filesystem implementation of drop_transaction which should, as a minimum, call
         // LockManager's drop_transaction to ensure the locks are released.
         debug!(txn:? = &self; "Drop");
+        if self.parent_transaction.is_none() {
+            self.fs.sub_transaction();
+        }
         self.fs.clone().drop_transaction(self);
     }
 }

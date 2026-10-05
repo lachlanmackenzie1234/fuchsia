@@ -732,7 +732,7 @@ mod tests {
                 .await
                 .expect("new_transaction failed");
             let new_layer_object = if let Some(crypt) = &crypt {
-                let raw_id = parent_store.get_next_object_id().await.unwrap();
+                let raw_id = parent_store.get_next_object_id(&transaction).await.unwrap();
                 let (fxfs_key, unwrapped_key) =
                     crypt.create_key(raw_id.get(), KeyPurpose::Data).await.unwrap();
                 ObjectStore::create_object_with_key(

@@ -58,7 +58,7 @@ const_assert!(9223372036854771712 == MAX_FILE_SIZE);
 use futures::stream::StreamExt;
 
 // The maximum number of transactions that can be in-flight at any time.
-const MAX_IN_FLIGHT_TRANSACTIONS: u64 = 4;
+pub(crate) const MAX_IN_FLIGHT_TRANSACTIONS: u64 = 4;
 
 // Start trimming 1 hour after boot.  The idea here is to wait until the initial flurry of
 // activity during boot is finished.  This is a rough heuristic and may need to change later if
@@ -855,9 +855,6 @@ impl FxFilesystem {
     }
 
     pub(crate) fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
-        if !matches!(transaction.metadata_reservation, MetadataReservation::None) {
-            self.sub_transaction();
-        }
         // If we placed a hold for metadata space, return it now.
         if let MetadataReservation::Hold(hold_amount) =
             std::mem::replace(&mut transaction.metadata_reservation, MetadataReservation::None)
@@ -1086,7 +1083,7 @@ impl FxFilesystem {
                 if inc() {
                     break;
                 }
-                listener.await;
+                debug_assert_not_too_long!(listener);
             }
         }
     }
