@@ -241,3 +241,21 @@ TEST(ImageFormat, IntelYTiledFormat_V2BytesPerRowDivisor) {
     EXPECT_EQ(kPlaneSize, ImageFormatImageSize(image_format));
   }
 }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(32)
+TEST(ImageFormat, IntelPlaneByteOffsetOverflowIsInvalid) {
+  fuchsia_images2::ImageFormat image_format;
+  image_format.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
+  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kIntelI915YTiled;
+  image_format.size() = {0xFFFFFFFFu, 0xFFFFFFFFu};
+  image_format.bytes_per_row() = 0xFFFFFFFFu;
+
+  EXPECT_FALSE(ImageFormatImageSizeChecked(image_format).IsValid());
+  EXPECT_TRUE(ImageFormatPlaneByteOffsetChecked(image_format, 0).IsValid());
+  // The Y plane's size overflows, so the UV plane and CCS plane offsets are invalid.
+  EXPECT_FALSE(ImageFormatPlaneByteOffsetChecked(image_format, 1).IsValid());
+  EXPECT_FALSE(ImageFormatPlaneByteOffsetChecked(image_format, 3).IsValid());
+  uint64_t offset;
+  EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, 1, &offset));
+}
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(32)

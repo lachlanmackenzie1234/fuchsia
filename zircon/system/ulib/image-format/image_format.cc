@@ -236,7 +236,9 @@ class IntelTiledFormats : public ImageFormatSet {
       GetSizeInTiles(image_format, plane_idx, &width_in_tiles, &height_in_tiles);
       offset += (width_in_tiles * height_in_tiles * kIntelTileByteSize);
     }
-    ZX_DEBUG_ASSERT(offset.IsValid() && ((offset % kIntelTileByteSize).ValueOrDie() == 0));
+    // The offset may have overflowed, in which case it's returned as invalid. A valid offset is
+    // always a whole number of tiles.
+    ZX_DEBUG_ASSERT(!offset.IsValid() || ((offset % kIntelTileByteSize).ValueOrDie() == 0));
     return offset;
   }
 
