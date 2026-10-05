@@ -221,7 +221,7 @@ var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 // as their GN `config()` counterparts, so the labels are kept as-is.
 //
 // `build_flags` is converted to `configs +=` and `disable_build_flags` to
-// `configs -=`, see `attrGNAssignmentOps`.
+// `configs -=`, see `bazelAttrToGNAssignmentOps`.
 var buildFlagsAttrMap = map[string]string{
 	"build_flags":         "configs",
 	"disable_build_flags": "configs",
@@ -474,22 +474,22 @@ var coptToConfig = map[string]string{
 	"//build/config/rust:bootfs": "//build/config/rust:bootfs",
 }
 
-// attrGNAssignmentOps maps from Bazel attribute names to the assignment operators to use in GN.
+// bazelAttrToGNAssignmentOps maps from Bazel attribute names to the assignment operators to use in GN.
 //
 // NOTE: Entries in this map should be clearly documented.
-var attrGNAssignmentOps = map[string]string{
+var bazelAttrToGNAssignmentOps = map[string]string{
 	// `configs` in GN are rarely (never?) empty lists because we set them in BUILDCONFIG.gn.
 	// Trying to overwrite a non-empty list in GN with a non-empty value will fail.
 	// Simply replacing assignment with `+=` works for the initial use cases we need.
 	// More complex mechanism may be required if we need to selectively overwrite config assignments.
 	//
 	// The same applies to all Bazel attributes that are converted to GN `configs`.
-	"configs":     "+=",
-	"copts":       "+=",
-	"build_flags": "+=",
+	"configs":     "+=", // Passed through some macros. Deprecated.
+	"copts":       "+=", // Mapped to "configs" by `bazelCOptToGNConfig`. Deprecated.
+	"build_flags": "+=", // Mapped to "configs" with the same labels.
 	// `disable_build_flags` removes `build_flags()` from the defaults, which is
 	// the equivalent of removing `config()`s from `configs` in GN.
-	"disable_build_flags": "-=",
+	"disable_build_flags": "-=", // Mapped to "configs" with the same labels.
 }
 
 // disableInstrumentationAttr is the name of the `fx_cc_binary()` attribute that

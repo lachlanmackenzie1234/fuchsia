@@ -405,7 +405,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 	//
 	// This requires determining which assignment operator to use now even though
 	// we may not end up using it.
-	op, ok := attrGNAssignmentOps[lhs.Name]
+	op, ok := bazelAttrToGNAssignmentOps[lhs.Name]
 	if !ok {
 		op = "="
 	}
