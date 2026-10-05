@@ -42,30 +42,55 @@ from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
 from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.drivers import battery_manager
 from honeydew.affordances.drivers.fake_battery import (
-    fake_battery,
+    fake_battery as fake_battery_affordance,
+)
+from honeydew.affordances.drivers.fake_battery import (
     fake_battery_using_ffx,
 )
 from honeydew.affordances.drivers.hardware import power as hardware_power
-from honeydew.affordances.hello_world import hello_world, hello_world_using_ffx
-from honeydew.affordances.media import media, media_using_fc
+from honeydew.affordances.hello_world import (
+    hello_world as hello_world_affordance,
+)
+from honeydew.affordances.hello_world import (
+    hello_world_using_ffx,
+)
+from honeydew.affordances.media import media as media_affordance
+from honeydew.affordances.media import media_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
 )
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller_using_starnix,
 )
-from honeydew.affordances.rtc import rtc, rtc_using_fc
-from honeydew.affordances.session import session, session_using_ffx
+from honeydew.affordances.rtc import rtc as rtc_affordance
+from honeydew.affordances.rtc import rtc_using_fc
+from honeydew.affordances.session import session as session_affordance
+from honeydew.affordances.session import (
+    session_using_ffx,
+)
 from honeydew.affordances.starnix import errors as starnix_errors
-from honeydew.affordances.starnix import starnix, starnix_using_ffx
+from honeydew.affordances.starnix import starnix as starnix_affordance
+from honeydew.affordances.starnix import (
+    starnix_using_ffx,
+)
+from honeydew.affordances.tracing import tracing as tracing_affordance
 from honeydew.affordances.tracing import (
-    tracing,
     tracing_using_fc,
     tracing_using_ffx,
 )
 from honeydew.affordances.tracing import types as tracing_types
-from honeydew.affordances.ui.screenshot import screenshot, screenshot_using_ffx
-from honeydew.affordances.ui.user_input import user_input, user_input_using_fc
+from honeydew.affordances.ui.screenshot import (
+    screenshot as screenshot_affordance,
+)
+from honeydew.affordances.ui.screenshot import (
+    screenshot_using_ffx,
+)
+from honeydew.affordances.ui.user_input import (
+    user_input as user_input_affordance,
+)
+from honeydew.affordances.ui.user_input import (
+    user_input_using_fc,
+)
 from honeydew.affordances.virtual_audio import (
     audio,
     audio_using_fuchsia_controller,
@@ -531,7 +556,7 @@ class FuchsiaDevice(
 
     # List all the affordances
     @properties.Affordance
-    def session(self) -> session.Session:
+    def session(self) -> session_affordance.Session:
         """Returns a session affordance object.
 
         Returns:
@@ -544,7 +569,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def screenshot(self) -> screenshot.Screenshot:
+    def screenshot(self) -> screenshot_affordance.Screenshot:
         """Returns a screenshot affordance object.
 
         Returns:
@@ -577,7 +602,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def starnix(self) -> starnix.Starnix:
+    def starnix(self) -> starnix_affordance.Starnix:
         """Returns a starnix affordance object.
 
         Returns:
@@ -609,7 +634,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def rtc(self) -> rtc.Rtc:
+    def rtc(self) -> rtc_affordance.Rtc:
         """Returns an RTC affordance object.
 
         Returns:
@@ -621,7 +646,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def tracing(self) -> tracing.Tracing:
+    def tracing(self) -> tracing_affordance.Tracing:
         """Returns a tracing affordance object.
 
         Returns:
@@ -641,7 +666,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def user_input(self) -> user_input.UserInput:
+    def user_input(self) -> user_input_affordance.UserInput:
         """Returns an user input affordance object.
 
         Returns:
@@ -771,7 +796,7 @@ class FuchsiaDevice(
         return self.battery
 
     @properties.Affordance
-    def fake_battery(self) -> fake_battery.FakeBattery:
+    def fake_battery(self) -> fake_battery_affordance.FakeBattery:
         """Returns a fake_battery affordance object.
 
         Returns:
@@ -828,7 +853,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def media(self) -> media.Media:
+    def media(self) -> media_affordance.Media:
         """Returns a media affordance object.
 
         Returns:
@@ -841,7 +866,7 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def hello_world(self) -> hello_world.HelloWorld:
+    def hello_world(self) -> hello_world_affordance.HelloWorld:
         """Returns a HelloWorld affordance object.
 
         Returns:

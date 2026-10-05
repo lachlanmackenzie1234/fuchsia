@@ -7,23 +7,34 @@ import abc
 from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
-from honeydew.affordances import location
-from honeydew.affordances.connectivity import netstack
+from honeydew.affordances import location as location_affordance
+from honeydew.affordances.connectivity import netstack as netstack_affordance
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
 from honeydew.affordances.connectivity.bluetooth.gap import gap
 from honeydew.affordances.connectivity.bluetooth.le import le
-from honeydew.affordances.connectivity.wlan import core as wlan_core
-from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
-from honeydew.affordances.hello_world import hello_world
-from honeydew.affordances.power.system_power_state_controller import (
-    system_power_state_controller,
+from honeydew.affordances.connectivity.wlan import core as wlan_core_affordance
+from honeydew.affordances.connectivity.wlan import (
+    wlan_policy as wlan_policy_affordance,
 )
-from honeydew.affordances.rtc import rtc
-from honeydew.affordances.session import session
-from honeydew.affordances.starnix import starnix
-from honeydew.affordances.tracing import tracing
-from honeydew.affordances.ui.screenshot import screenshot
-from honeydew.affordances.ui.user_input import user_input
+from honeydew.affordances.connectivity.wlan import (
+    wlan_policy_ap as wlan_policy_ap_affordance,
+)
+from honeydew.affordances.hello_world import (
+    hello_world as hello_world_affordance,
+)
+from honeydew.affordances.power.system_power_state_controller import (
+    system_power_state_controller as system_power_state_controller_affordance,
+)
+from honeydew.affordances.rtc import rtc as rtc_affordance
+from honeydew.affordances.session import session as session_affordance
+from honeydew.affordances.starnix import starnix as starnix_affordance
+from honeydew.affordances.tracing import tracing as tracing_affordance
+from honeydew.affordances.ui.screenshot import (
+    screenshot as screenshot_affordance,
+)
+from honeydew.affordances.ui.user_input import (
+    user_input as user_input_affordance,
+)
 from honeydew.affordances.virtual_audio import audio
 from honeydew.transports.adb import adb as adb_transport
 from honeydew.transports.fastboot import fastboot as fastboot_transport
@@ -227,7 +238,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def hello_world(self) -> hello_world.HelloWorld:
+    def hello_world(self) -> hello_world_affordance.HelloWorld:
         """Returns a HelloWorld affordance object.
 
         Returns:
@@ -236,7 +247,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def rtc(self) -> rtc.Rtc:
+    def rtc(self) -> rtc_affordance.Rtc:
         """Returns an RTC affordance object.
 
         Returns:
@@ -245,7 +256,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def screenshot(self) -> screenshot.Screenshot:
+    def screenshot(self) -> screenshot_affordance.Screenshot:
         """Returns a screenshot affordance object.
 
         Returns:
@@ -263,7 +274,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def session(self) -> session.Session:
+    def session(self) -> session_affordance.Session:
         """Returns a session affordance object.
 
         Returns:
@@ -272,7 +283,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def starnix(self) -> starnix.Starnix:
+    def starnix(self) -> starnix_affordance.Starnix:
         """Returns a starnix affordance object.
 
         Returns:
@@ -283,7 +294,7 @@ class DeviceKnobs(abc.ABC):
     @abc.abstractmethod
     def system_power_state_controller(
         self,
-    ) -> system_power_state_controller.SystemPowerStateController:
+    ) -> system_power_state_controller_affordance.SystemPowerStateController:
         """Returns a SystemPowerStateController affordance object.
 
         Returns:
@@ -295,7 +306,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def tracing(self) -> tracing.Tracing:
+    def tracing(self) -> tracing_affordance.Tracing:
         """Returns a tracing affordance object.
 
         Returns:
@@ -304,7 +315,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def user_input(self) -> user_input.UserInput:
+    def user_input(self) -> user_input_affordance.UserInput:
         """Returns a user_input affordance object.
 
         Returns:
@@ -313,7 +324,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy(self) -> wlan_policy.WlanPolicy:
+    def wlan_policy(self) -> wlan_policy_affordance.WlanPolicy:
         """Returns a WlanPolicy affordance object.
 
         Returns:
@@ -322,7 +333,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy_ap(self) -> wlan_policy_ap.WlanPolicyAp:
+    def wlan_policy_ap(self) -> wlan_policy_ap_affordance.WlanPolicyAp:
         """Returns a WlanPolicyAp affordance object.
 
         Returns:
@@ -331,7 +342,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_core(self) -> wlan_core.WlanCore:
+    def wlan_core(self) -> wlan_core_affordance.WlanCore:
         """Returns a Wlan affordance object.
 
         Returns:
@@ -340,7 +351,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def netstack(self) -> netstack.Netstack:
+    def netstack(self) -> netstack_affordance.Netstack:
         """Returns a netstack affordance object.
 
         Returns:
@@ -349,7 +360,7 @@ class DeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def location(self) -> location.Location:
+    def location(self) -> location_affordance.Location:
         """Returns a Location affordance object.
 
         Returns:
