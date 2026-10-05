@@ -31,7 +31,6 @@ regio_common = {
 regio_configs = []
 if (is_kernel) {
   regio_configs += [ "//zircon/kernel/switch:allow-new-without-default" ]
-  regio_configs += [ "//zircon/kernel/switch:allow-doc-lazy-continuation" ]
 }
 
 rustc_library("regio") {
