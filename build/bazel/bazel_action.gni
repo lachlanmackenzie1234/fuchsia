@@ -666,6 +666,9 @@ template("bazel_action") {
         # Starlark query files
         "//build/bazel/starlark/FuchsiaPackageInfo_archive.cquery",
 
+        # Imported by bazel_action_utils.py
+        "//build/bazel/scripts/bazel_build_events.py",
+
         # Imported by bazel_ninja_delayed_actions.py
         # LINT.IfChange(delayed_action_imports)
         "//build/bazel/scripts/bazel_action_impl.py",

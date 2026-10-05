@@ -80,6 +80,7 @@ if (is_host) {
   python_library("bazel_action_utils") {
     sources = [ "bazel_action_utils.py" ]
     library_deps = [
+      ":bazel_build_events",
       ":build_utils",
       ":stdio_redirection",
       "//build/rbe:rbe_settings",
@@ -89,6 +90,15 @@ if (is_host) {
   python_build_time_tests("bazel_action_utils_test") {
     tests = [ "bazel_action_utils_test.py" ]
     deps = [ ":bazel_action_utils" ]
+  }
+
+  python_library("bazel_build_events") {
+    sources = [ "bazel_build_events.py" ]
+  }
+
+  python_build_time_tests("bazel_build_events_test") {
+    tests = [ "bazel_build_events_test.py" ]
+    deps = [ ":bazel_build_events" ]
   }
 
   python_library("generate_host_test_wrapper") {
@@ -328,6 +338,7 @@ group("tests") {
     ":bazel_action_file_copy_utils_test($host_toolchain)",
     ":bazel_action_utils_test($host_toolchain)",
     ":bazel_build_args_test($host_toolchain)",
+    ":bazel_build_events_test($host_toolchain)",
     ":bazel_build_flags_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_label_mapper_test($host_toolchain)",

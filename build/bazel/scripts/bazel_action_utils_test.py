@@ -3,17 +3,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import json
 import os
 import sys
+import tempfile
 import typing as T
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
+import bazel_build_events
 import stdio_redirection
 from bazel_action_utils import (
+    AspectManifestOutputs,
     BazelStderrDebugLineFilter,
     BazelStderrDebugLineRecorder,
     find_prefix_in_input,
+    parse_build_event_manifests,
 )
 
 
@@ -306,6 +312,197 @@ class BazelTargetInfosMapTest(unittest.TestCase):
         self.assertIsNone(bar_info.extra_bazel_targets_file)
 
         self.assertEqual(list(target_map.all_infos()), [foo_info, bar_info])
+
+
+class AspectManifestOutputsTest(unittest.TestCase):
+    def test_to_from_dict_and_file(self) -> None:
+        outputs = AspectManifestOutputs(
+            source_files_manifest_paths=["fake-out/bin/fake_sources.json"],
+            debug_symbol_manifest_paths=[
+                "fake-out/bin/fake_symbols.debug_symbols.json"
+            ],
+            rust_analyzer_manifest_paths=[
+                "fake-out/bin/fake_rust.fuchsia_rust_analyzer_manifest.json"
+            ],
+            genquery_output_files=[
+                "//buildfiles_genquery:fake_q,fake-out/bin/fake_q.txt"
+            ],
+        )
+        d = outputs.to_dict()
+        reconstructed = AspectManifestOutputs.from_dict(d)
+        self.assertEqual(outputs, reconstructed)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "all_manifests.json"
+            outputs.save_to_file(file_path)
+            loaded = AspectManifestOutputs.load_from_file(file_path)
+            self.assertEqual(outputs, loaded)
+
+    def test_from_build_event_stream(self) -> None:
+        events = [
+            {
+                "id": {"namedSet": {"id": "set-src"}},
+                "namedSetOfFiles": {
+                    "files": [
+                        {
+                            "name": "fake/pkg/fake_target.fuchsia_source_files.json",
+                            "pathPrefix": ["fake-out", "bin"],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {"namedSet": {"id": "set-dbg"}},
+                "namedSetOfFiles": {
+                    "files": [
+                        {
+                            "name": "fake/pkg/fake_bin.debug_symbols.json",
+                            "pathPrefix": ["fake-out", "bin"],
+                        },
+                        {
+                            "name": "fake/pkg/fake_bin",
+                            "pathPrefix": ["fake-out", "bin"],
+                        },
+                    ]
+                },
+            },
+            {
+                "id": {"namedSet": {"id": "set-rust"}},
+                "namedSetOfFiles": {
+                    "files": [
+                        {
+                            "name": "fake/pkg/fake_rust.fuchsia_rust_analyzer_manifest.json",
+                            "pathPrefix": ["fake-out", "bin"],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {"namedSet": {"id": "set-gq"}},
+                "namedSetOfFiles": {
+                    "files": [
+                        {
+                            "name": "buildfiles_genquery/fake_target.buildfiles.txt",
+                            "pathPrefix": ["fake-out", "bin"],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {"targetCompleted": {"label": "//fake/pkg:fake_target"}},
+                "completed": {
+                    "outputGroup": [
+                        {
+                            "name": "fuchsia_sources_manifest",
+                            "fileSets": [{"id": "set-src"}],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {"targetCompleted": {"label": "//fake/pkg:fake_bin"}},
+                "completed": {
+                    "outputGroup": [
+                        {
+                            "name": "debug_symbol_manifest",
+                            "fileSets": [{"id": "set-dbg"}],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {"targetCompleted": {"label": "//fake/pkg:fake_rust"}},
+                "completed": {
+                    "outputGroup": [
+                        {
+                            "name": "fuchsia_rust_analyzer_manifest",
+                            "fileSets": [{"id": "set-rust"}],
+                        }
+                    ]
+                },
+            },
+            {
+                "id": {
+                    "targetCompleted": {
+                        "label": "//buildfiles_genquery:fake_target.buildfiles.txt"
+                    }
+                },
+                "completed": {
+                    "outputGroup": [
+                        {
+                            "name": "default",
+                            "fileSets": [{"id": "set-gq"}],
+                        }
+                    ]
+                },
+            },
+        ]
+        stream = bazel_build_events.BuildEventStream.from_events(events)
+        outputs = AspectManifestOutputs.from_build_event_stream(stream)
+
+        expected_src = os.path.join(
+            "fake-out", "bin", "fake/pkg/fake_target.fuchsia_source_files.json"
+        )
+        expected_dbg = os.path.join(
+            "fake-out", "bin", "fake/pkg/fake_bin.debug_symbols.json"
+        )
+        expected_rust = os.path.join(
+            "fake-out",
+            "bin",
+            "fake/pkg/fake_rust.fuchsia_rust_analyzer_manifest.json",
+        )
+        expected_gq = os.path.join(
+            "fake-out", "bin", "buildfiles_genquery/fake_target.buildfiles.txt"
+        )
+
+        self.assertEqual(outputs.source_files_manifest_paths, [expected_src])
+        self.assertEqual(outputs.debug_symbol_manifest_paths, [expected_dbg])
+        self.assertEqual(outputs.rust_analyzer_manifest_paths, [expected_rust])
+        self.assertEqual(
+            outputs.genquery_output_files,
+            [
+                f"@@//buildfiles_genquery:fake_target.buildfiles.txt,{expected_gq}"
+            ],
+        )
+
+    def test_parse_build_event_manifests_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bep_path = Path(tmpdir) / "bep.json"
+            bep_path.write_text(
+                json.dumps(
+                    {
+                        "id": {"namedSet": {"id": "set-1"}},
+                        "namedSetOfFiles": {
+                            "files": [
+                                {
+                                    "name": "fake/target.fuchsia_source_files.json",
+                                    "pathPrefix": ["fake-out", "bin"],
+                                }
+                            ]
+                        },
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "id": {"targetCompleted": {"label": "//fake:target"}},
+                        "completed": {
+                            "outputGroup": [
+                                {
+                                    "name": "fuchsia_sources_manifest",
+                                    "fileSets": [{"id": "set-1"}],
+                                }
+                            ]
+                        },
+                    }
+                )
+                + "\n"
+            )
+            outputs = parse_build_event_manifests(bep_path)
+            expected = os.path.join(
+                "fake-out", "bin", "fake/target.fuchsia_source_files.json"
+            )
+            self.assertEqual(outputs.source_files_manifest_paths, [expected])
 
 
 if __name__ == "__main__":

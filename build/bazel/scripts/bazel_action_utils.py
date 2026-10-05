@@ -27,10 +27,13 @@ _FUCHSIA_DIR = os.path.dirname(
 if _FUCHSIA_DIR not in sys.path:
     sys.path.insert(0, _FUCHSIA_DIR)
 
+import bazel_build_events
 import build_utils
 import stdio_redirection
 from build.rbe import rbe_settings
 from build_utils import BazelPaths
+
+JSONObject: T.TypeAlias = dict[str, T.Any]
 
 
 @dataclasses.dataclass(order=True, frozen=True)
@@ -710,3 +713,107 @@ class BazelStderrDebugLineRecorder(BazelStderrDebugLineFilter):
             )
             return True  # Skip this line, its content was recorded.
         return False  # Keep this line
+
+
+@dataclasses.dataclass(frozen=True)
+class AspectManifestOutputs:
+    """Aggregated manifest file paths and genquery outputs discovered during a Bazel build."""
+
+    source_files_manifest_paths: list[str] = dataclasses.field(
+        default_factory=list
+    )
+    debug_symbol_manifest_paths: list[str] = dataclasses.field(
+        default_factory=list
+    )
+    rust_analyzer_manifest_paths: list[str] = dataclasses.field(
+        default_factory=list
+    )
+    genquery_output_files: list[str] = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> dict[str, list[str]]:
+        """Return a dictionary matching BazelStderrDebugLineRecorder.get_all_recorded_values()."""
+        return {
+            "source_files_manifest_paths": list(
+                self.source_files_manifest_paths
+            ),
+            "debug_symbol_manifest_paths": list(
+                self.debug_symbol_manifest_paths
+            ),
+            "rust_analyzer_manifest_paths": list(
+                self.rust_analyzer_manifest_paths
+            ),
+            "genquery_output_files": list(self.genquery_output_files),
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+    def save_to_file(self, path: Path) -> None:
+        path.write_text(self.to_json(), encoding="utf-8")
+
+    @classmethod
+    def from_dict(cls, data: JSONObject) -> "AspectManifestOutputs":
+        return cls(
+            source_files_manifest_paths=list(
+                data.get("source_files_manifest_paths", [])
+            ),
+            debug_symbol_manifest_paths=list(
+                data.get("debug_symbol_manifest_paths", [])
+            ),
+            rust_analyzer_manifest_paths=list(
+                data.get("rust_analyzer_manifest_paths", [])
+            ),
+            genquery_output_files=list(data.get("genquery_output_files", [])),
+        )
+
+    @classmethod
+    def load_from_file(cls, path: Path) -> "AspectManifestOutputs":
+        return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_build_event_stream(
+        cls,
+        stream: bazel_build_events.BuildEventStream,
+        execroot: Path | None = None,
+    ) -> "AspectManifestOutputs":
+        """Extract aspect manifest paths and genqueries from a generic BEP event stream."""
+        source_files = stream.get_output_group_files(
+            "fuchsia_sources_manifest", execroot
+        )
+
+        debug_symbols = [
+            f
+            for f in stream.get_output_group_files(
+                "debug_symbol_manifest", execroot
+            )
+            if f.endswith(".debug_symbols.json")
+        ]
+
+        rust_manifests = stream.get_output_group_files(
+            "fuchsia_rust_analyzer_manifest", execroot
+        )
+
+        genqueries = [
+            f"{build_utils.canonicalize_label(label)},{file_path}"
+            for label, file_path in stream.get_target_output_group_files(
+                "default",
+                label_predicate=lambda l: "buildfiles_genquery" in l,
+                execroot=execroot,
+            )
+        ]
+
+        return cls(
+            source_files_manifest_paths=list(dict.fromkeys(source_files)),
+            debug_symbol_manifest_paths=list(dict.fromkeys(debug_symbols)),
+            rust_analyzer_manifest_paths=list(dict.fromkeys(rust_manifests)),
+            genquery_output_files=list(dict.fromkeys(genqueries)),
+        )
+
+
+def parse_build_event_manifests(
+    bep_json_path: Path,
+    execroot: Path | None = None,
+) -> AspectManifestOutputs:
+    """Parse a BEP JSON file and extract manifest paths using AspectManifestOutputs."""
+    stream = bazel_build_events.BuildEventStream.from_file(bep_json_path)
+    return AspectManifestOutputs.from_build_event_stream(stream, execroot)

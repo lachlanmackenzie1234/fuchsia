@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import typing as T
 from pathlib import Path
 
@@ -387,6 +388,12 @@ class BazelActionRunner(object):
                 if comma == ",":
                     path = self.paths.execroot / path_str
                     genquery_output_map[label] = path
+                    genquery_output_map[
+                        build_utils.canonicalize_label(label)
+                    ] = path
+                    genquery_output_map[
+                        build_utils.normalize_label(label)
+                    ] = path
 
             genquery_files_to_cleanup.extend(genquery_output_map.values())
 
@@ -783,6 +790,20 @@ class BazelActionRunner(object):
             )
         )
 
+        with tempfile.NamedTemporaryFile(
+            prefix="bazel_bep_",
+            suffix=".json",
+            dir=self.paths.workspace,
+            delete=False,
+        ) as tmp_bep:
+            bep_json_path = Path(tmp_bep.name)
+            tmp_bep.close()
+
+        cmd_args = list(cmd_args) + [
+            f"--build_event_json_file={bep_json_path}",
+            "--output_groups=+debug_symbol_manifest",
+        ]
+
         with stdio_redirection.PipeOutputSink(
             bazel_debug_line_recorder, use_pty=is_stderr_pty
         ) as pty_stderr:
@@ -805,6 +826,7 @@ class BazelActionRunner(object):
                 )
 
         if ret.returncode != 0:
+            bep_json_path.unlink(missing_ok=True)
             if self.global_args.quiet:
                 # Assert that the output sinks are the expected types for quiet mode.
                 assert isinstance(
@@ -842,7 +864,50 @@ class BazelActionRunner(object):
             # Assume Bazel printed a reasonable error to stderr already.
             raise BazelActionError()
 
-        return bazel_debug_line_recorder.get_all_recorded_values()
+        try:
+            time_profile.start(
+                "parse_bep_manifests", "Parse manifest files from BEP events."
+            )
+            bep_manifest_outputs = (
+                bazel_action_utils.parse_build_event_manifests(
+                    bep_json_path, self.paths.execroot
+                )
+            )
+            bep_recorded_map = bep_manifest_outputs.to_dict()
+
+            legacy_recorded_map = (
+                bazel_debug_line_recorder.get_all_recorded_values()
+            )
+
+            # Shadow validation: verify that BEP captures all manifests found by legacy stderr.
+            # Note: BEP can be a superset of legacy stderr because Starlark print() does
+            # not re-run when Bazel serves target analysis from Skyframe cache.
+            for key in (
+                "source_files_manifest_paths",
+                "debug_symbol_manifest_paths",
+                "rust_analyzer_manifest_paths",
+                "genquery_output_files",
+            ):
+                bep_set = {
+                    build_utils.normalize_label(e)
+                    for e in bep_recorded_map.get(key, [])
+                }
+                legacy_set = {
+                    build_utils.normalize_label(e)
+                    for e in legacy_recorded_map.get(key, [])
+                }
+                diff_missing_in_bep = legacy_set - bep_set
+                if diff_missing_in_bep:
+                    raise BazelActionError(
+                        f"BEP manifest extraction missed manifests for {key}!\n"
+                        f"Missing in BEP: {diff_missing_in_bep}\n"
+                        f"Found in stderr: {legacy_set}\n"
+                        f"Found in BEP: {bep_set}"
+                    )
+
+            return bep_recorded_map
+        finally:
+            bep_json_path.unlink(missing_ok=True)
 
     def _handle_debug_symbols(
         self,
