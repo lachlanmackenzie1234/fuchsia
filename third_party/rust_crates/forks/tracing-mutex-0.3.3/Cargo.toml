@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.70"
 name = "tracing-mutex"
-version = "0.3.2"
+version = "0.3.3"
 build = "build.rs"
 autolib = false
 autobins = false
@@ -87,7 +87,7 @@ optional = true
 version = "0.5"
 
 [dev-dependencies.rand]
-version = "0.8"
+version = "0.9"
 
 [build-dependencies.autocfg]
 version = "1.4.0"

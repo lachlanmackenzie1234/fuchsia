@@ -517,7 +517,7 @@ _NORMAL_DEPENDENCIES = {
             "toml_edit": Label("//third_party/rust_crates/vendor/toml_edit-0.24.0+spec-1.1.0:toml_edit"),
             "tower-service": Label("//third_party/rust_crates/vendor/tower-service-0.3.3:tower_service"),
             "tracing": Label("//third_party/rust_crates/vendor/tracing-0.1.44:tracing"),
-            "tracing-mutex": Label("//third_party/rust_crates/vendor/tracing-mutex-0.3.2:tracing_mutex"),
+            "tracing-mutex": Label("//third_party/rust_crates/vendor/tracing-mutex-0.3.3:tracing_mutex"),
             "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.23.2:typed_builder"),
             "unic-char-range": Label("//third_party/rust_crates/vendor/unic-char-range-0.9.0:unic_char_range"),
             "unic-ucd-block": Label("//third_party/rust_crates/vendor/unic-ucd-block-0.9.0:unic_ucd_block"),

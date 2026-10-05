@@ -1,6 +1,6 @@
 [package]
 name = "tracing-mutex"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 categories = ["concurrency", "development-tools::debugging"]
@@ -22,7 +22,7 @@ parking_lot = { version = "0.12", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-rand = "0.8"
+rand = "0.9"
 
 [[bench]]
 name = "mutex"

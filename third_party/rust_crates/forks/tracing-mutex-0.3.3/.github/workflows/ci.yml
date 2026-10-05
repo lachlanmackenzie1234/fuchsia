@@ -21,12 +21,12 @@ jobs:
           - nightly
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
+          components: clippy
 
       # Make sure we test with recent deps
       - run: cargo update
@@ -34,7 +34,6 @@ jobs:
         if: "${{ matrix.rust != '1.74' }}"
       - run: cargo build --all-features --all-targets
       - run: cargo test --all-features
-      - run: cargo fmt --all -- --check
         # Note: Rust 1.74 doesn't understand edition 2024 formatting so no point
         if: "${{ matrix.rust != '1.74' }}"
       - run: cargo clippy --all-features --all-targets -- -D warnings
@@ -43,23 +42,35 @@ jobs:
     name: MSRV
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.70"
 
       # Test everything except experimental features.
-      - run: cargo test --features backtraces,lock_api,parking_lot
+      - run: cargo test --locked --features backtraces,lock_api,parking_lot
+
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Use nightly formatting options
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rustfmt
+      - run: cargo fmt --check
 
   docs:
     name: Documentation build
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
 
@@ -67,4 +78,4 @@ jobs:
         env:
           # Build the docs like docs.rs builds it
           RUSTDOCFLAGS: --cfg docsrs
-        run: cargo doc --all-features
+        run: cargo doc --all-features --no-deps

@@ -2573,11 +2573,11 @@ group("tracing-0.1.44") {
 }
 
 group("tracing-mutex") {
-  public_deps = [ ":tracing-mutex-v0_3_2" ]
+  public_deps = [ ":tracing-mutex-v0_3_3" ]
 }
 
-group("tracing-mutex-0.3.2") {
-  public_deps = [ ":tracing-mutex-v0_3_2" ]
+group("tracing-mutex-0.3.3") {
+  public_deps = [ ":tracing-mutex-v0_3_3" ]
 }
 
 if (current_os == "fuchsia") {
@@ -24796,18 +24796,18 @@ rustc_library("tracing-log-v0_2_0") {
   applicable_licenses = [ ":tracing-log-v0_2_0.license" ]
 }
 
-license("tracing-mutex-v0_3_2.license") {
+license("tracing-mutex-v0_3_3.license") {
   public_package_name = "tracing_mutex"
   license_files = [
-    "//third_party/rust_crates/forks/tracing-mutex-0.3.2/LICENSE-APACHE",
-    "//third_party/rust_crates/forks/tracing-mutex-0.3.2/LICENSE-MIT",
+    "//third_party/rust_crates/forks/tracing-mutex-0.3.3/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/tracing-mutex-0.3.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("tracing-mutex-v0_3_2") {
+rustc_library("tracing-mutex-v0_3_3") {
   crate_name = "tracing_mutex"
-  source_root = "//third_party/rust_crates/forks/tracing-mutex-0.3.2/src/lib.rs"
-  output_name = "tracing_mutex-fb9c5228a6600996"
+  source_root = "//third_party/rust_crates/forks/tracing-mutex-0.3.3/src/lib.rs"
+  output_name = "tracing_mutex-9058f67052faa17a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -24821,8 +24821,8 @@ rustc_library("tracing-mutex-v0_3_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fb9c5228a6600996",
-    "-Cextra-filename=-fb9c5228a6600996",
+    "-Cmetadata=9058f67052faa17a",
+    "-Cextra-filename=-9058f67052faa17a",
     "--cfg=feature=\"backtraces\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"experimental\"",
@@ -24834,7 +24834,7 @@ rustc_library("tracing-mutex-v0_3_2") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tracing-mutex-v0_3_2.license" ]
+  applicable_licenses = [ ":tracing-mutex-v0_3_3.license" ]
 }
 
 license("tracing-subscriber-v0_3_23.license") {

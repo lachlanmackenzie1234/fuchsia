@@ -15,11 +15,6 @@
 //! This conflicting dependency is not added to the graph, so future attempts at locking should
 //! succeed as normal.
 //!
-//! You can suppress panics by calling [`suppress_panics`]. This will cause the crate to print the
-//! cycle to stderr instead of panicking. This is useful for incrementally adopting tracing-mutex to
-//! a large codebase compiled with `panic=abort`, as it allows you to continue running your program
-//! even when a cycle is detected.
-//!
 //! # Structure
 //!
 //! Each module in this crate exposes wrappers for a specific base-mutex with dependency trakcing
@@ -120,8 +115,6 @@ pub mod parkinglot;
 mod reporting;
 pub mod stdsync;
 pub mod util;
-
-pub use reporting::suppress_panics;
 
 thread_local! {
     /// Stack to track which locks are held
@@ -327,8 +320,8 @@ fn get_dependency_graph() -> impl DerefMut<Target = DiGraph<usize, Dep>> {
 
 #[cfg(test)]
 mod tests {
+    use rand::rng;
     use rand::seq::SliceRandom;
-    use rand::thread_rng;
 
     use super::*;
 
@@ -400,7 +393,7 @@ mod tests {
             }
         }
 
-        edges.shuffle(&mut thread_rng());
+        edges.shuffle(&mut rng());
 
         for (x, y) in edges {
             // Acquire the mutexes, smallest first to ensure a cycle-free graph

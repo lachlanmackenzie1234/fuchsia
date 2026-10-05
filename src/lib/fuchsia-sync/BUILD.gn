@@ -105,7 +105,7 @@ DETECT_LOCK_CYCLE_FLAGS = [ "--cfg=detect_lock_cycles" ]
 # It's possible this variable is only used in if conditions (e.g. is_host).
 not_needed([ "DETECT_LOCK_CYCLE_FLAGS" ])
 
-DETECT_LOCK_CYCLE_DEPS = [ "//third_party/rust_crates:tracing-mutex-0.3.2" ]
+DETECT_LOCK_CYCLE_DEPS = [ "//third_party/rust_crates:tracing-mutex-0.3.3" ]
 
 # To avoid "Assignment had no effect" from GN.
 # It's possible this variable is only used in if conditions (e.g. is_host).

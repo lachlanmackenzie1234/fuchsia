@@ -547,7 +547,7 @@ CRATE_ANNOTATIONS = {
     ],
     "tracing-mutex": [
         crate.annotation(
-            version = "0.3.2",
+            version = "0.3.3",
             rustc_flags = [
                 "--cfg=has_std__sync__LazyLock",
             ],

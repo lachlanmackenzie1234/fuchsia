@@ -39,7 +39,7 @@ FUCHSIA_SYNC_TEST_DEPS = ["//third_party/rust_crates/vendor:crossbeam"]
 DETECT_LOCK_CYCLE_FLAGS = ["--cfg=detect_lock_cycles"]
 
 # @bazel2gn:transformer=deps
-DETECT_LOCK_CYCLE_DEPS = ["//third_party/rust_crates/forks/tracing-mutex-0.3.2:tracing_mutex"]
+DETECT_LOCK_CYCLE_DEPS = ["//third_party/rust_crates/forks/tracing-mutex-0.3.3:tracing_mutex"]
 
 rustc_library(
     name = "fuchsia-sync",

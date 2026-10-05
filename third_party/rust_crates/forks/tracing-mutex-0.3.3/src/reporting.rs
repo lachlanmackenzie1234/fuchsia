@@ -6,33 +6,33 @@ use std::backtrace::Backtrace;
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+use std::sync::PoisonError;
 
 #[cfg(feature = "backtraces")]
 pub type Dep = MutexDep<Arc<Backtrace>>;
 #[cfg(not(feature = "backtraces"))]
 pub type Dep = MutexDep<()>;
 
+pub(crate) type CycleHandler = Option<Box<dyn FnMut(&str) + Send + Sync>>;
+
 // Base message to be reported when cycle is detected
 const BASE_MESSAGE: &str = "Found cycle in mutex dependency graph:";
 
-static SHOULD_PANIC: AtomicBool = AtomicBool::new(true);
+pub(crate) fn cycle_handler_storage() -> MutexGuard<'static, CycleHandler> {
+    static CYCLE_HANDLER: Mutex<CycleHandler> = Mutex::new(None);
 
-/// Call this early in main() to suppress panics when a cycle is detected and print the lock cycles
-/// to stderr instead.
-///
-/// This is not as useful a mechanism for detecting issues as a panic, but it is useful for
-/// incrementally rolling out usage of tracing-mutex to many programs that use a shared crate.
-pub fn suppress_panics() {
-    SHOULD_PANIC.store(false, Ordering::Relaxed);
+    CYCLE_HANDLER.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 pub(crate) fn report_cycle(cycle: &[Dep]) {
     let message = Dep::message(cycle);
-    if SHOULD_PANIC.load(Ordering::Relaxed) {
-        panic!("{message}");
+
+    if let Some(handler) = cycle_handler_storage().as_mut() {
+        handler(&message);
     } else {
-        eprintln!("{message}");
+        panic!("{message}");
     }
 }
 
