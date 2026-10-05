@@ -83,7 +83,7 @@ func testCommon(t *testing.T,
 
 // See that the kernel stows a crashlog upon panicking.
 func TestKernelCrashlog(t *testing.T) {
-	i := testCommon(t, "k crash", "ZIRCON KERNEL PANIC", "KERNEL PANIC")
+	i := testCommon(t, "k crash deref", "ZIRCON KERNEL PANIC", "KERNEL PANIC")
 
 	// There should be a banner present, with a "VERSION" line.
 	i.WaitForLogMessage("VERSION")
