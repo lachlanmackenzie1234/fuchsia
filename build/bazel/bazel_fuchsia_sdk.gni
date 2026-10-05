@@ -237,7 +237,7 @@ template("run_fuchsia_bazel_sdk_tests") {
 
     action(_cpu_target_name) {
       testonly = true
-      script = "//build/bazel_sdk/tests/scripts/bazel_test.py"
+      script = "//build/bazel_sdk/tests/scripts/run_tests.py"
       inputs = [
         "//prebuilt/third_party/bazel/${host_os}-${host_cpu}/bazel",
         "//build/bazel_sdk/tests/MODULE.bazel",

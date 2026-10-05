@@ -251,7 +251,7 @@ can be used:
 
 2) Define the %s environment variable to
    point to content hash file. This is used by the Bazel SDK test suite's
-   bazel_test.py script.
+   run_tests.py script.
 
 3) As a fallback, if interpreter_path is given, its hash will be used as the
    source of truth.

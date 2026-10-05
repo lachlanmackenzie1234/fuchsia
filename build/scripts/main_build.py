@@ -833,7 +833,7 @@ class FuchsiaBuildContext(object):
             env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
         # LINT.ThenChange(
         #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
-        #   //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_socket_env_vars
+        #   //build/bazel_sdk/tests/scripts/run_tests.py:bazel_socket_env_vars
         # )
 
         # Forward ResultStore/CAS instance names unconditionally.

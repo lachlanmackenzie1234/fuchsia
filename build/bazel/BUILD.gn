@@ -40,7 +40,7 @@ generated_file("bazel_content_hashes_json") {
 #
 # These will be used to trigger new runs of the bazel_sdk_test_xxx targets
 # if the content of these directory changes. And the
-# //build/bazel_sdk/tests/script/bazel_test.py script will ensure that their
+# //build/bazel_sdk/tests/scripts/run_tests.py script will ensure that their
 # values are passed to the test workspace.
 #
 generate_prebuilt_dir_content_hash(prebuilt_content_hash_targets.python) {
