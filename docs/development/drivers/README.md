@@ -124,8 +124,12 @@ section.
 -  Board drivers
    - [GPIO initialization][gpio-init]
 -  Display drivers
-   -  [Modifying board drivers][modifying-board-drivers]
-   -  [What does a display controller do?][what-does-a-display-controller-do]
+   -  [Display hardware overview][display-hardware-overview]
+   -  [Developing drivers for new display hardware][developing-drivers-for-new-display-hardware]
+   -  [Display Coordinator terms for configuration states][display-coordinator-config-states]
+   -  [Referencing information sources in Fuchsia display drivers][display-referencing]
+   -  [Principles for modern register definitions][modern-register-definitions]
+   -  [Rubric for display drivers written in Rust][display-rust-rubric]
 -  PCI drivers
    - [Configuration][configuration]
 -  Registers
@@ -161,8 +165,12 @@ section.
 [driver-runtime-api-guidelines]: developer_guide/driver-runtime-api-guidelines.md
 [cpp-drivers-rubric]: developer_guide/cpp-rubric.md
 [rust-drivers-rubric]: developer_guide/rust-rubric.md
-[modifying-board-drivers]: driver_guides/display/board_driver_changes.md
-[what-does-a-display-controller-do]: driver_guides/display/hardware_concepts.md
+[display-hardware-overview]: driver_guides/display/hardware.md
+[developing-drivers-for-new-display-hardware]: driver_guides/display/new-driver-guide.md
+[display-coordinator-config-states]: driver_guides/display/config-states.md
+[display-referencing]: driver_guides/display/referencing.md
+[modern-register-definitions]: driver_guides/display/register-definitions.md
+[display-rust-rubric]: driver_guides/display/rust-rubric.md
 [registers-overview]: driver_guides/registers/overview.md
 [getting-descriptors-and-endpoints-from-usb]: driver_guides/usb/getting_descriptors_and_endpoints.md
 [usb-system-overview]: driver_guides/usb/concepts/overview.md
