@@ -6,6 +6,11 @@
 #include <fidl/fuchsia.wlan.stats/cpp/fidl.h>
 #include <zircon/errors.h>
 
+#include <cstring>
+#include <limits>
+#include <type_traits>
+#include <vector>
+
 #include <wlan/common/channel.h>
 #include <wlan/drivers/macaddr.h>
 #include <zxtest/zxtest.h>
@@ -24,6 +29,21 @@ using ::wlan::common::MacAddr;
 namespace wlan::brcmfmac {
 
 namespace wlan_ieee80211 = wlan_ieee80211;
+
+namespace {
+
+// Returns |value| as the raw bytes that the error injector substitutes for a firmware response.
+// Restricted to trivially copyable types, for which copying the object representation is well
+// defined.
+template <typename T>
+  requires std::is_trivially_copyable_v<T>
+std::vector<uint8_t> CreatePayloadVector(const T& value) {
+  std::vector<uint8_t> payload(sizeof(value));
+  std::memcpy(payload.data(), &value, sizeof(value));
+  return payload;
+}
+
+}  // namespace
 
 // Some default AP and association request values
 constexpr fuchsia_wlan_ieee80211::wire::ChannelNumber kDefaultChannel = {
@@ -555,6 +575,72 @@ TEST_F(ConnectTest, GetSignalReportTest_Connected) {
   EXPECT_EQ(conn_report.rssi_dbm(), kDefaultSimFwRssi);
   EXPECT_EQ(conn_report.snr_db(), kDefaultSimFwSnr);
   EXPECT_EQ(conn_report.primary().number, kDefaultChannel.number);
+}
+
+// Verify that an SNR too large for the int8_t it is reported in is clamped rather than truncated.
+// SNR is retrieved through a string-named iovar.
+TEST_F(ConnectTest, GetSignalReportTest_SnrOutOfRange) {
+  Init();
+
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  ap.EnableBeacon(zx::msec(100));
+
+  // Far outside int8_t range. Truncating this value would report an SNR of 64 dB.
+  const std::vector<uint8_t> alt_snr_data = CreatePayloadVector<int32_t>(40000);
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    brcmf_simdev* sim = device->GetSim();
+    sim->sim_fw->err_inj_.AddErrInjIovar("snr", ZX_OK, BCME_OK, client_ifc_.iface_id_,
+                                         &alt_snr_data);
+  });
+
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
+  fuchsia_wlan_stats::wire::SignalReport signal_report = {};
+
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
+  env_->ScheduleNotification(std::bind(&ConnectTest::GetSignalReport, this, &signal_report),
+                             zx::msec(30));
+
+  env_->Run(kTestDuration);
+
+  ASSERT_TRUE(signal_report.has_connection_signal_report());
+  auto conn_report = signal_report.connection_signal_report();
+  EXPECT_EQ(conn_report.snr_db(), std::numeric_limits<int8_t>::max());
+  // The RSSI is not injected, so it should be unaffected.
+  EXPECT_EQ(conn_report.rssi_dbm(), kDefaultSimFwRssi);
+}
+
+// Verify that an RSSI too small for the int8_t it is reported in is clamped rather than truncated.
+// Unlike SNR, RSSI is retrieved with a numbered command rather than a string-named iovar.
+TEST_F(ConnectTest, GetSignalReportTest_RssiOutOfRange) {
+  Init();
+
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  ap.EnableBeacon(zx::msec(100));
+
+  // Far outside int8_t range. Truncating this value would report an RSSI of -64 dBm.
+  const std::vector<uint8_t> alt_rssi_data = CreatePayloadVector<int32_t>(-40000);
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    brcmf_simdev* sim = device->GetSim();
+    sim->sim_fw->err_inj_.AddErrInjCmd(BRCMF_C_GET_RSSI, ZX_OK, BCME_OK, client_ifc_.iface_id_,
+                                       &alt_rssi_data);
+  });
+
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
+  fuchsia_wlan_stats::wire::SignalReport signal_report = {};
+
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
+  env_->ScheduleNotification(std::bind(&ConnectTest::GetSignalReport, this, &signal_report),
+                             zx::msec(30));
+
+  env_->Run(kTestDuration);
+
+  ASSERT_TRUE(signal_report.has_connection_signal_report());
+  auto conn_report = signal_report.connection_signal_report();
+  EXPECT_EQ(conn_report.rssi_dbm(), std::numeric_limits<int8_t>::min());
+  // The SNR is not injected, so it should be unaffected.
+  EXPECT_EQ(conn_report.snr_db(), kDefaultSimFwSnr);
 }
 
 // This test is to verify that GetIfaceStats still returns a response even when the

@@ -364,7 +364,10 @@ static zx_status_t brcmf_rx_hdrpull(struct brcmf_pub* drvr, wlan::drivers::compo
     }
     return ZX_ERR_IO;
   }
-  frame.SetPortId((*ifp)->ifidx);
+  if (!std::in_range<uint8_t>((*ifp)->ifidx)) {
+    return ZX_ERR_INTERNAL;
+  }
+  frame.SetPortId(static_cast<uint8_t>((*ifp)->ifidx));
   return ZX_OK;
 }
 
@@ -993,8 +996,11 @@ zx_status_t brcmf_get_head_length(struct brcmf_pub* drvr, uint16_t* head_length_
   if (head_length_out == nullptr) {
     return ZX_ERR_INVALID_ARGS;
   }
+  if (drvr->hdrlen > std::numeric_limits<uint16_t>::max()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
 
-  *head_length_out = drvr->hdrlen;
+  *head_length_out = static_cast<uint16_t>(drvr->hdrlen);
 
   return ZX_OK;
 }

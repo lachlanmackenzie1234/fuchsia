@@ -790,9 +790,17 @@ std::unique_ptr<WlanInterface>* Device::GetInterfaceForId(uint16_t interface_id)
 }
 
 void Device::Get(GetRequestView request, GetCompleter::Sync& completer) {
+  const size_t size = request->request.size();
+  if (size > std::numeric_limits<uint32_t>::max()) {
+    BRCMF_ERR("Request size %zu exceeds maximum length %u", size,
+              std::numeric_limits<uint32_t>::max());
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
   zx_status_t status =
       brcmf_send_cmd_to_firmware(brcmf_pub_.get(), request->iface_idx, request->cmd,
-                                 (void*)request->request.data(), request->request.size(), false);
+                                 request->request.data(), static_cast<uint32_t>(size), false);
   if (status == ZX_OK) {
     completer.ReplySuccess(request->request);
   } else {
@@ -801,9 +809,17 @@ void Device::Get(GetRequestView request, GetCompleter::Sync& completer) {
 }
 
 void Device::Set(SetRequestView request, SetCompleter::Sync& completer) {
+  const size_t size = request->request.size();
+  if (size > std::numeric_limits<uint32_t>::max()) {
+    BRCMF_ERR("Request size %zu exceeds maximum length %u", size,
+              std::numeric_limits<uint32_t>::max());
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+
   zx_status_t status =
       brcmf_send_cmd_to_firmware(brcmf_pub_.get(), request->iface_idx, request->cmd,
-                                 (void*)request->request.data(), request->request.size(), true);
+                                 request->request.data(), static_cast<uint32_t>(size), true);
   if (status == ZX_OK) {
     completer.ReplySuccess();
   } else {

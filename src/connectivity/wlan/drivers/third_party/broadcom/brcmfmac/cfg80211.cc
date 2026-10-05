@@ -34,6 +34,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <wlan/common/ieee80211.h>
@@ -90,7 +91,7 @@
 // attempts to reconnect right away and that might preempt the disconnect.
 #define BRCMF_WAIT_FOR_DISCONNECT_MSEC ZX_MSEC(500)
 // Rate returned by FW (in units of Mbps) is multiplied by 2 to avoid passing fractional value
-#define BRCMF_CONVERT_TO_REAL_RATE(fw_rate) (fw_rate / 2.0)
+#define BRCMF_CONVERT_TO_REAL_RATE(fw_rate) (static_cast<float>(fw_rate) / 2.0f)
 
 #define EXEC_TIMEOUT_WORKER(worker)                                       \
   {                                                                       \
@@ -946,9 +947,6 @@ static zx_status_t brcmf_dev_escan_set_randmac(struct brcmf_if* ifp) {
 static zx_status_t brcmf_escan_prep(
     struct brcmf_cfg80211_info* cfg, struct brcmf_scan_params_le* params_le,
     const fuchsia_wlan_fullmac_wire::WlanFullmacImplStartScanRequest* request) {
-  uint32_t n_ssids = 0;
-  uint32_t n_channels = 0;
-  int32_t offset = 0;
   if (!(request->has_scan_type() && request->has_channels())) {
     BRCMF_ERR("Missing required field, scan_type: %d, channels: %d", request->has_scan_type(),
               request->has_channels());
@@ -978,14 +976,17 @@ static zx_status_t brcmf_escan_prep(
   params_le->home_time = -1;
 
   /* Copy channel array if applicable */
-  n_channels = request->channels().size();
-  BRCMF_DBG(SCAN, "### List of channelspecs to scan ### %u", n_channels);
+  size_t n_channels = request->channels().size();
+  BRCMF_DBG(SCAN, "### List of channelspecs to scan ### %zu", n_channels);
   if (n_channels == 0) {
     BRCMF_ERR("Scan request contains empty channel list.");
     return ZX_ERR_INVALID_ARGS;
+  } else if (n_channels > std::numeric_limits<uint16_t>::max()) {
+    BRCMF_ERR("Scan request contains too many channels: %zu", n_channels);
+    return ZX_ERR_INVALID_ARGS;
   } else {
-    uint32_t valid_channels = 0;
-    for (uint32_t i = 0; i < n_channels; i++) {
+    size_t valid_channels = 0;
+    for (size_t i = 0; i < n_channels; i++) {
       const auto& channel = request->channels().data()[i];
       // Cbw20 is deliberately hard-coded for scanning purposes.
       const auto chanspec =
@@ -1009,38 +1010,35 @@ static zx_status_t brcmf_escan_prep(
   /* Add number of channels to channel_num */
   params_le->channel_num = n_channels & BRCMF_SCAN_PARAMS_COUNT_MASK;
 
-  if (!request->has_ssids()) {
-    BRCMF_DBG(SCAN, "No ssids field in the request.");
-  } else {
-    /* Set SSID fields as applicable */
-    n_ssids = request->ssids().size();
-    BRCMF_DBG(SCAN, "### List of SSIDs to scan ### %d", n_ssids);
+  const size_t n_ssids = request->has_ssids() ? request->ssids().size() : 0;
 
-    /* Copy ssids_list if non-empty */
-    if (n_ssids > 0) {
-      offset = offsetof(struct brcmf_scan_params_le, channel_list) + n_channels * sizeof(uint16_t);
-      offset = roundup(offset, sizeof(uint32_t));
-      struct brcmf_ssid_le* ssid_le =
-          reinterpret_cast<struct brcmf_ssid_le*>(reinterpret_cast<char*>(params_le) + offset);
-      for (uint32_t i = 0; i < n_ssids; i++, ssid_le++) {
-        if (request->ssids().data()[i].size() > fuchsia_wlan_ieee80211::kMaxSsidByteLen) {
-          BRCMF_ERR("SSID in scan request SSID list too long(no longer than %hhu bytes)",
-                    fuchsia_wlan_ieee80211::kMaxSsidByteLen);
-          return ZX_ERR_INVALID_ARGS;
-        }
-        ssid_le->SSID_len = request->ssids().data()[i].size();
-        memcpy(&ssid_le->SSID, request->ssids().data()[i].data(),
-               request->ssids().data()[i].size());
-        if (ssid_le->SSID_len == 0) {
-          BRCMF_DBG(SCAN, "%d: Broadcast scan", i);
-        } else {
-          BRCMF_DBG(SCAN, "%d: Targeted scan", i);
+  /* Copy ssids_list if non-empty */
+  if (n_ssids > 0) {
+    BRCMF_DBG(SCAN, "### List of SSIDs to scan ### %zu", n_ssids);
+    const size_t offset =
+        roundup(offsetof(struct brcmf_scan_params_le, channel_list) + n_channels * sizeof(uint16_t),
+                sizeof(uint32_t));
+    struct brcmf_ssid_le* ssid_le =
+        reinterpret_cast<struct brcmf_ssid_le*>(reinterpret_cast<char*>(params_le) + offset);
+    for (size_t i = 0; i < n_ssids; i++, ssid_le++) {
+      if (request->ssids().data()[i].size() > fuchsia_wlan_ieee80211::kMaxSsidByteLen) {
+        BRCMF_ERR("SSID in scan request SSID list too long(no longer than %hhu bytes)",
+                  fuchsia_wlan_ieee80211::kMaxSsidByteLen);
+        return ZX_ERR_INVALID_ARGS;
+      }
+      ssid_le->SSID_len = static_cast<uint32_t>(request->ssids().data()[i].size());
+      memcpy(&ssid_le->SSID, request->ssids().data()[i].data(), request->ssids().data()[i].size());
+      if (ssid_le->SSID_len == 0) {
+        BRCMF_DBG(SCAN, "%zu: Broadcast scan", i);
+      } else {
+        BRCMF_DBG(SCAN, "%zu: Targeted scan", i);
 #if !defined(NDEBUG)
-          BRCMF_DBG(SCAN, "  ssid:" FMT_SSID, FMT_SSID_BYTES(ssid_le->SSID, ssid_le->SSID_len));
+        BRCMF_DBG(SCAN, "  ssid:" FMT_SSID, FMT_SSID_BYTES(ssid_le->SSID, ssid_le->SSID_len));
 #endif /* !defined(NDEBUG) */
-        }
       }
     }
+  } else {
+    BRCMF_DBG(SCAN, "No ssids field in the request.");
   }
 
   /* Add number of SSIDs to channel_num. See comment at channel_num field declaration. */
@@ -1132,7 +1130,7 @@ static zx_status_t brcmf_run_escan(
     }
   }
 
-  err = brcmf_fil_iovar_data_set(ifp, "escan", params, params_size, &fw_err);
+  err = brcmf_fil_iovar_data_set(ifp, "escan", params, static_cast<uint32_t>(params_size), &fw_err);
   if (err == ZX_OK) {
     *sync_id_out = params->sync_id;
   } else {
@@ -1283,12 +1281,18 @@ static void brcmf_clear_profile_on_client_disconnect(struct brcmf_cfg80211_profi
 }
 
 static zx_status_t brcmf_set_pmk(struct brcmf_if* ifp, const uint8_t* pmk_data, uint16_t pmk_len) {
-  struct brcmf_wsec_pmk_le pmk;
+  struct brcmf_wsec_pmk_le pmk{};
   int i;
   zx_status_t err;
 
+  if (pmk_len > BRCMF_WSEC_MAX_PSK_LEN) {
+    BRCMF_ERR("PMK length %u exceeds maximum length %d", pmk_len, BRCMF_WSEC_MAX_PSK_LEN);
+    return ZX_ERR_INVALID_ARGS;
+  }
+  const uint32_t key_len = pmk_len << 1;
+
   /* convert to firmware key format */
-  pmk.key_len = pmk_len << 1;
+  pmk.key_len = static_cast<uint16_t>(key_len);
   pmk.flags = BRCMF_WSEC_PASSPHRASE;
   for (i = 0; i < pmk_len; i++) {
     // TODO(cphoenix): Make sure handling of pmk keys is consistent with their being
@@ -1453,7 +1457,7 @@ static bool is_target_bss(brcmf_cfg80211_info* cfg, const uint8_t addr[ETH_ALEN]
 // Send SME notification(s) after a disconnect event was received from firmware.
 static void cfg80211_disconnected(struct brcmf_cfg80211_vif* vif,
                                   fuchsia_wlan_ieee80211::ReasonCode reason_code,
-                                  uint16_t event_code, const uint8_t event_addr[ETH_ALEN]) {
+                                  uint32_t event_code, const uint8_t event_addr[ETH_ALEN]) {
   struct net_device* ndev = vif->wdev.netdev;
   std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
   if (!ndev->if_proto.is_valid()) {
@@ -1521,7 +1525,7 @@ static zx_status_t brcmf_bss_reset(brcmf_if* ifp) {
 
 // If connected, disconnect and notify; regardless, clean up after link down.
 static void brcmf_link_down(struct brcmf_cfg80211_vif* vif,
-                            fuchsia_wlan_ieee80211::ReasonCode reason_code, uint16_t event_code,
+                            fuchsia_wlan_ieee80211::ReasonCode reason_code, uint32_t event_code,
                             const uint8_t event_addr[ETH_ALEN]) {
   if (vif == nullptr) {
     BRCMF_ERR("vif is null, ignoring link down");
@@ -1688,7 +1692,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
     goto exit;
   }
   /* walk thru unicast cipher list and pick up what we recognize */
-  count = data[offset] + (data[offset + 1] << 8);
+  count = static_cast<uint16_t>(data[offset] + (data[offset + 1] << 8));
   offset += WPA_IE_SUITE_COUNT_LEN;
   /* Check for unicast suite(s) */
   if (offset + (WPA_IE_MIN_OUI_LEN * count) > len) {
@@ -1733,7 +1737,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
     goto exit;
   }
   /* walk thru auth management suite list and pick up what we recognize */
-  count = data[offset] + (data[offset + 1] << 8);
+  count = static_cast<uint16_t>(data[offset] + (data[offset + 1] << 8));
   offset += WPA_IE_SUITE_COUNT_LEN;
   /* Check for auth key management suite(s) */
   if (offset + (WPA_IE_MIN_OUI_LEN * count) > len) {
@@ -1795,7 +1799,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
     if (is_ap) {
       wme_bss_disable = 1;
       if (offset + RSN_CAP_LEN <= len) {
-        rsn_cap = data[offset] + (data[offset + 1] << 8);
+        rsn_cap = static_cast<uint16_t>(data[offset] + (data[offset + 1] << 8u));
         if (rsn_cap & RSN_CAP_PTK_REPLAY_CNTR_MASK) {
           wme_bss_disable = 0;
         }
@@ -1848,7 +1852,7 @@ static zx_status_t brcmf_configure_wpaie(struct brcmf_if* ifp, const struct brcm
       // security_ie (MFPR/MFPC) so the firmware "mfp" knob matches what the
       // host actually negotiated. Mirrors bcmdhd wl_set_key_mgmt().
       if ((offset + RSN_CAP_LEN) <= len) {
-        rsn_cap = data[offset] + (data[offset + 1] << 8);
+        rsn_cap = static_cast<uint16_t>(data[offset] + (data[offset + 1] << 8u));
         if (rsn_cap & RSN_CAP_MFPR_MASK) {
           mfp = BRCMF_MFP_REQUIRED;
         } else if (rsn_cap & RSN_CAP_MFPC_MASK) {
@@ -2049,7 +2053,8 @@ void brcmf_return_roam_start(struct net_device* ndev) {
         ::fidl::VectorView<uint8_t>::FromExternal(ie_ptr, target_bss_info->ie_length);
   }
 
-  selected_bss.rssi_dbm = std::min<int16_t>(0, std::max<int16_t>(-255, target_bss_info->RSSI));
+  const int16_t rssi = static_cast<int16_t>(target_bss_info->RSSI);
+  selected_bss.rssi_dbm = clamp_to_type<int8_t>(rssi, std::numeric_limits<int8_t>::min(), 0);
   selected_bss.snr_db = static_cast<int8_t>(target_bss_info->SNR);
 
   roam_start_builder.selected_bss(selected_bss);
@@ -2200,7 +2205,7 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
   struct brcmf_join_params join_params;
-  size_t join_params_size = 0;
+  uint32_t join_params_size = 0;
   std::vector<uint8_t> ssid;
   zx_status_t err = ZX_OK;
   bcme_status_t fw_err = BCME_OK;
@@ -2261,9 +2266,15 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
   }
 
   if (req->security_ie().has_value() && req->security_ie()->size() > 0) {
+    const size_t security_ies_len = req->security_ie()->size();
+    if (security_ies_len > std::numeric_limits<uint32_t>::max()) {
+      BRCMF_ERR("Security IEs length %zu exceeds maximum length", security_ies_len);
+      err = ZX_ERR_INVALID_ARGS;
+      goto fail;
+    }
     // Set wpaie only if there's security ie
     err = brcmf_fil_iovar_data_set(ifp, "wpaie", req->security_ie()->data(),
-                                   req->security_ie()->size(), &fw_err);
+                                   static_cast<uint32_t>(security_ies_len), &fw_err);
     if (err != ZX_OK) {
       BRCMF_ERR("wpaie failed: %s, fw err %s", zx_status_get_string(err),
                 brcmf_fil_get_errstr(fw_err));
@@ -2295,12 +2306,18 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
 
   ssid = brcmf_find_ssid_in_ies(ifp->connect_req.selected_bss()->ies().data(),
                                 ifp->connect_req.selected_bss()->ies().size());
+  if (ssid.size() > sizeof(join_params.ssid_le.SSID)) {
+    BRCMF_ERR("SSID length %zu exceeds maximum length %zu", ssid.size(),
+              std::size(join_params.ssid_le.SSID));
+    err = ZX_ERR_INVALID_ARGS;
+    goto fail;
+  }
 
   join_params_size = sizeof(join_params);
   memset(&join_params, 0, join_params_size);
 
   memcpy(&join_params.ssid_le.SSID, ssid.data(), ssid.size());
-  join_params.ssid_le.SSID_len = ssid.size();
+  join_params.ssid_le.SSID_len = static_cast<uint32_t>(ssid.size());
 
   memcpy(join_params.params_le.bssid, ifp->connect_req.selected_bss()->bssid().data(), ETH_ALEN);
   join_params.params_le.chanspec_num = 1;
@@ -2414,17 +2431,21 @@ static void brcmf_log_client_stats(struct brcmf_cfg80211_info* cfg) {
     int32_t total_rx_pkts = fw_pktcnt.rx_good_pkt + fw_pktcnt.rx_bad_pkt;
     int32_t total_tx_pkts = fw_pktcnt.tx_good_pkt + fw_pktcnt.tx_bad_pkt;
 
-    lifetime_err_rate_rx = (float)(fw_pktcnt.rx_bad_pkt) / total_rx_pkts;
-    lifetime_err_rate_tx = (float)(fw_pktcnt.tx_bad_pkt) / total_tx_pkts;
+    lifetime_err_rate_rx =
+        static_cast<float>(fw_pktcnt.rx_bad_pkt) / static_cast<float>(total_rx_pkts);
+    lifetime_err_rate_tx =
+        static_cast<float>(fw_pktcnt.tx_bad_pkt) / static_cast<float>(total_tx_pkts);
     if (total_rx_pkts > ndev->stats.total_rx_pkts_prev) {
-      periodic_err_rate_rx = (float)(fw_pktcnt.rx_bad_pkt - ndev->stats.rx_bad_pkts_prev) /
-                             (total_rx_pkts - ndev->stats.total_rx_pkts_prev);
+      periodic_err_rate_rx =
+          static_cast<float>(fw_pktcnt.rx_bad_pkt - ndev->stats.rx_bad_pkts_prev) /
+          static_cast<float>(total_rx_pkts - ndev->stats.total_rx_pkts_prev);
       ndev->stats.total_rx_pkts_prev = total_rx_pkts;
       ndev->stats.rx_bad_pkts_prev = fw_pktcnt.rx_bad_pkt;
     }
     if (total_tx_pkts > ndev->stats.total_tx_pkts_prev) {
-      periodic_err_rate_tx = (float)(fw_pktcnt.tx_bad_pkt - ndev->stats.tx_bad_pkts_prev) /
-                             (total_tx_pkts - ndev->stats.total_tx_pkts_prev);
+      periodic_err_rate_tx =
+          static_cast<float>(fw_pktcnt.tx_bad_pkt - ndev->stats.tx_bad_pkts_prev) /
+          static_cast<float>(total_tx_pkts - ndev->stats.total_tx_pkts_prev);
       ndev->stats.total_tx_pkts_prev = total_tx_pkts;
       ndev->stats.tx_bad_pkts_prev = fw_pktcnt.tx_bad_pkt;
     }
@@ -2499,8 +2520,9 @@ static void brcmf_log_client_stats(struct brcmf_cfg80211_info* cfg) {
                           wme_cnt.tx_failed[AC_BE].packets + wme_cnt.tx_failed[AC_BK].packets;
 
     if (wme_total_rx_pkts > ndev->stats.wme_total_rx_pkts_prev) {
-      wme_periodic_rx_err_rate = (float)(wme_rx_bad_pkts - ndev->stats.wme_rx_bad_pkts_prev) /
-                                 (wme_total_rx_pkts - ndev->stats.wme_total_rx_pkts_prev);
+      wme_periodic_rx_err_rate =
+          static_cast<float>(wme_rx_bad_pkts - ndev->stats.wme_rx_bad_pkts_prev) /
+          static_cast<float>(wme_total_rx_pkts - ndev->stats.wme_total_rx_pkts_prev);
     }
     ndev->stats.wme_total_rx_pkts_prev = wme_total_rx_pkts;
     ndev->stats.wme_rx_bad_pkts_prev = wme_rx_bad_pkts;
@@ -2709,8 +2731,8 @@ static zx_status_t brcmf_get_rssi_snr(net_device* ndev, int8_t* rssi_dbm, int8_t
               brcmf_fil_get_errstr(fw_err));
     return status;
   }
-  *rssi_dbm = rssi;
-  *snr_db = snr;
+  *rssi_dbm = clamp_to_type<int8_t>(rssi);
+  *snr_db = clamp_to_type<int8_t>(snr);
   return status;
 }
 
@@ -2985,20 +3007,22 @@ static zx_status_t brcmf_cfg80211_add_key(
   int32_t wsec;
   zx_status_t err;
   bool ext_key;
-  uint8_t key_idx = req->key_id();
   const uint8_t* mac_addr = req->peer_addr().data();
 
   BRCMF_DBG(TRACE, "Enter");
-  BRCMF_DBG(CONN, "key index (%d)", key_idx);
+  BRCMF_DBG(CONN, "key index (%d)", req->key_id());
   if (!check_vif_up(ifp->vif)) {
     return ZX_ERR_IO;
   }
 
-  if (key_idx >= BRCMF_MAX_DEFAULT_KEYS) {
+  if (req->key_id() >= BRCMF_MAX_DEFAULT_KEYS) {
     /* we ignore this key index in this case */
-    BRCMF_ERR("invalid key index (%d)", key_idx);
+    BRCMF_ERR("invalid key index (%u)", req->key_id());
     return ZX_ERR_INVALID_ARGS;
   }
+  // Ensure that the previous check also proves that the key ID fits in a uint8_t.
+  static_assert(BRCMF_MAX_DEFAULT_KEYS < std::numeric_limits<uint8_t>::max());
+  const uint8_t key_idx = static_cast<uint8_t>(req->key_id());
 
   if (req->key().size() == 0) {
     return brcmf_cfg80211_del_key(ndev, key_idx);
@@ -3008,6 +3032,8 @@ static zx_status_t brcmf_cfg80211_add_key(
     BRCMF_ERR("Too long key length (%zu)", req->key().size());
     return ZX_ERR_INVALID_ARGS;
   }
+  // Ensure that the previous check also proves that the key size fits in a uint32_t.
+  static_assert(sizeof(key->data) <= std::numeric_limits<uint32_t>::max());
 
   ext_key = false;
   if (mac_addr && !address_is_multicast(mac_addr) &&
@@ -3022,7 +3048,7 @@ static zx_status_t brcmf_cfg80211_add_key(
   if ((ext_key) && (!address_is_multicast(mac_addr))) {
     memcpy((char*)&key->ea, (void*)mac_addr, ETH_ALEN);
   }
-  key->len = req->key().size();
+  key->len = static_cast<uint32_t>(req->key().size());
   key->index = key_idx;
   memcpy(key->data, req->key().data(), key->len);
   if (!ext_key) {
@@ -3231,7 +3257,7 @@ static void brcmf_return_scan_result(struct net_device* ndev, uint16_t chanspec,
   bss.primary = chanspec_to_primary_channel_number(&cfg->d11inf, chanspec);
   bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec);
   bss.vht_secondary_80_channel = chanspec_to_secondary80(&cfg->d11inf, chanspec);
-  bss.rssi_dbm = std::min<int16_t>(0, std::max<int16_t>(-255, rssi_dbm));
+  bss.rssi_dbm = clamp_to_type<int8_t>(rssi_dbm, std::numeric_limits<int8_t>::min(), 0);
   bss.snr_db = static_cast<int8_t>(snr_db);
   bss.ies = ::fidl::VectorView<uint8_t>::FromExternal(ie, ie_len);
   scan_result_builder.bss(bss);
@@ -3843,8 +3869,17 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
 
   struct brcmf_ssid_le ssid_le;
   memset(&ssid_le, 0, sizeof(ssid_le));
+
+  if (req->ssid().size() > sizeof(ssid_le.SSID)) {
+    BRCMF_ERR("SSID length %zu exceeds maximum length %zu", req->ssid().size(),
+              std::size(ssid_le.SSID));
+    goto fail;
+  }
+  // Make sure that the previous check also ensures that the uint32_t cast below is safe.
+  static_assert(sizeof(ssid_le.SSID) <= std::numeric_limits<uint32_t>::max());
+
   memcpy(ssid_le.SSID, req->ssid().data(), req->ssid().size());
-  ssid_le.SSID_len = req->ssid().size();
+  ssid_le.SSID_len = static_cast<uint32_t>(req->ssid().size());
 
   brcmf_enable_mpc(ifp, 0);
 
@@ -4611,7 +4646,7 @@ static void brcmf_populate_eapol_eth_header(
 
 static void brcmf_if_eapol_req_netdev(
     net_device* ndev, const fuchsia_wlan_fullmac_wire::WlanFullmacImplEapolTxRequest* req,
-    int length) {
+    size_t length) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_pub* drvr = ifp->drvr;
   wlan::drivers::components::FrameContainer frames = brcmf_bus_acquire_tx_space(drvr->bus_if, 1);
@@ -4619,12 +4654,22 @@ static void brcmf_if_eapol_req_netdev(
     BRCMF_ERR("Failed to allocate space for EAPOL transmittion");
     return;
   }
+  if (!std::in_range<uint8_t>(ifp->ifidx)) {
+    BRCMF_ERR("Invalid interface index %d", ifp->ifidx);
+    return;
+  }
 
   wlan::drivers::components::Frame& frame = *frames.begin();
   frame.ShrinkHead(drvr->hdrlen);
-  frame.SetPortId(ifp->ifidx);
+  if (length > frame.Size()) {
+    BRCMF_ERR("EAPOL frame length %zu exceeds the available tx buffer size %u", length,
+              frame.Size());
+    return;
+  }
+  frame.SetPortId(static_cast<uint8_t>(ifp->ifidx));
   frame.SetPriority(0);
-  frame.SetSize(length);
+  // The check above ensures that the length fits in the frame size, which is a uint32_t.
+  frame.SetSize(static_cast<uint32_t>(length));
 
   brcmf_populate_eapol_eth_header(frame.Data(), req);
 
@@ -4644,10 +4689,8 @@ void brcmf_if_eapol_req(net_device* ndev,
 
   BRCMF_IFDBG(WLANIF, ndev, "EAPOL xmit request from SME. data_len: %zu", req->data().size());
 
-  int packet_length;
-
   // Ethernet header length + EAPOL PDU length
-  packet_length = 2 * ETH_ALEN + sizeof(uint16_t) + req->data().size();
+  const size_t packet_length = 2 * ETH_ALEN + sizeof(uint16_t) + req->data().size();
 
   brcmf_if_eapol_req_netdev(ndev, req, packet_length);
 }
@@ -4702,12 +4745,12 @@ static void brcmf_get_bwcap(struct brcmf_if* ifp, uint32_t bw_cap[]) {
 }
 
 static uint16_t brcmf_get_mcs_map(uint32_t nchain, uint16_t supp) {
-  uint16_t mcs_map = 0xffff;
+  uint32_t mcs_map = 0xffff;
   for (uint32_t i = 0; i < nchain; i++) {
-    mcs_map = (mcs_map << 2) | supp;
+    mcs_map = (mcs_map << 2u) | supp;
   }
 
-  return mcs_map;
+  return static_cast<uint16_t>(mcs_map);
 }
 
 // Updates |fidl_ht_caps| in place with capabilities determined by information from firmware.
@@ -4759,13 +4802,13 @@ static void brcmf_update_ht_cap(struct brcmf_if* ifp,
     // Cap A-MPDU length at 64K
     max_ampdu_len_exp = 3;
   }
-  ht_caps->ampdu_params.set_exponent(max_ampdu_len_exp);
+  ht_caps->ampdu_params.set_exponent(static_cast<uint8_t>(max_ampdu_len_exp));
 
   // Supported MCS Set
   size_t mcs_set_size = sizeof(ht_caps->mcs_set);
   if (nchain > mcs_set_size) {
     BRCMF_ERR("Supported MCS set too small for nchain (%u), truncating", nchain);
-    nchain = mcs_set_size;
+    nchain = static_cast<uint32_t>(mcs_set_size);
   }
   memset(&ht_caps->mcs_set, 0xff, nchain);
 }
@@ -4843,16 +4886,35 @@ static void brcmf_update_vht_cap(struct brcmf_if* ifp,
   if (status != ZX_OK) {
     (void)brcmf_fil_iovar_int_get(ifp, "txstreams", &txstreams, nullptr);
   }
+  // The num_sounding VHT capability (the maximum number of spatial streams during beamforming) is
+  // represented by 3 bits, therefore it's limited to values 0 through 7. The value is the number of
+  // streams minus one. So if there is one stream the bit-field value is 0, if there are 8 streams
+  // the bit-field value is 7. Therefore the maximum allowed number of streams is 8.
+  const uint8_t clamped_txstreams = clamp_to_type<uint8_t>(txstreams, 0, 8);
+  if (clamped_txstreams != txstreams) {
+    // There's really no way to report an error here, and we are so unlikely to run into this that
+    // it shouldn't even be a worry. Just override the number if it's this large.
+    BRCMF_ERR("Number of txstreams %u exceeds maximum value, capping value at %u", txstreams,
+              clamped_txstreams);
+  }
 
-  if ((txbf_bfe_cap || txbf_bfr_cap) && (txstreams > 1)) {
+  if ((txbf_bfe_cap || txbf_bfr_cap) && (clamped_txstreams > 1)) {
     vht_caps->vht_cap_info.set_bfee_sts(2);
-    vht_caps->vht_cap_info.set_num_sounding(txstreams - 1);
+    vht_caps->vht_cap_info.set_num_sounding(clamped_txstreams - 1);
     // Link adapt = Both
     vht_caps->vht_cap_info.set_link_adapt(3);
   }
 
+  // The maximum ampdu length exponent is represented by 3 bits. It should be capped to a maximum
+  // value of 7. This should not be possible, but cap this value just to be safe.
+  const uint8_t clamped_max_ampdu_len_exp = clamp_to_type<uint8_t>(max_ampdu_len_exp, 0, 7);
+  if (clamped_max_ampdu_len_exp != max_ampdu_len_exp) {
+    BRCMF_ERR("Maximum AMPDU length exponent %u exceeds maximum value, capping value at %u",
+              max_ampdu_len_exp, clamped_max_ampdu_len_exp);
+  }
+
   // Maximum A-MPDU Length Exponent
-  vht_caps->vht_cap_info.set_max_ampdu_exp(max_ampdu_len_exp);
+  vht_caps->vht_cap_info.set_max_ampdu_exp(clamped_max_ampdu_len_exp);
 }
 
 static void brcmf_dump_80211_ht_caps(fuchsia_wlan_ieee80211::HtCapabilities* caps) {
@@ -5053,7 +5115,7 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
   list = (struct brcmf_chanspec_list*)pbuf;
   for (uint32_t i = 0; i < list->count; i++) {
     struct brcmu_chan ch;
-    ch.chspec = list->element[i];
+    ch.chspec = static_cast<uint16_t>(list->element[i]);
     cfg->d11inf.decchspec(&ch);
 
     // Find the appropriate band
@@ -5290,7 +5352,10 @@ zx_status_t brcmf_convert_antenna_id(const histograms_report_t& histograms_repor
     default:
       return ZX_ERR_OUT_OF_RANGE;
   }
-  out_antenna_id->index = histograms_report.antennaid.idx;
+  if (!std::in_range<uint8_t>(histograms_report.antennaid.idx)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  out_antenna_id->index = static_cast<uint8_t>(histograms_report.antennaid.idx);
   return ZX_OK;
 }
 
@@ -5298,7 +5363,7 @@ void brcmf_get_noise_floor_samples(
     const histograms_report_t& histograms_report,
     std::vector<fuchsia_wlan_stats::wire::HistBucket>* out_noise_floor_samples,
     uint64_t* out_invalid_samples) {
-  for (size_t i = 0; i < fuchsia_wlan_stats::wire::kMaxNoiseFloorSamples; ++i) {
+  for (uint16_t i = 0; i < fuchsia_wlan_stats::wire::kMaxNoiseFloorSamples; ++i) {
     fuchsia_wlan_stats::wire::HistBucket bucket;
     bucket.bucket_index = i;
     bucket.num_samples = histograms_report.rxnoiseflr[i];
@@ -5308,13 +5373,13 @@ void brcmf_get_noise_floor_samples(
     }
   }
   // rxnoiseflr has an extra bucket. If there is anything in it, it is invalid.
-  *out_invalid_samples = histograms_report.rxsnr[255];
+  *out_invalid_samples = histograms_report.rxnoiseflr[255];
 }
 
 void brcmf_get_rssi_samples(const histograms_report_t& histograms_report,
                             std::vector<fuchsia_wlan_stats::wire::HistBucket>* out_rssi_samples,
                             uint64_t* out_invalid_samples) {
-  for (size_t i = 0; i < fuchsia_wlan_stats::wire::kMaxRssiSamples; ++i) {
+  for (uint16_t i = 0; i < fuchsia_wlan_stats::wire::kMaxRssiSamples; ++i) {
     fuchsia_wlan_stats::wire::HistBucket bucket;
     bucket.bucket_index = i;
     bucket.num_samples = histograms_report.rxrssi[i];
@@ -5330,7 +5395,7 @@ void brcmf_get_rssi_samples(const histograms_report_t& histograms_report,
 void brcmf_get_snr_samples(const histograms_report_t& histograms_report,
                            std::vector<fuchsia_wlan_stats::wire::HistBucket>* out_snr_samples,
                            uint64_t* out_invalid_samples) {
-  for (size_t i = 0; i < fuchsia_wlan_stats::wire::kMaxSnrSamples; ++i) {
+  for (uint16_t i = 0; i < fuchsia_wlan_stats::wire::kMaxSnrSamples; ++i) {
     fuchsia_wlan_stats::wire::HistBucket bucket;
     bucket.bucket_index = i;
     bucket.num_samples = histograms_report.rxsnr[i];
@@ -5352,7 +5417,7 @@ void brcmf_get_rx_rate_index_samples(
   brcmu_set_rx_rate_index_hist_rx11b(histograms_report.rx11b, rxrate);
   brcmu_set_rx_rate_index_hist_rx11g(histograms_report.rx11g, rxrate);
   brcmu_set_rx_rate_index_hist_rx11n(histograms_report.rx11n, rxrate);
-  for (uint8_t i = 0; i < fuchsia_wlan_stats::wire::kMaxRxRateIndexSamples; ++i) {
+  for (uint16_t i = 0; i < fuchsia_wlan_stats::wire::kMaxRxRateIndexSamples; ++i) {
     fuchsia_wlan_stats::wire::HistBucket bucket;
     bucket.bucket_index = i;
     bucket.num_samples = rxrate[i];
@@ -6358,18 +6423,23 @@ zx_status_t brcmf_if_sae_frame_tx(net_device* ndev,
   }
 
   // Mac header(24 bytes) + Auth frame header(6 bytes) + sae_fields length.
-  uint32_t frame_size =
+  const size_t frame_size =
       sizeof(wlan::MgmtFrameHeader) + sizeof(wlan::Authentication) + frame->sae_fields().size();
   // Carry the SAE authentication frame in the last field of assoc_mgr_cmd.
-  uint32_t cmd_buf_len = sizeof(assoc_mgr_cmd_t) + frame_size;
-  uint8_t cmd_buf[cmd_buf_len];
+  const size_t cmd_buf_len = sizeof(assoc_mgr_cmd_t) + frame_size;
+  if (cmd_buf_len > BRCMF_DCMD_MAXLEN) {
+    BRCMF_ERR("SAE frame command buffer size %zu exceeds maximum length %d", cmd_buf_len,
+              BRCMF_DCMD_MAXLEN);
+    return ZX_ERR_INVALID_ARGS;
+  }
+  alignas(assoc_mgr_cmd_t) uint8_t cmd_buf[cmd_buf_len];
   assoc_mgr_cmd_t* cmd = reinterpret_cast<assoc_mgr_cmd_t*>(cmd_buf);
   cmd->version = ASSOC_MGR_CURRENT_VERSION;
   // As the description of "length" field in this structure, it should be used to store the length
   // of the entire structure, here is a special case where we store the length of the frame here.
   // After confirming with vendor, this is the way they deal with extra data for this iovar, the
   // value of "length" field should be the length of extra data.
-  cmd->length = frame_size;
+  cmd->length = static_cast<uint16_t>(frame_size);
   cmd->cmd = ASSOC_MGR_CMD_SEND_AUTH;
 
   auto sae_frame =
@@ -6398,7 +6468,8 @@ zx_status_t brcmf_if_sae_frame_tx(net_device* ndev,
   // Attach SAE payload after authentication frame header.
   memcpy(sae_frame->sae_payload, frame->sae_fields().data(), frame->sae_fields().size());
 
-  err = brcmf_fil_iovar_data_set(ifp, "assoc_mgr_cmd", cmd_buf, cmd_buf_len, &fw_err);
+  err = brcmf_fil_iovar_data_set(ifp, "assoc_mgr_cmd", cmd_buf, static_cast<uint32_t>(cmd_buf_len),
+                                 &fw_err);
   if (err != ZX_OK) {
     BRCMF_ERR("Error sending SAE auth frame. err: %s, fw_err: %s", zx_status_get_string(err),
               brcmf_fil_get_errstr(fw_err));
@@ -6855,15 +6926,34 @@ static zx_status_t brcmf_indicate_client_connect(struct brcmf_if* ifp,
   return status;
 }
 
+static fuchsia_wlan_ieee80211_wire::StatusCode brcmf_status_code_from_event_reason(
+    const brcmf_event_msg* e) {
+  if (e->reason > std::numeric_limits<uint16_t>::max()) {
+    BRCMF_ERR("Reason code %u is beyond reason", e->reason);
+    return fuchsia_wlan_ieee80211_wire::StatusCode::kRefusedReasonUnspecified;
+  }
+
+  return static_cast<fuchsia_wlan_ieee80211_wire::StatusCode>(static_cast<uint16_t>(e->reason));
+}
+
+static fuchsia_wlan_ieee80211_wire::ReasonCode brcmf_reason_code_from_event_reason(
+    const brcmf_event_msg* e) {
+  if (e->reason > std::numeric_limits<uint16_t>::max()) {
+    BRCMF_ERR("Reason code %u is beyond reason", e->reason);
+    return fuchsia_wlan_ieee80211_wire::ReasonCode::kUnspecifiedReason;
+  }
+
+  return static_cast<fuchsia_wlan_ieee80211_wire::ReasonCode>(static_cast<uint16_t>(e->reason));
+}
+
 // Handler for ASSOC event (client only)
 static zx_status_t brcmf_handle_assoc_event(struct brcmf_if* ifp, const struct brcmf_event_msg* e,
                                             void* data) {
   BRCMF_DBG_EVENT(ifp, e, "%d", [](uint32_t reason) { return reason; });
   ZX_DEBUG_ASSERT(!brcmf_is_apmode(ifp->vif));
 
-  // For this event, e->reason is in the fuchsia_wlan_ieee80211_wire::StatusCode enum space.
-  fuchsia_wlan_ieee80211_wire::StatusCode reason_code =
-      static_cast<fuchsia_wlan_ieee80211_wire::StatusCode>(e->reason);
+  // For this event, the event reason is in the fuchsia_wlan_ieee80211_wire::StatusCode enum space.
+  fuchsia_wlan_ieee80211_wire::StatusCode reason_code = brcmf_status_code_from_event_reason(e);
 
   // Vendor confirmed the firmware can return reason_code 0 while status_code > 0. See
   // http://b/201803254#comment12. This is a design that they would like to not change in the
@@ -6962,10 +7052,21 @@ static zx_status_t brcmf_handle_assoc_ind(struct brcmf_if* ifp, const struct brc
       return ZX_OK;
     }
   }
+  const uint32_t listen_interval =
+      ifp->vif->profile.beacon_period == 0
+          ? 0
+          : sta_info.listen_interval_inms / ifp->vif->profile.beacon_period;
+  if (listen_interval > std::numeric_limits<uint16_t>::max()) {
+    BRCMF_ERR(
+        "Listen interval %u, computed from STA listen interval %u and beacon period %u, exceeds maximum value %u",
+        listen_interval, sta_info.listen_interval_inms, ifp->vif->profile.beacon_period,
+        std::numeric_limits<uint16_t>::max());
+    return ZX_ERR_INTERNAL;
+  }
   auto assoc_ind_builder =
       fuchsia_wlan_fullmac_wire::WlanFullmacImplIfcAssocIndRequest::Builder(arena)
           .peer_sta_address(peer_sta_address)
-          .listen_interval(sta_info.listen_interval_inms / ifp->vif->profile.beacon_period)
+          .listen_interval(static_cast<uint16_t>(listen_interval))
           .ssid(ssid)
           .rsne(rsne)
           .Build();
@@ -7081,8 +7182,7 @@ static zx_status_t brcmf_handle_reassoc_event(struct brcmf_if* ifp, const struct
     // Reassociation failed, so roam will not succeed, and we may not see further roam-related
     // events. For this event, e->reason is in the StatusCode enum space.
     const fuchsia_wlan_ieee80211_wire::StatusCode reason_code =
-        static_cast<fuchsia_wlan_ieee80211_wire::StatusCode>(e->reason);
-
+        brcmf_status_code_from_event_reason(e);
     const auto connect_status = status_code_is_authentication_failure(reason_code)
                                     ? brcmf_connect_status_t::AUTHENTICATION_FAILED
                                     : brcmf_connect_status_t::REASSOC_REQ_FAILED;
@@ -7299,7 +7399,7 @@ static zx_status_t brcmf_indicate_client_disconnect(struct brcmf_if* ifp,
   fuchsia_wlan_ieee80211::ReasonCode reason_code =
       (connect_status == brcmf_connect_status_t::LINK_FAILED)
           ? fuchsia_wlan_ieee80211::ReasonCode::kMlmeLinkFailed
-          : static_cast<fuchsia_wlan_ieee80211::ReasonCode>(e->reason);
+          : brcmf_reason_code_from_event_reason(e);
   brcmf_disconnect_done(cfg);
   brcmf_link_down(ifp->vif, reason_code, e->event_code, e->addr);
   brcmf_clear_profile_on_client_disconnect(ndev_to_prof(ndev));
@@ -7388,8 +7488,7 @@ static zx_status_t brcmf_process_deauth_ind_event(struct brcmf_if* ifp,
 
   brcmf_proto_delete_peer(ifp->drvr, ifp->ifidx, (uint8_t*)e->addr);
   if (brcmf_is_apmode(ifp->vif)) {
-    brcmf_notify_deauth_ind(ifp->ndev, e->addr,
-                            static_cast<fuchsia_wlan_ieee80211::ReasonCode>(e->reason), false);
+    brcmf_notify_deauth_ind(ifp->ndev, e->addr, brcmf_reason_code_from_event_reason(e), false);
     return ZX_OK;
   }
 
@@ -7485,8 +7584,7 @@ static zx_status_t brcmf_process_disassoc_ind_event(struct brcmf_if* ifp,
 
   brcmf_proto_delete_peer(ifp->drvr, ifp->ifidx, (uint8_t*)e->addr);
   if (brcmf_is_apmode(ifp->vif)) {
-    brcmf_notify_disassoc_ind(ifp->ndev, e->addr,
-                              static_cast<fuchsia_wlan_ieee80211::ReasonCode>(e->reason), false);
+    brcmf_notify_disassoc_ind(ifp->ndev, e->addr, brcmf_reason_code_from_event_reason(e), false);
     return ZX_OK;
   }
 

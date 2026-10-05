@@ -429,8 +429,15 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
 
   zx_status_t status;
   bcme_status_t fw_err;
-  if (err_inj_.CheckIfErrInjCmdEnabled(dcmd->cmd, &status, &fw_err, ifidx)) {
+  const std::vector<uint8_t>* err_inj_alt_value = nullptr;
+  if (err_inj_.CheckIfErrInjCmdEnabled(dcmd->cmd, &status, &fw_err, &err_inj_alt_value, ifidx)) {
     if (status == ZX_OK) {
+      if (err_inj_alt_value != nullptr) {
+        // Use provided replacement data, zeroing out any remaining bytes.
+        const size_t alt_data_size = std::min(err_inj_alt_value->size(), data_len);
+        std::memcpy(data, err_inj_alt_value->data(), alt_data_size);
+        std::memset(&data[alt_data_size], 0, data_len - alt_data_size);
+      }
       // If the transmission status is ZX_OK, customize the firmware error code which will be
       // sent back through bcdc response.
       if (fw_err != BCME_OK) {
@@ -2566,7 +2573,7 @@ zx_status_t SimFirmware::IovarsGet(uint16_t ifidx, const char* name, void* value
     *fw_err = BCME_OK;
   }
 
-  const std::vector<uint8_t>* err_inj_alt_value;
+  const std::vector<uint8_t>* err_inj_alt_value = nullptr;
   if (err_inj_.CheckIfErrInjIovarEnabled(name, &status, fw_err, &err_inj_alt_value, ifidx)) {
     if (err_inj_alt_value != nullptr) {
       // Use provided replacement data
