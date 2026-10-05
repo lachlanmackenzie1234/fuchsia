@@ -1282,6 +1282,14 @@ const fn round_down(val: u64, align: u64) -> u64 {
     val & !(align - 1)
 }
 
+/// An entry visited by `VmPageList::for_every_page_and_gap_in_range_internal`.
+enum PageOrGap<'a> {
+    /// A page/ref/marker or interval sentinel, and its offset.
+    Page(&'a VmPageOrMarker, u64),
+    /// A gap (unpopulated range), as `(gap_start, gap_end)`.
+    Gap(u64, u64),
+}
+
 impl VmPageList {
     /// Allow the implementation to use a one-past-the-end for VmPageListNode offsets.
     pub const MAX_SIZE: u64 = round_down(u64::MAX, VmPageListNode::NODE_SPAN_BYTES);
@@ -3156,6 +3164,25 @@ impl VmPageList {
         PageFunc: FnMut(&VmPageOrMarker, u64) -> Status,
         GapFunc: FnMut(u64, u64) -> Status,
     {
+        self.for_every_page_and_gap_in_range_internal(start_offset, end_offset, |e| match e {
+            PageOrGap::Page(p, off) => per_page_func(p, off),
+            PageOrGap::Gap(gap_start, gap_end) => per_gap_func(gap_start, gap_end),
+        })
+    }
+
+    /// Internal version of `for_every_page_and_gap_in_range` that calls a single `func` for both
+    /// pages and gaps, in the same order that `for_every_page_and_gap_in_range` calls
+    /// `per_page_func` and `per_gap_func`. This allows a caller to track state across both pages
+    /// and gaps in a single closure.
+    fn for_every_page_and_gap_in_range_internal<F>(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        mut func: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(PageOrGap<'_>) -> Status,
+    {
         let page_size = page::SIZE as u64;
         let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
         // Position cursor at lower bound.
@@ -3201,11 +3228,11 @@ impl VmPageList {
                 // represents a run of pages. Make sure this is not an interval before calling the
                 // per_gap_func.
                 if expected_next_off != off && !p.is_interval_end() {
-                    status = per_gap_func(expected_next_off, off);
+                    status = func(PageOrGap::Gap(expected_next_off, off));
                 }
                 expected_next_off = off + page_size;
                 if status == Status::NEXT {
-                    status = per_page_func(p, off);
+                    status = func(PageOrGap::Page(p, off));
                 }
                 status
             });
@@ -3242,7 +3269,303 @@ impl VmPageList {
                     )
                     .is_some());
             if !ended_in_interval {
-                let status = per_gap_func(expected_next_off, end_offset);
+                let status = func(PageOrGap::Gap(expected_next_off, end_offset));
+                if status != Status::NEXT && status != Status::STOP {
+                    return Err(status);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Walk the page tree, calling `per_page_func` on every page/marker/interval that fulfills
+    /// (returns true) the `compare_func`. Also call `contiguous_run_func` on every contiguous range
+    /// of such pages/markers/intervals encountered, whose signature is:
+    /// `contiguous_run_func(start: u64, end: u64, is_interval: bool) -> Status`
+    ///
+    /// Intervals are treated as distinct contiguous runs, i.e. they won't be merged into a
+    /// contiguous run of pages/markers for invocation of `contiguous_run_func`. For intervals,
+    /// `contiguous_run_func` will be called with `is_interval` set to true; for other page types it
+    /// will be false. Additionally, the entire interval should fulfill `compare_func` for
+    /// `contiguous_run_func` to be called on the portion that falls in
+    /// `[start_offset, end_offset)`.
+    pub fn for_every_page_and_contiguous_run_in_range<CompareFunc, PageFunc, ContiguousRunFunc>(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        mut compare_func: CompareFunc,
+        mut per_page_func: PageFunc,
+        mut contiguous_run_func: ContiguousRunFunc,
+    ) -> Result<(), Status>
+    where
+        CompareFunc: FnMut(&VmPageOrMarker, u64) -> bool,
+        PageFunc: FnMut(&VmPageOrMarker, u64) -> Status,
+        ContiguousRunFunc: FnMut(u64, u64, bool) -> Status,
+    {
+        if start_offset == end_offset {
+            return Ok(());
+        }
+        let page_size = page::SIZE as u64;
+
+        // Track contiguous range of pages fulfilling compare_func.
+        let mut contiguous_run_start = start_offset;
+        let mut contiguous_run_len = 0;
+
+        // Tracks whether we enter the for_every_page_and_gap_in_range traversal at all.
+        let mut found_page_or_gap = false;
+        // Tracks information if we encounter an interval start, to be used when we encounter the
+        // corresponding end.
+        struct IntervalTracker {
+            interval_start_offset: u64,
+            start_compare_status: bool,
+            started_interval: bool,
+        }
+        let mut interval_tracker = IntervalTracker {
+            interval_start_offset: 0,
+            start_compare_status: false,
+            started_interval: false,
+        };
+
+        self.for_every_page_and_gap_in_range_internal(
+            start_offset,
+            end_offset,
+            |entry| match entry {
+                PageOrGap::Page(p, off) => {
+                    found_page_or_gap = true;
+                    let mut st = Status::NEXT;
+                    let compare_result = compare_func(p, off);
+
+                    // Handle interval types first.
+                    if p.is_interval() {
+                        // If we are going to start an interval, end any contiguous run being
+                        // tracked, and call contiguous_run_func on it. This is because intervals
+                        // are treated as contiguous ranges distinct from pages or markers. Do this
+                        // before per_page_func because we don't want to have processed extra pages
+                        // if contiguous_run_func on the range prior would have failed. Also do this
+                        // irrespective of whether this interval passes the compare_func or not,
+                        // since we are processing pages prior to the interval.
+                        if (p.is_interval_start() || p.is_interval_slot()) && contiguous_run_len > 0
+                        {
+                            st = contiguous_run_func(
+                                contiguous_run_start,
+                                contiguous_run_start + contiguous_run_len,
+                                /*is_interval=*/ false,
+                            );
+                            // Reset contiguous range tracking.
+                            contiguous_run_len = 0;
+                            if st != Status::NEXT {
+                                return st;
+                            }
+                        }
+                        debug_assert_eq!(contiguous_run_len, 0);
+
+                        // Run the per-page function on the interval sentinel first. Then proceed to
+                        // the more complicated logic for the contiguous function.
+                        if compare_result {
+                            st = per_page_func(p, off);
+                            if st != Status::NEXT && st != Status::STOP {
+                                return st;
+                            }
+                        }
+
+                        // A slot is a contiguous run of a single page.
+                        if p.is_interval_slot() {
+                            // We should not have been already tracking an interval.
+                            debug_assert!(!interval_tracker.started_interval);
+                            if compare_result {
+                                return contiguous_run_func(
+                                    off,
+                                    off + page_size,
+                                    /*is_interval=*/ true,
+                                );
+                            }
+                            return Status::NEXT;
+                        }
+
+                        if p.is_interval_start() {
+                            // Start tracking a new run. We should not have been already tracking an
+                            // interval.
+                            debug_assert!(!interval_tracker.started_interval);
+                            interval_tracker.started_interval = true;
+                            interval_tracker.interval_start_offset = off;
+                            // Stash the comparison result for the interval start.
+                            interval_tracker.start_compare_status = compare_result;
+                            return Status::NEXT;
+                        }
+
+                        debug_assert!(p.is_interval_end());
+                        // If the interval end does not pass the check, there is nothing more to be
+                        // done.
+                        if !compare_result {
+                            interval_tracker.started_interval = false;
+                            return Status::NEXT;
+                        }
+
+                        // If this is the end of an interval, call contiguous_run_func on the
+                        // interval if the compare_func passes for *both* the start and the end, and
+                        // proceed. It is possible that we don't have the interval start if we
+                        // started the traversal partway inside an interval. Find the start and
+                        // evaluate compare_func on it.
+                        if !interval_tracker.started_interval {
+                            let (start, interval_start_offset) =
+                                self.find_interval_start_for_end(off);
+                            debug_assert!(start.is_interval_start());
+                            debug_assert!(interval_start_offset < start_offset);
+                            interval_tracker.started_interval = true;
+                            interval_tracker.start_compare_status =
+                                compare_func(start, interval_start_offset);
+                            // Pretend that the interval begins at start_offset since we're not
+                            // considering the range before it.
+                            interval_tracker.interval_start_offset = start_offset;
+                        }
+                        debug_assert!(interval_tracker.started_interval);
+                        interval_tracker.started_interval = false;
+                        if interval_tracker.start_compare_status {
+                            return contiguous_run_func(
+                                interval_tracker.interval_start_offset,
+                                off + page_size,
+                                /*is_interval=*/ true,
+                            );
+                        }
+                        return Status::NEXT;
+                    }
+
+                    // Handle any non-interval types.
+                    debug_assert!(!p.is_interval());
+                    debug_assert!(!interval_tracker.started_interval);
+
+                    if compare_result {
+                        st = per_page_func(p, off);
+                        // Return any errors early before considering this page for
+                        // contiguous_run_func.
+                        if st != Status::NEXT && st != Status::STOP {
+                            // If there was an outstanding contiguous run, process it since it had
+                            // to have ended before the failing offset.
+                            if contiguous_run_len > 0 {
+                                let prev_range_status = contiguous_run_func(
+                                    contiguous_run_start,
+                                    contiguous_run_start + contiguous_run_len,
+                                    /*is_interval=*/ false,
+                                );
+                                contiguous_run_len = 0;
+                                // If there was an error encountered, surface that instead of st, as
+                                // it occurred on a range prior to this offset.
+                                if prev_range_status != Status::NEXT
+                                    && prev_range_status != Status::STOP
+                                {
+                                    return prev_range_status;
+                                }
+                            }
+                            return st;
+                        }
+
+                        // Start tracking a contiguous run if none was being tracked.
+                        if contiguous_run_len == 0 {
+                            contiguous_run_start = off;
+                        }
+                        // Append this page to the contiguous range being tracked.
+                        contiguous_run_len += page_size;
+                        // In the case that st is Status::STOP, we will include this page in the
+                        // contiguous run and stop traversal *after* this page.
+                        return st;
+                    }
+                    // We were already tracking a contiguous range when we encountered this page
+                    // that does not fulfill compare_func. Invoke contiguous_run_func on the range
+                    // so far and start tracking a new one skipping over this page.
+                    if contiguous_run_len > 0 {
+                        st = contiguous_run_func(
+                            contiguous_run_start,
+                            contiguous_run_start + contiguous_run_len,
+                            /*is_interval=*/ false,
+                        );
+                        // Reset contiguous_run_len to zero to track a new range later if required.
+                        // Do this irrespective of the return status to ensure we don't erroneously
+                        // have a remaining range to process below after exiting the traversal.
+                        contiguous_run_len = 0;
+                    }
+                    st
+                }
+                PageOrGap::Gap(_, _) => {
+                    found_page_or_gap = true;
+                    // We should not encounter any gaps in the midst of an interval we were
+                    // tracking.
+                    debug_assert!(!interval_tracker.started_interval);
+                    let mut st = Status::NEXT;
+                    // We were already tracking a contiguous range when we encountered this gap.
+                    // Invoke contiguous_run_func on the range so far and start tracking a new one
+                    // skipping over this gap.
+                    if contiguous_run_len > 0 {
+                        st = contiguous_run_func(
+                            contiguous_run_start,
+                            contiguous_run_start + contiguous_run_len,
+                            /*is_interval=*/ false,
+                        );
+                        // Reset contiguous_run_len to zero to track a new range later if required.
+                        // Do this irrespective of the return status to ensure we don't erroneously
+                        // have a remaining range to process below after exiting the traversal.
+                        contiguous_run_len = 0;
+                    }
+                    st
+                }
+            },
+        )?;
+
+        // If we did not execute either the per-page or per-gap function, we could only have been
+        // inside an interval. In that case, we need to find both the start and the end of this
+        // interval and evaluate compare_func on them.
+        if !found_page_or_gap {
+            debug_assert!(self.is_offset_in_interval(start_offset));
+            debug_assert!(self.is_offset_in_interval(end_offset - page_size));
+
+            let mut interval_end_offset = u64::MAX;
+            let mut end_compare_status = false;
+            let status = self.for_every_page_in_range(end_offset, Self::MAX_SIZE, |p, off| {
+                // The first populated slot should be an interval end.
+                debug_assert!(p.is_interval_end());
+                interval_end_offset = off;
+                end_compare_status = compare_func(p, off);
+                Status::STOP
+            });
+            debug_assert!(status.is_ok());
+
+            if end_compare_status {
+                let (start, interval_start_offset) =
+                    self.find_interval_start_for_end(interval_end_offset);
+                debug_assert!(start.is_interval_start());
+                debug_assert!(interval_start_offset < start_offset);
+                if compare_func(start, interval_start_offset) {
+                    let status =
+                        contiguous_run_func(start_offset, end_offset, /*is_interval=*/ true);
+                    if status != Status::NEXT && status != Status::STOP {
+                        return Err(status);
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Process the last contiguous range if there is one, or an interval that we started
+        // tracking but did not end.
+        if contiguous_run_len > 0 {
+            let status = contiguous_run_func(
+                contiguous_run_start,
+                contiguous_run_start + contiguous_run_len,
+                /*is_interval=*/ false,
+            );
+            if status != Status::NEXT && status != Status::STOP {
+                return Err(status);
+            }
+        } else if interval_tracker.started_interval && interval_tracker.start_compare_status {
+            let (end, interval_end_offset) =
+                self.find_interval_end_for_start(interval_tracker.interval_start_offset);
+            debug_assert!(end.is_interval_end());
+            if compare_func(end, interval_end_offset) {
+                let status = contiguous_run_func(
+                    interval_tracker.interval_start_offset,
+                    end_offset,
+                    /*is_interval=*/ true,
+                );
                 if status != Status::NEXT && status != Status::STOP {
                     return Err(status);
                 }
