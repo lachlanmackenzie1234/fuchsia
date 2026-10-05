@@ -79,13 +79,14 @@ def main() -> None:
         sys.exit(do_process_previous(real_flags))
 
     # No special modes, proceed with async execution.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     fut = asyncio.ensure_future(
         async_main_wrapper(
             real_flags, config_file=config_file, replay_mode=replay_mode
         )
     )
     try:
-        loop = asyncio.get_event_loop()
         loop.run_until_complete(fut)
         sys.exit(fut.result())
     except asyncio.CancelledError:
