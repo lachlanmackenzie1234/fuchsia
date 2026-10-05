@@ -84,7 +84,7 @@ rust_library(
     }),
     version = "0.3.2",
     deps = [
-        "//third_party/rust_crates/forks/tracing-mutex-0.3.2:build_script_build",
+        ":build_script_build",
         "//third_party/rust_crates/vendor/lock_api-0.4.14:lock_api",
         "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
     ],
@@ -132,6 +132,7 @@ cargo_build_script(
         ],
     ),
     edition = "2021",
+    emit_warnings = False,
     pkg_name = "tracing-mutex",
     rustc_flags = [
         "--cap-lints=allow",

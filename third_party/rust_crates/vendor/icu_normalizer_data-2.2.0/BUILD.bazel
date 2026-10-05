@@ -72,7 +72,7 @@ rust_library(
     }),
     version = "2.2.0",
     deps = [
-        "//third_party/rust_crates/vendor/icu_normalizer_data-2.2.0:build_script_build",
+        ":build_script_build",
     ],
 )
 
@@ -110,6 +110,7 @@ cargo_build_script(
         ],
     ),
     edition = "2021",
+    emit_warnings = False,
     pkg_name = "icu_normalizer_data",
     rustc_flags = [
         "--cap-lints=allow",
