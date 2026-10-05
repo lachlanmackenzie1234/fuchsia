@@ -90,7 +90,10 @@ WLAN E2E flakes can sometimes be caused by hardware issues.
    Never rely solely on raw failure counts; a high number of failures on a bot may simply mean more runs were scheduled on it. Always validate:
    *   **Failure Rate**: Calculate `(bot_failures / bot_total_runs) * 100` using runs fetched without `-u`.
    *   **Fleet Baseline Comparison**: Compare the suspicious bot's failure rate against the fleet average (e.g. 70% vs. 1% baseline).
-   *   **Symptom Concentration**: Check if a specific symptom (e.g. `Network not found` or AP de-authentications) is localized to 1 or 2 specific bots. If so, it is almost certainly a hardware or AP broadcast issue on that testbed.
+   *   **Symptom Concentration**: Check if a specific symptom (e.g. `Network not found` or AP de-authentications) is localized to 1 or 2 specific bots.
+   *   **DUT / Board Bringup vs. Testbed Flake**: Before blaming the testbed, check if the failing bot(s) represent a new DUT/board type with a very small fleet (N=1 or 2):
+       *   *Do other bots with the same DUT pass?* -> Likely a testbed/AP hardware issue.
+       *   *Is this the only bot for this DUT, or do all bots of this DUT fail?* -> Likely a **DUT support / driver issue** (e.g. firmware crash, driver initialization bug, missing board support), NOT a testbed flake. Do not dismiss as a lab issue; proceed to Step 4/5.
 
 ### Step 4: Fetch & Parse Artifacts
 To root cause WLAN test failures, understand where artifacts are located in ResultDB's hierarchy:
