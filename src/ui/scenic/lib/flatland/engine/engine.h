@@ -100,6 +100,7 @@ class Engine {
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalTransformClipRegionVector clip_regions;
     flatland::GlobalOpacityVector opacities;
+    std::vector<ResolvedLayerStack> resolved_layer_stacks;
     std::vector<ResolvedLayer> resolved_layers;
   };
 

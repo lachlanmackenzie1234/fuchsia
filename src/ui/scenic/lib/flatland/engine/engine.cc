@@ -276,8 +276,10 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
   ComputeGlobalOpacityValues(/*output=*/opacities, topology_data.topology_vector,
                              topology_data.parent_indices, snapshot.map);
 
-  ComputeGlobalResolvedLayers(/*output=*/resolved_layers, topology_data, snapshot.map,
-                              global_matrices, clip_regions, opacities);
+  ComputeGlobalResolvedLayerStacks(/*output=*/resolved_layer_stacks, topology_data, snapshot.map,
+                                   global_matrices, clip_regions, opacities);
+
+  ComputeGlobalResolvedLayers(/*output=*/resolved_layers, resolved_layer_stacks, snapshot.map);
 }
 
 void Engine::SceneState::Clear() {
@@ -301,6 +303,10 @@ void Engine::SceneState::Clear() {
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[opacities]");
     opacities.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layer_stacks]");
+    resolved_layer_stacks.clear();
   }
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layers]");

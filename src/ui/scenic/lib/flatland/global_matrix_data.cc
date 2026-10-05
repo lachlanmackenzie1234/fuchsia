@@ -11,9 +11,6 @@
 
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 
-#include <glm/gtc/epsilon.hpp>
-#include <glm/gtc/matrix_access.hpp>
-
 namespace flatland {
 
 constexpr TransformClipRegion kUnclippedRegion({.x = -(std::numeric_limits<int32_t>::max() / 2),
@@ -22,8 +19,6 @@ constexpr TransformClipRegion kUnclippedRegion({.x = -(std::numeric_limits<int32
                                                 .height = std::numeric_limits<int32_t>::max()});
 
 namespace {
-
-using fuchsia_ui_composition::Orientation;
 
 // TODO(https://fxbug.dev/426028969): `types::RectangleF` exists now; consider using it here after
 // adding helpers such as `Overlap()` or `Intersect(...).IsEmpty()`.  One concern is that we heavily
@@ -133,159 +128,6 @@ types::RectangleF MatrixMultiplyRectF(const glm::mat3& matrix, types::RectangleF
 }
 
 }  // namespace
-
-SrcToDest CreateSrcToDest(const glm::mat3& matrix, const TransformClipRegion& clip,
-                          const types::RectangleF& src,
-                          const fuchsia_ui_composition::ImageFlip image_flip) {
-  // The local space of the renderable has its top-left origin point at (0,0) and grows
-  // downward and to the right, so that the bottom-right point is at (1,1). We apply
-  // the matrix to the four points that represent this unit square to get the points in
-  // the global coordinate space.
-  //
-  // Note that the verts provided are 2D homogenous coordinates, so the third value is always equal
-  // to 1. These are NOT 3D vectors with x, y, z values.
-  auto [verts, reordered_verts] = MatrixMultiplyVerts(matrix, {
-                                                                  glm::vec3(0, 0, 1),
-                                                                  glm::vec3(1, 0, 1),
-                                                                  glm::vec3(1, 1, 1),
-                                                                  glm::vec3(0, 1, 1),
-                                                              });
-
-  // Will equal the index of the vert located at the origin in the reordered verts.
-  int vert_index = 0;
-  bool vert_index_set = false;
-  for (uint32_t i = 0; i < 4; i++) {
-    if (glm::all(glm::epsilonEqual(reordered_verts[0], verts[i], 0.001f))) {
-      vert_index = i;
-      vert_index_set = true;
-      break;
-    }
-  }
-
-  FX_DCHECK(vert_index_set) << "Expected |vert_index| to be set";
-
-  // Maps the calculated |vert_index| value to the global Orientation specified by the matrix. Note
-  // this conversion only considers orientation and not reflections. Reflections are a property of
-  // Image Content only, not Transforms (or Viewports), and so are not handled here.
-  constexpr Orientation kIndexToOrientation[4] = {
-      // If |vert_index| = 0, then the list is in the same order (no rotation).
-      Orientation::kCcw0Degrees,
-      // If |vert_index| = 1, then the verts have been rotated by 90 degrees (top-left is now
-      // top-right).
-      Orientation::kCcw90Degrees,
-      // If |vert_index| = 2, then the verts have been rotated by 180 degrees (top-left is now
-      // bottom-right).
-      Orientation::kCcw180Degrees,
-      // If |vert_index| = 3, then the verts have been rotated by 270 degrees (top-left is now
-      // bottom-left).
-      Orientation::kCcw270Degrees};
-
-  const Orientation orientation = kIndexToOrientation[vert_index];
-  const types::RotateFlip transform = types::RotateFlip::From(orientation, image_flip);
-
-  // Grab the origin, extent and orientation of the rectangle.
-  auto origin = reordered_verts[0];
-  auto extent = reordered_verts[2] - reordered_verts[0];
-  FX_CHECK(extent.x >= 0.f && extent.y >= 0.f);
-
-  // Now clip the origin and extent based on the clip rectangle.
-  auto [clipped_origin, clipped_extent] = ClipRectangle(clip, origin, extent);
-
-  if (origin == clipped_origin && extent == clipped_extent) {
-    // If no clipping happened, we can leave the source rect as is and return.
-    const types::RectangleF clipped_dest({
-        .x = clipped_origin.x,
-        .y = clipped_origin.y,
-        .width = clipped_extent.x,
-        .height = clipped_extent.y,
-    });
-    return SrcToDest(src, clipped_dest, transform);
-  }
-  if (clipped_origin == glm::vec2(0) && clipped_extent == glm::vec2(0)) {
-    // The entire rectangle is outside of the clip region.
-    return SrcToDest(types::RectangleF({.x = 0.f, .y = 0.f, .width = 0.f, .height = 0.f}),
-                     types::RectangleF({.x = 0.f, .y = 0.f, .width = 0.f, .height = 0.f}),
-                     transform);
-  }
-
-  // The rectangle was clipped, so we also have to clip the source rectangle.
-  const float x_lerp = glm::clamp((clipped_origin.x - origin.x) / extent.x, 0.f, 1.f);
-  const float y_lerp = glm::clamp((clipped_origin.y - origin.y) / extent.y, 0.f, 1.f);
-  const float w_lerp =
-      glm::clamp((clipped_origin.x + clipped_extent.x - origin.x) / extent.x, 0.f, 1.f);
-  const float h_lerp =
-      glm::clamp((clipped_origin.y + clipped_extent.y - origin.y) / extent.y, 0.f, 1.f);
-
-  // Map the dst-space clip ratios onto the source rect's axes.
-  //
-  // The clip ran in dst (screen) space, yielding four edge ratios. The source
-  // sub-rectangle is the clipped dst mapped back through the leaf transform
-  // (orientation + flip), so each ratio re-attaches to a source edge through that
-  // transform, NOT one-to-one:
-  //   * 0/180:  dst-x -> source-u, dst-y -> source-v   (axes aligned)
-  //   * 90/270: dst-x -> source-v, dst-y -> source-u   (axes swapped)
-  //   * flip mirrors which END of the chosen axis each ratio shrinks.
-  // This is the same dependence the old four-corner path had (`rotated_u`/`rotated_v`
-  // plus the `flip_idx` reorder), reduced to a per-axis edge assignment. The same
-  // orientation + image_flip are combined into the stored RotateFlip above.
-  float u_min_ratio = 0.f, u_max_ratio = 1.f;
-  float v_min_ratio = 0.f, v_max_ratio = 1.f;
-
-  switch (orientation) {
-    case Orientation::kCcw0Degrees:
-      u_min_ratio = x_lerp;
-      u_max_ratio = w_lerp;
-      v_min_ratio = y_lerp;
-      v_max_ratio = h_lerp;
-      break;
-    case Orientation::kCcw90Degrees:
-      u_min_ratio = 1.f - h_lerp;
-      u_max_ratio = 1.f - y_lerp;
-      v_min_ratio = x_lerp;
-      v_max_ratio = w_lerp;
-      break;
-    case Orientation::kCcw180Degrees:
-      u_min_ratio = 1.f - w_lerp;
-      u_max_ratio = 1.f - x_lerp;
-      v_min_ratio = 1.f - h_lerp;
-      v_max_ratio = 1.f - y_lerp;
-      break;
-    case Orientation::kCcw270Degrees:
-      u_min_ratio = y_lerp;
-      u_max_ratio = h_lerp;
-      v_min_ratio = 1.f - w_lerp;
-      v_max_ratio = 1.f - x_lerp;
-      break;
-  }
-
-  if (image_flip == fuchsia_ui_composition::ImageFlip::kLeftRight) {
-    const float new_u_min = 1.f - u_max_ratio;
-    const float new_u_max = 1.f - u_min_ratio;
-    u_min_ratio = new_u_min;
-    u_max_ratio = new_u_max;
-  } else if (image_flip == fuchsia_ui_composition::ImageFlip::kUpDown) {
-    const float new_v_min = 1.f - v_max_ratio;
-    const float new_v_max = 1.f - v_min_ratio;
-    v_min_ratio = new_v_min;
-    v_max_ratio = new_v_max;
-  }
-
-  const types::RectangleF clipped_src({
-      .x = src.x() + u_min_ratio * src.width(),
-      .y = src.y() + v_min_ratio * src.height(),
-      .width = (u_max_ratio - u_min_ratio) * src.width(),
-      .height = (v_max_ratio - v_min_ratio) * src.height(),
-  });
-
-  const types::RectangleF clipped_dest({
-      .x = clipped_origin.x,
-      .y = clipped_origin.y,
-      .width = clipped_extent.x,
-      .height = clipped_extent.y,
-  });
-
-  return SrcToDest(clipped_src, clipped_dest, transform);
-}
 
 GlobalMatrixVector ComputeGlobalMatrices(
     const GlobalTopologyData::TopologyVector& global_topology,
