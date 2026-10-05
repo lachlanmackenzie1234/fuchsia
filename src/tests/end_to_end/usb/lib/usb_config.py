@@ -18,22 +18,15 @@ import json
 import logging
 import re
 import shlex
-import time
 from typing import Any
 
 from honeydew import errors as honeydew_errors
 from honeydew.fuchsia_device import fuchsia_device
-from honeydew.transports.serial import errors as serial_errors
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _DONE_TOKEN: str = "[usb-cli:DONE]"
 _ERROR_TOKEN: str = "[usb-cli:ERROR]"
 _IDENT_RE: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
-
-# How many consecutive failing serial reads to tolerate before giving up on
-# capturing console output. Each failing read costs ~1s (Honeydew's internal
-# socket timeout).
-_MAX_SERIAL_READ_FAILURES: int = 3
 
 
 def _invoke_maybe_async(
@@ -250,44 +243,14 @@ def _send_serial_command(
         return None
 
     try:
-        serial.send(cmd.strip())
+        output = serial.send_and_recv(
+            cmd=cmd.strip(),
+            stop_tokens=(_DONE_TOKEN, _ERROR_TOKEN),
+            timeout_sec=timeout_sec,
+        )
     except (honeydew_errors.HoneydewError, OSError) as e:
         _LOGGER.warning("Failed dispatching serial command %r: %s", cmd, e)
         return None
-
-    # Honeydew's read() opens a fresh connection, performs a single recv with a
-    # 1s timeout, and raises SerialError when nothing arrives in that window.
-    # It is also comparatively expensive (each call forks a liveness-check
-    # process), so poll conservatively and stop as soon as the console goes
-    # quiet. Depending on how the serial server is configured a read may also
-    # replay a buffer it has already served, so duplicate content ends the
-    # poll too.
-    output = ""
-    previous_chunk: str | None = None
-    consecutive_failures = 0
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        try:
-            chunk = serial.read()
-        except (serial_errors.SerialError, OSError) as e:
-            consecutive_failures += 1
-            _LOGGER.debug("Serial read failed while awaiting %r: %s", cmd, e)
-            # Stop once consecutive timeouts indicate nothing more is coming.
-            # Deliberately do not break merely because `output` is non-empty,
-            # since the console almost always echoes the command immediately
-            # while the [usb-cli:DONE] token takes another second to arrive.
-            if consecutive_failures >= _MAX_SERIAL_READ_FAILURES:
-                break
-            continue
-        consecutive_failures = 0
-        if chunk:
-            if chunk == previous_chunk:
-                break
-            previous_chunk = chunk
-            output += chunk
-            if _DONE_TOKEN in output or _ERROR_TOKEN in output:
-                break
-        time.sleep(0.25)
 
     _LOGGER.info(
         "Dispatched serial command %r; console output: %s",
