@@ -458,6 +458,38 @@ TEST(BootTests, LoadAndBootMismatchedSlotTriggerRebootOneShotRecovery) {
   ASSERT_NO_FATAL_FAILURE(TestFirmwareAbrRebootIfSlotMismatchedOneShotRecovery(kAbrSlotIndexB));
 }
 
+TEST(BootTests, LoadAndBootSlotChangedBetweenPeekAndGetTriggersReboot) {
+  std::unique_ptr<MockZirconBootOps> dev;
+  ASSERT_NO_FATAL_FAILURE(CreateMockZirconBootOps(&dev));
+  ZirconBootOps zircon_boot_ops = dev->GetZirconBootOps();
+  dev->SetFirmwareSlot(kAbrSlotIndexA);
+  MarkSlotActive(dev.get(), kAbrSlotIndexA);
+
+  static size_t durable_boot_reads = 0;
+  static auto orig_read = zircon_boot_ops.read_from_partition;
+  durable_boot_reads = 0;
+  orig_read = zircon_boot_ops.read_from_partition;
+
+  zircon_boot_ops.read_from_partition = [](ZirconBootOps* ops, const char* part, size_t offset,
+                                           size_t size, void* dst, size_t* read_size) -> bool {
+    bool ok = orig_read(ops, part, offset, size, dst, read_size);
+    if (ok && strcmp(part, GPT_DURABLE_BOOT_NAME) == 0) {
+      durable_boot_reads++;
+      if (durable_boot_reads == 1) {
+        // Simulate on-flash modification of durable_boot between AbrPeekBootSlot (Read #1)
+        // and AbrGetBootSlot (Read #2) switching the active slot from A to B.
+        auto* mock_dev = static_cast<MockZirconBootOps*>(ops->context);
+        AbrOps abr_ops = mock_dev->GetAbrOps();
+        AbrMarkSlotActive(&abr_ops, kAbrSlotIndexB);
+      }
+    }
+    return ok;
+  };
+
+  ASSERT_EQ(LoadAndBoot(&zircon_boot_ops, kZirconBootFlagsNone), kBootResultRebootReturn);
+  ASSERT_FALSE(dev->GetBootedSlot());
+}
+
 // Validate that a target slot is booted after successful kernel verification.
 // Nullopt slot means we expect a slotless boot.
 void ValidateVerifiedBootedSlot(const MockZirconBootOps* dev,
