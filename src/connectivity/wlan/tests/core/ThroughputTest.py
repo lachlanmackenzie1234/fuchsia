@@ -26,7 +26,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
 from honeydew.typing.custom_types import MacAddress
-from iperf import iperf_server
 from iperf.iperf_server import IPerfServerOverSsh
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
@@ -417,22 +416,7 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self.phy.set_country(
             KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
-
-        iperf_servers: list[IPerfServerOverSsh] = (
-            await self.register_controller(
-                iperf_server,
-                required=False,
-            )
-            or []
-        )
-
-        if self.openwrt_ap is not None:
-            self.iperf_server = self.openwrt_ap.iperf_server
-        elif iperf_servers:
-            self.iperf_server = iperf_servers[0]
-        else:
-            raise signals.TestError("Requires at least one iperf server")
-        self.iperf_server.start()
+        self.iperf_server = await self.setup_iperf_server()
 
         self.test_cases = []
         self._write_json_report()
