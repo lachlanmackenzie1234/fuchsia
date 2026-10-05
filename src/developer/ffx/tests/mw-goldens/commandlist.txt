@@ -1,5 +1,8 @@
 ffx component destroy
+ffx component list
 ffx component show
+ffx config get
+ffx config set
 ffx debug symbol-index list
 ffx debug symbol-index add
 ffx debug symbol-index remove
@@ -21,6 +24,8 @@ ffx repository publish
 ffx repository server start
 ffx repository server stop
 ffx target add
+ffx target bootloader boot
+ffx target flash
 ffx target list
 ffx target remove
 ffx target repository register
@@ -29,3 +34,4 @@ ffx target screenshot
 ffx target show
 ffx target status
 ffx target wait
+ffx test run
