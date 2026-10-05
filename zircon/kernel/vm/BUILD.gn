@@ -1333,6 +1333,7 @@ kernel_bindgen_crate("compression-bindings") {
     "cpp_vmcompression_acquire_compressor",
     "cpp_vmcompression_compressor_guard_destroy",
     "cpp_vmcompression_compressor_guard_get",
+    "cpp_vmcompression_free_reference",
   ]
   type_allowlist = [
     "VmCompression",
