@@ -1135,6 +1135,60 @@ func TestCCConversion(t *testing.T) {
 			wantGN: `static_library("foo") {
 }`,
 		},
+		{
+			name: "fx_cc_binary with build_flags and instrumentation disabled",
+			bazel: `fx_cc_binary(
+	name = "foo",
+	srcs = ["foo.cc"],
+	build_flags = [
+		"//build/config/fuchsia:no_cpp_standard_library",
+		":config",
+	],
+	disable_build_flags = ["//build/config/linux:implicit-host-libs"],
+	disable_instrumentation = True,
+	disable_syslog_backend = True,
+)
+`,
+			wantGN: `executable("foo") {
+	sources = [
+		"foo.cc",
+	]
+	configs += [
+		"//build/config/fuchsia:no_cpp_standard_library",
+		":config",
+	]
+	configs -= [
+		"//build/config/linux:implicit-host-libs",
+	]
+	exclude_toolchain_tags = [ "instrumented" ]
+	disable_syslog_backend = true
+}`,
+		},
+		{
+			name: "fx_cc_binary disable_instrumentation = False is dropped",
+			bazel: `fx_cc_binary(
+	name = "foo",
+	disable_instrumentation = False,
+)
+`,
+			wantGN: `executable("foo") {
+}`,
+		},
+		{
+			name: "fx_cc_library build_flags with path_overwrite",
+			bazel: `fx_cc_library(
+	name = "foo",
+	build_flags = [
+		"//build/config:foo",  # @bazel2gn:path_overwrite://build/config:gn_foo
+	],
+)
+`,
+			wantGN: `static_library("foo") {
+	configs += [
+		"//build/config:gn_foo",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

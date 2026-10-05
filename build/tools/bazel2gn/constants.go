@@ -90,6 +90,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	// C++
 	"cc_library":            "static_library",
 	"cc_binary":             "executable",
+	"fx_cc_binary":          "executable",
 	"fx_cc_library_headers": "library_headers",
 	"fx_cc_library":         "static_library",
 
@@ -215,6 +216,25 @@ var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 	"implementation_deps": "deps",
 })
 
+// buildFlagsAttrMap maps the `build_flags()` attributes of the `fx_cc_*()`
+// macros to GN parameter names. Bazel `build_flags()` targets use the same labels
+// as their GN `config()` counterparts, so the labels are kept as-is.
+//
+// `build_flags` is converted to `configs +=` and `disable_build_flags` to
+// `configs -=`, see `attrGNAssignmentOps`.
+var buildFlagsAttrMap = map[string]string{
+	"build_flags":         "configs",
+	"disable_build_flags": "configs",
+}
+
+// fxCcBinaryAttrMap maps from attribute names in `fx_cc_binary()` to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var fxCcBinaryAttrMap = mustMergeMaps(ccCommonAttrMap, buildFlagsAttrMap)
+
+// fxCcLibAttrMap maps from attribute names in `fx_cc_library()` to GN parameter names.
+// This map only includes attributes that have different names in Bazel and GN.
+var fxCcLibAttrMap = mustMergeMaps(ccLibAttrMap, buildFlagsAttrMap)
+
 // rustCommonAttrMap maps from attribute names common in Bazel Rust rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var rustCommonAttrMap = map[string]string{
@@ -328,7 +348,8 @@ var attrMapsByRules = map[string]map[string]string{
 	// C++
 	"cc_library":    ccLibAttrMap,
 	"cc_binary":     ccCommonAttrMap,
-	"fx_cc_library": ccLibAttrMap,
+	"fx_cc_binary":  fxCcBinaryAttrMap,
+	"fx_cc_library": fxCcLibAttrMap,
 
 	// C++ Zircon
 	"cc_shared_library_zx": ccLibAttrMap,
@@ -453,7 +474,7 @@ var coptToConfig = map[string]string{
 	"//build/config/rust:bootfs": "//build/config/rust:bootfs",
 }
 
-// attrGNAssignmentOps maps from GN attribute names to the assignment operators to use in GN.
+// attrGNAssignmentOps maps from Bazel attribute names to the assignment operators to use in GN.
 //
 // NOTE: Entries in this map should be clearly documented.
 var attrGNAssignmentOps = map[string]string{
@@ -461,8 +482,23 @@ var attrGNAssignmentOps = map[string]string{
 	// Trying to overwrite a non-empty list in GN with a non-empty value will fail.
 	// Simply replacing assignment with `+=` works for the initial use cases we need.
 	// More complex mechanism may be required if we need to selectively overwrite config assignments.
-	"configs": "+=",
+	//
+	// The same applies to all Bazel attributes that are converted to GN `configs`.
+	"configs":     "+=",
+	"copts":       "+=",
+	"build_flags": "+=",
+	// `disable_build_flags` removes `build_flags()` from the defaults, which is
+	// the equivalent of removing `config()`s from `configs` in GN.
+	"disable_build_flags": "-=",
 }
+
+// disableInstrumentationAttr is the name of the `fx_cc_binary()` attribute that
+// prevents building the target with instrumented (e.g. sanitizer) variants.
+const disableInstrumentationAttr = "disable_instrumentation"
+
+// disableInstrumentationGN is the GN statement equivalent to
+// `disable_instrumentation = True`.
+const disableInstrumentationGN = `exclude_toolchain_tags = [ "instrumented" ]`
 
 // goThirdPartyAggregateDeps lists known third-party GN targets that include sources of multiple Go
 // libraries in a single target. These deps need to be handled specially because in Bazel we have a
