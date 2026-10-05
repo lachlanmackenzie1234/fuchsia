@@ -98,7 +98,7 @@ If a good summary cannot be determined or the list of directory names is long, t
 
 ## 3. Title Length Considerations
 
-- In accordance with the [Fuchsia commit message style guide](../../../docs/contribute/commit-message-style-guide.md), aim to keep the subject line concise (ideally <= 65 characters, and no longer than 72 characters).
+- In accordance with the [Fuchsia commit message style guide](/docs/contribute/commit-message-style-guide.md), aim to keep the subject line concise (ideally <= 65 characters, and no longer than 72 characters).
 - Omitting redundant verbs like "Migrate " helps ensure the title stays within line length constraints even with full `//...` labels.
 
 ---
@@ -117,4 +117,4 @@ The commit body should explain the details of the migration:
 
 Include standard Fuchsia issue and verification footers:
 - **`Bug:`** Link to the tracking Buganizer issue (e.g., `Bug: 123456789`).
-- **`Test:`** List the exact commands used to verify the build and tests (e.g., `Test: fx build`, `Test: fx bazel test //...`). Consolidate entries to at most 3 lines. For detailed formatting, quoting, and consolidation rules, see [`migration_commit_message_test_guidelines.md`](migration_commit_message_test_guidelines.md).
+- **`Test:`** List the exact commands used to verify the build and tests (e.g., `Test: fx build`, `Test: fx bazel test //...`). Consolidate entries to at most 3 lines. For detailed formatting, quoting, and consolidation rules, see [`determining_appropriate_test_footer.md`](/build/beads/references/migration/commit_message/determining_appropriate_test_footer.md).
