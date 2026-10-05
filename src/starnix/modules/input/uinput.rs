@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::uinput::vfs::{CloseFreeSafe, NamespaceNode};
-use crate::{InputEventsRelayHandle, InputFile, OpenedFiles};
+use crate::{InputDeviceInfo, InputEventsRelayHandle, InputFile, OpenedFiles};
 use bit_vec::BitVec;
 use fidl_fuchsia_ui_test_input::{
     self as futinput, CoordinateUnit, DisplayDimensions, KeyboardSimulateKeyEventRequest,
@@ -588,12 +588,12 @@ impl DeviceOps for VirtualDevice {
         let child_node =
             self.inspect_status.node.create_child(format!("file_{}", file_nodes.len()));
         let input_file = match &self.devt {
-            DeviceId::Keyboard => {
-                Arc::new(InputFile::new_keyboard(self.input_id, "starnix_buttons", &child_node))
-            }
+            DeviceId::Keyboard => Arc::new(InputFile::new_keyboard(
+                InputDeviceInfo::new(self.input_id, "starnix_buttons".to_string()),
+                &child_node,
+            )),
             DeviceId::Touchscreen(width, height) => Arc::new(InputFile::new_touch(
-                self.input_id,
-                "starnix_touch",
+                InputDeviceInfo::new(self.input_id, "starnix_touch".to_string()),
                 width.clone(),
                 height.clone(),
                 &child_node,

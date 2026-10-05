@@ -610,6 +610,10 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
                 mouse_source_client_end: mouse_source_client,
                 view_ref,
                 registry_proxy,
+                device_listener_server: None,
+                existing_devices_iterator: None,
+                display_width,
+                display_height,
             },
         );
 
