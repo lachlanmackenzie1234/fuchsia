@@ -2,61 +2,62 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::security_context::SecurityContext;
-use super::{
-    AccessDecision, AccessVector, ClassId, MlsLevel, ParsedPolicy, PermissionId, RoleId, TypeId,
+use super::permissions::{
+    ClassPermission as _, FileClass, KernelClass, KernelPermission, ProcessPermission,
 };
+use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
     CategorySet, Class, ClassDefault, ClassDefaultRange, CommonSymbol, FsUseType, GenfsConPath,
     HandleUnknown, IdAndNameIndexed, SymbolArray,
 };
-use crate::{
-    ClassPermission as _, KernelClass, KernelPermission, NullessByteStr, PolicyCap,
-    ProcessPermission,
+use crate::policy::parsed_policy::ParsedPolicy;
+use crate::policy::{
+    AccessDecision, AccessVector, ClassId, MlsLevel, PermissionId, RoleId, SecurityContext, TypeId,
 };
+use crate::{NullessByteStr, PolicyCap};
 
 use std::collections::HashMap;
 use std::ops::Deref;
 
 use strum::VariantArray as _;
 
-/// The [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
+/// [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
 pub struct FsUseLabelAndType {
     pub context: SecurityContext,
     pub use_type: FsUseType,
 }
 
-/// Array of `PermissionId` values each of a kernel security class' permissions.
+/// Array of [`PermissionId`] values for each of a kernel security class' permissions.
 type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 
-/// An index for facilitating fast lookup of common abstractions inside parsed binary policy data
+/// Index for facilitating fast lookup of common abstractions inside parsed binary policy data
 /// structures. Typically, data is indexed by an enum that describes a well-known value and the
-/// index stores the offset of the data in the binary policy to avoid scanning a collection to find
-/// an element that contains a matching string. For example, the policy contains a collection of
-/// classes that are identified by string names included in each collection entry. However,
-/// `policy_index.classes(KernelClass::Process).unwrap()` yields the offset in the policy's
-/// collection of classes where the "process" class resides.
+/// index stores the ID or offset of the data in the binary policy to avoid scanning a collection to
+/// find an element that contains a matching string. For example, the policy contains a collection
+/// of classes that are identified by string names included in each collection entry. However,
+/// `policy_index.class(KernelClass::Process.into()).unwrap()` yields the [`Class`] entry in the
+/// policy's collection of classes without scanning by name.
 #[derive(Debug)]
 pub struct PolicyIndex {
     /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
-    /// [`super::symbols::Classes`] collection.
+    /// classes collection.
     classes: HashMap<KernelClass, ClassId>,
-    /// Index mapping kernel class permissions to their policy-specific `AccessVector` bit index.
+    /// Index mapping kernel class permissions to their policy-specific [`AccessVector`] bit index.
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
-    /// The parsed binary policy.
+    /// Parsed binary policy.
     parsed_policy: ParsedPolicy,
-    /// The "object_r" role used as a fallback for new file context transitions.
+    /// "object_r" role used as a fallback for new file context transitions.
     cached_object_r_role: RoleId,
-    /// The cached `ClassId` for the "process" class, if defined by the policy.
+    /// Cached [`ClassId`] for the "process" class, if defined by the policy.
     cached_process_class: Option<ClassId>,
 }
 
 impl PolicyIndex {
     /// Constructs a [`PolicyIndex`] that indexes over well-known policy elements.
     ///
-    /// [`Class`]es and [`Permission`]s used by the kernel are amongst the indexed elements.
+    /// [`Class`]es and permissions used by the kernel are amongst the indexed elements.
     /// The policy's `handle_unknown()` configuration determines whether the policy can be loaded even
     /// if it omits classes or permissions expected by the kernel, and whether to allow or deny those
     /// permissions if so.
@@ -64,12 +65,12 @@ impl PolicyIndex {
         let policy_classes = parsed_policy.classes();
         let common_symbols = parsed_policy.common_symbols();
 
-        let mut classes = HashMap::with_capacity(crate::KernelClass::VARIANTS.len());
+        let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());
 
         // Insert elements for each kernel object class. If the policy defines that unknown
         // kernel classes should cause rejection then return an error describing the missing
         // element.
-        for known_class in crate::KernelClass::VARIANTS {
+        for known_class in KernelClass::VARIANTS {
             match policy_classes.get_by_name(known_class.name().as_bytes()) {
                 Some(class) => {
                     classes.insert(*known_class, class.id());
@@ -89,7 +90,7 @@ impl PolicyIndex {
         // unknown permissions or classes should cause rejection then return an error describing the
         // missing element.
         let mut permissions = [KernelPermissionIdsArray::default(); _];
-        for kernel_permission in crate::KernelPermission::all_variants() {
+        for kernel_permission in KernelPermission::all_variants() {
             let kernel_class_name = kernel_permission.class().name();
             if let Some(class) = policy_classes.get_by_name(kernel_class_name.as_bytes()) {
                 if let Some(permission_id) =
@@ -130,13 +131,13 @@ impl PolicyIndex {
 
     /// Returns the policy entry for a class identified either by its well-known kernel object class
     /// enum value, or its policy-defined Id.
-    pub(super) fn class(&self, object_class: crate::ObjectClass) -> Option<&Class> {
+    pub fn class(&self, object_class: ObjectClass) -> Option<&Class> {
         match object_class {
-            crate::ObjectClass::Kernel(kernel_class) => {
+            ObjectClass::Kernel(kernel_class) => {
                 let &class_id = self.classes.get(&kernel_class)?;
                 self.classes().get_by_id(class_id)
             }
-            crate::ObjectClass::ClassId(class_id) => self.classes().get_by_id(class_id),
+            ObjectClass::ClassId(class_id) => self.classes().get_by_id(class_id),
         }
     }
 
@@ -153,33 +154,35 @@ impl PolicyIndex {
     }
 
     /// Returns the security context that should be applied to a newly created SELinux
-    /// object according to `source` and `target` security contexts, as well as the new object's
-    /// `class` and `name`.
+    /// object according to `source_context` and `target_context`, as well as the new object's
+    /// `object_class` and `name`.
     ///
     /// Computation follows the "create" algorithm for labeling newly created objects:
-    /// - user is taken from the `source`.
+    /// - user is taken from the `source_context`.
     /// - role, type and range are taken from the matching transition rules, if any.
-    /// - role, type and range fall-back to the `source` or `target` values according to policy.
+    /// - role, type and range fall-back to the `source_context` or `target_context` values
+    ///   according to policy.
     ///
     /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
     /// When a non-empty `name` is provided, filename transition rules are checked first.
     /// If no transitions apply, and the policy does not explicitly specify defaults then the
-    /// role, type and range values have defaults chosen based on the `class`:
-    /// - For "process", and socket-like classes, role, type and range are taken from the `source`.
-    /// - Otherwise role is "object_r", type is taken from `target` and range is set to the
-    ///   low level of the `source` range.
+    /// role, type and range values have defaults chosen based on the `object_class`:
+    /// - For "process", and socket-like classes, role, type and range are taken from the
+    ///   `source_context`.
+    /// - Otherwise role is "object_r", type is taken from `target_context` and range is set to the
+    ///   low level of the `source_context` range.
     pub fn compute_create_context(
         &self,
-        source: &SecurityContext,
-        target: &SecurityContext,
-        class: crate::ObjectClass,
+        source_context: &SecurityContext,
+        target_context: &SecurityContext,
+        object_class: ObjectClass,
         name: &[u8],
     ) -> SecurityContext {
         let override_type = if !name.is_empty() {
-            self.class(class).and_then(|policy_class| {
+            self.class(object_class).and_then(|policy_class| {
                 self.type_transition_new_type_with_name(
-                    source.type_(),
-                    target.type_(),
+                    source_context.type_(),
+                    target_context.type_(),
                     &policy_class,
                     name,
                 )
@@ -187,7 +190,12 @@ impl PolicyIndex {
         } else {
             None
         };
-        self.new_security_context_internal(source, target, class, override_type)
+        self.new_security_context_internal(
+            source_context,
+            target_context,
+            object_class,
+            override_type,
+        )
     }
 
     /// Internal implementation used by [`Self::compute_create_context`] to implement the policy transition calculations.
@@ -198,7 +206,7 @@ impl PolicyIndex {
         &self,
         source: &SecurityContext,
         target: &SecurityContext,
-        target_class: crate::ObjectClass,
+        target_class: ObjectClass,
         override_type: Option<TypeId>,
     ) -> SecurityContext {
         let Some(policy_class) = self.class(target_class) else {
@@ -288,7 +296,7 @@ impl PolicyIndex {
 
     /// Evaluates the access rights allowed, and whether an audit should be emitted for any allowed
     /// or denied permissions, by `source_context` acting on `target_context` as `target_class`.
-    pub(super) fn compute_access_decision(
+    pub fn compute_access_decision(
         &self,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
@@ -335,23 +343,20 @@ impl PolicyIndex {
 
     /// Returns the Id of the "object_r" role within the `parsed_policy`, for use when validating
     /// Security Context fields.
-    pub(super) fn object_role(&self) -> RoleId {
+    pub fn object_role(&self) -> RoleId {
         self.cached_object_r_role
     }
 
     /// Returns the [`SecurityContext`] defined by this policy for the specified
     /// well-known (or "initial") Id.
-    pub(super) fn initial_context(&self, id: crate::InitialSid) -> SecurityContext {
+    pub fn initial_context(&self, id: crate::InitialSid) -> SecurityContext {
         // All [`InitialSid`] have already been verified as resolvable, by `new()`.
         SecurityContext::from_policy_context(self.parsed_policy.initial_context(id))
     }
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated
     /// [`SecurityContext`] and [`FsUseType`].
-    pub(super) fn fs_use_label_and_type(
-        &self,
-        fs_type: NullessByteStr<'_>,
-    ) -> Option<FsUseLabelAndType> {
+    pub fn fs_use_label_and_type(&self, fs_type: NullessByteStr<'_>) -> Option<FsUseLabelAndType> {
         self.object_contexts()
             .fs_uses()
             .iter()
@@ -366,13 +371,13 @@ impl PolicyIndex {
     /// [`SecurityContext`], taking the `node_path` into account. `class_id` defines the type
     /// of the file in the given `node_path`. It can only be omitted when looking up the filesystem
     /// label.
-    pub(super) fn genfscon_label_for_fs_and_path(
+    pub fn genfscon_label_for_fs_and_path(
         &self,
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
-        class: Option<crate::KernelClass>,
+        class: Option<KernelClass>,
     ) -> Option<SecurityContext> {
-        let node_path = if class == Some(crate::FileClass::LnkFile.into())
+        let node_path = if class == Some(FileClass::LnkFile.into())
             && !self.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
         {
             // Symlinks receive the filesystem root label by default, rather than a label dependent on
@@ -563,6 +568,51 @@ fn glblub_range(
         intersect_categories(source_high, target_high),
     );
     (low_level, Some(high_level))
+}
+
+impl AccessVectorComputer for PolicyIndex {
+    fn access_decision_to_kernel_access_decision(
+        &self,
+        class: KernelClass,
+        access_decision: AccessDecision,
+    ) -> KernelAccessDecision {
+        let mut kernel_allow;
+        let mut kernel_audit;
+        // Set the default values of the bits as appropriate for the policy's handle_unknown value.
+        // Bits corresponding to policy-known permissions will be overwritten.
+        if self.handle_unknown() == HandleUnknown::Allow {
+            // If we allow unknown permissions, a bit will be by default allowed and not audited.
+            kernel_allow = u32::MAX;
+            kernel_audit = 0u32;
+        } else {
+            // Otherwise, a bit is by default audited and not allowed.
+            kernel_allow = 0u32;
+            kernel_audit = u32::MAX;
+        }
+
+        let decision_allow = access_decision.allow;
+        let decision_audit = (access_decision.allow & access_decision.auditallow)
+            | (!access_decision.allow & access_decision.auditdeny);
+        for permission in class.permissions() {
+            if let Some(permission_access_vector) =
+                self.kernel_permission_to_access_vector(*permission)
+            {
+                // If the permission is known, set the corresponding bit according to
+                // `decision_allow` and `decision_audit`.
+                let bit = 1 << permission.id();
+                let allow = decision_allow & permission_access_vector == permission_access_vector;
+                let audit = decision_audit & permission_access_vector == permission_access_vector;
+                kernel_allow = (kernel_allow & !bit) | ((allow as u32) << permission.id());
+                kernel_audit = (kernel_audit & !bit) | ((audit as u32) << permission.id());
+            }
+        }
+        KernelAccessDecision {
+            allow: AccessVector::from(kernel_allow),
+            audit: AccessVector::from(kernel_audit),
+            flags: access_decision.flags,
+            todo_bug: access_decision.todo_bug,
+        }
+    }
 }
 
 impl Deref for PolicyIndex {

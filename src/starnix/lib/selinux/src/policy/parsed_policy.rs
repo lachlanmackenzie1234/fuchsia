@@ -57,7 +57,7 @@ impl ParsedPolicy {
     /// constraints, are removed from the allowed set. Matching policy statements then
     /// add permissions to the granted & audit-allow sets, or remove them from the
     /// audit-deny set.
-    pub(super) fn compute_access_decision(
+    pub(crate) fn compute_access_decision(
         &self,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
@@ -227,7 +227,7 @@ impl ParsedPolicy {
         XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
-    pub(super) fn genfscon_find_all<'a>(
+    pub(crate) fn genfscon_find_all<'a>(
         &'a self,
         fs_type: &'a [u8],
     ) -> impl Iterator<Item = &'a GenfsConPath> {
@@ -237,7 +237,7 @@ impl ParsedPolicy {
             .flat_map(|entry| entry.paths().iter())
     }
 
-    pub(super) fn compute_filename_transition(
+    pub(crate) fn compute_filename_transition(
         &self,
         source_type: TypeId,
         target_type: TypeId,
@@ -252,7 +252,7 @@ impl ParsedPolicy {
         )
     }
 
-    pub(super) fn initial_context(&self, mut id: crate::InitialSid) -> &crate::new_policy::Context {
+    pub(crate) fn initial_context(&self, mut id: crate::InitialSid) -> &crate::new_policy::Context {
         let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         if id == crate::InitialSid::Init && !need_init_sid {
             id = crate::InitialSid::Kernel;

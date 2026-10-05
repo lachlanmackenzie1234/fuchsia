@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::index::PolicyIndex;
 use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
 use super::{CategoryId, RoleId, TypeId, UserId};
 use crate::NullessByteStr;
+use crate::kernel::PolicyIndex;
 use crate::new_policy::NewPolicy;
 use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId as _};
 
@@ -28,7 +28,7 @@ impl SecurityContext {
     /// Returns a new instance with the specified field values.
     /// Fields are not validated against the policy until explicitly via `validate()`,
     /// or implicitly via insertion into a [`SidTable`].
-    pub(super) fn new(
+    pub(crate) fn new(
         user: UserId,
         role: RoleId,
         type_: TypeId,
@@ -43,7 +43,7 @@ impl SecurityContext {
         Self { inner }
     }
 
-    pub(super) fn from_policy_context(context: &Context) -> SecurityContext {
+    pub(crate) fn from_policy_context(context: &Context) -> SecurityContext {
         SecurityContext { inner: context.clone() }
     }
 }

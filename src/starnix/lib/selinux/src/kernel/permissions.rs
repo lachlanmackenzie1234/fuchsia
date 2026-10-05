@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-///! Kernel classes and permissions are added here when the relevant hook and enforcement is added.
+//! Kernel classes and permissions are added here when the relevant hook and enforcement is added.
 use crate::policy::AccessVector;
 use fuchsia_rcu::RcuDroppable;
 use paste::paste;
@@ -113,7 +113,7 @@ macro_rules! declare_kernel_classes {
 }
 
 declare_kernel_classes! {
-    /// A well-known class in SELinux policy that has a particular meaning in policy enforcement
+    /// Well-known class in SELinux policy that has a particular meaning in policy enforcement
     /// hooks.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     #[repr(u32)]
@@ -506,7 +506,7 @@ macro_rules! cap2_class_permission_enum {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         class_permission_enum! {
-            $(#[$meta])* $ name $(for $kernel_class)? {
+            $(#[$meta])* $name $(for $kernel_class)? {
                 // keep-sorted start
 
                 AuditRead("audit_read"),

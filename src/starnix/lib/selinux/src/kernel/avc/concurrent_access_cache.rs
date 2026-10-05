@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use super::concurrent_cache::{LockFreeQueryCache, StorageStrategy};
-use super::{AccessQueryArgs, KernelXpermsAccessDecision, XpermsAccessQueryArgs};
+use super::{AccessQueryArgs, XpermsAccessQueryArgs};
 use crate::SecurityId;
-use crate::kernel_permissions::ClassPermission;
-use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
+use crate::kernel::{ClassPermission, KernelAccessDecision, KernelXpermsAccessDecision};
+use crate::policy::{XpermsBitmap, XpermsKind};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use zerocopy::IntoBytes;
@@ -349,7 +349,7 @@ impl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel_permissions::{DirPermission, KernelClass, KernelPermission};
+    use crate::kernel::{DirPermission, KernelClass, KernelPermission};
     use crate::policy::{AccessVector, XpermsBitmap};
 
     #[test]

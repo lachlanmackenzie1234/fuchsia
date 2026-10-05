@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::avc::{AccessVectorCache, Query};
-use crate::policy::{AccessVector, KernelAccessDecision, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind};
+use crate::kernel::{AccessVectorCache, KernelAccessDecision, Query};
+use crate::policy::{AccessVector, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind};
 use crate::security_server::{PolicySeqNo, SecurityServer};
 use crate::{ClassPermission, FdPermission, KernelClass, KernelPermission, SecurityId};
 
 use std::num::NonZeroU32;
 
-pub use crate::avc::PerThreadCache;
+pub use crate::kernel::PerThreadCache;
 
 /// Result of a permission lookup between two Security Contexts.
 #[derive(Clone, Debug, PartialEq)]
@@ -258,8 +258,8 @@ fn has_extended_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::avc::KernelXpermsAccessDecision;
-    use crate::policy::{AccessVector, KernelAccessDecision, XpermsBitmap};
+    use crate::kernel::KernelXpermsAccessDecision;
+    use crate::policy::{AccessVector, XpermsBitmap};
     use crate::{CommonFsNodePermission, FileClass, ForClass, KernelClass, ProcessPermission};
 
     use std::num::NonZeroU32;

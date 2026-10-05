@@ -3,22 +3,21 @@
 // found in the LICENSE file.
 
 pub mod error;
-pub mod index;
 pub mod parsed_policy;
 pub mod parser;
 
 mod constraints;
 mod security_context;
 
+pub use crate::kernel::FsUseLabelAndType;
+use crate::kernel::PolicyIndex;
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
     AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, FsUseType, HandleUnknown,
     IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, User, UserId, XpermsBitmap,
 };
-use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, new_policy as new};
-pub use index::FsUseLabelAndType;
-use index::PolicyIndex;
+use crate::{KernelClass, NullessByteStr, ObjectClass, new_policy as new};
 use parsed_policy::ParsedPolicy;
 pub use parser::PolicyCursor;
 use parser::PolicyData;
@@ -26,7 +25,6 @@ pub use security_context::{SecurityContext, SecurityContextError};
 
 use anyhow::Context as _;
 use std::fmt::Debug;
-use std::num::NonZeroU32;
 use std::ops::Deref;
 
 use std::sync::Arc;
@@ -276,50 +274,6 @@ impl Policy {
     }
 }
 
-impl AccessVectorComputer for Policy {
-    fn access_decision_to_kernel_access_decision(
-        &self,
-        class: KernelClass,
-        av: AccessDecision,
-    ) -> KernelAccessDecision {
-        let mut kernel_allow;
-        let mut kernel_audit;
-        // Set the default values of the bits as appropriate for the policy's handle_unknown value.
-        // Bits corresponding to policy-known permissions will be overwritten.
-        if self.0.handle_unknown() == HandleUnknown::Allow {
-            // If we allow unknown permissions, a bit will be by default allowed and not audited.
-            kernel_allow = 0xffffffffu32;
-            kernel_audit = 0u32;
-        } else {
-            // Otherwise, a bit is by default audited and not allowed.
-            kernel_allow = 0u32;
-            kernel_audit = 0xffffffffu32;
-        }
-
-        let decision_allow = av.allow;
-        let decision_audit = (av.allow & av.auditallow) | (!av.allow & av.auditdeny);
-        for permission in class.permissions() {
-            if let Some(permission_access_vector) =
-                self.0.kernel_permission_to_access_vector(permission.clone())
-            {
-                // If the permission is known, set the corresponding bit according to
-                // `decision_allow` and `decision_audit`.
-                let bit = 1 << permission.id();
-                let allow = decision_allow & permission_access_vector == permission_access_vector;
-                let audit = decision_audit & permission_access_vector == permission_access_vector;
-                kernel_allow = (kernel_allow & !bit) | ((allow as u32) << permission.id());
-                kernel_audit = (kernel_audit & !bit) | ((audit as u32) << permission.id());
-            }
-        }
-        KernelAccessDecision {
-            allow: AccessVector::from(kernel_allow),
-            audit: AccessVector::from(kernel_audit),
-            flags: av.flags,
-            todo_bug: av.todo_bug,
-        }
-    }
-}
-
 /// A [`Policy`] that has been successfully parsed, but not validated.
 pub struct Unvalidated(ParsedPolicy);
 
@@ -329,30 +283,6 @@ impl Unvalidated {
         let index = PolicyIndex::new(self.0).context("building index")?;
         Ok(Policy(index))
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KernelAccessDecision {
-    pub allow: AccessVector,
-    pub audit: AccessVector,
-    pub flags: u32,
-    pub todo_bug: Option<NonZeroU32>,
-}
-
-/// An owner of policy information that can translate [`crate::Permission`] values into
-/// [`AccessVector`] values that are consistent with the owned policy.
-pub trait AccessVectorComputer {
-    /// Translates the given [`AccessDecision`] to a [`KernelAccessDecision`].
-    ///
-    /// The loaded policy's "handle unknown" configuration determines how `permissions`
-    /// entries not explicitly defined by the policy are handled. Allow-unknown will
-    /// result in unknown `permissions` being allowed, while they are denied (and audited)
-    /// if the policy uses deny-unknown.
-    fn access_decision_to_kernel_access_decision(
-        &self,
-        class: KernelClass,
-        av: AccessDecision,
-    ) -> KernelAccessDecision;
 }
 
 /// A data structure that can be parsed as a part of a binary policy.

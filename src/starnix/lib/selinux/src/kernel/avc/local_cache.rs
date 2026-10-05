@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::kernel::{ClassPermission, KernelAccessDecision, KernelClass, KernelPermission};
 use crate::permission_check::PermissionCheckResult;
-use crate::policy::{AccessVector, KernelAccessDecision, XpermsKind};
-use crate::{ClassPermission, KernelClass, KernelPermission, PolicySeqNo, SecurityId};
+use crate::policy::{AccessVector, XpermsKind};
+use crate::{PolicySeqNo, SecurityId};
 use std::cell::Cell;
 
 /// Simple allow decision (allowed, not audited, not permissive, no TODO bug).

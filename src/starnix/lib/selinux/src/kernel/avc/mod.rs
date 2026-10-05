@@ -7,10 +7,12 @@ mod concurrent_access_cache;
 mod concurrent_cache;
 mod local_cache;
 
-use crate::kernel_permissions::KernelPermission;
-use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
+use crate::SecurityId;
+use crate::kernel::{
+    KernelAccessDecision, KernelClass, KernelPermission, KernelXpermsAccessDecision,
+};
+use crate::policy::XpermsKind;
 use crate::security_server::SecurityServerBackend;
-use crate::{KernelClass, SecurityId};
 use concurrent_access_cache::{ConcurrentSidCache, ConcurrentXpermsCache};
 use std::sync::Arc;
 
@@ -18,26 +20,13 @@ pub use cache_stats::CacheStats;
 pub use concurrent_access_cache::{AccessCacheStorage, ConcurrentAccessCache};
 pub use local_cache::PerThreadCache;
 
-/// Extended permission access decision as seen from the kernel.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct KernelXpermsAccessDecision {
-    /// Set of xperms that are allowed.
-    pub allow: XpermsBitmap,
-    /// Set of xperms that should be audited (as allowed or denials depending on `allow`)
-    pub audit: XpermsBitmap,
-    /// Whether the domain is permissive.
-    pub permissive: bool,
-    /// Whether the entry has an associated todo.
-    pub has_todo: bool,
-}
-
 /// Interface used internally by the [`SecurityServer`](crate::SecurityServer) implementation to
 /// implement policy queries such as looking up the set of permissions to grant, or the Security
 /// Context to apply to new files, etc.
 ///
 /// This trait allows layering of caching, delegation, and thread-safety between the policy-backed
 /// calculations, and the caller-facing permission-check interface.
-pub(super) trait Query {
+pub(crate) trait Query {
     /// Computes the [`KernelAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
     /// an object of type `target_class`.
     fn compute_access_decision(
@@ -202,7 +191,7 @@ pub const DEFAULT_SHARED_SIZE: QueryCacheCapacity = QueryCacheCapacity {
 
 /// Access vector cache.
 #[derive(Clone)]
-pub(super) struct AccessVectorCache {
+pub(crate) struct AccessVectorCache {
     cache: Arc<FifoQueryCache>,
     backend: Arc<SecurityServerBackend>,
 }

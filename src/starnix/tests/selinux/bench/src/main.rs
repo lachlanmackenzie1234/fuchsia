@@ -7,8 +7,11 @@
 use criterion::Criterion;
 use fuchsia_criterion::FuchsiaCriterion;
 use security::PermissionFlags;
-use selinux::policy::{AccessVector, KernelAccessDecision};
-use selinux::{AccessQueryArgs, ConcurrentAccessCache, FileClass, KernelClass, SecurityId};
+use selinux::policy::AccessVector;
+use selinux::{
+    AccessQueryArgs, ConcurrentAccessCache, FileClass, KernelAccessDecision, KernelClass,
+    SecurityId,
+};
 use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::testing::{PanickingFile, spawn_kernel_with_selinux_and_run};
