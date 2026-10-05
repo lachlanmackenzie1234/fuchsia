@@ -422,7 +422,7 @@ impl FsNodeOps for FuseCtlConnectionsDirectory {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -438,7 +438,7 @@ impl FsNodeOps for FuseCtlConnectionsDirectory {
         let Some(connection) = connection else {
             return error!(ENOENT);
         };
-        let fs = node.fs();
+        let fs = entry.node.fs();
         let dir = SimpleDirectory::new();
         dir.edit(&fs, |dir| {
             dir.node(
@@ -1375,7 +1375,7 @@ impl FsNodeOps for FuseNode {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -1384,7 +1384,7 @@ impl FsNodeOps for FuseNode {
             self,
             FuseOperation::Lookup { name: name.to_owned() },
         )?;
-        self.fs_node_from_entry(node, name, response.entry().ok_or_else(|| errno!(EINVAL))?)
+        self.fs_node_from_entry(&entry.node, name, response.entry().ok_or_else(|| errno!(EINVAL))?)
     }
 
     fn mknod(

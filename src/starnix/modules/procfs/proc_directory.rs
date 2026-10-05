@@ -33,9 +33,10 @@ use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, SimpleFileNode};
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
-    CloseFreeSafe, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle, FsNode,
-    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, emit_dotdot, fileops_impl_directory,
-    fileops_impl_noop_sync, fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
+    CloseFreeSafe, DirEntry, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle,
+    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, emit_dotdot,
+    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
+    fs_node_impl_dir_readonly,
 };
 use starnix_logging::{BugRef, bug_ref, track_stub};
 
@@ -179,7 +180,7 @@ impl FsNodeOps for ProcDirectoryNode {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -192,7 +193,7 @@ impl FsNodeOps for ProcDirectoryNode {
                 let running_state = task.running_state()?;
                 let pd = running_state
                     .proc_pid_directory_cache
-                    .get_or_init(|| pid_directory(current_task, &node.fs(), &task));
+                    .get_or_init(|| pid_directory(current_task, &entry.node.fs(), &task));
                 Ok(pd.clone())
             }
         }

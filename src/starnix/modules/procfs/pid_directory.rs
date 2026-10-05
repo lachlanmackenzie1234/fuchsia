@@ -22,10 +22,10 @@ use starnix_core::vfs::pseudo::simple_file::{
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    CallbackSymlinkNode, CloseFreeSafe, DirectoryEntryType, DirentSink, FdNumber, FileObject,
-    FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget, default_seek, emit_dotdot,
-    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    CallbackSymlinkNode, CloseFreeSafe, DirEntry, DirectoryEntryType, DirentSink, FdNumber,
+    FileObject, FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
+    FsString, ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget, default_seek,
+    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
     fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, track_stub};
@@ -160,13 +160,13 @@ impl FsNodeOps for TaskDirectoryNode {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let tid = self.tid.clone();
-        let creds = node.info().cred();
-        let fs = node.fs();
+        let creds = entry.node.info().cred();
+        let fs = entry.node.fs();
         let (mode, ino) = task_entries(self.scope)
             .iter()
             .enumerate()
@@ -367,7 +367,7 @@ impl FsNodeOps for FdDirectory {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -378,7 +378,7 @@ impl FsNodeOps for FdDirectory {
         // Derive the symlink's mode from the mode in which the file was opened.
         let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
         let tid = self.tid.clone();
-        Ok(node.fs().create_node_and_allocate_node_id(
+        Ok(entry.node.fs().create_node_and_allocate_node_id(
             CallbackSymlinkNode::new(move || {
                 let task = tid.get_task()?;
                 let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
@@ -494,7 +494,7 @@ impl FsNodeOps for NsDirectory {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -520,7 +520,10 @@ impl FsNodeOps for NsDirectory {
             }
             let node_info = || FsNodeInfo::new(mode!(IFREG, 0o444), task.real_fscred());
             let fallback = || {
-                node.fs().create_node_and_allocate_node_id(BytesFile::new_node(vec![]), node_info())
+                entry
+                    .node
+                    .fs()
+                    .create_node_and_allocate_node_id(BytesFile::new_node(vec![]), node_info())
             };
             Ok(match ns {
                 "cgroup" => {
@@ -531,7 +534,8 @@ impl FsNodeOps for NsDirectory {
                     track_stub!(TODO("https://fxbug.dev/297313673"), "ipc namespaces");
                     fallback()
                 }
-                "mnt" => node
+                "mnt" => entry
+                    .node
                     .fs()
                     .create_node_and_allocate_node_id(current_task.fs().namespace(), node_info()),
                 "net" => {
@@ -570,7 +574,7 @@ impl FsNodeOps for NsDirectory {
         } else {
             // The name is {namespace}, link to the correct one of the current task.
             let id = current_task.fs().namespace().id;
-            Ok(node.fs().create_node_and_allocate_node_id(
+            Ok(entry.node.fs().create_node_and_allocate_node_id(
                 CallbackSymlinkNode::new(move || {
                     Ok(SymlinkTarget::Path(format!("{name}:[{id}]").into()))
                 }),
@@ -614,7 +618,7 @@ impl FsNodeOps for FdInfoDirectory {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -627,7 +631,7 @@ impl FsNodeOps for FdInfoDirectory {
         if let Some(extra_fdinfo) = file.extra_fdinfo(current_task) {
             data.extend_from_slice(extra_fdinfo.as_slice());
         }
-        Ok(node.fs().create_node_and_allocate_node_id(
+        Ok(entry.node.fs().create_node_and_allocate_node_id(
             BytesFile::new_node(data),
             FsNodeInfo::new(mode!(IFREG, 0o444), task.real_fscred()),
         ))
@@ -683,7 +687,7 @@ impl FsNodeOps for TaskListDirectory {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -699,7 +703,7 @@ impl FsNodeOps for TaskListDirectory {
             return error!(ENOENT);
         }
 
-        Ok(tid_directory(&node.fs(), &task))
+        Ok(tid_directory(&entry.node.fs(), &task))
     }
 }
 

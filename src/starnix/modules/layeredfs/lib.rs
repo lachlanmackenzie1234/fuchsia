@@ -6,10 +6,10 @@
 
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
-    CacheMode, DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString, MountInfo,
-    SeekTarget, ValueOrSize, WhatToMount, XattrOp, fileops_impl_directory, fileops_impl_noop_sync,
-    fs_node_impl_dir_readonly, unbounded_seek,
+    CacheMode, DirEntry, DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps,
+    FileSystem, FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
+    MountInfo, SeekTarget, ValueOrSize, WhatToMount, XattrOp, fileops_impl_directory,
+    fileops_impl_noop_sync, fs_node_impl_dir_readonly, unbounded_seek,
 };
 
 use starnix_uapi::errors::Errno;
@@ -205,14 +205,15 @@ impl FsNodeOps for LayeredNodeOps {
 
     fn lookup(
         &self,
-        _node: &FsNode,
+        _entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         if let Some(fs) = self.fs.mappings.get(name) {
             Ok(fs.root().node.clone())
         } else {
-            self.fs.base_fs.root().node.lookup(current_task, &MountInfo::detached(), name)
+            let root = self.fs.base_fs.root();
+            root.node.ops().lookup(root, current_task, name)
         }
     }
 

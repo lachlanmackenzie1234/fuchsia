@@ -13,11 +13,11 @@ use crate::vfs::pipe::{Pipe, PipeHandle};
 use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard, RwQueueWriteGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
-    CheckAccessReason, DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps,
-    FileSystem, FileSystemHandle, FileWriteGuardMode, FileWriteGuardRef, FileWriteGuardState,
-    FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE, MountInfo, NamespaceNode, OPathOps,
-    OpenAccessCheck, RecordLockCommand, RecordLockOwner, RecordLocks, WeakFileHandle,
-    checked_add_offset_and_length, inotify_hook,
+    CheckAccessReason, DefaultDirEntryOps, DirEntry, DirEntryOps, FileObject, FileObjectState,
+    FileOps, FileSystem, FileSystemHandle, FileWriteGuardMode, FileWriteGuardRef,
+    FileWriteGuardState, FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE, MountInfo,
+    NamespaceNode, OPathOps, OpenAccessCheck, RecordLockCommand, RecordLockOwner, RecordLocks,
+    WeakFileHandle, checked_add_offset_and_length, inotify_hook,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -593,13 +593,10 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno>;
 
-    /// Find an existing child node and populate the child parameter. Return the node.
-    ///
-    /// The child parameter is an empty node. Operations other than initialize may panic before
-    /// initialize is called.
+    /// Finds an existing child node matching `name` within the parent directory `entry`.
     fn lookup(
         &self,
-        _node: &FsNode,
+        _entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -613,17 +610,17 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         false
     }
 
-    /// Find multiple children nodes in sequence.
+    /// Finds multiple children nodes in sequence.
     ///
     /// This can be used to pipeline lookups in filesystems that support it.
     ///
     /// Each name in `names` is looked up in the node found for the previous name, starting with
-    /// `node`, and the results are returned in the same order as `names`. Lookups stop at the
+    /// `entry`, and the results are returned in the same order as `names`. Lookups stop at the
     /// first error, so fewer results than `names` may be returned, but at least one result must
     /// be returned if `names` is not empty.
     fn lookup_pipelined(
         &self,
-        _node: &FsNode,
+        _entry: &DirEntry,
         _current_task: &CurrentTask,
         _names: &[&FsStr],
     ) -> LookupVec<Result<FsNodeHandle, Errno>> {
@@ -1095,7 +1092,7 @@ macro_rules! fs_node_impl_not_dir {
     () => {
         fn lookup(
             &self,
-            _node: &$crate::vfs::FsNode,
+            _entry: &$crate::vfs::DirEntry,
             _current_task: &$crate::task::CurrentTask,
             _name: &$crate::vfs::FsStr,
         ) -> Result<$crate::vfs::FsNodeHandle, starnix_uapi::errors::Errno> {
@@ -1382,22 +1379,6 @@ impl FsNode {
             FileMode::IFSOCK => error!(ENXIO),
             _ => self.create_file_ops(current_task, flags),
         }
-    }
-
-    pub fn lookup(
-        &self,
-        current_task: &CurrentTask,
-        mount: &MountInfo,
-        name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        self.check_access(
-            current_task,
-            mount,
-            Access::EXEC,
-            CheckAccessReason::InternalPermissionChecks,
-            &[Auditable::Name(name), std::panic::Location::caller().into()],
-        )?;
-        self.ops().lookup(self, current_task, name)
     }
 
     pub fn create_node(

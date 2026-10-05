@@ -14,11 +14,11 @@ use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
-    Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
-    FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_seek,
-    fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType,
+    DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
+    FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps,
+    FsStr, FsString, LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage,
+    default_seek, fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
@@ -1189,13 +1189,13 @@ impl FsNodeOps for RemoteNode {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let name = get_name_str(name)?;
 
-        let fs = node.fs();
+        let fs = entry.node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
         let mut query = MODE_ATTRIBUTES
@@ -1208,7 +1208,7 @@ impl FsNodeOps for RemoteNode {
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 
-        if security::fs_is_xattr_labeled(node.fs()) {
+        if security::fs_is_xattr_labeled(fs.clone()) {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
 
@@ -1224,11 +1224,11 @@ impl FsNodeOps for RemoteNode {
 
     fn lookup_pipelined(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         names: &[&FsStr],
     ) -> LookupVec<Result<FsNodeHandle, Errno>> {
-        let fs = node.fs();
+        let fs = entry.node.fs();
         let fs_ops = RemoteFs::from_fs(&fs);
 
         let mut query = MODE_ATTRIBUTES
@@ -1241,7 +1241,7 @@ impl FsNodeOps for RemoteNode {
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 
-        if security::fs_is_xattr_labeled(node.fs()) {
+        if security::fs_is_xattr_labeled(fs.clone()) {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
 

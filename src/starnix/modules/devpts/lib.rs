@@ -14,8 +14,8 @@ use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    CacheMode, DirectoryEntryType, FdFlags, FileHandle, FileObject, FileObjectState, FileOps,
-    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    CacheMode, DirEntry, DirectoryEntryType, FdFlags, FileHandle, FileObject, FileObjectState,
+    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
     FsNodeInfo, FsNodeOps, FsStr, FsString, LookupContext, MountInfo, NamespaceNode, SpecialNode,
     SymlinkMode,
 };
@@ -222,11 +222,11 @@ impl FsNodeOps for DevPtsRootDir {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
-        let fs = node.fs();
+        let fs = entry.node.fs();
         let devptsfs =
             fs.downcast_ops::<DevPtsFs>().expect("DevPts should only handle `DevPtsFs`s");
         let name = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;

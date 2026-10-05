@@ -13,7 +13,7 @@ use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    CacheMode, DirectoryEntryType, FileObject, FileObjectState, FileOps, FileSystem,
+    CacheMode, DirEntry, DirectoryEntryType, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr,
     InputBuffer, OutputBuffer, fileops_impl_noop_sync, fileops_impl_seekless, fs_args,
     fs_node_impl_dir_readonly, fs_node_impl_not_dir,
@@ -815,24 +815,24 @@ impl FsNodeOps for FunctionFsRootDir {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<starnix_core::vfs::FsNodeHandle, Errno> {
         let name = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
-        let cred = node.info().cred();
+        let cred = entry.node.info().cred();
         match name {
-            CONTROL_ENDPOINT => Ok(node.fs().create_node(
+            CONTROL_ENDPOINT => Ok(entry.node.fs().create_node(
                 CONTROL_ENDPOINT_NODE_ID,
                 FunctionFsControlEndpoint,
                 FsNodeInfo::new(mode!(IFREG, 0o600), cred),
             )),
-            OUTPUT_ENDPOINT => Ok(node.fs().create_node(
+            OUTPUT_ENDPOINT => Ok(entry.node.fs().create_node(
                 OUTPUT_ENDPOINT_NODE_ID,
                 FunctionFsOutputEndpoint,
                 FsNodeInfo::new(mode!(IFREG, 0o600), cred),
             )),
-            INPUT_ENDPOINT => Ok(node.fs().create_node(
+            INPUT_ENDPOINT => Ok(entry.node.fs().create_node(
                 INPUT_ENDPOINT_NODE_ID,
                 FunctionFsInputEndpoint,
                 FsNodeInfo::new(mode!(IFREG, 0o600), cred),

@@ -340,6 +340,27 @@ impl DirEntry {
         self.flags().contains(DirEntryFlags::IS_DEAD)
     }
 
+    /// Looks up an existing child [`FsNodeHandle`] matching `name` within this directory entry.
+    ///
+    /// Checks search (`EXEC`) permission on this directory node before delegating
+    /// to [`crate::vfs::FsNodeOps::lookup`].
+    #[track_caller]
+    fn lookup(
+        &self,
+        current_task: &CurrentTask,
+        mount: &MountInfo,
+        name: &FsStr,
+    ) -> Result<FsNodeHandle, Errno> {
+        self.node.check_access(
+            current_task,
+            mount,
+            Access::EXEC,
+            CheckAccessReason::InternalPermissionChecks,
+            &[security::Auditable::Name(name), std::panic::Location::caller().into()],
+        )?;
+        self.node.ops().lookup(self, current_task, name)
+    }
+
     /// Look up a directory entry with the given name as direct child of this
     /// entry.
     pub fn component_lookup(
@@ -369,15 +390,11 @@ impl DirEntry {
                 current_task,
                 mount,
                 names[i],
-                |parent_node, _mount, _name| {
+                |d, _mount, _name| {
                     let node = if let Some(node) = next_node {
                         node?
                     } else {
-                        nodes = parent_node.ops().lookup_pipelined(
-                            parent_node,
-                            current_task,
-                            &names[i..],
-                        );
+                        nodes = d.node.ops().lookup_pipelined(d, current_task, &names[i..]);
                         nodes.reverse();
                         nodes.pop().expect("lookup_pipelined must return at least one result")?
                     };
@@ -455,7 +472,7 @@ impl DirEntry {
                 match d.lookup(current_task, mount, name) {
                     Ok(node) => Ok((node, CreationStatus::Existed)),
                     Err(e) if e == ENOENT => {
-                        Ok((create_node_fn(d, mount, name)?, CreationStatus::Created))
+                        Ok((create_node_fn(&d.node, mount, name)?, CreationStatus::Created))
                     }
                     Err(e) => Err(e),
                 }
@@ -973,7 +990,7 @@ impl DirEntry {
         mount: &MountInfo,
         name: &FsStr,
         create_fn: impl FnOnce(
-            &FsNodeHandle,
+            &DirEntryHandle,
             &MountInfo,
             &FsStr,
         ) -> Result<(FsNodeHandle, CreationStatus), Errno>,
@@ -1284,7 +1301,7 @@ impl<'a> DirEntryLockedChildren<'a> {
         mount: &MountInfo,
         name: &FsStr,
         create_fn: impl FnOnce(
-            &FsNodeHandle,
+            &DirEntryHandle,
             &MountInfo,
             &FsStr,
         ) -> Result<(FsNodeHandle, CreationStatus), Errno>,
@@ -1297,7 +1314,7 @@ impl<'a> DirEntryLockedChildren<'a> {
             return Ok((child, CreationStatus::Existed));
         }
 
-        let (node, status) = create_fn(&self.entry.node, mount, name)?;
+        let (node, status) = create_fn(self.entry, mount, name)?;
 
         assert!(
             node.info().mode & FileMode::IFMT != FileMode::EMPTY,

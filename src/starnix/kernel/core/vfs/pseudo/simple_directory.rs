@@ -4,8 +4,8 @@
 
 use crate::task::CurrentTask;
 use crate::vfs::{
-    CloseFreeSafe, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle, FsNode,
-    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, SymlinkNode, emit_dotdot,
+    CloseFreeSafe, DirEntry, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystemHandle,
+    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, SymlinkNode, emit_dotdot,
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
@@ -213,7 +213,7 @@ impl FsNodeOps for Arc<SimpleDirectory> {
 
     fn lookup(
         &self,
-        _node: &FsNode,
+        _entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -264,7 +264,8 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let dir = SimpleDirectory::new();
             let node = dir.clone().into_node(&current_task.fs().root().entry.node.fs(), 0o777);
-            let result = FsNodeOps::lookup(&dir, &node, &current_task, "nonexistent".into());
+            let entry = DirEntry::new_unrooted(node);
+            let result = FsNodeOps::lookup(&dir, &entry, &current_task, "nonexistent".into());
             assert_eq!(result.unwrap_err(), errno!(ENOENT));
         })
         .await;
@@ -277,11 +278,12 @@ mod tests {
                 if name == "special" { errno!(EACCES) } else { errno!(ENOENT) }
             });
             let node = dir.clone().into_node(&current_task.fs().root().entry.node.fs(), 0o777);
+            let entry = DirEntry::new_unrooted(node);
 
-            let result_special = FsNodeOps::lookup(&dir, &node, &current_task, "special".into());
+            let result_special = FsNodeOps::lookup(&dir, &entry, &current_task, "special".into());
             assert_eq!(result_special.unwrap_err(), errno!(EACCES));
 
-            let result_other = FsNodeOps::lookup(&dir, &node, &current_task, "other".into());
+            let result_other = FsNodeOps::lookup(&dir, &entry, &current_task, "other".into());
             assert_eq!(result_other.unwrap_err(), errno!(ENOENT));
         })
         .await;
@@ -303,20 +305,21 @@ mod tests {
             });
 
             let node = dir.clone().into_node(&fs, 0o777);
+            let entry = DirEntry::new_unrooted(node);
 
             // Verify that lookup returns the same FsNodeHandle for multiple calls.
             let node1 =
-                FsNodeOps::lookup(&dir, &node, &current_task, "link".into()).expect("lookup link");
-            let node2 = FsNodeOps::lookup(&dir, &node, &current_task, "link".into())
+                FsNodeOps::lookup(&dir, &entry, &current_task, "link".into()).expect("lookup link");
+            let node2 = FsNodeOps::lookup(&dir, &entry, &current_task, "link".into())
                 .expect("lookup link again");
 
             assert!(Arc::ptr_eq(&node1, &node2));
             assert!(node1.info().mode.is_lnk());
 
             // Verify that lookup returns the same FsNodeHandle for subdirectories.
-            let subdir1 = FsNodeOps::lookup(&dir, &node, &current_task, "subdir".into())
+            let subdir1 = FsNodeOps::lookup(&dir, &entry, &current_task, "subdir".into())
                 .expect("lookup subdir");
-            let subdir2 = FsNodeOps::lookup(&dir, &node, &current_task, "subdir".into())
+            let subdir2 = FsNodeOps::lookup(&dir, &entry, &current_task, "subdir".into())
                 .expect("lookup subdir again");
 
             assert!(Arc::ptr_eq(&subdir1, &subdir2));
@@ -328,7 +331,7 @@ mod tests {
 
             // Verify that removing an entry works.
             mutator.remove("link".into());
-            let result = FsNodeOps::lookup(&dir, &node, &current_task, "link".into());
+            let result = FsNodeOps::lookup(&dir, &entry, &current_task, "link".into());
             assert_eq!(result.unwrap_err(), errno!(ENOENT));
         })
         .await;

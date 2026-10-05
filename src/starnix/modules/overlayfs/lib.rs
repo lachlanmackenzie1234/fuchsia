@@ -556,7 +556,7 @@ impl FsNodeOps for OverlayNodeOps {
 
     fn lookup(
         &self,
-        node: &FsNode,
+        entry: &DirEntry,
         current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
@@ -605,7 +605,7 @@ impl FsNodeOps for OverlayNodeOps {
                 return error!(ENOENT);
             }
 
-            Ok(self.node.init_fs_node_for_child(node, lower, upper))
+            Ok(self.node.init_fs_node_for_child(&entry.node, lower, upper))
         })
     }
 
