@@ -11,6 +11,7 @@
 #include <lib/zx/eventpair.h>
 
 #include <map>
+#include <memory_resource>
 #include <optional>
 #include <utility>
 
@@ -112,6 +113,11 @@ class Engine {
   std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter_;
   std::shared_ptr<flatland::UberStructSystem> uber_struct_system_;
   std::shared_ptr<flatland::LinkSystem> link_system_;
+
+  // Backs the link maps built each frame.  `Engine` runs only on the main thread,
+  // so an unsynchronized pool is safe.  Declared before any member that can hold
+  // a container using this pool, so the pool outlives those containers.
+  std::pmr::unsynchronized_pool_resource link_map_pool_;
 
   // Updated every frame, and cached for purposes like ViewTree generation.  These states are
   // double-buffered; even though there are 3 variables, only 2 of them are non-null at any given

@@ -197,7 +197,8 @@ class FlatlandDisplayTest : public FlatlandTest {
 
   CommonTopologyState ComputeCommonTopologyState(TransformHandle root_transform) {
     auto snapshot = uber_struct_system_->Snapshot();
-    auto links = link_system_->GetResolvedTopologyLinks();
+    GlobalTopologyData::LinkTopologyMap links;
+    link_system_->GetResolvedTopologyLinks(links);
     auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
         snapshot.map, links, link_system_->GetInstanceId(), root_transform);
 
@@ -234,9 +235,11 @@ class FlatlandDisplayTest : public FlatlandTest {
     auto [snapshot, topology_data, global_matrices, clip_regions] =
         ComputeCommonTopologyState(root_transform);
 
+    GlobalTopologyData::ChildToParentTransformMap link_child_to_parent_transform_map;
+    link_system_->GetLinkChildToParentTransformMap(link_child_to_parent_transform_map);
     return GlobalTopologyData::GenerateViewTreeSnapshot(
         topology_data, snapshot.map, {}, clip_regions, global_matrices,
-        link_system_->GetLinkChildToParentTransformMap().first);
+        link_child_to_parent_transform_map);
   }
 };
 
@@ -1849,7 +1852,8 @@ TEST_F(FlatlandTest, ViewportClippingPersistsAcrossInstances) {
   // that the root of the child instance has a global clip region equivalent to that of the
   // logical size of the parent viewport's properties.
   const auto snapshot = uber_struct_system_->Snapshot();
-  const auto links = link_system_->GetResolvedTopologyLinks();
+  GlobalTopologyData::LinkTopologyMap links;
+  link_system_->GetResolvedTopologyLinks(links);
   const auto link_system_id = link_system_->GetInstanceId();
 
   const auto topology_data = flatland::GlobalTopologyData::ComputeGlobalTopologyData(
@@ -5594,7 +5598,8 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
 
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent_flatland->GetRoot());
-  auto links = link_system_->GetResolvedTopologyLinks();
+  GlobalTopologyData::LinkTopologyMap links;
+  link_system_->GetResolvedTopologyLinks(links);
   EXPECT_EQ(links.size(), 0U);
 
   // We post this task onto the other Flatland's thread, so that we can have a *chance* of locking
@@ -5622,7 +5627,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   // handled properly).
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent_flatland->GetRoot());
-  links = link_system_->GetResolvedTopologyLinks();
+  link_system_->GetResolvedTopologyLinks(links);
   // One of these will be true, but we don't know which one.
   // EXPECT_EQ(links.size(), 0U);
   // EXPECT_EQ(links.size(), 1U);
@@ -5634,7 +5639,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
 
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent_flatland->GetRoot());
-  links = link_system_->GetResolvedTopologyLinks();
+  link_system_->GetResolvedTopologyLinks(links);
   EXPECT_EQ(links.size(), 1U);
 
   // Need to destroy the child Flatland on the correct thread, so the FIDL binding doesn't CHECK.
@@ -8415,7 +8420,8 @@ TEST_F(Flatland2Test, InvisibleLayerInStack) {
   // Scene dump prints without crashing.
   std::ostringstream str;
   auto snapshot = uber_struct_system_->Snapshot();
-  auto links = link_system_->GetResolvedTopologyLinks();
+  GlobalTopologyData::LinkTopologyMap links;
+  link_system_->GetResolvedTopologyLinks(links);
   auto root_transform = flatland->GetRoot();
   auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
       snapshot.map, links, link_system_->GetInstanceId(), root_transform);

@@ -28,7 +28,13 @@ using fuchsia_ui_views::ViewportCreationToken;
 namespace flatland {
 
 LinkSystem::LinkSystem(TransformHandle::InstanceId instance_id)
-    : instance_id_(instance_id), link_graph_(instance_id_), linker_(ObjectLinker::New()) {
+    : instance_id_(instance_id),
+      link_graph_(instance_id_),
+      linker_(ObjectLinker::New()),
+      parent_to_child_map_(&map_pool_resource_),
+      child_to_parent_map_(&map_pool_resource_),
+      link_topologies_(&map_pool_resource_),
+      initial_layout_infos_(&map_pool_resource_) {
   device_pixel_ratio_ = fuchsia_math::VecF{{.x = 1.f, .y = 1.f}};
 }
 
@@ -321,36 +327,33 @@ void LinkSystem::UpdateViewportPropertiesFor(
   }
 }
 
-GlobalTopologyData::LinkTopologyMap LinkSystem::GetResolvedTopologyLinks() {
+void LinkSystem::GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const {
   TRACE_DURATION("gfx", "LinkSystem::GetResolvedTopologyLinks");
-  GlobalTopologyData::LinkTopologyMap copy;
+  out_links.clear();
 
-  // Acquire the lock and copy.
-  {
-    std::scoped_lock lock(mutex_);
-    copy = link_topologies_;
-  }
-  return copy;
+  // Acquire the lock and copy into `out_links` using its own memory resource.
+  std::scoped_lock lock(mutex_);
+  out_links.reserve(link_topologies_.size());
+  out_links.insert(link_topologies_.begin(), link_topologies_.end());
 }
 
 TransformHandle::InstanceId LinkSystem::GetInstanceId() const { return instance_id_; }
 
-std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> const
-LinkSystem::GetLinkChildToParentTransformMap() {
+bool LinkSystem::GetLinkChildToParentTransformMap(
+    GlobalTopologyData::ChildToParentTransformMap& out_map) {
   TRACE_DURATION("gfx", "LinkSystem::GetLinkChildToParentTransformMap");
-  std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> result;
-  auto& child_to_parent_map = result.first;
-  auto& link_topology_changed = result.second;
+  out_map.clear();
 
   std::scoped_lock lock(mutex_);
+  out_map.reserve(parent_to_child_map_.size());
   for (const auto& [parent_transform_handle, child_end] : parent_to_child_map_) {
-    child_to_parent_map.try_emplace(child_end.child_transform_handle, parent_transform_handle);
+    out_map.try_emplace(child_end.child_transform_handle, parent_transform_handle);
   }
 
-  link_topology_changed = link_topology_changed_;
+  const bool link_topology_changed = link_topology_changed_;
   link_topology_changed_ = false;
 
-  return result;
+  return link_topology_changed;
 }
 
 }  // namespace flatland

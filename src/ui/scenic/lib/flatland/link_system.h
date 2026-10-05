@@ -13,6 +13,7 @@
 #include <zircon/errors.h>
 
 #include <functional>
+#include <memory_resource>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -355,13 +356,13 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
       fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher,
       TransformHandle child_transform_handle, LinkProtocolErrorCallback error_callback);
 
-  // Returns a snapshot of the current set of links, represented as a map from LinkSystem-owned
-  // TransformHandles to TransformHandles in LinkToParents. The LinkSystem generates Keys for this
-  // map in CreateLinkToChild() and returns them to callers in a LinkToChild's
-  // |internal_link_handle|. The values in this map are arguments to CreateLinkToParent() and become
-  // the LinkToParent's |child_transform_handle|. The LinkSystem places entries in the map when a
-  // link resolves and removes them when a link is invalidated.
-  GlobalTopologyData::LinkTopologyMap GetResolvedTopologyLinks();
+  // Populates `out_links` with a snapshot of the current set of links, represented as a map from
+  // LinkSystem-owned TransformHandles to TransformHandles in LinkToParents. The LinkSystem
+  // generates Keys for this map in CreateLinkToChild() and returns them to callers in a
+  // LinkToChild's `internal_link_handle`. The values in this map are arguments to
+  // CreateLinkToParent() and become the LinkToParent's `child_transform_handle`. The LinkSystem
+  // places entries in the map when a link resolves and removes them when a link is invalidated.
+  void GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const;
 
   // Returns the instance ID used for LinkSystem-authored handles.
   TransformHandle::InstanceId GetInstanceId() const;
@@ -378,10 +379,10 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
                           const GlobalMatrixVector& global_matrices,
                           const UberStruct::InstanceMap& uber_structs) const;
 
-  // Returns the mapping from the child_transform_handle of each LinkToParent to the corresponding
-  // parent_transform_handle from each LinkToChild.
-  std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> const
-  GetLinkChildToParentTransformMap();
+  // Populates `out_map` with the mapping from the `child_transform_handle` of each LinkToParent to
+  // the corresponding `parent_transform_handle` from each LinkToChild, and returns whether the link
+  // topology has changed since the last call to this function.
+  bool GetLinkChildToParentTransformMap(GlobalTopologyData::ChildToParentTransformMap& out_map);
 
   // Updates |device_pixel_ratio_| for the View with parent |handle|. If the value changed it sends
   // updates to all waiting clients, otherwise it does nothing.
@@ -433,15 +434,19 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
     std::shared_ptr<ChildViewWatcherImpl> child_view_watcher;
   };
 
+  // Backs the link maps below, which are only touched under `mutex_`, so an
+  // unsynchronized pool is safe.  Declared before the maps so it outlives them.
+  std::pmr::unsynchronized_pool_resource map_pool_resource_ FXL_GUARDED_BY(mutex_);
+
   // Keyed by LinkToChild::parent_transform_handle. Access is managed by |mutex_|.
-  std::unordered_map<TransformHandle, ChildEnd> parent_to_child_map_ FXL_GUARDED_BY(mutex_);
+  std::pmr::unordered_map<TransformHandle, ChildEnd> parent_to_child_map_ FXL_GUARDED_BY(mutex_);
   // Keyed by LinkToParent::child_transform_handle. Access is managed by |mutex_|.
-  std::unordered_map<TransformHandle, ParentEnd> child_to_parent_map_ FXL_GUARDED_BY(mutex_);
+  std::pmr::unordered_map<TransformHandle, ParentEnd> child_to_parent_map_ FXL_GUARDED_BY(mutex_);
   // The set of current link topologies. Access is managed by |mutex_|.
   GlobalTopologyData::LinkTopologyMap link_topologies_ FXL_GUARDED_BY(mutex_);
 
   // A map of the most recent LayoutInfo generated for each link that hasn't resolved yet.
-  std::unordered_map<TransformHandle, fuchsia_ui_composition::LayoutInfo> initial_layout_infos_
+  std::pmr::unordered_map<TransformHandle, fuchsia_ui_composition::LayoutInfo> initial_layout_infos_
       FXL_GUARDED_BY(mutex_);
 
   // The starting DPR used by the link system. The actual DPR used on subsequent calls to
@@ -454,7 +459,7 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // the ViewTree needs to be recomputed.  Starting as true guarantees that the ViewTree is always
   // generated the first time (necessary because it is illegal for a subtree generator to say
   // "no diff" the first time).
-  bool link_topology_changed_ = true;
+  bool link_topology_changed_ FXL_GUARDED_BY(mutex_) = true;
 };
 
 }  // namespace flatland

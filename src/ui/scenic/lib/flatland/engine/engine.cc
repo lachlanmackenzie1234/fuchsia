@@ -211,8 +211,9 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
   TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
   utils::CheckIsOnMainThread();
 
-  const auto [link_child_to_parent_transform_map, link_topology_changed] =
-      link_system_->GetLinkChildToParentTransformMap();
+  GlobalTopologyData::ChildToParentTransformMap link_child_to_parent_transform_map(&link_map_pool_);
+  const bool link_topology_changed =
+      link_system_->GetLinkChildToParentTransformMap(link_child_to_parent_transform_map);
 
   FX_DCHECK(current_scene_state_);
 
@@ -254,9 +255,13 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 
 void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
+  // Called by the inspect scene dump as well as the frame path;
+  // `link_map_pool_` needs the main thread.
+  utils::CheckIsOnMainThread();
   snapshot = engine.uber_struct_system_->Snapshot();
 
-  const auto links = engine.link_system_->GetResolvedTopologyLinks();
+  GlobalTopologyData::LinkTopologyMap links(&engine.link_map_pool_);
+  engine.link_system_->GetResolvedTopologyLinks(links);
   const auto link_system_id = engine.link_system_->GetInstanceId();
 
   GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot.map, links,
