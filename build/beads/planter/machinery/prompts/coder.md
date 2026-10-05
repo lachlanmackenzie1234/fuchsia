@@ -226,6 +226,14 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    ```
 - **`rustc_binary` attributes**: bazel2gn maps Bazel `crate_name` to GN `output_name`,
    `crate_root` to `source_root`, and `lint_config` to GN lint `configs`.
+- **Legacy host-tool macros (`go_binary_host_tool`, `py_binary_host_tool`) and `output_name`**:
+   these macros in `//build/bazel/rules/host:defs.bzl` are legacy macros that expand a `select()`
+   referencing `//build/bazel/versioning:is_api_level_PLATFORM` in the caller package - grant the
+   caller package `"//<dir>:__pkg__"` visibility on `is_api_level_PLATFORM` in
+   `//build/bazel/versioning/BUILD.bazel` rather than editing `//build/bazel/rules/host:defs.bzl`
+   or any shared rule/macro file under `//build/bazel/rules/`. When a GN target sets
+   `output_name = "<name>"` equal to `name`, omit `output_name` in `BUILD.bazel` (so `bazel2gn`
+   emits the equivalent GN default without `output_name`).
 - **GN `declare_args()` build arguments**: keep `declare_args()` in a `.gni` file imported above
    the sentinel with `# LINT.IfChange` / `# LINT.ThenChange(//build/bazel/BUILD.gn:<arg>)`, export it
    from `generated_file("gn_build_variables_for_bazel")` in `//build/bazel/BUILD.gn` inside a
@@ -257,6 +265,12 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 dependents, `fx build --host //build:bazel2gn_verifications`, and `fx bazel build` for fuchsia
 and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDIR`:
 1. While iterating, run `run_checks.sh --skip-build` (seconds) and fix every ERROR and WARNING.
+   If CQ failed with `Failed to rebase` (`checkout|jiri patch`) or `cq_reachability` reports
+   `upstream_rebase_conflict`, fetch and rebase onto the latest `origin/main`
+   (`git fetch origin main && git rebase origin/main`, resolve conflicts in shared lists such as
+   `build/bazel2gn_verification_targets.gni` keeping both `origin/main` and your entries in
+   alphabetical order, `git add <file>`, and `git -c core.editor=true rebase --continue`
+   preserving `Change-Id`).
    For fast compile feedback, run `fx bazel2gn -d <dir>` and
    `fx bazel build --config=fuchsia_platform //<dir>:all` (for `fidl_library`/`validate_json`
    packages pass `-- //<dir>:all -//<dir>:<name>_validate_ir_json`). Fix BUILD files, never sources.
