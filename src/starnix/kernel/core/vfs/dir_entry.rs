@@ -340,27 +340,6 @@ impl DirEntry {
         self.flags().contains(DirEntryFlags::IS_DEAD)
     }
 
-    /// Looks up an existing child [`FsNodeHandle`] matching `name` within this directory entry.
-    ///
-    /// Checks search (`EXEC`) permission on this directory node before delegating
-    /// to [`crate::vfs::FsNodeOps::lookup`].
-    #[track_caller]
-    fn lookup(
-        &self,
-        current_task: &CurrentTask,
-        mount: &MountInfo,
-        name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        self.node.check_access(
-            current_task,
-            mount,
-            Access::EXEC,
-            CheckAccessReason::InternalPermissionChecks,
-            &[security::Auditable::Name(name), std::panic::Location::caller().into()],
-        )?;
-        self.node.ops().lookup(self, current_task, name)
-    }
-
     /// Look up a directory entry with the given name as direct child of this
     /// entry.
     pub fn component_lookup(
@@ -369,9 +348,10 @@ impl DirEntry {
         mount: &MountInfo,
         name: &FsStr,
     ) -> Result<DirEntryHandle, Errno> {
-        let (node, _) = self.get_or_create_child(current_task, mount, name, |d, mount, name| {
-            Ok((d.lookup(current_task, mount, name)?, CreationStatus::Existed))
-        })?;
+        let (node, _) =
+            self.get_or_create_child(current_task, mount, name, |d, _mount, name| {
+                Ok((d.node.ops().lookup(d, current_task, name)?, CreationStatus::Existed))
+            })?;
         Ok(node)
     }
 
@@ -469,7 +449,7 @@ impl DirEntry {
         }
         let (entry, status) =
             self.get_or_create_child(current_task, mount, name, |d, mount, name| {
-                match d.lookup(current_task, mount, name) {
+                match d.node.ops().lookup(d, current_task, name) {
                     Ok(node) => Ok((node, CreationStatus::Existed)),
                     Err(e) if e == ENOENT => {
                         Ok((create_node_fn(&d.node, mount, name)?, CreationStatus::Created))
@@ -978,6 +958,29 @@ impl DirEntry {
         }
     }
 
+    /// Verifies that `name` is not a reserved `.` or `..` entry, that this entry is a directory,
+    /// and that `current_task` has search (`EXEC`) permission on it.
+    fn check_search_access(
+        &self,
+        current_task: &CurrentTask,
+        mount: &MountInfo,
+        name: &FsStr,
+    ) -> Result<(), Errno> {
+        assert!(!DirEntry::is_reserved_name(name));
+        // Only directories can have children.
+        if !self.node.is_dir() {
+            return error!(ENOTDIR);
+        }
+        // The user must be able to search the directory (requires the EXEC permission).
+        self.node.check_access(
+            current_task,
+            mount,
+            Access::EXEC,
+            CheckAccessReason::InternalPermissionChecks,
+            self,
+        )
+    }
+
     /// Retrieves a child `DirEntry` from the cache or obtains one via `create_fn`.
     ///
     /// Checks the in-memory child cache. A cached child is validated using `revalidate()` and
@@ -995,19 +998,7 @@ impl DirEntry {
             &FsStr,
         ) -> Result<(FsNodeHandle, CreationStatus), Errno>,
     ) -> Result<(DirEntryHandle, CreationStatus), Errno> {
-        assert!(!DirEntry::is_reserved_name(name));
-        // Only directories can have children.
-        if !self.node.is_dir() {
-            return error!(ENOTDIR);
-        }
-        // The user must be able to search the directory (requires the EXEC permission)
-        self.node.check_access(
-            current_task,
-            mount,
-            Access::EXEC,
-            CheckAccessReason::InternalPermissionChecks,
-            self,
-        )?;
+        self.check_search_access(current_task, mount, name)?;
 
         // Check if the child is already in children. In that case, we can simply return the
         // child if it is still valid, and we do not need to call create_fn.
@@ -1288,10 +1279,11 @@ impl<'a> DirEntryLockedChildren<'a> {
         mount: &MountInfo,
         name: &FsStr,
     ) -> Result<DirEntryHandle, Errno> {
-        assert!(!DirEntry::is_reserved_name(name));
-        let (node, _) = self.get_or_create_child(current_task, mount, name, |d, mount, name| {
-            Ok((d.lookup(current_task, mount, name)?, CreationStatus::Existed))
-        })?;
+        self.entry.check_search_access(current_task, mount, name)?;
+        let (node, _) =
+            self.get_or_create_child(current_task, mount, name, |d, _mount, name| {
+                Ok((d.node.ops().lookup(d, current_task, name)?, CreationStatus::Existed))
+            })?;
         Ok(node)
     }
 

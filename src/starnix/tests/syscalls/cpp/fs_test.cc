@@ -1088,6 +1088,72 @@ TEST_P(FsMountTest, CantBypassDirectoryPermissions) {
       EXPECT_EQ(unlink(file_path.c_str()), 0);
     }
   });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(FsMountTest, UnlinkAndRenameRequireDirectorySearchPermission) {
+  std::string user1_folder = mount_path_ + "/user1";
+  ASSERT_THAT(mkdir(user1_folder.c_str(), S_IRWXU), SyscallSucceeds());
+  ASSERT_THAT(chown(user1_folder.c_str(), kUser1Uid, kUser1Gid), SyscallSucceeds());
+
+  std::string other_folder = mount_path_ + "/other";
+  ASSERT_THAT(mkdir(other_folder.c_str(), S_IRWXU), SyscallSucceeds());
+  ASSERT_THAT(chown(other_folder.c_str(), kUser1Uid, kUser1Gid), SyscallSucceeds());
+
+  std::string cached_file = user1_folder + "/file";
+  {
+    fbl::unique_fd fd(open(cached_file.c_str(), O_RDWR | O_CREAT | O_EXCL, S_IRWXU));
+    ASSERT_TRUE(fd.is_valid()) << "open: " << std::strerror(errno);
+  }
+  ASSERT_THAT(chown(cached_file.c_str(), kUser1Uid, kUser1Gid), SyscallSucceeds());
+
+  std::string cached_subdir = user1_folder + "/subdir";
+  ASSERT_THAT(mkdir(cached_subdir.c_str(), S_IRWXU), SyscallSucceeds());
+  ASSERT_THAT(chown(cached_subdir.c_str(), kUser1Uid, kUser1Gid), SyscallSucceeds());
+
+  std::string other_file = other_folder + "/other_file";
+  {
+    fbl::unique_fd fd(open(other_file.c_str(), O_RDWR | O_CREAT | O_EXCL, S_IRWXU));
+    ASSERT_TRUE(fd.is_valid()) << "open: " << std::strerror(errno);
+  }
+  ASSERT_THAT(chown(other_file.c_str(), kUser1Uid, kUser1Gid), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+    test_helper::DropAllCapabilities();
+
+    // Populate the directory entry cache before removing search permission.
+    struct stat st{};
+    ASSERT_THAT(stat(cached_file.c_str(), &st), SyscallSucceeds());
+    ASSERT_THAT(stat(cached_subdir.c_str(), &st), SyscallSucceeds());
+    ASSERT_THAT(stat(other_file.c_str(), &st), SyscallSucceeds());
+
+    // Make user1_folder write-only (no S_IXUSR search permission).
+    ASSERT_THAT(chmod(user1_folder.c_str(), S_IWUSR), SyscallSucceeds());
+
+    // Unlink and rmdir must fail with EACCES even when the target entry is cached, and must not
+    // leak file type errors (EISDIR / ENOTDIR) or existence (ENOENT).
+    EXPECT_THAT(unlink(cached_file.c_str()), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(unlink(cached_subdir.c_str()), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(unlink((user1_folder + "/nonexistent").c_str()), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(rmdir(cached_subdir.c_str()), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(rmdir(cached_file.c_str()), SyscallFailsWithErrno(EACCES));
+
+    // Rename out of or into the write-only directory must fail with EACCES even when the source
+    // or replaced target entry is cached.
+    EXPECT_THAT(rename(cached_file.c_str(), (other_folder + "/moved").c_str()),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(rename(other_file.c_str(), cached_file.c_str()), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(rename(other_file.c_str(), (user1_folder + "/new_target").c_str()),
+                SyscallFailsWithErrno(EACCES));
+
+    ASSERT_THAT(chmod(user1_folder.c_str(), S_IRWXU), SyscallSucceeds());
+    EXPECT_THAT(unlink(cached_file.c_str()), SyscallSucceeds());
+    EXPECT_THAT(rmdir(cached_subdir.c_str()), SyscallSucceeds());
+    EXPECT_THAT(unlink(other_file.c_str()), SyscallSucceeds());
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST_P(FsMountTest, CreateWithDifferentModes) {

@@ -1618,11 +1618,12 @@ impl FsNode {
         name: &FsStr,
         child: &FsNodeHandle,
     ) -> Result<(), Errno> {
-        // The user must be able to search and write to the directory.
+        // The user must be able to write to the directory; search permission was already
+        // verified when looking up `child`.
         self.check_access(
             current_task,
             mount,
-            Access::EXEC | Access::WRITE,
+            Access::WRITE,
             CheckAccessReason::InternalPermissionChecks,
             security::Auditable::Name(name),
         )?;
