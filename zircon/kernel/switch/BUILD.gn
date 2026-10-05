@@ -506,11 +506,3 @@ variant("unit-tests-enabled") {
     "ktest",
   ]
 }
-
-# TODO(https://fxbug.dev/548748442): remove when all fixed in the code
-clippy_lints = [ "too-many-arguments" ]
-foreach(lint, clippy_lints) {
-  config("allow-$lint") {
-    rustflags = [ "--allow=clippy::$lint" ]
-  }
-}
