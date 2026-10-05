@@ -51,6 +51,10 @@ rustc_library("fuchsia-rcu-collections") {
     "src/rcu_intrusive_list.rs",
     "src/rcu_list.rs",
     "src/rcu_raw_hash_map.rs",
+    "src/tests/mod.rs",
+    "src/tests/rcu_array.rs",
+    "src/tests/rcu_list.rs",
+    "src/tests/rcu_raw_hash_map.rs",
   ]
   edition = "2024"
   test_deps = [ "//sdk/lib/fdio" ]
