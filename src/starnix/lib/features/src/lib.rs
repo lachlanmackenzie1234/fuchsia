@@ -45,12 +45,19 @@ pub enum Feature {
     Thermal,
     Cooling,
     DataCollectionConsentSync,
+    // Note: HvdcpOpti statically registers IIO devices (`iio:device0`, `iio:device1`).
+    // Conflicts with `GoogleOdpm`, which also statically registers `iio:device0`.
+    // Until dynamic IIO numbering is supported, they must not be used at the same time.
     HvdcpOpti,
     Wifi,
     AdditionalMounts,
     WakeupTest,
     MmcblkStub,
     AndroidUsb,
+    // Note: GoogleOdpm statically registers `iio:device0`.
+    // Conflicts with `HvdcpOpti`, which also statically registers `iio:device0`.
+    // Until dynamic IIO numbering is supported, they must not be used at the same time.
+    GoogleOdpm,
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     FakeIon,
     UnifiedTracing,
@@ -150,6 +157,7 @@ mod test {
             (Feature::WakeupTest, "wakeup_test"),
             (Feature::MmcblkStub, "mmcblk_stub"),
             (Feature::AndroidUsb, "android_usb"),
+            (Feature::GoogleOdpm, "google_odpm"),
             // TODO(https://fxbug.dev/485370648) remove when unnecessary
             (Feature::FakeIon, "fake_ion"),
             (Feature::UnifiedTracing, "unified_tracing"),

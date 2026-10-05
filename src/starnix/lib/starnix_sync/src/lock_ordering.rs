@@ -287,6 +287,8 @@ lock_ordering! {
     Terminal(NetnsIdLock),
     Terminal(NmfsNetworkManagerLock),
     Terminal(NotFoundCountsLock),
+    Terminal(OdpmRailLastReadingLock),
+    Terminal(OdpmRailProxyLock),
     Terminal(OverlayFsDirEntriesLock),
     Terminal(PagerFilesByInodeLock),
     Terminal(PagerFilesystemsLock),

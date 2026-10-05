@@ -34,6 +34,7 @@ use starnix_modules_kgsl::kgsl_device_init;
 use starnix_modules_magma::magma_device_init;
 use starnix_modules_nanohub::nanohub_device_init;
 use starnix_modules_nmfs::nmfs_init;
+use starnix_modules_odpm::odpm_device_init;
 use starnix_modules_perfetto_consumer::start_perfetto_consumer_thread;
 use starnix_modules_thermal::{cooling_device_init, thermal_device_init};
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
@@ -130,6 +131,10 @@ pub struct Features {
     /// Whether to add android bootreason to kernel cmdline.
     pub android_bootreason: bool,
 
+    /// Whether to enable hvdcp_opti sysfs logic.
+    ///
+    /// Note: Statically registers IIO devices (`iio:device0`, `iio:device1`).
+    /// Conflicts with `google_odpm`, so they cannot both be enabled simultaneously.
     pub hvdcp_opti: bool,
 
     pub additional_mounts: Option<Vec<String>>,
@@ -146,6 +151,12 @@ pub struct Features {
 
     /// Whether to initialize unified tracing with a Fuchsia trace observer.
     pub unified_tracing: bool,
+
+    /// Whether to enable google-odpm power monitoring sysfs logic.
+    ///
+    /// Note: Statically registers `iio:device0`.
+    /// Conflicts with `hvdcp_opti`, so they cannot both be enabled simultaneously.
+    pub google_odpm: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -214,8 +225,10 @@ impl Features {
                 mmcblk_stub,
                 android_usb,
                 unified_tracing,
+                google_odpm,
                 initial_view_id_annotation,
             } => {
+                inspect_node.record_bool("google_odpm", *google_odpm);
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("unified_tracing", *unified_tracing);
                 inspect_node.record_bool("ashmem", *ashmem);
@@ -473,11 +486,18 @@ pub fn parse_features(
             (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
             (Feature::FakeIon, _) => features.kernel.fake_ion = true,
             (Feature::AndroidUsb, _) => features.android_usb = true,
+            (Feature::GoogleOdpm, _) => features.google_odpm = true,
         };
     }
 
     if features.boot_notifier_cpu_boost.is_some() && !features.boot_notifier {
         return Err(anyhow!("boot_notifier_cpu_boost feature requires boot_notifier"));
+    }
+
+    if features.google_odpm && features.hvdcp_opti {
+        return Err(anyhow!(
+            "features 'google_odpm' and 'hvdcp_opti' cannot be enabled simultaneously"
+        ));
     }
 
     if *ui_visual_debugging_level > 0 {
@@ -693,6 +713,9 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
     }
     if features.android_usb {
         usb_device_init(kernel).context("Failed to add android usb device nodes")?;
+    }
+    if features.google_odpm {
+        odpm_device_init(kernel);
     }
     Ok(())
 }
