@@ -343,7 +343,7 @@ impl YamlChecker {
     // It uses pulldown_cmark to find links (inline, reference, collapsed, shortcut, anchor).
     // Reference links are validated against the known set of tools and problems.
     //
-    // TODO(https://fxbug.dev/289256340): Incorporate these markdown links into the LinkChecker flow
+    // TODO(https://fxbug.dev/562935840): Incorporate these markdown links into the LinkChecker flow
     // to validate external links and anchors comprehensively.
     fn check_markdown_links(
         &self,
@@ -823,7 +823,8 @@ fn is_external_path(p: &str) -> bool {
 
 /// Checks the path property from a yaml file.
 /// Returns `Some(DocCheckError)` if validation fails, or `None` if the path is valid.
-// TODO: Convert check_path to return Result<(), DocCheckError> for consistency with other checker helpers.
+// TODO(https://fxbug.dev/562935840): Convert check_path to return Result<(), DocCheckError> and
+// fold it into check_yaml_link, so table of contents entries share the same link pipeline.
 fn check_path(
     doc_line: &DocLine,
     root_path: &Path,
@@ -896,6 +897,64 @@ fn check_path(
             doc_line.file_name.clone(),
             &format!("Error checking path {}: {}", path, e),
         )),
+    }
+}
+
+/// Validates a single link extracted from a YAML file.
+///
+/// Runs the shared link pipeline: URL policy checks (`do_check_link`), in-tree
+/// resolution (`is_intree_link`), and on-disk verification (`do_in_tree_check`).
+/// External links are queued in `external_links` for batch validation instead of
+/// being resolved here.
+///
+/// Returns `Some(DocCheckError)` if validation fails, or `None` if the link is
+/// valid or was deferred to the external link queue.
+///
+/// `check_path` deliberately does not use this helper: table of contents entries
+/// are additionally restricted to the docs folder and accept external links
+/// without queueing them. See the TODO on `check_markdown_links` for the plan to
+/// unify the remaining paths.
+fn check_yaml_link(
+    doc_line: &DocLine,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    link: &str,
+    allow_fuchsia_src_links: bool,
+    external_links: &mut Vec<LinkReference>,
+) -> Option<DocCheckError> {
+    match do_check_link(doc_line, link, project, allow_fuchsia_src_links) {
+        Ok(Some(err)) => Some(err),
+        Err(e) => Some(DocCheckError::new_error(
+            doc_line.line_num,
+            doc_line.file_name.clone(),
+            &format!("Error parsing link {}: {}", link, e),
+        )),
+        Ok(None) => {
+            let root_dir_str = root_dir.display().to_string();
+            match is_intree_link(project, &root_dir_str, docs_folder, link) {
+                Ok(Some(in_tree_path)) => {
+                    do_in_tree_check(doc_line, root_dir, docs_folder, link, &in_tree_path).err()
+                }
+                Ok(None) if is_external_path(link) => {
+                    external_links.push(LinkReference {
+                        link: normalize_external_link(link),
+                        location: doc_line.clone(),
+                    });
+                    None
+                }
+                Ok(None) => Some(DocCheckError::new_error(
+                    doc_line.line_num,
+                    doc_line.file_name.clone(),
+                    &format!("invalid path {}", link),
+                )),
+                Err(e) => Some(DocCheckError::new_error(
+                    doc_line.line_num,
+                    doc_line.file_name.clone(),
+                    &format!("Error checking in-tree link {}: {}", link, e),
+                )),
+            }
+        }
     }
 }
 
@@ -1448,53 +1507,16 @@ fn check_metadata(
                 }
 
                 // Link validation
-                match do_check_link(&doc_line, &guide.url, project, allow_fuchsia_src_links) {
-                    Ok(Some(err)) => {
-                        errors.push(err);
-                    }
-                    Ok(None) => {
-                        let root_dir_str = root_dir.display().to_string();
-                        match is_intree_link(project, &root_dir_str, docs_folder, &guide.url) {
-                            Ok(Some(in_tree_path)) => {
-                                if let Err(err) = do_in_tree_check(
-                                    &doc_line,
-                                    root_dir,
-                                    docs_folder,
-                                    &guide.url,
-                                    &in_tree_path,
-                                ) {
-                                    errors.push(err);
-                                }
-                            }
-                            Ok(None) if is_external_path(&guide.url) => {
-                                external_links.push(LinkReference {
-                                    link: normalize_external_link(&guide.url),
-                                    location: doc_line.clone(),
-                                });
-                            }
-                            Ok(None) => {
-                                errors.push(DocCheckError::new_error(
-                                    doc_line.line_num,
-                                    doc_line.file_name.clone(),
-                                    &format!("invalid path {}", guide.url),
-                                ));
-                            }
-                            Err(e) => {
-                                errors.push(DocCheckError::new_error(
-                                    doc_line.line_num,
-                                    doc_line.file_name.clone(),
-                                    &format!("Error checking path {}: {}", guide.url, e),
-                                ));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        errors.push(DocCheckError::new_error(
-                            doc_line.line_num,
-                            doc_line.file_name.clone(),
-                            &e.to_string(),
-                        ));
-                    }
+                if let Some(err) = check_yaml_link(
+                    &doc_line,
+                    root_dir,
+                    docs_folder,
+                    project,
+                    &guide.url,
+                    allow_fuchsia_src_links,
+                    external_links,
+                ) {
+                    errors.push(err);
                 }
             }
             if errors.is_empty() { None } else { Some(errors) }
@@ -1695,47 +1717,16 @@ fn check_roadmap(
             for cap in HREF_REGEX.captures_iter(&entry.workstream) {
                 let link = &cap[1];
                 let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
-                match do_check_link(&doc_line, link, project, allow_fuchsia_src_links) {
-                    Ok(Some(err)) => errs.push(err),
-                    Ok(None) => {
-                        let root_dir_str = root_dir.display().to_string();
-                        match is_intree_link(project, &root_dir_str, docs_folder, link) {
-                            Ok(Some(in_tree_path)) => {
-                                if let Err(err) = do_in_tree_check(
-                                    &doc_line,
-                                    root_dir,
-                                    docs_folder,
-                                    link,
-                                    &in_tree_path,
-                                ) {
-                                    errs.push(err);
-                                }
-                            }
-                            Ok(None) if is_external_path(link) => {
-                                external_links.push(LinkReference {
-                                    link: normalize_external_link(link),
-                                    location: doc_line.clone(),
-                                });
-                            }
-                            Ok(None) => {
-                                errs.push(DocCheckError::new_error(
-                                    doc_line.line_num,
-                                    doc_line.file_name.clone(),
-                                    &format!("invalid path {}", link),
-                                ));
-                            }
-                            Err(e) => errs.push(DocCheckError::new_error(
-                                1,
-                                filename.to_path_buf(),
-                                &format!("Error checking in-tree link {}: {}", link, e),
-                            )),
-                        }
-                    }
-                    Err(e) => errs.push(DocCheckError::new_error(
-                        1,
-                        filename.to_path_buf(),
-                        &format!("Error parsing link {}: {}", link, e),
-                    )),
+                if let Some(err) = check_yaml_link(
+                    &doc_line,
+                    root_dir,
+                    docs_folder,
+                    project,
+                    link,
+                    allow_fuchsia_src_links,
+                    external_links,
+                ) {
+                    errs.push(err);
                 }
             }
 
