@@ -31,7 +31,6 @@ categories.
 """
 
 import argparse
-import errno
 import json
 import os
 import platform
@@ -74,19 +73,6 @@ _APPARENT_REPO_NAME_TO_CANONICAL = {
 # Type alias for string or Path type.
 # NOTE: With python 3.10+, it is possible to use 'str | Path' directly.
 StrOrPath = T.Union[str, Path]
-
-
-def _force_symlink(target_path: Path, link_path: Path) -> None:
-    link_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path = Path(os.path.relpath(target_path, link_path.parent))
-    try:
-        link_path.symlink_to(target_path)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            link_path.unlink()
-            link_path.symlink_to(target_path)
-        else:
-            raise
 
 
 def _generate_command_string(
@@ -791,36 +777,6 @@ def main() -> int:
         or fuchsia_source_dir / _DEFAULT_BAZEL_REGISTRY_DIR
     ).resolve()
 
-    # If there's a //vendor dir in the fuchsia source dir, we need to symlink to it
-    # from the tests directory, so that any hlcpp visibility rules referencing
-    # allowlisted vendor targets won't fail.
-    vendor_dir = fuchsia_source_dir / "vendor"
-    vendor_dir_link = workspace_dir / "vendor"
-    if vendor_dir.exists():
-        _force_symlink(vendor_dir, vendor_dir_link)
-    else:
-        # And if //vendor has been removed (ie, integration repo change),
-        # then remove the link.
-        if os.path.lexists(vendor_dir_link) and vendor_dir_link.is_symlink():
-            vendor_dir_link.unlink()
-
-    # To ensure that the repository rules for @fuchsia_clang and
-    # @prebuilt_python are re-run properly when the content of the prebuilt
-    # toolchain directory changes, use a version file that is symlinked into
-    # the workspace, and whose path is passed through environment variables
-    # LOCAL_FUCHSIA_CLANG_VERSION_FILE and LOCAL_PREBUILT_PYTHON_VERSION_FILE
-    # respectively. The workspace symlinks are necessary to ensure that
-    # Bazel will track changes to these files properly, as repository rules
-    # cannot track changes to files outside the workspace :-(
-
-    def setup_version_file(name: str, source_path: Path) -> str | None:
-        if not source_path.exists():
-            return None
-
-        dst_path = f".versions/{name}"
-        _force_symlink(source_path, workspace_dir / dst_path)
-        return dst_path
-
     python_prebuilt_dir = (
         fuchsia_source_dir / f"prebuilt/third_party/python3/{host_tag}"
     )
@@ -830,20 +786,12 @@ def main() -> int:
             python_prebuilt_dir / ".versions/cpython3.cipd_version"
         )
 
-    workspace_python_version_file = setup_version_file(
-        "prebuilt_python", python_version_file
-    )
-
     clang_version_file = args.prebuilt_clang_version_file
     if not clang_version_file:
         clang_version_file = (
             fuchsia_source_dir
             / f"prebuilt/third_party/clang/{host_tag}/.versions/clang.cipd_version"
         )
-
-    workspace_clang_version_file = setup_version_file(
-        "prebuilt_clang", clang_version_file
-    )
 
     # These argument remove verbose output from Bazel, used in queries.
     bazel_quiet_args = [
@@ -1125,15 +1073,15 @@ def main() -> int:
         "PATH": f"{python_prebuilt_dir}/bin:{PATH}",
     }
 
-    if workspace_python_version_file:
-        bazel_env[
-            "LOCAL_PREBUILT_PYTHON_VERSION_FILE"
-        ] = workspace_python_version_file
+    if python_version_file.exists():
+        bazel_env["LOCAL_PREBUILT_PYTHON_VERSION_FILE"] = str(
+            python_version_file.resolve()
+        )
 
-    if workspace_clang_version_file:
-        bazel_env[
-            "LOCAL_FUCHSIA_CLANG_VERSION_FILE"
-        ] = workspace_clang_version_file
+    if clang_version_file.exists():
+        bazel_env["LOCAL_FUCHSIA_CLANG_VERSION_FILE"] = str(
+            clang_version_file.resolve()
+        )
 
     if input_mode == _INPUT_MODE_SDK:
         # Pass the location of the Fuchsia SDK to the

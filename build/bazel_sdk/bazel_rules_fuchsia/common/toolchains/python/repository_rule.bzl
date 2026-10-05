@@ -39,8 +39,6 @@ Example usage:
 
 """
 
-load("//common:repository_utils.bzl", "bazel_major_version_is_at_least")
-
 # Set to True to enable log messages.
 _LOG = False
 
@@ -56,25 +54,24 @@ def log(message):
 _VERSION_FILE_VARNAME = "LOCAL_PREBUILT_PYTHON_VERSION_FILE"
 
 def _make_path_from_str(repo_ctx, path_str):
+    """Convert a path string to a Path value.
+
+    Relative input paths will be interpreted as relative to the workspace root,
+    not to the current directory (which is the external repository's directory)
+    """
     if not path_str.startswith("/"):
         path_str = "%s/%s" % (repo_ctx.workspace_root, path_str)
     return repo_ctx.path(path_str)
 
-# Ensure this repository rule is re-run everytime the content of a given path
-# changes. Relative paths are relative to the workspace root. Does not do
-# anything if path is empty.
+# Ensure this repository rule is re-run everytime the content
+# of a given path changes (if relative to the workspace root).
+# Does not do anything if path is empty or absolute.
+# Ensure this repository rule is re-run everytime the content
+# of a given path changes.
 def _record_path_dependency(repo_ctx, path_str):
-    if not path_str:
-        return
-    if not path_str.startswith("/"):
-        path_str = "%s/%s" % (repo_ctx.workspace_root, path_str)
-
-    # repo_ctx.path() only records a dependency for Labels, never for path
-    # strings, so the file must be watched explicitly. watch() requires
-    # Bazel 7.1+, so Bazel 6 users (e.g. HSP) get no tracking.
-    if bazel_major_version_is_at_least(repo_ctx, 7):
-        repo_ctx.watch(path_str)
-    log("### Recording %s as path dependency for repository %s ###" % (path_str, repo_ctx.name))
+    if path_str:
+        repo_ctx.watch(_make_path_from_str(repo_ctx, path_str))
+        log("### Recording %s as path dependency for repository %s ###" % (path_str, repo_ctx.name))
 
 def _compact_python_runtime_impl(repo_ctx):
     # If content_hash_file is provided, make sure this repository rule
