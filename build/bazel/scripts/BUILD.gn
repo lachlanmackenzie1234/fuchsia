@@ -82,7 +82,6 @@ if (is_host) {
     library_deps = [
       ":bazel_build_events",
       ":build_utils",
-      ":stdio_redirection",
       "//build/rbe:rbe_settings",
     ]
   }
