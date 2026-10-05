@@ -12,23 +12,35 @@
 #include <kernel/ffi.h>
 #include <vm/evictor.h>
 
-using EvictionLevel = Evictor::EvictionLevel;
-using Output = Evictor::Output;
-using TriggerReason = Evictor::TriggerReason;
-using EvictionResult = Evictor::EvictionResult;
-using EvictedPageCounts = Evictor::EvictedPageCounts;
-
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
+using EvictorTestReclaimFn = bool (*)(void* ctx, VmCompression* compression,
+                                      Evictor::EvictionLevel eviction_level, bool* out_is_ok,
+                                      VmCowReclaimSuccess* out_success,
+                                      VmCowReclaimFailure* out_failure);
+using EvictorTestFreePagesFn = uint64_t (*)(void* ctx);
+
 FFI_ALWAYS_INLINE void cpp_evictor_disable_eviction(Evictor* evictor);
 FFI_ALWAYS_INLINE void cpp_evictor_init(ffi::Uninitialized<Evictor>* evictor);
-void cpp_evictor_evict_synchronous(Evictor* evictor, uint64_t min_mem_to_free,
-                                   uint64_t free_mem_target, EvictionLevel eviction_level,
-                                   Output output, TriggerReason reason,
-                                   ffi::Uninitialized<EvictionResult>* out_result);
-void cpp_evictor_evict_asynchronous(Evictor* evictor, uint64_t min_free_target,
-                                    uint64_t free_mem_target, bool print_output);
+FFI_ALWAYS_INLINE void cpp_evictor_enable_eviction(Evictor* evictor, bool use_compression);
+FFI_ALWAYS_INLINE void cpp_evictor_evict_from_external_target(Evictor* evictor,
+                                                              const Evictor::EvictionTarget* target,
+                                                              Evictor::EvictionResult* out_result);
+FFI_ALWAYS_INLINE void cpp_evictor_evict_synchronous(Evictor* evictor, uint64_t min_mem_to_free,
+                                                     uint64_t free_mem_target,
+                                                     Evictor::EvictionLevel eviction_level,
+                                                     Evictor::Output output,
+                                                     Evictor::TriggerReason reason,
+                                                     Evictor::EvictionResult* out_result);
+FFI_ALWAYS_INLINE void cpp_evictor_evict_asynchronous(Evictor* evictor, uint64_t min_mem_to_free,
+                                                      uint64_t free_mem_target,
+                                                      Evictor::EvictionLevel eviction_level,
+                                                      Evictor::Output output);
+FFI_ALWAYS_INLINE bool cpp_evictor_is_eviction_enabled(const Evictor* evictor);
+FFI_ALWAYS_INLINE bool cpp_evictor_is_compression_enabled(const Evictor* evictor);
+FFI_ALWAYS_INLINE void cpp_evictor_get_global_stats(Evictor::EvictorStats* out_stats);
+FFI_ALWAYS_INLINE Thread* cpp_evictor_debug_get_evictor_thread(Evictor* evictor);
 
 __END_CDECLS
 

@@ -134,28 +134,37 @@ kernel_bindgen_crate("evictor-bindings") {
   function_allowlist = [
     "cpp_evictor_disable_eviction",
     "cpp_evictor_init",
+    "cpp_evictor_enable_eviction",
+    "cpp_evictor_evict_from_external_target",
     "cpp_evictor_evict_synchronous",
     "cpp_evictor_evict_asynchronous",
+    "cpp_evictor_is_eviction_enabled",
+    "cpp_evictor_is_compression_enabled",
+    "cpp_evictor_get_global_stats",
+    "cpp_evictor_debug_get_evictor_thread",
   ]
   type_allowlist = [
     "Evictor",
-    "EvictionLevel",
-    "Output",
-    "TriggerReason",
-    "EvictionResult",
-    "EvictedPageCounts",
     "Evictor_EvictionLevel",
+    "Evictor_Output",
+    "Evictor_TriggerReason",
     "Evictor_EvictionTarget",
     "Evictor_EvictedPageCounts",
+    "Evictor_EvictionResult",
+    "Evictor_EvictorStats",
     "Evictor_ReclaimFunction",
     "Evictor_FreePagesFunction",
+    "EvictorTestReclaimFn",
+    "EvictorTestFreePagesFn",
     "ktl::atomic",
     "std::atomic",
   ]
   type_blocklist = [
     "AutounsignalEvent",
     "Thread",
-    "Evictor_EvictorStats",
+    "VmCompression",
+    "VmCowReclaimSuccess",
+    "VmCowReclaimFailure",
   ]
   opaque_types = [
     "Evictor_ReclaimFunction",
@@ -176,6 +185,9 @@ kernel_bindgen_crate("evictor-bindings") {
     "#![no_std]",
     "pub use event_bindings::AutounsignalEvent;",
     "pub type Thread = core::ffi::c_void;",
+    "pub type VmCompression = core::ffi::c_void;",
+    "pub type VmCowReclaimSuccess = core::ffi::c_void;",
+    "pub type VmCowReclaimFailure = core::ffi::c_void;",
   ]
   expect_lints = [ "non_camel_case_types" ]
 }
