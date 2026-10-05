@@ -519,6 +519,18 @@ impl DeviceRegistry {
         self.objects.create_device(name, None, class, build_directory)
     }
 
+    /// Adds a platform device to the [`KObjectStore`].
+    ///
+    /// The device is added under the top-level `"platform"` pseudo-device (`/sys/devices/platform`)
+    /// with the `"platform"` bus subsystem (`/sys/bus/platform/devices`).
+    pub fn add_platform_device(
+        &self,
+        name: &FsStr,
+        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
+    ) -> Device {
+        self.objects.create_platform_device(name, build_directory)
+    }
+
     /// Remove a device directly added with `add_device`.
     pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
         if let Some(metadata) = &device.metadata {
@@ -985,6 +997,49 @@ mod tests {
             registry.remove_device(&current_task, dev);
 
             assert_eq!(registry.get_device(devt, DeviceMode::Char).map(|_| ()), error!(ENODEV));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn registry_add_and_remove_platform_device() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+
+            let platform_dev =
+                registry.add_platform_device("test_platform_dev".into(), build_device_directory);
+
+            assert!(
+                registry
+                    .objects
+                    .root
+                    .lookup("bus/platform/devices/test_platform_dev".into())
+                    .is_some()
+            );
+            assert!(
+                registry.objects.root.lookup("devices/platform/test_platform_dev".into()).is_some()
+            );
+            assert!(
+                registry
+                    .objects
+                    .root
+                    .lookup("devices/platform/test_platform_dev/uevent".into())
+                    .is_some()
+            );
+
+            registry.remove_device(&current_task, platform_dev);
+
+            assert!(
+                registry
+                    .objects
+                    .root
+                    .lookup("bus/platform/devices/test_platform_dev".into())
+                    .is_none()
+            );
+            assert!(
+                registry.objects.root.lookup("devices/platform/test_platform_dev".into()).is_none()
+            );
         })
         .await;
     }

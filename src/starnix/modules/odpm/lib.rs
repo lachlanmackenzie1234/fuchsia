@@ -670,7 +670,7 @@ mod tests {
 
             let device = register_odpm_device(current_task.kernel(), odpm_device);
             assert_eq!(device.name.as_slice(), b"iio:device0");
-            assert_eq!(device.class.bus.name.as_slice(), b"iio");
+            assert_eq!(device.bus.name.as_slice(), b"iio");
 
             let root = &current_task.kernel().device_registry.objects.root;
             assert!(root.lookup("bus/iio/devices/iio:device0".into()).is_some());

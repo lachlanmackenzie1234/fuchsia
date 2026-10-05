@@ -76,21 +76,30 @@ pub type UEventProperties = Vec<(FsString, FsString)>;
 #[derive(Clone, Debug)]
 pub struct Device {
     pub name: FsString,
-    pub class: Class,
+    pub bus: Bus,
+    pub class: Option<Class>,
     pub metadata: Option<DeviceMetadata>,
 }
 
 impl Device {
+    /// Constructs a device associated with a [`Class`].
     pub fn new(name: FsString, class: Class, metadata: Option<DeviceMetadata>) -> Self {
-        Self { name, class, metadata }
+        Self { name, bus: class.bus.clone(), class: Some(class), metadata }
+    }
+
+    /// Constructs a class-less device attached directly to a [`Bus`].
+    pub fn new_bus_device(name: FsString, bus: Bus) -> Self {
+        Self { name, bus, class: None, metadata: None }
     }
 
     /// Returns a path to the device, relative to the sysfs root, going up `depth` directories.
     pub fn path_from_depth(&self, depth: usize) -> FsString {
         let mut builder = PathBuilder::new();
         builder.prepend_element(self.name.as_ref());
-        builder.prepend_element(self.class.name.as_ref());
-        builder.prepend_element(self.class.bus.name.as_ref());
+        if let Some(class) = &self.class {
+            builder.prepend_element(class.name.as_ref());
+        }
+        builder.prepend_element(self.bus.name.as_ref());
         builder.prepend_element(b"devices".into());
         for _ in 0..depth {
             builder.prepend_element(b"..".into());
@@ -114,7 +123,11 @@ impl Device {
         devpath.extend_from_slice(path.as_ref());
 
         props.push((b"DEVPATH".into(), devpath.into()));
-        props.push((b"SUBSYSTEM".into(), self.class.name.clone()));
+        let subsystem = match &self.class {
+            Some(class) => class.name.clone(),
+            None => self.bus.name.clone(),
+        };
+        props.push((b"SUBSYSTEM".into(), subsystem));
 
         if let Some(metadata) = &self.metadata {
             props.push((b"DEVNAME".into(), metadata.devname.clone()));
@@ -387,5 +400,23 @@ mod tests {
         assert_eq!(props[6], ("ABC".into(), "XYZ".into()));
         assert_eq!(props[7], ("FOO".into(), "BAR".into()));
         assert_eq!(props[8], ("USB_STATE".into(), "CONNECTED".into()));
+    }
+
+    #[::fuchsia::test]
+    fn test_bus_device_path_and_uevent_properties() {
+        let dir = SimpleDirectory::new();
+        let collection = SimpleDirectory::new();
+        let bus = Bus::new("platform".into(), dir, Some(collection));
+        let device = Device::new_bus_device("powerdashboard".into(), bus);
+
+        assert_eq!(device.path_from_depth(0), "devices/platform/powerdashboard");
+        assert_eq!(device.path_from_depth(1), "../devices/platform/powerdashboard");
+        assert_eq!(device.path_from_depth(3), "../../../devices/platform/powerdashboard");
+
+        assert_eq!(
+            device.uevent_properties('\n'),
+            b"DEVPATH=/devices/platform/powerdashboard\n\
+             SUBSYSTEM=platform\n"
+        );
     }
 }

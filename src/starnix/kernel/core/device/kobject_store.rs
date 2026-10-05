@@ -175,27 +175,44 @@ impl KObjectStore {
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Device {
-        let device = Device::new(name.to_owned(), class, metadata);
-        device.class.dir.edit(self.fs(), |dir| {
+        self.add(Device::new(name.to_owned(), class, metadata), build_directory)
+    }
+
+    /// Creates a platform device under `/sys/devices/platform` with the `"platform"` bus subsystem.
+    pub(super) fn create_platform_device(
+        &self,
+        name: &FsStr,
+        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
+    ) -> Device {
+        let bus = self.get_or_create_bus("platform".into());
+        self.add(Device::new_bus_device(name.to_owned(), bus), build_directory)
+    }
+
+    fn add(
+        &self,
+        device: Device,
+        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
+    ) -> Device {
+        let name = device.name.as_ref();
+        let parent_dir = match &device.class {
+            Some(class) => &class.dir,
+            None => &device.bus.dir,
+        };
+        parent_dir.edit(self.fs(), |dir| {
             dir.subdir2(name, 0o755, |dir| {
                 build_directory(&device, dir);
             });
         });
-        self.add(&device);
-        device
-    }
-
-    fn add(&self, device: &Device) {
-        let class = &device.class;
-        let name = device.name.as_ref();
 
         let up_device = device.path_from_depth(1);
         let up_up_device = device.path_from_depth(2);
 
         // Insert the newly created device into various views.
-        class.collection.edit(self.fs(), |dir| {
-            dir.symlink(name, up_up_device.as_ref());
-        });
+        if let Some(class) = &device.class {
+            class.collection.edit(self.fs(), |dir| {
+                dir.symlink(name, up_up_device.as_ref());
+            });
+        }
 
         if let Some(metadata) = &device.metadata {
             let device_number = FsString::from(metadata.devt.to_string());
@@ -214,11 +231,13 @@ impl KObjectStore {
             }
         }
 
-        if let Some(bus_collection) = &class.bus.collection {
+        if let Some(bus_collection) = &device.bus.collection {
             bus_collection.edit(self.fs(), |dir| {
                 dir.symlink(name, device.path_from_depth(3).as_ref());
             });
         }
+
+        device
     }
 
     /// Destroy a device.
@@ -230,7 +249,7 @@ impl KObjectStore {
     pub(super) fn remove(&self, device: &Device) {
         let name = device.name.as_ref();
         // Remove the device from its views in the reverse order in which it was added.
-        if let Some(bus_collection) = &device.class.bus.collection {
+        if let Some(bus_collection) = &device.bus.collection {
             bus_collection.remove(name);
         }
         if let Some(metadata) = &device.metadata {
@@ -245,9 +264,12 @@ impl KObjectStore {
                 }
             }
         }
-        device.class.collection.remove(name);
-        // Finally, remove the device from the object store.
-        device.class.dir.remove(name);
+        if let Some(class) = &device.class {
+            class.collection.remove(name);
+            class.dir.remove(name);
+        } else {
+            device.bus.dir.remove(name);
+        }
     }
 }
 
