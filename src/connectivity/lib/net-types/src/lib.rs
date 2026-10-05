@@ -540,6 +540,7 @@ checking to see if `addr` is actually ", $adj, ".
 It is up to the caller to make sure that `addr` is ", $adj, " to avoid breaking
 the guarantees of `", stringify!($type), "`. See [`", stringify!($type), "`] for
 more details."),
+                #[allow(clippy::missing_safety_doc, reason = "https://fxbug.dev/568916733")]
                 pub const unsafe fn new_unchecked(addr: A) -> $type<A> {
                     $type(addr)
                 }

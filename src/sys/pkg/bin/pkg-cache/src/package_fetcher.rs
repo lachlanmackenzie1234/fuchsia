@@ -179,11 +179,7 @@ async fn fetch_impl(
         let () = package_index
             .write()
             .await
-            .add_blobs(
-                pkg_id,
-                HashSet::from_iter(subpackages.as_slice().iter().copied()),
-                gc_protection,
-            )
+            .add_blobs(pkg_id, HashSet::from_iter(subpackages.iter().copied()), gc_protection)
             .map_err(Error::ProtectBlobs)?;
         for sub in subpackages {
             if queued.insert(sub) {
