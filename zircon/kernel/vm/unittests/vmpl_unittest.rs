@@ -594,6 +594,84 @@ mod vmpl_rs {
         pl.remove_all_content(|_| {});
     }
 
+    /// Tests iterating over contiguous entries in a page list with a cursor.
+    #[test]
+    fn vmpl_cursor_test() {
+        let mut pl = VmPageList::new();
+
+        const FAN_OUT: u64 = VmPageListNode::PAGE_FAN_OUT as u64;
+
+        // Add some entries to produce some contiguous and non-contiguous nodes.
+        const OFF1: u64 = FAN_OUT * 3 + 4;
+        const OFF2: u64 = FAN_OUT * 5 + 4;
+        const OFF3: u64 = FAN_OUT * 6 + 1;
+        const OFF4: u64 = FAN_OUT * 6 + 2;
+        const OFF5: u64 = FAN_OUT * 8 + 1;
+
+        expect_true!(add_marker(&mut pl, OFF1 * PAGE_SIZE));
+        expect_true!(add_marker(&mut pl, OFF2 * PAGE_SIZE));
+        expect_true!(add_marker(&mut pl, OFF3 * PAGE_SIZE));
+        expect_true!(add_marker(&mut pl, OFF4 * PAGE_SIZE));
+        expect_true!(add_marker(&mut pl, OFF5 * PAGE_SIZE));
+
+        // Looking up offsets that fall completely out of a node should yield an invalid cursor.
+        let cursor = pl.lookup_mut_cursor((OFF1 - FAN_OUT) * PAGE_SIZE);
+        expect_true!(cursor.current().is_none());
+        let cursor = pl.lookup_mut_cursor((OFF1 + FAN_OUT) * PAGE_SIZE);
+        expect_true!(cursor.current().is_none());
+
+        // Looking up in a node should yield a cursor, even if nothing at the exact entry.
+        let mut cursor = pl.lookup_mut_cursor((OFF1 - 1) * PAGE_SIZE);
+        expect_true!(cursor.current().is_some());
+        expect_true!(cursor.current().is_some_and(|slot| slot.is_empty()));
+
+        // Cursor should iterate into the marker though.
+        cursor.step();
+        expect_true!(cursor.current().is_some());
+        expect_true!(cursor.current().is_some_and(|slot| slot.is_marker()));
+
+        // Further iteration should terminate at the end of this node, as the next node is not
+        // contiguous.
+        cursor.step();
+        while let Some(is_empty) = cursor.current().map(|slot| slot.is_empty()) {
+            expect_true!(is_empty);
+            cursor.step();
+        }
+
+        // Should be able to iterate across contiguous nodes.
+        let mut cursor = pl.lookup_mut_cursor(OFF2 * PAGE_SIZE);
+        expect_true!(cursor.current().is_some());
+        expect_true!(cursor.current().is_some_and(|slot| slot.is_marker()));
+        cursor.step();
+
+        // Iterate to the next marker, which is in a different node, and count the number of items.
+        let mut items: u64 = 0;
+        expect_ok!(cursor.for_every_contiguous(|page_or_marker| {
+            items += 1;
+            if page_or_marker.is_marker() { Status::STOP } else { Status::NEXT }
+        }));
+        expect_eq!(OFF3 - OFF2, items);
+
+        // `for_every_contiguous` will have left us at OFF3 when we stopped, so the next item should
+        // be OFF4, which is also a marker.
+        cursor.step();
+        expect_true!(cursor.current().is_some());
+        expect_true!(cursor.current().is_some_and(|slot| slot.is_marker()));
+
+        // Attempting to do this again should fail as the next item is in the next node.
+        items = 0;
+        cursor.step();
+        expect_ok!(cursor.for_every_contiguous(|page_or_marker| {
+            items += 1;
+            if page_or_marker.is_marker() { Status::STOP } else { Status::NEXT }
+        }));
+        expect_true!(cursor.current().is_none());
+        // Should have iterated the remaining items in a node after OFF4.
+        expect_eq!(FAN_OUT - (OFF4 % FAN_OUT) - 1, items);
+
+        pl.remove_all_content(|_| {});
+    }
+
     /// Interval [1, 3] in a single page list node.
     #[test]
     fn vmpl_interval_single_node_test() {

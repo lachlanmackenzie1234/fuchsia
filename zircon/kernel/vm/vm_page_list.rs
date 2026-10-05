@@ -987,6 +987,162 @@ impl<'a> Iterator for NodeIterMut<'a> {
     }
 }
 
+/// Cursor that can be used for iterating over contiguous blocks of entries in a page list. The
+/// underlying page list must not have any entries removed while using this cursor, as the cursor
+/// retains iterators into the page list. It is, however, safe to insert new entries.
+///
+/// The cursor can be used to iterate over empty contiguous slots, however iteration will always
+/// cease if entries are not contiguous.
+pub struct VmPageListCursor<'a> {
+    cursor: Opaque<bindings::VmPageListBtreeCursor>,
+    /// The index into the node that is currently being pointed at to be returned by `current`. The
+    /// sentinel value of `VmPageListNode::PAGE_FAN_OUT` is used to indicate that the node is no
+    /// longer valid.
+    index: usize,
+    _phantom: core::marker::PhantomData<&'a mut VmPageList>,
+}
+
+impl Default for VmPageListCursor<'_> {
+    /// Constructs a cursor that is already exhausted, i.e. `current` will return `None`.
+    fn default() -> Self {
+        let cursor = Opaque::uninit();
+        // SAFETY: `cursor.get()` is a valid pointer to be initialized to a default invalid
+        // iterator.
+        unsafe { bindings::cpp_vm_page_list_btree_cursor_default_init(cursor.get()) };
+        Self { cursor, index: VmPageListNode::PAGE_FAN_OUT, _phantom: core::marker::PhantomData }
+    }
+}
+
+impl<'a> VmPageListCursor<'a> {
+    /// Constructs a cursor pointing at `index` inside the node that `cursor` refers to.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `cursor` is an initialized iterator that points at a node of a
+    /// `VmPageList` that is mutably borrowed for `'a`.
+    unsafe fn new(cursor: Opaque<bindings::VmPageListBtreeCursor>, index: usize) -> Self {
+        debug_assert!(index < VmPageListNode::PAGE_FAN_OUT);
+        Self { cursor, index, _phantom: core::marker::PhantomData }
+    }
+
+    /// Retrieve the current `VmPageOrMarker` pointed at by the cursor. This will be `None` if the
+    /// cursor is no longer valid. The slot pointed at may itself be empty.
+    ///
+    /// Note that it is up to the caller to know the offset, which it can track by remembering how
+    /// many `step`s it has done.
+    pub fn current(&self) -> Option<&VmPageOrMarker> {
+        if !self.valid() {
+            return None;
+        }
+        let entry = self.get();
+        // SAFETY: the cursor is valid, so `entry.node` is non-null and points at a live node that
+        // outlives the borrow of `self`.
+        let node = unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
+        Some(node.lookup(self.index))
+    }
+
+    /// See `current`. Returns a `VmPageOrMarkerRef` that allows for limited mutation of the slot.
+    pub fn current_ref(&mut self) -> Option<VmPageOrMarkerRef<'_>> {
+        if !self.valid() {
+            return None;
+        }
+        let entry = self.get();
+        // SAFETY: the cursor is valid, so `entry.node` is non-null and points at a live node that
+        // outlives the borrow of `self`. The cursor holds the only mutable borrow of the list.
+        let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+        Some(VmPageOrMarkerRef::new(node.lookup_mut(self.index)))
+    }
+
+    /// Move the cursor to the next entry. The next entry can then be retrieved by calling
+    /// `current`, and if there is no next entry then `current` will return `None`.
+    pub fn step(&mut self) {
+        if self.valid() {
+            self.index += 1;
+            if self.index == VmPageListNode::PAGE_FAN_OUT {
+                self.inc_node();
+            }
+        }
+    }
+
+    /// Calls the provided callback on every entry as long as they are contiguous. This is
+    /// equivalent to a loop calling `step` and `current`, but can produce more optimal code gen
+    /// with the internal loop.
+    ///
+    /// The callback can return `Status::NEXT` to continue, `Status::STOP` to cease iteration
+    /// gracefully, or any other status to terminate with that status code.
+    pub fn for_every_contiguous<F>(&mut self, mut func: F) -> Result<(), Status>
+    where
+        F: FnMut(&VmPageOrMarker) -> Status,
+    {
+        while self.valid() {
+            let entry = self.get();
+            // SAFETY: the cursor is valid, so `entry.node` is non-null and points at a live node.
+            // The node is not mutated by the loop below, which only advances `self.index`.
+            let node = unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
+            while self.index < VmPageListNode::PAGE_FAN_OUT {
+                let status = func(node.lookup(self.index));
+                if status != Status::NEXT {
+                    if status == Status::STOP {
+                        return Ok(());
+                    }
+                    return Err(status);
+                }
+                self.index += 1;
+            }
+            if !self.inc_node() {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the offset of the `current` position of the cursor. This is invalid to call if
+    /// `current` is returning `None`.
+    pub fn offset(&self) -> u64 {
+        debug_assert!(self.valid());
+        self.get().offset + (self.index as u64) * (page::SIZE as u64)
+    }
+
+    /// Helper to increment the underlying node, testing for contiguity. Returns whether the cursor
+    /// is still valid after the increment.
+    fn inc_node(&mut self) -> bool {
+        // Should only be incrementing if index is at the end, as otherwise we're not being
+        // contiguous.
+        debug_assert_eq!(self.index, VmPageListNode::PAGE_FAN_OUT);
+        // `cursor_next` returns the entry that the iterator was pointing at prior to advancing it.
+        // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
+        let prev = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.cursor.get()) };
+        // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
+        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.cursor.get()) };
+        // A null node means that the iterator has moved past the last node. Otherwise `entry`
+        // follows `prev` in key order and both offsets are multiples of `NODE_SPAN_BYTES`, so the
+        // sum is at most `entry.offset` and cannot overflow.
+        if !entry.node.is_null() && entry.offset == prev.offset + VmPageListNode::NODE_SPAN_BYTES {
+            // The node is valid and contiguous, reset the index to both remove the terminal
+            // sentinel, and resume iteration from the beginning.
+            self.index = 0;
+            // TODO: Once cursor is in use benchmark the impact of validating that the node is not
+            // empty.
+            return true;
+        }
+        false
+    }
+
+    /// Helper to check if the node is valid or not by checking index for its sentinel value.
+    fn valid(&self) -> bool {
+        self.index < VmPageListNode::PAGE_FAN_OUT
+    }
+
+    /// Returns the entry that the underlying iterator points at. This must only be called while the
+    /// cursor is `valid()`, which guarantees that the iterator points at a node.
+    fn get(&self) -> bindings::VmPageListBtreeNodeEntry {
+        // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
+        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.cursor.get()) };
+        debug_assert!(!entry.node.is_null());
+        entry
+    }
+}
+
 /// Helper object for performing repeated `lookup_or_allocate` operations that are likely to be
 /// close to each other. While using this object other (modifying) methods on this `VmPageList` must
 /// not be performed, if they are the `reset` method needs to be used before continuing.
@@ -1219,6 +1375,47 @@ impl VmPageList {
             // SAFETY: `slot_ptr` is verified non-null and points to a valid `VmPageOrMarker`.
             Some(VmPageOrMarkerRef::new(unsafe { &mut *slot_ptr }))
         }
+    }
+
+    /// Similar to `lookup_mut` but returns a `VmPageListCursor` that allows for iterating over any
+    /// contiguous slots from the provided offset.
+    pub fn lookup_mut_cursor(&mut self, offset: u64) -> VmPageListCursor<'_> {
+        // Lookup the tree node that holds this offset.
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let node_ptr = unsafe {
+            bindings::cpp_vm_page_list_btree_find(
+                self.list.get(),
+                VmPageListNode::node_offset(offset),
+                cursor.get(),
+            )
+        };
+        if node_ptr.is_null() {
+            return VmPageListCursor::default();
+        }
+        // SAFETY: the node was found, so `cursor` was initialized to point at it. The returned
+        // cursor mutably borrows `self`, which owns the node.
+        unsafe { VmPageListCursor::new(cursor, VmPageListNode::node_index(offset)) }
+    }
+
+    /// Similar to `lookup_mut_cursor` but does a lower bound search instead of a find, returning
+    /// the first slot >= `offset`, if any exists.
+    pub fn lookup_nearest_mut_cursor(&mut self, offset: u64) -> VmPageListCursor<'_> {
+        // Lookup the tree node that holds this offset or a larger one.
+        let node_offset = VmPageListNode::node_offset(offset);
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let entry = unsafe {
+            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
+        };
+        if entry.node.is_null() {
+            return VmPageListCursor::default();
+        }
+        let index =
+            if entry.offset == node_offset { VmPageListNode::node_index(offset) } else { 0 };
+        // SAFETY: a node was found, so `cursor` points at it. The returned cursor mutably borrows
+        // `self`, which owns the node.
+        unsafe { VmPageListCursor::new(cursor, index) }
     }
 
     /// Similar to `lookup` but only returns None if a slot cannot be allocated either due to out
@@ -2849,7 +3046,6 @@ impl VmPageList {
     ///
     /// Calls the provided callback for every page in the given range.
     fn for_every_page_in_range_internal<F>(
-        &self,
         cursor: &Opaque<bindings::VmPageListBtreeCursor>,
         start_offset: u64,
         end_offset: u64,
@@ -2867,7 +3063,8 @@ impl VmPageList {
             if entry.node.is_null() || entry.offset >= end_offset {
                 break;
             }
-            // SAFETY: `entry.node` is non-null and valid for the lifetime of `&self`.
+            // SAFETY: `entry.node` is non-null and valid for the lifetime of the borrow of the list
+            // held by the caller.
             let node = unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() };
             let start = core::cmp::max(start_offset, entry.offset);
             let end = core::cmp::min(VmPageListNode::end_offset(entry.offset), end_offset);
@@ -2900,8 +3097,40 @@ impl VmPageList {
                 cursor.get(),
             );
         }
-        let status =
-            self.for_every_page_in_range_internal(&cursor, start_offset, end_offset, per_page_func);
+        let status = Self::for_every_page_in_range_internal(
+            &cursor,
+            start_offset,
+            end_offset,
+            per_page_func,
+        );
+        if status != Status::NEXT {
+            if status == Status::STOP {
+                return Ok(());
+            }
+            return Err(status);
+        }
+        Ok(())
+    }
+
+    /// Similar to `for_every_page_in_range` but uses a valid `cursor` as the starting point.
+    pub fn for_every_page_in_cursor_range<F>(
+        cursor: VmPageListCursor<'_>,
+        end_offset: u64,
+        per_page_func: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(&VmPageOrMarker, u64) -> Status,
+    {
+        let start_offset = cursor.offset();
+        if start_offset >= end_offset {
+            return Ok(());
+        }
+        let status = Self::for_every_page_in_range_internal(
+            &cursor.cursor,
+            start_offset,
+            end_offset,
+            per_page_func,
+        );
         if status != Status::NEXT {
             if status == Status::STOP {
                 return Ok(());
@@ -2944,7 +3173,7 @@ impl VmPageList {
         let mut in_interval = false;
 
         let status =
-            self.for_every_page_in_range_internal(&cursor, start_offset, end_offset, |p, off| {
+            Self::for_every_page_in_range_internal(&cursor, start_offset, end_offset, |p, off| {
                 // Update our interval tracking first. Should the callbacks later request an early
                 // exit then this work is wasted, but doing it first, and unconditionally, lets the
                 // compiler perform better common expression elimination with the per_gap_func check
