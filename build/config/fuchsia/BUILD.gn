@@ -199,9 +199,12 @@ config("zircon_asserts") {
 
 # LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:zircon_asserts)
 
+# LINT.IfChange(no_cpp_standard_library)
 config("no_cpp_standard_library") {
   ldflags = [ "-nostdlib++" ]
 }
+
+# LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:no_cpp_standard_library)
 
 config("static_cpp_standard_library") {
   ldflags = [
@@ -280,6 +283,7 @@ if (is_fuchsia) {
 
 # NOTE: This config's label is hard-coded in //build/config/BUILDCONFIG.gn
 # so don't rename it without updating that file too!
+# LINT.IfChange(static-pie-config)
 compiler_config("static-pie-config") {
   cflags = [
     "-fno-sanitize=all",
@@ -291,6 +295,8 @@ compiler_config("static-pie-config") {
   ]
   linker_flags = [ "-no-dynamic-linker" ]
 }
+
+# LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:static-pie-config)
 
 group("maybe_scudo_default_options") {
   if (scudo_default_options != "" && scudo_default_options != []) {
