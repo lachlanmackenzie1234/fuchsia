@@ -93,7 +93,9 @@ struct GlossaryTerm {
     short_description: String,
     full_description: Option<String>,
     see_also: Option<Vec<String>>,
+    #[serde(default)]
     related_guides: Vec<String>,
+    #[serde(default)]
     area: Vec<String>,
 }
 
@@ -1303,10 +1305,70 @@ fn check_eng_council(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheck
     }
 }
 
+/// Validates structural constraints and required fields for glossary entries.
+///
+/// Ensures:
+/// - Terms are non-empty and unique across the glossary.
+/// - Each term defines at least one non-empty area name.
+/// - Short descriptions are present (empty ones emit warnings to preserve
+///   compatibility with legacy glossary items).
+fn validate_glossary(filename: &Path, terms: &[GlossaryTerm], errors: &mut Vec<DocCheckError>) {
+    let mut seen_terms = HashSet::new();
+
+    for term_entry in terms {
+        let trimmed_term = term_entry.term.trim();
+        if trimmed_term.is_empty() {
+            errors.push(DocCheckError::new_error(
+                1,
+                filename.to_path_buf(),
+                "glossary term cannot be empty",
+            ));
+        } else if !seen_terms.insert(trimmed_term) {
+            errors.push(DocCheckError::new_error(
+                1,
+                filename.to_path_buf(),
+                &format!("duplicate glossary term '{}' found", trimmed_term),
+            ));
+        }
+
+        if term_entry.short_description.trim().is_empty() {
+            errors.push(DocCheckError::new_error(
+                1,
+                filename.to_path_buf(),
+                &format!(
+                    "short_description for glossary term '{}' cannot be empty",
+                    term_entry.term
+                ),
+            ));
+        }
+
+        if term_entry.area.is_empty() {
+            errors.push(DocCheckError::new_error(
+                1,
+                filename.to_path_buf(),
+                &format!("area list for glossary term '{}' cannot be empty", term_entry.term),
+            ));
+        } else {
+            for area in &term_entry.area {
+                if area.trim().is_empty() {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("empty area entry found in glossary term '{}'", term_entry.term),
+                    ));
+                }
+            }
+        }
+    }
+}
+
 fn check_glossary(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<GlossaryTerm>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064926): other checks for GlossaryTerm?
-    errors
+    let (items, errors) = parse_entries::<GlossaryTerm>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(terms) = items {
+        validate_glossary(filename, &terms, &mut errs);
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 fn normalize_external_link(p: &str) -> String {
@@ -3289,5 +3351,79 @@ guides:
         assert!(reachable.contains(&doc_f));
         assert!(!reachable.contains(&isolated_1));
         assert!(!reachable.contains(&isolated_2));
+    }
+
+    #[test]
+    fn test_check_glossary_valid_and_sentinel() -> Result<()> {
+        let filename = PathBuf::from("docs/glossary/_glossary.yaml");
+        // Verify valid entries and ensure [""] sentinels are accepted without false positive errors.
+        let valid_yaml: Value = serde_yaml::from_str(
+            r#"
+- term: "ABI"
+  short_description: "The binary-level interface to the system."
+  full_description: "Application Binary Interface."
+  see_also: [""]
+  related_guides: [""]
+  area: ["System", "General"]
+- term: "ABR"
+  short_description: "Fuchsia bootloader A/B/R recovery slot."
+  see_also: ["<a href=\"/docs/glossary#ota\">OTA</a>"]
+  related_guides: ["<a href=\"/docs/concepts/packages/ota.md\">OTA updates</a>"]
+  area: ["System"]
+"#,
+        )?;
+        let errors = check_glossary(&filename, &valid_yaml);
+        assert!(errors.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_glossary_errors() -> Result<()> {
+        let filename = PathBuf::from("docs/glossary/_glossary.yaml");
+        // Test empty term, duplicates, empty short description, missing area, and empty area string.
+        let invalid_yaml: Value = serde_yaml::from_str(
+            r#"
+- term: ""
+  short_description: "Missing term name."
+  area: ["System"]
+- term: "DuplicateTerm"
+  short_description: "First instance."
+  area: ["System"]
+- term: "DuplicateTerm"
+  short_description: "Second instance."
+  area: ["System"]
+- term: "EmptyShortDesc"
+  short_description: "   "
+  area: ["System"]
+- term: "MissingArea"
+  short_description: "Valid description."
+  area: []
+- term: "EmptyAreaString"
+  short_description: "Valid description."
+  area: [""]
+"#,
+        )?;
+        let errors = check_glossary(&filename, &invalid_yaml).expect("should produce findings");
+        assert_eq!(errors.len(), 5);
+
+        let messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+        assert!(messages.iter().any(|m| m.contains("glossary term cannot be empty")));
+        assert!(
+            messages.iter().any(|m| m.contains("duplicate glossary term 'DuplicateTerm' found"))
+        );
+        assert!(messages.iter().any(|m| {
+            m.contains("short_description for glossary term 'EmptyShortDesc' cannot be empty")
+        }));
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("area list for glossary term 'MissingArea' cannot be empty"))
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("empty area entry found in glossary term 'EmptyAreaString'"))
+        );
+        Ok(())
     }
 }
