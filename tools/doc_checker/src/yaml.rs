@@ -84,10 +84,6 @@ pub struct FromTo {
 }
 
 #[derive(Deserialize, Debug)]
-// Dead code is used here so the names
-// of the fields can be used by Deserialize
-// even though there is no reading of the fields.
-#[allow(dead_code)]
 struct GlossaryTerm {
     term: String,
     short_description: String,
@@ -516,7 +512,15 @@ impl DocYamlCheck for YamlChecker {
                 Some("_drivers_areas.yaml") => check_drivers_areas(filename, yaml_value),
                 Some("_drivers_epitaphs.yaml") => check_drivers_epitaphs(filename, yaml_value),
                 Some("_eng_council.yaml") => check_eng_council(filename, yaml_value),
-                Some("_glossary.yaml") => check_glossary(filename, yaml_value),
+                Some("_glossary.yaml") => check_glossary(
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &self.project,
+                    filename,
+                    yaml_value,
+                    self.allow_fuchsia_src_links,
+                    &mut self.external_links,
+                ),
                 Some("_metadata.yaml") => check_metadata(
                     &self.root_dir,
                     &self.docs_folder,
@@ -1275,6 +1279,17 @@ static HREF_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"href="([^"]+)""#).expect("Failed to compile HREF regex")
 });
 
+// Matches HTML href attributes (quoted or unquoted) and Markdown link syntax in glossary text.
+// Supports:
+// - Standard double-quoted HTML links: `<a href="/path/doc.md">`
+// - Single-quoted HTML links: `<a href='/path/doc.md'>`
+// - Unquoted HTML links: `<a href=/path/doc.md>`
+// - Standard Markdown links: `[title](/path/doc.md)`
+static GLOSSARY_LINK_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r#"(?:href=["']?([^\s>'"]+)["']?|\[[^\]]+\]\(([^)]+)\))"#)
+        .expect("Failed to compile GLOSSARY_LINK_REGEX")
+});
+
 fn check_drivers_epitaphs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<DriverEpitaph>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
@@ -1421,11 +1436,121 @@ fn validate_glossary(filename: &Path, terms: &[GlossaryTerm], errors: &mut Vec<D
     }
 }
 
-fn check_glossary(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
+/// Converts a glossary term into an anchor slug matching DevSite HTML anchor conventions
+/// (lowercase, non-alphanumeric characters replaced with hyphens, trimmed).
+fn slugify_glossary_term(term: &str) -> String {
+    let mut slug = String::with_capacity(term.len());
+    let mut prev_was_hyphen = false;
+    for c in term.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+            prev_was_hyphen = false;
+        } else if !prev_was_hyphen {
+            slug.push('-');
+            prev_was_hyphen = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+/// Returns the anchor of a link that points at another glossary term, or `None`
+/// if the link points somewhere else.
+///
+/// Accepts the root-relative (`/docs/glossary#slug`) and same-page (`#slug`)
+/// forms, which are the only two the glossary uses. Any other spelling falls
+/// through to the normal link pipeline and is reported as a bad path, which
+/// keeps anchors consistent rather than tolerating a second spelling.
+fn glossary_anchor(link: &str) -> Option<&str> {
+    const PREFIXES: [&str; 2] = ["/docs/glossary#", "#"];
+    PREFIXES.iter().find_map(|prefix| link.strip_prefix(prefix))
+}
+
+/// Extracts and validates all hyperlinks embedded in glossary entries.
+///
+/// Validates:
+/// - Glossary anchor links against the slugs of the terms defined in this file.
+/// - Everything else through the shared link pipeline, which resolves in-tree
+///   paths and queues external links for batch validation.
+fn validate_glossary_links(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    terms: &[GlossaryTerm],
+    allow_fuchsia_src_links: bool,
+    external_links: &mut Vec<LinkReference>,
+    errors: &mut Vec<DocCheckError>,
+) {
+    let term_slugs: HashSet<String> =
+        terms.iter().map(|t| slugify_glossary_term(&t.term)).collect();
+    let exact_terms: HashSet<String> =
+        terms.iter().map(|t| t.term.trim().to_ascii_lowercase()).collect();
+
+    let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+
+    for term_entry in terms {
+        let mut text_sources: Vec<&str> = vec![term_entry.short_description.as_str()];
+        text_sources.extend(term_entry.full_description.as_deref());
+        text_sources.extend(term_entry.see_also.iter().flatten().map(String::as_str));
+        text_sources.extend(term_entry.related_guides.iter().map(String::as_str));
+
+        for text in text_sources {
+            for cap in GLOSSARY_LINK_REGEX.captures_iter(text) {
+                let link = cap.get(1).or_else(|| cap.get(2)).map_or("", |m| m.as_str());
+                if link.is_empty() {
+                    continue;
+                }
+
+                if let Some(anchor) = glossary_anchor(link) {
+                    if !term_slugs.contains(anchor) && !exact_terms.contains(anchor) {
+                        errors.push(DocCheckError::new_error(
+                            doc_line.line_num,
+                            doc_line.file_name.clone(),
+                            &format!(
+                                "invalid glossary anchor '{}' in term '{}': target term does not exist",
+                                anchor, term_entry.term
+                            ),
+                        ));
+                    }
+                } else if let Some(err) = check_yaml_link(
+                    &doc_line,
+                    root_dir,
+                    docs_folder,
+                    project,
+                    link,
+                    allow_fuchsia_src_links,
+                    external_links,
+                ) {
+                    errors.push(err);
+                }
+            }
+        }
+    }
+}
+
+fn check_glossary(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+    external_links: &mut Vec<LinkReference>,
+) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<GlossaryTerm>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
     if let Some(terms) = items {
         validate_glossary(filename, &terms, &mut errs);
+        validate_glossary_links(
+            root_dir,
+            docs_folder,
+            project,
+            filename,
+            &terms,
+            allow_fuchsia_src_links,
+            external_links,
+            &mut errs,
+        );
     }
     if errs.is_empty() { None } else { Some(errs) }
 }
@@ -3346,6 +3471,9 @@ guides:
 
     #[test]
     fn test_check_glossary_valid_and_sentinel() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
         let filename = PathBuf::from("docs/glossary/_glossary.yaml");
         // Verify valid entries and ensure [""] sentinels are accepted without false positive errors.
         let valid_yaml: Value = serde_yaml::from_str(
@@ -3361,15 +3489,30 @@ guides:
   see_also: ["<a href=\"/docs/glossary#ota\">OTA</a>"]
   related_guides: ["<a href=\"/docs/concepts/packages/ota.md\">OTA updates</a>"]
   area: ["System"]
+- term: "OTA"
+  short_description: "Over-the-air software updates."
+  area: ["System"]
 "#,
         )?;
-        let errors = check_glossary(&filename, &valid_yaml);
+        let mut external_links = vec![];
+        let errors = check_glossary(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &valid_yaml,
+            false,
+            &mut external_links,
+        );
         assert!(errors.is_none());
         Ok(())
     }
 
     #[test]
     fn test_check_glossary_errors() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
         let filename = PathBuf::from("docs/glossary/_glossary.yaml");
         // Test empty term, duplicates, empty short description, missing area, and empty area string.
         let invalid_yaml: Value = serde_yaml::from_str(
@@ -3394,7 +3537,17 @@ guides:
   area: [""]
 "#,
         )?;
-        let errors = check_glossary(&filename, &invalid_yaml).expect("should produce findings");
+        let mut external_links = vec![];
+        let errors = check_glossary(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &invalid_yaml,
+            false,
+            &mut external_links,
+        )
+        .expect("should produce findings");
         assert_eq!(errors.len(), 5);
 
         let messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
@@ -3415,6 +3568,95 @@ guides:
                 .iter()
                 .any(|m| m.contains("empty area entry found in glossary term 'EmptyAreaString'"))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_glossary_links() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
+        let filename = PathBuf::from("docs/glossary/_glossary.yaml");
+        // Test valid in-tree doc links, Markdown link syntax, unquoted hrefs, self anchors,
+        // external links, broken in-tree links, non-canonical anchor spellings,
+        // and nonexistent glossary anchor targets.
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- term: "ValidTerm"
+  short_description: "Term with valid links."
+  full_description: "Mentions [ValidMarkdown](/docs/valid.md) and <a href=/docs/valid.md>Unquoted</a>."
+  see_also:
+    - "<a href=\"/docs/glossary#validterm\">Self anchor</a>"
+    - "<a href=\"https://example.com/external\">External</a>"
+  related_guides:
+    - "<a href=\"/docs/concepts/packages/ota.md\">OTA updates</a>"
+  area: ["System"]
+- term: "InvalidTerm"
+  short_description: "Term with invalid links."
+  full_description: "Points to <a href=\"/docs/missing.md\">Missing doc</a> and <a href=\"https://fuchsia.dev/fuchsia-src/development/legacy\">Legacy</a>."
+  see_also:
+    - "<a href=\"/docs/glossary#nonexistent-term\">Broken anchor</a>"
+    - "<a href=\"docs/glossary#validterm\">Anchor missing its leading slash</a>"
+  area: ["System"]
+"#,
+        )?;
+
+        let mut external_links = vec![];
+        let errors = check_glossary(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &yaml_value,
+            false,
+            &mut external_links,
+        )
+        .expect("should produce findings for invalid links");
+
+        // 1. External link collected into the external links queue.
+        assert_eq!(external_links.len(), 1);
+        assert_eq!(external_links[0].link, "https://example.com/external");
+
+        let messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+        // 2. Missing in-tree doc path detected and reported.
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("in-tree link to /docs/missing.md could not be found")),
+            "Expected missing in-tree link error, found: {:?}",
+            messages
+        );
+        // 3. Nonexistent glossary anchor target detected and reported.
+        assert!(
+            messages.iter().any(|m| m.contains(
+                "invalid glossary anchor 'nonexistent-term' in term 'InvalidTerm': target term does not exist"
+            )),
+            "Expected broken anchor error, found: {:?}",
+            messages
+        );
+        // 4. Links to published docs are reported like anywhere else in the tree.
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.contains("Should not link to https://fuchsia.dev/fuchsia-src")),
+            "Expected finding for fuchsia-src link, found: {:?}",
+            messages
+        );
+        // 5. Only the canonical /docs/glossary# spelling is treated as an anchor, so
+        // one missing its leading slash is reported rather than silently accepted.
+        assert!(
+            messages.iter().any(|m| m.contains("docs/glossary#validterm")),
+            "Expected finding for non-canonical anchor spelling, found: {:?}",
+            messages
+        );
+        // 6. Glossary link findings carry the same severity as every other YAML
+        // link check, so a broken glossary link blocks submission.
+        assert!(
+            errors.iter().all(|e| e.level == ErrorLevel::Error),
+            "Expected all glossary link findings to be errors, but found: {:?}",
+            errors
+        );
+
         Ok(())
     }
 }
