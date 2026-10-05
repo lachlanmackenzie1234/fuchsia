@@ -122,6 +122,7 @@ bazel2gn_verification_targets = [
   "//src/lib/cmdline:verify_bazel2gn",
   "//src/lib/collections/packed:verify_bazel2gn",
   "//src/lib/containers/cpp:verify_bazel2gn",
+  "//src/lib/debug/rust:verify_bazel2gn",
   "//src/lib/debug:verify_bazel2gn",
   "//src/lib/depfile:verify_bazel2gn",
   "//src/lib/diagnostics/fuchsia-async-inspect:verify_bazel2gn",
