@@ -407,7 +407,7 @@ class FFX:
                 log_status_on_failure=False,
                 timeout=30.0,
             )
-        except Exception as err:  # pylint: disable=broad-exception-caught
+        except errors.HoneydewError as err:
             _LOGGER.warning(
                 "Failed to notify intentional disconnect to FFX monitor: %s",
                 err,
@@ -480,7 +480,7 @@ class FFX:
                         "FFX Triage: State captured after command failure (ffx target status):\n%s",
                         output,
                     )
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except errors.HoneydewError as e:
                     _LOGGER.warning(
                         "Failed to execute diagnostic 'ffx target status' on target %s: %s",
                         self._log_name,
