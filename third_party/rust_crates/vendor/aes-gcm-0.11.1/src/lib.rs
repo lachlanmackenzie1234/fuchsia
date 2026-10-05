@@ -297,7 +297,7 @@ where
         // See: <https://github.com/RustCrypto/AEADs/issues/74>
         let expected_tag = self.compute_tag(mask, associated_data, buffer.get_in());
 
-        use subtle::ConstantTimeEq;
+        use ctutils::CtEq;
         if expected_tag[..TagSize::to_usize()].ct_eq(tag).into() {
             ctr.apply_keystream_partial(buffer);
             Ok(())
@@ -375,4 +375,15 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AesGcm").finish_non_exhaustive()
     }
+}
+
+// `AesGcm` intentionally has no custom `Drop`.
+// With the `zeroize` feature enabled, sensitive state is cleared by member drops
+// (`cipher` via `Aes`, `ghash` via internal `Polyval`) after this marker impl.
+#[cfg(feature = "zeroize")]
+impl<Aes, NonceSize, TagSize> zeroize::ZeroizeOnDrop for AesGcm<Aes, NonceSize, TagSize>
+where
+    Aes: zeroize::ZeroizeOnDrop,
+    TagSize: self::TagSize,
+{
 }

@@ -1,6 +1,6 @@
 [package]
 name = "aes-gcm-siv"
-version = "0.12.0-rc.3"
+version = "0.12.1"
 description = """
 Pure Rust implementation of the AES-GCM-SIV Misuse-Resistant Authenticated
 Encryption Cipher (RFC 8452) with optional architecture-specific
@@ -17,16 +17,18 @@ categories = ["cryptography", "no-std"]
 rust-version = "1.85"
 
 [dependencies]
-aead = { version = "0.6.0-rc.10", default-features = false }
-aes = { version = "0.9.0-rc.4", optional = true }
-cipher = "0.5.0-rc.8"
-ctr = "0.10.0-rc.3"
-polyval = { version = "0.7.0-rc.7", default-features = false }
-subtle = { version = "2", default-features = false }
+aead = { version = "0.6", default-features = false }
+cipher = "0.5"
+ctr = "0.10"
+ctutils = "0.4"
+polyval = { version = "0.7", default-features = false }
+
+# optional dependencies
+aes = { version = "0.9", optional = true }
 zeroize = { version = "1", optional = true, default-features = false }
 
 [dev-dependencies]
-aead = { version = "0.6.0-rc.10", features = ["dev"], default-features = false }
+aead = { version = "0.6", features = ["dev"], default-features = false }
 
 [features]
 default = ["aes", "alloc", "getrandom"]
@@ -36,6 +38,8 @@ bytes = ["aead/bytes"]
 getrandom = ["aead/getrandom"]
 rand_core = ["aead/rand_core"]
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]

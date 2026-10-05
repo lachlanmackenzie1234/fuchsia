@@ -22,19 +22,19 @@ group("aes-0.9.1") {
 }
 
 group("aes-gcm") {
-  public_deps = [ ":aes-gcm-v0_11_0" ]
+  public_deps = [ ":aes-gcm-v0_11_1" ]
 }
 
-group("aes-gcm-0.11.0") {
-  public_deps = [ ":aes-gcm-v0_11_0" ]
+group("aes-gcm-0.11.1") {
+  public_deps = [ ":aes-gcm-v0_11_1" ]
 }
 
 group("aes-gcm-siv") {
-  public_deps = [ ":aes-gcm-siv-v0_12_0-rc_3" ]
+  public_deps = [ ":aes-gcm-siv-v0_12_1" ]
 }
 
-group("aes-gcm-siv-0.12.0-rc.3") {
-  public_deps = [ ":aes-gcm-siv-v0_12_0-rc_3" ]
+group("aes-gcm-siv-0.12.1") {
+  public_deps = [ ":aes-gcm-siv-v0_12_1" ]
 }
 
 group("ansi_term") {
@@ -3044,18 +3044,18 @@ rustc_library("aes-v0_9_1") {
   applicable_licenses = [ ":aes-v0_9_1.license" ]
 }
 
-license("aes-gcm-v0_11_0.license") {
+license("aes-gcm-v0_11_1.license") {
   public_package_name = "aes_gcm"
   license_files = [
-    "//third_party/rust_crates/vendor/aes-gcm-0.11.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/aes-gcm-0.11.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/aes-gcm-0.11.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/aes-gcm-0.11.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("aes-gcm-v0_11_0") {
+rustc_library("aes-gcm-v0_11_1") {
   crate_name = "aes_gcm"
-  source_root = "//third_party/rust_crates/vendor/aes-gcm-0.11.0/src/lib.rs"
-  output_name = "aes_gcm-9ca0b0abd8a16174"
+  source_root = "//third_party/rust_crates/vendor/aes-gcm-0.11.1/src/lib.rs"
+  output_name = "aes_gcm-78403c1be45777d0"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -3066,15 +3066,15 @@ rustc_library("aes-gcm-v0_11_0") {
   deps += [ ":aes-v0_9_1" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
+  deps += [ ":ctutils-v0_4_2" ]
   deps += [ ":ghash-v0_6_0" ]
-  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ca0b0abd8a16174",
-    "-Cextra-filename=-9ca0b0abd8a16174",
+    "-Cmetadata=78403c1be45777d0",
+    "-Cextra-filename=-78403c1be45777d0",
     "--cfg=feature=\"aes\"",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
@@ -3083,22 +3083,21 @@ rustc_library("aes-gcm-v0_11_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":aes-gcm-v0_11_0.license" ]
+  applicable_licenses = [ ":aes-gcm-v0_11_1.license" ]
 }
 
-license("aes-gcm-siv-v0_12_0-rc_3.license") {
+license("aes-gcm-siv-v0_12_1.license") {
   public_package_name = "aes_gcm_siv"
   license_files = [
-    "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("aes-gcm-siv-v0_12_0-rc_3") {
+rustc_library("aes-gcm-siv-v0_12_1") {
   crate_name = "aes_gcm_siv"
-  source_root =
-      "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.0-rc.3/src/lib.rs"
-  output_name = "aes_gcm_siv-8d563f4b5c512bb"
+  source_root = "//third_party/rust_crates/vendor/aes-gcm-siv-0.12.1/src/lib.rs"
+  output_name = "aes_gcm_siv-5287e6fa15ed4403"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -3109,15 +3108,15 @@ rustc_library("aes-gcm-siv-v0_12_0-rc_3") {
   deps += [ ":aes-v0_9_1" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
+  deps += [ ":ctutils-v0_4_2" ]
   deps += [ ":polyval-v0_7_3" ]
-  deps += [ ":subtle-v2_6_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8d563f4b5c512bb",
-    "-Cextra-filename=-8d563f4b5c512bb",
+    "-Cmetadata=5287e6fa15ed4403",
+    "-Cextra-filename=-5287e6fa15ed4403",
     "--cfg=feature=\"aes\"",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
@@ -3126,7 +3125,7 @@ rustc_library("aes-gcm-siv-v0_12_0-rc_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":aes-gcm-siv-v0_12_0-rc_3.license" ]
+  applicable_licenses = [ ":aes-gcm-siv-v0_12_1.license" ]
 }
 
 license("ahash-v0_8_12.license") {
