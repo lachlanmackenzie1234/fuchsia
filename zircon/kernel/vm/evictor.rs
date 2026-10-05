@@ -15,6 +15,8 @@ use ksync::{KMutex, RawMonitoredSpinlock, RawMutex, guarded};
 use pin_init::{PinInit, pin_data};
 use zr::Opaque;
 
+pub use bindings::{EvictionResult, Evictor_EvictionResult, Output, TriggerReason};
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum EvictionLevel {
@@ -268,5 +270,54 @@ impl Evictor {
     /// Domain-specific conversion: returns raw pointer for `Evictor`.
     fn as_raw(&self) -> *mut bindings::Evictor {
         (self as *const Self).cast_mut().cast()
+    }
+
+    /// Synchronously evicts pages according to the given parameters and returns an `EvictionResult`.
+    pub fn evict_synchronous(
+        &self,
+        min_mem_to_free: u64,
+        free_mem_target: u64,
+        eviction_level: EvictionLevel,
+        output: Output,
+        reason: TriggerReason,
+    ) -> EvictionResult {
+        let eviction_level = match eviction_level {
+            EvictionLevel::OnlyOldest => bindings::Evictor_EvictionLevel::OnlyOldest,
+            EvictionLevel::IncludeNewest => bindings::Evictor_EvictionLevel::IncludeNewest,
+        };
+        let mut result = core::mem::MaybeUninit::<EvictionResult>::uninit();
+        // SAFETY: `self.as_raw()` returns a valid `Evictor` pointer, and `result` is valid for
+        // writing.
+        unsafe {
+            bindings::cpp_evictor_evict_synchronous(
+                self.as_raw(),
+                min_mem_to_free,
+                free_mem_target,
+                eviction_level,
+                output,
+                reason,
+                result.as_mut_ptr().cast(),
+            );
+        }
+        // SAFETY: `cpp_evictor_evict_synchronous` initializes `result`.
+        unsafe { result.assume_init() }
+    }
+
+    /// Triggers asynchronous background page eviction aiming for `free_mem_target`.
+    pub fn evict_asynchronous(
+        &self,
+        min_free_target: u64,
+        free_mem_target: u64,
+        print_output: bool,
+    ) {
+        // SAFETY: `self.as_raw()` returns a valid `Evictor` pointer.
+        unsafe {
+            bindings::cpp_evictor_evict_asynchronous(
+                self.as_raw(),
+                min_free_target,
+                free_mem_target,
+                print_output,
+            )
+        }
     }
 }

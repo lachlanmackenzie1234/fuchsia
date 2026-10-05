@@ -8,7 +8,6 @@
 
 #include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
 #include <kernel/event.h>
 #include <kernel/ffi.h>
 #include <ktl/memory.h>
@@ -184,7 +183,7 @@ FFI_ALWAYS_INLINE void cpp_page_queues_get_active_inactive_counts(
   *out_counts = queues->GetActiveInactiveCounts();
 }
 
-FFI_ALWAYS_INLINE void cpp_page_queues_dump(PageQueues* queues) { queues->Dump(); }
+FFI_ALWAYS_INLINE void cpp_page_queues_dump(const PageQueues* queues) { queues->Dump(); }
 
 FFI_ALWAYS_INLINE uint64_t cpp_page_queues_get_lru_pages_compressed(void) {
   return PageQueues::GetLruPagesCompressed();

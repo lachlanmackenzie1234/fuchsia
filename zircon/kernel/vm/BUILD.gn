@@ -134,9 +134,16 @@ kernel_bindgen_crate("evictor-bindings") {
   function_allowlist = [
     "cpp_evictor_disable_eviction",
     "cpp_evictor_init",
+    "cpp_evictor_evict_synchronous",
+    "cpp_evictor_evict_asynchronous",
   ]
   type_allowlist = [
     "Evictor",
+    "EvictionLevel",
+    "Output",
+    "TriggerReason",
+    "EvictionResult",
+    "EvictedPageCounts",
     "Evictor_EvictionLevel",
     "Evictor_EvictionTarget",
     "Evictor_EvictedPageCounts",
@@ -148,9 +155,6 @@ kernel_bindgen_crate("evictor-bindings") {
   type_blocklist = [
     "AutounsignalEvent",
     "Thread",
-    "Evictor_Output",
-    "Evictor_TriggerReason",
-    "Evictor_EvictionResult",
     "Evictor_EvictorStats",
   ]
   opaque_types = [
@@ -159,7 +163,11 @@ kernel_bindgen_crate("evictor-bindings") {
     "ktl::atomic",
     "std::atomic",
   ]
-  rustified_enum = [ "Evictor_EvictionLevel" ]
+  rustified_enum = [
+    "Evictor_EvictionLevel",
+    "Evictor_Output",
+    "Evictor_TriggerReason",
+  ]
   function_blocklist = [ "Evictor_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [ "//zircon/kernel/kernel:event-bindings" ]
@@ -279,6 +287,7 @@ kernel_bindgen_crate("pmm-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_pmm_page_queues",
+    "cpp_pmm_evictor",
     "cpp_pmm_alloc_page",
     "cpp_pmm_alloc_pages",
     "cpp_pmm_alloc_contiguous",
@@ -291,6 +300,7 @@ kernel_bindgen_crate("pmm-bindings") {
   ]
   type_allowlist = []
   type_blocklist = [
+    "Evictor",
     "PmmOptDelayReuse",
     "PageQueues",
     "PmmNode",
@@ -305,6 +315,7 @@ kernel_bindgen_crate("pmm-bindings") {
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [
+    ":evictor-bindings",
     ":page-bindings",
     ":page-queues-bindings",
     ":pmm-arena-bindings",
@@ -315,6 +326,7 @@ kernel_bindgen_crate("pmm-bindings") {
   edition = "2024"
   raw_lines = [
     "#![no_std]",
+    "use evictor_bindings::Evictor;",
     "use page_bindings::vm_page_t;",
     "use page_queues_bindings::PageQueues;",
     "pub use pmm_arena_bindings::{pmm_arena_info, pmm_arena_info_t};",

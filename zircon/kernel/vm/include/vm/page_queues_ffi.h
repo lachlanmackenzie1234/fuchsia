@@ -93,7 +93,7 @@ FFI_ALWAYS_INLINE void cpp_page_queues_queue_counts(const PageQueues* queues,
 FFI_ALWAYS_INLINE void cpp_page_queues_get_active_inactive_counts(
     const PageQueues* queues, PageQueues::ActiveInactiveCounts* out_counts);
 
-FFI_ALWAYS_INLINE void cpp_page_queues_dump(PageQueues* queues);
+FFI_ALWAYS_INLINE void cpp_page_queues_dump(const PageQueues* queues);
 
 FFI_ALWAYS_INLINE uint64_t cpp_page_queues_get_lru_pages_compressed(void);
 

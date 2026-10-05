@@ -482,7 +482,7 @@ const char* PageQueues::string_from_age_reason(PageQueues::AgeReason reason) {
   }
 }
 
-void PageQueues::Dump() {
+void PageQueues::Dump() const {
   // Need to grab a copy of all the counts and generations. As the lock is needed to acquire the
   // active/inactive counts, also hold the lock over the copying of the counts to avoid needless
   // races.
