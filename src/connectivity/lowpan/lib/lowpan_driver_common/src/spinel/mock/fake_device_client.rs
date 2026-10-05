@@ -67,12 +67,15 @@ impl FakeSpinelDevice {
             vec![0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
         );
         properties.insert(Prop::Mac(PropMac::ShortAddr), vec![0, 0]);
-        properties.insert(Prop::Unknown(2048), vec![]); // SPINEL_PROP_RCP_MAC_KEY
-        properties.insert(Prop::Unknown(2049), vec![0, 0, 0, 0]); // SPINEL_PROP_RCP_MAC_FRAME_COUNTER
-        properties.insert(Prop::Unknown(2050), vec![0, 0, 0, 0, 0, 0, 0, 0]); // SPINEL_PROP_RCP_TIMESTAMP
-        properties.insert(Prop::Unknown(2051), vec![0, 0, 0, 0]); // SPINEL_PROP_RCP_ENH_ACK_PROBING
+        properties.insert(Prop::Rcp(PropRcp::MacKey), vec![]);
+        properties.insert(Prop::Rcp(PropRcp::MacFrameCounter), vec![0, 0, 0, 0]);
+        properties.insert(Prop::Rcp(PropRcp::Timestamp), vec![0, 0, 0, 0, 0, 0, 0, 0]);
+        properties.insert(Prop::Rcp(PropRcp::EnhAckProbing), vec![0, 0, 0, 0]);
         properties.insert(Prop::Mac(PropMac::Unknown(4868)), vec![]);
         properties.insert(Prop::Mac(PropMac::Unknown(4869)), vec![]);
+        // SPINEL_PROP_RADIO_COEX_ENABLE, set at init because the platform radio URL
+        // includes `enable-coex`.
+        properties.insert(Prop::Phy(PropPhy::Unknown(0x120d)), vec![0]);
 
         properties.insert(Prop::Stream(PropStream::Net), vec![]);
         properties.insert(Prop::Stream(PropStream::NetInsecure), vec![]);
@@ -675,7 +678,7 @@ impl FakeSpinelDevice {
                 )
                 .unwrap();
             }
-            Prop::Unknown(176) => {
+            Prop::Rcp(PropRcp::Unknown(176)) => {
                 // RCP API Version
                 spinel_write!(
                     &mut response,
@@ -845,7 +848,9 @@ impl FakeSpinelDevice {
             Cmd::PropValueGet => {
                 let mut payload = frame.payload.iter();
                 let prop = Prop::try_unpack(&mut payload);
-                if payload.count() == 0 || prop.as_ref().ok() == Some(&Prop::Unknown(2050)) {
+                if payload.count() == 0
+                    || prop.as_ref().ok() == Some(&Prop::Rcp(PropRcp::Timestamp))
+                {
                     prop.ok()
                         .and_then(|prop| self.handle_get_prop(frame, prop))
                         .map(|r| vec![r])
