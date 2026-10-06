@@ -740,6 +740,36 @@
             ]
         },
         {
+            "name": "InotifyTest.WatchAccessDenied",
+            "audit_expectations": [
+                "avc:  denied  { watch_reads } for path=\"/tmp/proc_test_file_17b57l\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inotify_watch_t:s0 tcontext=test_u:object_r:test_inotify_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "InotifyTest.WatchCloseNoWriteDenied",
+            "audit_expectations": [
+                "avc:  denied  { watch_reads } for path=\"/tmp/proc_test_file_6V2xRq\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_inotify_watch_t:s0 tcontext=test_u:object_r:test_inotify_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "InotifyTest.WatchDenied",
+            "audit_expectations": [
+                "avc:  denied  { watch } for path=\"/tmp/proc_test_file_aOW3Lc\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inotify_no_watch_t:s0 tcontext=test_u:object_r:test_inotify_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "InotifyTest.WatchReadsOnlyDenied",
+            "audit_expectations": [
+                "avc:  denied  { watch } for path=\"/tmp/proc_test_file_8isYnv\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_inotify_watch_reads_only_t:s0 tcontext=test_u:object_r:test_inotify_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "InotifyTest.WatchSocketDenied",
+            "audit_expectations": [
+                "avc:  denied  { name_bind } for path=\"socket:[314]\" dev=\"sockfs\" ino=314 scontext=test_u:test_r:test_inotify_no_watch_t:s0 tcontext=test_u:test_r:test_inotify_no_watch_t:s0 tclass=unix_stream_socket permissive=0"
+            ]
+        },
+        {
             "name": "IoUringTest.IoUringSqpollDenied",
             "audit_expectations": [
                 "avc:  denied  { sqpoll } for scontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tcontext=test_u:test_r:io_uring_test_no_sqpoll_t:s0 tclass=io_uring permissive=0"

@@ -967,6 +967,10 @@ macro_rules! file_class_permission_enum {
             Rename("rename"),
             /// Permission to delete a file or remove a hard link.
             Unlink("unlink"),
+            /// Permission to set a watch for changes to a file (e.g. via inotify).
+            Watch("watch"),
+            /// Permission to set a watch that will receive notifications of read-like events.
+            WatchReads("watch_reads"),
             // keep-sorted end
 
             // Additional permissions specific to the derived class.

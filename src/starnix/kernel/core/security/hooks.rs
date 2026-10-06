@@ -67,6 +67,7 @@ use starnix_uapi::auth::{Credentials, PtraceAccessMode};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode};
+use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::Signal;
@@ -1797,6 +1798,20 @@ pub fn check_fs_node_getattr_access(
     track_hook_duration!("security.hooks.check_fs_node_getattr_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::fs_node::check_fs_node_getattr_access(security_server, current_task, fs_node)
+    })
+}
+
+/// Checks whether `current_task` can set a watch on `fs_node`, to be notified of the events in
+/// `mask`.
+/// Corresponds to the `path_notify()` LSM hook.
+pub fn path_notify(
+    current_task: &CurrentTask,
+    fs_node: &FsNode,
+    mask: InotifyMask,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.path_notify");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::fs_node::path_notify(security_server, current_task, fs_node, mask)
     })
 }
 

@@ -29,6 +29,7 @@ use starnix_uapi::auth::{CAP_FOWNER, Credentials};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{ENODATA, EOPNOTSUPP, Errno};
 use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::{XATTR_NAME_SELINUX, errno, error};
 use syncio::zxio_node_attr_has_t;
 
@@ -1046,6 +1047,59 @@ pub(in crate::security) fn check_fs_node_getattr_access(
         &[CommonFsNodePermission::GetAttr],
         current_task.into(),
     )
+}
+
+/// Checks whether `current_task` can set a watch on `fs_node`, to be notified of the events in
+/// `mask`.
+///
+/// Starnix only supports inotify, which only allows watches to be set on individual nodes. The
+/// "watch_mount", "watch_sb" and "watch_with_perm" permissions are only relevant to fanotify
+/// mount/superblock marks and permission events, so they are not checked here.
+pub(in crate::security) fn path_notify(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    fs_node: &FsNode,
+    mask: InotifyMask,
+) -> Result<(), Errno> {
+    if fs_node.is_private() {
+        return Ok(());
+    }
+
+    let FsNodeSidAndClass { sid: target_sid, class } = fs_node_effective_sid_and_class(fs_node);
+    let FsNodeClass::File(file_class) = class else {
+        // The "watch" permissions are only defined for file-like classes, but watches can still be
+        // requested on socket-like nodes, e.g. by watching "/proc/<pid>/fd/<n>". SELinux on Linux
+        // denies such watches unless permissions that are unrelated to watching (or undefined)
+        // happen to be granted on the socket class, so deny them.
+        return error!(EACCES);
+    };
+
+    let permission_check = build_permission_check(current_task, security_server);
+    let current_sid = current_task_state(current_task).current_sid;
+    let fs = fs_node.fs();
+    let audit_context = [current_task.into(), fs_node.into(), fs.as_ref().into()];
+    // The "watch" permission is required to set any watch, regardless of the events in `mask`.
+    check_permission(
+        &permission_check,
+        current_task,
+        current_sid,
+        target_sid,
+        CommonFilePermission::Watch.for_class(file_class),
+        (&audit_context).into(),
+    )?;
+    // Watches that will report read-exclusive events additionally require the "watch_reads"
+    // permission. `OPEN` is not read-exclusive, since files may also be opened for writing.
+    if mask.intersects(InotifyMask::ACCESS | InotifyMask::CLOSE_NOWRITE) {
+        check_permission(
+            &permission_check,
+            current_task,
+            current_sid,
+            target_sid,
+            CommonFilePermission::WatchReads.for_class(file_class),
+            (&audit_context).into(),
+        )?;
+    }
+    Ok(())
 }
 
 /// Checks whether `current_task` can set attributes on `node`.

@@ -9,6 +9,11 @@
         "CapabilitiesTest.ChmodSgidDifferentOwnerAndGroup",
         "CapabilitiesTest.ChmodSgidSameOwnerDifferentGroup",
 
+        // Linux audits the denial using an unrelated permission of the socket class (since the
+        // "watch" permissions are not defined for socket-like classes), while Starnix denies
+        // the watch without auditing.
+        "InotifyTest.WatchSocketDenied",
+
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
