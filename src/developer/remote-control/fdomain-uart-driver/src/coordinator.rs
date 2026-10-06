@@ -171,13 +171,14 @@ fn stage_or_send_connected(
     sender: &mut mpsc::Sender<Vec<u8>>,
     pending_incoming: &mut VecDeque<Vec<u8>>,
     pending_bytes: &mut usize,
-) -> bool {
+) -> std::result::Result<(), String> {
     let to_stage = if pending_incoming.is_empty() {
         match sender.try_send(data) {
-            Ok(()) => return true,
+            Ok(()) => return Ok(()),
             Err(e) if e.is_disconnected() => {
-                error!("Channel {} writer disconnected, dropping channel", channel_id);
-                return false;
+                let reason = format!("Channel {channel_id} writer disconnected");
+                error!("{reason}, dropping channel");
+                return Err(reason);
             }
             Err(e) => e.into_inner(),
         }
@@ -185,15 +186,15 @@ fn stage_or_send_connected(
         data
     };
     if *pending_bytes + to_stage.len() > MAX_CHANNEL_STAGING_BYTES {
-        error!(
-            "Channel {} exceeded max staging buffer ({} bytes), dropping channel",
-            channel_id, MAX_CHANNEL_STAGING_BYTES
+        let reason = format!(
+            "Channel {channel_id} exceeded max staging buffer ({MAX_CHANNEL_STAGING_BYTES} bytes)"
         );
-        return false;
+        error!("{reason}, dropping channel");
+        return Err(reason);
     }
     *pending_bytes += to_stage.len();
     pending_incoming.push_back(to_stage);
-    true
+    Ok(())
 }
 
 /// Stages an incoming serial payload in the pending channel buffer before socket connection.
@@ -202,17 +203,17 @@ fn stage_pending_data(
     data: Vec<u8>,
     buffer: &mut Vec<Vec<u8>>,
     pending_bytes: &mut usize,
-) -> bool {
+) -> std::result::Result<(), String> {
     if *pending_bytes + data.len() > MAX_CHANNEL_STAGING_BYTES {
-        error!(
-            "Pending channel {} exceeded max staging buffer ({} bytes), dropping channel",
-            channel_id, MAX_CHANNEL_STAGING_BYTES
+        let reason = format!(
+            "Pending channel {channel_id} exceeded max staging buffer ({MAX_CHANNEL_STAGING_BYTES} bytes)"
         );
-        return false;
+        error!("{reason}, dropping channel");
+        return Err(reason);
     }
     *pending_bytes += data.len();
     buffer.push(data);
-    true
+    Ok(())
 }
 
 /// Spawns an asynchronous task to register a channel socket with the RCS connector.
@@ -258,9 +259,12 @@ impl CoordinatorState {
         generation
     }
 
-    /// Enqueues a `SenderMessage::Close` message into the outgoing serial queue for `channel_id`.
-    fn enqueue_close(&mut self, channel_id: u16) {
-        self.outgoing.entry(channel_id).or_default().push_back(SenderMessage::Close { channel_id });
+    /// Enqueues a [`SenderMessage::Close`] message into the outgoing serial queue for `channel_id`.
+    fn enqueue_close(&mut self, channel_id: u16, reason: Option<String>) {
+        self.outgoing
+            .entry(channel_id)
+            .or_default()
+            .push_back(SenderMessage::Close { channel_id, reason });
     }
 
     /// Synchronously drains staged incoming chunks from `pending_incoming` into the connected
@@ -290,7 +294,10 @@ impl CoordinatorState {
         }
         for channel_id in disconnected_channels {
             if self.active.remove(&channel_id).is_some() {
-                self.enqueue_close(channel_id);
+                self.enqueue_close(
+                    channel_id,
+                    Some(format!("Channel {channel_id} writer disconnected")),
+                );
             }
         }
     }
@@ -330,7 +337,10 @@ impl CoordinatorState {
         }
         for channel_id in disconnected_channels {
             if self.active.remove(&channel_id).is_some() {
-                self.enqueue_close(channel_id);
+                self.enqueue_close(
+                    channel_id,
+                    Some(format!("Channel {channel_id} writer disconnected")),
+                );
             }
         }
         if made_progress { Poll::Ready(()) } else { Poll::Pending }
@@ -423,8 +433,11 @@ impl CoordinatorState {
                     Some(ChannelState::Pending { generation: active_gen, .. }) if *active_gen == generation
                 );
                 if matches_gen && self.active.remove(&channel_id).is_some() {
-                    error!("Failed to register RCS socket for channel {}: {:?}", channel_id, error);
-                    self.enqueue_close(channel_id);
+                    let reason = format!(
+                        "Failed to register RCS socket for channel {channel_id}: {error:?}"
+                    );
+                    error!("{reason}");
+                    self.enqueue_close(channel_id, Some(reason));
                 }
             }
             InternalEvent::WriterDone { channel_id, generation, error } => {
@@ -434,10 +447,12 @@ impl CoordinatorState {
                     Some(ChannelState::Connected { generation: active_gen, .. }) if *active_gen == generation
                 );
                 if matches_gen && self.active.remove(&channel_id).is_some() {
-                    if let Some(e) = error {
-                        error!("RCS socket write error for channel {}: {:?}", channel_id, e);
-                    }
-                    self.enqueue_close(channel_id);
+                    let reason = error.map(|e| {
+                        let msg = format!("RCS socket write error for channel {channel_id}: {e:?}");
+                        error!("{msg}");
+                        msg
+                    });
+                    self.enqueue_close(channel_id, reason);
                 }
             }
         }
@@ -454,16 +469,19 @@ impl CoordinatorState {
         rcs_connector: &ConnectorProxy,
     ) {
         if self.active.len() >= MAX_ACTIVE_CHANNELS {
-            warn!(
-                "Max active channels ({}) reached; rejecting new channel {}",
-                MAX_ACTIVE_CHANNELS, channel_id
+            let reason = format!(
+                "Max active channels ({MAX_ACTIVE_CHANNELS}) reached; rejecting new channel {channel_id}"
             );
-            self.enqueue_close(channel_id);
+            warn!("{reason}");
+            self.enqueue_close(channel_id, Some(reason));
             return;
         }
         if data.len() > MAX_CHANNEL_STAGING_BYTES {
-            error!("Initial frame on channel {} exceeds max staging bytes", channel_id);
-            self.enqueue_close(channel_id);
+            let reason = format!(
+                "Initial frame on channel {channel_id} exceeds max staging bytes ({MAX_CHANNEL_STAGING_BYTES})"
+            );
+            error!("{reason}");
+            self.enqueue_close(channel_id, Some(reason));
             return;
         }
         let generation = self.alloc_generation();
@@ -502,7 +520,7 @@ impl CoordinatorState {
         self.drain_pending_incoming();
         match self.active.get_mut(&channel_id) {
             Some(ChannelState::Connected { sender, pending_incoming, pending_bytes, .. }) => {
-                if !stage_or_send_connected(
+                if let Err(reason) = stage_or_send_connected(
                     channel_id,
                     data,
                     sender,
@@ -510,13 +528,13 @@ impl CoordinatorState {
                     pending_bytes,
                 ) {
                     self.active.remove(&channel_id);
-                    self.enqueue_close(channel_id);
+                    self.enqueue_close(channel_id, Some(reason));
                 }
             }
             Some(ChannelState::Pending { buffer, pending_bytes, .. }) => {
-                if !stage_pending_data(channel_id, data, buffer, pending_bytes) {
+                if let Err(reason) = stage_pending_data(channel_id, data, buffer, pending_bytes) {
                     self.active.remove(&channel_id);
-                    self.enqueue_close(channel_id);
+                    self.enqueue_close(channel_id, Some(reason));
                 }
             }
             None => self.open_pending_channel(channel_id, data, rcs_connector),
@@ -620,9 +638,11 @@ impl CoordinatorState {
                     .push_back(SenderMessage::Data { channel_id, payload });
             }
             ClientEvent::Closed { channel_id, error, .. } => {
-                if let Some(e) = error {
-                    error!("RCS socket read error for channel {}: {:?}", channel_id, e);
-                }
+                let reason = error.map(|e| {
+                    let msg = format!("RCS socket read error for channel {channel_id}: {e:?}");
+                    error!("{msg}");
+                    msg
+                });
                 if let Some(state) = self.active.remove(&channel_id) {
                     if let ChannelState::Connected {
                         generation,
@@ -640,7 +660,7 @@ impl CoordinatorState {
                             _writer_task,
                         );
                     }
-                    self.enqueue_close(channel_id);
+                    self.enqueue_close(channel_id, reason);
                 }
             }
         }
@@ -791,7 +811,10 @@ mod tests {
             SenderMessage::Data { channel_id, payload: b"hello".to_vec() }
         );
         drop(rcs_socket);
-        assert_eq!(sender_rx.next().await.unwrap(), SenderMessage::Close { channel_id });
+        assert_eq!(
+            sender_rx.next().await.unwrap(),
+            SenderMessage::Close { channel_id, reason: None }
+        );
         drop(serial_tx);
         coordinator_handle.await.unwrap();
     }
@@ -892,9 +915,46 @@ mod tests {
             .await
             .unwrap();
         serial_tx.send(SerialEvent::SerialData { channel_id, data: large_chunk }).await.unwrap();
-        assert_eq!(sender_rx.next().await.unwrap(), SenderMessage::Close { channel_id });
+        assert_eq!(
+            sender_rx.next().await.unwrap(),
+            SenderMessage::Close {
+                channel_id,
+                reason: Some(format!(
+                    "Pending channel {channel_id} exceeded max staging buffer ({MAX_CHANNEL_STAGING_BYTES} bytes)"
+                )),
+            }
+        );
         assert!(connector_stream.next().now_or_never().is_none());
 
+        drop(serial_tx);
+        coordinator_handle.await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_coordinator_propagates_registration_failure_reason() {
+        let (mut serial_tx, serial_rx) = mpsc::channel(10);
+        let (sender_tx, mut sender_rx) = mpsc::channel(10);
+        let (connector_proxy, connector_stream) =
+            fidl::endpoints::create_proxy_and_stream::<ConnectorMarker>();
+        drop(connector_stream);
+        let coordinator_handle = fuchsia_async::Task::spawn(async move {
+            coordinator_task(serial_rx, sender_tx, connector_proxy).await
+        });
+        let channel_id = 12u16;
+        serial_tx
+            .send(SerialEvent::SerialData { channel_id, data: b"hello".to_vec() })
+            .await
+            .unwrap();
+        match sender_rx.next().await.unwrap() {
+            SenderMessage::Close { channel_id: id, reason: Some(reason) } => {
+                assert_eq!(id, channel_id);
+                assert!(
+                    reason.contains("Failed to register RCS socket for channel 12"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("Expected Close with reason, got {other:?}"),
+        }
         drop(serial_tx);
         coordinator_handle.await.unwrap();
     }
@@ -981,7 +1041,10 @@ mod tests {
         state.handle_client_event(ClientEvent::Closed { channel_id, generation, error: None });
         assert!(!state.active.contains_key(&channel_id));
         assert!(state.closing_writers.contains_key(&(channel_id, generation)));
-        assert_eq!(state.select_next_message(), Some(SenderMessage::Close { channel_id }));
+        assert_eq!(
+            state.select_next_message(),
+            Some(SenderMessage::Close { channel_id, reason: None })
+        );
 
         let mut rcs_socket = fuchsia_async::Socket::from_socket(remote_socket);
         let mut received = [0u8; 14];
