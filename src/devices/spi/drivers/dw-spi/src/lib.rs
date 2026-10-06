@@ -46,6 +46,7 @@ struct DwSpiDriver {
     _node: Node,
     _scope: fasync::Scope,
     _businfo_server: Option<MetadataServer>,
+    device: DwSpiDevice,
 }
 
 driver_register!(DwSpiDriver);
@@ -120,7 +121,7 @@ impl Driver for DwSpiDriver {
             })
             .unwrap_or(DwSpiConfig { dw_spi_rx_sample_delay_ns: 0 });
 
-        let mut device = DwSpiDevice::new(
+        let device = DwSpiDevice::new(
             pdev.map_mmio_by_id(0).await?,
             cs_gpio,
             interrupt,
@@ -170,14 +171,22 @@ impl Driver for DwSpiDriver {
         context.serve_outgoing(&mut outgoing)?;
         scope.spawn(outgoing.collect());
 
-        scope.spawn_local(dispatcher.run(device));
+        scope.spawn_local(dispatcher.run(device.clone()));
 
         info!("dw-spi driver initialized successfully");
 
-        Ok(Self { _node: node, _scope: scope, _businfo_server: businfo_server.ok() })
+        Ok(Self { _node: node, _scope: scope, _businfo_server: businfo_server.ok(), device })
     }
 
     async fn stop(&self) {}
+
+    async fn system_suspend(&self) -> Result<(), DriverError> {
+        self.device.suspend().await
+    }
+
+    async fn system_resume(&self, _lease: Option<zx::EventPair>) -> Result<(), DriverError> {
+        self.device.resume().await
+    }
 }
 
 #[cfg(test)]

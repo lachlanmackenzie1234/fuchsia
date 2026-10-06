@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 {
     name: "dw-spi",
-    include: [ "driver/platform-device.shard.cml" ],
+    include: [
+        "driver/platform-device.shard.cml",
+        "driver_component/power_managed_dispatchers.shard.cml",
+    ],
     program: {
         binary: "driver/dw-spi.so",
     },

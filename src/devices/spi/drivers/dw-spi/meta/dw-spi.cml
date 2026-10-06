@@ -6,6 +6,7 @@
 {
     include: [
         "driver/platform-device.shard.cml",
+        "driver_component/power_managed_dispatchers.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
