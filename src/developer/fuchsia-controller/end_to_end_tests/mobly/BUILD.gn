@@ -32,6 +32,7 @@ if (is_host) {
     "//sdk/fidl/fuchsia.device:fuchsia.device_python",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_python",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_python",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_python",
     "//sdk/fidl/fuchsia.io:fuchsia.io_python",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_python",
   ]

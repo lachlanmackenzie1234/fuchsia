@@ -113,7 +113,6 @@ class TargetCollectionReaderImpl(ffx.TargetCollectionReaderServer):
             self.target_list.extend(request.entry)
 
 
-@implement_missing_abstract_methods
 class TargetCollectionImpl(ffx.TargetCollectionServer):
     async def list_targets(
         self, request: ffx.TargetCollectionListTargetsRequest
@@ -285,7 +284,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         target_list: typing.List[typing.Any] = []
         server = TargetCollectionReaderImpl(reader_server_channel, target_list)
         (tc_client_channel, tc_server_channel) = ctx.channel_create()
-        target_collection_server = TargetCollectionImpl(tc_server_channel)  # type: ignore[abstract]
+        target_collection_server = TargetCollectionImpl(tc_server_channel)
         reader_task = asyncio.create_task(server.serve())
         tc_task = asyncio.create_task(target_collection_server.serve())
         tc_client = ffx.TargetCollectionClient(tc_client_channel)
