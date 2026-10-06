@@ -1990,24 +1990,32 @@ fn calls_function(r: &Function, t: &Function) -> bool {
         && t.class
             .as_deref()
             .is_some_and(|c| r.calls.contains(&normalize::ident(c)));
-    by_type || (r.calls.contains(&normalize::ident(&t.base)) && rust_call_matches(r, t))
+    if by_type {
+        return true;
+    }
+    if r.calls.contains(&normalize::ident(&t.base)) {
+        return rust_call_matches(r, t, false);
+    }
+    !matches!(t.base.as_str(), "new" | "init" | "default")
+        && normalize::call(&t.base).is_none()
+        && rust_call_matches(r, t, true)
 }
 
 /// Checks that at least one call site of `callee.base` in `caller` matches
 /// `callee`'s parameter count (accounting for `self` receiver vs. associated
 /// call) and optional type qualifier, so e.g. `AtomicBool::store(val, order)`
 /// is not mistaken for `RelaxedAtomicPressureLevel::store(level)`.
-fn rust_call_matches(caller: &Function, callee: &Function) -> bool {
+fn rust_call_matches(caller: &Function, callee: &Function, require_site: bool) -> bool {
     if caller.lang != crate::model::Lang::Rust || callee.lang != crate::model::Lang::Rust {
-        return true;
+        return !require_site;
     }
     let Some((has_self, total_params)) = rust_fn_params(callee) else {
-        return true;
+        return !require_site;
     };
     let code = body_text(caller);
     let base = &callee.base;
     if base.is_empty() {
-        return true;
+        return !require_site;
     }
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
     let mut found_site = false;
@@ -2058,7 +2066,7 @@ fn rust_call_matches(caller: &Function, callee: &Function) -> bool {
             return true;
         }
     }
-    !found_site
+    !require_site && !found_site
 }
 
 fn rust_fn_params(f: &Function) -> Option<(bool, usize)> {

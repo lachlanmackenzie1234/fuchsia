@@ -209,7 +209,7 @@ pub fn check_with(
         let mut notes: Vec<Note> = Vec::new();
         let marker = match (p.cpp, p.rust) {
             (Some(i), Some(j)) => {
-                compare(&cpp.units[i], &rust.units[j], &mut notes);
+                compare(&cpp.units[i], &rust.units[j], ctx.elsewhere, &mut notes);
                 condition_diff(i, j, cpp, rust, &mut notes);
                 ordering_diff(
                     &unit_text(cpp, &cpp.units[i]),
@@ -1399,7 +1399,7 @@ fn only_in(u: &Unit, here: &str, there: &str, moved: Option<usize>) -> Note {
     Note::new(sev, category, msg)
 }
 
-fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
+fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
     let fa = &a.features;
     let fb = &b.features;
     if crate::align::is_handled_vs_propagated(a, b) {
@@ -1558,6 +1558,28 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
         .into_iter()
         .filter(|c| !fa.calls.contains(c) && !name_matches(c, fa))
         .collect();
+    // If Rust calls a `cpp_*` FFI helper defined in the same change (`elsewhere`),
+    // verify that the helper's body makes the C++ calls on this line.
+    only_b.retain(|y| {
+        if !y.starts_with("cpp_") {
+            return true;
+        }
+        let Some(h) = elsewhere
+            .iter()
+            .find(|h| crate::normalize::ident(&h.base) == **y)
+        else {
+            return true;
+        };
+        if !h.calls.is_empty()
+            && h.calls
+                .iter()
+                .all(|hc| fa.calls.contains(hc) || name_matches(hc, fa))
+        {
+            only_a.retain(|x| !h.calls.contains(x));
+            return false;
+        }
+        true
+    });
     // Rust calling back into C++ through `cpp_<class>_<method>` makes the
     // call C++ made directly.
     let via_ffi = |x: &str, y: &str| y.starts_with("cpp_") && y.ends_with(&format!("_{x}"));
@@ -1569,6 +1591,41 @@ fn compare(a: &Unit, b: &Unit, notes: &mut Vec<Note>) {
         only_a.remove(i);
         only_b.remove(j);
     }
+    // A C++ scope macro (`OOM_KTRACE_DURATION()`) and a Rust RAII guard
+    // (`ScopedOomKtrace::new()`) share the same stem once `scoped_`/`auto_`
+    // and `_duration`/`_guard`/`_scope` are stripped.
+    fn guard_stem(s: &str) -> &str {
+        let s = s
+            .strip_prefix("scoped_")
+            .or_else(|| s.strip_prefix("auto_"))
+            .unwrap_or(s);
+        s.strip_suffix("_duration")
+            .or_else(|| s.strip_suffix("_guard"))
+            .or_else(|| s.strip_suffix("_scope"))
+            .unwrap_or(s)
+    }
+    while let Some((i, j)) = only_a.iter().enumerate().find_map(|(i, x)| {
+        let gx = guard_stem(x);
+        (!gx.is_empty())
+            .then(|| {
+                only_b.iter().position(|y| {
+                    let gy = guard_stem(y);
+                    !gy.is_empty() && (gx != x.as_str() || gy != y.as_str()) && gx == gy
+                })
+            })
+            .flatten()
+            .map(|j| (i, j))
+    }) {
+        only_a.remove(i);
+        only_b.remove(j);
+    }
+    // Functional-style C++ type cast passed to a helper named after the type
+    // (`PressureLevelToString(PressureLevel(i))`).
+    only_a.retain(|x| {
+        !fb.calls
+            .iter()
+            .any(|c| fa.calls.contains(c) && c.starts_with(&format!("{x}_")))
+    });
     for (x, y) in crate::normalize::EQUIVALENT_CALLS {
         let (i, j) = (
             only_a.iter().position(|c| c.as_str() == *x),
@@ -1604,12 +1661,14 @@ fn equivalent_kinds(a: UnitKind, b: UnitKind) -> bool {
 /// Whether a call on one side is a field or accessor on the other: C++
 /// `allocation()` and Rust `self.allocation`, or `set_key(k)` and `key_ = k`.
 fn name_matches(call: &str, other: &crate::model::Features) -> bool {
-    let bare = call
+    let stripped = call
         .strip_prefix("set_")
         .or_else(|| call.strip_prefix("get_"))
-        .unwrap_or(call)
-        .replace('_', "");
-    other.names.contains(&bare) || other.idents.contains(&bare)
+        .unwrap_or(call);
+    let bare = stripped.replace('_', "");
+    other.names.contains(&bare)
+        || other.idents.contains(&bare)
+        || other.idents.iter().any(|id| id == stripped)
 }
 
 /// One side propagates with `?` where the other returns the status it
@@ -1966,6 +2025,7 @@ fn constants(text: &str) -> Vec<Constant> {
         "FFI_ALWAYS_INLINE",
         "DEBUG_ASSERT_IMPLEMENTED",
         "ZX_CLOCK_MONOTONIC",
+        "MAX_FORMAT_SIZE_LEN",
     ];
     let code = code_only(text);
     let mut out: Vec<Constant> = Vec::new();

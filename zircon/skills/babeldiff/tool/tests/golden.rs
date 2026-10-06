@@ -1068,3 +1068,66 @@ pub fn init_and_shutdown(deadline: zx_instant_mono_t) {
         assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
     }
 }
+
+#[test]
+fn idiomatic_zircon_rust_patterns_and_cpp_helpers_produce_no_false_notes() {
+    let cpp_old = r#"
+void Watchdog::CheckAndEvict(zx_instant_mono_t time_now) {
+  OOM_KTRACE_DURATION();
+  if (eviction_strategy_ == EvictionStrategy::Continuous) {
+    continuous_eviction_active_ = true;
+  }
+  if (zx_time_sub_time(time_now, prev_eval_time_) >= hysteresis_ && ispow2(iterations_)) {
+    uint64_t free_bytes = pmm_count_free_pages() * kPageSize;
+    printf("free: %s\n", FormattedBytes(free_bytes).c_str());
+    pmm_page_queues()->Dump();
+    pmm_evictor()->EvictAsynchronous(min_free_target_, free_mem_target_);
+  }
+  for (uint8_t i = 0; i < kNumLevels; i++) {
+    auto level = PressureLevel(i);
+    printf("level: %s\n", PressureLevelToString(level));
+  }
+}
+"#;
+    let cpp_new = r#"
+FFI_ALWAYS_INLINE void cpp_watchdog_evict_async(uint64_t min_free, uint64_t target) {
+  pmm_evictor()->EvictAsynchronous(min_free, target);
+}
+"#;
+    let rust_new = r#"
+impl WatchdogState {
+    pub fn check_and_evict(&self, time_now: zx_instant_mono_t) {
+        let _trace = ScopedOomKtrace::new();
+        if *self.eviction_strategy.get() == EvictionStrategy::Continuous {
+            self.continuous_eviction_active.store(true, Ordering::SeqCst);
+        }
+        if time_now.saturating_sub(*self.prev_eval_time.get()) >= *self.hysteresis.get()
+            && self.iterations.load().is_power_of_two()
+        {
+            let free_bytes = pmm::node().count_free_pages() * PAGE_SIZE;
+            let mut buf = [0u8; pretty::MAX_FORMAT_SIZE_LEN];
+            kprintln!("free: {:s}", pretty::format_size_rs(&mut buf, free_bytes as usize));
+            pmm::page_queues().dump();
+            cpp_watchdog_evict_async(*self.min_free_target.get(), *self.free_mem_target.get());
+        }
+        for (i, _slot) in self.slots.iter_mut().enumerate().take(NUM_LEVELS) {
+            let level = PressureLevel::try_from(i as u8).unwrap();
+            kprintln!("level: {:s}", pressure_level_to_string(level));
+        }
+    }
+}
+"#;
+    let cs = ChangeSet {
+        cpp_old: vec![version("watchdog.cc", cpp_old)],
+        cpp_new: vec![version("watchdog.cc", cpp_new)],
+        rust_new: vec![version("watchdog.rs", rust_new)],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    assert!(
+        p.findings.is_empty(),
+        "expected 0 findings, got {:?}",
+        p.findings
+    );
+}

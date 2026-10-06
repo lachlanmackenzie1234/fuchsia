@@ -314,6 +314,13 @@ pub fn build_inputs(cs: &ChangeSet, min_changed: f64) -> Inputs {
         inputs.cpp_changes.extend(stays_cpp(v, &e.functions));
     }
 
+    if cs.cpp_new.is_empty() {
+        for f in &inputs.cpp {
+            if f.base.starts_with("cpp_") {
+                inputs.cpp_helpers.push(f.clone());
+            }
+        }
+    }
     for e in cpp_new {
         for (k, b) in e.bases {
             inputs.cpp_bases.entry(k).or_insert(b);

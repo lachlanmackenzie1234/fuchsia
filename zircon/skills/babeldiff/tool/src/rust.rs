@@ -238,7 +238,14 @@ impl<'a> Ctx<'a> {
         match n.kind() {
             "call_expression" => {
                 if let Some(f) = n.child_by_field_name("function") {
-                    acc.call(self.text(f));
+                    let is_iter_take = f.kind() == "field_expression"
+                        && f.child_by_field_name("field")
+                            .is_some_and(|fld| self.text(fld) == "take")
+                        && n.child_by_field_name("arguments")
+                            .is_some_and(|a| a.named_child_count() > 0);
+                    if !is_iter_take {
+                        acc.call(self.text(f));
+                    }
                 }
             }
             "macro_invocation" => {
@@ -945,12 +952,24 @@ impl<'a> Ctx<'a> {
 /// (`*fields.timestamp`, `unsafe { &*self.dispatcher }`), or a call of a
 /// zero-argument accessor (`self.state()`).
 fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
-    fn calls<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
-        if matches!(n.kind(), "call_expression" | "macro_invocation" | "try_expression") {
-            out.push(n);
+    fn calls<'t>(n: Node<'t>, src: &[u8], out: &mut Vec<Node<'t>>) {
+        match n.kind() {
+            "call_expression" => {
+                let name = n
+                    .child_by_field_name("function")
+                    .map(|f| ts::text(f, src))
+                    .unwrap_or("");
+                let is_plumbing_conversion =
+                    crate::normalize::call(name).is_none() && !crate::normalize::is_mutating(name);
+                if !is_plumbing_conversion {
+                    out.push(n);
+                }
+            }
+            "macro_invocation" | "try_expression" => out.push(n),
+            _ => {}
         }
         for c in ts::named_children(n) {
-            calls(c, out);
+            calls(c, src, out);
         }
     }
     let mut v = v;
@@ -992,7 +1011,7 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
         }
     }
     let mut found = Vec::new();
-    calls(v, &mut found);
+    calls(v, src, &mut found);
     match found.as_slice() {
         [] => true,
         [c] if c.id() == v.id() && c.kind() == "call_expression" => {
