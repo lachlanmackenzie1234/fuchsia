@@ -397,10 +397,6 @@ void GlobalTopologyData::Clear() {
   }
 }
 
-bool GlobalTopologyData::IsCleared() const {
-  return topology_vector.empty() && parent_indices.empty();
-}
-
 // static
 GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
     const UberStruct::InstanceMap& uber_structs, const LinkTopologyMap& links,
@@ -417,7 +413,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
                                                    TransformHandle::InstanceId link_instance_id,
                                                    TransformHandle root) {
   TRACE_DURATION("gfx", "flatland::ComputeGlobalTopologyData");
-  FX_DCHECK(output.IsCleared());
+  output.Clear();
   // There should never be an UberStruct for the |link_instance_id|.
   FX_DCHECK(!uber_structs.contains(link_instance_id));
 

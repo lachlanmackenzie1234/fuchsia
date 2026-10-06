@@ -49,9 +49,9 @@ class Engine {
 
     UberStructSnapshot snapshot;
     GlobalTopologyData::LinkTopologyMap links;
-    // The `LinkSystem` generation that `links` was copied at.
-    // `RenderScheduledFrame()` compares it against the current value
-    // to detect a link-topology change.
+    // The `LinkSystem` generation that `links` was copied at (`0` on construction and after
+    // `Clear()`). `RenderScheduledFrame()` and `GenerateViewTreeSnapshot()` compare against this
+    // value to detect a link-topology change.
     uint64_t link_topology_generation = 0;
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
@@ -68,11 +68,12 @@ class Engine {
   };
 
   // Maintains `scene_state` for a frame.  Every frame, `snapshot`, `links`, and
-  // `link_topology_generation` are moved into `scene_state`.  When `needs_full_rebuild` is
-  // true, the global transform state is rebuilt; otherwise it is reused (debug builds use
-  // `FindStaleSceneStateInput()` to verify that it's safe to reuse).
+  // `link_topology_generation` are moved into `scene_state`; `links` is `std::nullopt` when the
+  // cached links are still current.  When `needs_full_rebuild` is true, the global transform state
+  // is rebuilt; otherwise it is reused (debug builds use `FindStaleSceneStateInput()` to verify
+  // that it's safe to reuse).
   static void PrepareSceneState(SceneState& scene_state, UberStructSnapshot snapshot,
-                                GlobalTopologyData::LinkTopologyMap links,
+                                std::optional<GlobalTopologyData::LinkTopologyMap> links,
                                 uint64_t link_topology_generation,
                                 TransformHandle::InstanceId link_system_id,
                                 TransformHandle root_transform, bool needs_full_rebuild);
@@ -159,6 +160,11 @@ class Engine {
   SceneState scene_state_{&link_map_pool_};
 
   bool first_frame_with_image_is_rendered_ = false;
+
+  // The `scene_state_` link topology generation that the last generated view tree reflects.
+  // Empty until the first view tree, which is always generated: a subtree generator may not
+  // answer "no diff" the first time.
+  std::optional<uint64_t> view_tree_link_topology_generation_;
 
   // Used to skip rendering until the display is added.
   std::map<display::DisplayId, bool> seen_display_ids_;

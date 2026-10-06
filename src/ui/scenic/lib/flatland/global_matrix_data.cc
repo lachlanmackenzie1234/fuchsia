@@ -7,7 +7,8 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
-#include <cmath>
+#include <algorithm>
+#include <limits>
 
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 
@@ -58,73 +59,38 @@ std::pair<glm::vec2, glm::vec2> ClipRectangle(const TransformClipRegion& clip,
   return {result_origin, result_extent};
 }
 
-std::array<glm::vec3, 4> ConvertRectToVerts(types::Rectangle rect) {
-  return {glm::vec3(static_cast<float>(rect.x()), static_cast<float>(rect.y()), 1),
-          glm::vec3(static_cast<float>(rect.x() + rect.width()), static_cast<float>(rect.y()), 1),
-          glm::vec3(static_cast<float>(rect.x() + rect.width()),
-                    static_cast<float>(rect.y() + rect.height()), 1),
-          glm::vec3(static_cast<float>(rect.x()), static_cast<float>(rect.y() + rect.height()), 1)};
+template <typename RectType>
+RectType MatrixMultiplyRectHelper(const glm::mat3& matrix, const RectType& rect) {
+  const float rx = static_cast<float>(rect.x());
+  const float ry = static_cast<float>(rect.y());
+  const float rw = static_cast<float>(rect.width());
+  const float rh = static_cast<float>(rect.height());
+
+  const glm::vec2 p0 = matrix * glm::vec3(rx, ry, 1.f);
+  const glm::vec2 p1 = matrix * glm::vec3(rx + rw, ry, 1.f);
+  const glm::vec2 p2 = matrix * glm::vec3(rx + rw, ry + rh, 1.f);
+  const glm::vec2 p3 = matrix * glm::vec3(rx, ry + rh, 1.f);
+
+  const float min_x = std::min({p0.x, p1.x, p2.x, p3.x});
+  const float min_y = std::min({p0.y, p1.y, p2.y, p3.y});
+  const float max_x = std::max({p0.x, p1.x, p2.x, p3.x});
+  const float max_y = std::max({p0.y, p1.y, p2.y, p3.y});
+
+  using CoordType = decltype(rect.x());
+  return RectType({
+      .x = static_cast<CoordType>(min_x),
+      .y = static_cast<CoordType>(min_y),
+      .width = static_cast<CoordType>(max_x - min_x),
+      .height = static_cast<CoordType>(max_y - min_y),
+  });
 }
 
-std::array<glm::vec3, 4> ConvertRectFToVerts(const types::RectangleF& rect) {
-  return {glm::vec3(rect.x(), rect.y(), 1), glm::vec3(rect.x() + rect.width(), rect.y(), 1),
-          glm::vec3(rect.x() + rect.width(), rect.y() + rect.height(), 1),
-          glm::vec3(rect.x(), rect.y() + rect.height(), 1)};
+types::Rectangle MatrixMultiplyRect(const glm::mat3& matrix, const types::Rectangle& rect) {
+  return MatrixMultiplyRectHelper(matrix, rect);
 }
 
-// Template to handle both vec2 and vec3 inputs.
-template <typename T>
-types::Rectangle ConvertVertsToRect(const std::array<T, 4>& verts) {
-  return types::Rectangle({.x = static_cast<int32_t>(verts[0].x),
-                           .y = static_cast<int32_t>(verts[0].y),
-                           .width = static_cast<int32_t>(fabs(verts[1].x - verts[0].x)),
-                           .height = static_cast<int32_t>(fabs(verts[2].y - verts[1].y))});
-}
-
-types::RectangleF ConvertVertsToRectF(const std::array<glm::vec2, 4>& verts) {
-  return types::RectangleF({.x = verts[0].x,
-                            .y = verts[0].y,
-                            .width = fabs(verts[1].x - verts[0].x),
-                            .height = fabs(verts[2].y - verts[1].y)});
-}
-
-// Assume that the 4 vertices represent a rectangle, and are provided in clockwise order,
-// starting at the top-left corner. Return a tuple of the transformed vertices as well as
-// those same transformed vertices reordered so that they are in clockwise order starting
-// at the top-left corner.
-std::pair<std::array<glm::vec2, 4>, std::array<glm::vec2, 4>> MatrixMultiplyVerts(
-    const glm::mat3& matrix, const std::array<glm::vec3, 4>& in_verts) {
-  const std::array<glm::vec2, 4> verts = {
-      matrix * in_verts[0],
-      matrix * in_verts[1],
-      matrix * in_verts[2],
-      matrix * in_verts[3],
-  };
-
-  float min_x = FLT_MAX, min_y = FLT_MAX;
-  float max_x = std::numeric_limits<float>::lowest(), max_y = std::numeric_limits<float>::lowest();
-  for (uint32_t i = 0; i < 4; i++) {
-    min_x = std::min(min_x, verts[i].x);
-    min_y = std::min(min_y, verts[i].y);
-    max_x = std::max(max_x, verts[i].x);
-    max_y = std::max(max_y, verts[i].y);
-  }
-
-  return {verts,
-          {
-              glm::vec2(min_x, min_y),  // top_left
-              glm::vec2(max_x, min_y),  // top_right
-              glm::vec2(max_x, max_y),  // bottom_right
-              glm::vec2(min_x, max_y),  // bottom_left
-          }};
-}
-
-types::Rectangle MatrixMultiplyRect(const glm::mat3& matrix, types::Rectangle rect) {
-  return ConvertVertsToRect(std::get<1>(MatrixMultiplyVerts(matrix, ConvertRectToVerts(rect))));
-}
-
-types::RectangleF MatrixMultiplyRectF(const glm::mat3& matrix, types::RectangleF rect) {
-  return ConvertVertsToRectF(std::get<1>(MatrixMultiplyVerts(matrix, ConvertRectFToVerts(rect))));
+types::RectangleF MatrixMultiplyRectF(const glm::mat3& matrix, const types::RectangleF& rect) {
+  return MatrixMultiplyRectHelper(matrix, rect);
 }
 
 }  // namespace

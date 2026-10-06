@@ -567,6 +567,11 @@ TEST(UberStructSystemTest, NeedsViewTreeRecompute) {
   EXPECT_TRUE(system.MustRecomputeViewTree());
   // Verify that `MustRecomputeViewTree()` resets the value.
   EXPECT_FALSE(system.MustRecomputeViewTree());
+
+  // Removing a session also requests a new view tree.
+  system.RemoveSession(kSession1);
+  EXPECT_TRUE(system.MustRecomputeViewTree());
+  EXPECT_FALSE(system.MustRecomputeViewTree());
 }
 
 TEST(UberStructSystemTest, MustRecomputeSceneState) {

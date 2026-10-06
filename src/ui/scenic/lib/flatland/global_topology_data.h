@@ -61,9 +61,6 @@ struct GlobalTopologyData {
   // Clear all fields without freeing memory, so that it avoid reallocation when reused.
   void Clear();
 
-  // Return true if all fields are cleared/empty.
-  bool IsCleared() const;
-
   // The list of direct child counts for each entry in the |topology_vector|.
   using ChildCountVector = std::vector<uint64_t>;
   ChildCountVector ComputeChildCountVector() const;

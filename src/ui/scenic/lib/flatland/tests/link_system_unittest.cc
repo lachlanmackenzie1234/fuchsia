@@ -326,7 +326,7 @@ TEST_F(LinkSystemTest, ChildToParentTransformMapTracksLinks) {
   GlobalTopologyData::ChildToParentTransformMap child_to_parent_map;
 
   // Before resolution the map is empty.
-  EXPECT_TRUE(link_system->GetLinkChildToParentTransformMap(child_to_parent_map));
+  link_system->GetLinkChildToParentTransformMap(child_to_parent_map);
   EXPECT_TRUE(child_to_parent_map.empty());
 
   auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
@@ -352,12 +352,7 @@ TEST_F(LinkSystemTest, ChildToParentTransformMapTracksLinks) {
 
     // After resolution it maps the LinkToParent's child transform to the LinkToChild's parent
     // transform.
-    EXPECT_TRUE(link_system->GetLinkChildToParentTransformMap(child_to_parent_map));
-    EXPECT_EQ(child_to_parent_map.size(), 1u);
-    EXPECT_EQ(child_to_parent_map[child_transform], parent_transform);
-
-    // Calling again without link changes reports `false` and preserves the mapping.
-    EXPECT_FALSE(link_system->GetLinkChildToParentTransformMap(child_to_parent_map));
+    link_system->GetLinkChildToParentTransformMap(child_to_parent_map);
     EXPECT_EQ(child_to_parent_map.size(), 1u);
     EXPECT_EQ(child_to_parent_map[child_transform], parent_transform);
 
@@ -365,7 +360,7 @@ TEST_F(LinkSystemTest, ChildToParentTransformMapTracksLinks) {
   }
 
   // After the link dies, a second call with the same (now non-empty) map leaves it empty.
-  EXPECT_TRUE(link_system->GetLinkChildToParentTransformMap(child_to_parent_map));
+  link_system->GetLinkChildToParentTransformMap(child_to_parent_map);
   EXPECT_TRUE(child_to_parent_map.empty());
 }
 
@@ -414,6 +409,25 @@ TEST_F(LinkSystemTest, TopologyGenerationAdvancesOnResolveAndInvalidate) {
   }
 
   EXPECT_EQ(link_system->GetResolvedTopologyLinks(links), 3u);
+  EXPECT_TRUE(links.empty());
+}
+
+// `GetResolvedTopologyLinksIfChanged()` leaves the output map untouched when the caller already
+// holds the current generation, and replaces its contents otherwise.
+TEST_F(LinkSystemTest, ResolvedTopologyLinksCopiedOnlyWhenGenerationMoved) {
+  auto link_system = CreateViewportSystem();
+  const TransformHandle kSentinelKey(99, 1);
+  const TransformHandle kSentinelValue(99, 2);
+
+  GlobalTopologyData::LinkTopologyMap links;
+  links[kSentinelKey] = kSentinelValue;
+
+  // A fresh `LinkSystem` is at generation 1 with no links.
+  EXPECT_EQ(link_system->GetResolvedTopologyLinksIfChanged(/*known_generation=*/1, links), 1u);
+  ASSERT_EQ(links.size(), 1u);
+  EXPECT_EQ(links.at(kSentinelKey), kSentinelValue);
+
+  EXPECT_EQ(link_system->GetResolvedTopologyLinksIfChanged(/*known_generation=*/0, links), 1u);
   EXPECT_TRUE(links.empty());
 }
 

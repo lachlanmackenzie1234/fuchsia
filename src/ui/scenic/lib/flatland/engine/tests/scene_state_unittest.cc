@@ -461,6 +461,41 @@ TEST_F(SceneStateTest, ClearedFollowsConstructionRebuildAndClear) {
   EXPECT_EQ(scene_state.link_topology_generation, 0u);
 }
 
+// `links == std::nullopt` keeps the cached links, whether the state is reused or rebuilt.
+TEST_F(SceneStateTest, NulloptLinksKeepCachedLinks) {
+  const TransformHandle kRoot(1, 0);
+  GlobalTopologyData::LinkTopologyMap links;
+  // A link whose handle is not in the topology, so it does not change what is built.
+  links[TransformHandle(kLinkSystemId, 1)] = TransformHandle(2, 0);
+
+  Engine::SceneState scene_state;
+  Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), links, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot, /*needs_full_rebuild=*/true);
+  ASSERT_EQ(scene_state.links, links);
+
+  Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), std::nullopt, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot, /*needs_full_rebuild=*/false);
+  EXPECT_EQ(scene_state.rebuild_count, 1u);
+  EXPECT_EQ(scene_state.links, links);
+
+  Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), std::nullopt, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot, /*needs_full_rebuild=*/true);
+  EXPECT_EQ(scene_state.rebuild_count, 2u);
+  EXPECT_EQ(scene_state.links, links);
+}
+
+// A cleared `SceneState` holds no links, so preparing it with `links == std::nullopt` fails an
+// `FX_CHECK` in every build type.
+TEST_F(SceneStateTest, ClearedStateWithoutLinksDies) {
+  const TransformHandle kRoot(1, 0);
+
+  Engine::SceneState scene_state;
+  EXPECT_DEATH(Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), std::nullopt,
+                                         kLinkTopologyGeneration, kLinkSystemId, kRoot,
+                                         /*needs_full_rebuild=*/true),
+               "cleared scene state holds no links");
+}
+
 // Reusing a `SceneState` that describes no frame fails an `FX_CHECK`, so this runs in every build
 // type.
 TEST_F(SceneStateTest, ReuseOfClearedStateDies) {

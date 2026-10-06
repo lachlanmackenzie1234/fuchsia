@@ -365,6 +365,11 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // link resolves and removes them when a link is invalidated.
   uint64_t GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const;
 
+  // Like `GetResolvedTopologyLinks()`, but leaves `out_links` untouched when the generation equals
+  // `known_generation`, so a caller that still holds the links of that generation skips the copy.
+  uint64_t GetResolvedTopologyLinksIfChanged(uint64_t known_generation,
+                                             GlobalTopologyData::LinkTopologyMap& out_links) const;
+
   // Returns the instance ID used for LinkSystem-authored handles.
   TransformHandle::InstanceId GetInstanceId() const;
 
@@ -381,9 +386,9 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
                           const UberStruct::InstanceMap& uber_structs) const;
 
   // Populates `out_map` with the mapping from the `child_transform_handle` of each LinkToParent to
-  // the corresponding `parent_transform_handle` from each LinkToChild, and returns whether the link
-  // topology has changed since the last call to this function.
-  bool GetLinkChildToParentTransformMap(GlobalTopologyData::ChildToParentTransformMap& out_map);
+  // the corresponding `parent_transform_handle` from each LinkToChild.
+  void GetLinkChildToParentTransformMap(
+      GlobalTopologyData::ChildToParentTransformMap& out_map) const;
 
   // Updates |device_pixel_ratio_| for the View with parent |handle|. If the value changed it sends
   // updates to all waiting clients, otherwise it does nothing.
@@ -399,6 +404,9 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   }
 
  private:
+  uint64_t GetResolvedTopologyLinksIfChangedImpl(
+      uint64_t known_generation, GlobalTopologyData::LinkTopologyMap& out_links) const;
+
   TransformHandle CreateTransformLocked() {
     TransformHandle transform;
     {
@@ -454,13 +462,6 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // UpdateLinkWatchers() may be different from this value.
   // TODO(https://fxbug.dev/42059985): This will need to be updated once we have multidisplay setup.
   fuchsia_math::VecF device_pixel_ratio_ FXL_GUARDED_BY(mutex_);
-
-  // Tracks whether a link between sessions has been established/broken since the last time that
-  // `GetLinkChildToParentTransformMap()` was called.  This is used as a signal that indicates that
-  // the ViewTree needs to be recomputed.  Starting as true guarantees that the ViewTree is always
-  // generated the first time (necessary because it is illegal for a subtree generator to say
-  // "no diff" the first time).
-  bool link_topology_changed_ FXL_GUARDED_BY(mutex_) = true;
 
   // Incremented under `mutex_` whenever `link_topologies_` changes. `GetResolvedTopologyLinks()`
   // returns it with the map so that callers can compare against the value they last saw; nothing

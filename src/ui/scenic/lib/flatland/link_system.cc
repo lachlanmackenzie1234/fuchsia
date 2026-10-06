@@ -165,7 +165,6 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
           // LinkToParent object, so that its destruction (which depends on the
           // internal_link_handle) can occur on the same endpoint.
           ref->link_topologies_[*topology_map_key] = child_transform_handle;
-          ref->link_topology_changed_ = true;
           ++ref->link_topology_generation_;
         }
       },
@@ -184,7 +183,6 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
 
           ref->link_topologies_.erase(*topology_map_key);
           ref->link_graph_.ReleaseTransform(*topology_map_key);
-          ref->link_topology_changed_ = true;
           ++ref->link_topology_generation_;
         }
 
@@ -332,10 +330,23 @@ void LinkSystem::UpdateViewportPropertiesFor(
 uint64_t LinkSystem::GetResolvedTopologyLinks(
     GlobalTopologyData::LinkTopologyMap& out_links) const {
   TRACE_DURATION("gfx", "LinkSystem::GetResolvedTopologyLinks");
-  out_links.clear();
+  return GetResolvedTopologyLinksIfChangedImpl(/*known_generation=*/0, out_links);
+}
 
-  // Acquire the lock and copy into `out_links` using its own memory resource.
+uint64_t LinkSystem::GetResolvedTopologyLinksIfChanged(
+    uint64_t known_generation, GlobalTopologyData::LinkTopologyMap& out_links) const {
+  TRACE_DURATION("gfx", "LinkSystem::GetResolvedTopologyLinksIfChanged");
+  return GetResolvedTopologyLinksIfChangedImpl(known_generation, out_links);
+}
+
+uint64_t LinkSystem::GetResolvedTopologyLinksIfChangedImpl(
+    uint64_t known_generation, GlobalTopologyData::LinkTopologyMap& out_links) const {
   std::scoped_lock lock(mutex_);
+  if (link_topology_generation_ == known_generation) {
+    return link_topology_generation_;
+  }
+  // Copy into `out_links` using its own memory resource.
+  out_links.clear();
   out_links.reserve(link_topologies_.size());
   out_links.insert(link_topologies_.begin(), link_topologies_.end());
   return link_topology_generation_;
@@ -343,8 +354,8 @@ uint64_t LinkSystem::GetResolvedTopologyLinks(
 
 TransformHandle::InstanceId LinkSystem::GetInstanceId() const { return instance_id_; }
 
-bool LinkSystem::GetLinkChildToParentTransformMap(
-    GlobalTopologyData::ChildToParentTransformMap& out_map) {
+void LinkSystem::GetLinkChildToParentTransformMap(
+    GlobalTopologyData::ChildToParentTransformMap& out_map) const {
   TRACE_DURATION("gfx", "LinkSystem::GetLinkChildToParentTransformMap");
   out_map.clear();
 
@@ -353,11 +364,6 @@ bool LinkSystem::GetLinkChildToParentTransformMap(
   for (const auto& [parent_transform_handle, child_end] : parent_to_child_map_) {
     out_map.try_emplace(child_end.child_transform_handle, parent_transform_handle);
   }
-
-  const bool link_topology_changed = link_topology_changed_;
-  link_topology_changed_ = false;
-
-  return link_topology_changed;
 }
 
 }  // namespace flatland

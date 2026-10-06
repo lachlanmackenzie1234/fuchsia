@@ -114,14 +114,39 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   TRACE_FLOW_STEP("gfx", "scenic_frame", frame_number);
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/fps.py,//src/performance/lib/trace_processing/metrics/scenic.py)
 
+  // Copy the links only when their generation moved; otherwise `scene_state_.links` already holds
+  // them. A cleared state has `link_topology_generation == 0`, so it always gets a copy.
+  const uint64_t known_link_topology_generation = scene_state_.link_topology_generation;
   GlobalTopologyData::LinkTopologyMap links(&link_map_pool_);
-  const uint64_t link_topology_generation = link_system_->GetResolvedTopologyLinks(links);
+  const uint64_t link_topology_generation =
+      link_system_->GetResolvedTopologyLinksIfChanged(known_link_topology_generation, links);
+  std::optional<GlobalTopologyData::LinkTopologyMap> new_links;
+  if (link_topology_generation != known_link_topology_generation) {
+    new_links = std::move(links);
+  } else {
+#ifndef NDEBUG
+    // Verify that `LinkSystem` did not mutate its resolved links without advancing its generation.
+    // A session thread may resolve or invalidate a link between the two `LinkSystem` calls, so
+    // only compare when the second snapshot is still at `link_topology_generation`.
+    TRACE_DURATION("gfx", "ValidateLinkTopologyChanges");
+    if (link_system_->GetResolvedTopologyLinks(links) == link_topology_generation) {
+      FX_DCHECK(links == scene_state_.links);
+    }
+#endif
+  }
   const bool links_changed = link_topology_generation != scene_state_.link_topology_generation;
   const bool uber_structs_dirty = uber_struct_system_->MustRecomputeSceneState();
   // Rebuild when the cache describes no frame, when a session published a transform-graph change,
   // or when the link topology changed; otherwise reuse the cached global transform state.
   const bool needs_full_rebuild = scene_state_.cleared || uber_structs_dirty || links_changed;
-  PrepareSceneState(scene_state_, uber_struct_system_->Snapshot(), std::move(links),
+  // Records which cause triggered each rebuild, so a trace shows what keeps a frame off the fast
+  // path.
+  if (needs_full_rebuild) {
+    TRACE_INSTANT("gfx", "flatland::Engine::SceneStateRebuild", TRACE_SCOPE_THREAD, "cleared",
+                  scene_state_.cleared, "uber_structs_dirty", uber_structs_dirty, "links_changed",
+                  links_changed);
+  }
+  PrepareSceneState(scene_state_, uber_struct_system_->Snapshot(), std::move(new_links),
                     link_topology_generation, link_system_->GetInstanceId(),
                     display->root_transform(), needs_full_rebuild);
 
@@ -237,13 +262,20 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
   FX_DCHECK(scene_state_.topology_data.topology_vector.empty() ||
             scene_state_.topology_data.topology_vector.front() == root_transform);
 
-  GlobalTopologyData::ChildToParentTransformMap link_child_to_parent_transform_map(&link_map_pool_);
-  const bool link_topology_changed =
-      link_system_->GetLinkChildToParentTransformMap(link_child_to_parent_transform_map);
-
-  if (!uber_struct_system_->MustRecomputeViewTree() && !link_topology_changed) {
+  // Compare the link generation that `scene_state_` was built at, not the `LinkSystem`'s current
+  // one. A link can change on a session thread after `RenderScheduledFrame()`; recording that
+  // newer generation here would make the next frame, which rebuilds `scene_state_` with the
+  // change, answer "no diff".
+  const uint64_t link_topology_generation = scene_state_.link_topology_generation;
+  if (!uber_struct_system_->MustRecomputeViewTree() &&
+      view_tree_link_topology_generation_ == link_topology_generation) {
     return view_tree::SubtreeSnapshotNoDiff();
   }
+  view_tree_link_topology_generation_ = link_topology_generation;
+
+  // Built only when regenerating, which most frames do not.
+  GlobalTopologyData::ChildToParentTransformMap link_child_to_parent_transform_map(&link_map_pool_);
+  link_system_->GetLinkChildToParentTransformMap(link_child_to_parent_transform_map);
 
   const auto& uber_struct_snapshot = scene_state_.snapshot;
   const auto& topology_data = scene_state_.topology_data;
@@ -283,7 +315,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 }
 
 void Engine::PrepareSceneState(SceneState& scene_state, UberStructSnapshot snapshot,
-                               GlobalTopologyData::LinkTopologyMap links,
+                               std::optional<GlobalTopologyData::LinkTopologyMap> links,
                                uint64_t link_topology_generation,
                                TransformHandle::InstanceId link_system_id,
                                TransformHandle root_transform, bool needs_full_rebuild) {
@@ -292,28 +324,35 @@ void Engine::PrepareSceneState(SceneState& scene_state, UberStructSnapshot snaps
   // Called by the inspect scene dump as well as the frame path;
   // `link_map_pool_` needs the main thread.
   utils::CheckIsOnMainThread();
+  FX_CHECK(links || !scene_state.cleared) << "A cleared scene state holds no links to keep";
+  FX_CHECK(links || scene_state.link_topology_generation == link_topology_generation)
+      << "Cached links cannot be reused across link topology generations";
   if (!needs_full_rebuild) {
     FX_CHECK(!scene_state.cleared)
         << "Memoization check failed: scene state is cleared when needs_full_rebuild is false";
 #ifndef NDEBUG
-    const std::optional<std::string> stale_input =
-        FindStaleSceneStateInput(scene_state, snapshot, links, root_transform);
+    const std::optional<std::string> stale_input = FindStaleSceneStateInput(
+        scene_state, snapshot, links ? *links : scene_state.links, root_transform);
     FX_DCHECK(!stale_input) << "Memoization check failed with needs_full_rebuild false: "
                             << *stale_input;
 #endif
-    scene_state.snapshot = std::move(snapshot);
-    // Move rather than copy: the caller's map and `scene_state.links` normally share
-    // `link_map_pool_`, so the pmr move assignment steals the nodes; with different resources it
-    // falls back to moving element by element.
-    scene_state.links = std::move(links);
-    scene_state.link_topology_generation = link_topology_generation;
-    return;
   }
 
-  scene_state.Clear();
+  // No `scene_state.Clear()`: each computation below clears its own output, and the cached
+  // `links` must survive when `needs_full_rebuild` is triggered by an `UberStruct` change while
+  // the link topology generation is unchanged (`links == std::nullopt`).
   scene_state.snapshot = std::move(snapshot);
-  scene_state.links = std::move(links);
+  // Move rather than copy: the caller's map and `scene_state.links` normally share
+  // `link_map_pool_`, so the pmr move assignment steals the nodes; with different resources it
+  // falls back to moving element by element.
+  if (links) {
+    scene_state.links = std::move(*links);
+  }
   scene_state.link_topology_generation = link_topology_generation;
+
+  if (!needs_full_rebuild) {
+    return;
+  }
 
   GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/scene_state.topology_data,
                                                 scene_state.snapshot.map, scene_state.links,

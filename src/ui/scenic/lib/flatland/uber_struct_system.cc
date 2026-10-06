@@ -43,8 +43,9 @@ void UberStructSystem::RemoveSession(scheduling::SessionId session_id) {
   snapshot_.map.erase(session_id);
   // The session's link, if any, is invalidated by the Flatland destructor on its own thread,
   // possibly after this call; a frame in between would see the topology change without a link
-  // generation bump, so the removal itself must request a rebuild.
+  // generation bump, so the removal itself must request a rebuild and a new view tree.
   recompute_scene_state_ = true;
+  recompute_view_tree_ = true;
 }
 
 UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
