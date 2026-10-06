@@ -615,6 +615,7 @@ impl SocketOps for UnixSocket {
 
         let peer = match (connected_peer, dest_address, socket.socket_type) {
             (Some(peer), None, _) => peer,
+            (Some(peer), Some(_), SocketType::SeqPacket) => peer,
             (None, Some(_), SocketType::Stream) => return error!(EOPNOTSUPP),
             (None, Some(_), SocketType::SeqPacket) => return error!(ENOTCONN),
             (Some(_), Some(_), _) => return error!(EISCONN),

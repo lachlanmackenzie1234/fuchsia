@@ -918,9 +918,6 @@
                 "AllUnixDomainSockets/UnixSocketPairTest.TIOCINQSucceeds/1[01]",
                 "AllUnixDomainSockets/UnixSocketPairTest.TIOCOUTQSucceeds/*",
 
-                // socket_unix_seqpacket_local_test
-                "SeqpacketUnixSockets/SeqpacketUnixSocketPairTest.Sendto/*",
-
                 // socket_unix_non_stream_blocking_local_test
                 "UnixSeqpacketBlockingTest.RecvfromTruncPeekNullBufferRestarted",
 
