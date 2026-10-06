@@ -1194,6 +1194,35 @@ TEST(BootTests, RollbackIndexUpdatedOnSuccessfulSlot) {
   ASSERT_EQ(res.value(), 5ULL);
 }
 
+TEST(BootTests, RollbackIndexUpdatedOnSuccessfulSlotWhenUnlocked) {
+  std::unique_ptr<MockZirconBootOps> dev;
+  ASSERT_NO_FATAL_FAILURE(CreateMockZirconBootOps(&dev));
+  ZirconBootOps ops = dev->GetZirconBootOpsWithAvb();
+  ops.firmware_can_boot_kernel_slot = nullptr;
+  dev->SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+
+  // Mark slot A successful.
+  constexpr AbrSlotIndex active_slot = kAbrSlotIndexA;
+  AbrOps abr_ops = dev->GetAbrOps();
+  ASSERT_EQ(AbrMarkSlotSuccessful(&abr_ops, kAbrSlotIndexA, false), kAbrResultOk);
+  ASSERT_EQ(AbrMarkSlotUnbootable(&abr_ops, kAbrSlotIndexB, kAbrUnbootableReasonNone),
+            kAbrResultOk);
+
+  ASSERT_EQ(LoadAndBoot(&ops, kZirconBootFlagsNone), kBootResultBootReturn);
+  ASSERT_NO_FATAL_FAILURE(ValidateVerifiedBootedSlot(dev.get(), active_slot));
+  // Even when unlocked, booting a valid verified image that is marked successful
+  // should update rollback indices and ATX key versions.
+  auto res = dev->ReadRollbackIndex(0);
+  ASSERT_TRUE(res.is_ok());
+  ASSERT_EQ(res.value(), 5ULL);
+  auto pik_res = dev->ReadRollbackIndex(AVB_ATX_PIK_VERSION_LOCATION);
+  ASSERT_TRUE(pik_res.is_ok());
+  ASSERT_EQ(pik_res.value(), 42ULL);
+  auto psk_res = dev->ReadRollbackIndex(AVB_ATX_PSK_VERSION_LOCATION);
+  ASSERT_TRUE(psk_res.is_ok());
+  ASSERT_EQ(psk_res.value(), 42ULL);
+}
+
 // Slotless boots should still provide anti-rollback support.
 TEST(BootTests, RollbackIndexUpdatedOnSuccessfulSlotless) {
   std::unique_ptr<MockZirconBootOps> dev;

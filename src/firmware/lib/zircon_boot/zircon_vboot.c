@@ -293,11 +293,12 @@ static bool ZirconVBootSlotVerifyInternal(ZirconBootOps* zb_ops, zbi_header_t* i
   }
 
   if (unlocked) {
-    zircon_boot_dlog("Device unlocked: not checking verification result.\n");
-    return true;
-  }
-
-  if (result != AVB_SLOT_VERIFY_RESULT_OK) {
+    zircon_boot_dlog("Device unlocked\n");
+    if (result != AVB_SLOT_VERIFY_RESULT_OK) {
+      zircon_boot_dlog("Verification failed, will boot anyway\n");
+      return true;
+    }
+  } else if (result != AVB_SLOT_VERIFY_RESULT_OK) {
     zircon_boot_dlog("Failed to verify slot: %s, err_code: %s\n", ab_suffix,
                      avb_slot_verify_result_to_string(result));
     return false;
