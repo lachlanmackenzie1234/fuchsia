@@ -12189,18 +12189,18 @@ rustc_library("iana-time-zone-haiku-v0_1_2") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("icu_collections-v2_2_0.license") {
+license("icu_collections-v2_3_0.license") {
   public_package_name = "icu_collections"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_collections-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_collections-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_collections-v2_2_0") {
+rustc_library("icu_collections-v2_3_0") {
   crate_name = "icu_collections"
   source_root =
-      "//third_party/rust_crates/vendor/icu_collections-2.2.0/src/lib.rs"
-  output_name = "icu_collections-97eb6f78b64eb12a"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_collections-2.3.0/src/lib.rs"
+  output_name = "icu_collections-eb2f092760a60df9"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -12217,27 +12217,27 @@ rustc_library("icu_collections-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=97eb6f78b64eb12a",
-    "-Cextra-filename=-97eb6f78b64eb12a",
+    "-Cmetadata=eb2f092760a60df9",
+    "-Cextra-filename=-eb2f092760a60df9",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_collections-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_collections-v2_3_0.license" ]
 }
 
-license("icu_locale_core-v2_2_0.license") {
+license("icu_locale_core-v2_3_0.license") {
   public_package_name = "icu_locale_core"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_locale_core-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_locale_core-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_locale_core-v2_2_0") {
+rustc_library("icu_locale_core-v2_3_0") {
   crate_name = "icu_locale_core"
   source_root =
-      "//third_party/rust_crates/vendor/icu_locale_core-2.2.0/src/lib.rs"
-  output_name = "icu_locale_core-28f64b9df9a0a02d"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_locale_core-2.3.0/src/lib.rs"
+  output_name = "icu_locale_core-7bd564bb4ef4b148"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -12253,37 +12253,37 @@ rustc_library("icu_locale_core-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=28f64b9df9a0a02d",
-    "-Cextra-filename=-28f64b9df9a0a02d",
+    "-Cmetadata=7bd564bb4ef4b148",
+    "-Cextra-filename=-7bd564bb4ef4b148",
     "--cfg=feature=\"zerovec\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_locale_core-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_locale_core-v2_3_0.license" ]
 }
 
-license("icu_normalizer-v2_2_0.license") {
+license("icu_normalizer-v2_3_0.license") {
   public_package_name = "icu_normalizer"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_normalizer-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_normalizer-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_normalizer-v2_2_0") {
+rustc_library("icu_normalizer-v2_3_0") {
   crate_name = "icu_normalizer"
   source_root =
-      "//third_party/rust_crates/vendor/icu_normalizer-2.2.0/src/lib.rs"
-  output_name = "icu_normalizer-348f5a7efc4b1d8e"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_normalizer-2.3.0/src/lib.rs"
+  output_name = "icu_normalizer-4e039ba190c7d8aa"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":icu_collections-v2_2_0" ]
-  deps += [ ":icu_normalizer_data-v2_2_0" ]
-  deps += [ ":icu_properties-v2_2_0" ]
-  deps += [ ":icu_provider-v2_2_0" ]
+  deps += [ ":icu_collections-v2_3_0" ]
+  deps += [ ":icu_normalizer_data-v2_3_0" ]
+  deps += [ ":icu_properties-v2_3_0" ]
+  deps += [ ":icu_provider-v2_3_1" ]
   deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":zerovec-v0_11_8" ]
 
@@ -12291,28 +12291,28 @@ rustc_library("icu_normalizer-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=348f5a7efc4b1d8e",
-    "-Cextra-filename=-348f5a7efc4b1d8e",
+    "-Cmetadata=4e039ba190c7d8aa",
+    "-Cextra-filename=-4e039ba190c7d8aa",
     "--cfg=feature=\"compiled_data\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_normalizer-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_normalizer-v2_3_0.license" ]
 }
 
-license("icu_normalizer_data-v2_2_0.license") {
+license("icu_normalizer_data-v2_3_0.license") {
   public_package_name = "icu_normalizer_data"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_normalizer_data-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_normalizer_data-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_normalizer_data-v2_2_0") {
+rustc_library("icu_normalizer_data-v2_3_0") {
   crate_name = "icu_normalizer_data"
   source_root =
-      "//third_party/rust_crates/vendor/icu_normalizer_data-2.2.0/src/lib.rs"
-  output_name = "icu_normalizer_data-ffb23da261fa7f8e"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_normalizer_data-2.3.0/src/lib.rs"
+  output_name = "icu_normalizer_data-51ad93207f3ceab"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -12323,36 +12323,37 @@ rustc_library("icu_normalizer_data-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ffb23da261fa7f8e",
-    "-Cextra-filename=-ffb23da261fa7f8e",
+    "-Cmetadata=51ad93207f3ceab",
+    "-Cextra-filename=-51ad93207f3ceab",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_normalizer_data-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_normalizer_data-v2_3_0.license" ]
 }
 
-license("icu_properties-v2_2_0.license") {
+license("icu_properties-v2_3_0.license") {
   public_package_name = "icu_properties"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_properties-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_properties-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_properties-v2_2_0") {
+rustc_library("icu_properties-v2_3_0") {
   crate_name = "icu_properties"
   source_root =
-      "//third_party/rust_crates/vendor/icu_properties-2.2.0/src/lib.rs"
-  output_name = "icu_properties-4502a354f5eee6a0"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_properties-2.3.0/src/lib.rs"
+  output_name = "icu_properties-36f6583c2cb04f30"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":icu_collections-v2_2_0" ]
-  deps += [ ":icu_locale_core-v2_2_0" ]
-  deps += [ ":icu_properties_data-v2_2_0" ]
-  deps += [ ":icu_provider-v2_2_0" ]
+  deps += [ ":displaydoc-v0_2_7($host_toolchain)" ]
+  deps += [ ":icu_collections-v2_3_0" ]
+  deps += [ ":icu_locale_core-v2_3_0" ]
+  deps += [ ":icu_properties_data-v2_3_0" ]
+  deps += [ ":icu_provider-v2_3_1" ]
   deps += [ ":zerotrie-v0_2_5" ]
   deps += [ ":zerovec-v0_11_8" ]
 
@@ -12360,28 +12361,28 @@ rustc_library("icu_properties-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4502a354f5eee6a0",
-    "-Cextra-filename=-4502a354f5eee6a0",
+    "-Cmetadata=36f6583c2cb04f30",
+    "-Cextra-filename=-36f6583c2cb04f30",
     "--cfg=feature=\"compiled_data\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_properties-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_properties-v2_3_0.license" ]
 }
 
-license("icu_properties_data-v2_2_0.license") {
+license("icu_properties_data-v2_3_0.license") {
   public_package_name = "icu_properties_data"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_properties_data-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_properties_data-2.3.0/LICENSE" ]
 }
 
-rustc_library("icu_properties_data-v2_2_0") {
+rustc_library("icu_properties_data-v2_3_0") {
   crate_name = "icu_properties_data"
   source_root =
-      "//third_party/rust_crates/vendor/icu_properties_data-2.2.0/src/lib.rs"
-  output_name = "icu_properties_data-f8c1e0f03cc93cb"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/icu_properties_data-2.3.0/src/lib.rs"
+  output_name = "icu_properties_data-12a8492a1784f2e3"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -12392,33 +12393,33 @@ rustc_library("icu_properties_data-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f8c1e0f03cc93cb",
-    "-Cextra-filename=-f8c1e0f03cc93cb",
+    "-Cmetadata=12a8492a1784f2e3",
+    "-Cextra-filename=-12a8492a1784f2e3",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_properties_data-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_properties_data-v2_3_0.license" ]
 }
 
-license("icu_provider-v2_2_0.license") {
+license("icu_provider-v2_3_1.license") {
   public_package_name = "icu_provider"
   license_files =
-      [ "//third_party/rust_crates/vendor/icu_provider-2.2.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/icu_provider-2.3.1/LICENSE" ]
 }
 
-rustc_library("icu_provider-v2_2_0") {
+rustc_library("icu_provider-v2_3_1") {
   crate_name = "icu_provider"
-  source_root = "//third_party/rust_crates/vendor/icu_provider-2.2.0/src/lib.rs"
-  output_name = "icu_provider-82439313eb54aa5b"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/icu_provider-2.3.1/src/lib.rs"
+  output_name = "icu_provider-949c77dada7928d2"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":displaydoc-v0_2_7($host_toolchain)" ]
-  deps += [ ":icu_locale_core-v2_2_0" ]
+  deps += [ ":icu_locale_core-v2_3_0" ]
   deps += [ ":writeable-v0_6_4" ]
   deps += [ ":yoke-v0_8_3" ]
   deps += [ ":zerofrom-v0_1_8" ]
@@ -12429,14 +12430,14 @@ rustc_library("icu_provider-v2_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=82439313eb54aa5b",
-    "-Cextra-filename=-82439313eb54aa5b",
+    "-Cmetadata=949c77dada7928d2",
+    "-Cextra-filename=-949c77dada7928d2",
     "--cfg=feature=\"baked\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":icu_provider-v2_2_0.license" ]
+  applicable_licenses = [ ":icu_provider-v2_3_1.license" ]
 }
 
 license("ident_case-v1_0_1.license") {
@@ -12560,8 +12561,8 @@ rustc_library("idna_adapter-v1_2_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":icu_normalizer-v2_2_0" ]
-  deps += [ ":icu_properties-v2_2_0" ]
+  deps += [ ":icu_normalizer-v2_3_0" ]
+  deps += [ ":icu_properties-v2_3_0" ]
 
   rustenv = []
 
