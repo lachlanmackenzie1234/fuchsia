@@ -31,6 +31,7 @@ using types::RectangleF;
 using types::RotateFlip;
 
 constexpr TransformHandle::InstanceId kLinkSystemId = 999;
+constexpr uint64_t kLinkTopologyGeneration = 1;
 
 class SceneStateTest : public ::testing::Test {
  protected:
@@ -106,7 +107,8 @@ TEST_F(SceneStateTest, LayerOnlyFrameReusesTransformState) {
 
   Engine::SceneState cached_state;
   const UberStructSnapshot initial_snapshot = MakeBaseSnapshot();
-  Engine::PrepareSceneState(cached_state, initial_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(cached_state, initial_snapshot, kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
   EXPECT_EQ(cached_state.rebuild_count, 1u);
   ASSERT_EQ(cached_state.resolved_layer_stacks.size(), 1u);
@@ -136,7 +138,8 @@ TEST_F(SceneStateTest, LayerOnlyFrameReusesTransformState) {
   UberStructSnapshot layer_only_snapshot;
   layer_only_snapshot.map[1] = updated_uber;
 
-  Engine::PrepareSceneState(cached_state, layer_only_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(cached_state, layer_only_snapshot, kEmptyLinks,
+                            kLinkTopologyGeneration + 1, kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/false);
 
   // `rebuild_count` and buffer addresses are unchanged.
@@ -147,10 +150,13 @@ TEST_F(SceneStateTest, LayerOnlyFrameReusesTransformState) {
   EXPECT_EQ(cached_state.opacities.data(), initial_opacities_ptr);
   EXPECT_EQ(cached_state.resolved_layer_stacks.data(), initial_stacks_ptr);
   EXPECT_EQ(cached_state.snapshot.map.at(1).get(), updated_uber.get());
+  // The reuse arm stores the generation passed in.
+  EXPECT_EQ(cached_state.link_topology_generation, kLinkTopologyGeneration + 1);
 
   // Compare layer-stage output against a reference full rebuild.
   Engine::SceneState rebuilt_state;
-  Engine::PrepareSceneState(rebuilt_state, layer_only_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(rebuilt_state, layer_only_snapshot, kEmptyLinks,
+                            kLinkTopologyGeneration, kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
 
   const auto reused_layers =
@@ -172,7 +178,8 @@ TEST_F(SceneStateTest, TransformFrameRebuildsTransformState) {
 
   Engine::SceneState scene_state;
   const UberStructSnapshot initial_snapshot = MakeBaseSnapshot();
-  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
   EXPECT_EQ(scene_state.rebuild_count, 1u);
 
@@ -184,9 +191,12 @@ TEST_F(SceneStateTest, TransformFrameRebuildsTransformState) {
   UberStructSnapshot updated_snapshot;
   updated_snapshot.map[1] = updated_uber;
 
-  Engine::PrepareSceneState(scene_state, updated_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, updated_snapshot, kEmptyLinks, kLinkTopologyGeneration + 1,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
   EXPECT_EQ(scene_state.rebuild_count, 2u);
+  // The rebuild arm stores the generation passed in.
+  EXPECT_EQ(scene_state.link_topology_generation, kLinkTopologyGeneration + 1);
   ASSERT_EQ(scene_state.resolved_layer_stacks.size(), 1u);
   EXPECT_EQ(scene_state.resolved_layer_stacks[0].node_rotation, RotateFlip::kIdentity());
   EXPECT_FLOAT_EQ(scene_state.resolved_layer_stacks[0].opacity, 0.25f);
@@ -222,8 +232,9 @@ TEST_F(SceneStateTest, FindStaleSceneStateInputNamesEachInput) {
   {
     const TransformHandle kUnpublishedRoot(99, 0);
     Engine::SceneState empty_topology_state;
-    Engine::PrepareSceneState(empty_topology_state, initial_snapshot, kEmptyLinks, kLinkSystemId,
-                              kUnpublishedRoot, /*needs_full_rebuild=*/true);
+    Engine::PrepareSceneState(empty_topology_state, initial_snapshot, kEmptyLinks,
+                              kLinkTopologyGeneration, kLinkSystemId, kUnpublishedRoot,
+                              /*needs_full_rebuild=*/true);
     ASSERT_TRUE(empty_topology_state.topology_data.topology_vector.empty());
     EXPECT_EQ(Engine::FindStaleSceneStateInput(empty_topology_state, initial_snapshot, kEmptyLinks,
                                                kUnpublishedRoot),
@@ -234,7 +245,8 @@ TEST_F(SceneStateTest, FindStaleSceneStateInputNamesEachInput) {
     EXPECT_THAT(*stale, ::testing::HasSubstr("root transform changed"));
   }
 
-  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
 
   // Returns a snapshot holding only `uber`, as session `id`.
@@ -439,12 +451,14 @@ TEST_F(SceneStateTest, ClearedFollowsConstructionRebuildAndClear) {
   Engine::SceneState scene_state;
   EXPECT_TRUE(scene_state.cleared);
 
-  Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
   EXPECT_FALSE(scene_state.cleared);
 
   scene_state.Clear();
   EXPECT_TRUE(scene_state.cleared);
+  EXPECT_EQ(scene_state.link_topology_generation, 0u);
 }
 
 // Reusing a `SceneState` that describes no frame fails an `FX_CHECK`, so this runs in every build
@@ -455,7 +469,8 @@ TEST_F(SceneStateTest, ReuseOfClearedStateDies) {
 
   Engine::SceneState scene_state;
   EXPECT_DEATH(Engine::PrepareSceneState(scene_state, MakeBaseSnapshot(), kEmptyLinks,
-                                         kLinkSystemId, kRoot, /*needs_full_rebuild=*/false),
+                                         kLinkTopologyGeneration, kLinkSystemId, kRoot,
+                                         /*needs_full_rebuild=*/false),
                "scene state is cleared");
 }
 
@@ -477,8 +492,9 @@ TEST_F(SceneStateTest, UnreachableEntriesAreNotTransformInputs) {
   snapshot_with_unreachable.map[1] = uber_with_unreachable;
 
   Engine::SceneState scene_state;
-  Engine::PrepareSceneState(scene_state, snapshot_with_unreachable, kEmptyLinks, kLinkSystemId,
-                            kRoot, /*needs_full_rebuild=*/true);
+  Engine::PrepareSceneState(scene_state, snapshot_with_unreachable, kEmptyLinks,
+                            kLinkTopologyGeneration, kLinkSystemId, kRoot,
+                            /*needs_full_rebuild=*/true);
   ASSERT_EQ(scene_state.rebuild_count, 1u);
   const auto expected_layers =
       ComputeGlobalResolvedLayers(scene_state.resolved_layer_stacks, scene_state.snapshot.map);
@@ -487,7 +503,8 @@ TEST_F(SceneStateTest, UnreachableEntriesAreNotTransformInputs) {
   // 1. The entries of the unreachable transform are removed.
   EXPECT_EQ(Engine::FindStaleSceneStateInput(scene_state, base_snapshot, kEmptyLinks, kRoot),
             std::nullopt);
-  Engine::PrepareSceneState(scene_state, base_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, base_snapshot, kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/false);
   EXPECT_EQ(scene_state.rebuild_count, 1u);
   EXPECT_EQ(
@@ -498,8 +515,9 @@ TEST_F(SceneStateTest, UnreachableEntriesAreNotTransformInputs) {
   EXPECT_EQ(
       Engine::FindStaleSceneStateInput(scene_state, snapshot_with_unreachable, kEmptyLinks, kRoot),
       std::nullopt);
-  Engine::PrepareSceneState(scene_state, snapshot_with_unreachable, kEmptyLinks, kLinkSystemId,
-                            kRoot, /*needs_full_rebuild=*/false);
+  Engine::PrepareSceneState(scene_state, snapshot_with_unreachable, kEmptyLinks,
+                            kLinkTopologyGeneration, kLinkSystemId, kRoot,
+                            /*needs_full_rebuild=*/false);
   EXPECT_EQ(scene_state.rebuild_count, 1u);
   EXPECT_EQ(
       ComputeGlobalResolvedLayers(scene_state.resolved_layer_stacks, scene_state.snapshot.map),
@@ -516,7 +534,8 @@ TEST_F(SceneStateTest, StackLayerContentsAreNotTransformInputs) {
 
   Engine::SceneState scene_state;
   const UberStructSnapshot initial_snapshot = MakeBaseSnapshot();
-  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkSystemId, kRoot,
+  Engine::PrepareSceneState(scene_state, initial_snapshot, kEmptyLinks, kLinkTopologyGeneration,
+                            kLinkSystemId, kRoot,
                             /*needs_full_rebuild=*/true);
 
   auto updated_uber = CloneEngineInputs(*initial_snapshot.map.at(1));

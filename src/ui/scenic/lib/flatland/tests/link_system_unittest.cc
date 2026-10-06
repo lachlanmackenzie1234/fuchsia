@@ -369,6 +369,54 @@ TEST_F(LinkSystemTest, ChildToParentTransformMapTracksLinks) {
   EXPECT_TRUE(child_to_parent_map.empty());
 }
 
+// `GetResolvedTopologyLinks()` returns a generation that starts at 1, advances once when a link
+// resolves and once when it is invalidated, and is not consumed by reading it (in contrast to
+// `UberStructSystem::MustRecomputeSceneState()`).
+TEST_F(LinkSystemTest, TopologyGenerationAdvancesOnResolveAndInvalidate) {
+  auto link_system = CreateViewportSystem();
+  auto child_graph = CreateTransformGraph();
+  auto parent_graph = CreateTransformGraph();
+
+  GlobalTopologyData::LinkTopologyMap links;
+  EXPECT_EQ(link_system->GetResolvedTopologyLinks(links), 1u);
+  EXPECT_TRUE(links.empty());
+
+  auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+
+  auto [parent_client_end, parent_server_end] = fidl::Endpoints<ParentViewportWatcher>::Create();
+  fidl::Client<ParentViewportWatcher> parent_viewport_watcher(std::move(parent_client_end),
+                                                              dispatcher());
+  LinkToParent link_to_parent = link_system->CreateLinkToParent(
+      dispatcher_holder_, std::move(child_token), scenic::cpp::NewViewIdentityOnCreation(),
+      std::move(parent_server_end), child_graph.CreateTransform(),
+      [](const std::string& error_log) { GTEST_FAIL() << error_log; });
+
+  {
+    auto [child_client_end, child_server_end] = fidl::Endpoints<ChildViewWatcher>::Create();
+    fidl::Client<ChildViewWatcher> child_view_watcher(std::move(child_client_end), dispatcher());
+    ViewportProperties properties;
+    properties.logical_size(SizeU{{.width = 1, .height = 2}});
+    properties.inset(fuchsia_math::Inset{{.top = 0, .right = 0, .bottom = 0, .left = 0}});
+    LinkToChild link_to_child = link_system->CreateLinkToChild(
+        dispatcher_holder_, std::move(parent_token), std::move(properties),
+        std::move(child_server_end), parent_graph.CreateTransform(),
+        [](const std::string& error_log) { GTEST_FAIL() << error_log; });
+
+    // The link resolved.
+    EXPECT_EQ(link_system->GetResolvedTopologyLinks(links), 2u);
+    EXPECT_EQ(links.size(), 1u);
+
+    // A second read without changes returns the same generation.
+    EXPECT_EQ(link_system->GetResolvedTopologyLinks(links), 2u);
+    EXPECT_EQ(links.size(), 1u);
+
+    // `link_to_child` dies here, which invalidates the link.
+  }
+
+  EXPECT_EQ(link_system->GetResolvedTopologyLinks(links), 3u);
+  EXPECT_TRUE(links.empty());
+}
+
 TEST_F(LinkSystemTest, OverwrittenHangingGetsReturnError) {
   auto link_system = CreateViewportSystem();
   auto child_graph = CreateTransformGraph();

@@ -49,6 +49,10 @@ class Engine {
 
     UberStructSnapshot snapshot;
     GlobalTopologyData::LinkTopologyMap links;
+    // The `LinkSystem` generation that `links` was copied at.
+    // `RenderScheduledFrame()` compares it against the current value
+    // to detect a link-topology change.
+    uint64_t link_topology_generation = 0;
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalTransformClipRegionVector clip_regions;
@@ -63,12 +67,13 @@ class Engine {
     bool cleared = true;
   };
 
-  // Maintains `scene_state` for a frame.  Every frame, `snapshot` and `links` are moved
-  // into `scene_state`.  When `needs_full_rebuild` is true, the global transform state is
-  // rebuilt; otherwise it is reused (debug builds use `FindStaleSceneStateInput()` to
-  // verify that it's safe to reuse).
+  // Maintains `scene_state` for a frame.  Every frame, `snapshot`, `links`, and
+  // `link_topology_generation` are moved into `scene_state`.  When `needs_full_rebuild` is
+  // true, the global transform state is rebuilt; otherwise it is reused (debug builds use
+  // `FindStaleSceneStateInput()` to verify that it's safe to reuse).
   static void PrepareSceneState(SceneState& scene_state, UberStructSnapshot snapshot,
                                 GlobalTopologyData::LinkTopologyMap links,
+                                uint64_t link_topology_generation,
                                 TransformHandle::InstanceId link_system_id,
                                 TransformHandle root_transform, bool needs_full_rebuild);
 
@@ -127,6 +132,8 @@ class Engine {
 
   static constexpr uint32_t kNumDisplayFramebuffers = 2;
   void AddDisplay(display::Display& display, uint32_t num_vmos = kNumDisplayFramebuffers);
+
+  const SceneState& scene_state_for_test() const { return scene_state_; }
 
  private:
   // Initialize all inspect::Nodes, so that the Engine state can be observed.

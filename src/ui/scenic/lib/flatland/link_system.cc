@@ -166,6 +166,7 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
           // internal_link_handle) can occur on the same endpoint.
           ref->link_topologies_[*topology_map_key] = child_transform_handle;
           ref->link_topology_changed_ = true;
+          ++ref->link_topology_generation_;
         }
       },
       /* link_invalidated = */
@@ -184,6 +185,7 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
           ref->link_topologies_.erase(*topology_map_key);
           ref->link_graph_.ReleaseTransform(*topology_map_key);
           ref->link_topology_changed_ = true;
+          ++ref->link_topology_generation_;
         }
 
         // Avoid race conditions by destroying ParentViewportWatcher on its "own" thread.  For
@@ -327,7 +329,8 @@ void LinkSystem::UpdateViewportPropertiesFor(
   }
 }
 
-void LinkSystem::GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const {
+uint64_t LinkSystem::GetResolvedTopologyLinks(
+    GlobalTopologyData::LinkTopologyMap& out_links) const {
   TRACE_DURATION("gfx", "LinkSystem::GetResolvedTopologyLinks");
   out_links.clear();
 
@@ -335,6 +338,7 @@ void LinkSystem::GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& o
   std::scoped_lock lock(mutex_);
   out_links.reserve(link_topologies_.size());
   out_links.insert(link_topologies_.begin(), link_topologies_.end());
+  return link_topology_generation_;
 }
 
 TransformHandle::InstanceId LinkSystem::GetInstanceId() const { return instance_id_; }

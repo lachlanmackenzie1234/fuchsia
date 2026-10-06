@@ -357,12 +357,13 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
       TransformHandle child_transform_handle, LinkProtocolErrorCallback error_callback);
 
   // Populates `out_links` with a snapshot of the current set of links, represented as a map from
-  // LinkSystem-owned TransformHandles to TransformHandles in LinkToParents. The LinkSystem
-  // generates Keys for this map in CreateLinkToChild() and returns them to callers in a
-  // LinkToChild's `internal_link_handle`. The values in this map are arguments to
-  // CreateLinkToParent() and become the LinkToParent's `child_transform_handle`. The LinkSystem
-  // places entries in the map when a link resolves and removes them when a link is invalidated.
-  void GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const;
+  // LinkSystem-owned TransformHandles to TransformHandles in LinkToParents, and returns the
+  // `link_topology_generation_` value the snapshot was taken at. The LinkSystem generates Keys for
+  // this map in CreateLinkToChild() and returns them to callers in a LinkToChild's
+  // `internal_link_handle`. The values in this map are arguments to CreateLinkToParent() and become
+  // the LinkToParent's `child_transform_handle`. The LinkSystem places entries in the map when a
+  // link resolves and removes them when a link is invalidated.
+  uint64_t GetResolvedTopologyLinks(GlobalTopologyData::LinkTopologyMap& out_links) const;
 
   // Returns the instance ID used for LinkSystem-authored handles.
   TransformHandle::InstanceId GetInstanceId() const;
@@ -460,6 +461,12 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // generated the first time (necessary because it is illegal for a subtree generator to say
   // "no diff" the first time).
   bool link_topology_changed_ FXL_GUARDED_BY(mutex_) = true;
+
+  // Incremented under `mutex_` whenever `link_topologies_` changes. `GetResolvedTopologyLinks()`
+  // returns it with the map so that callers can compare against the value they last saw; nothing
+  // is consumed (in contrast to `UberStructSystem::MustRecomputeSceneState()`), so any number of
+  // callers may read it. Starts at 1 so that a caller holding the default 0 sees a change.
+  uint64_t link_topology_generation_ FXL_GUARDED_BY(mutex_) = 1;
 };
 
 }  // namespace flatland

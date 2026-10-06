@@ -64,9 +64,9 @@ void Engine::InitializeInspectObjects() {
 
     SceneState scene_state(&link_map_pool_);
     GlobalTopologyData::LinkTopologyMap links(&link_map_pool_);
-    link_system_->GetResolvedTopologyLinks(links);
+    const uint64_t link_topology_generation = link_system_->GetResolvedTopologyLinks(links);
     PrepareSceneState(scene_state, uber_struct_system_->Snapshot(), std::move(links),
-                      link_system_->GetInstanceId(), *root_transform,
+                      link_topology_generation, link_system_->GetInstanceId(), *root_transform,
                       /*needs_full_rebuild=*/true);
     auto resolved_layers =
         ComputeGlobalResolvedLayers(scene_state.resolved_layer_stacks, scene_state.snapshot.map);
@@ -115,12 +115,15 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/fps.py,//src/performance/lib/trace_processing/metrics/scenic.py)
 
   GlobalTopologyData::LinkTopologyMap links(&link_map_pool_);
-  link_system_->GetResolvedTopologyLinks(links);
-  // TODO(https://fxbug.dev/510346578): Wire the session-side transform-graph dirty signal and
-  // `link_topology_changed` instead of passing `needs_full_rebuild = true` unconditionally.
+  const uint64_t link_topology_generation = link_system_->GetResolvedTopologyLinks(links);
+  const bool links_changed = link_topology_generation != scene_state_.link_topology_generation;
+  const bool uber_structs_dirty = uber_struct_system_->MustRecomputeSceneState();
+  // Rebuild when the cache describes no frame, when a session published a transform-graph change,
+  // or when the link topology changed; otherwise reuse the cached global transform state.
+  const bool needs_full_rebuild = scene_state_.cleared || uber_structs_dirty || links_changed;
   PrepareSceneState(scene_state_, uber_struct_system_->Snapshot(), std::move(links),
-                    link_system_->GetInstanceId(), display->root_transform(),
-                    /*needs_full_rebuild=*/true);
+                    link_topology_generation, link_system_->GetInstanceId(),
+                    display->root_transform(), needs_full_rebuild);
 
   display::Display* const hw_display = display->display();
 
@@ -265,9 +268,10 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 
   SceneState scene_state(&link_map_pool_);
   GlobalTopologyData::LinkTopologyMap links(&link_map_pool_);
-  link_system_->GetResolvedTopologyLinks(links);
+  const uint64_t link_topology_generation = link_system_->GetResolvedTopologyLinks(links);
   PrepareSceneState(scene_state, uber_struct_system_->Snapshot(), std::move(links),
-                    link_system_->GetInstanceId(), root, /*needs_full_rebuild=*/true);
+                    link_topology_generation, link_system_->GetInstanceId(), root,
+                    /*needs_full_rebuild=*/true);
   const auto hw_display = display.display();
 
   auto resolved_layers =
@@ -280,6 +284,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
 
 void Engine::PrepareSceneState(SceneState& scene_state, UberStructSnapshot snapshot,
                                GlobalTopologyData::LinkTopologyMap links,
+                               uint64_t link_topology_generation,
                                TransformHandle::InstanceId link_system_id,
                                TransformHandle root_transform, bool needs_full_rebuild) {
   TRACE_DURATION("gfx", "flatland::Engine::PrepareSceneState", "needs_full_rebuild",
@@ -301,12 +306,14 @@ void Engine::PrepareSceneState(SceneState& scene_state, UberStructSnapshot snaps
     // `link_map_pool_`, so the pmr move assignment steals the nodes; with different resources it
     // falls back to moving element by element.
     scene_state.links = std::move(links);
+    scene_state.link_topology_generation = link_topology_generation;
     return;
   }
 
   scene_state.Clear();
   scene_state.snapshot = std::move(snapshot);
   scene_state.links = std::move(links);
+  scene_state.link_topology_generation = link_topology_generation;
 
   GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/scene_state.topology_data,
                                                 scene_state.snapshot.map, scene_state.links,
@@ -426,6 +433,7 @@ void Engine::SceneState::Clear() {
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[links]");
     links.clear();
+    link_topology_generation = 0;
   }
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[topology_data]");
