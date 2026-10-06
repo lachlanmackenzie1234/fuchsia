@@ -661,7 +661,7 @@ class KTraceTests {
 
     TestKTrace ktrace;
     const uint32_t total_bufsize = kPageSize * arch_max_num_cpus();
-    ktrace.Init(total_bufsize, KTRACE_GRP_META);
+    ktrace.Init(total_bufsize, KTRACE_GRP_META | KTRACE_GRP_SCHEDULER);
 
     const cpu_num_t target_cpu = [&]() {
       InterruptDisableGuard guard;
@@ -673,8 +673,8 @@ class KTraceTests {
       return arch_curr_cpu_num();
     }();
 
-    // The total bytes written by the 11 macro events is 456 bytes.
-    constexpr size_t total_size = 456;
+    // The total bytes written by the 19 macro events is 856 bytes.
+    constexpr size_t total_size = 856;
     uint8_t actual[total_size];
     auto copy_out = [&](uint32_t offset, ktl::span<ktl::byte> src) {
       memcpy(actual + offset, src.data(), src.size());
@@ -683,6 +683,8 @@ class KTraceTests {
     zx::result<size_t> read_result = ktrace.percpu_buffers_[target_cpu].Read(copy_out, total_size);
     ASSERT_OK(read_result.status_value());
     ASSERT_EQ(total_size, read_result.value());
+
+    const auto& cpu_ref = ktrace.cpu_context_map_.GetCpuRef(target_cpu);
 
     // Verify each record sequentially
     size_t offset = 0;
@@ -808,6 +810,7 @@ class KTraceTests {
       ASSERT_EQ(2u, arg_header & 0xfu);
       ASSERT_EQ(1u, (arg_header >> 4) & 0xfffu);
       ASSERT_EQ(111u, arg_header >> 32);
+      // get_word(5) is End timestamp
       offset += 48;
     }
 
@@ -860,6 +863,138 @@ class KTraceTests {
       ASSERT_EQ(2u, (arg_header >> 4) & 0xfffu);
       ASSERT_NE(0u, (arg_header >> 16) & 0xffffu);
       ASSERT_EQ(117u, get_word(5));  // Koid value
+      offset += 48;
+    }
+
+    // 12. Cpu DurationComplete with 1 initial + 2 completion arguments (size 64 bytes = 8 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);           // kEvent
+      ASSERT_EQ(8u, (header >> 4) & 0xfffu);  // Size
+      ASSERT_EQ(4u, (header >> 16) & 0xfu);   // kDurationComplete
+      ASSERT_EQ(3u, (header >> 20) & 0xfu);   // Arg count = 3
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg0_header = get_word(4);
+      ASSERT_EQ(2u, arg0_header & 0xfu);  // kUint32
+      ASSERT_EQ(0u, arg0_header >> 32);   // value = 0
+      uint64_t arg1_header = get_word(5);
+      ASSERT_EQ(2u, arg1_header & 0xfu);  // kUint32
+      ASSERT_EQ(1u, arg1_header >> 32);   // value = 1
+      uint64_t arg2_header = get_word(6);
+      ASSERT_EQ(2u, arg2_header & 0xfu);  // kUint32
+      ASSERT_EQ(2u, arg2_header >> 32);   // value = 2
+      offset += 64;
+    }
+
+    // 13. CounterTimestamp (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(1u, (header >> 16) & 0xfu);  // kCounter
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(130u, get_word(1));  // Timestamp
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(132u, arg_header >> 32);
+      ASSERT_EQ(131u, get_word(5));  // Counter ID
+      offset += 48;
+    }
+
+    // 14. CpuCounter (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(1u, (header >> 16) & 0xfu);  // kCounter
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(134u, arg_header >> 32);
+      ASSERT_EQ(133u, get_word(5));  // Counter ID
+      offset += 48;
+    }
+
+    // 15. CpuCounterTimestamp (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(1u, (header >> 16) & 0xfu);  // kCounter
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(135u, get_word(1));  // Timestamp
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(137u, arg_header >> 32);
+      ASSERT_EQ(136u, get_word(5));  // Counter ID
+      offset += 48;
+    }
+
+    // 16. CpuFlowBegin (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(8u, (header >> 16) & 0xfu);  // kFlowBegin
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(139u, arg_header >> 32);
+      ASSERT_EQ(138u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 17. CpuFlowStep (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(9u, (header >> 16) & 0xfu);  // kFlowStep
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(140u, arg_header >> 32);
+      ASSERT_EQ(138u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 18. CpuFlowEnd (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(10u, (header >> 16) & 0xfu);  // kFlowEnd
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(141u, arg_header >> 32);
+      ASSERT_EQ(138u, get_word(5));  // Flow ID
+      offset += 48;
+    }
+
+    // 19. CpuBeginScope DurationComplete (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(4u, header & 0xfu);
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);
+      ASSERT_EQ(4u, (header >> 16) & 0xfu);  // kDurationComplete
+      ASSERT_EQ(1u, (header >> 20) & 0xfu);
+      ASSERT_EQ(cpu_ref.process().koid, get_word(2));
+      ASSERT_EQ(cpu_ref.thread().koid, get_word(3));
+      uint64_t arg_header = get_word(4);
+      ASSERT_EQ(2u, arg_header & 0xfu);
+      ASSERT_EQ(142u, arg_header >> 32);
       offset += 48;
     }
 

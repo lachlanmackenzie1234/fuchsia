@@ -86,6 +86,7 @@ pub enum Context {
 }
 
 /// The value of a trace argument.
+#[derive(Clone, Copy)]
 pub enum ArgValue<'a> {
     Null,
     Bool(bool),
@@ -146,7 +147,6 @@ impl<'a> From<&'static InternedString> for ArgValue<'a> {
         ArgValue::InternedString(v)
     }
 }
-
 /// A wrapper for KOID values passed as trace arguments.
 impl<'a> From<Koid> for ArgValue<'a> {
     fn from(v: Koid) -> Self {
@@ -219,7 +219,7 @@ impl<'a> StringRef<'a> {
         }
     }
 }
-
+#[derive(Clone, Copy)]
 pub struct Argument<'a> {
     name: &'static InternedString,
     value: ArgValue<'a>,
@@ -353,9 +353,19 @@ impl<'a, const N: usize> KTraceScope<'a, N> {
         Self { category, name, timestamp, context, args, ended: false }
     }
 
+    #[inline]
+    pub const fn is_ended(&self) -> bool {
+        self.ended
+    }
+
+    #[inline]
+    pub fn end(&mut self) {
+        self.end_with_args(&[]);
+    }
+
     #[inline(never)]
     #[cold]
-    pub fn end(&mut self) {
+    pub fn end_with_args(&mut self, end_args: &[Argument<'_>]) {
         if !self.ended {
             if KTrace::category_enabled(self.category) {
                 let end_time = KTrace::timestamp();
@@ -367,6 +377,7 @@ impl<'a, const N: usize> KTraceScope<'a, N> {
                     self.context,
                     Some(end_time.0 as u64),
                     &self.args,
+                    end_args,
                 );
             }
             self.ended = true;
@@ -375,10 +386,22 @@ impl<'a, const N: usize> KTraceScope<'a, N> {
 }
 
 impl<'a, const N: usize> Drop for KTraceScope<'a, N> {
-    #[inline(never)]
-    #[cold]
+    #[inline]
     fn drop(&mut self) {
-        self.end();
+        self.end_with_args(&[]);
+    }
+}
+
+/// Type-erased interface for ending a `KTraceScope<'a, N>` early across function boundaries
+/// without monomorphizing the callee over the argument count `N` (used by the scheduler to end
+/// an outer trace scope before context switching).
+pub trait ErasedScope {
+    fn end(&mut self);
+}
+
+impl<'a, const N: usize> ErasedScope for KTraceScope<'a, N> {
+    fn end(&mut self) {
+        KTraceScope::end(self);
     }
 }
 
@@ -864,7 +887,8 @@ impl KTrace {
         timestamp: InstantBootTicks,
         context: Context,
         content: Option<u64>,
-        args: &[Argument<'_>],
+        args1: &[Argument<'_>],
+        args2: &[Argument<'_>],
     ) {
         let _ = Self::with_instance(|ktrace| {
             let _guard = InterruptDisableGuard::new();
@@ -897,8 +921,13 @@ impl KTrace {
             // 2. Calculate the record size.
             let base_size = 4; // Header, Timestamp, Process KOID, Thread KOID
             let content_size = if content.is_some() { 1 } else { 0 };
-            let args = if args.len() > 15 { &args[..15] } else { args };
-            let args_size: usize = args.iter().map(|a| a.size_words()).sum();
+            let args1_take = args1.len().min(15);
+            let args2_take = (15 - args1_take).min(args2.len());
+            let args1 = &args1[..args1_take];
+            let args2 = &args2[..args2_take];
+            let total_args_count = args1.len() + args2.len();
+            let args_size: usize = args1.iter().map(|a| a.size_words()).sum::<usize>()
+                + args2.iter().map(|a| a.size_words()).sum::<usize>();
             let total_size_words = base_size + content_size + args_size;
 
             if total_size_words > 0xfff {
@@ -910,7 +939,7 @@ impl KTrace {
             header
                 .set_record_size(total_size_words as u16)
                 .set_event_type(event_type)
-                .set_arg_count(args.len() as u8)
+                .set_arg_count(total_args_count as u8)
                 .set_category_ref(category.label().id())
                 .set_name_ref(name.id());
 
@@ -921,7 +950,10 @@ impl KTrace {
                 let _ = res.write_word(process_koid);
                 let _ = res.write_word(thread_koid);
 
-                for arg in args {
+                for arg in args1 {
+                    let _ = arg.write(&mut res);
+                }
+                for arg in args2 {
                     let _ = arg.write(&mut res);
                 }
 
@@ -1969,15 +2001,56 @@ pub unsafe extern "C" fn rust_ktrace_test_interop(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_ktrace_test_macros() {
     // Exercise each macro. We'll write specific, distinguishable events.
-    instant!("kernel:meta", "rust_instant", Context::Thread, "val" => 101u32);
-    duration_begin!("kernel:meta", "rust_duration", Context::Thread, "val" => 102u32);
-    duration_end!("kernel:meta", "rust_duration", Context::Thread, "val" => 103u32);
+    instant!("kernel:meta", "rust_instant", crate::ktrace_rs::Context::Thread, "val" => 101u32);
+    duration_begin!(
+        "kernel:meta",
+        "rust_duration",
+        crate::ktrace_rs::Context::Thread,
+        "val" => 102u32
+    );
+    duration_end!(
+        "kernel:meta",
+        "rust_duration",
+        crate::ktrace_rs::Context::Thread,
+        "val" => 103u32
+    );
     counter!("kernel:meta", "rust_counter", 104u64, "val" => 105u32);
     flow_begin!("kernel:meta", "rust_flow", 106u64, "val" => 107u32);
     flow_step!("kernel:meta", "rust_flow", 106u64, "val" => 108u32);
     flow_end!("kernel:meta", "rust_flow", 106u64, "val" => 109u32);
-    complete!("kernel:meta", "rust_complete", InstantBootTicks(110i64), "val" => 111u32);
+    complete!(
+        "kernel:meta",
+        "rust_complete",
+        crate::ktrace_rs::InstantBootTicks(110i64),
+        crate::ktrace_rs::Context::Thread,
+        "val" => 111u32
+    );
     kernel_object!("kernel:meta", 112u64, 1u32, "rust_kernel_obj", "val" => 113u32);
     kernel_object_always!(114u64, 2u32, "rust_kernel_obj_always", "val" => 115u32);
     kernel_object!("kernel:meta", 116u64, 1u32, &b"dynamic_proc"[..], "job" => Koid(117u64));
+
+    let scope = cpu_begin_scope_cond!(true, "kernel:sched", "find_target", "cpu" => 0u32);
+    end_scope!(scope, "last_cpu" => 1u32, "target_cpu" => 2u32);
+
+    counter_timestamp!(
+        "kernel:meta",
+        "rust_counter_ts",
+        crate::ktrace_rs::InstantBootTicks(130i64),
+        131u64,
+        "val" => 132u32
+    );
+    cpu_counter!("kernel:sched", "rust_cpu_counter", 133u64, "val" => 134u32);
+    cpu_counter_timestamp!(
+        "kernel:sched",
+        "rust_cpu_counter_ts",
+        crate::ktrace_rs::InstantBootTicks(135i64),
+        136u64,
+        "val" => 137u32
+    );
+    cpu_flow_begin!("kernel:sched", "rust_cpu_flow", 138u64, "val" => 139u32);
+    cpu_flow_step!("kernel:sched", "rust_cpu_flow", 138u64, "val" => 140u32);
+    cpu_flow_end!("kernel:sched", "rust_cpu_flow", 138u64, "val" => 141u32);
+    {
+        let _cpu_scope = cpu_begin_scope!("kernel:sched", "rust_cpu_scope", "val" => 142u32);
+    }
 }
