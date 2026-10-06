@@ -54,9 +54,10 @@ class PhysIter {
     ZX_ASSERT(chunk_list_ != nullptr);
     ZX_ASSERT(chunk_count_ > 0);
     ZX_ASSERT(buf_length_ > 0);
+    ZX_ASSERT(chunk_size_ > 0);
 
     // Chunk size must be a power-of-2 to support the chunk mask calculation.
-    ZX_ASSERT(!(chunk_size_ & (chunk_size - 1)));
+    ZX_ASSERT(!(chunk_size_ & (chunk_size_ - 1)));
   }
 
   // This overload defaults to page-sized chunks.
@@ -108,7 +109,7 @@ class PhysIter {
       zx_paddr_t cur_chunk{current_.first & iter_->chunk_mask_};
       zx_paddr_t next_chunk{(current_.first + current_.second) & iter_->chunk_mask_};
 
-      if (cur_chunk != next_chunk) {
+      if (iter_->chunk_count_ > 1 && cur_chunk != next_chunk) {
         current_.first = iter_->chunk_list_[++chunk_index_];
       } else {
         current_.first += current_.second;
