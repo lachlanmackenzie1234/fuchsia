@@ -267,7 +267,6 @@
         {
             directory: "system",
             from: "#pkg-cache",
-            as: "pkgfs-system",
             to: "#system-updater",
         },
         {
