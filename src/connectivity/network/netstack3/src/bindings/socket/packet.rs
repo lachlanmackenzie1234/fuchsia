@@ -164,6 +164,7 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
                     raw,
                     frame.body_offset(),
                     default_offset,
+                    packet_type,
                     None,
                 );
                 let result = program.run(packet);

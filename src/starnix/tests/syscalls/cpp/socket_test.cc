@@ -27,6 +27,7 @@
 #include <optional>
 #include <set>
 #include <thread>
+#include <vector>
 
 #include <asm-generic/socket.h>
 #include <fbl/unaligned.h>
@@ -2077,6 +2078,103 @@ TEST_F(BpfTest, SoAttachFilterBpfLen) {
       0);
 
   SendPacketAndCheckReceived(AF_INET, 1234, true);
+}
+
+TEST_F(BpfTest, SoAttachFilterPktType) {
+  const uint16_t kTestDstPortIpv4 = 1234;
+
+  auto make_filter = [](uint8_t packet_type) -> std::vector<sock_filter> {
+    return {
+        // Check packet type == packet_type.
+        BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (__u32)SKF_AD_OFF + SKF_AD_PKTTYPE),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, packet_type, 0, 8),
+
+        // Check if this is IPv4.
+        BPF_STMT(BPF_LD | BPF_H | BPF_ABS, (__u32)SKF_AD_OFF + SKF_AD_PROTOCOL),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETHERTYPE_IP, 0, 6),
+
+        // Check that the protocol is UDP.
+        BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (__u32)SKF_NET_OFF + 9),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, IPPROTO_UDP, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, 0),
+
+        // Get the IP header length.
+        BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, (__u32)SKF_NET_OFF),
+
+        // Check the destination port.
+        BPF_STMT(BPF_LD | BPF_H | BPF_IND, (__u32)SKF_NET_OFF + 2),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kTestDstPortIpv4, 1, 0),
+        BPF_STMT(BPF_RET | BPF_K, 0),
+
+        // Accept.
+        BPF_STMT(BPF_RET | BPF_K, 0xFFFFFFFF),
+    };
+  };
+
+  // This filter accepts IPv4 UDP packets on port kTestDstPortIpv4 only if they are PACKET_OUTGOING.
+  std::vector<sock_filter> filter_outgoing_code = make_filter(PACKET_OUTGOING);
+  const sock_fprog filter_outgoing = {
+      .len = static_cast<unsigned short>(filter_outgoing_code.size()),
+      .filter = filter_outgoing_code.data(),
+  };
+
+  ASSERT_EQ(setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter_outgoing,
+                       sizeof(filter_outgoing)),
+            0);
+
+  // Send a packet to loopback. When sent to loopback without a filter, the packet is captured twice
+  // (once as PACKET_OUTGOING on egress, once as PACKET_HOST on ingress). With the filter above,
+  // only the outgoing packet is received.
+  sockaddr_in addr4 = {
+      .sin_family = AF_INET,
+      .sin_port = htons(kTestDstPortIpv4),
+      .sin_addr =
+          {
+              .s_addr = htonl(INADDR_LOOPBACK),
+          },
+  };
+
+  const char data[] = "test message";
+  fbl::unique_fd sendfd;
+  ASSERT_TRUE(sendfd = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0))) << strerror(errno);
+  ASSERT_EQ(sendto(sendfd.get(), data, sizeof(data), 0, reinterpret_cast<sockaddr*>(&addr4),
+                   sizeof(addr4)),
+            static_cast<int>(sizeof(data)))
+      << strerror(errno);
+
+  pollfd pfd = {
+      .fd = packet_socket_fd_.get(),
+      .events = POLLIN,
+  };
+
+  ASSERT_EQ(poll(&pfd, 1, 10000), 1);
+  char buf[4096];
+  ASSERT_GT(recv(packet_socket_fd_.get(), buf, sizeof(buf), 0), 0);
+
+  // The second packet (PACKET_HOST on ingress) should be dropped by the filter.
+  ASSERT_EQ(poll(&pfd, 1, 1000), 0);
+
+  // Now test with PACKET_HOST filter.
+  std::vector<sock_filter> filter_host_code = make_filter(PACKET_HOST);
+  const sock_fprog filter_host = {
+      .len = static_cast<unsigned short>(filter_host_code.size()),
+      .filter = filter_host_code.data(),
+  };
+
+  ASSERT_EQ(setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter_host,
+                       sizeof(filter_host)),
+            0);
+
+  ASSERT_EQ(sendto(sendfd.get(), data, sizeof(data), 0, reinterpret_cast<sockaddr*>(&addr4),
+                   sizeof(addr4)),
+            static_cast<int>(sizeof(data)))
+      << strerror(errno);
+
+  ASSERT_EQ(poll(&pfd, 1, 10000), 1);
+  ASSERT_GT(recv(packet_socket_fd_.get(), buf, sizeof(buf), 0), 0);
+
+  // Egress packet was dropped, only one packet (PACKET_HOST on ingress) received.
+  ASSERT_EQ(poll(&pfd, 1, 1000), 0);
 }
 
 TEST(IpTables, IpTablesAdminCap) {
