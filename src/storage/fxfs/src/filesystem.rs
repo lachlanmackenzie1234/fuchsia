@@ -72,15 +72,27 @@ const TRIM_INTERVAL_TIMER: Duration = Duration::from_secs(60 * 60 * 24);
 // TODO(https://fxbug.dev/489725256) Configure the task to run when fxfs is idle.
 const CLEAN_TRANSFER_BUFFER_INTERVAL: Duration = Duration::from_secs(60);
 
-#[cfg(target_os = "fuchsia")]
-pub type WakeLease = zx::NullableHandle;
+/// An opaque token representing an active wake lease. When held, it prevents the system from
+/// suspending. Dropping this token releases the lease.
+#[derive(Debug)]
+pub struct WakeLease {
+    #[cfg(target_os = "fuchsia")]
+    _lease: zx::Handle,
+}
 
-#[cfg(not(target_os = "fuchsia"))]
-pub type WakeLease = fuchsia_emulated_handle::Handle;
+#[cfg(target_os = "fuchsia")]
+impl WakeLease {
+    pub fn new<H: TryInto<zx::Handle>>(lease: H) -> Self
+    where
+        H::Error: std::fmt::Debug,
+    {
+        Self { _lease: lease.try_into().expect("lease handle must be valid") }
+    }
+}
 
 pub trait PowerManager: Send + Sync {
     /// Returns a stream of battery status changes (true if using battery).
-    fn watch_battery(self: Arc<Self>) -> BoxStream<'static, (bool, WakeLease)>;
+    fn watch_battery(self: Arc<Self>) -> BoxStream<'static, (bool, Option<WakeLease>)>;
 }
 
 /// Services registration of layer files with a platform-specific layer pager.
@@ -910,7 +922,7 @@ impl FxFilesystem {
 
                 let mut pause_future = pin!(
                     async {
-                        let mut wake_lease = WakeLease::invalid();
+                        let mut wake_lease: Option<WakeLease> = None;
                         loop {
                             let Some((using_battery, new_lease)) = watcher.next_latest().await
                             else {
@@ -927,8 +939,8 @@ impl FxFilesystem {
                             // Hold onto a wake lease if we are using an external power source (and
                             // we are therefore unpaused).
                             if using_battery {
-                                wake_lease = WakeLease::invalid();
-                            } else if !new_lease.is_invalid() {
+                                wake_lease = None;
+                            } else if new_lease.is_some() {
                                 wake_lease = new_lease;
                             }
                         }
@@ -2563,7 +2575,7 @@ mod tests {
         impl super::PowerManager for MockPowerManager {
             fn watch_battery(
                 self: Arc<Self>,
-            ) -> futures::stream::BoxStream<'static, (bool, super::WakeLease)> {
+            ) -> futures::stream::BoxStream<'static, (bool, Option<super::WakeLease>)> {
                 futures::stream::unfold(true, move |first| {
                     let this = self.clone();
                     async move {
@@ -2572,12 +2584,11 @@ mod tests {
                         }
                         let val = *this.on_battery.lock();
                         let handle = if val {
-                            zx::NullableHandle::invalid()
+                            None
                         } else {
                             let (h1, h2) = zx::EventPair::create();
                             *this.wake_lease.lock() = Some(h2);
-                            // SAFETY: It's clear the handle is valid.
-                            h1.into_handle()
+                            Some(super::WakeLease::new(h1))
                         };
                         Some(((val, handle), false))
                     }
