@@ -2211,3 +2211,24 @@ TEST(ImageFormat, IsNonTiledSinglePlaneTest) {
   EXPECT_TRUE(ImageFormatIsNonTiledSinglePlane(bgra32));
 }
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(30)
+
+// The image-format asserts are enabled in all build types, so misuse crashes consistently instead
+// of returning a meaningless value in release builds.
+TEST(ImageFormat, UnsupportedPixelFormatPropertiesCrash) {
+  PixelFormatAndModifier unsupported(fuchsia_images2::PixelFormat::kB8G8R8A8,
+                                     fuchsia_images2::PixelFormatModifier::kDoNotCare);
+  ASSERT_FALSE(ImageFormatIsSupported(unsupported));
+  ASSERT_DEATH([&] { ImageFormatBitsPerPixel(unsupported); });
+  ASSERT_DEATH([&] { ImageFormatStrideBytesPerWidthPixel(unsupported); });
+  ASSERT_DEATH([&] { ImageFormatSurfaceWidthMinDivisor(unsupported); });
+  ASSERT_DEATH([&] { ImageFormatSurfaceHeightMinDivisor(unsupported); });
+  ASSERT_DEATH([&] { ImageFormatSampleAlignment(unsupported); });
+}
+
+TEST(ImageFormat, LinearImageSizeWithoutBytesPerRowCrashes) {
+  fuchsia_images2::ImageFormat image_format;
+  image_format.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
+  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+  image_format.size() = {64u, 64u};
+  ASSERT_DEATH([&] { ImageFormatImageSize(image_format); });
+}
