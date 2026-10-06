@@ -352,9 +352,6 @@
                 "PrivateFutexTest.WakeOp0Xor",
 
                 // getdents_test
-                "GetdentsTest/0.TooLargeSize",
-                "GetdentsTest/1.TooLargeSize",
-
                 // Assumes structure of root directory.
                 "ReaddirTest.RootContainsBasicDirectories",
 
