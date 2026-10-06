@@ -20,7 +20,7 @@ use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::SIGKILL;
+use starnix_uapi::signals::{SIGKILL, SIGSEGV};
 use zerocopy::FromZeros;
 
 mod table;
@@ -56,6 +56,20 @@ type RestrictedExitCallback = extern "C" fn(
 ) -> bool;
 
 unsafe extern "C" {
+    /// Enters restricted mode in a loop, invoking `restricted_exit_callback` on each restricted
+    /// exit until the callback returns `false` or `zx_restricted_enter` fails.
+    ///
+    /// # Safety
+    ///
+    /// * `options` and `restricted_exit_callback` must be a valid `zx_restricted_enter` FFI
+    ///   configuration.
+    /// * `restricted_exit_callback_context` must point to a valid [`RestrictedEnterContext`] that
+    ///   is exclusively accessed by the current thread and outlives this call.
+    /// * `restricted_state` must point to the current thread's bound and mapped
+    ///   `zx_restricted_state_t`, which must outlive this call.
+    /// * `extended_pstate_ptr_ptr` must point to a valid [`ExtendedPstatePointer`] whose backing
+    ///   storage matches the architectural mode selected by `restricted_state` and outlives this
+    ///   call.
     // rustc doesn't like RestrictedEnterContext for FFI but we're just passing it back to
     // ourselves with extra steps.
     #[allow(improper_ctypes)]
@@ -113,10 +127,6 @@ fn run_task(
         return Ok(exit_status);
     }
 
-    // This extended pstate pointer points to the storage for extended processor
-    // state (vector and FP registers).
-    let mut extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
-
     let mut restricted_enter_context = RestrictedEnterContext {
         current_task,
         error_context,
@@ -124,27 +134,57 @@ fn run_task(
         exception_report_raw,
     };
 
-    // SAFETY: `restricted_enter_context`, `restricted_state_ptr`, and `extended_pstate_ptr`
-    // point to valid, exclusively-owned state for the current thread that outlives
-    // `restricted_enter_loop`. The thread's extended pstate storage matches the
-    // architectural mode in `restricted_state_ptr`.
-    let restricted_enter_status = zx::Status::ok(unsafe {
-        restricted_enter_loop(
-            RESTRICTED_ENTER_OPTIONS,
-            restricted_exit_callback_c,
-            &mut restricted_enter_context,
-            restricted_state_ptr,
-            &raw mut extended_pstate_ptr,
-        )
-    });
-    if let Err(status) = restricted_enter_status {
-        // If restricted_enter_loop failed, it means that we failed to satisfy
-        // a prerequisite of zx_restricted_enter which should never happen.
-        log_error!(
-            "restricted_enter_loop failed: {}, register state: {:?}",
-            status,
-            restricted_enter_context.current_task.thread_state.registers
-        );
+    loop {
+        let mut extended_pstate_ptr =
+            restricted_enter_context.current_task.thread_state.extended_pstate.as_ptr();
+        // SAFETY:
+        // * `RESTRICTED_ENTER_OPTIONS` and `restricted_exit_callback_c` form a valid
+        //   `zx_restricted_enter` FFI configuration.
+        // * `restricted_enter_context` is exclusively accessed by the current thread, outlives the
+        //   call, and is passed as a raw pointer to avoid asserting an intermediate `&mut` borrow.
+        // * `restricted_state_ptr` points to the current thread's bound and mapped
+        //   `zx_restricted_state_t`, which outlives this function.
+        // * `extended_pstate_ptr` is refreshed on each iteration from `current_task.thread_state`
+        //   so its backing storage matches the architectural mode in `restricted_state_ptr`.
+        let restricted_enter_status = zx::Status::ok(unsafe {
+            restricted_enter_loop(
+                RESTRICTED_ENTER_OPTIONS,
+                restricted_exit_callback_c,
+                &raw mut restricted_enter_context,
+                restricted_state_ptr,
+                &raw mut extended_pstate_ptr,
+            )
+        });
+        match restricted_enter_status {
+            Ok(()) => break,
+            Err(zx::Status::BAD_STATE) => {
+                // `zx_restricted_enter` returns `ZX_ERR_BAD_STATE` if the restricted register
+                // state fails architectural pre-entry validation (e.g. an invalid user IP or flags).
+                // Deliver a forced `SIGSEGV` (`SI_KERNEL`) and process the completed exit to
+                // dispatch a signal handler or terminate the task.
+                force_signal(
+                    restricted_enter_context.current_task,
+                    SignalInfo::forced(SIGSEGV),
+                    /* restricted_exception = */ None,
+                );
+                if let Some(exit_status) = process_completed_restricted_exit(
+                    restricted_enter_context.current_task,
+                    &restricted_enter_context.error_context,
+                )? {
+                    return Ok(exit_status);
+                }
+            }
+            Err(status) => {
+                // If restricted_enter_loop failed, it means that we failed to satisfy
+                // a prerequisite of zx_restricted_enter which should never happen.
+                log_error!(
+                    "restricted_enter_loop failed: {}, register state: {:?}",
+                    status,
+                    restricted_enter_context.current_task.thread_state.registers
+                );
+                break;
+            }
+        }
     }
     restricted_enter_context.exit_status
 }

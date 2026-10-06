@@ -21,6 +21,7 @@ use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_HIGHEST_ADDRESS;
 use starnix_uapi::signals::{SIGCHLD, SigSet};
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
 use starnix_uapi::vfs::EpollEvent;
@@ -63,12 +64,20 @@ pub fn sys_arch_prctl(
     code: u32,
     addr: UserAddress,
 ) -> Result<(), Errno> {
+    // From `arch_prctl(2)`:
+    // EPERM: `addr` is outside the process address space.
     match code {
         ARCH_SET_FS => {
+            if addr.ptr() >= RESTRICTED_ASPACE_HIGHEST_ADDRESS {
+                return error!(EPERM);
+            }
             current_task.thread_state.registers.fs_base = addr.ptr() as u64;
             Ok(())
         }
         ARCH_SET_GS => {
+            if addr.ptr() >= RESTRICTED_ASPACE_HIGHEST_ADDRESS {
+                return error!(EPERM);
+            }
             current_task.thread_state.registers.gs_base = addr.ptr() as u64;
             Ok(())
         }

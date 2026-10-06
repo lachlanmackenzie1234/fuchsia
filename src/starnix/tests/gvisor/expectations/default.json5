@@ -763,9 +763,6 @@
                 "SigaltstackTest.ResetByExecve",
 
                 // sigreturn_test
-                // TODO(https://fxbug.dev/563127415): Deliver SIGSEGV when handler RIP is non-canonical.
-                "SigIretTest.BadHandler",
-
                 // TODO(https://fxbug.dev/322874521): Requires setitimer(ITIMER_VIRTUAL).
                 "SigIretTest.CheckRcxR11",
 
@@ -952,9 +949,6 @@
                 // semaphore_test
                 "SemaphoreTest.*",
                 "SempahoreTest.*",
-
-                // sysret_test
-                "SysretTest.BadRip",
 
                 // tcp_socket_test
                 "AllInetTests/SimpleTcpSocketTest.SetSocketAttachDetachFilter/*",
@@ -1232,6 +1226,7 @@
                 "FPSigTest.Fork",
                 "FPSigTest.ForkWithZeroMxcsr",
                 "ProcPidCmdline.SubprocessForkSameCmdline",
+
                 // TODO(https://fxbug.dev/570221669): Fix intermittent crash and re-enable.
                 "ProcTask.VerifyTaskChildrenNeverReportsZeroTID",
                 "SigaltstackTest.SetCurrentStack",

@@ -67,7 +67,7 @@ impl<T: RegisterStorage> RegisterState<T> {
         }
         self.sp = regs.sp;
         self.pc = regs.pc;
-        self.cpsr = regs.pstate as u32;
+        self.cpsr = (regs.pstate as u32) & !(zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32);
     }
 
     pub fn from_user_regs_struct_arch32(&mut self, regs: &starnix_uapi::arch32::user_regs_struct) {
@@ -81,7 +81,7 @@ impl<T: RegisterStorage> RegisterState<T> {
         self.r[14] = self.r[30];
         self.pc = regs.regs[15] as u64;
         self.r[15] = self.pc;
-        self.cpsr = regs.regs[16];
+        self.cpsr = regs.regs[16] | (zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32);
         self.orig_x0 = regs.regs[17] as u64;
     }
 
@@ -200,9 +200,13 @@ impl<T: RegisterStorage> RegisterState<T> {
 
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
-        // Reset all the flags except the aarch32 and thumb bits.
-        self.cpsr = self.cpsr
-            & (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK) as u32;
+        // Reset all the flags except the aarch32 and (in aarch32 mode) thumb bits.
+        if self.is_arch32() {
+            self.cpsr &=
+                (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK) as u32;
+        } else {
+            self.cpsr = 0;
+        }
     }
 
     /// Executes the given predicate on the register.
@@ -245,10 +249,16 @@ impl<T: RegisterStorage> RegisterState<T> {
             if is_arch32 {
                 self.r[15] = self.pc;
             }
-        } else if offset == memoffset::offset_of!(user_regs_struct, pstate) {
+        } else if offset == memoffset::offset_of!(user_regs_struct, pstate)
+            || (offset == reg_offset(16) && is_arch32)
+        {
             let mut cpsr = self.cpsr as u64;
             final_f(&mut cpsr);
-            self.cpsr = cpsr as u32;
+            if is_arch32 {
+                self.cpsr = (cpsr as u32) | (zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32);
+            } else {
+                self.cpsr = (cpsr as u32) & !(zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32);
+            }
         } else if offset == reg_offset(30) || (offset == reg_offset(14) && is_arch32) {
             // The 30th register is stored as lr in self.real_registers
             final_f(&mut self.r[30]);

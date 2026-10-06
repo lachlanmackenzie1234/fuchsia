@@ -4,6 +4,7 @@
 
 use crate::{HeapRegs, RegisterStorage, RegisterStorageEnum};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_HIGHEST_ADDRESS;
 use starnix_uapi::{__NR_restart_syscall, error, user_regs_struct};
 
 /// The size of the syscall instruction in bytes.
@@ -178,6 +179,14 @@ impl<T: RegisterStorage> RegisterState<T> {
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
         self.flags = 0;
+        // Clear out-of-range segment bases so that a signal handler can be entered if
+        // `zx_restricted_enter` rejected the state with `ZX_ERR_BAD_STATE`.
+        if self.fs_base as usize >= RESTRICTED_ASPACE_HIGHEST_ADDRESS {
+            self.fs_base = 0;
+        }
+        if self.gs_base as usize >= RESTRICTED_ASPACE_HIGHEST_ADDRESS {
+            self.gs_base = 0;
+        }
     }
 
     /// Executes the given predicate on the register.
