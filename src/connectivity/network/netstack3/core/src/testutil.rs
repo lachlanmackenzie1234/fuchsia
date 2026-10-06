@@ -36,7 +36,7 @@ use netstack3_base::testutil::{
 use netstack3_base::{
     AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
     InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, LocalFrameDestination,
-    MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError,
+    MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError, PacketType,
     ReferenceNotifiers, RemoveResourceResult, RemoveResourceResultWithContext, RngContext,
     SocketDiagnosticsSeed, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
     WorkQueueReport,
@@ -328,13 +328,15 @@ where
         parsing_context: NetworkParsingContext,
     ) {
         let (core_ctx, bindings_ctx) = self.contexts();
+        let packet_type = frame_dst.map(PacketType::from).unwrap_or(PacketType::Host);
+        let metadata = DeviceIpLayerMetadata::with_marks_and_packet_type(marks, packet_type);
         match I::VERSION {
             IpVersion::V4 => ip::receive_ipv4_packet(
                 core_ctx,
                 bindings_ctx,
                 device,
                 frame_dst,
-                DeviceIpLayerMetadata::with_marks(marks),
+                metadata,
                 parsing_context,
                 None,
                 buffer,
@@ -344,7 +346,7 @@ where
                 bindings_ctx,
                 device,
                 frame_dst,
-                DeviceIpLayerMetadata::with_marks(marks),
+                metadata,
                 parsing_context,
                 None,
                 buffer,

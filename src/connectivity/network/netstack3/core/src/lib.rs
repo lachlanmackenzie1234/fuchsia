@@ -51,7 +51,8 @@ pub mod device {
 
     // Re-exported types.
     pub use netstack3_base::{
-        BoundInterfaceMatcher, InterfaceMatcher, InterfaceProperties, StrongDeviceIdentifier,
+        BoundInterfaceMatcher, DeviceIdentifier, InterfaceMatcher, InterfaceProperties,
+        StrongDeviceIdentifier,
     };
     pub use netstack3_device::blackhole::{BlackholeDevice, BlackholeDeviceId};
     pub use netstack3_device::ethernet::{
@@ -82,7 +83,7 @@ pub mod device {
 
 /// Device socket API.
 pub mod device_socket {
-    pub use netstack3_base::{FrameDestination, SendFrameErrorReason};
+    pub use netstack3_base::{FrameDestination, PacketType, SendFrameErrorReason};
     pub use netstack3_device::socket::{
         DeviceSocketBindingsContext, DeviceSocketMetadata, DeviceSocketTypes, EthernetFrame,
         EthernetHeaderParams, Frame, IpFrame, Protocol, ReceiveFrameError, ReceivedFrame,
