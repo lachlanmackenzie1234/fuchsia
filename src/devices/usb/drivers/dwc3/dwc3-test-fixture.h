@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <mutex>
 #include <optional>
+#include <queue>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
@@ -66,6 +67,18 @@ class Dwc3TestHelper {
   static void Ep0Reset(Dwc3& drv) { drv.Ep0Reset(); }
   static void Ep0QueueSetup(Dwc3& drv) { drv.Ep0QueueSetup(); }
   static Dwc3::Ep0::State GetEp0State(Dwc3& drv) { return drv.ep0_.state; }
+  static fuchsia_hardware_usb_descriptor::wire::UsbSpeed GetEp0CurSpeed(const Dwc3& drv) {
+    return drv.ep0_.cur_speed;
+  }
+  static void SetEp0CurSpeed(Dwc3& drv, fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed) {
+    drv.ep0_.cur_speed = speed;
+  }
+  static uint64_t GetEp0SetupGeneration(const Dwc3& drv) { return drv.ep0_.setup_generation; }
+  static void ResetUserEndpoints(Dwc3& drv, bool force = false) { drv.ResetUserEndpoints(force); }
+  static void EnableEp0(Dwc3& drv) {
+    drv.EpEnable(drv.ep0_.out, true);
+    drv.EpEnable(drv.ep0_.in, true);
+  }
   static fuchsia_hardware_usb_policy::wire::DeviceState GetDeviceState(Dwc3& drv) {
     return drv.device_state_;
   }
@@ -1033,6 +1046,22 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
     }
   }
 
+  void SetDeferControl(bool defer, libsync::Completion* signal = nullptr) {
+    defer_control_ = defer;
+    control_deferred_signal_ = signal;
+  }
+  bool has_deferred_control() const { return !deferred_control_.empty(); }
+  void CompleteDeferredControl(zx_status_t status = ZX_OK) {
+    ASSERT_FALSE(deferred_control_.empty());
+    auto completer = std::move(deferred_control_.front());
+    deferred_control_.pop();
+    if (status != ZX_OK) {
+      completer.Reply(zx::error(status));
+      return;
+    }
+    completer.Reply(zx::ok(&response_));
+  }
+
   void Control(ControlRequestView request, ControlCompleter::Sync& completer) override {
     control_called_.store(true);
 
@@ -1041,16 +1070,27 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
                   cpp20::span<const uint8_t>(request->write.data(), request->write.size()));
     }
 
+    if (usb_request_is_in(request->setup.bm_request_type)) {
+      uint8_t* data = read_data_.data();
+      size_t size = read_data_.size();
+      response_.read = fidl::VectorView<uint8_t>::FromExternal(data, size);
+    } else {
+      response_.read = {};
+    }
+
+    if (defer_control_) {
+      deferred_control_.push(completer.ToAsync());
+      if (control_deferred_signal_) {
+        control_deferred_signal_->Signal();
+      }
+      return;
+    }
+
     if (control_status_ != ZX_OK) {
       completer.Reply(zx::error(control_status_));
       return;
     }
 
-    if (usb_request_is_in(request->setup.bm_request_type)) {
-      uint8_t* data = read_data_.data();
-      size_t size = read_data_.size();
-      response_.read = fidl::VectorView<uint8_t>::FromExternal(data, size);
-    }
     completer.Reply(zx::ok(&response_));
   }
 
@@ -1092,6 +1132,9 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   std::atomic<bool> set_speed_called_{false};
   bool defer_set_connected_false_ = false;
   std::optional<SetConnectedCompleter::Async> deferred_set_connected_;
+  bool defer_control_ = false;
+  libsync::Completion* control_deferred_signal_ = nullptr;
+  std::queue<ControlCompleter::Async> deferred_control_;
   ControlCallback control_cb_;
   SetConnectedCallback set_connected_cb_;
   SetSpeedCallback set_speed_cb_;

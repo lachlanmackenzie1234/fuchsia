@@ -1720,4 +1720,149 @@ TEST_F(UnmanagedWakeLeaseTestFixture, DisconnectHoldsWakeLeaseIrisPlatformExtens
                                  /*serve_platform_mocks=*/false);
 }
 
+TEST_F(UnmanagedTestFixture, SetConfigurationPreservesEp0AndIgnoresStaleCompletionAcrossBusReset) {
+  FakeUsbDciInterface fake_dci;
+  auto dalepena_val = std::make_shared<std::atomic<uint32_t>>(0);
+
+  dut_.RunInEnvironmentTypeContext([dalepena_val](Environment& env) {
+    auto& dalepena = env.reg_region()[DALEPENA::Get().addr()];
+    dalepena.SetWriteCallback(
+        [dalepena_val](uint64_t val_raw) { dalepena_val->store(static_cast<uint32_t>(val_raw)); });
+    dalepena.SetReadCallback([dalepena_val]() -> uint64_t { return dalepena_val->load(); });
+  });
+
+  SetUpAndPowerOnDriver();
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DALEPENA::Get().addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[DALEPENA::Get().addr()].SetReadCallback([]() -> uint64_t { return 0; });
+    });
+  });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  uint64_t gen_before = 0;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::EnableEp0(drv);
+    Dwc3TestHelper::SetEp0CurSpeed(drv, fdescriptor::wire::UsbSpeed::kSuper);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+    EXPECT_EQ(dalepena_val->load() & 0x3u, 0x3u);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0CurSpeed(drv), fdescriptor::wire::UsbSpeed::kSuper);
+    gen_before = Dwc3TestHelper::GetEp0SetupGeneration(drv);
+  });
+
+  // Defer the DCI Control reply to hold the transfer in-flight.
+  libsync::Completion control_deferred;
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.SetDeferControl(true, &control_deferred); });
+
+  // Send USB_REQ_SET_CONFIGURATION.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto setup = MakeSetupPacket(
+        kStandardDeviceOut, fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration), 1,
+        0, 0);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  control_deferred.Wait();
+  dut_.RunInDriverContext([&](Dwc3& drv) { ASSERT_TRUE(fake_dci.has_deferred_control()); });
+
+  // Verify that USB_REQ_SET_CONFIGURATION called ResetConfiguration() which resets user
+  // endpoints without calling Ep0Reset(): EP0 OUT/IN remain enabled in software,
+  // DALEPENA bits 0 and 1 remain set, and cur_speed is preserved.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 0));
+    EXPECT_TRUE(Dwc3TestHelper::IsEpEnabled(drv, 1));
+    EXPECT_EQ(dalepena_val->load() & 0x3u, 0x3u);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0CurSpeed(drv), fdescriptor::wire::UsbSpeed::kSuper);
+  });
+
+  // Simulate a bus reset arriving while Control(SET_CONFIGURATION) is still pending.
+  dut_.RunInDriverContext([&](Dwc3& drv) { Dwc3TestHelper::HandleResetEvent(drv); });
+  dut_.runtime().RunUntilIdle();
+
+  // Reset puts the device in kDefault state and increments setup_generation.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kDefault);
+    EXPECT_GT(Dwc3TestHelper::GetEp0SetupGeneration(drv), gen_before);
+  });
+
+  // Now complete the stale deferred Control() call from before the reset.
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredControl(ZX_OK); });
+  dut_.runtime().RunUntilIdle();
+
+  // The stale completion must be ignored and must not transition device state to kConfigured.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kDefault);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+TEST_F(UnmanagedTestFixture, Ep0QueueSetupIncrementsGenerationAndDropsStaleControlCompletion) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  uint64_t gen_before = 0;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::EnableEp0(drv);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    gen_before = Dwc3TestHelper::GetEp0SetupGeneration(drv);
+  });
+
+  // Defer the DCI Control reply to hold the transfer in-flight.
+  libsync::Completion control_deferred;
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.SetDeferControl(true, &control_deferred); });
+
+  // Send USB_REQ_SET_CONFIGURATION.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto setup = MakeSetupPacket(
+        kStandardDeviceOut, fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration), 1,
+        0, 0);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  control_deferred.Wait();
+  dut_.RunInDriverContext([&](Dwc3& drv) { ASSERT_TRUE(fake_dci.has_deferred_control()); });
+
+  // Simulate a new SETUP packet arriving, re-invoking Ep0QueueSetup on early abort.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    EXPECT_GT(Dwc3TestHelper::GetEp0SetupGeneration(drv), gen_before);
+  });
+
+  // Complete the stale deferred Control() call from the prior generation.
+  dut_.RunInDriverContext([&](Dwc3& drv) { fake_dci.CompleteDeferredControl(ZX_OK); });
+  dut_.runtime().RunUntilIdle();
+
+  // The stale completion must be dropped and must not transition device state to kConfigured.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_NE(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kConfigured);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
 }  // namespace dwc3

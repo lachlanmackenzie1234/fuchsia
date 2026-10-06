@@ -1217,10 +1217,7 @@ void Dwc3::StartPeripheralMode() {
 
 void Dwc3::ResetConfiguration() {
   TRACE_DURATION("dwc3", "Dwc3::ResetConfiguration");
-  CancelAllEndpointIdleCallbacks();
-  for (UserEndpoint& uep : user_endpoints_) {
-    UserEpReset(uep);
-  }
+  ResetUserEndpoints(false);
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -1248,7 +1245,6 @@ void Dwc3::HandleResetEvent() {
   TRACE_DURATION("dwc3", "Dwc3::HandleResetEvent");
   fdf::info("Dwc3::HandleResetEvent");
 
-  CancelAllEndpointIdleCallbacks();
   ResetEndpoints();
   SetDeviceAddress(0);
   connection_speed_ = fdescriptor::UsbSpeed::kUndefined;
@@ -1373,7 +1369,6 @@ void Dwc3::HandleDisconnectedEvent() {
         });
   }
 
-  CancelAllEndpointIdleCallbacks();
   ResetEndpoints();
 
   connection_speed_ = fdescriptor::UsbSpeed::kUndefined;
@@ -1811,6 +1806,7 @@ void Dwc3::UserEpReset(UserEndpoint& uep, bool force) {
 
 void Dwc3::Ep0Reset() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
+  ep0_.setup_generation++;
   if (is_active()) {
     for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
       if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
@@ -1891,12 +1887,18 @@ void Dwc3::CancelAllEndpointIdleCallbacks() {
   }
 }
 
-void Dwc3::ResetEndpoints(bool force) {
-  TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
-  Ep0Reset();
+void Dwc3::ResetUserEndpoints(bool force) {
+  TRACE_DURATION("dwc3", "Dwc3::ResetUserEndpoints");
+  CancelAllEndpointIdleCallbacks();
   for (UserEndpoint& uep : user_endpoints_) {
     UserEpReset(uep, force);
   }
+}
+
+void Dwc3::ResetEndpoints(bool force) {
+  TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
+  Ep0Reset();
+  ResetUserEndpoints(force);
 }
 
 void Dwc3::OnConnectStatusChanged(

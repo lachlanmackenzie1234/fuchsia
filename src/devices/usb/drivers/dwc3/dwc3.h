@@ -408,6 +408,7 @@ class Dwc3 : public fdf::DriverBase2,
     Endpoint in;
     fdescriptor::wire::UsbSetup cur_setup;
     fdescriptor::wire::UsbSpeed cur_speed{fdescriptor::wire::UsbSpeed::kUndefined};
+    uint64_t setup_generation{0};
   };
 
   friend struct std::formatter<Ep0::State>;
@@ -505,6 +506,9 @@ class Dwc3 : public fdf::DriverBase2,
   void WaitForAllUserEndpointsIdle(fit::callback<void(bool)> callback);
   void NotifyEndpointIdle(UserEndpoint& uep);
   void CancelAllEndpointIdleCallbacks();
+
+  // Resets only user endpoints without touching EP0 or its state.
+  void ResetUserEndpoints(bool force = false);
 
   // This method is safe to call with the core powered down.
   void ResetEndpoints(bool force = false);

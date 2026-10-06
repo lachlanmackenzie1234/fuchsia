@@ -55,6 +55,7 @@ void Dwc3::Ep0Start() {
 
 void Dwc3::Ep0QueueSetup() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0QueueSetup");
+  ep0_.setup_generation++;
   if (is_active()) {
     for (Endpoint* ep : {&ep0_.out, &ep0_.in}) {
       if (ep->transfer_state == Endpoint::TransferState::kStartingSingle) {
@@ -356,10 +357,11 @@ void Dwc3::HandleEp0Setup(size_t length) {
         SetDeviceAddress(setup.w_value);
         ep0_.state = Ep0::State::WaitHost;
         return;
-      case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration):
+      case fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration): {
         ResetConfiguration();
-        WaitForAllUserEndpointsIdle([this, setup, length](bool idle) {
-          if (!idle || !power_on_ ||
+        const uint64_t setup_gen = ep0_.setup_generation;
+        WaitForAllUserEndpointsIdle([this, setup, length, setup_gen](bool idle) {
+          if (!idle || !power_on_ || ep0_.setup_generation != setup_gen ||
               (ep0_.state != Ep0::State::TwoStage && ep0_.state != Ep0::State::WaitFidl)) {
             return;
           }
@@ -367,6 +369,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
           DoControlCall(setup, length);
         });
         return;
+      }
       default:
         // fall through to the common DoControlCall
         break;
@@ -411,14 +414,21 @@ void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
     }
   }
 
+  const uint64_t setup_gen = ep0_.setup_generation;
   dci_intf_.buffer(arena)
       ->Control(setup, out_payload)
-      .Then([this, is_out, fail, length,
-             setup](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>&
-                        result) {
+      .Then([this, is_out, fail, length, setup,
+             setup_gen](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>&
+                            result) {
         if (!power_on_ || !controller_started_) {
           // Return in case the core was powered off or disabled between the setup event and
           // the reply from our child.
+          return;
+        }
+
+        if (ep0_.setup_generation != setup_gen) {
+          fdf::warn("Ignoring stale Control() completion: gen {} != current {}", setup_gen,
+                    ep0_.setup_generation);
           return;
         }
 
@@ -467,13 +477,6 @@ void Dwc3::DoControlCall(fdescriptor::wire::UsbSetup setup, size_t length) {
             break;
           default:
             if (!is_out) {
-              if (ep0_.state == Ep0::State::None) {
-                fdf::error(
-                    "BUG TRIPPED: Async IN control callback handling None state! (CRASH IMMINENT)");
-                // Sleep to allow syslog to flush this to serial before the instant hardware
-                // lockup!
-                zx::nanosleep(zx::deadline_after(zx::msec(500)));
-              }
               // A lightweight byte-span is used to make it easier to process the read data.
               cpp20::span<uint8_t> read_data{result.value()->read.get()};
               // Don't blow out caller's buffer.
