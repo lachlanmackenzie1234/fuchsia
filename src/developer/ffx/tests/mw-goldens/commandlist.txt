@@ -1,6 +1,9 @@
 ffx component destroy
 ffx component list
 ffx component show
+ffx component storage copy
+ffx component storage list
+ffx component storage make-directory
 ffx config get
 ffx config set
 ffx debug symbol-index list

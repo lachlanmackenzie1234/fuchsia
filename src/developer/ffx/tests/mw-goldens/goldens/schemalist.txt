@@ -1,6 +1,9 @@
 component_destroy.json
 component_list.json
 component_show.json
+component_storage_copy.json
+component_storage_list.json
+component_storage_make-directory.json
 config_get.json
 config_set.json
 debug_symbol-index_list.json
