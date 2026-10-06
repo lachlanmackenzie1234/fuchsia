@@ -565,6 +565,18 @@ fn validate(
                         selector_context
                     ));
                 }
+
+                for e in check_event_codes(&metric.event_codes, cobalt_metric, 0) {
+                    errors.push(format_invalid_event_code_error(
+                        path,
+                        "metric",
+                        cobalt_metric,
+                        project_id,
+                        project_name,
+                        &e,
+                        &selector_context,
+                    ));
+                }
             }
         }
     }
@@ -637,6 +649,22 @@ fn validate(
                     selector_context
                 ));
             }
+
+            for e in check_event_codes(
+                &metric.event_codes,
+                cobalt_metric,
+                FIRE_EVENT_CODE_DIMENSION_OFFSET,
+            ) {
+                errors.push(format_invalid_event_code_error(
+                    path,
+                    "FIRE metric",
+                    cobalt_metric,
+                    project_id,
+                    project_name,
+                    &e,
+                    &selector_context,
+                ));
+            }
         }
     }
 
@@ -660,6 +688,62 @@ fn verify_metric_type(sampler_type: SamplerMetricType, cobalt_type_raw: i32) -> 
         bail!("Sampler specified {:?}, Cobalt defines {:?}", sampler_type, cobalt_type);
     }
     Ok(())
+}
+
+/// Checks that each event code is valid for the Cobalt dimension it maps to.
+///
+/// `event_codes[i]` maps to Cobalt dimension `i + dimension_offset` of `cobalt_metric`. A code is
+/// valid if the dimension defines it, or if it doesn't exceed the dimension's `max_event_code`.
+/// Event codes without a corresponding dimension are skipped, since the dimension count is checked
+/// separately.
+///
+/// Returns a description of each invalid event code.
+fn check_event_codes(
+    event_codes: &[EventCode],
+    cobalt_metric: &MetricDefinition,
+    dimension_offset: usize,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (index, code) in event_codes.iter().enumerate() {
+        let Some(dimension) = cobalt_metric.metric_dimensions.get(index + dimension_offset) else {
+            continue;
+        };
+        // A `max_event_code` of 0 means it isn't set, so only the defined codes are valid.
+        let max_event_code = dimension.max_event_code;
+        if dimension.event_codes.contains_key(&code.0)
+            || (max_event_code > 0 && code.0 <= max_event_code)
+        {
+            continue;
+        }
+        let mut error = format!(
+            "event_codes[{index}] = {code} is not defined in Cobalt dimension '{}'",
+            dimension.dimension
+        );
+        if max_event_code > 0 {
+            error.push_str(&format!(" and exceeds its max_event_code ({max_event_code})"));
+        }
+        errors.push(error);
+    }
+    errors
+}
+
+/// Formats `error`, which describes an invalid event code for `cobalt_metric`, with the location
+/// of the Sampler metric. `metric_kind` describes the Sampler metric, e.g. "FIRE metric".
+fn format_invalid_event_code_error(
+    path: &Path,
+    metric_kind: &str,
+    cobalt_metric: &MetricDefinition,
+    project_id: u32,
+    project_name: &str,
+    error: &str,
+    selector_context: &str,
+) -> String {
+    let path = path.display();
+    let MetricDefinition { id: metric_id, metric_name, .. } = cobalt_metric;
+    format!(
+        "In {path}: Invalid event code for {metric_kind} {metric_id} ({metric_name}) in project \
+         {project_id} ({project_name}): {error}{selector_context}"
+    )
 }
 
 fn format_selectors_context(selectors: &[Selector]) -> String {
@@ -722,6 +806,7 @@ mod tests {
                             metric_type: CobaltMetricType::Occurrence as i32,
                             metric_dimensions: vec![MetricDimension {
                                 dimension: "dim1".into(),
+                                max_event_code: 10,
                                 ..Default::default()
                             }],
                             ..Default::default()
@@ -1412,6 +1497,89 @@ mod tests {
              Cobalt defines 2 dimension(s) [\"component\", \"reason\"], and event_codes[0] maps \
              to \"reason\" because [\"component\"] is reserved for the FIRE component ID\n  \
              Selector: {MONIKER}:root:val"
+        ));
+    }
+
+    #[test]
+    fn test_valid_numeric_event_codes() {
+        let registry = make_test_registry();
+        let bytes = registry.encode_to_vec();
+
+        // Codes defined by the dimension, and codes up to the dimension's max_event_code, are
+        // valid.
+        let project_configs = vec![(
+            PathBuf::from("test/valid_codes.json5"),
+            SamplerProjectConfig {
+                project_id: ProjectId(10),
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        metric_id: MetricId(102),
+                        metric_type: SamplerMetricType::Occurrence,
+                        event_codes: vec![EventCode(0), EventCode(10), EventCode(2)],
+                        selectors: vec![],
+                        upload_once: false,
+                    }],
+                }],
+            },
+        )];
+
+        assert!(validate(&bytes, &project_configs, &[]).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_numeric_event_codes() {
+        let registry = make_test_registry();
+        let bytes = registry.encode_to_vec();
+
+        let project_configs = vec![(
+            PathBuf::from("test/bad_codes.json5"),
+            SamplerProjectConfig {
+                project_id: ProjectId(10),
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        metric_id: MetricId(102),
+                        metric_type: SamplerMetricType::Occurrence,
+                        event_codes: vec![EventCode(5), EventCode(11), EventCode(1)],
+                        selectors: vec![],
+                        upload_once: false,
+                    }],
+                }],
+            },
+        )];
+        // The FIRE component ID is dimension 0, so event_codes[0] maps to the "reason" dimension.
+        let fire_templates = vec![(
+            PathBuf::from("test/bad_fire_codes.json5"),
+            ProjectTemplate {
+                project_id: ProjectId(10),
+                poll_rate_sec: 60,
+                metrics: vec![MetricTemplate {
+                    metric_id: MetricId(101),
+                    metric_type: SamplerMetricType::IntHistogram,
+                    event_codes: vec![EventCode(3)],
+                    selectors: vec!["core/fire:root:val".to_string()],
+                    upload_once: false,
+                }],
+            },
+        )];
+
+        let err = validate(&bytes, &project_configs, &fire_templates).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("3 validation error(s) found in Sampler configs:"), "{msg}");
+        let prefix = "In test/bad_codes.json5: Invalid event code for metric 102 \
+                      (test_named_occurrence) in project 10 (test_project):";
+        assert!(msg.contains(&format!(
+            "{prefix} event_codes[0] = 5 is not defined in Cobalt dimension 'status'"
+        )));
+        assert!(msg.contains(&format!(
+            "{prefix} event_codes[1] = 11 is not defined in Cobalt dimension 'count' and exceeds \
+             its max_event_code (10)"
+        )));
+        assert!(msg.contains(
+            "In test/bad_fire_codes.json5: Invalid event code for FIRE metric 101 \
+             (test_fire_histogram) in project 10 (test_project): event_codes[0] = 3 is not \
+             defined in Cobalt dimension 'reason'\n  Selector: core/fire:root:val"
         ));
     }
 }
