@@ -58,7 +58,6 @@ rustc_library("fuchsia-rcu-collections") {
     "src/tests/rcu_raw_hash_map.rs",
   ]
   edition = "2024"
-  test_deps = [ "//sdk/lib/fdio" ]
   visibility = [
     ":*",
     "//src/starnix/kernel/core:*",
