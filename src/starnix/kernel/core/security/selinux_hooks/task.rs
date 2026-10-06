@@ -14,8 +14,8 @@ use crate::task::{CurrentTask, Task};
 use crate::vfs::{FsNode, FsStr, NamespaceNode};
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
-    InitialSid, KernelClass, NullessByteStr, PolicyCap, Process2Permission, SystemPermission,
-    TaskAttrs,
+    InitialSid, KernelClass, KeyPermission, NullessByteStr, PolicyCap, Process2Permission,
+    SystemPermission, TaskAttrs,
 };
 use starnix_uapi::auth::{
     Credentials, PTRACE_MODE_ATTACH, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ, PtraceAccessMode,
@@ -1010,6 +1010,18 @@ pub(in crate::security) fn set_procattr(
                 ProcessPermission::SetKeyCreate,
                 audit_context,
             )?;
+
+            // Permission to create keys with the new Context is also required.
+            if let Some(new_sid) = sid {
+                check_permission(
+                    &permission_check,
+                    current_task,
+                    current_sid,
+                    new_sid,
+                    KeyPermission::Create,
+                    audit_context,
+                )?;
+            }
             creds.security_state.keycreate_sid = sid;
         }
         ProcAttr::SockCreate => {

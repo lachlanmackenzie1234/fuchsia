@@ -145,6 +145,8 @@ declare_kernel_classes! {
         FileSystem("filesystem"),
         /// "icmp_socket" class enabled via the "extended_socket_class" policy capability.
         IcmpSocket("icmp_socket"),
+        /// The SELinux "key" object class.
+        Key("key"),
         /// The SELinux "key_socket" object class.
         KeySocket("key_socket"),
         /// The SELinux "lnk_file" object class.
@@ -1138,6 +1140,15 @@ class_permission_enum! {
         Remount("remount"),
         /// Permission to unmount a filesystem.
         Unmount("unmount"),
+        // keep-sorted end
+    }
+}
+
+class_permission_enum! {
+    KeyPermission for Key {
+        // keep-sorted start
+        /// Permission to create a key.
+        Create("create"),
         // keep-sorted end
     }
 }
