@@ -104,6 +104,11 @@ import("//build/toolchain/rbe.gni")
 #     procedural macros run as compiler plugins on the build machine. Entries
 #     must not specify a toolchain.
 #
+#   link_deps (optional)
+#     List of labels of native (e.g. C/C++) libraries to link against. Same
+#     semantics as `deps` in GN. Mirrors the `link_deps` attribute of the
+#     Bazel rustc_*() macros, which only allows Rust targets in `deps`.
+#
 #
 #   all_dependent_configs
 #   applicable_licenses
@@ -172,6 +177,9 @@ template("rustc_artifact") {
   _deps = []
   if (defined(invoker.deps)) {
     _deps += invoker.deps
+  }
+  if (defined(invoker.link_deps)) {
+    _deps += invoker.link_deps
   }
 
   # Procedural macros run as compiler plugins on the build machine, so they and

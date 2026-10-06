@@ -61,6 +61,12 @@ while maintaining backward compatibility, because:
 * We'll eventually remove the GN targets, so it's better to keep Bazel targets
     as idiomatic as possible.
 
+For example, `rules_rust` only allows Rust targets in `deps`, and native
+(e.g. C/C++) libraries linked into Rust targets go in `link_deps` instead.
+The GN `rustc_*` templates accept `link_deps` too (with the same semantics as
+`deps`), so `bazel2gn` passes the attribute through unchanged, applying the
+same label translations it applies to `deps`.
+
 ### Starlark vs GN
 
 [Starlark][starlark] is the chosen language of Bazel for defining build targets,

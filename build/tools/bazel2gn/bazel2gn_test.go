@@ -660,6 +660,35 @@ rustc_dylib(
 		]
 	}
 }`,
+		}, {
+			name: "rustc_library link_deps",
+			bazel: `
+rustc_library(
+	name = "foo",
+	link_deps = [
+		"//zircon/system/ulib/sync",
+		"//sdk/lib/zxio",  # @bazel2gn:path_overwrite://sdk/lib/zxio:zxio_static
+	] + select({
+		"@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+		"//conditions:default": [],
+	}),
+	deps = ["//third_party/rust_crates/vendor:anyhow"],
+)`,
+			wantGN: `rustc_library("foo") {
+	link_deps = []
+	link_deps += [
+		"//zircon/system/ulib/sync",
+		"//sdk/lib/zxio:zxio_static",
+	]
+	if (is_fuchsia) {
+		link_deps += [
+			"//sdk/lib/fdio",
+		]
+	}
+	deps = [
+		"//third_party/rust_crates:anyhow",
+	]
+}`,
 		},
 	} {
 		f := toSyntaxFile(t, tc.bazel)
