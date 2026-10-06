@@ -678,7 +678,7 @@ class OpenWrtAP:
                 return False, {}
             for iface in interfaces:
                 status_res = self.ssh.run(
-                    f"ubus call hostapd.{iface} get_status"
+                    f"ubus -t 2 call hostapd.{iface} get_status"
                 )
                 status_data = json.loads(status_res.stdout.decode("utf-8"))
                 status_map[iface] = status_data
