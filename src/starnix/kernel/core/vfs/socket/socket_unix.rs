@@ -136,7 +136,8 @@ struct UnixSocketInner {
     /// See SO_ATTACH_BPF.
     bpf_program: Option<UnixSocketFilter>,
 
-    /// Unix credentials of the owner of this socket, for SO_PEERCRED.
+    /// Unix credentials of the peer of this socket, or of the listening socket itself, for
+    /// SO_PEERCRED.
     credentials: Option<ucred>,
 
     /// Socket state: a queue if this is a listening socket, or a peer if this is a connected
@@ -268,7 +269,7 @@ impl UnixSocket {
             )?;
             security::unix_stream_connect(current_task, socket, peer, &server)?;
             client.state = UnixSocketState::Connected(server.clone());
-            client.credentials = Some(current_task.current_ucred());
+            client.credentials = listener.credentials.clone();
             {
                 // This allow_subclass is safe because `server` is a newly created socket
                 // that hasn't been added to any public table or returned to the user yet.
@@ -278,7 +279,7 @@ impl UnixSocket {
                 server.state = UnixSocketState::Connected(socket.clone());
                 server.address = listener.address.clone();
                 server.messages.set_capacity(listener.messages.capacity())?;
-                server.credentials = listener.credentials.clone();
+                server.credentials = Some(current_task.current_ucred());
                 server.passcred = listener.passcred;
                 server.passsec = listener.passsec;
             }
@@ -459,17 +460,7 @@ impl UnixSocket {
     }
 
     fn peer_cred(&self) -> Option<ucred> {
-        let peer = {
-            let inner = self.lock();
-            inner.peer().cloned()
-        };
-        if let Some(peer) = peer {
-            let unix_socket = downcast_socket_to_unix(&peer);
-            let unix_socket = unix_socket.lock();
-            unix_socket.credentials.clone()
-        } else {
-            None
-        }
+        self.lock().credentials.clone()
     }
 
     pub fn bind_socket_to_node(
@@ -526,20 +517,19 @@ impl SocketOps for UnixSocket {
             _ => return error!(EOPNOTSUPP),
         }
         let mut inner = self.lock();
-        inner.credentials = Some(credentials);
         let is_bound = inner.address.is_some();
         let backlog = if backlog < 0 { DEFAULT_LISTEN_BACKLOG } else { backlog as usize };
         match &mut inner.state {
             UnixSocketState::Disconnected if is_bound => {
                 inner.state = UnixSocketState::Listening(AcceptQueue::new(backlog));
-                Ok(())
             }
             UnixSocketState::Listening(queue) => {
                 queue.set_backlog(backlog)?;
-                Ok(())
             }
-            _ => error!(EINVAL),
+            _ => return error!(EINVAL),
         }
+        inner.credentials = Some(credentials);
+        Ok(())
     }
 
     fn accept(&self, socket: &Socket, _current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
@@ -599,14 +589,9 @@ impl SocketOps for UnixSocket {
         dest_address: &mut Option<SocketAddress>,
         ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
-        let (connected_peer, local_address, creds, is_write_shutdown) = {
+        let (connected_peer, local_address, is_write_shutdown) = {
             let inner = self.lock();
-            (
-                inner.peer().map(|p| p.clone()),
-                inner.address.clone(),
-                inner.credentials.clone(),
-                inner.is_write_shutdown,
-            )
+            (inner.peer().map(|p| p.clone()), inner.address.clone(), inner.is_write_shutdown)
         };
 
         if is_write_shutdown {
@@ -634,7 +619,7 @@ impl SocketOps for UnixSocket {
         let write_result = {
             let mut peer = unix_socket.lock();
             if peer.passcred {
-                let creds = creds.unwrap_or_else(|| current_task.current_ucred());
+                let creds = current_task.current_ucred();
                 ancillary_data.push(AncillaryData::Unix(UnixControlData::Credentials(creds)));
             }
             if socket.socket_type == SocketType::Datagram {

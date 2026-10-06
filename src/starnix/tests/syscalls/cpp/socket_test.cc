@@ -818,6 +818,40 @@ TEST_P(CmsgAlignmentTest, ScmRightsFollowedByCredentials) {
 
 INSTANTIATE_TEST_SUITE_P(UnixSocket, CmsgAlignmentTest, testing::Values(1, 2, 3));
 
+TEST(UnixSocket, FailedListenDoesNotCorruptPeercred) {
+  // 1. Failed listen() on an unbound socket must leave SO_PEERCRED at {0, -1, -1}.
+  fbl::unique_fd unbound(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_TRUE(unbound.is_valid()) << strerror(errno);
+  EXPECT_THAT(listen(unbound.get(), 5), SyscallFailsWithErrno(EINVAL));
+
+  struct ucred cred = {};
+  socklen_t cred_len = sizeof(cred);
+  ASSERT_THAT(getsockopt(unbound.get(), SOL_SOCKET, SO_PEERCRED, &cred, &cred_len),
+              SyscallSucceeds());
+  EXPECT_EQ(cred.pid, 0);
+  EXPECT_EQ(cred.uid, static_cast<uid_t>(-1));
+  EXPECT_EQ(cred.gid, static_cast<gid_t>(-1));
+
+  // 2. Failed listen() on a connected socket from another process must not overwrite SO_PEERCRED.
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess(
+      [&] { EXPECT_THAT(listen(sv[0].get(), 5), SyscallFailsWithErrno(EINVAL)); });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  for (const auto& fd : sv) {
+    cred = {};
+    cred_len = sizeof(cred);
+    ASSERT_THAT(getsockopt(fd.get(), SOL_SOCKET, SO_PEERCRED, &cred, &cred_len), SyscallSucceeds());
+    EXPECT_EQ(cred.pid, getpid());
+    EXPECT_EQ(cred.uid, getuid());
+    EXPECT_EQ(cred.gid, getgid());
+  }
+}
+
 // This test verifies that we can concurrently attempt to create the same type of socket from
 // multiple threads.
 TEST(Socket, ConcurrentCreate) {
