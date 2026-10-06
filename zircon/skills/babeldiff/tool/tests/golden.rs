@@ -867,3 +867,52 @@ impl Watchdog {
         .expect("init pair");
     assert!(init.findings.is_empty(), "{:?}", init.findings);
 }
+
+#[test]
+fn unpaired_helper_callers_distinguish_same_named_methods() {
+    let cpp = r#"
+void Watchdog::EvictionTrigger() {
+  continuous_eviction_active_.store(true);
+  trigger_eviction();
+}
+
+void Watchdog::WaitForMemChange() {
+  mem_event_idx_ = idx;
+  wait_event();
+}
+"#;
+    let rust = r#"
+impl RelaxedAtomicPressureLevel {
+    fn store(&self, level: PressureLevel) {
+        self.0.store(level as u8, Ordering::Relaxed);
+    }
+}
+
+impl Watchdog {
+    fn eviction_trigger(&self) {
+        self.continuous_eviction_active.store(true, Ordering::SeqCst);
+        trigger_eviction();
+    }
+
+    fn wait_for_mem_change(&self) {
+        self.mem_event_idx.store(idx);
+        wait_event();
+    }
+}
+"#;
+    let cs = ChangeSet {
+        cpp_old: vec![version("watchdog.cc", cpp)],
+        cpp_new: Vec::new(),
+        rust_new: vec![version("watchdog.rs", rust)],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    let store_fn = report
+        .unmatched_rust
+        .iter()
+        .find(|f| f.name == "RelaxedAtomicPressureLevel::store")
+        .expect("unpaired store helper");
+    assert_eq!(
+        report.callers(store_fn),
+        vec!["Watchdog::wait_for_mem_change"]
+    );
+}
