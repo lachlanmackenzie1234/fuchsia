@@ -3440,7 +3440,7 @@ pub mod tests {
                 Some(QueuedCommand {
                     command: Command::OnewayTransaction(TransactionData {
                         code: FIRST_TRANSACTION_CODE,
-                        peer_pid: 0,
+                        peer_pid: None,
                         ..
                     }),
                     ..
@@ -3731,8 +3731,8 @@ pub mod tests {
     /// security context, which is written as BR_TRANSACTION_SEC_CTX.
     fn largest_command(current_task: &CurrentTask, peer: &BinderProcessFixture) -> Command {
         Command::OnewayTransaction(TransactionData {
-            peer_pid: peer.proc.key.id,
-            peer_tid: peer.thread.tid,
+            peer_pid: Some(peer.proc.key.clone()),
+            peer_tid: peer.thread.tid.clone(),
             peer_euid: current_task.current_creds().euid,
             object: FlatBinderObject::Remote { handle: Handle::ContextManager },
             code: 200,
@@ -4314,8 +4314,8 @@ pub mod tests {
 
             // 2. A process-directed command is enqueued on proc_a.
             let oneway_to_a = Command::OnewayTransaction(TransactionData {
-                peer_pid: proc_b.proc.key.id,
-                peer_tid: proc_b.thread.tid,
+                peer_pid: Some(proc_b.proc.key.clone()),
+                peer_tid: proc_b.thread.tid.clone(),
                 peer_euid: current_task.current_creds().euid,
                 object: FlatBinderObject::Remote { handle: Handle::ContextManager },
                 code: 200,
@@ -5238,7 +5238,7 @@ pub mod tests {
             let thread_state = proc_b.thread.lock();
             let role = thread_state.transactions.last().unwrap();
             if let TransactionRole::Sender(sender_info) = role {
-                assert_eq!(sender_info.target_thread, Some(proc_a.thread.tid));
+                assert_eq!(sender_info.target_thread.as_ref(), Some(&proc_a.thread.tid));
                 assert!(sender_info.target_thread_handle.is_some());
 
                 let a_thread_handle = &proc_a.thread.thread;

@@ -7,7 +7,9 @@ use crate::process::{BinderProcess, BinderProcessGuard};
 
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
-use starnix_core::task::{EventHandler, Kernel, SimpleWaiter, WaitCanceler, WaitQueue, Waiter};
+use starnix_core::task::{
+    EventHandler, Kernel, Pid, SimpleWaiter, WaitCanceler, WaitQueue, Waiter,
+};
 
 use starnix_logging::{log_trace, log_warn};
 use starnix_sync::{
@@ -35,7 +37,7 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
     binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
     binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_frozen_state_info,
-    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, errno, error, pid_t,
+    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, errno, error,
 };
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -121,7 +123,7 @@ impl CommandQueueWithWaitQueue {
 pub(crate) fn generate_dead_replies(
     commands: impl IntoIterator<Item = QueuedCommand>,
     target_proc: u64,
-    target_thread: Option<i32>,
+    target_thread: Option<&Pid>,
 ) {
     // Notify all callers that had transactions scheduled for this process that the recipient is
     // dead.
@@ -149,7 +151,7 @@ pub(crate) fn generate_dead_replies(
 pub(crate) fn generate_dead_replies_for_transactions(
     sender_thread: &mut BinderThreadState,
     target_proc: u64,
-    target_thread: Option<i32>,
+    target_thread: Option<&Pid>,
 ) {
     if let Some((top_transaction, remaining_transactions)) =
         sender_thread.transactions.split_last_mut()
@@ -181,7 +183,7 @@ pub struct BinderThread {
     /// Weak reference to self.
     pub weak_self: WeakRef<BinderThread>,
 
-    pub tid: pid_t,
+    pub tid: Pid,
 
     // The underlying Zircon thread which backs this binder thread.
     pub thread: Arc<zx::Thread>,
@@ -209,10 +211,10 @@ pub struct BinderThread {
 impl BinderThread {
     pub fn new(
         binder_proc: &BinderProcessGuard<'_>,
-        tid: pid_t,
+        tid: Pid,
         thread: Arc<zx::Thread>,
     ) -> OwnedRef<Self> {
-        let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
+        let inner_state = BinderThreadState::new(tid.clone(), binder_proc.base.identifier);
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
         let available_threads = binder_proc.base.available_threads.clone();
         let state = inner_state.into();
@@ -273,7 +275,7 @@ impl Releasable for BinderThread {
 /// The mutable state of a binder thread.
 #[derive(Debug)]
 pub struct BinderThreadState {
-    pub tid: pid_t,
+    pub tid: Pid,
 
     /// The process identifier of the `BinderProcess` to which this thread belongs. Note that this
     /// is not the same as the actual `pid` of the process.
@@ -324,7 +326,7 @@ impl Drop for BinderThreadGuard<'_> {
 }
 
 impl BinderThreadState {
-    pub fn new(tid: pid_t, process_identifier: u64) -> Self {
+    pub fn new(tid: Pid, process_identifier: u64) -> Self {
         Self {
             tid,
             process_identifier,
@@ -427,7 +429,7 @@ impl Releasable for BinderThreadState {
         // If there are any transactions queued, we need to tell the caller that this thread is now
         // dead.
         let command_queue = self.command_queue.commands;
-        generate_dead_replies(command_queue, self.process_identifier, Some(self.tid));
+        generate_dead_replies(command_queue, self.process_identifier, Some(&self.tid));
 
         // If there are any transactions that this thread was processing, we need to tell the caller
         // that this thread is now dead and to not expect a reply.
@@ -438,7 +440,7 @@ impl Releasable for BinderThreadState {
                     generate_dead_replies_for_transactions(
                         sender_thread,
                         self.process_identifier,
-                        Some(self.tid),
+                        Some(&self.tid),
                     );
                 }
             }
@@ -724,7 +726,7 @@ pub struct TransactionSender {
     /// The target thread of the transaction. Used to determine whether or not this transaction is
     /// still alive. If `None`, the transaction will be marked dead when the handling thread in
     /// `target_proc` is released.
-    pub target_thread: Option<i32>,
+    pub target_thread: Option<Pid>,
 
     /// Whether or not the target of this transaction is still alive. Used to determine whether or
     /// not a `DeadReply` should be inserted into the command queue when a thread is waiting for
@@ -741,7 +743,7 @@ pub struct TransactionSender {
 
 impl TransactionRole {
     /// Marks the transaction as dead if it is a `Sender` targeting `thread` or `process`.
-    fn mark_dead(&mut self, process: u64, thread: Option<i32>) -> bool {
+    fn mark_dead(&mut self, process: u64, thread: Option<&Pid>) -> bool {
         match (thread, self) {
             (
                 // If a thread is provided to `mark_dead`, it means that the transaction should
@@ -752,7 +754,7 @@ impl TransactionRole {
                     is_alive,
                     ..
                 }),
-            ) if *target == thread => {
+            ) if target == thread => {
                 *is_alive = false;
                 true
             }

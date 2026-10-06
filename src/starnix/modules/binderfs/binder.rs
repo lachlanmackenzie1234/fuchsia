@@ -79,7 +79,7 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_TRANSACTION,
     binder_driver_command_protocol_BC_TRANSACTION_SG, binder_freeze_info,
     binder_frozen_status_info, binder_transaction_data, binder_transaction_data_sg,
-    binder_uintptr_t, binder_version, binder_write_read, errno, error, flat_binder_object, pid_t,
+    binder_uintptr_t, binder_version, binder_write_read, errno, error, flat_binder_object,
     transaction_flags_TF_ONE_WAY, uapi,
 };
 use std::cell::Cell;
@@ -439,11 +439,11 @@ impl BinderDriver {
     }
 
     /// Finds all binder processes that associate with the given `pid`.
-    fn find_processes_by_pid(&self, pid: pid_t) -> Vec<OwnedRef<BinderProcess>> {
+    fn find_processes_by_pid(&self, pid: &Pid) -> Vec<OwnedRef<BinderProcess>> {
         self.procs
             .read()
             .iter()
-            .filter_map(|(_k, v)| if v.key.id == pid { Some(OwnedRef::share(v)) } else { None })
+            .filter_map(|(_k, v)| if &v.key == pid { Some(OwnedRef::share(v)) } else { None })
             .collect::<Vec<_>>()
     }
 
@@ -581,7 +581,10 @@ impl BinderDriver {
                     _ => return error!(EINVAL),
                 };
 
-                let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
+                let Ok(pid) = current_task.kernel().pids.get(pid as i32) else {
+                    return error!(EINVAL);
+                };
+                let target_binder_procs = self.find_processes_by_pid(&pid);
                 if target_binder_procs.is_empty() {
                     return error!(EINVAL);
                 }
@@ -665,7 +668,10 @@ impl BinderDriver {
                     binder_proc.get_memory_accessor(current_task, remote_memory_accessor);
                 let binder_frozen_status_info { pid, .. } =
                     memory_accessor.read_object(user_ref)?;
-                let target_binder_procs = self.find_processes_by_pid(pid as pid_t);
+                let Ok(target_pid) = current_task.kernel().pids.get(pid as i32) else {
+                    return error!(EINVAL);
+                };
+                let target_binder_procs = self.find_processes_by_pid(&target_pid);
                 if target_binder_procs.is_empty() {
                     return error!(EINVAL);
                 }
@@ -845,7 +851,7 @@ impl BinderDriver {
                 }
                 uapi::BINDER_THREAD_EXIT => {
                     log_trace!("binder thread {} exiting", binder_thread.tid);
-                    binder_proc.lock().unregister_thread(current_task, binder_thread.tid);
+                    binder_proc.lock().unregister_thread(current_task, &binder_thread.tid);
                     Ok(SUCCESS)
                 }
                 uapi::BINDER_GET_NODE_DEBUG_INFO => {
@@ -1071,8 +1077,8 @@ impl BinderDriver {
                 )?;
 
                 let transaction = TransactionData {
-                    peer_pid: if oneway { 0 } else { context.binder_proc.key.id },
-                    peer_tid: context.binder_thread.tid,
+                    peer_pid: (!oneway).then(|| context.binder_proc.key.clone()),
+                    peer_tid: context.binder_thread.tid.clone(),
                     peer_euid: context.current_task.current_creds().euid,
                     object: {
                         if handle.is_handle_0() {
@@ -1149,7 +1155,7 @@ impl BinderDriver {
 
                     let transaction_sender = TransactionSender {
                         target_proc: target_proc.identifier,
-                        target_thread: target_thread.as_ref().map(|t| t.tid),
+                        target_thread: target_thread.as_ref().map(|t| t.tid.clone()),
                         is_alive: true,
                         target_thread_handle: target_thread.as_ref().map(|t| t.thread.clone()),
                         trace_id,
@@ -1264,8 +1270,8 @@ impl BinderDriver {
                     BinderThread::ordered_lock(&target_thread, context.binder_thread);
                 target_thread.enqueue_command(QueuedCommand::new(
                     Command::Reply(TransactionData {
-                        peer_pid: context.binder_proc.key.id,
-                        peer_tid: context.binder_thread.tid,
+                        peer_pid: Some(context.binder_proc.key.clone()),
+                        peer_tid: context.binder_thread.tid.clone(),
                         peer_euid: context.current_task.current_creds().euid,
 
                         object: FlatBinderObject::Remote { handle: Handle::ContextManager },
