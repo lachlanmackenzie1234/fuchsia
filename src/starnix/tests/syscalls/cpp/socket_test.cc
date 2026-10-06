@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -1051,11 +1052,19 @@ TEST(UnixSocket, StreamChunkedWriteDoesNotLeakImplicitCredentials) {
               SyscallSucceeds());
   ASSERT_GT(actual_sndbuf, 1024);
 
+  const size_t total_len = static_cast<size_t>(actual_sndbuf) + 1024;
+  std::vector<char> buf(total_len, 'a');
+  ssize_t fill_len = send(sv[0].get(), buf.data(), buf.size(), MSG_DONTWAIT);
+  ASSERT_GT(fill_len, 0) << strerror(errno);
+  ASSERT_LT(static_cast<size_t>(fill_len), total_len);
+  EXPECT_THAT(send(sv[0].get(), "x", 1, MSG_DONTWAIT), SyscallFailsWithErrno(EAGAIN));
+  ASSERT_THAT(recv(sv[1].get(), buf.data(), static_cast<size_t>(fill_len), MSG_WAITALL),
+              SyscallSucceedsWithValue(fill_len));
+
   int one = 1;
   ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
               SyscallSucceeds());
 
-  const size_t total_len = static_cast<size_t>(actual_sndbuf) + 1024;
   std::thread sender([&] {
     std::vector<char> payload(total_len, 'y');
     EXPECT_THAT(write(sv[0].get(), payload.data(), payload.size()),
@@ -1068,20 +1077,30 @@ TEST(UnixSocket, StreamChunkedWriteDoesNotLeakImplicitCredentials) {
     }
   });
 
-  // Wait for the first chunk to be queued while SO_PASSCRED is enabled.
+  // Wait for the initial buffer fill to be queued while SO_PASSCRED is enabled. On Linux, the
+  // initial fill may be split across multiple skbs and wake poll() after the first skb before the
+  // send buffer is full.
   struct pollfd pfd = {.fd = sv[1].get(), .events = POLLIN};
   ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceedsWithValue(1));
+  while (true) {
+    int queued = 0;
+    ASSERT_THAT(ioctl(sv[1].get(), FIONREAD, &queued), SyscallSucceeds());
+    if (queued >= fill_len) {
+      ASSERT_EQ(queued, fill_len);
+      break;
+    }
+    usleep(1000);
+  }
 
-  // Disable SO_PASSCRED before draining the first chunk so the remaining bytes are queued while
-  // SO_PASSCRED is disabled.
+  // Disable SO_PASSCRED before draining the initial buffer fill so the remaining bytes are queued
+  // while SO_PASSCRED is disabled. Read only `fill_len` bytes so that if the sender wakes up and
+  // queues the trailing chunk before recv() returns, recv() does not coalesce the trailing chunk.
   int zero = 0;
   ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &zero, sizeof(zero)),
               SyscallSucceeds());
 
-  std::vector<char> buf(total_len);
-  ssize_t first_read = recv(sv[1].get(), buf.data(), buf.size(), 0);
-  ASSERT_GT(first_read, 0) << strerror(errno);
-  ASSERT_LT(static_cast<size_t>(first_read), total_len);
+  ssize_t first_read = recv(sv[1].get(), buf.data(), static_cast<size_t>(fill_len), MSG_WAITALL);
+  ASSERT_EQ(first_read, fill_len) << strerror(errno);
 
   sender.join();
 
