@@ -33,6 +33,9 @@ void cpp_pmm_free_list(VmPageDoublyLinkedList* list);
 size_t cpp_pmm_num_arenas();
 zx_status_t cpp_pmm_get_arena_info(size_t count, uint64_t i, pmm_arena_info_t* buffer,
                                    size_t buffer_size);
+void cpp_pmm_checker_init_from_cmdline();
+// Initializes the PMM arenas from `count` memory ranges starting at `ranges`.
+zx_status_t cpp_pmm_init(const memalloc::Range* ranges, size_t count);
 
 __END_CDECLS
 

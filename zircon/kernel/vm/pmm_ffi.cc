@@ -61,4 +61,10 @@ FFI_ALWAYS_INLINE zx_status_t cpp_pmm_get_arena_info(size_t count, uint64_t i,
   return pmm_get_arena_info(count, i, buffer, buffer_size);
 }
 
+FFI_ALWAYS_INLINE void cpp_pmm_checker_init_from_cmdline() { pmm_checker_init_from_cmdline(); }
+
+FFI_ALWAYS_INLINE zx_status_t cpp_pmm_init(const memalloc::Range* ranges, size_t count) {
+  return pmm_init(ktl::span{ranges, count});
+}
+
 }  // extern "C"

@@ -194,13 +194,6 @@ paddr_t StackPaddr(vaddr_t vaddr) {
 
 }  // anonymous namespace
 
-extern "C" {
-// C++ helpers called by Rust:
-zx_status_t cpp_riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id) {
-  return riscv64_start_cpu(cpu_num, hart_id);
-}
-}
-
 // Called from the PhysicalBootstrap::SbiEntryPaddr() code.
 void PhysicalBootstrap::VirtualEntry(uint32_t hart_id, cpu_num_t cpu_num) {
   riscv64_init_percpu();

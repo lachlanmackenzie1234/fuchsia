@@ -84,31 +84,27 @@ pub extern "C" fn riscv64_timer_exception() {
 static TIMER_INITIALIZED: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
-/// Returns true if the timer driver has completed early initialization.
+/// Returns true once the timer driver has completed early initialization: the
+/// ticks-to-time ratio and the initial ticks are set, so a raw ticks read can be
+/// placed on the timelines.
 #[inline(always)]
 pub fn timer_is_initialized() -> bool {
     TIMER_INITIALIZED.load(core::sync::atomic::Ordering::Relaxed)
 }
 
-/// Early initialization of the RISC-V generic timer driver.
-///
-/// # Safety
-/// `config` must point at a live `DcfgRiscvGenericTimerDriver` for the duration
-/// of the call. It comes from the driver configuration handed over by physboot.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn riscv_generic_timer_init_early(
-    config: *const DcfgRiscvGenericTimerDriver,
-) {
-    // SAFETY: the caller guarantees `config` points at a live driver config.
-    let config = unsafe { &*config };
+/// Early initialization of the RISC-V generic timer driver from the driver
+/// configuration physboot handed off.
+pub fn riscv_generic_timer_init_early(config: &DcfgRiscvGenericTimerDriver) {
     let initial_ticks = riscv_sbi_current_ticks() as u64;
     dprintf!(INFO, "TIMER: registering SBI timer\n");
-    TIMER_INITIALIZED.store(true, core::sync::atomic::Ordering::Release);
     // SAFETY: both arguments are plain integers; the callee registers the tick
     // conversion ratio and takes no pointers from this side.
     unsafe {
         cpp_timer_set_conversion_and_register(config.freq_hz, initial_ticks);
     }
+    // Only now is the timer initialized: the ratio and initial ticks are set,
+    // so raw ticks may be reported instead of zero.
+    TIMER_INITIALIZED.store(true, core::sync::atomic::Ordering::Release);
 }
 
 // C FFI exports

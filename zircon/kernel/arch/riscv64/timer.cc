@@ -10,7 +10,6 @@
 #include <trace.h>
 #include <zircon/types.h>
 
-#include <arch/riscv64/timer.h>
 #include <kernel/ffi.h>
 #include <pdev/timer.h>
 #include <platform/timer.h>
