@@ -71,5 +71,8 @@ group("bootfs") {
 
 group("tests") {
   testonly = true
-  deps = [ ":driver_debug_unit_tests" ]
+  deps = [
+    ":driver_debug_unit_tests",
+    "tests",
+  ]
 }
