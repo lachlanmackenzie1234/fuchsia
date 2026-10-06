@@ -172,6 +172,7 @@
             config: [
                 "fuchsia.driver.ExposeDebugCapabilities",
                 "fuchsia.driver.UseHardwareIommu",
+                "fuchsia.power.GpuPowerManagementEnabled",
                 "fuchsia.power.PowerFrameworkEnabledForWlanDriver",
                 "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
