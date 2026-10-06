@@ -6,8 +6,8 @@
 
 use crate::object::{
     BusTransactionInitiatorDispatcher, ClockDispatcher, Dispatcher, HandleValue, JobDispatcher,
-    MsiDispatcher, SocketDispatcher, ThreadDispatcher, TimerDispatcher, VcpuDispatcher,
-    VmAddressRegionDispatcher, VmObjectDispatcher,
+    MsiDispatcher, SocketDispatcher, ThreadDispatcher, TimerDispatcher, VmAddressRegionDispatcher,
+    VmObjectDispatcher,
 };
 use crate::user_copy::UserOutPtr;
 use debug::ltracef;
@@ -320,7 +320,6 @@ pub fn sys_object_get_info(
         ZX_INFO_TIMER => single_record_info!(TimerDispatcher, get_info),
         ZX_INFO_MSI => single_record_info!(MsiDispatcher, get_info),
         ZX_INFO_BTI => single_record_info!(BusTransactionInitiatorDispatcher, get_info),
-        ZX_INFO_VCPU => single_record_info!(VcpuDispatcher, get_info),
         ZX_INFO_CLOCK_MAPPED_SIZE => single_record_info!(ClockDispatcher, get_mapped_size?),
         // C++ only topics (and VM map/vmo enumeration, system resources, process info, etc.)
         _ => {

@@ -37,6 +37,7 @@ source_set("impl") {
     "exceptions.cc",
     "futex.cc",
     "handle_ops.cc",
+    "hypervisor.cc",
     "membarrier_ffi.cc",
     "object.cc",
     "object_info_ffi.cc",
@@ -152,7 +153,6 @@ kernel_rust_mod("syscalls-rs") {
     "thread.rs",
     "ticks.rs",
     "timer.rs",
-    "vcpu.rs",
     "vmar.rs",
     "vmo.rs",
   ]
