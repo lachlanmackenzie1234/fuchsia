@@ -256,35 +256,10 @@ pub trait IpPacket<I: FilterIpExt> {
             })
         } else {
             self.maybe_transport_packet().transport_packet_data().and_then(|transport_data| {
-                let protocol =
-                    I::map_ip(self.protocol()?, |proto| proto.into(), |proto| proto.into());
-                match (protocol, &transport_data) {
-                    (conntrack::TransportProtocol::Tcp, TransportPacketData::Tcp { .. }) => {}
-                    // If the IP protocol is TCP, but we failed to parse the TCP header,
-                    // we fall back to generic transport info. In that case, we do not want
-                    // to track the packet, so we return `None`.
-                    (conntrack::TransportProtocol::Tcp, TransportPacketData::Generic { .. }) => {
-                        return None
-                    }
-                    (
-                        conntrack::TransportProtocol::Udp
-                        | conntrack::TransportProtocol::Icmp
-                        | conntrack::TransportProtocol::Other(_),
-                        TransportPacketData::Generic { .. },
-                    ) => {}
-                    (
-                        conntrack::TransportProtocol::Udp
-                        | conntrack::TransportProtocol::Icmp
-                        | conntrack::TransportProtocol::Other(_),
-                        TransportPacketData::Tcp { .. },
-                    ) => unreachable!(
-                        "non-TCP packet with TCP transport data: proto={protocol:?}, data={transport_data:?}"
-                    ),
-                }
                 Some(conntrack::PacketMetadata::new(
                     self.src_addr(),
                     self.dst_addr(),
-                    protocol,
+                    I::map_ip(self.protocol()?, |proto| proto.into(), |proto| proto.into()),
                     transport_data,
                 ))
             })

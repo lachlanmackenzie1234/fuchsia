@@ -435,6 +435,7 @@ where
             Err(ConnectionUpdateError::InvalidPacket) => {
                 Err(GetConnectionError::InvalidPacket(connection, direction))
             }
+            Err(ConnectionUpdateError::MalformedPacket) => Ok(None),
         }
     }
 
@@ -603,6 +604,10 @@ enum ConnectionUpdateError {
     /// The packet was invalid. The caller may decide whether to drop this
     /// packet or not.
     InvalidPacket,
+
+    /// The packet was malformed and its transport header could not be
+    /// parsed completely.
+    MalformedPacket,
 }
 
 /// An error returned from [`Table::get_connection_for_packet_and_update`].
@@ -819,13 +824,10 @@ impl ProtocolState {
         transport_data: &TransportPacketData,
     ) -> Result<ConnectionUpdateAction, ConnectionUpdateError> {
         match self {
-            ProtocolState::Tcp(tcp_conn) => {
-                let (segment, payload_len) = assert_matches!(
-                    transport_data,
-                    TransportPacketData::Tcp { segment, payload_len, .. } => (segment, payload_len)
-                );
-                tcp_conn.update(&segment, *payload_len, dir)
-            }
+            ProtocolState::Tcp(tcp_conn) => match transport_data.tcp_segment_and_len() {
+                Some((segment, payload_len)) => tcp_conn.update(segment, payload_len, dir),
+                None => Err(ConnectionUpdateError::MalformedPacket),
+            },
             ProtocolState::Udp | ProtocolState::Other => Ok(ConnectionUpdateAction::NoAction),
         }
     }
@@ -1029,15 +1031,7 @@ where
                 establishment_lifecycle: EstablishmentLifecycle::SeenOriginal,
                 protocol_state: match tuple.protocol {
                     TransportProtocol::Tcp => {
-                        let (segment, payload_len) = match transport_data.tcp_segment_and_len() {
-                            Some(v) => v,
-                            // This should be impossible as PacketMetadata
-                            // ensures the Tuple and transport information
-                            // are the same protocol.
-                            None => unreachable!(
-                                "protocol was TCP, but didn't have TCP info: {transport_data:?}"
-                            ),
-                        };
+                        let (segment, payload_len) = transport_data.tcp_segment_and_len()?;
 
                         ProtocolState::Tcp(tcp::Connection::new(
                             segment,
@@ -1159,9 +1153,7 @@ pub trait CompatibleWith {
 }
 
 /// A struct containing relevant fields extracted from the IP and transport
-/// headers that means we only have to touch the incoming packet once. Also acts
-/// as a witness type that the tuple and transport data have the same transport
-/// protocol.
+/// headers that means we only have to touch the incoming packet once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PacketMetadata<I: IpExt> {
     Full { tuple: Tuple<I>, transport_data: TransportPacketData },
@@ -1176,9 +1168,9 @@ impl<I: IpExt> PacketMetadata<I> {
         transport_data: TransportPacketData,
     ) -> Self {
         match protocol {
-            TransportProtocol::Tcp => {
-                assert_matches!(transport_data, TransportPacketData::Tcp { .. })
-            }
+            // If the IP protocol is TCP, `transport_data` may still be `Generic`
+            // if we failed to parse the TCP header beyond the ports.
+            TransportProtocol::Tcp => {}
             TransportProtocol::Udp | TransportProtocol::Icmp | TransportProtocol::Other(_) => {
                 assert_matches!(transport_data, TransportPacketData::Generic { .. })
             }
@@ -2559,6 +2551,43 @@ mod tests {
                 .state()
                 .establishment_lifecycle,
             EstablishmentLifecycle::SeenReply
+        );
+
+        // A TCP packet with a malformed header (represented as `Generic`
+        // transport data) should be ignored by conntrack (`Ok(None)`) both when
+        // updating an existing connection and when creating a new one, without
+        // advancing the connection lifecycle.
+        let malformed_packet = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            TransportProtocol::Tcp,
+            TransportPacketData::Generic { src_port: I::SRC_PORT, dst_port: I::DST_PORT },
+        );
+        assert_matches!(
+            table.get_connection_for_packet_and_update(&bindings_ctx, malformed_packet),
+            Ok(None)
+        );
+        assert_matches!(
+            table
+                .get_connection(&syn_packet.tuple())
+                .expect("should exist")
+                .state()
+                .establishment_lifecycle,
+            EstablishmentLifecycle::SeenReply
+        );
+
+        let malformed_new_conn_packet = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            TransportProtocol::Tcp,
+            TransportPacketData::Generic {
+                src_port: I::SRC_PORT.wrapping_add(1),
+                dst_port: I::DST_PORT,
+            },
+        );
+        assert_matches!(
+            table.get_connection_for_packet_and_update(&bindings_ctx, malformed_new_conn_packet),
+            Ok(None)
         );
     }
 }
