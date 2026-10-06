@@ -19,7 +19,7 @@ use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{duration_from_timeval, timeval_from_duration};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::as_any::AsAny;
-use starnix_uapi::auth::CAP_NET_RAW;
+use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTTY, Errno};
 use starnix_uapi::user_address::MappingMultiArchUserRef;
 use starnix_uapi::vfs::FdEvents;
@@ -299,6 +299,10 @@ fn create_socket_ops(
             Ok(Box::new(ZxioBackedSocket::new(current_task, domain, socket_type, protocol)?))
         }
         SocketDomain::Key => {
+            // Require CAP_NET_ADMIN to create key management sockets.
+            // See the "Deny capability { net_admin }" case in
+            // https://github.com/SELinuxProject/selinux-testsuite/blob/main/tests/key_socket/test.
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
             track_stub!(
                 TODO("https://fxbug.dev/323365389"),
                 "Returning a UnixSocket instead of a KeySocket"
