@@ -118,6 +118,7 @@ pub use resource::{
     validate_resource_kind_base, validate_system_resource,
 };
 pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
+pub use root_job_observer_ffi::start_root_job_observer;
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use stream_dispatcher::*;

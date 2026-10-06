@@ -78,6 +78,13 @@ unsafe extern "C" {
     /// Safe to call from any thread context after root job initialization.
     pub(crate) fn cpp_job_dispatcher_get_root_job() -> *mut JobDispatcher;
 
+    /// Returns a pointer to the immortal singleton root job handle.
+    ///
+    /// # Safety
+    ///
+    /// Safe to call from any thread context after root job initialization.
+    pub(crate) fn cpp_job_dispatcher_get_root_job_handle() -> *const core::ffi::c_void;
+
     /// Creates and returns a reference-counted pointer to a new root job dispatcher.
     pub(crate) fn cpp_job_dispatcher_create_root_job() -> *mut JobDispatcher;
 
