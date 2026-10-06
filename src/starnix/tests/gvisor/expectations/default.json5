@@ -1056,9 +1056,6 @@
                 "RawSocketNoCapTest.CreationFailsWithEPERM",
                 "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
 
-                // TODO(https://fxbug.dev/568843305): Fix short IPV6_CHECKSUM optlen handling.
-                "RawSocketTest.SetIPv6ChecksumError_ReadShort",
-
                 // TODO(https://fxbug.dev/507795191): Blocked on a refactor of how Starnix handles
                 // tracking file references and emitting inotify events, specifically with regards
                 // to how open file descriptors impact the DELETE_SELF inotify event.
