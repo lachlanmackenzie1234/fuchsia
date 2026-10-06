@@ -609,7 +609,6 @@
                 "PrctlTest.InvalidPrSetMM",
                 "PrctlTest.PDeathSig",
                 "PrctlTest.OrphansReparentedToSubreaper",
-                "PrctlTest.RootDumpability",
 
                 // processes_test
                 "Processes.SetPGIDOfZombie",

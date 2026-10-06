@@ -939,7 +939,11 @@ pub fn sys_prctl(
         PR_SET_DUMPABLE => {
             let mm = current_task.mm()?;
             let mut dumpable = mm.dumpable.lock();
-            *dumpable = if arg2 == 1 { DumpPolicy::User } else { DumpPolicy::Disable };
+            *dumpable = match arg2 {
+                0 => DumpPolicy::Disable,
+                1 => DumpPolicy::User,
+                _ => return error!(EINVAL),
+            };
             Ok(().into())
         }
         PR_GET_DUMPABLE => {
@@ -2126,14 +2130,17 @@ mod tests {
     #[::fuchsia::test]
     async fn test_prctl_get_set_dumpable() {
         spawn_kernel_and_run(async |current_task| {
-            sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0).expect("failed to get dumpable");
+            assert_eq!(sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0), Ok(1.into()));
+
+            sys_prctl(current_task, PR_SET_DUMPABLE, 0, 0, 0, 0).expect("failed to set dumpable");
+            assert_eq!(sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0), Ok(0.into()));
 
             sys_prctl(current_task, PR_SET_DUMPABLE, 1, 0, 0, 0).expect("failed to set dumpable");
-            sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0).expect("failed to get dumpable");
+            assert_eq!(sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0), Ok(1.into()));
 
             // SUID_DUMP_ROOT not supported.
-            sys_prctl(current_task, PR_SET_DUMPABLE, 2, 0, 0, 0).expect("failed to set dumpable");
-            sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0).expect("failed to get dumpable");
+            assert_eq!(sys_prctl(current_task, PR_SET_DUMPABLE, 2, 0, 0, 0), error!(EINVAL));
+            assert_eq!(sys_prctl(current_task, PR_GET_DUMPABLE, 0, 0, 0, 0), Ok(1.into()));
         })
         .await;
     }
