@@ -53,6 +53,7 @@ _CUMULATIVE_METRIC_NAMES = frozenset(
 class _StructuredMetricName:
     structured_name: str
     unit: metrics.Unit
+    direction: metrics.Direction | None = None
 
 
 # Names and units of some of the metrics we will export as structured metrics.
@@ -71,7 +72,9 @@ _STRUCTURED_METRIC_NAMES = {
         "Memory/System/DecompressionTime", metrics.Unit.nanoseconds
     ),
     "page_refaults": _StructuredMetricName(
-        "Memory/System/PageRefaults", metrics.Unit.count
+        "Memory/System/PageRefaults",
+        metrics.Unit.count,
+        metrics.Direction.smallerIsBetter,
     ),
     "total_heap_bytes": _StructuredMetricName(
         "Memory/System/ZirconHeapBytes", metrics.Unit.bytes
@@ -214,6 +217,7 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
                     label=_STRUCTURED_METRIC_NAMES[name].structured_name,
                     values=values,
                     unit=_STRUCTURED_METRIC_NAMES[name].unit,
+                    direction=_STRUCTURED_METRIC_NAMES[name].direction,
                 )
             )
 
