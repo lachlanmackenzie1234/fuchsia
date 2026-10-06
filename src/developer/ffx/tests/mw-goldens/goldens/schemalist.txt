@@ -10,6 +10,7 @@ debug_symbol-index_list.json
 debug_symbol-index_add.json
 debug_symbol-index_remove.json
 debug_symbol-index_clean.json
+doctor.json
 emu_console.json
 emu_list.json
 emu_screenshot.json
