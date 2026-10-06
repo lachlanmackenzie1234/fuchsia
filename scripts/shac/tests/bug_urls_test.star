@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Tests for the checks in //scripts/shac/main.star."""
+"""Tests for the checks in //scripts/shac/bug_urls.star."""
 
-load("//scripts/shac/main.star", "_gn_format", "bug_urls")
+load("//scripts/shac/bug_urls.star", "bug_urls")
 
 # Split up so that the bug_urls check doesn't flag this file.
 _SHORT = "fx" + "b/"
@@ -66,29 +66,3 @@ def test_bug_urls_only_new_lines():
         ),
     })
     asserts.eq(res.findings, ())
-
-# These tests exec the real prebuilt gn binary.
-
-def test_gn_format():
-    res = testing.run(_gn_format, files = {
-        "BUILD.gn": "group(\"foo\"){deps=[\"b\",\"a\"]}\n",
-        "ok.gni": "x = 1\n",
-        "foo.cc": "",
-    })
-    asserts.eq(res.findings, (
-        testing.finding(
-            level = "error",
-            message = "File not formatted. Run `fx format-code` to fix.",
-            filepath = "BUILD.gn",
-            replacements = ["group(\"foo\") {\n  deps = [\n    \"a\",\n    \"b\",\n  ]\n}\n"],
-        ),
-    ))
-
-def test_gn_format_syntax_error():
-    asserts.fails(
-        lambda: testing.run(_gn_format, files = {
-            "bad.gn": "group(\"foo\" {\n",
-            "BUILD.gn": "group(\"foo\"){}\n",
-        }),
-        "bad.gn:",
-    )

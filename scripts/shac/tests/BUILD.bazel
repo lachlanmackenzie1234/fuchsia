@@ -13,13 +13,13 @@ test_suite(
     tests = [
         ":bazel_migration_test",
         ":bazel_test",
+        ":bug_urls_test",
         ":cml_test",
         ":confusing_characters_test",
         ":docs_test",
         ":fidl_test",
         ":gn_test",
         ":keep_sorted_test",
-        ":main_test",
         ":mirror_blocklists_test",
         ":python_test",
         ":underscore_vs_dash_test",
@@ -35,6 +35,12 @@ host_shac_test(
 host_shac_test(
     name = "bazel_test",
     src = "bazel_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "bug_urls_test",
+    src = "bug_urls_test.star",
     data = ["//scripts/shac:starlark_files"],
 )
 
@@ -65,7 +71,11 @@ host_shac_test(
 host_shac_test(
     name = "gn_test",
     src = "gn_test.star",
-    data = ["//scripts/shac:starlark_files"],
+    data = [
+        # Executed for real, rather than mocked.
+        "//:prebuilt/third_party/gn/%s/gn" % build_config.host_tag,
+        "//scripts/shac:starlark_files",
+    ],
 )
 
 host_shac_test(
@@ -74,16 +84,6 @@ host_shac_test(
     data = [
         # Executed for real, rather than mocked.
         "//:prebuilt/third_party/keep-sorted/%s/keep-sorted" % build_config.host_tag,
-        "//scripts/shac:starlark_files",
-    ],
-)
-
-host_shac_test(
-    name = "main_test",
-    src = "main_test.star",
-    data = [
-        # Executed for real, rather than mocked.
-        "//:prebuilt/third_party/gn/%s/gn" % build_config.host_tag,
         "//scripts/shac:starlark_files",
     ],
 )
