@@ -10,9 +10,6 @@ use fidl_fuchsia_hardware_sdmmc;
 /// Maps child device names (defined in DML) to helper functions that construct and
 /// serialize their driver-specific metadata.
 pub static VIM3_DRIVER_METADATA: dml_config::parser::DriverSpecificMetadata = phf::phf_map! {
-    "adc-buttons" => &[
-        ("fuchsia.buttons.AdcButtonsMetadata", get_adc_buttons_metadata),
-    ],
     "usb-phy-ffe09000" => &[
         ("fuchsia.hardware.usb.phy.Metadata", get_aml_usb_phy_metadata),
     ],
@@ -158,27 +155,6 @@ fn get_cpu_metadata() -> anyhow::Result<Vec<u8>> {
     fidl::persist(&metadata).context("Failed to serialize cpu metadata")
 }
 
-fn get_adc_buttons_metadata() -> anyhow::Result<Vec<u8>> {
-    use fidl_fuchsia_buttons::{AdcButtonConfig, AdcButtonsMetadata, Button, ButtonConfig};
-    use fidl_fuchsia_input_report::ConsumerControlButton;
-
-    let metadata = AdcButtonsMetadata {
-        polling_rate_usec: Some(20000),
-        buttons: Some(vec![Button {
-            types: Some(vec![ConsumerControlButton::Function]),
-            button_config: Some(ButtonConfig::Adc(AdcButtonConfig {
-                channel_idx: Some(2),
-                release_threshold: Some(1000),
-                press_threshold: Some(70),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }]),
-        ..Default::default()
-    };
-
-    fidl::persist(&metadata).context("Failed to serialize adc buttons metadata")
-}
 fn get_wifi_metadata() -> anyhow::Result<Vec<u8>> {
     use fidl_fuchsia_wlan_broadcom::{CcEntry, IovarCommand, IovarEntry, WifiConfig};
 
@@ -340,6 +316,7 @@ fn get_sdio_metadata() -> anyhow::Result<Vec<u8>> {
     };
     fidl::persist(&metadata).context("Failed to serialize SDIO metadata")
 }
+
 fn get_empty_i2c_metadata() -> anyhow::Result<Vec<u8>> {
     let dictionary = fdr::Dictionary {
         entries: Some(vec![
