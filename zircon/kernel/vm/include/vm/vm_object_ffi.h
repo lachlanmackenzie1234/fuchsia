@@ -113,6 +113,22 @@ zx_status_t cpp_vm_object_take_pages(VmObject* vmo, uint64_t offset, uint64_t le
 zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t offset, uint64_t len,
                                        VmPageSpliceList* pages, SupplyOptions options);
 
+using cpp_vm_object_dirty_range_fn = zx_status_t (*)(void* ctx, uint64_t range_offset,
+                                                     uint64_t range_len, bool range_is_zero);
+zx_status_t cpp_vm_object_enumerate_dirty_ranges(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                 void* ctx,
+                                                 cpp_vm_object_dirty_range_fn dirty_range_fn);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_fail_page_requests(VmObject* vmo, uint64_t offset,
+                                                               uint64_t len,
+                                                               zx_status_t error_status);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_query_pager_vmo_stats(VmObject* vmo, bool reset,
+                                                                  zx_pager_vmo_stats_t* stats);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_koid_t cpp_vm_object_get_page_source_koid(const VmObject* vmo);
+
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_paged(const VmObject* vmo);
 

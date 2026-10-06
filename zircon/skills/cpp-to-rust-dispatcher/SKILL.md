@@ -99,6 +99,27 @@ crate::impl_dispatcher_facade_with_state!(
   `DispatcherOps` are automatically generated via the facade macros.
 - **Thread Safety**: Automatically provides `Send` and `Sync` implementations.
 
+### Non-Dispatcher C++ `fbl::RefCounted` Objects (Bindgen vs. Facade)
+When a dispatcher holds a `fbl::RefPtr<T>` to a non-dispatcher C++
+`fbl::RefCounted` object (such as `PageSource`, `VmObject`, `VmAddressRegion`,
+or `Bti`), choose the pattern based on whether `T` has `bindgen`-generated
+bindings:
+- **Bindgen-Backed C++ Types** (e.g., `PageSource`, `VmObject`, `VmCowPages`):
+  If `bindgen` generates `bindings::T`, **do NOT use
+  `fbl::impl_opaque_ref_counted_facade!`**. Using that macro replaces the struct
+  body with a zero-sized `OpaqueRefCountedFacade<T>` (`size_of::<T>() == 0`),
+  discards the `bindgen` layout, and creates a pointer-type mismatch between
+  `*mut T` and `*mut bindings::T`. Instead, keep `raw: Opaque<bindings::T>` and
+  `phantom: PhantomData<PhantomPinned>`, keep `as_raw(&self) -> *mut bindings::T
+  { self.raw.get() }`, and manually implement `fbl::HasRefCount` and
+  `fbl::Recyclable` calling
+  `bindings::cpp_<type>_get_ref_counted(self.as_raw())` and
+  `bindings::cpp_<type>_free(ptr.as_ptr().cast())`.
+- **Non-Bindgen (`extern "C"`) Facades** (e.g., `VmAddressRegion`, `VmMapping`,
+  `Bti`, `Pmt`): Only use `fbl::impl_opaque_ref_counted_facade!` when there is
+  no `bindgen` struct and hand-written `extern "C"` functions accept `*mut Self`
+  / `&Self` directly.
+
 ---
 
 ## 3. The `<Type>DispatcherState` Pattern (Synchronization & State Layout)

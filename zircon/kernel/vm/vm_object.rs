@@ -27,7 +27,7 @@ use pin_init::PinInit;
 use vm_object_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
-use zx_types::zx_status_t;
+use zx_types::{ZX_KOID_INVALID, zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};
 
 pub use bindings::{
     Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
@@ -655,11 +655,95 @@ impl VmObject {
         Status::ok(status)
     }
 
+    /// Indicates that page requests in the range [offset, offset + len) could not be fulfilled.
+    /// `error_status` specifies the error encountered. `offset` and `len` must be page aligned.
+    pub fn fail_page_requests(
+        &self,
+        offset: u64,
+        len: u64,
+        error_status: Status,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe {
+            bindings::cpp_vm_object_fail_page_requests(
+                self.as_raw(),
+                offset,
+                len,
+                error_status.into_raw(),
+            )
+        };
+        Status::ok(status)
+    }
+
     /// Dirties pages in the vmo in the range [offset, offset + len).
     pub fn dirty_pages(&self, offset: u64, len: u64) -> Result<(), Status> {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         let status = unsafe { bindings::cpp_vm_object_dirty_pages(self.as_raw(), offset, len) };
         Status::ok(status)
+    }
+
+    /// Enumerates dirty ranges in the range [offset, offset + len) in ascending order, updating
+    /// any relevant VMO internal state required to perform the enumeration, and calls
+    /// `dirty_range_fn` on each dirty range (spanning [range_offset, range_offset + range_len)
+    /// where `range_is_zero` indicates whether the range is all zeros). `dirty_range_fn` can return
+    /// `Err(Status::NEXT)` to continue with the enumeration, `Err(Status::STOP)` to terminate the
+    /// enumeration successfully, and any other error code to terminate the enumeration early with
+    /// that error code.
+    pub fn enumerate_dirty_ranges<F>(
+        &self,
+        offset: u64,
+        len: u64,
+        mut dirty_range_fn: F,
+    ) -> Result<(), Status>
+    where
+        F: FnMut(u64, u64, bool) -> Result<(), Status>,
+    {
+        /// # Safety
+        ///
+        /// `ctx` must point to a valid `F` on the stack in `enumerate_dirty_ranges` that remains
+        /// valid for the duration of the C++ FFI callback.
+        unsafe extern "C" fn dirty_range_callback_shim<F>(
+            ctx: *mut c_void,
+            range_offset: u64,
+            range_len: u64,
+            range_is_zero: bool,
+        ) -> zx_status_t
+        where
+            F: FnMut(u64, u64, bool) -> Result<(), Status>,
+        {
+            // SAFETY: `ctx` is guaranteed by `cpp_vm_object_enumerate_dirty_ranges` to be the
+            // non-null `ctx_ptr` passed from `enumerate_dirty_ranges`, which points to a live `F`.
+            let f = unsafe { &mut *ctx.cast::<F>() };
+            Status::result_into_raw(f(range_offset, range_len, range_is_zero))
+        }
+
+        let ctx_ptr: *mut c_void = (&raw mut dirty_range_fn).cast();
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `ctx_ptr` and
+        // `dirty_range_callback_shim::<F>` remain valid for the duration of the call.
+        let status = unsafe {
+            bindings::cpp_vm_object_enumerate_dirty_ranges(
+                self.as_raw(),
+                offset,
+                len,
+                ctx_ptr,
+                Some(dirty_range_callback_shim::<F>),
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Query pager relevant VMO stats, e.g. whether the VMO has been modified. If `reset` is set
+    /// to true, the queried stats are reset as well, potentially affecting the queried state
+    /// returned by future calls to this function.
+    pub fn query_pager_vmo_stats(&self, reset: bool) -> Result<zx_pager_vmo_stats_t, Status> {
+        let mut stats = MaybeUninit::<zx_pager_vmo_stats_t>::uninit();
+        // SAFETY: `self.as_raw()` points to a live `VmObject` and `stats` is valid for writing.
+        let status = unsafe {
+            bindings::cpp_vm_object_query_pager_vmo_stats(self.as_raw(), reset, stats.as_mut_ptr())
+        };
+        Status::ok(status)?;
+        // SAFETY: `cpp_vm_object_query_pager_vmo_stats` initialized `stats` on `ZX_OK`.
+        Ok(unsafe { stats.assume_init() })
     }
 
     /// Indicates start of writeback for the range [offset, offset + len). Any [`Dirty`] pages in
@@ -702,6 +786,14 @@ impl VmObject {
     pub fn detach_source(&self) {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         unsafe { bindings::cpp_vm_object_detach_source(self.as_raw()) }
+    }
+
+    /// If this VMO has a backing page source, and that page source has a koid, then it is
+    /// returned. Otherwise returns `None`.
+    pub fn get_page_source_koid(&self) -> Option<zx_koid_t> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let koid = unsafe { bindings::cpp_vm_object_get_page_source_koid(self.as_raw()) };
+        if koid == ZX_KOID_INVALID { None } else { Some(koid) }
     }
 
     /// Takes pages out of this vmo and places them into the splice list.

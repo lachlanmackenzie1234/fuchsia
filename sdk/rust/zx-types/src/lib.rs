@@ -1416,6 +1416,22 @@ pub const ZX_PAGER_VMO_STATS_MODIFIED: u32 = 1;
 // Options for zx_pager_query_vmo_stats().
 pub const ZX_PAGER_RESET_VMO_STATS: u32 = 1;
 
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_pager_vmo_stats_t {
+    pub modified: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
+pub struct zx_vmo_dirty_range_t {
+    pub offset: u64,
+    pub length: u64,
+    pub options: u64,
+}
+
 pub type zx_excp_type_t = u32;
 
 multiconst!(zx_excp_type_t, [

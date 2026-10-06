@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 // Size and alignment constants for Rust dispatcher states stored in C++ OpaqueStorage.
 // These values must match the exact size and alignment of their corresponding Rust structs,
@@ -96,6 +97,12 @@ constexpr size_t kLogDispatcherStateOffset = 48;
 // Size and alignment for DlogReaderStorage (DlogReader).
 constexpr size_t kDlogReaderStorageSize = 48;
 constexpr size_t kDlogReaderStorageAlign = 8;
+
+// Size, alignment, and offset for PagerDispatcherState.
+constexpr size_t kPagerDispatcherStateSize = 120 + (2 * kLockClassIdSize);
+constexpr size_t kPagerDispatcherStateAlign = 8;
+constexpr size_t kPagerDispatcherStateOffset = 48;
+constexpr uint32_t kPagerProxyTrapDirty = (1u << 0u);
 
 // Size, alignment, and offset for PinnedMemoryTokenDispatcherState.
 constexpr size_t kPinnedMemoryTokenDispatcherStateSize = 56 + kLockClassIdSize;

@@ -292,6 +292,24 @@ let fields = guard.as_mut().fields_mut();
 - Cross-Language Lifecycles: Implement `Recyclable` (or
   `#[derive(Recyclable)]`). Provide an FFI callback (e.g. `rust_recycle_<type>`)
   on C++ side that invokes `Recyclable::recycle_ffi`.
+- Unported C++ `fbl::RefCounted` Types (`Opaque<bindings::T>` vs
+  `fbl::impl_opaque_ref_counted_facade!`):
+  - **Bindgen-Backed Types** (e.g., `VmObject`, `VmCowPages`, `PageSource`):
+    When `bindgen` generates a struct (`bindings::T`) for a C++ `fbl::RefCounted`
+    type, **do NOT use `fbl::impl_opaque_ref_counted_facade!`**. That macro
+    replaces the struct body with a zero-sized `OpaqueRefCountedFacade<T>`,
+    losing the true C++ size/alignment (`size_of::<T>() == 0`) and creating a
+    pointer-type mismatch between `*mut Self` and `*mut bindings::T`. Instead,
+    keep `raw: Opaque<bindings::T>` (with `phantom: PhantomData<PhantomPinned>`),
+    define `as_raw(&self) -> *mut bindings::T { self.raw.get() }`, and manually
+    implement `fbl::HasRefCount` and `fbl::Recyclable` delegating to
+    `bindings::cpp_<type>_get_ref_counted(self.as_raw())` and
+    `bindings::cpp_<type>_free(ptr.as_ptr().cast())`.
+  - **Non-Bindgen (`extern "C"`) Facade Types** (e.g., `VmMapping`,
+    `VmAddressRegion`, `Bti`, `Pmt`): Only use
+    `fbl::impl_opaque_ref_counted_facade!` when there is no `bindgen`-generated
+    struct and hand-written `extern "C"` declarations take `*mut Self` / `&Self`
+    directly.
 - Intrusive Containers: Derive `DoublyLinkedListContainable`,
   `SinglyLinkedListContainable`, or `WavlTreeContainable`. Annotate node fields
   with `#[dll_node]`, `#[sll_node]`, or `#[wavl_node]`. Use `tag = ...` for
@@ -472,6 +490,19 @@ Ok(())
   of C++ source and header files (`.cc` and `.h`) against the corresponding
   `.rs` files to ensure complete inline comment parity.
 
+### 3.16. Code Formatting & Line Length Limits
+- **100-Character Line Limit**: All lines in Rust (`.rs`) and C++ (`.cc`, `.h`)
+  files MUST be 100 characters or fewer.
+- **`fx format-code` Limitations**: Note that `fx format-code` (`rustfmt`) does
+  **not** fix or wrap comments (`//` and `///`), string literals, or code inside
+  macros (such as `pin_init!`, `ksync::lock!`, `unittest::expect_*!`,
+  `debug_assert!`, `ltracef!`, `impl_dispatcher_facade!`, or
+  `impl_dispatcher_facade_with_state!`).
+- **Manual Wrapping & Re-formatting**: You must manually wrap comments, strings,
+  and macro arguments to stay within 100 characters, and **always re-run `fx
+  format-code` after manual edits** so `rustfmt` and `shac` formatting checks
+  pass cleanly.
+
 ## 4. Common Pitfalls & Anti-Patterns Checklist
 
 Reviewers must audit code against this checklist:
@@ -551,3 +582,18 @@ Reviewers must audit code against this checklist:
 29. [ ] **Manual Deferred Cleanup**: C++ `fit::defer` cleanup guards are
     translated to `zr::defer` rather than manually duplicating cleanup logic
     before every early return.
+30. [ ] **LazyInit vs. Ad-hoc Statics**: Translation of bare C++ global
+    variables should use the Rust port of `LazyInit` rather than ad-hoc
+    `MaybeUninit`/`UnsafeCell`/`AtomicPtr` statics. Note also when `LazyInit`
+    implements `Deref` and avoid introducing redundant `get_foo()` wrappers in
+    those cases.
+31. [ ] **Mixing `impl_opaque_ref_counted_facade!` with Bindgen Types**: C++
+    `fbl::RefCounted` types with a `bindgen`-generated struct (`bindings::T`)
+    do not use `fbl::impl_opaque_ref_counted_facade!` (which makes the Rust
+    type zero-sized and mismatches `*mut Self` vs `*mut bindings::T`); they
+    wrap `Opaque<bindings::T>` and implement `HasRefCount` and `Recyclable`
+    directly.
+32. [ ] **Lines Exceeding 100 Characters or Unformatted Macros/Comments**: All
+    lines (including comments, string literals, and code inside macros, which
+    `fx format-code` does not touch) are `<= 100` characters, and `fx
+    format-code` is re-run after any manual line wrapping.

@@ -27,6 +27,7 @@ mod nanosleep;
 mod object_info;
 mod object_property;
 mod object_wait;
+mod pager;
 mod pmt;
 mod process;
 mod profile;

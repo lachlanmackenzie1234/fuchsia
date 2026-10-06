@@ -266,4 +266,31 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t
   return vmo->SupplyPages(offset, len, pages, options);
 }
 
+zx_status_t cpp_vm_object_enumerate_dirty_ranges(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                 void* ctx,
+                                                 cpp_vm_object_dirty_range_fn dirty_range_fn) {
+  return vmo->EnumerateDirtyRanges(
+      offset, len, [ctx, dirty_range_fn](uint64_t range_offset, uint64_t range_len, bool is_zero) {
+        return dirty_range_fn(ctx, range_offset, range_len, is_zero);
+      });
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_fail_page_requests(VmObject* vmo, uint64_t offset,
+                                                               uint64_t len,
+                                                               zx_status_t error_status) {
+  return vmo->FailPageRequests(offset, len, error_status);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_query_pager_vmo_stats(VmObject* vmo, bool reset,
+                                                                  zx_pager_vmo_stats_t* stats) {
+  return vmo->QueryPagerVmoStats(reset, stats);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_koid_t cpp_vm_object_get_page_source_koid(const VmObject* vmo) {
+  return vmo->GetPageSourceKoid().value_or(ZX_KOID_INVALID);
+}
+
 }  // extern "C"

@@ -45,6 +45,8 @@ mod msi_dispatcher;
 mod msi_dispatcher_ffi;
 mod msi_interrupt_dispatcher;
 mod msi_interrupt_dispatcher_ffi;
+mod pager_dispatcher;
+mod pager_dispatcher_ffi;
 mod pinned_memory_token_dispatcher;
 mod pinned_memory_token_dispatcher_ffi;
 mod pmt;
@@ -101,6 +103,7 @@ pub use message_packet::{MessagePacket, MessagePacketPtr};
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
+pub use pager_dispatcher::PagerDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
 pub use port_dispatcher::PortDispatcher;
 pub use process_dispatcher::{

@@ -1013,7 +1013,10 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_page_request_get_offset",
     "cpp_page_request_get_len",
     "cpp_page_request_provider_node",
+    "cpp_page_source_free",
+    "cpp_page_source_get_ref_counted",
     "cpp_page_source_on_pages_failed",
+    "cpp_page_source_is_valid_external_failure_code",
     "cpp_page_source_is_valid_internal_failure_code",
     "cpp_page_source_paged_vmo_lock_is_held",
   ]
@@ -1164,7 +1167,10 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_attributed_memory_in_range",
     "cpp_vm_object_read",
     "cpp_vm_object_zero_range",
+    "cpp_vm_object_fail_page_requests",
     "cpp_vm_object_dirty_pages",
+    "cpp_vm_object_enumerate_dirty_ranges",
+    "cpp_vm_object_query_pager_vmo_stats",
     "cpp_vm_object_try_lock_range",
     "cpp_vm_object_lock_range",
     "cpp_vm_object_unlock_range",
@@ -1172,6 +1178,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_writeback_end",
     "cpp_vm_object_reclamation_event_count",
     "cpp_vm_object_detach_source",
+    "cpp_vm_object_get_page_source_koid",
     "cpp_vm_object_take_pages",
     "cpp_vm_object_supply_pages",
     "cpp_vm_object_read_user",
@@ -1186,6 +1193,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObjectChildObserver",
     "VmObjectReadWriteOptions",
     "arch_mmu_flags_t",
+    "cpp_vm_object_dirty_range_fn",
     "cpp_vm_object_lookup_fn",
   ]
   type_blocklist = [
@@ -1194,6 +1202,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmPageSpliceList",
     "paddr_t",
     "vm_page_t",
+    "zx_koid_t",
+    "zx_pager_vmo_stats_t",
     "zx_status_t",
     "zx_vmo_lock_state_t",
     "VmObject_AttributionCounts",
@@ -1238,7 +1248,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "use page_source_bindings::MultiPageRequest;",
     "use vm_page_list_bindings::VmPageSpliceList;",
     "use zx_types::zx_paddr_t as paddr_t;",
-    "use zx_types::zx_status_t;",
+    "use zx_types::{zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};",
     "pub use zx_types::zx_vmo_lock_state_t;",
   ]
   expect_lints = [
@@ -1267,14 +1277,17 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_unmap_and_call",
     "cpp_vm_object_paged_user_stream_size_locked",
     "cpp_vm_object_paged_create_contiguous",
+    "cpp_vm_object_paged_create_external",
     "cpp_vm_object_paged_debug_get_cow_pages",
     "cpp_vm_object_paged_debug_get_page",
+    "cpp_vm_object_paged_reset_pager_vmo_stats",
   ]
   type_allowlist = [
     "VmObjectPaged",
     "StreamSizeManager",
   ]
   type_blocklist = [
+    "PageSource",
     "VmCowPages",
     "VmObject",
     "vm_page_t",
@@ -1301,6 +1314,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   ]
   deps = [
     ":page-bindings",
+    ":page-source-bindings",
     ":vm-cow-pages-bindings",
     ":vm-object-bindings",
     "//sdk/rust/zx-types",
@@ -1309,6 +1323,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   raw_lines = [
     "#![no_std]",
     "use page_bindings::vm_page_t;",
+    "use page_source_bindings::PageSource;",
     "use vm_cow_pages_bindings::VmCowPages;",
     "use vm_object_bindings::VmObject;",
     "use zx_types::zx_status_t;",

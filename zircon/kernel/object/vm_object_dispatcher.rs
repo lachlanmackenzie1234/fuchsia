@@ -17,8 +17,8 @@ use fbl::RefPtr;
 use page;
 use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED, zx_info_vmo_t,
-    zx_rights_t,
+    ZX_KOID_INVALID, ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED,
+    zx_info_vmo_t, zx_koid_t, zx_rights_t,
 };
 
 // LINT.IfChange(InitialMutability)
@@ -71,6 +71,11 @@ impl VmObjectDispatcher {
     pub fn vmo(&self) -> &RefPtr<VmObject> {
         // SAFETY: `self` is a valid `VmObjectDispatcher` reference.
         unsafe { &*cpp_vm_object_dispatcher_get_vmo(self.as_ffi()) }
+    }
+
+    /// Returns the koid of the backing pager, or `ZX_KOID_INVALID` if none.
+    pub fn pager_koid(&self) -> zx_koid_t {
+        self.vmo().get_page_source_koid().unwrap_or(ZX_KOID_INVALID)
     }
 
     /// Parses create syscall flags for VMOs.

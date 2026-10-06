@@ -115,7 +115,9 @@ already exists:
     and `BUILD.gn` target definitions):
     > Please implement the initial Rust port for `<component>` based on `<cpp_paths>`.
     > Create the in-tree files using `write_to_file`, update `BUILD.gn`, run `fx build`
-    > and `fx test`, and format code with `fx format-code`.
+    > and `fx test`, wrap any comments, strings, or macro lines exceeding 100
+    > characters (which `fx format-code` does not touch), and format code with
+    > `fx format-code`.
 2.  Apply the **Git Verification Gate** (Step 4).
 3.  Once in-tree files are verified, proceed to Step 5 for the initial Reviewer
     audit.
@@ -178,7 +180,8 @@ Forward the actionable feedback to the Coder subagent:
 > Here is the review feedback for `<component>` from the Reviewer.
 > Please update the in-tree repository files using `write_to_file` or `replace_file_content`
 > to address all items in the Actionable Instructions.
-> Ensure you run `fx build`, `fx test`, and `fx format-code`.
+> Ensure all lines (including comments, strings, and inside macros) are <= 100
+> characters, and run `fx build`, `fx test`, and `fx format-code`.
 >
 > `<insert Actionable Instructions from Reviewer>`
 
@@ -191,7 +194,9 @@ When the Coder responds:
 ### Step 7: Finalize and Clean Up
 
 Once the Reviewer provides final approval:
-1.  Verify the workspace formatting with `fx format-code`.
+1.  Verify that no lines in modified files exceed 100 characters (remembering
+    that `fx format-code` does not wrap comments, strings, or code inside
+    macros), and run `fx format-code`.
 2.  Verify the final build with `fx build` and tests with `fx test`.
 3.  Report completion and summary of verified in-tree files to the user.
 4.  Terminate both subagents using `manage_subagents` with `Action: "kill"`.
