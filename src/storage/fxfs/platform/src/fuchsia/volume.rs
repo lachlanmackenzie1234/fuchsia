@@ -34,7 +34,7 @@ use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::project_id::ProjectIdExt;
-use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
+use fxfs::object_store::transaction::{LockKey, Options, ReservationOptions, lock_keys};
 use fxfs::object_store::{
     DirType, HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore, ProjectId,
 };
@@ -514,7 +514,8 @@ impl FxVolume {
             return Ok(());
         }
         // If this fails, the graveyard should clean it up on next mount.
-        let txn_options = Options { borrow_metadata_space: true, ..Default::default() };
+        let txn_options =
+            Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() };
         self.store.tombstone_object(object_id, txn_options, truncate_guard).await?;
         Ok(())
     }

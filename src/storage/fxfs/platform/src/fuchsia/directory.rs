@@ -20,7 +20,9 @@ use fxfs::errors::FxfsError;
 use fxfs::filesystem::{SyncOptions, TruncateGuard};
 use fxfs::log::*;
 use fxfs::object_store::directory::{self, ReplacedChild};
-use fxfs::object_store::transaction::{LockKey, Options, Transaction, lock_keys};
+use fxfs::object_store::transaction::{
+    LockKey, Options, ReservationOptions, Transaction, lock_keys,
+};
 use fxfs::object_store::{self, Directory, ObjectDescriptor, ObjectStore, Timestamp};
 use fxfs_crypto::WrappingKeyId;
 use fxfs_macros::ToWeakNode;
@@ -860,7 +862,7 @@ impl MutableDirectory for FxDirectory {
                     self.store().store_object_id(),
                     self.directory.object_id()
                 )],
-                Options { borrow_metadata_space: true, ..Default::default() },
+                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
             )
             .await
             .map_err(map_to_status)?;

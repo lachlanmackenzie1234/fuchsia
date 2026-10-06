@@ -15,7 +15,9 @@ use crate::object_store::directory::{
     self, Directory, MutableAttributesInternal, encrypt_filename,
 };
 use crate::object_store::extent::MIN_BLOCK_SIZE;
-use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
+use crate::object_store::transaction::{
+    self, LockKey, ObjectStoreMutation, Options, ReservationOptions, lock_keys,
+};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
     AttributeId, AttributeKey, BytesAndNodes, ChildValue, DirType, EncryptionKeys, ExtentMode,
@@ -233,8 +235,7 @@ async fn test_missing_graveyard() {
                 lock_keys![],
                 transaction::Options {
                     skip_journal_checks: true,
-                    borrow_metadata_space: true,
-                    ..Default::default()
+                    reservation: ReservationOptions::BorrowedMetadata,
                 },
             )
             .await
@@ -4119,7 +4120,7 @@ async fn test_delete_volume() {
                     ),
                     LockKey::flush(store_id)
                 ],
-                Options { borrow_metadata_space: true, ..Default::default() },
+                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
             )
             .await
             .expect("new_transaction failed");

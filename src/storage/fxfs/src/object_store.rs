@@ -51,7 +51,8 @@ use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, Jour
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, LockKeys, MutationV59, ObjectMutationIterator,
-    ObjectStoreMutation, Operation, Options, Transaction, WriteGuard, lock_keys,
+    ObjectStoreMutation, Operation, Options, ReservationOptions, Transaction, WriteGuard,
+    lock_keys,
 };
 use crate::serialized_types::{
     AES_JOURNAL_ENCRYPTION_VERSION, DEFAULT_MAX_SERIALIZED_RECORD_SIZE, Version, Versioned,
@@ -1510,7 +1511,7 @@ impl ObjectStore {
         self.trim_or_tombstone(
             object_id,
             false,
-            Options { borrow_metadata_space: true, ..Default::default() },
+            Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
             truncate_guard,
         )
         .await
@@ -2898,7 +2899,10 @@ impl ObjectStore {
             let mut transaction = self
                 .new_transaction(
                     lock_keys![LockKey::object(self.store_object_id, object_id,)],
-                    Options { borrow_metadata_space: true, ..Default::default() },
+                    Options {
+                        reservation: ReservationOptions::BorrowedMetadata,
+                        ..Default::default()
+                    },
                 )
                 .await?;
             if precondition() {

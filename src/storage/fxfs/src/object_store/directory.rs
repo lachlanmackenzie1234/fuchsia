@@ -13,7 +13,7 @@ use crate::object_store::object_record::{
     Timestamp,
 };
 use crate::object_store::transaction::{
-    LockKey, LockKeys, Mutation, Options, Transaction, lock_keys,
+    LockKey, LockKeys, Mutation, Options, ReservationOptions, Transaction, lock_keys,
 };
 use crate::object_store::{
     AttributeId, DataObjectHandle, HandleOptions, HandleOwner, ObjectStore,
@@ -463,7 +463,14 @@ impl<S: HandleOwner> Directory<S> {
             let transaction = store
                 .new_transaction(
                     lock_keys.clone(),
-                    Options { borrow_metadata_space, ..Default::default() },
+                    Options {
+                        reservation: if borrow_metadata_space {
+                            ReservationOptions::BorrowedMetadata
+                        } else {
+                            ReservationOptions::New
+                        },
+                        ..Default::default()
+                    },
                 )
                 .await?;
 

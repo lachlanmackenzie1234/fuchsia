@@ -8,7 +8,7 @@ use crate::hooks::HooksHandle;
 use crate::log::*;
 use crate::metrics;
 use crate::object_handle::LayerObject;
-use crate::object_store::allocator::{Allocator, Hold, Reservation};
+use crate::object_store::allocator::Allocator;
 use crate::object_store::directory::Directory;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::super_block::{SuperBlockHeader, SuperBlockInstance};
@@ -867,17 +867,6 @@ impl FxFilesystem {
     }
 
     pub(crate) fn drop_transaction(&self, transaction: &mut Transaction<'_>) {
-        // If we placed a hold for metadata space, return it now.
-        if let MetadataReservation::Hold(hold_amount) =
-            std::mem::replace(&mut transaction.metadata_reservation, MetadataReservation::None)
-        {
-            let hold = transaction
-                .allocator_reservation
-                .unwrap()
-                .reserve(0)
-                .expect("Zero should always succeed.");
-            hold.add(hold_amount);
-        }
         self.objects.drop_transaction(transaction);
         self.lock_manager.drop_transaction(transaction);
     }
@@ -1019,56 +1008,47 @@ impl FxFilesystem {
         );
     }
 
-    pub(crate) async fn reservation_for_transaction<'a>(
+    /// Tops up the transaction's metadata_reservation to ensure the reservation is large enough to
+    /// accommodate a maximally sized transaction.  This must be called before the transaction is
+    /// used.
+    ///
+    /// If `skip_journal_checks` is unset, this function also ensures that there is sufficient
+    /// space in the journal to write the transaction, and will block if the journal needs to grow.
+    pub(crate) async fn add_transaction_reservation(
         self: &Arc<Self>,
-        options: transaction::Options<'a>,
-    ) -> Result<(MetadataReservation, Option<&'a Reservation>, Option<Hold<'a>>), Error> {
+        transaction: &mut Transaction<'_>,
+    ) -> Result<(), Error> {
         if self.options.image_builder_mode.is_some() {
             // Image builder mode avoids the journal so reservation tracking for metadata overheads
             // doesn't make sense and so we essentially have 'all or nothing' semantics instead.
-            return Ok((MetadataReservation::Borrowed, None, None));
+            return Ok(());
         }
-        if !options.skip_journal_checks {
+        if !transaction.skip_journal_checks {
             self.maybe_start_flush_task();
             self.journal.check_journal_space().await?;
         }
 
-        // We support three options for metadata space reservation:
-        //
-        //   1. We can borrow from the filesystem's metadata reservation.  This should only be
-        //      be used on the understanding that eventually, potentially after a full compaction,
-        //      there should be no net increase in space used.  For example, unlinking an object
-        //      should eventually decrease the amount of space used and setting most attributes
-        //      should not result in any change.
-        //
-        //   2. A reservation is provided in which case we'll place a hold on some of it for
-        //      metadata.
-        //
-        //   3. No reservation is supplied, so we try and reserve space with the allocator now,
-        //      and will return NoSpace if that fails.
-        let mut hold = None;
-        let metadata_reservation = if options.borrow_metadata_space {
-            MetadataReservation::Borrowed
-        } else {
-            match options.allocator_reservation {
-                Some(reservation) => {
-                    hold = Some(
-                        reservation
-                            .reserve(TRANSACTION_METADATA_MAX_AMOUNT)
-                            .ok_or(FxfsError::NoSpace)?,
-                    );
-                    MetadataReservation::Hold(TRANSACTION_METADATA_MAX_AMOUNT)
-                }
-                None => {
-                    let reservation = self
-                        .allocator()
-                        .reserve(None, TRANSACTION_METADATA_MAX_AMOUNT)
-                        .ok_or(FxfsError::NoSpace)?;
-                    MetadataReservation::Reservation(reservation)
-                }
+        match &mut transaction.metadata_reservation {
+            MetadataReservation::BorrowedMetadata
+            | MetadataReservation::BorrowedMetadataAndData => {}
+            MetadataReservation::Hold(hold) => {
+                let amount = TRANSACTION_METADATA_MAX_AMOUNT.saturating_sub(hold.amount());
+                hold.add(hold.owner().reserve(amount).ok_or(FxfsError::NoSpace)?.forget());
             }
-        };
-        Ok((metadata_reservation, options.allocator_reservation, hold))
+            MetadataReservation::Reservation(txn_reservation) => {
+                txn_reservation.add(
+                    self.allocator()
+                        .reserve(
+                            txn_reservation.owner_object_id(),
+                            TRANSACTION_METADATA_MAX_AMOUNT
+                                .saturating_sub(txn_reservation.amount()),
+                        )
+                        .ok_or(FxfsError::NoSpace)?
+                        .forget(),
+                );
+            }
+        }
+        Ok(())
     }
 
     pub(crate) async fn add_transaction(&self, skip_journal_checks: bool) {
@@ -1147,12 +1127,14 @@ impl FxFilesystem {
             || store_id == self.objects.root_store_object_id()
         {
             transaction::Options {
-                borrow_metadata_space: true,
-                allocator_reservation: Some(self.objects.metadata_reservation()),
+                reservation: transaction::ReservationOptions::BorrowedMetadataAndData,
                 ..Default::default()
             }
         } else {
-            transaction::Options { borrow_metadata_space: true, ..Default::default() }
+            transaction::Options {
+                reservation: transaction::ReservationOptions::BorrowedMetadata,
+                ..Default::default()
+            }
         };
         store.tombstone_object(object_id, options, truncate_guard).await
     }
@@ -1180,12 +1162,14 @@ impl FxFilesystem {
             || store_id == self.objects.root_store_object_id()
         {
             transaction::Options {
-                borrow_metadata_space: true,
-                allocator_reservation: Some(self.objects.metadata_reservation()),
+                reservation: transaction::ReservationOptions::BorrowedMetadataAndData,
                 ..Default::default()
             }
         } else {
-            transaction::Options { borrow_metadata_space: true, ..Default::default() }
+            transaction::Options {
+                reservation: transaction::ReservationOptions::BorrowedMetadata,
+                ..Default::default()
+            }
         };
         store.tombstone_attribute(object_id, attribute_id, options).await
     }

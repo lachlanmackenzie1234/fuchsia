@@ -26,7 +26,7 @@ use fxfs::errors::FxfsError;
 use fxfs::filesystem::FxFilesystem;
 use fxfs::fsck;
 use fxfs::log::*;
-use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
+use fxfs::object_store::transaction::{LockKey, Options, ReservationOptions, lock_keys};
 use fxfs::object_store::volume::RootVolume;
 use fxfs::object_store::{
     Directory, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions,
@@ -289,7 +289,12 @@ impl MountedVolumesGuard<'_> {
         let (object_id, transaction) = self
             .volumes_directory
             .root_volume
-            .acquire_transaction_for_remove_volume(name, [], false)
+            .acquire_transaction_for_remove_volume(
+                name,
+                [],
+                false,
+                Options { reservation: ReservationOptions::BorrowedMetadata, ..Default::default() },
+            )
             .await?;
 
         // Cowardly refuse to delete a mounted volume.
