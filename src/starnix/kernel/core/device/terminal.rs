@@ -7,7 +7,7 @@ use crate::task::{EventHandler, ProcessGroup, Session, WaitCanceler, WaitQueue, 
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{DirEntryHandle, FsString, Mounts};
 use derivative::Derivative;
-use line_discipline::{LineDiscipline, PendingSignals};
+use line_discipline::{LineDiscipline, PendingSignals, TerminalSide};
 use macro_rules_attribute::apply;
 use starnix_sync::{DeviceTerminalsLock, LockDepMutex, LockDepRwLock, PtsIdsSetLock};
 use starnix_uapi::auth::FsCred;
@@ -206,7 +206,9 @@ impl Terminal {
 
     /// `read` implementation of the replica side of the terminal.
     pub fn replica_read(&self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
-        self.write().replica_read(data)
+        let (bytes, signals) = self.write().replica_read(data)?;
+        self.send_signals(signals);
+        Ok(bytes)
     }
 
     /// `write` implementation of the replica side of the terminal.
@@ -256,6 +258,9 @@ impl<'a> line_discipline::InputBuffer for InputBufferWrapper<'a> {
 struct OutputBufferWrapper<'a>(&'a mut dyn crate::vfs::buffers::OutputBuffer);
 
 impl<'a> line_discipline::OutputBuffer for OutputBufferWrapper<'a> {
+    fn available(&self) -> usize {
+        self.0.available()
+    }
     fn write(&mut self, data: &[u8]) -> Result<usize, Errno> {
         self.0.write(data)
     }
@@ -278,22 +283,18 @@ impl TerminalMutableState<Base = Terminal> {
     /// Returns the number of available bytes to read from the side of the terminal described by
     /// `is_main`.
     pub fn get_available_read_size(&self, is_main: bool) -> usize {
-        self.line_discipline.get_available_read_size(is_main)
+        self.line_discipline.get_available_read_size(TerminalSide::from(is_main))
     }
 
     /// Sets the terminal configuration.
     fn set_termios(&mut self, termios: uapi::termios2) -> PendingSignals {
-        let old_canon_enabled = self.line_discipline.is_canon_enabled();
         let signals = self.line_discipline.set_termios(termios);
-        let canon_disabled = old_canon_enabled && !self.line_discipline.is_canon_enabled();
-        if canon_disabled || self.line_discipline.has_packet_mode_pending_events() {
-            self.notify_waiters();
-        }
+        self.notify_waiters();
         signals
     }
 
     pub fn flush(&mut self, is_main: bool, arg: u32) -> Result<(), Errno> {
-        self.line_discipline.flush(is_main, arg)?;
+        self.line_discipline.flush(TerminalSide::from(is_main), arg)?;
         self.notify_waiters();
         Ok(())
     }
@@ -337,6 +338,8 @@ impl TerminalMutableState<Base = Terminal> {
     }
 
     /// `write` implementation of the main side of the terminal.
+    ///
+    /// Returns the number of bytes written and any signals generated while processing the input.
     fn main_write(&mut self, data: &mut dyn InputBuffer) -> Result<(usize, PendingSignals), Errno> {
         let mut wrapper = InputBufferWrapper(data);
         let (result, signals) = self.line_discipline.main_write(&mut wrapper)?;
@@ -371,11 +374,17 @@ impl TerminalMutableState<Base = Terminal> {
     }
 
     /// `read` implementation of the replica side of the terminal.
-    fn replica_read(&mut self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
+    ///
+    /// Returns the number of bytes read and any signals generated while draining waiting input
+    /// buffers.
+    fn replica_read(
+        &mut self,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<(usize, PendingSignals), Errno> {
         let mut wrapper = OutputBufferWrapper(data);
-        let result = self.line_discipline.replica_read(&mut wrapper)?;
+        let (result, signals) = self.line_discipline.replica_read(&mut wrapper)?;
         self.notify_waiters();
-        Ok(result)
+        Ok((result, signals))
     }
 
     /// `write` implementation of the replica side of the terminal.
