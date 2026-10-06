@@ -293,7 +293,7 @@ impl SysFs {
         // TODO(https://fxbug.dev/425942145): Correctly implement system filesystem in sysfs
         dir.subdir("devices", dir_mode, |dir| {
             dir.subdir("system", dir_mode, |dir| {
-                dir.subdir("cpu", dir_mode, build_cpu_class_directory);
+                dir.subdir("cpu", dir_mode, |dir| build_cpu_class_directory(kernel, dir));
             });
             dir.subdir("leds", dir_mode, |_dir| {});
             dir.subdir("platform", dir_mode, |dir| {
