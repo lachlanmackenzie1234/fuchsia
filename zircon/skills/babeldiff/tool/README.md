@@ -284,18 +284,20 @@ on narrow screens, and prints cleanly.
    `try_new(..).ok_or(NO_MEMORY)?`;
    `return c ? A : B;` as `if c { A } else { B }`,
    `*out = x; return ZX_OK;` as `Ok(x)`, `do { ... } while (c);` as
-   `loop { ... if !c { break; } }`, and `case A: case B:` as `A | B =>`.
+   `loop { ... if !c { break; } }`, `case A: case B:` as `A | B =>`, and
+   nested `extern "C" fn` callback bodies as C++ lambda bodies.
    Declarations with no initializer, pure bindings such as
    `let state = self.state();`, out-parameter writes and thread-safety
    assertions are bookkeeping, not steps.
 3. **Pairing.** C++ functions are paired with Rust functions by, in order:
    explicit `--pair`s; the FFI shim pattern (the new C++ body calls
-   `rust_<class>_<method>`, whose `#[no_mangle]` definition forwards to the
-   Rust method, or the shim's name spells the C++ function's); the same
-   class and method name; then a score combining name similarity and body
-   similarity, where comments count double. When a shim calls several
-   same-named methods (`A::create` and `B::create`), the type path decides,
-   and if nothing does the shim is reported as ambiguous rather than
+   `rust_<class>_<method>`, whose `#[no_mangle]` or `pub extern "C"` definition
+   forwards to the Rust method, or the shim's name spells the C++ function's;
+   private `extern "C"` callbacks without `#[no_mangle]` pair as ordinary
+   functions); the same class and method name; then a score combining name
+   similarity and body similarity, where comments count double. When a shim
+   calls several same-named methods (`A::create` and `B::create`), the type path
+   decides, and if nothing does the shim is reported as ambiguous rather than
    guessed. A `#[no_mangle]` function that does the work itself is the port,
    and a C++ one-line trampoline hands the shim to the C++ it calls.
    C++ overrides of a method in related classes (found from the class

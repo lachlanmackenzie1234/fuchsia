@@ -787,3 +787,83 @@ fn pairs_follow_names_types_and_real_bodies() {
     // The shim calls `LampId::new(..).stepping()`: its target is `stepping`.
     assert!(has("LampId::stepping", "LampId::stepping"), "{pairs:?}");
 }
+
+#[test]
+fn private_extern_c_callback_pairs_and_nested_fn_aligns() {
+    let cpp = r#"
+void Watchdog::EvictionTriggerCallback(Timer* timer, zx_instant_mono_t now, void* arg) {
+  Watchdog* watchdog = reinterpret_cast<Watchdog*>(arg);
+  watchdog->EvictionTrigger();
+}
+
+void Watchdog::EvictionTrigger() {
+  trigger_eviction();
+}
+
+void Watchdog::Init() {
+  auto worker_cb = [](void* arg) -> int {
+    Watchdog* watchdog = reinterpret_cast<Watchdog*>(arg);
+    watchdog->WorkerThread();
+  };
+  start_worker(worker_cb, this);
+}
+"#;
+    let rust = r#"
+unsafe extern "C" fn eviction_trigger_callback(
+    _timer: *mut Timer,
+    _now: i64,
+    arg: *mut c_void,
+) {
+    // SAFETY: `arg` points to a valid `Watchdog`.
+    let watchdog = unsafe { &*arg.cast::<Watchdog>() };
+    watchdog.eviction_trigger();
+}
+
+impl Watchdog {
+    fn eviction_trigger(&self) {
+        trigger_eviction();
+    }
+
+    pub fn init(&self) {
+        extern "C" fn worker_cb(arg: *mut c_void) -> i32 {
+            // SAFETY: `arg` points to a valid `Watchdog`.
+            let watchdog = unsafe { &*arg.cast::<Watchdog>() };
+            watchdog.worker_thread();
+            0
+        }
+        start_worker(worker_cb, self);
+    }
+}
+"#;
+    let cs = ChangeSet {
+        cpp_old: vec![version("watchdog.cc", cpp)],
+        cpp_new: Vec::new(),
+        rust_new: vec![version("watchdog.rs", rust)],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert!(report.shims.is_empty(), "{:?}", report.shims);
+    assert!(
+        report.unmatched_cpp.is_empty(),
+        "{:?}",
+        report.unmatched_cpp
+    );
+    assert!(
+        report.unmatched_rust.is_empty(),
+        "{:?}",
+        report.unmatched_rust
+    );
+    let cb = report
+        .pairs
+        .iter()
+        .find(|p| p.cpp.name == "Watchdog::EvictionTriggerCallback")
+        .expect("callback pair");
+    assert_eq!(cb.rust.name, "eviction_trigger_callback");
+    assert!(cb.findings.is_empty(), "{:?}", cb.findings);
+
+    let init = report
+        .pairs
+        .iter()
+        .find(|p| p.cpp.name == "Watchdog::Init")
+        .expect("init pair");
+    assert!(init.findings.is_empty(), "{:?}", init.findings);
+}

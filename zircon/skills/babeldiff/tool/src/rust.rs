@@ -136,7 +136,9 @@ impl<'a> Ctx<'a> {
                     break;
                 }
             }
-            if is_attr && self.text(p).contains("no_mangle") {
+            if is_attr
+                && (self.text(p).contains("no_mangle") || self.text(p).contains("export_name"))
+            {
                 is_ffi = true;
             }
             first = ts::line(p);
@@ -148,8 +150,11 @@ impl<'a> Ctx<'a> {
                 b.comment(self.text(*p), ts::line(*p), ts::end_line(*p), 0);
             }
         }
+        let is_pub = ts::children(n)
+            .iter()
+            .any(|c| c.kind() == "visibility_modifier");
         for c in ts::children(n) {
-            if c.kind() == "function_modifiers" && self.text(c).contains("extern") {
+            if is_pub && c.kind() == "function_modifiers" && self.text(c).contains("extern") {
                 is_ffi = true;
             }
         }
@@ -444,13 +449,19 @@ impl<'a> Ctx<'a> {
         b.push(UnitKind::Return, line, end, depth, f);
     }
 
-    /// A plain statement; multi-line closure bodies are split out.
+    /// A plain statement; multi-line closure and nested function bodies are split out.
     fn plain(&self, n: Node, depth: usize, b: &mut UnitBuilder) {
         let mut bodies = Vec::new();
         find_closure_bodies(n, &mut bodies);
         let bodies: Vec<Node> =
             bodies.into_iter().filter(|x| ts::end_line(*x) > ts::line(*x)).collect();
-        let f = self.features(n, &bodies);
+        let mut f = self.features(n, &bodies);
+        if matches!(
+            n.kind(),
+            "integer_literal" | "boolean_literal" | "unit_expression"
+        ) {
+            f.plumbing = true;
+        }
         let end = bodies.first().map_or(ts::end_line(n), |x| ts::line(*x));
         b.push(UnitKind::Stmt, ts::line(n), end, depth, f);
         for body in bodies {
@@ -879,14 +890,14 @@ fn comments_within<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
 }
 
 fn find_closure_bodies<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
-    for c in ts::named_children(n) {
-        if c.kind() == "closure_expression" {
-            if let Some(body) = c.child_by_field_name("body") {
-                out.push(body);
-            }
-        } else {
-            find_closure_bodies(c, out);
+    if matches!(n.kind(), "closure_expression" | "function_item") {
+        if let Some(body) = n.child_by_field_name("body") {
+            out.push(body);
         }
+        return;
+    }
+    for c in ts::named_children(n) {
+        find_closure_bodies(c, out);
     }
 }
 
