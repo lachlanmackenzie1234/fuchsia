@@ -491,7 +491,7 @@ impl Broker {
 
         let targets = vec![ElementLevel { element_id, level }];
         let (lease, deps_claimed) =
-            self.catalog.create_lease_and_claim_dependencies(targets, lease_control);
+            self.catalog.create_lease_and_claim_dependencies(None, targets, lease_control);
         // Activate all pending claims that have all of their
         // dependencies satisfied.
         self.activate_claims_if_dependencies_satisfied(
@@ -544,8 +544,11 @@ impl Broker {
                 .push(ElementLevel { element_id: requires_element_id, level: *requires_level });
         }
 
-        let (lease, deps_claimed) =
-            self.catalog.create_lease_and_claim_dependencies(required_levels, lease_control);
+        let (lease, deps_claimed) = self.catalog.create_lease_and_claim_dependencies(
+            Some(&lease_name),
+            required_levels,
+            lease_control,
+        );
 
         // Count the lease's targets, which `Lease::new` has deduplicated. `drop_lease` decrements
         // the same set, so any duplicates must be collapsed before we count them.
@@ -1360,6 +1363,7 @@ impl Catalog {
     /// Returns the new lease and the Vec of dependencies claimed.
     fn create_lease_and_claim_dependencies(
         &mut self,
+        lease_name: Option<&str>,
         targets: Vec<ElementLevel>,
         lease_control: zx::Koid,
     ) -> (Lease, Vec<Dependency>) {
@@ -1371,6 +1375,7 @@ impl Catalog {
                 self.topology.inspect().on_create_lease_and_claims(
                     element,
                     lease.id,
+                    lease_name,
                     target.level.level,
                 );
             }
@@ -5577,6 +5582,7 @@ mod tests {
                                 meta: contains {
                                     leases: {
                                         format!("{}", lease.id) => {
+                                            name: "L",
                                             level: ON.level as u64,
                                             status: LeaseStatus::Satisfied.into_primitive() as u64,
                                         },
@@ -5587,6 +5593,7 @@ mod tests {
                                 meta: contains {
                                     leases: {
                                         format!("{}", lease.id) => {
+                                            name: "L",
                                             level: ON.level as u64,
                                             status: LeaseStatus::Satisfied.into_primitive() as u64,
                                         },
@@ -5637,6 +5644,31 @@ mod tests {
                 },
             },
         });
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    rm_lease: {
+                        element_id: *element_b,
+                        lease_id: *lease.id,
+                        name: "L",
+                        level: ON.level as u64,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+                {
+                    rm_lease: {
+                        element_id: *element_c,
+                        lease_id: *lease.id,
+                        name: "L",
+                        level: ON.level as u64,
+                        status: LeaseStatus::Vacated.into_primitive() as u64,
+                    },
+                },
+            ]
+        );
     }
 
     // When a direct lease names the same element more than once, those demands
@@ -5737,6 +5769,7 @@ mod tests {
                                 meta: contains {
                                     leases: {
                                         format!("{}", lease.id) => {
+                                            name: "L",
                                             level: TWO.level as u64,
                                             status: LeaseStatus::Satisfied.into_primitive() as u64,
                                         },

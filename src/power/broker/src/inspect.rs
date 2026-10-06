@@ -33,6 +33,7 @@ const ELEMENT_ID: &str = "element_id";
 const ELEMENT_NAME: &str = "name";
 const LEVEL: &str = "level";
 const LEASE_ID: &str = "lease_id";
+const LEASE_NAME: &str = "name";
 const STATUS: &str = "status";
 const TIME: &str = "@time";
 const EDGE_ID: &str = "edge_id";
@@ -67,6 +68,7 @@ pub struct ElementData {
 #[derive(Debug)]
 struct LeaseData {
     node: inspect::Node,
+    name: Option<inspect::StringProperty>,
     level: inspect::UintProperty,
     status: Option<inspect::UintProperty>,
 }
@@ -129,15 +131,21 @@ impl ElementData {
         }
     }
 
-    fn create_lease(&mut self, lease_id: LeaseID, level: fpb::PowerLevel) {
+    fn create_lease(
+        &mut self,
+        lease_id: LeaseID,
+        lease_name: Option<&str>,
+        level: fpb::PowerLevel,
+    ) {
         match self.leases.get_mut(&lease_id) {
             Some(_) => unreachable!("We can't call into create lease twice"),
             None => {
                 let lease_node = self.leases_node.create_child(format!("{lease_id}"));
+                let name = lease_name.map(|name| lease_node.create_string(LEASE_NAME, name));
                 let level = lease_node.create_uint(LEVEL, level as u64);
                 self.leases.insert(
                     lease_id.to_owned(),
-                    LeaseData { node: lease_node, level, status: None },
+                    LeaseData { node: lease_node, name, level, status: None },
                 );
             }
         }
@@ -458,12 +466,13 @@ impl TopologyInspect {
         &self,
         element: &Element,
         lease_id: LeaseID,
+        lease_name: Option<&str>,
         level: fpb::PowerLevel,
     ) {
         let Some(ref vertex) = element.inspect_vertex else {
             return;
         };
-        vertex.borrow_mut().meta().create_lease(lease_id, level);
+        vertex.borrow_mut().meta().create_lease(lease_id, lease_name, level);
         self.maybe_record_event(element, CREATE_LEASE_EVENT, |node| {
             node.record_uint(ELEMENT_ID, *element.id as u64);
             node.record_uint(LEASE_ID, *lease_id);
@@ -498,6 +507,11 @@ impl TopologyInspect {
         self.maybe_record_event(element, REMOVE_LEASE_EVENT, |node| {
             node.record_uint(ELEMENT_ID, *element.id as u64);
             node.record_uint(LEASE_ID, *lease.id);
+
+            if let Some(name) = lease_data.name {
+                let _ = name.reparent(&node);
+                node.record(name);
+            }
 
             let _ = lease_data.level.reparent(&node);
             node.record(lease_data.level);
