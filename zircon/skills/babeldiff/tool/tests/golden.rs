@@ -1131,3 +1131,46 @@ impl WatchdogState {
         p.findings
     );
 }
+
+#[test]
+fn unadapted_cpp_identifiers_in_ported_comments_are_reported() {
+    let cpp = r#"
+void Watchdog::WaitForChange() {
+  // Coming into this method we must not be in the kOutOfMemory state, and
+  // eviction_trigger_ must not be active.
+  DEBUG_ASSERT(level_ != PressureLevel::kOutOfMemory);
+  // Adapted in Rust to `watermark_debounce`.
+  uint64_t debounce = watermark_debounce_;
+}
+"#;
+    let rust = r#"
+impl WatchdogState {
+    fn wait_for_change(&self) {
+        // Coming into this method we must not be in the kOutOfMemory state, and
+        // eviction_trigger_ must not be active.
+        debug_assert_ne!(self.level.load(), PressureLevel::OutOfMemory);
+        // Adapted in Rust to `watermark_debounce`.
+        let _debounce = *self.watermark_debounce.get();
+    }
+}
+"#;
+    let cs = ChangeSet::from_files(&[
+        ("watchdog.cc".into(), cpp.into()),
+        ("watchdog.rs".into(), rust.into()),
+    ]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    let issues: Vec<&str> = p
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Issue && f.category == Category::Comment)
+        .map(|f| f.message.as_str())
+        .collect();
+    assert_eq!(
+        issues,
+        ["comment still uses C++ identifiers `kOutOfMemory`, `eviction_trigger_`; update to the Rust name"],
+        "{:?}",
+        p.findings
+    );
+}

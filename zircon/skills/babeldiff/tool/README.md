@@ -145,7 +145,7 @@ checks:
 
 | Kind | What it covers |
 | --- | --- |
-| `comment` | A comment lost, added or reworded. Each lost comment is its own finding. |
+| `comment` | A comment lost, added, reworded, or still using C++ trailing-underscore member names (`foo_`) or `kPascalCase` constants (`kOutOfMemory`) that were renamed in Rust. Each lost comment is its own finding. |
 | `error-path` | Error codes, propagation, and success versus failure. |
 | `lock` | Locks taken or released. |
 | `control-flow` | Branches, loops, returns, and tests added to or dropped from a condition. |

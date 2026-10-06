@@ -210,6 +210,7 @@ pub fn check_with(
         let marker = match (p.cpp, p.rust) {
             (Some(i), Some(j)) => {
                 compare(&cpp.units[i], &rust.units[j], ctx.elsewhere, &mut notes);
+                unadapted_comment_idents(&cpp.units[i], &rust.units[j], cpp, rust, &mut notes);
                 condition_diff(i, j, cpp, rust, &mut notes);
                 ordering_diff(
                     &unit_text(cpp, &cpp.units[i]),
@@ -431,6 +432,59 @@ fn lock_by_callback(a: &Unit, b: &Unit, cpp: &Function, rust: &Function, notes: 
             Severity::Note,
             Category::Lock,
             "same lock, but the Rust takes it by passing this closure to a callback instead of holding a guard like the C++; a guard type would keep the Rust shaped like the C++",
+        ));
+    }
+}
+
+/// Flags aligned Rust comments that still use C++ trailing-underscore member
+/// names (`eviction_trigger_`) or `kPascalCase` constants (`kOutOfMemory`)
+/// copied verbatim from the C++ comment when the Rust code uses Rust names.
+fn unadapted_comment_idents(
+    a: &Unit,
+    b: &Unit,
+    cpp: &Function,
+    rust: &Function,
+    notes: &mut Vec<Note>,
+) {
+    static CPP_IDENT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\b([a-z][a-z0-9_]*_|k[A-Z][A-Za-z0-9]+)\b").unwrap()
+    });
+    if a.kind != UnitKind::Comment || b.kind != UnitKind::Comment {
+        return;
+    }
+    let cpp_text = unit_text(cpp, a);
+    let rust_text = unit_text(rust, b);
+    let rust_code: String = rust
+        .units
+        .iter()
+        .filter(|u| u.kind != UnitKind::Comment)
+        .map(|u| unit_text(rust, u))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut unadapted: Vec<String> = Vec::new();
+    for cap in CPP_IDENT.captures_iter(&rust_text) {
+        let ident = &cap[1];
+        let word_re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(ident))).unwrap();
+        if word_re.is_match(&cpp_text)
+            && !word_re.is_match(&rust_code)
+            && !unadapted.iter().any(|x| x == ident)
+        {
+            unadapted.push(ident.to_string());
+        }
+    }
+    if !unadapted.is_empty() {
+        let list = unadapted
+            .iter()
+            .map(|s| format!("`{s}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        notes.push(Note::new(
+            Severity::Issue,
+            Category::Comment,
+            format!(
+                "comment still uses C++ identifier{} {list}; update to the Rust name",
+                if unadapted.len() == 1 { "" } else { "s" }
+            ),
         ));
     }
 }
