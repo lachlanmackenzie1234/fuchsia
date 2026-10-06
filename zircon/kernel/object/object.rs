@@ -95,7 +95,7 @@ pub use event_pair_dispatcher::EventPairDispatcher;
 pub use fifo_dispatcher::FifoDispatcher;
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
-pub use handle::{HandleRef, HandleValue, KernelHandle};
+pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
 pub use io_buffer_dispatcher::IoBufferDispatcher;
 pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;

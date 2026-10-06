@@ -132,6 +132,7 @@ where
 }
 
 /// Safe RAII wrapper for an owned handle (`HandleOwner`).
+#[repr(transparent)]
 pub struct HandleOwner {
     ptr: NonNull<core::ffi::c_void>,
 }
@@ -195,6 +196,17 @@ impl HandleOwner {
     pub fn as_ref(&self) -> HandleRef<'_> {
         // SAFETY: `self.ptr` is a valid owned handle pointer for the lifetime of `&self`.
         unsafe { HandleRef::from_raw(self.ptr) }
+    }
+
+    /// Allocates a new `HandleOwner` wrapping `handle` with `rights`.
+    pub fn make<T>(handle: KernelHandle<T>, rights: zx_rights_t) -> Option<Self>
+    where
+        T: HasRefCount + Recyclable + DispatcherOps,
+    {
+        let mut generic = handle.cast();
+        // SAFETY: `generic` is a valid `KernelHandle<Dispatcher>`, and `cpp_handle_make` returns
+        // an owned `Handle*` or null.
+        unsafe { Self::from_raw(cpp_handle_make(&mut generic, rights)) }
     }
 }
 
@@ -274,6 +286,16 @@ impl<'a> HandleRef<'a> {
 }
 
 unsafe extern "C" {
+    /// Allocates a C++ `Handle` from a `KernelHandle<Dispatcher>` with `rights`.
+    ///
+    /// # Safety
+    ///
+    /// `kernel_handle` must point to a valid `KernelHandle<Dispatcher>`.
+    fn cpp_handle_make(
+        kernel_handle: *mut KernelHandle<Dispatcher>,
+        rights: zx_rights_t,
+    ) -> *mut core::ffi::c_void;
+
     /// Duplicates a C++ `Handle` with the specified rights.
     ///
     /// # Safety

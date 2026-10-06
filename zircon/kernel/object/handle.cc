@@ -239,6 +239,12 @@ int64_t HandleTableArena::get_alloc_failed_count() {
 
 extern "C" {
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Handle* cpp_handle_make(KernelHandle<Dispatcher>* kernel_handle,
+                                          zx_rights_t rights) {
+  return Handle::Make(ktl::move(*kernel_handle), rights).release();
+}
+
 Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights) {
   if (!handle) {
     return nullptr;
