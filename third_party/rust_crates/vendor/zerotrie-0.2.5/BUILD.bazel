@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "zerotrie",
     package_url = "https://github.com/unicode-org/icu4x",
-    package_version = "0.2.4",
+    package_version = "0.2.5",
 )
 
 license(
@@ -76,7 +76,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.4",
+    version = "0.2.5",
     deps = [
         "//third_party/rust_crates/vendor/yoke-0.8.3:yoke",
         "//third_party/rust_crates/vendor/zerofrom-0.1.8:zerofrom",

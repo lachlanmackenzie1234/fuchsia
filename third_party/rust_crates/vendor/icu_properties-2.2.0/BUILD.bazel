@@ -78,7 +78,7 @@ rust_library(
         "//third_party/rust_crates/vendor/icu_locale_core-2.2.0:icu_locale_core",
         "//third_party/rust_crates/vendor/icu_properties_data-2.2.0:icu_properties_data",
         "//third_party/rust_crates/vendor/icu_provider-2.2.0:icu_provider",
-        "//third_party/rust_crates/vendor/zerotrie-0.2.4:zerotrie",
+        "//third_party/rust_crates/vendor/zerotrie-0.2.5:zerotrie",
         "//third_party/rust_crates/vendor/zerovec-0.11.8:zerovec",
     ],
 )

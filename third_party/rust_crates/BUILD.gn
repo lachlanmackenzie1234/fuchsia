@@ -12353,7 +12353,7 @@ rustc_library("icu_properties-v2_2_0") {
   deps += [ ":icu_locale_core-v2_2_0" ]
   deps += [ ":icu_properties_data-v2_2_0" ]
   deps += [ ":icu_provider-v2_2_0" ]
-  deps += [ ":zerotrie-v0_2_4" ]
+  deps += [ ":zerotrie-v0_2_5" ]
   deps += [ ":zerovec-v0_11_8" ]
 
   rustenv = []
@@ -12422,7 +12422,7 @@ rustc_library("icu_provider-v2_2_0") {
   deps += [ ":writeable-v0_6_3" ]
   deps += [ ":yoke-v0_8_3" ]
   deps += [ ":zerofrom-v0_1_8" ]
-  deps += [ ":zerotrie-v0_2_4" ]
+  deps += [ ":zerotrie-v0_2_5" ]
   deps += [ ":zerovec-v0_11_8" ]
 
   rustenv = []
@@ -27565,15 +27565,15 @@ rustc_macro("zeroize_derive-v1_5_0") {
   applicable_licenses = [ ":zeroize_derive-v1_5_0.license" ]
 }
 
-license("zerotrie-v0_2_4.license") {
+license("zerotrie-v0_2_5.license") {
   public_package_name = "zerotrie"
-  license_files = [ "//third_party/rust_crates/vendor/zerotrie-0.2.4/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/zerotrie-0.2.5/LICENSE" ]
 }
 
-rustc_library("zerotrie-v0_2_4") {
+rustc_library("zerotrie-v0_2_5") {
   crate_name = "zerotrie"
-  source_root = "//third_party/rust_crates/vendor/zerotrie-0.2.4/src/lib.rs"
-  output_name = "zerotrie-536a4649c7772578"
+  source_root = "//third_party/rust_crates/vendor/zerotrie-0.2.5/src/lib.rs"
+  output_name = "zerotrie-3271962b4b236f3b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -27588,15 +27588,15 @@ rustc_library("zerotrie-v0_2_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=536a4649c7772578",
-    "-Cextra-filename=-536a4649c7772578",
+    "-Cmetadata=3271962b4b236f3b",
+    "-Cextra-filename=-3271962b4b236f3b",
     "--cfg=feature=\"yoke\"",
     "--cfg=feature=\"zerofrom\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zerotrie-v0_2_4.license" ]
+  applicable_licenses = [ ":zerotrie-v0_2_5.license" ]
 }
 
 license("zerovec-v0_11_8.license") {
