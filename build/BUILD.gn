@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/bazel2gn_verification_targets.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
@@ -22,6 +23,7 @@ group("tests") {
 
   deps = [
     ":bazel2gn_verifications($host_toolchain)",
+    ":bazel_host_tests",
     ":build_tests_json_tests($host_toolchain)",
     ":regenerator_tests($host_toolchain)",
     ":target_metadata_test($host_toolchain)",
@@ -49,6 +51,10 @@ group("tests") {
     "tools:tests",
     "tracer:tests",
   ]
+}
+
+bazel_test_suite("bazel_host_tests") {
+  host_tests = [ "//build:host_tests" ]
 }
 
 # Collect a list of directories with bazel2gn synced GN and Bazel build files

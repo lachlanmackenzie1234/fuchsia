@@ -35,6 +35,12 @@ exports_files(
     visibility = ["//build/bazel/rules/host_tests:__pkg__"],
 )
 
+# Executed by some shac tests, rather than mocked.
+exports_files(
+    glob(["prebuilt/third_party/keep-sorted/*/keep-sorted"]),
+    visibility = ["//scripts/shac/tests:__pkg__"],
+)
+
 exports_files(
     # Export these files for the benefit of the //build/bazel/toolchains/clang package.
     glob(["prebuilt/third_party/clang/**"]) +

@@ -11,5 +11,8 @@ filegroup(
     name = "starlark_files",
     testonly = True,
     srcs = glob(["*.star"]),
-    visibility = ["//scripts/shac/tests:__subpackages__"],
+    visibility = [
+        "//build:__pkg__",
+        "//scripts/shac/tests:__subpackages__",
+    ],
 )

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("//build/bazel/rules/host_tests:host_shac_test.bzl", "host_shac_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -10,12 +11,97 @@ package(default_applicable_licenses = ["//:license"])
 test_suite(
     name = "host_tests",
     tests = [
+        ":bazel_migration_test",
+        ":bazel_test",
+        ":cml_test",
+        ":confusing_characters_test",
+        ":docs_test",
+        ":fidl_test",
+        ":gn_test",
+        ":keep_sorted_test",
+        ":main_test",
+        ":mirror_blocklists_test",
         ":python_test",
+        ":underscore_vs_dash_test",
     ],
+)
+
+host_shac_test(
+    name = "bazel_migration_test",
+    src = "bazel_migration_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "bazel_test",
+    src = "bazel_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "cml_test",
+    src = "cml_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "confusing_characters_test",
+    src = "confusing_characters_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "docs_test",
+    src = "docs_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "fidl_test",
+    src = "fidl_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "gn_test",
+    src = "gn_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "keep_sorted_test",
+    src = "keep_sorted_test.star",
+    data = [
+        # Executed for real, rather than mocked.
+        "//:prebuilt/third_party/keep-sorted/%s/keep-sorted" % build_config.host_tag,
+        "//scripts/shac:starlark_files",
+    ],
+)
+
+host_shac_test(
+    name = "main_test",
+    src = "main_test.star",
+    data = [
+        # Executed for real, rather than mocked.
+        "//:prebuilt/third_party/gn/%s/gn" % build_config.host_tag,
+        "//scripts/shac:starlark_files",
+    ],
+)
+
+host_shac_test(
+    name = "mirror_blocklists_test",
+    src = "mirror_blocklists_test.star",
+    data = ["//scripts/shac:starlark_files"],
 )
 
 host_shac_test(
     name = "python_test",
     src = "python_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "underscore_vs_dash_test",
+    src = "underscore_vs_dash_test.star",
     data = ["//scripts/shac:starlark_files"],
 )
