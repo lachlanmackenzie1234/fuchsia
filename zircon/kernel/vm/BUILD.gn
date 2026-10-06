@@ -1278,6 +1278,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "cpp_vm_object_paged_user_stream_size_locked",
     "cpp_vm_object_paged_create_contiguous",
     "cpp_vm_object_paged_create_external",
+    "cpp_vm_object_paged_create_from_wired_pages",
     "cpp_vm_object_paged_debug_get_cow_pages",
     "cpp_vm_object_paged_debug_get_page",
     "cpp_vm_object_paged_reset_pager_vmo_stats",

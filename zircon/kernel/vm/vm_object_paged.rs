@@ -110,6 +110,35 @@ impl VmObjectPaged {
         unsafe { bindings::cpp_vm_object_paged_reset_pager_vmo_stats(self.as_raw()) }
     }
 
+    /// Creates a VMO from wired pages.
+    ///
+    /// Creating a VMO using this method is destructive. Once the VMO is released, its
+    /// pages will be released into the general purpose page pool, so it is not possible
+    /// to create multiple VMOs for the same region using this method.
+    ///
+    /// `exclusive` indicates whether or not the created vmo should have exclusive access to
+    /// the pages. If `exclusive` is true, then `data` will be unmapped from the
+    /// kernel address space (unless they lie in the physmap).
+    pub fn create_from_wired_pages(
+        data: &'static [u8],
+        exclusive: bool,
+    ) -> Result<RefPtr<VmObjectPaged>, Status> {
+        let mut status = 0;
+        // SAFETY: `data` points to `data.len()` bytes of wired kernel memory, and `status` is a
+        // valid local mutable reference.
+        let raw = unsafe {
+            bindings::cpp_vm_object_paged_create_from_wired_pages(
+                data.as_ptr().cast(),
+                data.len(),
+                exclusive,
+                &mut status,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: On `ZX_OK`, `raw` is a valid `VmObjectPaged` exported from `fbl::RefPtr`.
+        unsafe { Self::from_raw(raw).ok_or(Status::NO_MEMORY) }
+    }
+
     /// Exposed for testing.
     pub fn debug_get_cow_pages(&self) -> Option<RefPtr<VmCowPages>> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_cow_pages(self.as_raw()) };
