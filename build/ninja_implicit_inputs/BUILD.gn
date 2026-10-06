@@ -5,6 +5,7 @@
 import("//build/config/clang/clang_prefix.gni")
 import("//build/ninja_implicit_inputs/config.gni")
 import("//build/ninja_implicit_inputs/ninja_implicit_inputs.gni")
+import("//build/python/python_library.gni")
 
 # Generate a manifest that provides information about Ninja implicit
 # inputs for a set of root GN labels.
@@ -145,6 +146,20 @@ if (current_toolchain == default_toolchain) {
       "${_go_base_dir}/bin/go",
       "${_go_base_dir}/makefuchsia/makefuchsia.go",
       "${_go_base_dir}/makeroot/makeroot.go",
+    ]
+  }
+}
+
+if (is_host) {
+  python_library("ninja_implicit_inputs") {
+    sources = [
+      "check_tool.py",
+      "ninja_implicit_inputs.py",
+    ]
+    library_deps = [
+      "//build/api:gn_labels",
+      "//build/api:gn_ninja_outputs",
+      "//build/bazel/scripts:build_utils",
     ]
   }
 }
