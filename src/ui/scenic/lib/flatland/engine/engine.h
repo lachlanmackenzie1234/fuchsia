@@ -87,8 +87,9 @@ class Engine {
   void AddDisplay(display::Display& display, uint32_t num_vmos = kNumDisplayFramebuffers);
 
  private:
-  // Holds the per-frame scene state that is generated from the latest UberStructs from each
-  // Flatland session, linked together by the LinkSystem.
+  // Holds the per-frame snapshot and global transform-stage state generated from the latest
+  // `UberStruct`s from each Flatland session, linked together by the `LinkSystem` (layer
+  // resolution is performed separately).
   struct SceneState {
     void Initialize(Engine& engine, TransformHandle root_transform);
 
@@ -101,7 +102,6 @@ class Engine {
     flatland::GlobalTransformClipRegionVector clip_regions;
     flatland::GlobalOpacityVector opacities;
     std::vector<ResolvedLayerStack> resolved_layer_stacks;
-    std::vector<ResolvedLayer> resolved_layers;
   };
 
   // Initialize all inspect::Nodes, so that the Engine state can be observed.

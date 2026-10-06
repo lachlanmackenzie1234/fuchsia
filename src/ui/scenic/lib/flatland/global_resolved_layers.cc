@@ -199,15 +199,14 @@ std::optional<SrcToDest> ComputeClippedLayerGeometry(const glm::mat3& node_globa
   return SrcToDest(clipped_src, clipped_dest, leaf_transform);
 }
 
-}  // namespace
-
-void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
-                       uint64_t display_height) {
+template <typename VectorType>
+void CullLayersInPlaceImpl(VectorType* layers_in_out, uint64_t display_width,
+                           uint64_t display_height) {
   TRACE_DURATION("gfx", "CullLayersInPlace");
   FX_DCHECK(layers_in_out);
-  auto is_occluder = [display_width, display_height](const flatland::ResolvedLayer& layer) -> bool {
+  auto is_occluder = [display_width, display_height](const ResolvedLayer& layer) -> bool {
     // Only cull if the rect is opaque.
-    auto is_opaque = layer.blend_mode == flatland::BlendMode::kReplace();
+    auto is_opaque = layer.blend_mode == BlendMode::kReplace();
 
     // If the rect is full screen (or larger), and opaque, clear the output vectors.
     return (is_opaque && layer.geometry.dest.x() <= 0 && layer.geometry.dest.y() <= 0 &&
@@ -225,102 +224,24 @@ void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint
 
   // Move all of the remaining renderable data into the output vectors. Entries get erased
   // if they occur before the last occluder index, or if the geometry at that entry is empty.
-  const auto is_geometry_empty = [](const flatland::SrcToDest& geometry) {
+  const auto is_geometry_empty = [](const SrcToDest& geometry) {
     return geometry.dest.width() <= 0.f || geometry.dest.height() <= 0.f;
   };
 
-  layers_in_out->erase(
-      std::remove_if(layers_in_out->begin(), layers_in_out->end(),
-                     [index = static_cast<size_t>(0), occluder_index,
-                      &is_geometry_empty](const flatland::ResolvedLayer& layer) mutable {
-                       auto curr_index = index++;
-                       return curr_index < occluder_index || is_geometry_empty(layer.geometry);
-                     }),
-      layers_in_out->end());
+  layers_in_out->erase(std::remove_if(layers_in_out->begin(), layers_in_out->end(),
+                                      [index = static_cast<size_t>(0), occluder_index,
+                                       &is_geometry_empty](const ResolvedLayer& layer) mutable {
+                                        auto curr_index = index++;
+                                        return curr_index < occluder_index ||
+                                               is_geometry_empty(layer.geometry);
+                                      }),
+                       layers_in_out->end());
 }
 
-// Encapsulates the difference between how Flatland1 and Flatland2 APIs treat REPLACE blend mode
-// when `opacity < 1`; `pin_replace` is the selector for this differing behavior.
-//
-// In Flatland1 *for images only*, RGB is scaled and blend stays REPLACE (fade toward "black").
-//
-// Flatland2, and Flatland1 for solid color fills, "demote" REPLACE to PREMULTIPLIED_ALPHA,
-// so there is no visual discontinuity at `opacity == 0` (where the layer is treated as invisible);
-// this allows e.g. a window manager to fade out a child app even if it uses REPLACE.
-//
-// NOTE: `effective_opacity` combines layer opacity with inherited transform opacity.  It does not
-// involve "content opacity", neither the alpha of a solid color fill, nor the alpha channel of
-// image pixels.
-// TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity
-// decision must match the behavior implemented here.
-ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
-                                     bool pin_replace) {
-  types::BlendMode blend_mode = stored_blend;
-  if (blend_mode == types::BlendMode::kReplace() && effective_opacity < 1.f && !pin_replace) {
-    blend_mode = types::BlendMode::kPremultipliedAlpha();
-  }
-  if (blend_mode == types::BlendMode::kStraightAlpha()) {
-    return ResolvedBlend{
-        .blend_mode = blend_mode,
-        .multiply_color = {1.f, 1.f, 1.f, effective_opacity},
-    };
-  }
-  return ResolvedBlend{
-      .blend_mode = blend_mode,
-      .multiply_color = {effective_opacity, effective_opacity, effective_opacity,
-                         effective_opacity},
-  };
-}
-
-void ComputeGlobalResolvedLayerStacks(std::vector<ResolvedLayerStack>& output,
-                                      const GlobalTopologyData& topology,
-                                      const UberStruct::InstanceMap& snapshot,
-                                      const GlobalMatrixVector& global_matrices,
-                                      const GlobalTransformClipRegionVector& clip_regions,
-                                      const GlobalOpacityVector& inherited_opacities) {
-  TRACE_DURATION("gfx", "ComputeGlobalResolvedLayerStacks");
-  FX_DCHECK(topology.topology_vector.size() == global_matrices.size());
-  FX_DCHECK(topology.topology_vector.size() == clip_regions.size());
-  FX_DCHECK(topology.topology_vector.size() == inherited_opacities.size());
-  FX_CHECK(topology.topology_vector.size() <=
-           static_cast<size_t>(std::numeric_limits<int32_t>::max()));
-
-  output.clear();
-  if (topology.topology_vector.empty()) {
-    return;
-  }
-
-  for (size_t i = 0; i < topology.topology_vector.size(); ++i) {
-    const float inherited_opacity = inherited_opacities[i];
-    if (inherited_opacity == 0.f) {
-      continue;
-    }
-
-    const TransformHandle& handle = topology.topology_vector[i];
-    auto uber_struct_kv = snapshot.find(handle.GetInstanceId());
-    if (uber_struct_kv == snapshot.end()) {
-      FX_DCHECK(false) << "no corresponding UberStruct for global topology entry: " << handle;
-      continue;
-    }
-    const auto& uber_struct = uber_struct_kv->second;
-    if (!uber_struct->layer_stacks.contains(handle)) {
-      continue;
-    }
-
-    output.push_back(ResolvedLayerStack{
-        .handle = handle,
-        .topology_index = static_cast<int32_t>(i),
-        .node_rotation = DecodeNodeRotation(global_matrices[i]),
-        .global_matrix = global_matrices[i],
-        .clip_region = clip_regions[i],
-        .opacity = inherited_opacity,
-    });
-  }
-}
-
-void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
-                                 std::span<const ResolvedLayerStack> layer_stacks,
-                                 const UberStruct::InstanceMap& snapshot) {
+template <typename VectorType>
+void ComputeGlobalResolvedLayersImpl(VectorType& output,
+                                     std::span<const ResolvedLayerStack> layer_stacks,
+                                     const UberStruct::InstanceMap& snapshot) {
   TRACE_DURATION("gfx", "ComputeGlobalResolvedLayers");
   output.clear();
   if (layer_stacks.empty()) {
@@ -457,6 +378,109 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                     "Must handle all UberStructLayer content types");
     }
   }
+}
+
+}  // namespace
+
+void CullLayersInPlace(std::pmr::vector<ResolvedLayer>* layers_in_out, uint64_t display_width,
+                       uint64_t display_height) {
+  CullLayersInPlaceImpl(layers_in_out, display_width, display_height);
+}
+
+void CullLayersInPlace(std::vector<ResolvedLayer>* layers_in_out, uint64_t display_width,
+                       uint64_t display_height) {
+  CullLayersInPlaceImpl(layers_in_out, display_width, display_height);
+}
+
+// Encapsulates the difference between how Flatland1 and Flatland2 APIs treat REPLACE blend mode
+// when `opacity < 1`; `pin_replace` is the selector for this differing behavior.
+//
+// In Flatland1 *for images only*, RGB is scaled and blend stays REPLACE (fade toward "black").
+//
+// Flatland2, and Flatland1 for solid color fills, "demote" REPLACE to PREMULTIPLIED_ALPHA,
+// so there is no visual discontinuity at `opacity == 0` (where the layer is treated as invisible);
+// this allows e.g. a window manager to fade out a child app even if it uses REPLACE.
+//
+// NOTE: `effective_opacity` combines layer opacity with inherited transform opacity.  It does not
+// involve "content opacity", neither the alpha of a solid color fill, nor the alpha channel of
+// image pixels.
+// TODO(https://fxbug.dev/523371761): ratified DESIGN-blend_mode_and_opacity
+// decision must match the behavior implemented here.
+ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
+                                     bool pin_replace) {
+  types::BlendMode blend_mode = stored_blend;
+  if (blend_mode == types::BlendMode::kReplace() && effective_opacity < 1.f && !pin_replace) {
+    blend_mode = types::BlendMode::kPremultipliedAlpha();
+  }
+  if (blend_mode == types::BlendMode::kStraightAlpha()) {
+    return ResolvedBlend{
+        .blend_mode = blend_mode,
+        .multiply_color = {1.f, 1.f, 1.f, effective_opacity},
+    };
+  }
+  return ResolvedBlend{
+      .blend_mode = blend_mode,
+      .multiply_color = {effective_opacity, effective_opacity, effective_opacity,
+                         effective_opacity},
+  };
+}
+
+void ComputeGlobalResolvedLayerStacks(std::vector<ResolvedLayerStack>& output,
+                                      const GlobalTopologyData& topology,
+                                      const UberStruct::InstanceMap& snapshot,
+                                      const GlobalMatrixVector& global_matrices,
+                                      const GlobalTransformClipRegionVector& clip_regions,
+                                      const GlobalOpacityVector& inherited_opacities) {
+  TRACE_DURATION("gfx", "ComputeGlobalResolvedLayerStacks");
+  FX_DCHECK(topology.topology_vector.size() == global_matrices.size());
+  FX_DCHECK(topology.topology_vector.size() == clip_regions.size());
+  FX_DCHECK(topology.topology_vector.size() == inherited_opacities.size());
+  FX_CHECK(topology.topology_vector.size() <=
+           static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+
+  output.clear();
+  if (topology.topology_vector.empty()) {
+    return;
+  }
+
+  for (size_t i = 0; i < topology.topology_vector.size(); ++i) {
+    const float inherited_opacity = inherited_opacities[i];
+    if (inherited_opacity == 0.f) {
+      continue;
+    }
+
+    const TransformHandle& handle = topology.topology_vector[i];
+    auto uber_struct_kv = snapshot.find(handle.GetInstanceId());
+    if (uber_struct_kv == snapshot.end()) {
+      FX_DCHECK(false) << "no corresponding UberStruct for global topology entry: " << handle;
+      continue;
+    }
+    const auto& uber_struct = uber_struct_kv->second;
+    if (!uber_struct->layer_stacks.contains(handle)) {
+      continue;
+    }
+
+    output.push_back(ResolvedLayerStack{
+        .handle = handle,
+        .topology_index = static_cast<int32_t>(i),
+        .node_rotation = DecodeNodeRotation(global_matrices[i]),
+        .global_matrix = global_matrices[i],
+        .clip_region = clip_regions[i],
+        .opacity = inherited_opacity,
+    });
+  }
+}
+
+void ComputeGlobalResolvedLayers(std::pmr::vector<ResolvedLayer>& output,
+                                 std::span<const ResolvedLayerStack> layer_stacks,
+                                 const UberStruct::InstanceMap& snapshot) {
+  ComputeGlobalResolvedLayersImpl(output, layer_stacks, snapshot);
+}
+
+void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
+                                 std::span<const ResolvedLayerStack> layer_stacks,
+                                 const UberStruct::InstanceMap& snapshot) {
+  ComputeGlobalResolvedLayersImpl(output, layer_stacks, snapshot);
 }
 
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,

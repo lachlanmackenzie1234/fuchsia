@@ -9,6 +9,10 @@
 
 #include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 
+#include <array>
+#include <cstddef>
+#include <memory_resource>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -2002,6 +2006,95 @@ TEST(GlobalRenderListTest, RotatedLayerWithClipShrinksDstAndUVsProportionally) {
     EXPECT_NEAR(result[0].geometry.src.height(), tc.expected_src.height(), 1e-3f);
     EXPECT_EQ(result[0].geometry.transform, tc.transform);
   }
+}
+
+// Forwards to `std::pmr::new_delete_resource()` and counts allocations.
+class CountingMemoryResource : public std::pmr::memory_resource {
+ public:
+  size_t allocation_count() const { return allocation_count_; }
+
+ private:
+  void* do_allocate(size_t bytes, size_t alignment) override {
+    ++allocation_count_;
+    return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+  }
+
+  void do_deallocate(void* p, size_t bytes, size_t alignment) override {
+    std::pmr::new_delete_resource()->deallocate(p, bytes, alignment);
+  }
+
+  bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
+    return this == &other;
+  }
+
+  size_t allocation_count_ = 0;
+};
+
+// `ComputeGlobalResolvedLayers()` emitting into a pre-reserved `std::pmr::vector<ResolvedLayer>`
+// over a `std::pmr::monotonic_buffer_resource` whose buffer holds `kNumLayers` layers must
+// preserve the reserved capacity across `output.clear()` and never reach the upstream resource.
+// The result must also match `std::vector<ResolvedLayer>` both before and after
+// `CullLayersInPlace()` erases occluded layers.
+TEST(LayerStageTest, PmrMonotonicArenaZeroHeapAllocation) {
+  const TransformHandle kRoot = {1, 0};
+  GlobalTopologyData topology;
+  topology.topology_vector = {kRoot};
+  topology.parent_indices = {0};
+
+  UberStruct::InstanceMap snapshot;
+  auto uber_struct = std::make_shared<UberStruct>();
+  uber_struct->local_topology = {{kRoot, 0}};
+
+  constexpr int32_t kDisplayWidth = 1920;
+  constexpr int32_t kDisplayHeight = 1080;
+  constexpr size_t kNumLayers = 16;
+  constexpr size_t kOccluderIndex = 8;
+  for (size_t i = 0; i < kNumLayers; ++i) {
+    LayerHandle h(1, i + 1);
+    uber_struct->layer_stacks[kRoot].push_back(h);
+    const Rectangle display_rect =
+        i == kOccluderIndex
+            ? Rectangle({.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight})
+            : Rectangle({.x = static_cast<int32_t>(i * 10), .y = 0, .width = 50, .height = 50});
+    uber_struct->layers[h] = UberStructLayer{
+        .content =
+            UberStructLayer::ImageModeProperties{
+                .sample_rect = RectangleF({.x = 0.f, .y = 0.f, .width = 100.f, .height = 100.f}),
+                .transform = RotateFlip::kIdentity(),
+                .image_id = display::ImageId(i + 1),
+            },
+        .common =
+            {
+                .display_rect = display_rect,
+            },
+    };
+  }
+  snapshot[1] = uber_struct;
+
+  const auto stacks =
+      ComputeGlobalResolvedLayerStacks(topology, snapshot, {glm::mat3(1.f)}, {kUnclippedRegion});
+  ASSERT_EQ(stacks.size(), 1u);
+
+  // Uses a counting upstream rather than `null_memory_resource()` because this binary is built
+  // without exceptions, so a `bad_alloc` would abort the whole test binary instead of failing this
+  // test.
+  CountingMemoryResource upstream;
+  alignas(std::max_align_t) std::array<std::byte, kNumLayers * sizeof(ResolvedLayer)> arena_buf;
+  std::pmr::monotonic_buffer_resource arena(arena_buf.data(), arena_buf.size(), &upstream);
+  std::pmr::vector<ResolvedLayer> pmr_layers(&arena);
+  pmr_layers.reserve(kNumLayers);
+  ComputeGlobalResolvedLayers(pmr_layers, stacks, snapshot);
+  EXPECT_EQ(upstream.allocation_count(), 0u);
+
+  auto std_layers = ComputeGlobalResolvedLayers(stacks, snapshot);
+  EXPECT_EQ(pmr_layers.size(), kNumLayers);
+  EXPECT_THAT(pmr_layers, ::testing::ElementsAreArray(std_layers));
+
+  CullLayersInPlace(&pmr_layers, kDisplayWidth, kDisplayHeight);
+  CullLayersInPlace(&std_layers, kDisplayWidth, kDisplayHeight);
+  EXPECT_EQ(upstream.allocation_count(), 0u);
+  EXPECT_EQ(pmr_layers.size(), kNumLayers - kOccluderIndex);
+  EXPECT_THAT(pmr_layers, ::testing::ElementsAreArray(std_layers));
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_GLOBAL_RESOLVED_LAYERS_H_
 
 #include <cstdint>
+#include <memory_resource>
 #include <span>
 #include <vector>
 
@@ -96,6 +97,14 @@ inline std::vector<ResolvedLayerStack> ComputeGlobalResolvedLayerStacks(
 // Layer stage: computes the resolved layers list from `layer_stacks` (transform stage output) and
 // the fresh `snapshot`. For each entry, looks up the stack's current layers in `snapshot` and
 // emits one `ResolvedLayer` per visible stack layer via closed-form composition.
+//
+// The `std::pmr::vector` overload is used by the per-frame render hot path over a stack arena (the
+// caller pre-reserves `output` to avoid geometric-growth waste in a `monotonic_buffer_resource`);
+// the `std::vector` overload is retained for non-hot-path callers (e.g. `Engine::GetRenderables()`,
+// Inspect scene dumps, and unit tests).
+void ComputeGlobalResolvedLayers(std::pmr::vector<ResolvedLayer>& output,
+                                 std::span<const ResolvedLayerStack> layer_stacks,
+                                 const UberStruct::InstanceMap& snapshot);
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  std::span<const ResolvedLayerStack> layer_stacks,
                                  const UberStruct::InstanceMap& snapshot);
@@ -132,7 +141,12 @@ inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
 // according to depth, with the first entry being the furthest back, this has the effect of
 // eliminating all rectangles behind the full-screen one). Also culls any rectangle that has
 // no size (width is zero, or height is zero).
-void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
+//
+// The `std::pmr::vector` overload is used by the per-frame render hot path; the `std::vector`
+// overload is retained for non-hot-path callers (e.g. `Engine::GetRenderables()` and unit tests).
+void CullLayersInPlace(std::pmr::vector<ResolvedLayer>* layers_in_out, uint64_t display_width,
+                       uint64_t display_height);
+void CullLayersInPlace(std::vector<ResolvedLayer>* layers_in_out, uint64_t display_width,
                        uint64_t display_height);
 
 // Exposed for testing. Return type for `ResolveBlendAndOpacity()` helper.

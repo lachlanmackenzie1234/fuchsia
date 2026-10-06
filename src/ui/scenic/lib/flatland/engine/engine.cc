@@ -8,6 +8,8 @@
 #include <lib/async/cpp/time.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <array>
+#include <cstddef>
 #include <sstream>
 #include <string>
 
@@ -18,6 +20,7 @@
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/lib/utils/logging.h"
 
 // Hardcoded double buffering.
 // TODO(https://fxbug.dev/42156567): make this configurable.  Even fancier: is it worth considering
@@ -61,9 +64,10 @@ void Engine::InitializeInspectObjects() {
 
     SceneState scene_state;
     scene_state.Initialize(*this, *root_transform);
+    auto resolved_layers =
+        ComputeGlobalResolvedLayers(scene_state.resolved_layer_stacks, scene_state.snapshot.map);
     std::ostringstream output;
-    DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.resolved_layers,
-              output);
+    DumpScene(scene_state.snapshot.map, scene_state.topology_data, resolved_layers, output);
     inspector.GetRoot().CreateString(kSceneDump, output.str(), &inspector);
     return fpromise::make_ok_promise(std::move(inspector));
   });
@@ -102,48 +106,70 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
 
   display::Display* const hw_display = display.display();
 
-#if defined(USE_FLATLAND_VERBOSE_LOGGING)
-  std::ostringstream str;
-  str << "Engine::RenderScheduledFrame() frame_number=" << frame_number
-      << "\nRoot transform of global topology: " << scene_state.topology_data.topology_vector[0]
-      << "\nTopologically-sorted transforms and their corresponding parent transforms:";
-  for (size_t i = 1; i < scene_state.topology_data.topology_vector.size(); ++i) {
-    str << "\n        " << scene_state.topology_data.topology_vector[i] << " -> "
-        << scene_state.topology_data.topology_vector[scene_state.topology_data.parent_indices[i]];
-  }
-  str << "\nFrame display-list contains " << scene_state.resolved_layers.size()
-      << " resolved layers (in increasing Z-order):";
-  for (const auto& layer : scene_state.resolved_layers) {
-    str << "\n        layer: " << layer;
-  }
-  FLATLAND_VERBOSE_LOG << str.str();
-#endif
-
   if (auto it = seen_display_ids_.find(hw_display->display_id());
       it == seen_display_ids_.end() || !it->second) {
     // We already "rotated the scene state" above;
     // doing it again would fail a CHECK.
+    FLATLAND_VERBOSE_LOG << "Engine::RenderScheduledFrame() frame_number=" << frame_number
+                         << " skipped: display not yet added";
     SkipRender(std::move(callback), /*rotate_scene_state=*/false);
     return;
   }
 
   if (flatland_compositor_->IsDisplayDark(hw_display->display_id())) {
     // While the display is dark nothing is rendered or presented to the DisplayCoordinator;
-    // SkipRender() signals the frame's fences and invokes its callback so that nothing waits on
-    // a vsync. SceneState has already been initialized above so that the ViewTree and
+    // `SkipRender()` signals the frame's fences and invokes its callback so that nothing waits on
+    // a vsync. `SceneState` has already been initialized above so that the ViewTree and
     // LinkWatchers are still updated properly.
+    FLATLAND_VERBOSE_LOG << "Engine::RenderScheduledFrame() frame_number=" << frame_number
+                         << " skipped: display is dark";
     SkipRender(std::move(callback), /*rotate_scene_state=*/false);
     return;
   }
 
-  CullLayersInPlace(&scene_state.resolved_layers, hw_display->width_in_px(),
-                    hw_display->height_in_px());
+  // Stack arena so the frame's `ResolvedLayer` list costs no heap allocation per frame; we
+  // pre-reserve `kFrameLayerArenaCapacity` so the arena sees one allocation instead of wasting
+  // stack buffer space on geometric growth.  Sized for more layers than a typical frame needs;
+  // past that the arena falls back to the heap rather than failing.
+  // TODO(https://fxbug.dev/570155917): Avoid `-ftrivial-auto-var-init=pattern` overhead on PMR
+  // stack buffers.
+  constexpr size_t kFrameLayerArenaCapacity = 128;
+  alignas(std::max_align_t) std::array<std::byte, kFrameLayerArenaCapacity * sizeof(ResolvedLayer)>
+      frame_layer_arena_buffer;
+  std::pmr::monotonic_buffer_resource frame_layer_arena(frame_layer_arena_buffer.data(),
+                                                        frame_layer_arena_buffer.size());
+  std::pmr::vector<ResolvedLayer> resolved_layers(&frame_layer_arena);
+  resolved_layers.reserve(kFrameLayerArenaCapacity);
+  ComputeGlobalResolvedLayers(resolved_layers, scene_state.resolved_layer_stacks,
+                              scene_state.snapshot.map);
+
+#ifdef USE_FLATLAND_VERBOSE_LOGGING
+  std::ostringstream str;
+  str << "Engine::RenderScheduledFrame() frame_number=" << frame_number;
+  // Empty until `FlatlandDisplay::SetContent()` publishes the root's `UberStruct`.
+  if (!scene_state.topology_data.topology_vector.empty()) {
+    str << "\nRoot transform of global topology: " << scene_state.topology_data.topology_vector[0];
+  }
+  str << "\nTopologically-sorted transforms and their corresponding parent transforms:";
+  for (size_t i = 1; i < scene_state.topology_data.topology_vector.size(); ++i) {
+    str << "\n        " << scene_state.topology_data.topology_vector[i] << " -> "
+        << scene_state.topology_data.topology_vector[scene_state.topology_data.parent_indices[i]];
+  }
+  str << "\nFrame display-list contains " << resolved_layers.size()
+      << " resolved layers (in increasing Z-order):";
+  for (const auto& layer : resolved_layers) {
+    str << "\n        layer: " << layer;
+  }
+  FLATLAND_VERBOSE_LOG << str.str();
+#endif
+
+  CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
 
   // Don't render any initial frames if there is no image that could actually be rendered. We do
   // this to avoid triggering any changes in the display until we have content ready to render. We
-  // invoke |callback| to continue the render loop.
+  // invoke `callback` to continue the render loop.
   if (!first_frame_with_image_is_rendered_) {
-    if (scene_state.resolved_layers.empty()) {
+    if (resolved_layers.empty()) {
       // We already "rotated the scene state" above; doing it again would fail a CHECK.
       SkipRender(std::move(callback), /*rotate_scene_state=*/false);
       return;
@@ -153,7 +179,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
 
   RenderData render_data = {
       .display_id = hw_display->display_id(),
-      .layers = scene_state.resolved_layers,
+      .layers = resolved_layers,
   };
 
   auto fences = flatland_presenter_->TakeFences();
@@ -246,7 +272,8 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
 
-  auto resolved_layers = std::move(scene_state.resolved_layers);
+  auto resolved_layers =
+      ComputeGlobalResolvedLayers(scene_state.resolved_layer_stacks, scene_state.snapshot.map);
 
   CullLayersInPlace(&resolved_layers, hw_display->width_in_px(), hw_display->height_in_px());
 
@@ -278,8 +305,6 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
 
   ComputeGlobalResolvedLayerStacks(/*output=*/resolved_layer_stacks, topology_data, snapshot.map,
                                    global_matrices, clip_regions, opacities);
-
-  ComputeGlobalResolvedLayers(/*output=*/resolved_layers, resolved_layer_stacks, snapshot.map);
 }
 
 void Engine::SceneState::Clear() {
@@ -307,10 +332,6 @@ void Engine::SceneState::Clear() {
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layer_stacks]");
     resolved_layer_stacks.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layers]");
-    resolved_layers.clear();
   }
 }
 
