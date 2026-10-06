@@ -13,8 +13,8 @@ where the Rust does not do the same thing:
 - **error returns** that differ in code or order, and failures that one side
   handles and the other propagates
 - **locks** taken in a different place or on a different lock
-- **control flow** (`if`, loops, `switch`/`match`, `return`, `break`) with no
-  counterpart
+- **control flow** (`if`, loops, `switch`/`match`, `case` arms, `return`, `break`)
+  with no counterpart
 - **steps** (calls) that only one side performs
 
 The output is plain text in the style of `diff -y`, meant to be read by people

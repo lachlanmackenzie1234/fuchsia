@@ -645,6 +645,11 @@ fn exhaustive_match_demotes_default_fallback_and_flow() {
     for (_, a, b) in &p.summary.flow {
         assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
     }
+    assert!(
+        p.summary.flow.contains(&("switch", 1, 1)) && p.summary.flow.contains(&("case", 2, 2)),
+        "expected separate switch and case counts in flow summary: {:?}",
+        p.summary.flow
+    );
 
     // If a non-default C++ case is missing in Rust, it is still an issue.
     let missing_case = "pub fn level_to_string(level: Level) -> &'static str {\n    match level {\n        Level::Low => \"Low\",\n    }\n}\n";

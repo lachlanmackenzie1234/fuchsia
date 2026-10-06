@@ -257,7 +257,7 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   locks    same
            C++:  lantern
            Rust: lantern
-  flow     if 1/4!, else 0/1!, switch 4/0!, return 2/4!  (C++/Rust counts where they differ)
+  flow     if 1/4!, else 0/1!, switch 1/0!, case 3/0!, return 2/4!  (C++/Rust counts where they differ)
   comments 1 C++ comment: 1 identical, 0 reworded, 0 missing in Rust
   findings
     ! - | lantern.rs:44  doc comment added in Rust where the C++ function has none; a conversion adds no comments other than SAFETY

@@ -2346,7 +2346,7 @@ fn merge_override_summaries(s: &mut Summary, rust: &Function, ovs: &[OverrideRep
         v.dedup();
     }
     s.flow
-        .retain(|(name, a, _)| !(*name == "switch" && *a == 0));
+        .retain(|(name, a, _)| !(matches!(*name, "switch" | "case") && *a == 0));
 }
 
 /// The text of a comment line without its markers, if it is long enough to

@@ -1879,11 +1879,12 @@ pub fn summarize(cpp: &Function, rust: &Function, rows: &[Row]) -> Summary {
         }
         k += 1;
     }
-    let kinds: [(&'static str, &[UnitKind]); 6] = [
+    let kinds: [(&'static str, &[UnitKind]); 7] = [
         ("if", &[UnitKind::If, UnitKind::ElseIf]),
         ("else", &[UnitKind::Else]),
         ("loop", &[UnitKind::Loop]),
-        ("switch", &[UnitKind::Switch, UnitKind::Case]),
+        ("switch", &[UnitKind::Switch]),
+        ("case", &[UnitKind::Case]),
         ("return", &[UnitKind::Return]),
         ("break/continue", &[UnitKind::Break, UnitKind::Continue]),
     ];
