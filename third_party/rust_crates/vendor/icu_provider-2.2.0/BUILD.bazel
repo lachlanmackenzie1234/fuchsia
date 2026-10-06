@@ -82,6 +82,6 @@ rust_library(
         "//third_party/rust_crates/vendor/yoke-0.8.3:yoke",
         "//third_party/rust_crates/vendor/zerofrom-0.1.8:zerofrom",
         "//third_party/rust_crates/vendor/zerotrie-0.2.4:zerotrie",
-        "//third_party/rust_crates/vendor/zerovec-0.11.6:zerovec",
+        "//third_party/rust_crates/vendor/zerovec-0.11.8:zerovec",
     ],
 )
