@@ -307,6 +307,7 @@ pub fn build_inputs(cs: &ChangeSet, min_changed: f64) -> Inputs {
         .cpp_old
         .iter()
         .chain(&cs.cpp_new)
+        .filter(|v| v.changed.as_ref().is_none_or(|c| !c.is_empty()))
         .map(|v| v.path.clone())
         .collect();
 
@@ -321,12 +322,13 @@ pub fn build_inputs(cs: &ChangeSet, min_changed: f64) -> Inputs {
             }
         }
     }
-    for e in cpp_new {
+    for (v, e) in cs.cpp_new.iter().zip(cpp_new) {
+        let has_changes = v.changed.as_ref().is_none_or(|c| !c.is_empty());
         for (k, b) in e.bases {
             inputs.cpp_bases.entry(k).or_insert(b);
         }
         for f in e.functions {
-            if f.base.starts_with("cpp_") {
+            if has_changes && f.base.starts_with("cpp_") {
                 inputs.cpp_helpers.push(f.clone());
             }
             inputs

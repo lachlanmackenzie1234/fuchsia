@@ -546,6 +546,7 @@ fn extern_signatures(cs: &ChangeSet) -> Vec<Lint> {
             cpp.entry(s.name.clone()).or_default().push(s);
         }
     }
+    let mut had_problem: BTreeSet<String> = BTreeSet::new();
     let mut out = Vec::new();
     for v in &cs.rust_new {
         for r in rust_sigs(v) {
@@ -619,6 +620,9 @@ fn extern_signatures(cs: &ChangeSet) -> Vec<Lint> {
                     ),
                 ));
             }
+            if !problems.is_empty() {
+                had_problem.insert(r.name.clone());
+            }
             for (sev, msg) in problems {
                 out.push(Lint {
                     kind: LintKind::ExternSignature,
@@ -629,6 +633,75 @@ fn extern_signatures(cs: &ChangeSet) -> Vec<Lint> {
                     related: Some((c.path.clone(), c.line)),
                 });
             }
+        }
+    }
+
+    // Check that touched `cpp_*` definitions in `.cc` files have a matching
+    // `extern "C"` prototype declaration (Rubric Section 3.13 / 4.18).
+    static INCLUDE_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?m)^\s*#\s*include\s*[<"]([^>"]+)[>"]"#).unwrap());
+    let stem = |path: &str| -> String {
+        let base = path.rsplit('/').next().unwrap_or(path);
+        let s = base.split('.').next().unwrap_or(base);
+        s.strip_suffix("_ffi").unwrap_or(s).to_string()
+    };
+    let has_header_context = cs.cpp_new.iter().any(|v| {
+        v.path.ends_with(".h") || v.path.ends_with(".hpp") || INCLUDE_RE.is_match(&v.text)
+    });
+    if has_header_context {
+        for cands in cpp.values() {
+            let Some(c) = cands
+                .iter()
+                .find(|s| s.definition && s.touched && s.name.starts_with("cpp_"))
+            else {
+                continue;
+            };
+            if had_problem.contains(&c.name) {
+                continue;
+            }
+            let is_ffi_cc = c.path.ends_with("_ffi.cc") || c.path.ends_with("_ffi.cpp");
+            let has_decl = cands.iter().any(|s| {
+                !s.definition && (!is_ffi_cc || s.path.ends_with(".h") || s.path.ends_with(".hpp"))
+            });
+            if has_decl {
+                continue;
+            }
+            let want = stem(&c.path);
+            let hdr = cs
+                .cpp_new
+                .iter()
+                .find(|v| v.path == c.path)
+                .and_then(|v| {
+                    INCLUDE_RE
+                        .captures_iter(&v.text)
+                        .map(|cap| cap[1].to_string())
+                        .find(|inc| stem(inc) == want)
+                })
+                .or_else(|| {
+                    cs.cpp_new
+                        .iter()
+                        .find(|v| {
+                            (v.path.ends_with(".h") || v.path.ends_with(".hpp"))
+                                && stem(&v.path) == want
+                        })
+                        .map(|v| v.path.clone())
+                })
+                .map(|p| p.rsplit('/').next().unwrap_or(&p).to_string());
+            let where_decl = match hdr {
+                Some(h) => format!("in {h}"),
+                None => "in a C++ header".to_string(),
+            };
+            out.push(Lint {
+                kind: LintKind::ExternSignature,
+                severity: Severity::Issue,
+                path: c.path.clone(),
+                line: c.line,
+                message: format!(
+                    "{}: defined without an `extern \"C\"` prototype declaration {where_decl}",
+                    c.name
+                ),
+                related: None,
+            });
         }
     }
     out
@@ -1524,6 +1597,49 @@ pub extern "C" fn rust_foo_set(f: *mut Foo, v: u64) -> zx_status_t { 0 }
         assert!(
             m.iter().any(|x| x.contains("rust_foo_set: returns")),
             "{m:?}"
+        );
+    }
+
+    #[test]
+    fn missing_cpp_header_prototype_is_reported() {
+        let hdr = r#"
+extern "C" {
+void cpp_event_dispatcher_declared(EventDispatcher* e);
+}
+"#;
+        let ffi_cc = r#"
+#include <object/event_dispatcher.h>
+
+extern "C" {
+void cpp_event_dispatcher_declared(EventDispatcher* e) { e->Declared(); }
+FFI_ALWAYS_INLINE zx_status_t cpp_event_dispatcher_user_signal_self(EventDispatcher* e, uint32_t clear_mask, uint32_t set_mask) {
+  return e->user_signal_self(clear_mask, set_mask);
+}
+}
+"#;
+        let rust = r#"
+unsafe extern "C" {
+    fn cpp_event_dispatcher_declared(e: *mut EventDispatcher);
+    fn cpp_event_dispatcher_user_signal_self(e: *mut EventDispatcher, clear_mask: u32, set_mask: u32) -> zx_status_t;
+}
+"#;
+        let cs = ChangeSet {
+            cpp_old: Vec::new(),
+            cpp_new: vec![
+                version(
+                    "zircon/kernel/object/include/object/event_dispatcher.h",
+                    hdr,
+                ),
+                version("zircon/kernel/object/event_dispatcher_ffi.cc", ffi_cc),
+            ],
+            rust_new: vec![version("zircon/kernel/object/event_dispatcher.rs", rust)],
+        };
+        let l = lint(&cs);
+        let m = messages(&l, LintKind::ExternSignature);
+        assert_eq!(
+            m,
+            ["cpp_event_dispatcher_user_signal_self: defined without an `extern \"C\"` prototype declaration in event_dispatcher.h"],
+            "{l:?}"
         );
     }
 
