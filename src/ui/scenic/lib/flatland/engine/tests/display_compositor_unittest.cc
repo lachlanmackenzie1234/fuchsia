@@ -2236,7 +2236,7 @@ TEST_F(DisplayCompositorTest, SetDisplayPowerModeForwardsToCoordinator) {
   ExpectDisplayCleanup();
 }
 
-TEST_F(DisplayCompositorTest, SkipRenderLeavesViewTreeEmpty) {
+TEST_F(DisplayCompositorTest, RenderScheduledFrameWithoutDisplayLeavesViewTreeEmpty) {
   auto flatland_presenter =
       std::make_shared<flatland::FlatlandPresenterImpl>(dispatcher(), fake_frame_scheduler_);
   auto uber_struct_system = std::make_shared<flatland::UberStructSystem>();
@@ -2250,8 +2250,9 @@ TEST_F(DisplayCompositorTest, SkipRenderLeavesViewTreeEmpty) {
                           });
 
   bool callback_called = false;
-  engine.SkipRender([&callback_called](const scheduling::Timestamps&) { callback_called = true; },
-                    /*rotate_scene_state=*/true);
+  engine.RenderScheduledFrame(
+      /*frame_number=*/1, /*presentation_time=*/zx::time(1000), /*display=*/nullptr,
+      [&callback_called](const scheduling::Timestamps&) { callback_called = true; });
   EXPECT_TRUE(callback_called);
 
   auto snapshot_variant = engine.GenerateViewTreeSnapshot(flatland::TransformHandle(1, 1));
@@ -2261,8 +2262,6 @@ TEST_F(DisplayCompositorTest, SkipRenderLeavesViewTreeEmpty) {
   ASSERT_NE(snapshot, nullptr);
   EXPECT_EQ(snapshot->root, ZX_KOID_INVALID);
   EXPECT_TRUE(snapshot->view_tree.empty());
-
-  engine.CleanUpFrame();
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
@@ -2373,7 +2372,7 @@ TEST_F(DisplayCompositorTest,
   // but must invoke the frame presented callback and preserve the populated ViewTree.
   bool callback_called = false;
   engine.RenderScheduledFrame(
-      /*frame_number=*/1, /*presentation_time=*/zx::time(1000), *flatland_display,
+      /*frame_number=*/1, /*presentation_time=*/zx::time(1000), flatland_display.get(),
       [&callback_called](const scheduling::Timestamps&) { callback_called = true; });
   EXPECT_TRUE(callback_called);
 
@@ -2386,7 +2385,93 @@ TEST_F(DisplayCompositorTest,
   EXPECT_EQ(snapshot->root, expected_koid);
   EXPECT_TRUE(snapshot->view_tree.contains(expected_koid));
 
-  engine.CleanUpFrame();
+  flatland_display.reset();
+  RunLoopUntilIdle();
+
+  ExpectDisplayCleanup();
+}
+
+TEST_F(DisplayCompositorTest, RenderScheduledFrameWithoutDisplayClearsViewTree) {
+  auto flatland_presenter =
+      std::make_shared<flatland::FlatlandPresenterImpl>(dispatcher(), fake_frame_scheduler_);
+  auto uber_struct_system = std::make_shared<flatland::UberStructSystem>();
+  auto link_system =
+      std::make_shared<flatland::LinkSystem>(uber_struct_system->GetNextInstanceId());
+
+  flatland::Engine engine(display_compositor_, flatland_presenter, uber_struct_system, link_system,
+                          inspect::Node(),
+                          /*get_root_transform=*/[]() -> std::optional<flatland::TransformHandle> {
+                            return std::nullopt;
+                          });
+
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  auto display =
+      std::make_shared<display::Display>(display::WireDisplayId{.value = kDisplayId.value()},
+                                         resolution.x, resolution.y, kMaxDisplayLayersCount);
+
+  // Set up mock coordinator expectations for AddDisplay().
+  next_layer_id_ = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_, _))
+      .Times(kMaxDisplayLayersCount + 1)
+      .WillRepeatedly(testing::Invoke(
+          [this](fidl::WireServer<fuchsia_hardware_display::Coordinator>::CreateLayerRequestView
+                     request,
+                 MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            EXPECT_EQ(request->layer_id.value, next_layer_id_++);
+            completer.Reply(fit::ok());
+          }));
+  EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_))
+      .WillRepeatedly(Return(kPixelFormat));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).WillRepeatedly(Return());
+
+  engine.AddDisplay(*display, /*num_vmos=*/0);
+  RunLoopUntilIdle();
+
+  const auto session_id = scheduling::GetNextSessionId();
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::FlatlandDisplay>::Create();
+  auto uber_struct_queue = uber_struct_system->AllocateQueueForSession(session_id);
+  auto flatland_display = FlatlandDisplay::New(
+      std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
+      session_id, display,
+      /*destroy_display_function=*/[] {}, flatland_presenter, link_system, uber_struct_queue);
+
+  // Create an UberStruct with a ViewRef. It has no image layer, so the first frame prepares the
+  // scene state and then skips instead of submitting a frame to the DisplayCompositor.
+  auto uber_struct = std::make_unique<flatland::UberStruct>();
+  zx::eventpair endpoint1, endpoint2;
+  ASSERT_EQ(zx::eventpair::create(0, &endpoint1, &endpoint2), ZX_OK);
+  auto view_ref = std::make_shared<const flatland::ViewRef>(std::move(endpoint1));
+  uber_struct->view_ref = view_ref;
+  uber_struct->local_topology = {{flatland_display->root_transform(), 0}};
+
+  uber_struct_queue->Push(/*present_id=*/1, std::move(uber_struct), /*recompute_view_tree=*/true);
+  uber_struct_system->ForceUpdateAllSessions();
+
+  // A frame with the FlatlandDisplay populates the scene state; a following frame without one
+  // must clear it.
+  bool first_callback_called = false;
+  engine.RenderScheduledFrame(
+      /*frame_number=*/1, /*presentation_time=*/zx::time(1000), flatland_display.get(),
+      [&first_callback_called](const scheduling::Timestamps&) { first_callback_called = true; });
+  EXPECT_TRUE(first_callback_called);
+
+  bool second_callback_called = false;
+  engine.RenderScheduledFrame(
+      /*frame_number=*/2, /*presentation_time=*/zx::time(2000), /*display=*/nullptr,
+      [&second_callback_called](const scheduling::Timestamps&) { second_callback_called = true; });
+  EXPECT_TRUE(second_callback_called);
+
+  // `MustRecomputeViewTree()` is still set, so the generator produces a snapshot of the cleared
+  // scene state rather than `SubtreeSnapshotNoDiff`.
+  auto snapshot_variant = engine.GenerateViewTreeSnapshot(flatland_display->root_transform());
+  EXPECT_TRUE(
+      std::holds_alternative<std::unique_ptr<view_tree::SubtreeSnapshot>>(snapshot_variant));
+  auto& snapshot = std::get<std::unique_ptr<view_tree::SubtreeSnapshot>>(snapshot_variant);
+  ASSERT_NE(snapshot, nullptr);
+  EXPECT_EQ(snapshot->root, ZX_KOID_INVALID);
+  EXPECT_TRUE(snapshot->view_tree.empty());
 
   flatland_display.reset();
   RunLoopUntilIdle();
