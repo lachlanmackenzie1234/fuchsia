@@ -361,6 +361,7 @@ class BazelRepositoryMap(object):
             "rules_python++python+pythons_hub": self.IGNORED_REPO,
             "rules_shell+": self.IGNORED_REPO,
             "package_metadata+": self.IGNORED_REPO,
+            "test_fuchsia_products": self.IGNORED_REPO,
         }
 
         if not explicit_fuchsia_sdk:
