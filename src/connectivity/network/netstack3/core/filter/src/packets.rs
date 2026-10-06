@@ -597,6 +597,7 @@ pub enum TransportPacketData {
     },
     IcmpEcho {
         id: u16,
+        direction: conntrack::IcmpMessageDirection,
     },
 }
 
@@ -605,7 +606,7 @@ impl TransportPacketData {
         match self {
             TransportPacketData::Tcp { src_port, .. }
             | TransportPacketData::Udp { src_port, .. } => *src_port,
-            TransportPacketData::IcmpEcho { id } => *id,
+            TransportPacketData::IcmpEcho { id, .. } => *id,
         }
     }
 
@@ -613,7 +614,7 @@ impl TransportPacketData {
         match self {
             TransportPacketData::Tcp { dst_port, .. }
             | TransportPacketData::Udp { dst_port, .. } => *dst_port,
-            TransportPacketData::IcmpEcho { id } => *id,
+            TransportPacketData::IcmpEcho { id, .. } => *id,
         }
     }
 
@@ -1968,13 +1969,12 @@ pub trait IcmpMessage<I: IpExt>: icmp::IcmpMessage<I> + MaybeTransportPacket {
     fn update_icmp_id(&mut self, id: u16) -> u16;
 }
 
-// TODO(https://fxbug.dev/341128580): connection tracking will probably want to
-// special case ICMP echo packets to ensure that a new connection is only ever
-// created from an echo request, and not an echo response. We need to provide a
-// way for conntrack to differentiate between the two.
 impl MaybeTransportPacket for IcmpEchoReply {
     fn transport_packet_data(&self) -> Option<TransportPacketData> {
-        Some(TransportPacketData::IcmpEcho { id: self.id() })
+        Some(TransportPacketData::IcmpEcho {
+            id: self.id(),
+            direction: conntrack::IcmpMessageDirection::Reply,
+        })
     }
 }
 
@@ -1988,13 +1988,12 @@ impl<I: IpExt> IcmpMessage<I> for IcmpEchoReply {
     }
 }
 
-// TODO(https://fxbug.dev/341128580): connection tracking will probably want to
-// special case ICMP echo packets to ensure that a new connection is only ever
-// created from an echo request, and not an echo response. We need to provide a
-// way for conntrack to differentiate between the two.
 impl MaybeTransportPacket for IcmpEchoRequest {
     fn transport_packet_data(&self) -> Option<TransportPacketData> {
-        Some(TransportPacketData::IcmpEcho { id: self.id() })
+        Some(TransportPacketData::IcmpEcho {
+            id: self.id(),
+            direction: conntrack::IcmpMessageDirection::Request,
+        })
     }
 }
 
@@ -3501,7 +3500,10 @@ pub mod testutil {
 
         impl MaybeTransportPacket for &FakeIcmpEchoRequest {
             fn transport_packet_data(&self) -> Option<TransportPacketData> {
-                Some(TransportPacketData::IcmpEcho { id: self.id })
+                Some(TransportPacketData::IcmpEcho {
+                    id: self.id,
+                    direction: conntrack::IcmpMessageDirection::Request,
+                })
             }
         }
 
@@ -4045,12 +4047,14 @@ mod tests {
                 TransportPacketDataProtocol::Udp => {
                     TransportPacketData::Udp { src_port: SRC_PORT.get(), dst_port: DST_PORT.get() }
                 }
-                TransportPacketDataProtocol::IcmpEchoRequest => {
-                    TransportPacketData::IcmpEcho { id: SRC_PORT.get() }
-                }
-                TransportPacketDataProtocol::IcmpEchoReply => {
-                    TransportPacketData::IcmpEcho { id: DST_PORT.get() }
-                }
+                TransportPacketDataProtocol::IcmpEchoRequest => TransportPacketData::IcmpEcho {
+                    id: SRC_PORT.get(),
+                    direction: conntrack::IcmpMessageDirection::Request,
+                },
+                TransportPacketDataProtocol::IcmpEchoReply => TransportPacketData::IcmpEcho {
+                    id: DST_PORT.get(),
+                    direction: conntrack::IcmpMessageDirection::Reply,
+                },
             }
         }
 

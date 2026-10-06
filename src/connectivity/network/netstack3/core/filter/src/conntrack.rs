@@ -509,13 +509,21 @@ where
     }
 }
 
+/// The direction of a message in an ICMP request/response pair.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum IcmpMessageDirection {
+    Request,
+    Reply,
+}
+
 /// The transport-layer portion of a [`Tuple`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[allow(missing_docs)]
 pub enum TransportTuple {
     Tcp { src_port: u16, dst_port: u16 },
     Udp { src_port: u16, dst_port: u16 },
-    IcmpEcho { id: u16 },
+    IcmpEcho { id: u16, direction: IcmpMessageDirection },
 }
 
 impl TransportTuple {
@@ -527,9 +535,13 @@ impl TransportTuple {
             Self::Udp { src_port, dst_port } => {
                 Self::Udp { src_port: dst_port, dst_port: src_port }
             }
-            // TODO(https://fxbug.dev/328064082): Support tracking different ICMP
-            // request/response types.
-            Self::IcmpEcho { id } => Self::IcmpEcho { id },
+            Self::IcmpEcho { id, direction } => Self::IcmpEcho {
+                id,
+                direction: match direction {
+                    IcmpMessageDirection::Request => IcmpMessageDirection::Reply,
+                    IcmpMessageDirection::Reply => IcmpMessageDirection::Request,
+                },
+            },
         }
     }
 
@@ -537,7 +549,7 @@ impl TransportTuple {
     pub fn src_port_or_id(&self) -> u16 {
         match *self {
             Self::Tcp { src_port, .. } | Self::Udp { src_port, .. } => src_port,
-            Self::IcmpEcho { id } => id,
+            Self::IcmpEcho { id, .. } => id,
         }
     }
 
@@ -545,7 +557,7 @@ impl TransportTuple {
     pub fn dst_port_or_id(&self) -> u16 {
         match *self {
             Self::Tcp { dst_port, .. } | Self::Udp { dst_port, .. } => dst_port,
-            Self::IcmpEcho { id } => id,
+            Self::IcmpEcho { id, .. } => id,
         }
     }
 
@@ -554,7 +566,7 @@ impl TransportTuple {
             Self::Tcp { src_port, .. } | Self::Udp { src_port, .. } => {
                 *src_port = port_or_id;
             }
-            Self::IcmpEcho { id } => {
+            Self::IcmpEcho { id, .. } => {
                 *id = port_or_id;
             }
         }
@@ -565,7 +577,7 @@ impl TransportTuple {
             Self::Tcp { dst_port, .. } | Self::Udp { dst_port, .. } => {
                 *dst_port = port_or_id;
             }
-            Self::IcmpEcho { id } => {
+            Self::IcmpEcho { id, .. } => {
                 *id = port_or_id;
             }
         }
@@ -585,7 +597,7 @@ impl From<&TransportPacketData> for TransportTuple {
         match *transport_data {
             TransportPacketData::Tcp { src_port, dst_port, .. } => Self::Tcp { src_port, dst_port },
             TransportPacketData::Udp { src_port, dst_port } => Self::Udp { src_port, dst_port },
-            TransportPacketData::IcmpEcho { id } => Self::IcmpEcho { id },
+            TransportPacketData::IcmpEcho { id, direction } => Self::IcmpEcho { id, direction },
         }
     }
 }
@@ -610,7 +622,7 @@ impl<I: IpExt> Tuple<I> {
     /// Returns the inverted version of the tuple.
     ///
     /// This means the src and dst addresses are swapped as well as the ports
-    /// (for protocols like TCP and UDP that have ports).
+    /// (for protocols like TCP and UDP that have ports) or ICMP direction.
     pub(crate) fn invert(self) -> Tuple<I> {
         Self {
             src_addr: self.dst_addr,
@@ -1065,7 +1077,14 @@ where
                 ..
             } => ProtocolState::Tcp(tcp::Connection::new(segment, *payload_len, self_connected)?),
             TransportPacketData::Udp { .. } => ProtocolState::Udp,
-            TransportPacketData::IcmpEcho { .. } => ProtocolState::IcmpEcho,
+            TransportPacketData::IcmpEcho { direction: IcmpMessageDirection::Request, .. } => {
+                ProtocolState::IcmpEcho
+            }
+            // Avoid creating a new conntrack entry on a reply. If this was in
+            // response to a previous request, then we'd have an entry for it.
+            TransportPacketData::IcmpEcho { direction: IcmpMessageDirection::Reply, .. } => {
+                return None;
+            }
         };
 
         Some(Self {
@@ -1287,8 +1306,8 @@ mod tests {
         TransportTuple::Tcp { src_port: 2000, dst_port: 1000 }
     )]
     #[test_case(
-        TransportTuple::IcmpEcho { id: 1000 },
-        TransportTuple::IcmpEcho { id: 1000 }
+        TransportTuple::IcmpEcho { id: 1000, direction: IcmpMessageDirection::Request },
+        TransportTuple::IcmpEcho { id: 1000, direction: IcmpMessageDirection::Reply }
     )]
     fn tuple_invert<I: IpExt + TestIpExt>(
         orig_transport: TransportTuple,
@@ -2530,5 +2549,89 @@ mod tests {
             table.get_connection_for_packet_and_update(&bindings_ctx, malformed_new_conn_packet),
             Ok(None)
         );
+    }
+
+    #[ip_test(I)]
+    fn icmp_echo<I: TestIpExt>() {
+        let mut bindings_ctx = FakeBindingsCtx::new();
+        let table = Table::<_, (), _>::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
+
+        let echo_packet = |src, dst, direction| {
+            PacketMetadata::<I>::new(
+                src,
+                dst,
+                TransportPacketData::IcmpEcho { id: I::SRC_PORT, direction },
+            )
+        };
+        let request_a_to_b = echo_packet(I::SRC_IP, I::DST_IP, IcmpMessageDirection::Request);
+        let reply_b_to_a = echo_packet(I::DST_IP, I::SRC_IP, IcmpMessageDirection::Reply);
+
+        // Requests can create new entries, but replies do not.
+        assert_matches!(
+            table.get_connection_for_packet_and_update(&bindings_ctx, reply_b_to_a.clone()),
+            Ok(None)
+        );
+
+        let (conn_a, dir_a) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, request_a_to_b)
+            .expect("packet should be valid")
+            .expect("connection should be created for echo request");
+        assert_eq!(dir_a, ConnectionDirection::Original);
+        let conn_a = assert_matches!(
+            table.finalize_connection(&mut bindings_ctx, conn_a),
+            Ok((true, Some(conn))) => conn
+        );
+
+        let (matched_a, dir) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, reply_b_to_a)
+            .expect("packet should be valid")
+            .expect("connection should be present for echo reply");
+        assert_eq!(dir, ConnectionDirection::Reply);
+        let matched_a = assert_matches!(matched_a, Connection::Shared(conn) => conn);
+        assert!(Arc::ptr_eq(&conn_a, &matched_a));
+    }
+
+    #[ip_test(I)]
+    fn icmp_echo_self<I: TestIpExt>() {
+        let mut bindings_ctx = FakeBindingsCtx::new();
+        let table = Table::<_, (), _>::new::<IntoCoreTimerCtx>(&mut bindings_ctx);
+
+        // Self-pings aren't symmetric, unlike self-connected TCP and UDP
+        // flows, because they're request/response.
+        let self_request = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::SRC_IP,
+            TransportPacketData::IcmpEcho {
+                id: I::SRC_PORT,
+                direction: IcmpMessageDirection::Request,
+            },
+        );
+        let self_reply = PacketMetadata::<I>::new(
+            I::SRC_IP,
+            I::SRC_IP,
+            TransportPacketData::IcmpEcho {
+                id: I::SRC_PORT,
+                direction: IcmpMessageDirection::Reply,
+            },
+        );
+
+        let (conn_self, dir) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, self_request)
+            .expect("packet should be valid")
+            .expect("connection should be created");
+        assert_eq!(dir, ConnectionDirection::Original);
+        assert_ne!(conn_self.original_tuple(), conn_self.reply_tuple());
+        let conn_self = assert_matches!(
+            table.finalize_connection(&mut bindings_ctx, conn_self),
+            Ok((true, Some(conn))) => conn
+        );
+
+        let (reply_conn, dir) = table
+            .get_connection_for_packet_and_update(&bindings_ctx, self_reply)
+            .expect("packet should be valid")
+            .expect("connection should be present");
+        assert_eq!(dir, ConnectionDirection::Reply);
+        let reply_conn = assert_matches!(reply_conn, Connection::Shared(conn) => conn);
+        assert!(Arc::ptr_eq(&conn_self, &reply_conn));
     }
 }
