@@ -30,7 +30,7 @@ use net_declare::{fidl_subnet, std_ip};
 use net_types::ip::IpVersion;
 
 use assert_matches::assert_matches;
-use netemul::{OutOfStack, RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
+use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::realms::{KnownServiceProvider, Netstack3, TestSandboxExt as _};
 use netstack_testing_common::{dhcpv4, interfaces, ndp};
@@ -172,7 +172,7 @@ async fn interface_disruption(name: &str, ip_supported: IpSupported) {
         }
     };
 
-    client_if.start_dhcp::<OutOfStack>().await.expect("start DHCPv4 client");
+    client_if.start_dhcp().await.expect("start DHCPv4 client");
 
     let server_v4 = {
         let dhcpv4::TestConfig { server_addr: fnet::Ipv4Address { addr }, managed_addrs: _ } =
