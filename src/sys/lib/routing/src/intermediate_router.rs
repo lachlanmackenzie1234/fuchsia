@@ -480,17 +480,19 @@ where
         target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Arc<C>>, RouterError> {
         #[cfg(target_os = "fuchsia")]
-        if self.enable_tracing {
-            trace::duration_begin!(
-                "component_manager", "route_capability",
+        let _trace_guard = self.enable_tracing.then(|| {
+            trace::async_enter!(
+                trace::Id::new(),
+                "component_manager",
+                "route_capability",
                 "target" => self.moniker.as_str(),
                 "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
-            );
-        }
+            )
+        });
 
         self.handle_new_request(&mut request)?;
-        let result = match self.get_source_router(&request, false).await? {
+        match self.get_source_router(&request, false).await? {
             RouterCapabilityOrSource::Capability(c) => Ok(Some(c)),
             RouterCapabilityOrSource::Source(source) => {
                 match &*source {
@@ -505,19 +507,7 @@ where
                     .into())
             }
             RouterCapabilityOrSource::Router(router) => router.route(request, target).await,
-        };
-
-        #[cfg(target_os = "fuchsia")]
-        if self.enable_tracing {
-            trace::duration_end!(
-                "component_manager", "route_capability",
-                "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.to_string().as_str(),
-                "capability" => self.source_path.iter_segments().join("/").as_str()
-            );
         }
-
-        result
     }
 
     async fn route_debug(
@@ -526,35 +516,25 @@ where
         target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         #[cfg(target_os = "fuchsia")]
-        if self.enable_tracing {
-            trace::duration_begin!(
-                "component_manager", "route_capability_debug",
+        let _trace_guard = self.enable_tracing.then(|| {
+            trace::async_enter!(
+                trace::Id::new(),
+                "component_manager",
+                "route_capability_debug",
                 "target" => self.moniker.as_str(),
                 "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
-            );
-        }
+            )
+        });
 
         self.handle_new_request(&mut request)?;
-        let result = match self.get_source_router(&request, true).await? {
+        match self.get_source_router(&request, true).await? {
             RouterCapabilityOrSource::Capability(_) => {
                 panic!("returned capability for debug operation")
             }
             RouterCapabilityOrSource::Source(source) => Ok(*source),
             RouterCapabilityOrSource::Router(router) => router.route_debug(request, target).await,
-        };
-
-        #[cfg(target_os = "fuchsia")]
-        if self.enable_tracing {
-            trace::duration_end!(
-                "component_manager", "route_capability_debug",
-                "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.to_string().as_str(),
-                "capability" => self.source_path.iter_segments().join("/").as_str()
-            );
         }
-
-        result
     }
 
     fn error_info(&self) -> Option<RouterErrorInfo> {

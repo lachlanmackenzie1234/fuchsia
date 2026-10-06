@@ -42,6 +42,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 
+#[cfg(target_os = "fuchsia")]
+use fuchsia_trace as trace;
+
 /// This type comes from `UseEventStreamDecl`.
 pub type EventStreamFilter = Option<BTreeMap<String, DictionaryValue>>;
 
@@ -324,6 +327,12 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     aggregate_router_fn: &AggregateRouterFn<C>,
     event_stream_use_router_fn: &EventStreamUseRouterFn<C>,
 ) -> ComponentSandbox {
+    #[cfg(target_os = "fuchsia")]
+    trace::duration!(
+        "component_manager",
+        "build_component_sandbox",
+        "moniker" => component.moniker().as_str()
+    );
     let sandbox = ComponentSandbox {
         framework_router: Mutex::new(framework_router),
         component_input,
