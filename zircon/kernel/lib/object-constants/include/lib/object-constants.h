@@ -69,6 +69,11 @@ constexpr size_t kGuestDispatcherStateSize = 48;
 constexpr size_t kGuestDispatcherStateAlign = 8;
 constexpr size_t kGuestDispatcherStateOffset = 48;
 
+// Size, alignment, and offset for VcpuDispatcherState.
+constexpr size_t kVcpuDispatcherStateSize = 56 + kLockClassIdSize;
+constexpr size_t kVcpuDispatcherStateAlign = 8;
+constexpr size_t kVcpuDispatcherStateOffset = 48;
+
 // Size, alignment, and offset for IoBufferDispatcherState.
 constexpr size_t kIoBufferDispatcherStateSize = 64;
 constexpr size_t kIoBufferDispatcherStateAlign = 8;

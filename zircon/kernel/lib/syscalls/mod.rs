@@ -43,5 +43,6 @@ mod test;
 mod thread;
 mod ticks;
 mod timer;
+mod vcpu;
 mod vmar;
 mod vmo;
