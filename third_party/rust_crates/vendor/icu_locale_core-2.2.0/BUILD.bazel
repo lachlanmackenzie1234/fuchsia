@@ -79,7 +79,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/litemap-0.8.2:litemap",
         "//third_party/rust_crates/vendor/tinystr-0.8.3:tinystr",
-        "//third_party/rust_crates/vendor/writeable-0.6.3:writeable",
+        "//third_party/rust_crates/vendor/writeable-0.6.4:writeable",
         "//third_party/rust_crates/vendor/zerovec-0.11.8:zerovec",
     ],
 )
