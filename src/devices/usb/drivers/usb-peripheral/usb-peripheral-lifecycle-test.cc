@@ -2541,5 +2541,957 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   ExpectStateEventual(UsbPeripheral::DeviceState::kNoConfiguration);
 }
 
+// Verifies that when ClearFunctions() and a second SetConnected(false) arrive while a host
+// disconnect's SetConfigured(false) batch is already in flight, they coalesce into the single
+// active unconfigure batch and hold all completers until SetConfigured(false) finishes before
+// stopping the controller.
+// Marked DISABLED_ because SetConnected(false) currently replies immediately without waiting for
+// unconfiguration, and ClearFunctions() tears down functions and stops the controller without
+// draining the in-flight unconfigure batch.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_ClearFunctionsWhileDisconnectUnconfigureInFlightWaitsForCompletion) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(fake_function, nullptr);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  std::mutex completers_lock;
+  std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigures;
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          std::lock_guard lock(completers_lock);
+          deferred_unconfigures.push_back(std::move(completer));
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  // Host disconnects -> begins asynchronous SetConfigured(false). Run on a background thread
+  // because SetConnected(false) is a synchronous FIDL call that blocks until the held
+  // SetConfigured(false) completer is resolved by the main test thread.
+  std::atomic<bool> disconnect_finished = false;
+  auto disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    disconnect_finished.store(true);
+  });
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completers_lock);
+    return !deferred_unconfigures.empty();
+  });
+  WaitForDisconnectEventCount(1);
+  EXPECT_FALSE(disconnect_finished.load());
+
+  // Call ClearFunctions while disconnect's SetConfigured(false) is still in flight. Run on a
+  // background thread because ClearFunctions() is a synchronous FIDL call that blocks until the
+  // held SetConfigured(false) completer is resolved by the main test thread.
+  std::atomic<bool> clear_finished = false;
+  auto clear_promise = std::async(std::launch::async, [&] {
+    auto res = peripheral_client.value()->ClearFunctions();
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    clear_finished.store(true);
+  });
+  dut().runtime().RunUntil([&] {
+    bool clearing = false;
+    dut().RunInDriverContext([&](UsbPeripheral& driver) {
+      clearing = driver.SnapshotState() != UsbPeripheral::DeviceState::kHostConnected;
+    });
+    return clearing;
+  });
+
+  // Issue a second SetConnected(false) while ClearFunctions has transitioned out of kHostConnected
+  // and unconfiguring_functions_ is true. Run on a background thread because SetConnected(false)
+  // blocks until the coalesced unconfigure batch completes.
+  std::atomic<bool> second_disconnect_finished = false;
+  auto second_disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    second_disconnect_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> completers_to_run;
+    {
+      std::lock_guard lock(completers_lock);
+      completers_to_run = std::move(deferred_unconfigures);
+      deferred_unconfigures.clear();
+    }
+    for (auto& comp : completers_to_run) {
+      comp.ReplySuccess();
+    }
+  });
+
+  WaitForDisconnectEventCount(2);
+
+  // ClearFunctions and both SetConnected(false) calls must wait for the in-flight
+  // SetConfigured(false) to complete before stopping the controller or finishing teardown, and only
+  // one SetConfigured(false) FIDL call should be issued.
+  EXPECT_FALSE(disconnect_finished.load());
+  EXPECT_FALSE(second_disconnect_finished.load());
+  EXPECT_FALSE(clear_finished.load());
+  ExpectControllerStarted(true);
+  {
+    std::lock_guard lock(completers_lock);
+    EXPECT_EQ(deferred_unconfigures.size(), 1u);
+  }
+
+  completer_cleanup.call();
+
+  disconnect_future.get();
+  second_disconnect_future.get();
+  EXPECT_TRUE(disconnect_finished.load());
+  EXPECT_TRUE(second_disconnect_finished.load());
+  clear_promise.get();
+  EXPECT_TRUE(clear_finished.load());
+  ExpectControllerStarted(false);
+  ExpectStateEventual(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+// Verifies that duplicate SetConnected(false) notifications arriving while an unconfigure batch is
+// in flight coalesce into a single SetConfigured(false) call and hold both SetConnected(false)
+// completers until unconfiguration finishes, while subsequent SetConnected(false) calls in
+// kPeripheralReady are no-ops.
+// Marked DISABLED_ because SetConnected(false) currently replies immediately instead of holding its
+// completer and dispatches duplicate SetConfigured(false) batches on repeated disconnects.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_DuplicateSetConnectedFalseCoalescesUnconfigureAndHoldsBothCompleters) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  std::mutex completer_lock;
+  std::atomic<uint32_t> unconfigure_calls{0};
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigure;
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          uint32_t call_idx = unconfigure_calls.fetch_add(1);
+          if (call_idx == 0) {
+            std::lock_guard lock(completer_lock);
+            deferred_unconfigure.emplace(std::move(completer));
+          } else {
+            completer.ReplySuccess();
+          }
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  // Call #1: e.g. Dwc3::HandleResetEvent() or Dwc3::HandleDisconnectedEvent() calling
+  // SetConnected(false) while the function unconfigure is asynchronous. Run on a background thread
+  // because SetConnected(false) is a synchronous FIDL call that blocks until the held
+  // SetConfigured(false) completer is resolved by the main test thread.
+  std::atomic<bool> set_connected_1_finished = false;
+  auto set_connected_1_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    set_connected_1_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return deferred_unconfigure.has_value();
+  });
+  WaitForDisconnectEventCount(1);
+
+  // Call #2: e.g. Dwc3::OnConnectStatusChanged(false) calling SetConnected(false) while Call #1's
+  // SetConfigured(false) is still in flight. Run on a background thread because SetConnected(false)
+  // blocks until the coalesced unconfigure batch completes.
+  std::atomic<bool> set_connected_2_finished = false;
+  auto set_connected_2_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    set_connected_2_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_unconfigure);
+      deferred_unconfigure.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
+    }
+  });
+  WaitForDisconnectEventCount(2);
+
+  // The second SetConnected(false) must coalesce onto the single in-flight unconfigure batch
+  // rather than spawning a second batch, and BOTH SetConnected(false) calls must remain pending
+  // until the function finishes unconfiguring so Dwc3's connection wake lease is held across the
+  // entire teardown.
+  EXPECT_EQ(unconfigure_calls.load(), 1u);
+  EXPECT_FALSE(set_connected_1_finished.load());
+  EXPECT_FALSE(set_connected_2_finished.load());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  completer_cleanup.call();
+
+  set_connected_1_future.get();
+  set_connected_2_future.get();
+  EXPECT_TRUE(set_connected_1_finished.load());
+  EXPECT_TRUE(set_connected_2_finished.load());
+  ExpectStateEventual(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // A subsequent SetConnected(false) when already in kPeripheralReady must be a no-op.
+  ASSERT_OK(dci()->SetConnected(false).status());
+  WaitForDisconnectEventCount(3);
+  EXPECT_EQ(unconfigure_calls.load(), 1u);
+}
+
+// Verifies that when a function calls Deconfigure() while connected, the peripheral transitions to
+// kUnregisteringFunction and unconfigures remaining functions before stopping the controller, and a
+// concurrent SetConnected(false) coalesces into that unconfigure batch and waits for completion.
+// Marked DISABLED_ because FunctionUnregistered() currently stops the controller immediately
+// without draining SetConfigured(false) across active functions.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_SetConnectedFalseWhileFunctionUnregisteredInFlightWaitsForCompletion) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients_res);
+  auto remaining_fake = function_clients_res.value().fakes[1];
+  ASSERT_NE(nullptr, remaining_fake);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  std::mutex completer_lock;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigure;
+  auto callback_cleanup = fit::defer([&] { remaining_fake->set_on_set_configured_async(nullptr); });
+  remaining_fake->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          std::lock_guard lock(completer_lock);
+          deferred_unconfigure.emplace(std::move(completer));
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  // Function 0 calls Deconfigure(), which triggers FunctionUnregistered() and asynchronously calls
+  // SetConfigured(false) on remaining Function 1. Run on a background thread because Deconfigure()
+  // is a synchronous FIDL call that blocks until the held SetConfigured(false) completer is
+  // resolved by the main test thread.
+  std::atomic<bool> deconfigure_finished = false;
+  auto deconfigure_future = std::async(std::launch::async, [&] {
+    auto res = function_clients_res.value().clients[0]->Deconfigure();
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_ok());
+    }
+    deconfigure_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return deferred_unconfigure.has_value() || deconfigure_finished.load();
+  });
+  {
+    std::lock_guard lock(completer_lock);
+    EXPECT_TRUE(deferred_unconfigure.has_value());
+  }
+  EXPECT_FALSE(deconfigure_finished.load());
+
+  // While FunctionUnregistered is in flight, SetConnected(false) arrives. It must wait for
+  // FunctionUnregistered to complete SetConfigured and StopController rather than replying early.
+  // Run on a background thread because SetConnected(false) blocks until the in-flight unconfigure
+  // batch completes.
+  std::atomic<bool> disconnect_finished = false;
+  auto disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    disconnect_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_unconfigure);
+      deferred_unconfigure.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
+    }
+  });
+
+  WaitForDisconnectEventCount(1);
+  EXPECT_FALSE(disconnect_finished.load());
+  EXPECT_FALSE(deconfigure_finished.load());
+  ExpectControllerStarted(true);
+
+  completer_cleanup.call();
+
+  deconfigure_future.get();
+  disconnect_future.get();
+  EXPECT_TRUE(deconfigure_finished.load());
+  EXPECT_TRUE(disconnect_finished.load());
+  ExpectControllerStarted(false);
+  ExpectStateEventual(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+// Verifies that if a host disconnect (SetConnected(false)) arrives during the SetConfigured(false)
+// phase of a repeated SET_CONFIGURATION(1) reconfiguration, the pending reconfigure step is
+// canceled with ZX_ERR_CANCELED without sending a second SetConfigured(false) or a stale
+// SetConfigured(true).
+// Marked DISABLED_ because UsbFunction does not track a pending reconfiguration state that can be
+// superseded and canceled by Unconfigure() on disconnect.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_DisconnectDuringReconfigurationCancelsPendingConfigureAndLeavesUnconfigured) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  std::mutex completer_lock;
+  std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigures;
+  std::atomic<uint32_t> subsequent_configure_true_calls{0};
+  std::atomic<uint32_t> unconfigure_calls{0};
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          unconfigure_calls.fetch_add(1);
+          std::lock_guard lock(completer_lock);
+          deferred_unconfigures.push_back(std::move(completer));
+        } else {
+          subsequent_configure_true_calls.fetch_add(1);
+          completer.ReplySuccess();
+        }
+      });
+
+  // Issue a second SET_CONFIGURATION(1) while already configured. Per USB 2.0 section 9.1.1.5,
+  // UsbFunction::Configure() initiates unconfiguration (StartUnconfigure) and queues
+  // pending_configure_ (true) to run after the unconfigure finishes. Run on a background thread
+  // because Control() is a synchronous FIDL call that blocks until the held SetConfigured(false)
+  // completer is resolved by the main test thread.
+  std::atomic<bool> second_set_config_finished = false;
+  auto second_set_config_future = std::async(std::launch::async, [&] {
+    auto res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_error());
+      if (res->is_error()) {
+        EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+      }
+    }
+    second_set_config_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return !deferred_unconfigures.empty();
+  });
+  EXPECT_FALSE(second_set_config_finished.load());
+
+  // While the reconfiguration's SetConfigured(false) is in flight and pending_configure_ (true) is
+  // queued, host disconnects (calling SetConfigured(false) on the function). This must cancel the
+  // queued pending_configure_ (true) and wait for the in-flight unconfigure without sending a stale
+  // SetConfigured(true) to the function driver. Run on a background thread because
+  // SetConnected(false) blocks until the in-flight unconfigure completes.
+  std::atomic<bool> disconnect_finished = false;
+  auto disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    disconnect_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> completers_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completers_to_run = std::move(deferred_unconfigures);
+      deferred_unconfigures.clear();
+    }
+    for (auto& completer : completers_to_run) {
+      completer.ReplySuccess();
+    }
+  });
+
+  WaitForDisconnectEventCount(1);
+  dut().runtime().RunUntil(
+      [&] { return second_set_config_finished.load() || unconfigure_calls.load() > 1u; });
+  EXPECT_TRUE(second_set_config_finished.load());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  completer_cleanup.call();
+
+  second_set_config_future.get();
+  disconnect_future.get();
+  EXPECT_TRUE(disconnect_finished.load());
+  EXPECT_EQ(subsequent_configure_true_calls.load(), 0u);
+  EXPECT_EQ(unconfigure_calls.load(), 1u);
+  ExpectStateEventual(UsbPeripheral::DeviceState::kPeripheralReady);
+}
+
+// Verifies that if a host disconnect (SetConnected(false)) arrives while the initial
+// SetConfigured(true) from SET_CONFIGURATION(1) is still in flight, SET_CONFIGURATION(1) is
+// canceled with ZX_ERR_CANCELED, SetConfigured(false) is queued on the FIFO channel, and a late
+// ZX_OK reply to SetConfigured(true) does not leave the peripheral configured.
+// Marked DISABLED_ because UsbFunction only updates last_configured_ after SetConfigured(true)
+// replies, causing a disconnect during an in-flight SetConfigured(true) to skip unconfiguration and
+// commit configuration_ = 1.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_DisconnectWhileInitialSetConfigurationInFlightCancelsAndLeavesUnconfigured) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  std::mutex completer_lock;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_configure;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigure;
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        std::lock_guard lock(completer_lock);
+        if (configured) {
+          deferred_configure.emplace(std::move(completer));
+        } else {
+          deferred_unconfigure.emplace(std::move(completer));
+        }
+      });
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+
+  // Start initial SET_CONFIGURATION(1), which puts UsbFunction into kConfiguring. Run on a
+  // background thread because Control() is a synchronous FIDL call that blocks until the held
+  // SetConfigured(true) completer is resolved by the main test thread.
+  std::atomic<bool> set_config_finished = false;
+  auto set_config_future = std::async(std::launch::async, [&] {
+    auto res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_error());
+      if (res->is_error()) {
+        EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+      }
+    }
+    set_config_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return deferred_configure.has_value();
+  });
+
+  // Host disconnects while SetConfigured(true) is still in flight. Run on a background thread
+  // because SetConnected(false) blocks until the held SetConfigured(false) completer is resolved
+  // by the main test thread.
+  std::atomic<bool> disconnect_finished = false;
+  auto disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    disconnect_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> config_to_run;
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> unconfig_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      config_to_run = std::move(deferred_configure);
+      deferred_configure.reset();
+      unconfig_to_run = std::move(deferred_unconfigure);
+      deferred_unconfigure.reset();
+    }
+    if (config_to_run.has_value()) {
+      config_to_run->ReplySuccess();
+    }
+    if (unconfig_to_run.has_value()) {
+      unconfig_to_run->ReplySuccess();
+    }
+  });
+
+  WaitForDisconnectEventCount(1);
+  dut().runtime().RunUntil([&] {
+    {
+      std::lock_guard lock(completer_lock);
+      if (deferred_unconfigure.has_value()) {
+        return true;
+      }
+    }
+    bool is_ready = false;
+    dut().RunInDriverContext([&](UsbPeripheral& driver) {
+      is_ready = driver.SnapshotState() == UsbPeripheral::DeviceState::kPeripheralReady;
+    });
+    return is_ready;
+  });
+  {
+    std::lock_guard lock(completer_lock);
+    EXPECT_TRUE(deferred_unconfigure.has_value());
+  }
+
+  // Because the FIDL channel is FIFO, the function driver replies OK to SetConfigured(true) first
+  // before replying to SetConfigured(false). Because kConfiguring was superseded by kUnconfiguring,
+  // SET_CONFIGURATION(1) must fail with ZX_ERR_CANCELED and must not commit configuration_ = 1.
+  {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> config_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      config_to_run = std::move(deferred_configure);
+      deferred_configure.reset();
+    }
+    ASSERT_TRUE(config_to_run.has_value());
+    config_to_run->ReplySuccess();
+  }
+
+  set_config_future.get();
+  EXPECT_TRUE(set_config_finished.load());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  completer_cleanup.call();
+  disconnect_future.get();
+  EXPECT_TRUE(disconnect_finished.load());
+  ExpectStateEventual(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup get_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestIn,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kGetConfiguration),
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 1,
+  };
+  auto get_res = dci()->Control(get_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(get_res.ok()) << get_res.FormatDescription();
+  ASSERT_TRUE(get_res->is_ok());
+  ASSERT_EQ(get_res->value()->read.size(), 1u);
+  EXPECT_EQ(get_res->value()->read[0], 0);
+}
+
+// Verifies that when Deconfigure() triggers FunctionUnregistered(), all functions finish
+// unconfiguring before dci_->StopController() is called, and a DCI driver (such as dwc2) that
+// synchronously calls UsbDciInterface::SetConnected(false) from inside StopController() receives an
+// immediate reply without deadlocking on executor_.
+// Marked DISABLED_ because FunctionUnregistered() currently invokes StopController() before
+// unconfiguring active functions and does not bypass executor_ for re-entrant SetConnected(false)
+// calls during kUnregisteringFunction teardown.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_StopControllerCallingSetConnectedFalseSynchronouslyDoesNotDeadlockOnDeconfigure) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients_res);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  // Simulate Dwc2::StopController() synchronously calling UsbDciInterface::SetConnected(false)
+  // while UsbPeripheral's main dispatcher is blocked inside dci_->StopController().
+  std::atomic<uint32_t> stop_set_connected_calls{0};
+  auto on_stop_cleanup = fit::defer([&] {
+    dut().RunInEnvironmentTypeContext(
+        [](UsbPeripheralTestEnvironment& env) { env.dci().set_on_stop_controller(nullptr); });
+  });
+  dut().RunInEnvironmentTypeContext([&](UsbPeripheralTestEnvironment& env) {
+    env.dci().set_on_stop_controller([&] {
+      EXPECT_FALSE(function_clients_res.value().fakes[1]->configured());
+      EXPECT_OK(dci()->SetConnected(false).status());
+      stop_set_connected_calls.fetch_add(1);
+    });
+  });
+
+  auto deconfigure_res = function_clients_res.value().clients[0]->Deconfigure();
+  ASSERT_TRUE(deconfigure_res.ok()) << deconfigure_res.FormatDescription();
+  EXPECT_TRUE(deconfigure_res->is_ok());
+
+  EXPECT_EQ(stop_set_connected_calls.load(), 1u);
+  ExpectControllerStarted(false);
+  ExpectStateEventual(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+// Verifies that when ClearFunctions() tears down the peripheral, any concurrent SetConnected(false)
+// arriving while unconfiguration is in flight coalesces and completes before dci_->StopController()
+// is called, and a DCI driver (such as dwc2) that synchronously calls
+// UsbDciInterface::SetConnected(false) from inside StopController() receives an immediate reply
+// without deadlocking on executor_.
+// Marked DISABLED_ because ClearFunctions() and OnHostConnectionChanged(false) do not coalesce
+// in-flight teardown unconfigures or prioritize disconnect callbacks ahead of StopController().
+TEST_F(
+    UnmanagedUsbPeripheralReadyTest,
+    DISABLED_StopControllerCallingSetConnectedFalseSynchronouslyDoesNotDeadlockOnClearFunctions) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  std::mutex completer_lock;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigure;
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          std::lock_guard lock(completer_lock);
+          deferred_unconfigure.emplace(std::move(completer));
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  std::atomic<bool> first_disconnect_finished{false};
+  // Simulate Dwc2::StopController() synchronously calling UsbDciInterface::SetConnected(false)
+  // while UsbPeripheral's main dispatcher is blocked inside dci_->StopController().
+  std::atomic<uint32_t> stop_set_connected_calls{0};
+  auto on_stop_cleanup = fit::defer([&] {
+    dut().RunInEnvironmentTypeContext(
+        [](UsbPeripheralTestEnvironment& env) { env.dci().set_on_stop_controller(nullptr); });
+  });
+  dut().RunInEnvironmentTypeContext([&](UsbPeripheralTestEnvironment& env) {
+    env.dci().set_on_stop_controller([&] {
+      EXPECT_OK(dci()->SetConnected(false).status());
+      stop_set_connected_calls.fetch_add(1);
+    });
+  });
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+  std::atomic<bool> clear_finished{false};
+  // ClearFunctions() is a synchronous FIDL call that blocks until SetConfigured(false) completes.
+  // Run it on a background thread so the main test thread can issue a concurrent
+  // SetConnected(false) during the in-flight teardown window and resolve deferred_unconfigure.
+  auto clear_future = std::async(std::launch::async, [&] {
+    auto clear_res = peripheral_client.value()->ClearFunctions();
+    EXPECT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+    clear_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return deferred_unconfigure.has_value();
+  });
+
+  // A disconnect arriving while ClearFunctions's unconfigure batch is still in flight must coalesce
+  // and wait rather than replying early while the function is still unconfiguring. Run on a
+  // background thread because SetConnected(false) blocks until deferred_unconfigure is resolved.
+  auto first_disconnect_future = std::async(std::launch::async, [&] {
+    EXPECT_OK(dci()->SetConnected(false).status());
+    first_disconnect_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_unconfigure);
+      deferred_unconfigure.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
+    }
+  });
+
+  WaitForDisconnectEventCount(1);
+  EXPECT_FALSE(first_disconnect_finished.load());
+  EXPECT_FALSE(clear_finished.load());
+
+  completer_cleanup.call();
+
+  first_disconnect_future.get();
+  clear_future.get();
+  EXPECT_TRUE(first_disconnect_finished.load());
+  EXPECT_TRUE(clear_finished.load());
+  EXPECT_EQ(stop_set_connected_calls.load(), 1u);
+  ExpectControllerStarted(false);
+  ExpectStateEventual(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+// Verifies that overlapping SET_CONFIGURATION control requests arriving while an earlier
+// SET_CONFIGURATION batch is still awaiting SetConfigured() replies are queued in
+// pending_set_configuration_ (with newer queued requests superseding older ones with
+// ZX_ERR_CANCELED) and executed sequentially once the active batch completes.
+// Marked DISABLED_ because SetConfiguration() currently only defers incoming requests while
+// unconfiguring_functions_ is true and does not track configuring_functions_.
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_OverlappingSetConfigurationCallsAreSerialized) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  std::mutex completer_lock;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_first_configure;
+  std::atomic<uint32_t> configure_true_calls{0};
+  auto callback_cleanup = fit::defer([&] { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (configured) {
+          uint32_t count = configure_true_calls.fetch_add(1) + 1;
+          if (count == 1) {
+            std::lock_guard lock(completer_lock);
+            deferred_first_configure.emplace(std::move(completer));
+            return;
+          }
+        }
+        completer.ReplySuccess();
+      });
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config_1 = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config_0 = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 0,
+  };
+
+  // Run the first SET_CONFIGURATION(1) on a background thread because Control() is a synchronous
+  // FIDL call that blocks until the held SetConfigured(true) completer is resolved by the main
+  // test thread.
+  std::atomic<bool> first_finished = false;
+  auto first_future = std::async(std::launch::async, [&] {
+    auto res = dci()->Control(set_config_1, fidl::VectorView<uint8_t>());
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_ok());
+    }
+    first_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    std::lock_guard lock(completer_lock);
+    return deferred_first_configure.has_value();
+  });
+
+  // Issue a second SET_CONFIGURATION(0) while the first SET_CONFIGURATION(1) is still in flight.
+  // It should be queued in pending_set_configuration_. Run on a background thread because Control()
+  // blocks while queued in pending_set_configuration_.
+  std::atomic<bool> second_finished = false;
+  auto second_future = std::async(std::launch::async, [&] {
+    auto res = dci()->Control(set_config_0, fidl::VectorView<uint8_t>());
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_error());
+      if (res->is_error()) {
+        EXPECT_EQ(res->error_value(), ZX_ERR_CANCELED);
+      }
+    }
+    second_finished.store(true);
+  });
+
+  dut().runtime().RunUntil([&] {
+    bool has_pending = false;
+    dut().RunInDriverContext(
+        [&](UsbPeripheral& driver) { has_pending = driver.HasPendingSetConfiguration(); });
+    return has_pending || second_finished.load();
+  });
+  EXPECT_FALSE(second_finished.load());
+
+  // Issue a third SET_CONFIGURATION(1) which supersedes the queued SET_CONFIGURATION(0). Run on a
+  // background thread because Control() blocks until the first SET_CONFIGURATION(1) completes.
+  std::atomic<bool> third_finished = false;
+  auto third_future = std::async(std::launch::async, [&] {
+    auto res = dci()->Control(set_config_1, fidl::VectorView<uint8_t>());
+    EXPECT_TRUE(res.ok()) << res.FormatDescription();
+    if (res.ok()) {
+      EXPECT_TRUE(res->is_ok());
+    }
+    third_finished.store(true);
+  });
+  auto completer_cleanup = fit::defer([&] {
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_first_configure);
+      deferred_first_configure.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
+    }
+  });
+
+  dut().runtime().RunUntil([&] { return second_finished.load(); });
+  second_future.get();
+  EXPECT_FALSE(first_finished.load());
+  EXPECT_FALSE(third_finished.load());
+
+  // Release the first SetConfigured(true). Both the first and third SET_CONFIGURATION(1) should now
+  // complete sequentially.
+  completer_cleanup.call();
+
+  first_future.get();
+  third_future.get();
+  EXPECT_TRUE(first_finished.load());
+  EXPECT_TRUE(third_finished.load());
+  EXPECT_EQ(configure_true_calls.load(), 2u);
+}
+
+// Verifies that while UsbFunctionInterface::Control() is in flight, the function driver can make
+// synchronous UsbFunction FIDL calls (e.g. DisableEndpoint) back into usb-peripheral and the DCI
+// driver can concurrently invoke UsbDciInterface::SetSpeed() without deadlocking.
+// Marked DISABLED_ because UsbFunction::Control() currently makes a synchronous FIDL call on
+// UsbPeripheral::dispatcher(), blocking incoming UsbFunction and UsbDciInterface requests on that
+// dispatcher.
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_FunctionControlCallingUsbFunctionAndSetConnectedDoesNotDeadlock) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+  ASSERT_NE(nullptr, fake_function);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  auto control_cleanup = fit::defer([&] { fake_function->set_on_control(nullptr); });
+  fake_function->set_on_control([&] {
+    // While handling UsbFunctionInterface::Control, the DCI interface server dispatcher must not be
+    // blocked synchronously, allowing incoming UsbDciInterface calls (like SetSpeed) and re-entrant
+    // UsbFunction calls (like DisableEndpoint) to complete without deadlocking.
+    EXPECT_OK(dci()->SetSpeed(fdescriptor::wire::UsbSpeed::kHigh).status());
+    auto disable_res = function_clients_res.value().clients[0]->DisableEndpoint(0x01);
+    EXPECT_TRUE(disable_res.ok()) << disable_res.FormatDescription();
+    if (disable_res.ok()) {
+      EXPECT_TRUE(disable_res->is_ok());
+    }
+  });
+
+  fuchsia_hardware_usb_descriptor::wire::UsbSetup class_setup = {
+      .bm_request_type = static_cast<uint8_t>(fdescriptor::EndpointDirection::kIn |
+                                              fdescriptor::RequestRecipient::kInterface |
+                                              fdescriptor::RequestType::kClass),
+      .b_request = 0x01,
+      .w_value = 0,
+      .w_index = 0,
+      .w_length = 3,
+  };
+  auto ctrl_res = dci()->Control(class_setup, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(ctrl_res.ok()) << ctrl_res.FormatDescription();
+  ASSERT_TRUE(ctrl_res->is_ok());
+  EXPECT_EQ(ctrl_res->value()->read.size(), 3u);
+}
+
 }  // namespace
 }  // namespace usb_peripheral::test
