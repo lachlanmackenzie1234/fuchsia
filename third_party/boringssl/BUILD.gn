@@ -434,7 +434,10 @@ config("boringssl_config") {
     "-Wno-unused-function",
   ]
 
-  cflags_cc = [ "-Wno-deprecated-copy" ]
+  cflags_cc = [
+    "-Wno-deprecated-copy",
+    "-Wno-deprecated-volatile",
+  ]
 
   if (is_gcc) {
     cflags_cc += [ "-Wno-extra-semi" ]

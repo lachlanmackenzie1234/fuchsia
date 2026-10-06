@@ -91,7 +91,7 @@
              path="third_party/boringssl/src"
              remote="https://boringssl.googlesource.com/boringssl"
              gerrithost="https://boringssl-review.googlesource.com"
-             revision="5d6989e1e2bfbc592876a5d88c4d1d7591a462ec"/>
+             revision="66da97b9420113c1cab4ca567b4f4d6f2aa2178c"/>
     <project name="chromium-zucchini"
              path="third_party/chromium-zucchini/src"
              remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini"
