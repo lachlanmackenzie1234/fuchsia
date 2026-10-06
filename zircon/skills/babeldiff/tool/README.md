@@ -192,7 +192,7 @@ no pairing, and they are listed at the end of the report, under
 | `shim-logic` | A `rust_*` shim or `cpp_*` helper only forwards. Branches, loops and `match` arms are reported unless they only convert a result, a status, or a null pointer or empty optional. |
 | `file-placement` | Each C++ file becomes one Rust file named after it (`foo.cc` to `foo.rs`, `dir_foo.rs` for a flattened directory, or a part named `foo_*.rs`). A C++ file split across several Rust files, and functions that landed in a file not named after their C++ file, are issues; a Rust file that collects three or more C++ files is a note. Test files and `_ffi` companions don't count. The report also maps each C++ file to the Rust files its functions went to, under `File placement`. |
 | `provenance-comment` | Comments that say where code was ported from ("Ported from foo.cc", "(`foo.cc:12-34`)", "Mirrors the C++ version"), reported once per file. |
-| `invented-lifetime` | A reference made from a raw pointer that was taken from a place still in scope (`let p = buf.as_mut_ptr(); ... &mut *p`), whose lifetime the compiler can't check. |
+| `invented-lifetime` | A reference made from a raw pointer that was taken from a place still in scope (`let p = buf.as_mut_ptr(); ... &mut *p`), or a `&mut *self.field.get()` borrow held across a `self.method()` call or another `self.field.get()` access and used again afterwards, whose lifetime the compiler can't check. |
 | `unsafe-density` | A note on a file whose changed functions have ten or more `unsafe` blocks between them. |
 
 A lint issue counts toward the exit status like any other issue.

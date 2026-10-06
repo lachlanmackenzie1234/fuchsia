@@ -720,10 +720,94 @@ fn invented_lifetime(v: &Version, f: &Function) -> Vec<Lint> {
     static FROM_PLACE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"\blet\s+(?:mut\s+)?([a-z_]\w*)\s*(?::[^=]*)?=\s*&?(?:mut\s+)?([a-z_][\w.]*(?:\[[^\]]*\])?)\s*\.\s*as_(?:mut_)?ptr\s*\(\s*\)").unwrap()
     });
+    static MUT_GET: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\blet\s+(?:mut\s+)?([a-z_]\w*)\s*(?::[^=]*)?=\s*(?:unsafe\s*\{\s*)?&\s*mut\s*\*\s*([a-z_][\w.]*)\s*\.\s*get\s*\(\s*\)").unwrap()
+    });
+    static SELF_CALL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\bself\s*\.\s*([a-z_]\w*)\s*\(").unwrap());
     static LET: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\blet\s+(?:mut\s+)?([a-z_]\w*)\s*(?::[^=]*)?=(.*)").unwrap());
     static DEREF: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"&\s*(?:mut\s+)?\*\s*\(?\s*([a-z_]\w*)\b").unwrap());
+    let mut out = Vec::new();
+    let code: Vec<&str> = f.lines.iter().map(|l| code_part(l).trim()).collect();
+
+    // Check for `&mut *place.get()` held across a `self.method()` call or
+    // another `place.get()` access and used again afterwards.
+    for (k, text) in code.iter().enumerate() {
+        if !LET.is_match(text) {
+            continue;
+        }
+        let end = (k..code.len().min(k + 8))
+            .find(|&m| code[m].ends_with(';'))
+            .unwrap_or(k);
+        let whole = code[k..=end].join(" ");
+        let Some(c) = MUT_GET.captures(&whole) else {
+            continue;
+        };
+        let (var, place) = (&c[1], &c[2]);
+        let bind_line = f.start_line + k;
+        let var_re = Regex::new(&format!(r"\b{}\b", regex::escape(var))).unwrap();
+        let rebind_re =
+            Regex::new(&format!(r"\blet\s+(?:mut\s+)?{}\b", regex::escape(var))).unwrap();
+        let place_get_re =
+            Regex::new(&format!(r"\b{}\s*\.\s*get\s*\(", regex::escape(place))).unwrap();
+        let mut last_use = None;
+        let mut scan_end = code.len();
+        for (m, line_code) in code.iter().enumerate().skip(end + 1) {
+            if rebind_re.is_match(line_code) {
+                scan_end = m;
+                break;
+            }
+            if var_re.is_match(line_code) {
+                last_use = Some(m);
+            }
+        }
+        let Some(use_idx) = last_use else {
+            continue;
+        };
+        let use_line = f.start_line + use_idx;
+        if !touched(v, bind_line..=use_line) {
+            continue;
+        }
+        let is_self_place = place.starts_with("self.");
+        for m in (end + 1)..=use_idx.min(scan_end.saturating_sub(1)) {
+            let line_code = code[m];
+            let call_line = f.start_line + m;
+            if place_get_re.is_match(line_code) && m < use_idx {
+                out.push(Lint {
+                    kind: LintKind::InventedLifetime,
+                    severity: Severity::Issue,
+                    path: v.path.clone(),
+                    line: bind_line,
+                    message: format!(
+                        "`{var}` borrows `&mut *{place}.get()` (line {bind_line}) across `{place}.get()` at line {call_line} and is used again at line {use_line}, risking aliasing UB"
+                    ),
+                    related: None,
+                });
+                break;
+            }
+            if is_self_place {
+                if let Some(sc) = SELF_CALL.captures(line_code) {
+                    let method = &sc[1];
+                    if method != "get" && m < use_idx {
+                        out.push(Lint {
+                            kind: LintKind::InventedLifetime,
+                            severity: Severity::Issue,
+                            path: v.path.clone(),
+                            line: bind_line,
+                            message: format!(
+                                "`{var}` borrows `&mut *{place}.get()` (line {bind_line}) across `self.{method}()` at line {call_line} and is used again at line {use_line}, risking aliasing UB"
+                            ),
+                            related: None,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // Code that reaches everything through one base pointer on purpose,
     // because other raw aliases (`NonNull`s stored elsewhere) must stay
     // valid, says so; a borrow there would invalidate those aliases.
@@ -732,12 +816,10 @@ fn invented_lifetime(v: &Version, f: &Function) -> Vec<Lint> {
         .iter()
         .any(|k| all.contains(k))
     {
-        return Vec::new();
+        return out;
     }
     // Pointer name -> the place it came from, and the line.
     let mut derived: Vec<(String, String, usize)> = Vec::new();
-    let mut out = Vec::new();
-    let code: Vec<&str> = f.lines.iter().map(|l| code_part(l).trim()).collect();
     for (k, text) in code.iter().enumerate() {
         let line = f.start_line + k;
         // A `let` can span lines (a call that returns a derived pointer):
@@ -1325,6 +1407,23 @@ mod tests {
         assert_eq!(l.len(), 1, "{l:?}");
         assert_eq!(l[0].line, 6);
         assert!(l[0].message.contains("`arch.buffer`"), "{}", l[0].message);
+    }
+
+    #[test]
+    fn mut_cell_ref_held_across_self_call_is_reported() {
+        let rust = "impl State {\n    pub fn init(&self) {\n        unsafe {\n            let events = &mut *self.events.get();\n            events[0] = 1;\n            let watermarks = &mut *self.mem_watermarks.get();\n            watermarks[0] = 10;\n            let _ = NonNull::from(self.signal.as_event());\n            if self.is_imminent_oom_enabled() {\n                kprintln!(\"{}\", watermarks[1]);\n            }\n        }\n    }\n}\n";
+        let v = version("memory_watchdog.rs", rust);
+        let f = &crate::extract::extract(Lang::Rust, "memory_watchdog.rs", rust).functions[0];
+        let l = invented_lifetime(&v, f);
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(l[0].line, 6);
+        assert!(
+            l[0].message.contains("`watermarks`")
+                && l[0].message.contains("`self.is_imminent_oom_enabled()`")
+                && l[0].message.contains("line 10"),
+            "{}",
+            l[0].message
+        );
     }
 
     #[test]
