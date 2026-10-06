@@ -38,7 +38,9 @@ use starnix_uapi::arch32::{
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_HIGHEST_ADDRESS;
 use starnix_uapi::uapi::{
+    perf_callchain_context_PERF_CONTEXT_KERNEL, perf_callchain_context_PERF_CONTEXT_USER,
     perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_32, perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_64,
     perf_sample_regs_abi_PERF_SAMPLE_REGS_ABI_NONE,
 };
@@ -569,13 +571,35 @@ fn write_record_to_vmo(
     }
 
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_CALLCHAIN as u64) != 0 {
-        // nr
-        sample.extend(perf_record_sample.ips.len().to_ne_bytes());
+        // Callchains are structured into sections, each introduced by a
+        // PERF_CONTEXT_* marker, and readers rely on these markers to split
+        // kernel and user frames.
+        //
+        // Starnix normal-mode execution (>= GUEST_ASPACE_END, above
+        // restricted_return_loop) represents kernel execution from the guest's
+        // perspective and belongs in PERF_CONTEXT_KERNEL; restricted-mode
+        // guest execution (< GUEST_ASPACE_END) belongs in PERF_CONTEXT_USER.
+        // Both sections are always emitted; readers that unwind user stacks
+        // themselves (DWARF) stop at the PERF_CONTEXT_USER marker.
+        const GUEST_ASPACE_END: u64 = RESTRICTED_ASPACE_HIGHEST_ADDRESS as u64;
 
-        // ips[nr] - list of ips, u64 per ip.
-        for i in perf_record_sample.ips {
-            sample.extend(i.to_ne_bytes());
+        // Reserve nr, then fill it in once the markers and ips are written.
+        let nr_offset = sample.len();
+        sample.extend(0u64.to_ne_bytes());
+        let callchain_start = sample.len();
+
+        sample.extend(perf_callchain_context_PERF_CONTEXT_KERNEL.to_ne_bytes());
+        for ip in perf_record_sample.ips.iter().filter(|&&ip| ip >= GUEST_ASPACE_END) {
+            sample.extend(ip.to_ne_bytes());
         }
+        sample.extend(perf_callchain_context_PERF_CONTEXT_USER.to_ne_bytes());
+        for ip in perf_record_sample.ips.iter().filter(|&&ip| ip < GUEST_ASPACE_END) {
+            sample.extend(ip.to_ne_bytes());
+        }
+
+        // nr, counting the markers and ips.
+        let nr = ((sample.len() - callchain_start) / std::mem::size_of::<u64>()) as u64;
+        sample[nr_offset..callchain_start].copy_from_slice(&nr.to_ne_bytes());
     }
 
     // User registers (PERF_SAMPLE_REGS_USER): the ABI tag, then one u64 per

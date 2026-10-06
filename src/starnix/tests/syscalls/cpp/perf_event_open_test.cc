@@ -877,8 +877,9 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
           EXPECT_GE(record_details->tid, (uint64_t)1);
           EXPECT_EQ(record_details->id, record_details->sample_id);
           EXPECT_GE(record_details->sample_period, (uint64_t)250'000);
-          // We expect some nesting of at least 1, to maybe 200, for getpid().
-          EXPECT_GE(record_details->nr, (uint64_t)1);
+          // We expect PERF_CONTEXT_KERNEL and PERF_CONTEXT_USER markers plus at
+          // least 1 sampled frame, up to maybe 200, for getpid().
+          EXPECT_GE(record_details->nr, (uint64_t)3);
           EXPECT_LT(record_details->nr, (uint64_t)200);
 
           // Read the next param of perf_record_sample ips[nr]. When we created the
@@ -887,15 +888,21 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
           uint64_t* ips_start =
               reinterpret_cast<uint64_t*>(record_details_start + sizeof(perf_record_sample));
           std::span<uint64_t> ips{ips_start, static_cast<std::size_t>(number_of_ips)};
-          for (size_t i = 0; i < ips.size(); ++i) {
-            uint64_t ip = ips[i];
-            if (i == 0) {
+          if (!ips.empty()) {
+            EXPECT_EQ(ips[0], static_cast<uint64_t>(PERF_CONTEXT_KERNEL));
+          }
+          bool saw_user_context = false;
+          bool saw_first_frame = false;
+          for (uint64_t ip : ips) {
+            if (ip == static_cast<uint64_t>(PERF_CONTEXT_USER)) {
+              saw_user_context = true;
+            } else if (ip != static_cast<uint64_t>(PERF_CONTEXT_KERNEL) && !saw_first_frame) {
               EXPECT_EQ(ip, record_details->ip);
-            } else {
-              // The profiler may return 0 for frames at the end of the stack or when walking fails.
-              // We don't enforce non-zero for these frames.
+              saw_first_frame = true;
             }
           }
+          EXPECT_TRUE(saw_user_context);
+          EXPECT_TRUE(saw_first_frame);
         }
 
         // Advance counter.
