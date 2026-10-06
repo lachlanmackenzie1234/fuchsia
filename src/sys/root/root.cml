@@ -47,6 +47,7 @@
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
                 "fuchsia.pkgcache.RequireSystemImage",
+                "fuchsia.pkgcache.UseDriverBlobPaging",
                 "fuchsia.platform.bus.SoftwareDeviceIds",
                 "fuchsia.platform.bus.SoftwareDeviceNames",
                 "fuchsia.power.cpu.BoostEnabled",
