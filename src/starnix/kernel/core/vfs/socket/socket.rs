@@ -90,6 +90,21 @@ pub trait SocketOps: Send + Sync + AsAny {
         flags: SocketMessageFlags,
     ) -> Result<MessageReadInfo, Errno>;
 
+    /// Reads from the socket and appends to `read_info`, returning whether a `MSG_WAITALL` stream
+    /// read may continue waiting for more data.
+    fn read_and_append(
+        &self,
+        socket: &Socket,
+        current_task: &CurrentTask,
+        read_info: &mut MessageReadInfo,
+        data: &mut dyn OutputBuffer,
+        flags: SocketMessageFlags,
+    ) -> Result<bool, Errno> {
+        let mut info = self.read(socket, current_task, data, flags)?;
+        read_info.append(&mut info);
+        Ok(true)
+    }
+
     /// Writes the data in the provided user buffers to this socket.
     ///
     /// # Parameters
@@ -602,6 +617,17 @@ impl Socket {
     ) -> Result<MessageReadInfo, Errno> {
         security::check_socket_recvmsg_access(current_task, self)?;
         self.ops.read(self, current_task, data, flags)
+    }
+
+    pub fn read_and_append(
+        &self,
+        current_task: &CurrentTask,
+        read_info: &mut MessageReadInfo,
+        data: &mut dyn OutputBuffer,
+        flags: SocketMessageFlags,
+    ) -> Result<bool, Errno> {
+        security::check_socket_recvmsg_access(current_task, self)?;
+        self.ops.read_and_append(self, current_task, read_info, data, flags)
     }
 
     pub fn write(

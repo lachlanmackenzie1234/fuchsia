@@ -236,12 +236,13 @@ impl SocketFile {
         let mut read_info = MessageReadInfo::default();
 
         let mut op = || {
-            let mut info = self.socket.read(current_task, data, flags)?;
-            read_info.append(&mut info);
-            read_info.address = info.address;
+            let can_wait_all =
+                self.socket.read_and_append(current_task, &mut read_info, data, flags)?;
 
             let should_wait_all = self.socket.socket_type == SocketType::Stream
                 && flags.contains(SocketMessageFlags::WAITALL)
+                && !flags.contains(SocketMessageFlags::PEEK)
+                && can_wait_all
                 && !self.socket.query_events(current_task)?.contains(FdEvents::POLLHUP);
             if should_wait_all && data.available() > 0 {
                 return error!(EAGAIN);

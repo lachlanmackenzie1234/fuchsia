@@ -818,6 +818,304 @@ TEST_P(CmsgAlignmentTest, ScmRightsFollowedByCredentials) {
 
 INSTANTIATE_TEST_SUITE_P(UnixSocket, CmsgAlignmentTest, testing::Values(1, 2, 3));
 
+TEST(UnixSocket, StreamPasscredCoalescing) {
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(write(sv[0].get(), "ab", 2), SyscallSucceedsWithValue(2));
+  ASSERT_THAT(write(sv[0].get(), "c", 1), SyscallSucceedsWithValue(1));
+
+  pid_t child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    if (write(sv[0].get(), "de", 2) != 2) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  auto recv_with_creds = [&](int flags, std::string* out_data,
+                             std::optional<struct ucred>* out_cred) {
+    char data[10] = {};
+    struct iovec iov = {.iov_base = data, .iov_len = sizeof(data)};
+    char cmsg_buf[CMSG_SPACE(sizeof(struct ucred))] = {};
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf),
+    };
+    ssize_t n = recvmsg(sv[1].get(), &msg, flags);
+    ASSERT_GE(n, 0) << strerror(errno);
+    *out_data = std::string(data, static_cast<size_t>(n));
+    *out_cred = std::nullopt;
+    for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+      if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+        ASSERT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+        struct ucred cred;
+        memcpy(&cred, CMSG_DATA(c), sizeof(cred));
+        *out_cred = cred;
+      }
+    }
+  };
+
+  // With SO_PASSCRED disabled on the receiver, all queued messages coalesce regardless of sender
+  // credentials and no SCM_CREDENTIALS control message is returned.
+  int zero = 0;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &zero, sizeof(zero)),
+              SyscallSucceeds());
+  std::string data;
+  std::optional<struct ucred> cred;
+  ASSERT_NO_FATAL_FAILURE(recv_with_creds(MSG_PEEK, &data, &cred));
+  EXPECT_EQ(data, "abcde");
+  EXPECT_FALSE(cred.has_value());
+
+  // With SO_PASSCRED enabled on the receiver, only adjacent messages with matching credentials
+  // coalesce.
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+  ASSERT_NO_FATAL_FAILURE(recv_with_creds(MSG_PEEK, &data, &cred));
+  EXPECT_EQ(data, "abc");
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, getpid());
+  EXPECT_EQ(cred->uid, getuid());
+  EXPECT_EQ(cred->gid, getgid());
+
+  ASSERT_NO_FATAL_FAILURE(recv_with_creds(0, &data, &cred));
+  EXPECT_EQ(data, "abc");
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, getpid());
+  EXPECT_EQ(cred->uid, getuid());
+  EXPECT_EQ(cred->gid, getgid());
+
+  ASSERT_NO_FATAL_FAILURE(recv_with_creds(0, &data, &cred));
+  EXPECT_EQ(data, "de");
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, child_pid);
+  EXPECT_EQ(cred->uid, getuid());
+  EXPECT_EQ(cred->gid, getgid());
+}
+
+TEST(UnixSocket, StreamChunkedSendmsgRetainsCredentials) {
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int sndbuf = 4096;
+  ASSERT_THAT(setsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)),
+              SyscallSucceeds());
+  int actual_sndbuf = 0;
+  socklen_t optlen = sizeof(actual_sndbuf);
+  ASSERT_THAT(getsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &actual_sndbuf, &optlen),
+              SyscallSucceeds());
+  ASSERT_GT(actual_sndbuf, 1024);
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  fbl::unique_fd pipe_read(pipe_fds[0]);
+  fbl::unique_fd pipe_write(pipe_fds[1]);
+
+  const size_t total_len = static_cast<size_t>(actual_sndbuf) * 2;
+
+  std::thread sender([&] {
+    std::vector<char> payload(total_len, 'x');
+    struct iovec iov = {.iov_base = payload.data(), .iov_len = payload.size()};
+    char cmsg_buf[CMSG_SPACE(sizeof(int)) + CMSG_SPACE(sizeof(struct ucred))] = {};
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf),
+    };
+
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+    int fd_to_send = pipe_read.get();
+    memcpy(CMSG_DATA(cmsg), &fd_to_send, sizeof(int));
+
+    cmsg = CMSG_NXTHDR(&msg, cmsg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_CREDENTIALS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+    struct ucred creds = {
+        .pid = getpid(),
+        .uid = getuid(),
+        .gid = getgid(),
+    };
+    memcpy(CMSG_DATA(cmsg), &creds, sizeof(creds));
+
+    EXPECT_THAT(sendmsg(sv[0].get(), &msg, 0), SyscallSucceedsWithValue(total_len));
+  });
+  auto cleanup = fit::defer([&] {
+    sv[1].reset();
+    if (sender.joinable()) {
+      sender.join();
+    }
+  });
+
+  // Read the first chunk while SO_PASSCRED is still disabled. Because the first chunk carries
+  // SCM_RIGHTS, recvmsg stops at the end of the first chunk and frees its buffer space.
+  size_t total_received = 0;
+  int received_rights_fds = 0;
+  {
+    std::vector<char> buf(total_len);
+    struct iovec iov = {.iov_base = buf.data(), .iov_len = buf.size()};
+    char cmsg_buf[CMSG_SPACE(sizeof(int)) + CMSG_SPACE(sizeof(struct ucred))] = {};
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf),
+    };
+    ssize_t n = recvmsg(sv[1].get(), &msg, 0);
+    ASSERT_GT(n, 0) << strerror(errno);
+    ASSERT_LT(static_cast<size_t>(n), total_len);
+    total_received += static_cast<size_t>(n);
+    for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+      if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+        int count = static_cast<int>((c->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+        const int* fds = reinterpret_cast<const int*>(CMSG_DATA(c));
+        for (int i = 0; i < count; ++i) {
+          close(fds[i]);
+          received_rights_fds++;
+        }
+      }
+    }
+  }
+  EXPECT_EQ(received_rights_fds, 1);
+
+  // Wait for the next chunk of the split sendmsg to be queued while SO_PASSCRED is still disabled.
+  struct pollfd pfd = {.fd = sv[1].get(), .events = POLLIN};
+  ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceedsWithValue(1));
+
+  // Enable SO_PASSCRED on the receiver and read the remaining chunk(s). Each read must still carry
+  // the explicit SCM_CREDENTIALS from the multi-chunk sendmsg and must not duplicate SCM_RIGHTS.
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  while (total_received < total_len) {
+    std::vector<char> buf(total_len - total_received);
+    struct iovec iov = {.iov_base = buf.data(), .iov_len = buf.size()};
+    char cmsg_buf[CMSG_SPACE(sizeof(int)) + CMSG_SPACE(sizeof(struct ucred))] = {};
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf),
+    };
+    ssize_t n = recvmsg(sv[1].get(), &msg, 0);
+    ASSERT_GT(n, 0) << strerror(errno);
+    total_received += static_cast<size_t>(n);
+
+    std::optional<struct ucred> cred;
+    for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+      EXPECT_FALSE(c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS);
+      if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+        ASSERT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+        struct ucred received_cred;
+        memcpy(&received_cred, CMSG_DATA(c), sizeof(received_cred));
+        cred = received_cred;
+      }
+    }
+    ASSERT_TRUE(cred.has_value());
+    EXPECT_EQ(cred->pid, getpid());
+    EXPECT_EQ(cred->uid, getuid());
+    EXPECT_EQ(cred->gid, getgid());
+  }
+
+  sender.join();
+}
+
+TEST(UnixSocket, StreamChunkedWriteDoesNotLeakImplicitCredentials) {
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int sndbuf = 4096;
+  ASSERT_THAT(setsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)),
+              SyscallSucceeds());
+  int actual_sndbuf = 0;
+  socklen_t optlen = sizeof(actual_sndbuf);
+  ASSERT_THAT(getsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &actual_sndbuf, &optlen),
+              SyscallSucceeds());
+  ASSERT_GT(actual_sndbuf, 1024);
+
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  const size_t total_len = static_cast<size_t>(actual_sndbuf) + 1024;
+  std::thread sender([&] {
+    std::vector<char> payload(total_len, 'y');
+    EXPECT_THAT(write(sv[0].get(), payload.data(), payload.size()),
+                SyscallSucceedsWithValue(total_len));
+  });
+  auto cleanup = fit::defer([&] {
+    sv[1].reset();
+    if (sender.joinable()) {
+      sender.join();
+    }
+  });
+
+  // Wait for the first chunk to be queued while SO_PASSCRED is enabled.
+  struct pollfd pfd = {.fd = sv[1].get(), .events = POLLIN};
+  ASSERT_THAT(poll(&pfd, 1, -1), SyscallSucceedsWithValue(1));
+
+  // Disable SO_PASSCRED before draining the first chunk so the remaining bytes are queued while
+  // SO_PASSCRED is disabled.
+  int zero = 0;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &zero, sizeof(zero)),
+              SyscallSucceeds());
+
+  std::vector<char> buf(total_len);
+  ssize_t first_read = recv(sv[1].get(), buf.data(), buf.size(), 0);
+  ASSERT_GT(first_read, 0) << strerror(errno);
+  ASSERT_LT(static_cast<size_t>(first_read), total_len);
+
+  sender.join();
+
+  // Re-enable SO_PASSCRED and read the second chunk. Because the second chunk was queued while
+  // SO_PASSCRED was disabled and without explicit SCM_CREDENTIALS, it must carry unknown_creds.
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  const size_t remaining = total_len - static_cast<size_t>(first_read);
+  struct iovec iov = {.iov_base = buf.data(), .iov_len = buf.size()};
+  char cmsg_buf[CMSG_SPACE(sizeof(struct ucred))] = {};
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = cmsg_buf,
+      .msg_controllen = sizeof(cmsg_buf),
+  };
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, 0), SyscallSucceedsWithValue(remaining));
+
+  std::optional<struct ucred> cred;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+      ASSERT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+      struct ucred received_cred;
+      memcpy(&received_cred, CMSG_DATA(c), sizeof(received_cred));
+      cred = received_cred;
+    }
+  }
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, 0);
+  EXPECT_EQ(cred->uid, static_cast<uid_t>(65534));
+  EXPECT_EQ(cred->gid, static_cast<gid_t>(65534));
+}
+
 TEST(UnixSocket, FailedListenDoesNotCorruptPeercred) {
   // 1. Failed listen() on an unbound socket must leave SO_PEERCRED at {0, -1, -1}.
   fbl::unique_fd unbound(socket(AF_UNIX, SOCK_STREAM, 0));
@@ -850,6 +1148,366 @@ TEST(UnixSocket, FailedListenDoesNotCorruptPeercred) {
     EXPECT_EQ(cred.uid, getuid());
     EXPECT_EQ(cred.gid, getgid());
   }
+}
+
+TEST(UnixSocket, MultipleCredentialsCmsgsDeduplicated) {
+  for (int sock_type : {SOCK_STREAM, SOCK_DGRAM}) {
+    int sv_raw[2];
+    ASSERT_THAT(socketpair(AF_UNIX, sock_type, 0, sv_raw), SyscallSucceeds());
+    fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+    auto send_two_creds = [&]() {
+      char payload = 'a';
+      struct iovec iov = {.iov_base = &payload, .iov_len = 1};
+      char cmsg_buf[2 * CMSG_SPACE(sizeof(struct ucred))] = {};
+      struct msghdr msg = {
+          .msg_iov = &iov,
+          .msg_iovlen = 1,
+          .msg_control = cmsg_buf,
+          .msg_controllen = sizeof(cmsg_buf),
+      };
+      struct ucred creds = {
+          .pid = getpid(),
+          .uid = getuid(),
+          .gid = getgid(),
+      };
+
+      struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+      cmsg->cmsg_level = SOL_SOCKET;
+      cmsg->cmsg_type = SCM_CREDENTIALS;
+      cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+      memcpy(CMSG_DATA(cmsg), &creds, sizeof(creds));
+
+      cmsg = CMSG_NXTHDR(&msg, cmsg);
+      cmsg->cmsg_level = SOL_SOCKET;
+      cmsg->cmsg_type = SCM_CREDENTIALS;
+      cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+      memcpy(CMSG_DATA(cmsg), &creds, sizeof(creds));
+
+      ASSERT_THAT(sendmsg(sv[0].get(), &msg, 0), SyscallSucceedsWithValue(1));
+    };
+
+    auto recv_cred_count = [&]() -> int {
+      char rbuf = 0;
+      struct iovec iov = {.iov_base = &rbuf, .iov_len = 1};
+      char cmsg_buf[2 * CMSG_SPACE(sizeof(struct ucred))] = {};
+      struct msghdr msg = {
+          .msg_iov = &iov,
+          .msg_iovlen = 1,
+          .msg_control = cmsg_buf,
+          .msg_controllen = sizeof(cmsg_buf),
+      };
+      EXPECT_THAT(recvmsg(sv[1].get(), &msg, 0), SyscallSucceedsWithValue(1));
+      int count = 0;
+      for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // With SO_PASSCRED disabled on the receiver, no SCM_CREDENTIALS should be delivered.
+    ASSERT_NO_FATAL_FAILURE(send_two_creds());
+    EXPECT_EQ(recv_cred_count(), 0);
+
+    // With SO_PASSCRED enabled on the receiver, exactly one SCM_CREDENTIALS should be delivered.
+    int one = 1;
+    ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+                SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(send_two_creds());
+    EXPECT_EQ(recv_cred_count(), 1);
+  }
+}
+
+TEST(UnixSocket, WriteBeforeAcceptPreservesCredentials) {
+  fbl::unique_fd listener(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_TRUE(listener.is_valid()) << strerror(errno);
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  // Bind to a unique abstract socket address.
+  std::string abstract_name = fxl::StringPrintf("pre_accept_passcred_%d", getpid());
+  memcpy(addr.sun_path + 1, abstract_name.data(), abstract_name.size());
+  socklen_t addr_len =
+      static_cast<socklen_t>(offsetof(struct sockaddr_un, sun_path) + 1 + abstract_name.size());
+  ASSERT_THAT(bind(listener.get(), reinterpret_cast<struct sockaddr*>(&addr), addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listener.get(), 5), SyscallSucceeds());
+
+  fbl::unique_fd client(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_TRUE(client.is_valid()) << strerror(errno);
+  ASSERT_THAT(connect(client.get(), reinterpret_cast<struct sockaddr*>(&addr), addr_len),
+              SyscallSucceeds());
+
+  // Write to the client socket BEFORE the server calls accept() or enables SO_PASSCRED.
+  ASSERT_THAT(write(client.get(), "hi", 2), SyscallSucceedsWithValue(2));
+
+  fbl::unique_fd accepted(accept(listener.get(), nullptr, nullptr));
+  ASSERT_TRUE(accepted.is_valid()) << strerror(errno);
+
+  int one = 1;
+  ASSERT_THAT(setsockopt(accepted.get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  char rbuf[4] = {};
+  struct iovec iov = {.iov_base = rbuf, .iov_len = sizeof(rbuf)};
+  char cmsg_buf[CMSG_SPACE(sizeof(struct ucred))] = {};
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = cmsg_buf,
+      .msg_controllen = sizeof(cmsg_buf),
+  };
+  ASSERT_THAT(recvmsg(accepted.get(), &msg, 0), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(std::string(rbuf, 2), "hi");
+
+  std::optional<struct ucred> cred;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+      ASSERT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+      struct ucred received_cred;
+      memcpy(&received_cred, CMSG_DATA(c), sizeof(received_cred));
+      cred = received_cred;
+    }
+  }
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, getpid());
+  EXPECT_EQ(cred->uid, getuid());
+  EXPECT_EQ(cred->gid, getgid());
+}
+
+TEST(UnixSocket, StreamWaitAllPasscred) {
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int sndbuf = 4096;
+  ASSERT_THAT(setsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)),
+              SyscallSucceeds());
+  int actual_sndbuf = 0;
+  socklen_t optlen = sizeof(actual_sndbuf);
+  ASSERT_THAT(getsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &actual_sndbuf, &optlen),
+              SyscallSucceeds());
+  ASSERT_GT(actual_sndbuf, 1024);
+
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  // 1. MSG_WAITALL across multiple writes with the same credentials must coalesce the data and
+  // emit only a single SCM_CREDENTIALS control message. Fill the send buffer first so the second
+  // writer blocks on POLLOUT until recvmsg consumes the initial chunk.
+  std::vector<char> fill_buf(actual_sndbuf, 'a');
+  ssize_t fill_len = send(sv[0].get(), fill_buf.data(), fill_buf.size(), MSG_DONTWAIT);
+  ASSERT_GT(fill_len, 0) << strerror(errno);
+  EXPECT_THAT(send(sv[0].get(), "x", 1, MSG_DONTWAIT), SyscallFailsWithErrno(EAGAIN));
+
+  std::thread delayed_writer(
+      [&] { EXPECT_THAT(write(sv[0].get(), "cd", 2), SyscallSucceedsWithValue(2)); });
+  auto cleanup_writer = fit::defer([&] {
+    sv[1].reset();
+    if (delayed_writer.joinable()) {
+      delayed_writer.join();
+    }
+  });
+
+  std::vector<char> rbuf(static_cast<size_t>(fill_len) + 2, 0);
+  struct iovec iov = {.iov_base = rbuf.data(), .iov_len = rbuf.size()};
+  char cmsg_buf[2 * CMSG_SPACE(sizeof(struct ucred))] = {};
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = cmsg_buf,
+      .msg_controllen = sizeof(cmsg_buf),
+  };
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, MSG_WAITALL), SyscallSucceedsWithValue(rbuf.size()));
+  delayed_writer.join();
+  cleanup_writer.cancel();
+  EXPECT_EQ(rbuf[rbuf.size() - 2], 'c');
+  EXPECT_EQ(rbuf[rbuf.size() - 1], 'd');
+
+  int cred_count = 0;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+      cred_count++;
+    }
+  }
+  EXPECT_EQ(cred_count, 1);
+
+  // 2. MSG_WAITALL must stop at a credential boundary when messages with differing credentials are
+  // already queued.
+  ASSERT_THAT(write(sv[0].get(), "ef", 2), SyscallSucceedsWithValue(2));
+  pid_t child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    if (write(sv[0].get(), "gh", 2) != 2) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  char small_buf[4] = {};
+  iov = {.iov_base = small_buf, .iov_len = sizeof(small_buf)};
+  memset(cmsg_buf, 0, sizeof(cmsg_buf));
+  msg.msg_controllen = sizeof(cmsg_buf);
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, MSG_WAITALL), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(std::string(small_buf, 2), "ef");
+
+  memset(small_buf, 0, sizeof(small_buf));
+  memset(cmsg_buf, 0, sizeof(cmsg_buf));
+  msg.msg_controllen = sizeof(cmsg_buf);
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, 0), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(std::string(small_buf, 2), "gh");
+
+  // 3. MSG_WAITALL must also stop when a message with differing credentials arrives while recvmsg
+  // is blocked waiting for additional bytes after reading an initial message.
+  fill_len = send(sv[0].get(), fill_buf.data(), fill_buf.size(), MSG_DONTWAIT);
+  ASSERT_GT(fill_len, 0) << strerror(errno);
+  EXPECT_THAT(send(sv[0].get(), "x", 1, MSG_DONTWAIT), SyscallFailsWithErrno(EAGAIN));
+
+  child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    if (write(sv[0].get(), "kl", 2) != 2) {
+      _exit(1);
+    }
+    _exit(0);
+  }
+  auto cleanup_child = fit::defer([&] {
+    sv[1].reset();
+    if (child_pid > 0) {
+      int child_status = 0;
+      waitpid(child_pid, &child_status, 0);
+    }
+  });
+
+  rbuf.assign(static_cast<size_t>(fill_len) + 2, 0);
+  iov = {.iov_base = rbuf.data(), .iov_len = rbuf.size()};
+  memset(cmsg_buf, 0, sizeof(cmsg_buf));
+  msg.msg_controllen = sizeof(cmsg_buf);
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, MSG_WAITALL), SyscallSucceedsWithValue(fill_len));
+
+  status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+  child_pid = -1;
+  cleanup_child.cancel();
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  memset(small_buf, 0, sizeof(small_buf));
+  iov = {.iov_base = small_buf, .iov_len = sizeof(small_buf)};
+  memset(cmsg_buf, 0, sizeof(cmsg_buf));
+  msg.msg_controllen = sizeof(cmsg_buf);
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, 0), SyscallSucceedsWithValue(2));
+  EXPECT_EQ(std::string(small_buf, 2), "kl");
+}
+
+TEST(UnixSocket, DatagramBlockingSendmsgRetainsCredentials) {
+  int sv_raw[2];
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_DGRAM, 0, sv_raw), SyscallSucceeds());
+  fbl::unique_fd sv[2] = {fbl::unique_fd(sv_raw[0]), fbl::unique_fd(sv_raw[1])};
+
+  int sndbuf = 4096;
+  ASSERT_THAT(setsockopt(sv[0].get(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)),
+              SyscallSucceeds());
+
+  // Fill the socket buffer while SO_PASSCRED is disabled so the filler datagrams carry no
+  // credentials. Use 1024-byte datagrams rather than a single SO_SNDBUF-sized datagram because
+  // Linux charges sk_buff overhead against SO_SNDBUF and rejects an SO_SNDBUF-sized datagram with
+  // EMSGSIZE.
+  std::vector<char> filler(1024, 'f');
+  size_t filler_count = 0;
+  while (true) {
+    ssize_t res = send(sv[0].get(), filler.data(), filler.size(), MSG_DONTWAIT);
+    if (res == -1) {
+      ASSERT_EQ(errno, EAGAIN) << strerror(errno);
+      break;
+    }
+    ASSERT_EQ(res, static_cast<ssize_t>(filler.size()));
+    filler_count++;
+  }
+  ASSERT_GT(filler_count, 0u);
+
+  // Spawn a sender thread that sends a datagram with explicit SCM_CREDENTIALS while SO_PASSCRED is
+  // still disabled on both ends. Its initial write attempt inside sendmsg will hit EAGAIN on the
+  // full buffer and block until the filler datagrams are drained.
+  std::thread sender([&] {
+    char payload = 'z';
+    struct iovec iov = {.iov_base = &payload, .iov_len = 1};
+    char cmsg_buf[CMSG_SPACE(sizeof(struct ucred))] = {};
+    struct msghdr msg = {
+        .msg_iov = &iov,
+        .msg_iovlen = 1,
+        .msg_control = cmsg_buf,
+        .msg_controllen = sizeof(cmsg_buf),
+    };
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_CREDENTIALS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+    struct ucred creds = {
+        .pid = getpid(),
+        .uid = getuid(),
+        .gid = getgid(),
+    };
+    memcpy(CMSG_DATA(cmsg), &creds, sizeof(creds));
+
+    EXPECT_THAT(sendmsg(sv[0].get(), &msg, 0), SyscallSucceedsWithValue(1));
+  });
+  auto cleanup = fit::defer([&] {
+    sv[1].reset();
+    if (sender.joinable()) {
+      sender.join();
+    }
+  });
+
+  // Allow the sender thread to enter sendmsg and block on EAGAIN, then drain the filler datagrams.
+  usleep(20000);
+  std::vector<char> drain_buf(filler.size());
+  for (size_t i = 0; i < filler_count; ++i) {
+    ASSERT_THAT(recv(sv[1].get(), drain_buf.data(), drain_buf.size(), 0),
+                SyscallSucceedsWithValue(filler.size()));
+  }
+  sender.join();
+
+  // Enable SO_PASSCRED on the receiver after the second datagram has been queued. Because the
+  // explicit SCM_CREDENTIALS cmsg must be preserved across the EAGAIN retry in sendmsg, the
+  // receiver must observe the sender's credentials rather than unknown_creds.
+  int one = 1;
+  ASSERT_THAT(setsockopt(sv[1].get(), SOL_SOCKET, SO_PASSCRED, &one, sizeof(one)),
+              SyscallSucceeds());
+
+  char rbuf = 0;
+  struct iovec iov = {.iov_base = &rbuf, .iov_len = 1};
+  char cmsg_buf[2 * CMSG_SPACE(sizeof(struct ucred))] = {};
+  struct msghdr msg = {
+      .msg_iov = &iov,
+      .msg_iovlen = 1,
+      .msg_control = cmsg_buf,
+      .msg_controllen = sizeof(cmsg_buf),
+  };
+  ASSERT_THAT(recvmsg(sv[1].get(), &msg, 0), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(rbuf, 'z');
+
+  int cred_count = 0;
+  std::optional<struct ucred> cred;
+  for (struct cmsghdr* c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_CREDENTIALS) {
+      ASSERT_EQ(c->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+      struct ucred received_cred;
+      memcpy(&received_cred, CMSG_DATA(c), sizeof(received_cred));
+      cred = received_cred;
+      cred_count++;
+    }
+  }
+  EXPECT_EQ(cred_count, 1);
+  ASSERT_TRUE(cred.has_value());
+  EXPECT_EQ(cred->pid, getpid());
+  EXPECT_EQ(cred->uid, getuid());
+  EXPECT_EQ(cred->gid, getgid());
 }
 
 // This test verifies that we can concurrently attempt to create the same type of socket from

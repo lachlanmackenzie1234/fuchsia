@@ -767,8 +767,6 @@
                 "AbstractUnixSockets/AllSocketPairTest.SetSocketRecvBufForceAboveMax/*",
                 "AbstractUnixSockets/AllSocketPairTest.GetSocketOutOfBandInlineOption/*",
                 "AbstractUnixSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
-                "AbstractUnixSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
-                "AbstractUnixSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AbstractUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
                 "AbstractUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
@@ -809,8 +807,6 @@
                 "FilesystemUnixSockets/AllSocketPairTest.SetSocketRecvBufForceAboveMax/*",
                 "FilesystemUnixSockets/AllSocketPairTest.GetSocketOutOfBandInlineOption/*",
                 "FilesystemUnixSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
-                "FilesystemUnixSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
-                "FilesystemUnixSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "FilesystemUnixSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
                 "FilesystemUnixSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
@@ -900,8 +896,6 @@
                 "AllConnectedSockets/PersistentListenerConnectStressTest.ShutdownCloseSecond/*",
 
                 // socket_unix_pair_test - https://fxbug.dev/297464436
-                "AllUnixDomainSockets/UnixSocketPairCmsgTest.SendNullCredsBeforeSoPassCredRecvEndAfterSendEnd/*",
-                "AllUnixDomainSockets/UnixSocketPairCmsgTest.WriteBeforeSoPassCredRecvEndAfterSendEnd/*",
                 "AllUnixDomainSockets/UnixSocketPairTest.InvalidGetSockOptLevel/*",
                 "AllUnixDomainSockets/UnixSocketPairTest.InvalidSetSockOptLevel/*",
 
@@ -916,12 +910,7 @@
                 "UnixSeqpacketBlockingTest.RecvfromTruncPeekNullBufferRestarted",
 
                 // socket_unix_unbound_stream_test
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.CredPassPartialRead/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.SinglePeek/*",
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.CredsNotCoalescedUp/*",
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedCredsNoPasscred/*",
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedCreds2/*",
-                "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedDifferingCreds/*",
 
                 // stat_test
                 "StatTest.StatxMntId",
