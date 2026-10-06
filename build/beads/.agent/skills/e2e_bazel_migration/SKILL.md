@@ -53,6 +53,10 @@ Refer to `references/cl_creation.md` to commit the changes and upload to Fuchsia
 
 Refer to `references/cl_review.md` to review the CL and update result to it.
 
+## Error Handling
+
+Refer to `references/error_handling.md` to handle the reported error condition.
+
 
 ## Notifications
 
