@@ -33,6 +33,25 @@ class PageQueues;
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
 
+extern "C" {
+void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_counts);
+void rust_page_queues_queue_counts(const void* storage, void* out_counts);
+void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
+
+bool rust_page_queues_reclaim_is_only_pager_backed(const void* storage);
+bool rust_page_queues_is_page_reclaimable(const vm_page_t* page);
+
+bool rust_page_queues_debug_page_is_reclaim(const void* storage, const vm_page_t* page,
+                                            size_t* out_queue);
+bool rust_page_queues_debug_page_is_reclaim_isolate(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_pager_backed_dirty(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_anonymous(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_anonymous_zero_fork(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_any_anonymous(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_wired(const void* storage, const vm_page_t* page);
+bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_page_t* page);
+}  // extern "C"
+
 // Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
 // The page queues provide a way to
 //  * Classify and group pages across VMO boundaries
@@ -280,12 +299,13 @@ class PageQueues {
   void EnableAnonymousReclaim(bool zero_forks);
 
   // Returns whether or not the reclaim queues only include pager backed pages or not.
-  bool ReclaimIsOnlyPagerBacked() const { return !anonymous_is_reclaimable_; }
+  FFI_ALWAYS_INLINE bool ReclaimIsOnlyPagerBacked() const {
+    return rust_page_queues_reclaim_is_only_pager_backed(this);
+  }
 
   // Returns true if the page is in an isolate queue.
-  static bool IsPageReclaimable(const vm_page_t* page) {
-    return page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) ==
-           PageQueueReclaimIsolate;
+  FFI_ALWAYS_INLINE static bool IsPageReclaimable(const vm_page_t* page) {
+    return rust_page_queues_is_page_reclaimable(page);
   }
 
   // These query functions are marked Debug as it is generally a racy way to determine a pages state
@@ -433,21 +453,6 @@ class PageQueues {
     return queue_age(page_queue, mru) < kNumActiveQueues;
   }
 
-  // Returns whether the given page queue would be considered inactive against a given mru.
-  // This is valid to call on any page queue, not just reclaimable ones, and as such this returning
-  // false does not imply the queue is active.
-  static constexpr bool queue_is_inactive(PageQueue page_queue, PageQueue mru) {
-    // The Isolate queue does not have an age, and so we cannot call queue_age on it, but it should
-    // definitely be considered part of the inactive set.
-    if (page_queue == PageQueueReclaimIsolate) {
-      return true;
-    }
-    if (page_queue < PageQueueReclaimBase) {
-      return false;
-    }
-    return queue_age(page_queue, mru) >= kNumActiveQueues;
-  }
-
   PageQueue mru_gen_to_queue() const {
     return gen_to_queue(mru_gen_.load(ktl::memory_order_relaxed));
   }
@@ -522,16 +527,6 @@ class PageQueues {
   void LruThread();
   void MaybeTriggerLruProcessingLocked() TA_REQ(lock_);
   bool NeedsLruProcessingLocked() const TA_REQ(lock_);
-
-  // Returns true if a page is both in one of the Reclaim queues, and succeeds the passed in
-  // validator, which takes a fbl::RefPtr<VmCowPages>.
-  template <typename F>
-  bool DebugPageIsSpecificReclaim(const vm_page_t* page, F validator, size_t* queue) const;
-
-  // Returns true if a page is both in the specified |queue|, and succeeds the passed in validator,
-  // which takes a fbl::RefPtr<VmCowPages>.
-  template <typename F>
-  bool DebugPageIsSpecificQueue(const vm_page_t* page, PageQueue queue, F validator) const;
 
   // Records that |pages| have potentially changed queue impacting the active/inactive ratio, and
   // returns |true| if checking the active ratio can be skipped.

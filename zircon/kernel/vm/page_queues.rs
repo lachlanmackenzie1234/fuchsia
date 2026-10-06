@@ -5,13 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::event::{AutounsignalEvent, Event};
-use crate::kernel::relaxed_atomic::{RelaxedAtomic, RelaxedAtomicU32, RelaxedAtomicU64};
+use crate::kernel::relaxed_atomic::{RelaxedAtomicBool, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::platform_rs::timer::DurationMono;
 use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::vm_cow_pages::VmCowPages;
 use core::cell::UnsafeCell;
-use core::ffi::CStr;
+use core::ffi::{CStr, c_void};
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{MaybeUninit, offset_of};
 use core::pin::Pin;
@@ -19,6 +19,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use fbl::RefPtr;
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use page_bindings::vm_page_t;
 use page_queues_bindings as bindings;
 use pin_init::{PinInit, pin_data};
 
@@ -125,8 +126,8 @@ zr::static_assert!(size_of::<ReclaimCounts>() == size_of::<bindings::PageQueues_
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ActiveInactiveCounts {
-    /// Pages that would normally be available for eviction, but are presently considered active and
-    /// so will not be evicted.
+    /// Pages that would normally be available for eviction, but are presently considered active
+    /// and so will not be evicted.
     pub active: usize,
     /// Pages that are available for eviction due to not presently being considered active.
     pub inactive: usize,
@@ -260,6 +261,12 @@ zr::static_assert!(
     DEFAULT_ACTIVE_RATIO_MULTIPLIER == bindings::PageQueues_kDefaultActiveRatioMultiplier
 );
 
+/// When holding the PageQueue lock, and performing an operation on an arbitrary number of pages,
+/// the "operation batch size" controls the number of pages for which the lock will be held before
+/// checking for contention and potentially releasing the lock if contended, allowing other
+/// operations to proceed.
+const OP_BATCH_SIZE: usize = 64;
+
 /// Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
 /// The page queues provide a way to
 ///  * Classify and group pages across VMO boundaries
@@ -297,7 +304,8 @@ pub struct PageQueues {
 
     /// Time at which the `mru_gen` was last incremented.
     // TODO(https://fxbug.dev/549881466): This should be a InstantMono (which is just an i64), but
-    // Rust does not yet support arbitrary atomic types like this, even when an #[repr(transparent)]
+    // Rust does not yet support arbitrary atomic types like this, even when an
+    // #[repr(transparent)]
     last_age_time: AtomicI64,
 
     /// Reason the last aging event happened, this is purely for informational/debugging purposes.
@@ -454,11 +462,11 @@ pub struct PageQueues {
 
     /// Determines if anonymous zero page forks are placed in the zero fork queue or in the
     /// reclaimable queue.
-    zero_fork_is_reclaimable: RelaxedAtomic<AtomicBool>,
+    zero_fork_is_reclaimable: RelaxedAtomicBool,
 
     /// Determines if anonymous pages are placed in the reclaimable queues, or in their own non
     /// aging anonymous queues.
-    anonymous_is_reclaimable: RelaxedAtomic<AtomicBool>,
+    anonymous_is_reclaimable: RelaxedAtomicBool,
 
     /// Current active ratio multiplier.
     #[guarded_by(lock)]
@@ -611,6 +619,18 @@ impl PinnedDrop for PageQueues {
 }
 
 impl PageQueues {
+    pub const NUM_RECLAIM: usize = NUM_RECLAIM;
+    pub const NUM_ACTIVE_QUEUES: usize = NUM_ACTIVE_QUEUES;
+    pub const ACTIVE_INACTIVE_ERROR_MARGIN: usize = ACTIVE_INACTIVE_ERROR_MARGIN;
+    pub const NUM_OLDEST_QUEUES: usize = NUM_OLDEST_QUEUES;
+    pub const ISOLATE_QUEUE_DONT_NEED: usize = ISOLATE_QUEUE_DONT_NEED;
+    pub const ISOLATE_QUEUE_STANDARD: usize = ISOLATE_QUEUE_STANDARD;
+    pub const NUM_ISOLATE_QUEUES: usize = NUM_ISOLATE_QUEUES;
+    pub const DEFAULT_MIN_MRU_ROTATE_TIME: DurationMono = DEFAULT_MIN_MRU_ROTATE_TIME;
+    pub const DEFAULT_MAX_MRU_ROTATE_TIME: DurationMono = DEFAULT_MAX_MRU_ROTATE_TIME;
+    pub const DEFAULT_ACTIVE_RATIO_MULTIPLIER: u64 = DEFAULT_ACTIVE_RATIO_MULTIPLIER;
+    pub const OP_BATCH_SIZE: usize = OP_BATCH_SIZE;
+
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         zr::pin_init_ffi!(bindings::cpp_page_queues_init)
     }
@@ -618,6 +638,181 @@ impl PageQueues {
     /// Domain-specific conversion: returns raw pointer for `PageQueues`.
     pub fn as_raw(&self) -> *mut bindings::PageQueues {
         (self as *const Self).cast_mut().cast()
+    }
+
+    // Converts free running generation to reclaim queue.
+    #[inline]
+    fn gen_to_queue(generation: u64) -> PageQueue {
+        PageQueue(PageQueue::RECLAIM_BASE.0 + (generation % NUM_RECLAIM as u64) as u8)
+    }
+
+    // Validates that a given reclaim queue is valid in the inclusive range `[lru, mru]`. Both `lru`
+    // and `mru` must be reclaimable queues.
+    #[inline]
+    fn queue_is_valid(queue: PageQueue, lru: PageQueue, mru: PageQueue) -> bool {
+        debug_assert!(queue.0 >= PageQueue::RECLAIM_BASE.0);
+        if lru.0 <= mru.0 {
+            queue.0 >= lru.0 && queue.0 <= mru.0
+        } else {
+            queue.0 >= lru.0 || queue.0 <= mru.0
+        }
+    }
+
+    // Returns whether this queue is reclaimable, and hence can be active or inactive. If this
+    // returns false then it is guaranteed that both |queue_is_active| and |queue_is_inactive| would
+    // return false.
+    #[inline]
+    fn queue_is_reclaim(queue: PageQueue) -> bool {
+        // We check against the the Isolate queue and not the base queue so that accessing a page
+        // can move it from the Isolate list into the LRU queues. To keep this case
+        // efficient we require that the Isoalte queue be directly before the LRU queues.
+        const _: () = assert!(PageQueue::RECLAIM_ISOLATE.0 + 1 == PageQueue::RECLAIM_BASE.0);
+
+        // Ensure that the Dirty queue comes before the smallest queue that would return true for
+        // this function. This function is used for computing active/inactive sets for the
+        // purpose of eviction, and dirty pages cannot be evicted. The Dirty queue also
+        // needs to come before the Isolate queue so that MarkAccessed does not try to move
+        // the page to the MRU queue on access.
+        const _: () = assert!(PageQueue::PAGER_BACKED_DIRTY.0 < PageQueue::RECLAIM_ISOLATE.0);
+        queue.0 >= PageQueue::RECLAIM_ISOLATE.0
+    }
+
+    // Calculates the age of a queue against a given mru, with 0 meaning page_queue==mru.
+    // This is only meaningful to call on reclaimable queues.
+    #[inline]
+    fn queue_age(page_queue: PageQueue, mru: PageQueue) -> u64 {
+        debug_assert!(page_queue.0 >= PageQueue::RECLAIM_BASE.0);
+        if page_queue.0 <= mru.0 {
+            (mru.0 - page_queue.0) as u64
+        } else {
+            (NUM_RECLAIM as u32 + mru.0 as u32 - page_queue.0 as u32) as u64
+        }
+    }
+
+    // Returns whether the given page queue would be considered active against a given mru.
+    // This is valid to call on any page queue, not just reclaimable ones, and as such this
+    // returning false does not imply the queue is inactive.
+    #[inline]
+    fn queue_is_active(page_queue: PageQueue, mru: PageQueue) -> bool {
+        if page_queue.0 < PageQueue::RECLAIM_BASE.0 {
+            return false;
+        }
+        Self::queue_age(page_queue, mru) < NUM_ACTIVE_QUEUES as u64
+    }
+
+    // Returns whether the given page queue would be considered inactive against a given mru.
+    // This is valid to call on any page queue, not just reclaimable ones, and as such this
+    // returning false does not imply the queue is active.
+    #[inline]
+    fn queue_is_inactive(page_queue: PageQueue, mru: PageQueue) -> bool {
+        // The Isolate queue does not have an age, and so we cannot call queue_age on it, but it
+        // should definitely be considered part of the inactive set.
+        if page_queue == PageQueue::RECLAIM_ISOLATE {
+            return true;
+        }
+        if page_queue.0 < PageQueue::RECLAIM_BASE.0 {
+            return false;
+        }
+        Self::queue_age(page_queue, mru) >= NUM_ACTIVE_QUEUES as u64
+    }
+
+    #[inline]
+    fn mru_gen_to_queue(&self) -> PageQueue {
+        Self::gen_to_queue(self.mru_gen.load(Ordering::Relaxed))
+    }
+
+    #[inline]
+    fn lru_gen_to_queue(&self) -> PageQueue {
+        Self::gen_to_queue(self.lru_gen.load(Ordering::Relaxed))
+    }
+
+    // Returns whether or not it is permissible to increase the mru generation, or if the lru
+    // generation would need incrementing first. This is marked as requiring lock as, even though
+    // the annotation is not exercised, the return value of this method is only useful /
+    // non-racy if the mru/lru generations cannot change, which requires holding the lock to
+    // guarantee.
+    #[inline]
+    fn can_increment_mru_gen_locked(&self) -> bool {
+        self.mru_gen.load(Ordering::Relaxed) - self.lru_gen.load(Ordering::Relaxed)
+            < NUM_RECLAIM as u64 - 1
+    }
+
+    // Similar to |can_increment_mru_gen_locked|, but for the lru.
+    #[inline]
+    fn can_increment_lru_gen_locked(&self) -> bool {
+        self.mru_gen.load(Ordering::Relaxed) - self.lru_gen.load(Ordering::Relaxed)
+            > NUM_ACTIVE_QUEUES as u64
+    }
+
+    /// Helper for DebugPageIs* methods that checks if `page` is in any reclaim queue and passes
+    /// `validator` on its owning `VmCowPages`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    unsafe fn debug_page_is_specific_reclaim<F>(
+        &self,
+        page: VmPagePtr,
+        validator: F,
+    ) -> Option<usize>
+    where
+        F: FnOnce(&VmCowPages) -> bool,
+    {
+        let cow_pages: Option<RefPtr<VmCowPages>>;
+        let result;
+        {
+            ksync::lock!(let _guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is a valid VmPagePtr.
+            let raw = unsafe { page.as_ref() };
+            // SAFETY: `raw` is in the OBJECT state under `list_lock`.
+            let q = PageQueue(unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed));
+            if q.0 < PageQueue::RECLAIM_BASE.0 || q.0 > PageQueue::RECLAIM_LAST.0 {
+                return None;
+            }
+            result = Self::queue_age(q, self.mru_gen_to_queue()) as usize;
+            // SAFETY: `raw` is in a reclaim queue under `list_lock`.
+            let cow = unsafe { raw.get_object() };
+            debug_assert!(!cow.is_null());
+            // SAFETY: `cow` is valid and list_lock is held.
+            cow_pages = unsafe { VmCowPages::upgrade_from_raw(cow.cast()) };
+            debug_assert!(cow_pages.is_some());
+        }
+        if validator(&cow_pages.unwrap()) { Some(result) } else { None }
+    }
+
+    /// Helper for DebugPageIs* methods that checks if `page` is in `queue` and passes `validator`
+    /// on its owning `VmCowPages`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    unsafe fn debug_page_is_specific_queue<F>(
+        &self,
+        page: VmPagePtr,
+        queue: PageQueue,
+        validator: F,
+    ) -> bool
+    where
+        F: FnOnce(&VmCowPages) -> bool,
+    {
+        let cow_pages;
+        {
+            ksync::lock!(let _guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is a valid VmPagePtr.
+            let raw = unsafe { page.as_ref() };
+            // SAFETY: `raw` is in the OBJECT state under `list_lock`.
+            let q = PageQueue(unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed));
+            if q != queue {
+                return false;
+            }
+            // SAFETY: `raw` is in `queue` under `list_lock`.
+            let cow = unsafe { raw.get_object() };
+            debug_assert!(!cow.is_null());
+            // SAFETY: `cow` is valid and list_lock is held.
+            cow_pages = unsafe { VmCowPages::upgrade_from_raw(cow.cast()) };
+            debug_assert!(cow_pages.is_some());
+        }
+        validator(&cow_pages.unwrap())
     }
 
     // All Set operations places a page, which must not currently be in a page queue, into the
@@ -1083,40 +1278,93 @@ impl PageQueues {
 
     /// Returns just the reclaim queue counts. Called from the zx_object_get_info() syscall.
     pub fn get_reclaim_queue_counts(&self) -> ReclaimCounts {
-        let mut counts: MaybeUninit<ReclaimCounts> = MaybeUninit::uninit();
-        // SAFETY: `self.as_raw()` is valid and `counts` is valid for writing.
-        unsafe {
-            bindings::cpp_page_queues_get_reclaim_queue_counts(
-                self.as_raw(),
-                counts.as_mut_ptr().cast(),
-            );
-            counts.assume_init()
+        let mut counts = ReclaimCounts::default();
+
+        // Grab the lock to prevent LRU processing, this lets us get a slightly less racy snapshot
+        // of the queue counts, although we may still double count pages that move after we
+        // count them. Specifically any parallel callers of MarkAccessed could move a page
+        // and change the counts, causing us to either double count or miss count that page.
+        // As these counts are not load bearing we accept the very small chance of
+        // potentially being off a few pages.
+        ksync::lock!(let _guard = self.lock_list_lock());
+        let lru = self.lru_gen.load(Ordering::Relaxed);
+        let mru = self.mru_gen.load(Ordering::Relaxed);
+
+        counts.total = 0;
+        for index in lru..=mru {
+            let count = self.page_queue_counts[Self::gen_to_queue(index).0 as usize]
+                .load(Ordering::Relaxed);
+            // Distance to the MRU, and not the LRU, determines the bucket the count goes into. This
+            // is to match the logic in PeekPagerBacked, which is also based on distance
+            // to MRU.
+            if index > mru - NUM_ACTIVE_QUEUES as u64 {
+                counts.newest += count;
+            } else if index <= mru - (NUM_RECLAIM as u64 - NUM_OLDEST_QUEUES as u64) {
+                counts.oldest += count;
+            }
+            counts.total += count;
         }
+        // Account the Isolate queue length under |oldest|, since (Isolate + oldest LRU) pages are
+        // eligible for reclamation first. |oldest| is meant to track pages eligible for eviction
+        // first.
+        let inactive_count =
+            self.page_queue_counts[PageQueue::RECLAIM_ISOLATE.0 as usize].load(Ordering::Relaxed);
+        counts.oldest += inactive_count;
+        counts.total += inactive_count;
+        counts
     }
 
-    /// Returns the counts of pages in the various queues.
+    /// Returns the length of all the queues. Lookups of the lengths are not synchronized and are
+    /// only cohesive with respect to concurrent actions if the caller is otherwise guaranteeing
+    /// that QueueOperations are not happening in parallel.
     pub fn queue_counts(&self) -> Counts {
-        let mut counts: MaybeUninit<Counts> = MaybeUninit::uninit();
-        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer, and `counts` is valid for
-        // writing.
-        unsafe {
-            bindings::cpp_page_queues_queue_counts(self.as_raw(), counts.as_mut_ptr().cast());
+        let mut counts = Counts::default();
+
+        // Grab the lock to prevent LRU processing, this lets us get a slightly less racy snapshot
+        // of the queue counts. We may still double count pages that move after we count
+        // them.
+        ksync::lock!(let _guard = self.lock_list_lock());
+        let lru = self.lru_gen.load(Ordering::Relaxed);
+        let mru = self.mru_gen.load(Ordering::Relaxed);
+
+        for index in lru..=mru {
+            counts.reclaim[(mru - index) as usize] = self.page_queue_counts
+                [Self::gen_to_queue(index).0 as usize]
+                .load(Ordering::Relaxed);
         }
-        // SAFETY: `cpp_page_queues_queue_counts` certainly wrote out `counts`.
-        unsafe { counts.assume_init() }
+        counts.reclaim_isolate =
+            self.page_queue_counts[PageQueue::RECLAIM_ISOLATE.0 as usize].load(Ordering::Relaxed);
+        counts.pager_backed_dirty = self.page_queue_counts
+            [PageQueue::PAGER_BACKED_DIRTY.0 as usize]
+            .load(Ordering::Relaxed);
+        counts.anonymous =
+            self.page_queue_counts[PageQueue::ANONYMOUS.0 as usize].load(Ordering::Relaxed);
+        counts.wired = self.page_queue_counts[PageQueue::WIRED.0 as usize].load(Ordering::Relaxed);
+        counts.anonymous_zero_fork = self.page_queue_counts
+            [PageQueue::ANONYMOUS_ZERO_FORK.0 as usize]
+            .load(Ordering::Relaxed);
+        counts.failed_reclaim =
+            self.page_queue_counts[PageQueue::FAILED_RECLAIM.0 as usize].load(Ordering::Relaxed);
+        counts.high_priority =
+            self.page_queue_counts[PageQueue::HIGH_PRIORITY.0 as usize].load(Ordering::Relaxed);
+        counts
     }
 
-    /// Returns the counts of active and inactive pages.
+    /// Retrieves the current number of active and inactive pages across the queues.
     pub fn get_active_inactive_counts(&self) -> ActiveInactiveCounts {
-        let mut counts: MaybeUninit<ActiveInactiveCounts> = MaybeUninit::uninit();
-        // SAFETY: `self.as_raw()` is valid and `counts` is valid for writing.
-        unsafe {
-            bindings::cpp_page_queues_get_active_inactive_counts(
-                self.as_raw(),
-                counts.as_mut_ptr().cast(),
-            );
-            counts.assume_init()
+        let mut active_count: usize = 0;
+        let mut inactive_count: usize = 0;
+        let mru = self.mru_gen_to_queue();
+        for queue in 0..PageQueue::NUM_QUEUES.0 {
+            let count = self.page_queue_counts[queue as usize].load(Ordering::Relaxed);
+            if Self::queue_is_active(PageQueue(queue), mru) {
+                active_count += count;
+            }
+            if Self::queue_is_inactive(PageQueue(queue), mru) {
+                inactive_count += count;
+            }
         }
+        ActiveInactiveCounts { active: active_count, inactive: inactive_count }
     }
 
     /// Dumps debug information about the page queues.
@@ -1143,128 +1391,135 @@ impl PageQueues {
     }
 
     /// Returns whether or not the reclaim queues only include pager backed pages or not.
+    #[inline]
     pub fn reclaim_is_only_pager_backed(&self) -> bool {
-        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.
-        unsafe { bindings::cpp_page_queues_reclaim_is_only_pager_backed(self.as_raw()) }
+        !self.anonymous_is_reclaimable.load()
     }
 
-    /// Returns true if `page` is in an isolate queue.
+    /// Returns true if the page is in an isolate queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    #[inline]
     pub unsafe fn is_page_reclaimable(page: VmPagePtr) -> bool {
-        // SAFETY: The caller guarantees `page` is attached to a VM object.
-        unsafe { bindings::cpp_page_queues_is_page_reclaimable(page.as_ffi()) }
+        // SAFETY: Caller guarantees `page` is attached to a VM object.
+        let raw = unsafe { page.as_ref() };
+        // SAFETY: `raw` is in the OBJECT state.
+        unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed) == PageQueue::RECLAIM_ISOLATE.0
     }
 
     // These query functions are marked debug as it is generally a racy way to determine a pages
     // state and these are exposed for the purpose of writing tests or asserts against the
     // PageQueues.
 
-    /// This takes an optional output parameter that, if the function returns true, will contain the
+    /// Checks if a page is in a reclaim queue.
+    ///
+    /// This returns an optional value that, if the page is in a reclaim queue, will contain the
     /// index of the queue that the page was in.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_reclaim(&self, page: VmPagePtr) -> Option<usize> {
-        let mut age = 0;
-        // SAFETY: `self` and `&mut age` are valid for required accesses, and the caller
-        // guarantees `page` is attached to a VM object per function safety preconditions.
-        let is_reclaim = unsafe {
-            bindings::cpp_page_queues_debug_page_is_reclaim(self.as_raw(), page.as_ffi(), &mut age)
-        };
-        if is_reclaim { Some(age) } else { None }
+        // SAFETY: validity of page asserted by caller.
+        unsafe { self.debug_page_is_specific_reclaim(page, |_| true) }
     }
 
-    /// Returns whether `page` is in the reclaim isolate queue.
+    /// Checks if a page is in the reclaim isolate queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_reclaim_isolate(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
+        // SAFETY: validity of page asserted by caller.
         unsafe {
-            bindings::cpp_page_queues_debug_page_is_reclaim_isolate(self.as_raw(), page.as_ffi())
+            self.debug_page_is_specific_queue(page, PageQueue::RECLAIM_ISOLATE, |cow| {
+                cow.can_evict()
+            })
         }
     }
 
-    /// Returns whether `page` is in the pager backed dirty queue.
+    /// Checks if a page is in the pager backed dirty queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_pager_backed_dirty(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_debug_page_is_pager_backed_dirty(self.as_raw(), page.as_ffi())
-        }
+        // SAFETY: Caller guarantees `page` is attached to a VM object.
+        let raw = unsafe { page.as_ref() };
+        // SAFETY: `raw` is in the OBJECT state.
+        unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed)
+            == PageQueue::PAGER_BACKED_DIRTY.0
     }
 
-    /// Returns whether `page` is in an anonymous queue.
+    /// Checks if a page is in the anonymous queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_anonymous(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_debug_page_is_anonymous(self.as_raw(), page.as_ffi()) }
-    }
-
-    /// Returns whether `page` is in the anonymous zero fork queue.
-    ///
-    /// # Safety
-    ///
-    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
-    pub unsafe fn debug_page_is_anonymous_zero_fork(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_debug_page_is_anonymous_zero_fork(
-                self.as_raw(),
-                page.as_ffi(),
-            )
+        if self.reclaim_is_only_pager_backed() {
+            // SAFETY: Caller guarantees `page` is attached to a VM object.
+            let raw = unsafe { page.as_ref() };
+            // SAFETY: `raw` is in the OBJECT state.
+            return unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed)
+                == PageQueue::ANONYMOUS.0;
         }
+        // SAFETY: validity of page asserted by caller.
+        unsafe { self.debug_page_is_specific_reclaim(page, |cow| !cow.can_evict()).is_some() }
     }
 
-    /// Returns whether `page` is in any anonymous queue.
-    ///
-    /// # Safety
-    ///
-    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
-    pub unsafe fn debug_page_is_any_anonymous(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_debug_page_is_any_anonymous(self.as_raw(), page.as_ffi())
-        }
-    }
-
-    /// Returns whether `page` is in the wired queue.
+    /// Checks if a page is in the wired queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_wired(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_debug_page_is_wired(self.as_raw(), page.as_ffi()) }
+        // SAFETY: Caller guarantees `page` is attached to a VM object.
+        let raw = unsafe { page.as_ref() };
+        // SAFETY: `raw` is in the OBJECT state.
+        unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed) == PageQueue::WIRED.0
     }
 
-    /// Returns whether `page` is in the high priority queue.
+    /// Checks if a page is in the high priority queue.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
     pub unsafe fn debug_page_is_high_priority(&self, page: VmPagePtr) -> bool {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
+        // SAFETY: Caller guarantees `page` is attached to a VM object.
+        let raw = unsafe { page.as_ref() };
+        // SAFETY: `raw` is in the OBJECT state.
+        unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed) == PageQueue::HIGH_PRIORITY.0
+    }
+
+    /// Checks if a page is in the anonymous zero fork queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    pub unsafe fn debug_page_is_anonymous_zero_fork(&self, page: VmPagePtr) -> bool {
+        if self.reclaim_is_only_pager_backed() {
+            // SAFETY: Caller guarantees `page` is attached to a VM object.
+            let raw = unsafe { page.as_ref() };
+            // SAFETY: `raw` is in the OBJECT state.
+            return unsafe { raw.get_page_queue_ref() }.load(Ordering::Relaxed)
+                == PageQueue::ANONYMOUS_ZERO_FORK.0;
+        }
+        // SAFETY: validity of page asserted by caller.
+        unsafe { self.debug_page_is_specific_reclaim(page, |cow| !cow.can_evict()).is_some() }
+    }
+
+    /// Checks if a page is in any anonymous queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    pub unsafe fn debug_page_is_any_anonymous(&self, page: VmPagePtr) -> bool {
+        // SAFETY: Caller guarantees `page` is owned by a VMO and assigned to this PageQueue.
         unsafe {
-            bindings::cpp_page_queues_debug_page_is_high_priority(self.as_raw(), page.as_ffi())
+            self.debug_page_is_anonymous(page) || self.debug_page_is_anonymous_zero_fork(page)
         }
     }
 
@@ -1368,6 +1623,222 @@ impl PageQueues {
         // SAFETY: If non-null, `raw` points to a live kernel thread.
         unsafe { ThreadPtr::from_raw(raw.cast()) }
     }
+}
+
+/// FFI wrapper for [`PageQueues::get_reclaim_queue_counts`].
+///
+/// # Safety
+///
+/// `out_counts` must point to a valid writable `ReclaimCounts`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_get_reclaim_queue_counts(
+    queues: &PageQueues,
+    out_counts: *mut c_void,
+) {
+    let counts = queues.get_reclaim_queue_counts();
+    // SAFETY: Caller guarantees `out_counts` points to a valid `ReclaimCounts`.
+    unsafe {
+        *(out_counts as *mut ReclaimCounts) = counts;
+    }
+}
+
+/// FFI wrapper for [`PageQueues::queue_counts`].
+///
+/// # Safety
+///
+/// `out_counts` must point to a valid writable `Counts`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_queue_counts(
+    queues: &PageQueues,
+    out_counts: *mut c_void,
+) {
+    let counts = queues.queue_counts();
+    // SAFETY: Caller guarantees `out_counts` points to a valid `Counts`.
+    unsafe {
+        *(out_counts as *mut Counts) = counts;
+    }
+}
+
+/// FFI wrapper for [`PageQueues::get_active_inactive_counts`].
+///
+/// # Safety
+///
+/// `out_counts` must point to a valid writable `ActiveInactiveCounts`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_get_active_inactive_counts(
+    queues: &PageQueues,
+    out_counts: *mut c_void,
+) {
+    let counts = queues.get_active_inactive_counts();
+    // SAFETY: Caller guarantees `out_counts` points to a valid `ActiveInactiveCounts`.
+    unsafe {
+        *(out_counts as *mut ActiveInactiveCounts) = counts;
+    }
+}
+
+/// FFI wrapper for [`PageQueues::reclaim_is_only_pager_backed`].
+///
+/// # Safety
+///
+/// `queues` must be a valid reference to an initialized `PageQueues`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_reclaim_is_only_pager_backed(
+    queues: &PageQueues,
+) -> bool {
+    queues.reclaim_is_only_pager_backed()
+}
+
+/// FFI wrapper for [`PageQueues::is_page_reclaimable`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer meeting the preconditions of
+/// [`PageQueues::is_page_reclaimable`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_is_page_reclaimable(page: *const vm_page_t) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `is_page_reclaimable` preconditions.
+    unsafe { PageQueues::is_page_reclaimable(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_reclaim`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer, and `out_queue` (if non-null) must be a valid
+/// writable `usize` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_reclaim(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+    out_queue: *mut usize,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_reclaim` preconditions.
+    let q_opt = unsafe { queues.debug_page_is_reclaim(page_ptr) };
+    if let Some(q) = q_opt {
+        if !out_queue.is_null() {
+            // SAFETY: Caller guarantees `out_queue` is valid when non-null.
+            unsafe { *out_queue = q };
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_reclaim_isolate`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_reclaim_isolate(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_reclaim_isolate` preconditions.
+    unsafe { queues.debug_page_is_reclaim_isolate(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_pager_backed_dirty`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_pager_backed_dirty(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_pager_backed_dirty` preconditions.
+    unsafe { queues.debug_page_is_pager_backed_dirty(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_anonymous`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_anonymous(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_anonymous` preconditions.
+    unsafe { queues.debug_page_is_anonymous(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_anonymous_zero_fork`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_anonymous_zero_fork(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_anonymous_zero_fork` preconditions.
+    unsafe { queues.debug_page_is_anonymous_zero_fork(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_any_anonymous`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_any_anonymous(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_any_anonymous` preconditions.
+    unsafe { queues.debug_page_is_any_anonymous(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_wired`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_wired(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_wired` preconditions.
+    unsafe { queues.debug_page_is_wired(page_ptr) }
+}
+
+/// FFI wrapper for [`PageQueues::debug_page_is_high_priority`].
+///
+/// # Safety
+///
+/// `page` must be a valid `vm_page_t` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_debug_page_is_high_priority(
+    queues: &PageQueues,
+    page: *const vm_page_t,
+) -> bool {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer.
+    let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
+    // SAFETY: Caller upholds `debug_page_is_high_priority` preconditions.
+    unsafe { queues.debug_page_is_high_priority(page_ptr) }
 }
 
 #[cfg(ktest)]
@@ -1775,7 +2246,8 @@ mod tests {
 
         pq.rotate_reclaim_queues();
         // Further rotations might cause the page to be visible in the same queue, or the isolate,
-        // depending on whether the lru processing already ran in preparation of the next aging event.
+        // depending on whether the lru processing already ran in preparation of the next aging
+        // event.
         let mut counts_last = Counts { pager_backed_dirty: 1, wired: 1, ..Default::default() };
         counts_last.reclaim[NUM_RECLAIM - 1] = 1;
         let counts_isolate =
@@ -1917,8 +2389,8 @@ mod tests {
         );
 
         // Simulate access for one of the pages. Then rotate the queues again. This should move the
-        // accessed page1 out of the DontNeed queue to MRU+1 (as we've rotated the queues after access).
-        // SAFETY: pages are in a paqe queue
+        // accessed page1 out of the DontNeed queue to MRU+1 (as we've rotated the queues after
+        // access). SAFETY: pages are in a paqe queue
         unsafe {
             pq.mark_accessed(page1_ptr);
         }
@@ -1939,7 +2411,8 @@ mod tests {
             pq.get_active_inactive_counts() == ActiveInactiveCounts { active: 1, inactive: 1 }
         );
 
-        // Rotate the queues again. The page accessed above should move to the next pager-backed queue.
+        // Rotate the queues again. The page accessed above should move to the next pager-backed
+        // queue.
         pq.rotate_reclaim_queues();
         // SAFETY: pages are attached to a VM object.
         let queue = unsafe { pq.debug_page_is_reclaim(page1_ptr) };
@@ -1997,9 +2470,9 @@ mod tests {
         }
 
         // Peek the isolate list using the public peek_isolate method.
-        // We expect pages to be processed in age order (oldest first, i.e., old_page before new_page).
-        // Since they are added to the tail of the isolate list, the oldest page (old_page) should be at
-        // the head of the isolate list.
+        // We expect pages to be processed in age order (oldest first, i.e., old_page before
+        // new_page). Since they are added to the tail of the isolate list, the oldest page
+        // (old_page) should be at the head of the isolate list.
         let backlink = pq.peek_isolate(NUM_RECLAIM - 1);
         assert_true!(backlink.is_some());
         expect_eq!(backlink.as_ref().unwrap().page.as_raw(), old_page_ptr.as_raw());
@@ -2087,8 +2560,8 @@ mod tests {
         let cow = unwrap_some!(vmo.debug_get_cow_pages());
 
         // Set up both pages and mark them "Don't Need".
-        // old_page is marked first, then new_page. Use different offsets to represent distinct pages.
-        // SAFETY: `old_page_ptr` is valid and not in a queue.
+        // old_page is marked first, then new_page. Use different offsets to represent distinct
+        // pages. SAFETY: `old_page_ptr` is valid and not in a queue.
         unsafe {
             pq.set_reclaim(old_page_ptr, &cow, 0);
             pq.move_to_reclaim_dont_need(old_page_ptr);
