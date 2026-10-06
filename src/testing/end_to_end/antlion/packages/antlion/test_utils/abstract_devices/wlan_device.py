@@ -166,12 +166,20 @@ class FuchsiaWlanDevice:
 
     def is_connected(self, ssid: str | None = None) -> bool:
         async def _status() -> Any:
-            iface = await self._get_client_iface()
-            return await iface.status()
+            phy = await self.device.honeydew_fd.wlan_core.ensure_single_phy()
+            client_ifaces = await phy.get_client_ifaces()
+            if not client_ifaces:
+                return None
+            return await client_ifaces[0].status()
 
         result = fuchsia_async_extension.get_loop().run_until_complete(
             _status()
         )
+        if result is None:
+            self.device.log.info(
+                "Client status disconnected (no client interface)"
+            )
+            return False
         if result.idle:
             self.device.log.info("Client status idle")
             return False
