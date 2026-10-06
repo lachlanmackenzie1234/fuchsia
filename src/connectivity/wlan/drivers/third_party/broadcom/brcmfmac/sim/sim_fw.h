@@ -331,6 +331,9 @@ class SimFirmware {
   // Send a spurious ROAM NO_NETWORKS failure event.
   void TriggerFirmwareRoamEvent(const wlan::common::MacAddr& bssid);
 
+  // Send a trailing LINK down event.
+  void TriggerFirmwareLinkDownEvent();
+
   void SetSuspendHook(fit::function<zx_status_t()> suspend_hook) {
     suspend_hook_ = std::move(suspend_hook);
   }

@@ -1710,6 +1710,39 @@ TEST_F(ConnectTest, deauth_during_reconnect_via_assoc) {
   EXPECT_EQ(context_.deauth_conf_count, 1U);
 }
 
+TEST_F(ConnectTest, trailing_link_down_dropped_while_connecting) {
+  // Create our device instance
+  Init();
+
+  // Start up our fake AP
+  simulation::FakeAp ap(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel,
+                        fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20, 0);
+  aps_.push_back(&ap);
+
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
+  context_.expected_results.push_front(wlan_ieee80211::StatusCode::kSuccess);
+
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartConnect, this), zx::msec(10));
+  env_->ScheduleNotification(std::bind(&ConnectTest::DisassocFromAp, this), zx::sec(2));
+  env_->ScheduleNotification(std::bind(&ConnectTest::StartReconnect, this), zx::sec(3));
+  // Inject a trailing LINK down event (flag 0) while reconnect is CONNECTING.
+  // The driver should drop this event and the reconnect should succeed.
+  env_->ScheduleNotification(
+      [this]() {
+        WithSimDevice([&](brcmfmac::SimDevice* device) {
+          brcmf_simdev* sim = device->GetSim();
+          sim->sim_fw->TriggerFirmwareLinkDownEvent();
+        });
+      },
+      zx::sec(3) + zx::usec(500));
+
+  env_->Run(kTestDuration);
+
+  EXPECT_EQ(context_.connect_resp_count, 2U);
+  EXPECT_EQ(context_.disassoc_ind_count, 1U);
+  EXPECT_EQ(context_.ind_locally_initiated_count, 0U);
+}
+
 // Verify that association is retried as per the setting
 TEST_F(ConnectTest, AssocMaxRetries) {
   // Create our device instance

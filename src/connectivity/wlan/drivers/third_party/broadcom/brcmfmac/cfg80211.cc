@@ -7471,6 +7471,12 @@ static zx_status_t brcmf_process_link_event(struct brcmf_if* ifp, const struct b
       BRCMF_DBG(CONN, "LINK down but client is already disconnected.");
     }
     if (!(e->flags & BRCMF_EVENT_MSG_LINK)) {
+      if (brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTING, &ifp->vif->sme_state) &&
+          !brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state) &&
+          e->status == BRCMF_E_STATUS_SUCCESS && e->reason == BRCMF_E_REASON_LINK_DISASSOC) {
+        BRCMF_INFO("Dropping trailing LINK down event from prior connection while CONNECTING");
+        return ZX_OK;
+      }
       return brcmf_indicate_client_disconnect(ifp, e, data, brcmf_connect_status_t::LINK_FAILED);
     }
     if (e->status == BRCMF_E_STATUS_NO_NETWORKS) {

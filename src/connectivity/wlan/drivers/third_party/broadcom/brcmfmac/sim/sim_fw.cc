@@ -1018,6 +1018,11 @@ void SimFirmware::TriggerFirmwareRoamEvent(const MacAddr& bssid) {
                     bssid);
 }
 
+void SimFirmware::TriggerFirmwareLinkDownEvent() {
+  SendEventToDriver(0, nullptr, BRCMF_E_LINK, BRCMF_E_STATUS_SUCCESS, kClientIfidx, nullptr, 0,
+                    BRCMF_E_REASON_LINK_DISASSOC);
+}
+
 // Process an RX CTL message. We simply pass back the results of the previous TX CTL
 // operation, which has been stored in bcdc_response_. In real hardware, we may have to
 // indicate that the TX CTL operation has not completed. In simulated hardware, we perform
