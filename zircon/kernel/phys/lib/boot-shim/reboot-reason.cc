@@ -50,7 +50,7 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
     {.reason = "reboot,sys_ldo_ok,pmic", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
     {.reason = "reboot,smpl_timeout,pmic", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
     {.reason = "reboot,master_dc,reset", .value = ZBI_HW_REBOOT_REASON_BROWNOUT},
-    {.reason = "reboot,longkey,s2", .value = ZBI_HW_REBOOT_REASON_USER_HARD_RESET},
+    {.reason = "reboot,longkey", .value = ZBI_HW_REBOOT_REASON_USER_HARD_RESET},
 });
 
 }  // namespace
