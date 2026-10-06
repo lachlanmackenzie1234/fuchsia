@@ -168,6 +168,14 @@ const NOISE_CALLS: &[&str] = &[
     "is_none",
     "is_null",
     "has_value",
+    "null",
+    // Cell and pin-init wrappers used for Rust interior mutability and
+    // in-place initialization.
+    "unsafe_cell",
+    "k_cell",
+    "pin_init",
+    "pinned_init",
+    "write_pin_init",
     // `zx::error(s)` / `zx::ok(v)` are C++'s `Err(s)` / `Ok(v)`.
     "error",
     "success",
@@ -205,7 +213,8 @@ pub fn call(name: &str) -> Option<String> {
     ) {
         if let Some(ty) = segs
             .next()
-            .filter(|s| s.trim().starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(str::trim)
+            .filter(|s| s.starts_with(|c: char| c.is_ascii_uppercase()) && !s.starts_with("Atomic"))
         {
             n = ident(ty);
         }

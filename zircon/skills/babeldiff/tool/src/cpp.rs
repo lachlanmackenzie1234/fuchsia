@@ -133,6 +133,183 @@ impl<'a> Ctx<'a> {
                 .extend(bases);
         }
         self.walk_scope(body, &path, out);
+        self.synthesize_member_init_ctor(name, body, &path, out);
+    }
+
+    /// When a C++ class has no explicit constructor declaration or definition
+    /// and initializes fields via in-class default member initializers,
+    /// synthesizes a `ClassName::ClassName` constructor from its data member
+    /// declarations so it can pair with Rust `Type::new` / `Type::init`.
+    fn synthesize_member_init_ctor(
+        &self,
+        name: Node,
+        body: Node,
+        path: &[String],
+        out: &mut CppFile,
+    ) {
+        let base = unqualified_type(self.text(name));
+        if base.is_empty() || self.has_ctor_decl_or_def(body, &base) {
+            return;
+        }
+        let mut fields = Vec::new();
+        self.collect_data_fields(body, &mut fields);
+        if !fields
+            .iter()
+            .any(|f| f.child_by_field_name("default_value").is_some())
+        {
+            return;
+        }
+        let start = ts::line(*fields.first().unwrap());
+        let end = ts::end_line(*fields.last().unwrap());
+        let mut b = UnitBuilder::new();
+        let mut sig_acc = FeatureAcc::default();
+        sig_acc.ident(&base);
+        let sig = sig_acc.finish(Lang::Cpp);
+        b.push(UnitKind::Signature, start, start, 0, sig);
+        b.units[0].end_line = start.saturating_sub(1);
+
+        for fd in fields {
+            let mut acc = FeatureAcc::default();
+            let ty = fd.child_by_field_name("type");
+            let decl = fd.child_by_field_name("declarator");
+            let dv = fd.child_by_field_name("default_value");
+            if let Some(d) = decl {
+                self.collect(d, &mut acc, &[]);
+            }
+            if let Some(v) = dv {
+                self.collect(v, &mut acc, &[]);
+            } else if decl.is_some_and(|d| matches!(d.kind(), "identifier" | "field_identifier")) {
+                if let Some(t) = ty.filter(|t| {
+                    matches!(t.kind(), "type_identifier" | "qualified_identifier")
+                        && is_class_type(self.text(*t))
+                }) {
+                    acc.call(self.text(t));
+                }
+            }
+            if let Some(t) = ty.filter(|t| t.kind() == "template_type") {
+                let outer = t
+                    .child_by_field_name("name")
+                    .map(|x| unqualified_type(self.text(x)))
+                    .unwrap_or_default();
+                if !matches!(
+                    outer.as_str(),
+                    "array"
+                        | "atomic"
+                        | "RefPtr"
+                        | "unique_ptr"
+                        | "optional"
+                        | "KernelHandle"
+                        | "user_in_ptr"
+                        | "user_out_ptr"
+                        | "user_inout_ptr"
+                ) {
+                    acc.call(&normalize::ident(self.text(t)));
+                }
+            }
+            acc.text = self.text(fd).to_string();
+            let mut f = acc.finish(Lang::Cpp);
+            f.plumbing = f.calls.is_empty()
+                && f.errors.is_empty()
+                && f.locks.is_empty()
+                && !f.propagates
+                && dv.is_none_or(|v| is_pure_or_accessor(v, self.src));
+            b.push(UnitKind::Stmt, ts::line(fd), ts::end_line(fd), 1, f);
+        }
+
+        let mut calls: Vec<String> = b
+            .units
+            .iter()
+            .flat_map(|u| u.features.calls.clone())
+            .collect();
+        calls.sort();
+        calls.dedup();
+        let mut qcalls: Vec<String> = b
+            .units
+            .iter()
+            .flat_map(|u| u.features.qcalls.clone())
+            .collect();
+        qcalls.sort();
+        qcalls.dedup();
+        let cls = path.join("::");
+        let full_name = format!("{cls}::{base}");
+        out.functions.push(Function {
+            lang: Lang::Cpp,
+            path: self.path.to_string(),
+            name: full_name,
+            base,
+            class: Some(cls),
+            start_line: start,
+            end_line: end,
+            lines: self.lines[start - 1..end.min(self.lines.len())].to_vec(),
+            units: b.units,
+            calls,
+            qcalls,
+            is_ffi: false,
+            test_only: false,
+        });
+    }
+
+    fn has_ctor_decl_or_def(&self, scope: Node, base_cls: &str) -> bool {
+        for c in ts::named_children(scope) {
+            match c.kind() {
+                "function_definition" | "declaration" | "field_declaration" => {
+                    if let Some(fdecl) = c
+                        .child_by_field_name("declarator")
+                        .and_then(find_function_declarator)
+                    {
+                        if let Some(n) = fdecl.child_by_field_name("declarator") {
+                            if unqualified_type(self.text(n)) == base_cls {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                "declaration_list"
+                | "field_declaration_list"
+                | "preproc_if"
+                | "preproc_ifdef"
+                | "preproc_else"
+                | "preproc_elif"
+                | "template_declaration" => {
+                    if self.has_ctor_decl_or_def(c, base_cls) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn collect_data_fields<'t>(&self, scope: Node<'t>, out: &mut Vec<Node<'t>>) {
+        for c in ts::named_children(scope) {
+            match c.kind() {
+                "field_declaration" => {
+                    let Some(decl) = c.child_by_field_name("declarator") else {
+                        continue;
+                    };
+                    if find_function_declarator(decl).is_some() {
+                        continue;
+                    }
+                    let is_static_or_constexpr = ts::named_children(c).iter().any(|ch| {
+                        ch.kind() == "storage_class_specifier"
+                            || (ch.kind() == "type_qualifier" && self.text(*ch) == "constexpr")
+                    });
+                    if !is_static_or_constexpr {
+                        out.push(c);
+                    }
+                }
+                "declaration_list"
+                | "field_declaration_list"
+                | "preproc_if"
+                | "preproc_ifdef"
+                | "preproc_else"
+                | "preproc_elif" => {
+                    self.collect_data_fields(c, out);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Records leading comments of a function declaration so they can be

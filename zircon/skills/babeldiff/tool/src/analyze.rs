@@ -170,15 +170,10 @@ impl Report {
     /// The paired Rust functions that call an unpaired Rust function, for
     /// showing it as a helper of the code it serves.
     pub fn callers(&self, f: &Function) -> Vec<&str> {
-        let key = normalize::call(&f.base).unwrap_or_else(|| normalize::ident(&f.base));
         let mut v: Vec<&str> = self
             .pairs
             .iter()
-            .filter(|p| {
-                p.rust.name != f.name
-                    && p.rust.calls.contains(&key)
-                    && rust_call_matches(&p.rust, f)
-            })
+            .filter(|p| p.rust.name != f.name && calls_function(&p.rust, f))
             .map(|p| p.rust.name.as_str())
             .collect();
         v.sort();

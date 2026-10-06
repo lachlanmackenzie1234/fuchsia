@@ -226,8 +226,10 @@ impl<'a> Ctx<'a> {
     }
 
     fn collect(&self, n: Node, acc: &mut FeatureAcc, skip: &[Node]) {
-        static MACRO_CALL: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"\b([A-Za-z_]\w*)\s*(?:::\s*<[^>()]*>)?\s*\(").unwrap());
+        static MACRO_CALL: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"\b((?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*)\s*(?:::\s*<[^>()]*>)?\s*\(")
+                .unwrap()
+        });
         static STRING: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r#""(?:[^"\\]|\\.)*""#).unwrap());
         if skip.iter().any(|s| s.id() == n.id()) {
@@ -432,6 +434,17 @@ impl<'a> Ctx<'a> {
                 }
             }
         }
+        if end > line
+            && b.units
+                .iter()
+                .all(|u| matches!(u.kind, UnitKind::Signature | UnitKind::Comment))
+        {
+            if let Some(e) = expr {
+                if self.split_struct_init(e, depth, b) {
+                    return;
+                }
+            }
+        }
         let mut f = match expr {
             Some(e) => self.features(e, &[]),
             None => Features::default(),
@@ -447,6 +460,102 @@ impl<'a> Ctx<'a> {
             f.ret = Some(Ret::Status);
         }
         b.push(UnitKind::Return, line, end, depth, f);
+    }
+
+    /// Splits a multi-field constructor return (`Self { ... }` or
+    /// `pin_init!(Self { ... })`) into one `UnitKind::Stmt` per field
+    /// initializer so it aligns field-by-field with C++ member initializers.
+    fn split_struct_init(&self, e: Node, depth: usize, b: &mut UnitBuilder) -> bool {
+        if e.kind() == "struct_expression" {
+            let Some(body) = e.child_by_field_name("body") else {
+                return false;
+            };
+            let fields: Vec<Node> = ts::named_children(body)
+                .into_iter()
+                .filter(|c| {
+                    matches!(
+                        c.kind(),
+                        "field_initializer" | "shorthand_field_initializer"
+                    )
+                })
+                .collect();
+            if fields.len() < 2 {
+                return false;
+            }
+            for fi in fields {
+                let mut f = self.features(fi, &[]);
+                f.plumbing = f.calls.is_empty()
+                    && f.errors.is_empty()
+                    && f.locks.is_empty()
+                    && !f.propagates;
+                b.push(UnitKind::Stmt, ts::line(fi), ts::end_line(fi), depth, f);
+            }
+            return true;
+        }
+        if e.kind() == "macro_invocation" {
+            let is_pin_init = e
+                .child_by_field_name("macro")
+                .is_some_and(|m| self.text(m).trim().ends_with("pin_init"));
+            if !is_pin_init {
+                return false;
+            }
+            let Some(outer_tt) = ts::named_children(e)
+                .into_iter()
+                .find(|c| c.kind() == "token_tree")
+            else {
+                return false;
+            };
+            let Some(brace_tt) = ts::named_children(outer_tt)
+                .into_iter()
+                .find(|c| c.kind() == "token_tree" && self.text(*c).starts_with('{'))
+            else {
+                return false;
+            };
+            static MACRO_CALL: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new(r"\b((?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*)\s*(?:::\s*<[^>()]*>)?\s*\(")
+                    .unwrap()
+            });
+            static IDENT: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new(r"\b[A-Za-z_]\w*\b").unwrap());
+            let mut items = Vec::new();
+            for line_idx in ts::line(brace_tt)..=ts::end_line(brace_tt) {
+                let Some(raw) = self.lines.get(line_idx - 1) else {
+                    continue;
+                };
+                let code = raw.split("//").next().unwrap_or("").trim();
+                if code.is_empty() || code == "{" || code.starts_with('}') {
+                    continue;
+                }
+                if !(code.contains(": ") || code.contains("<-")) {
+                    continue;
+                }
+                let mut acc = FeatureAcc::default();
+                for c in MACRO_CALL.captures_iter(code) {
+                    acc.call(&c[1]);
+                }
+                for m in IDENT.find_iter(code) {
+                    let w = m.as_str();
+                    if !matches!(w, "false" | "true" | "Self" | "let" | "mut" | "unsafe") {
+                        acc.ident(w);
+                    }
+                }
+                acc.text = code.to_string();
+                let mut f = acc.finish(Lang::Rust);
+                f.plumbing = f.calls.is_empty()
+                    && f.errors.is_empty()
+                    && f.locks.is_empty()
+                    && !f.propagates;
+                items.push((line_idx, f));
+            }
+            if items.len() < 2 {
+                return false;
+            }
+            for (ln, f) in items {
+                b.push(UnitKind::Stmt, ln, ln, depth, f);
+            }
+            return true;
+        }
+        false
     }
 
     /// A plain statement; multi-line closure and nested function bodies are split out.

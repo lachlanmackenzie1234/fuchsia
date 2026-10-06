@@ -285,7 +285,11 @@ on narrow screens, and prints cleanly.
    `return c ? A : B;` as `if c { A } else { B }`,
    `*out = x; return ZX_OK;` as `Ok(x)`, `do { ... } while (c);` as
    `loop { ... if !c { break; } }`, `case A: case B:` as `A | B =>`, and
-   nested `extern "C" fn` callback bodies as C++ lambda bodies.
+   nested `extern "C" fn` callback bodies as C++ lambda bodies. A C++ class
+   with no explicit constructor that initializes fields via in-class default
+   member initializers synthesizes a `ClassName::ClassName` constructor so its
+   fields align with a Rust constructor returning `Self { ... }` or
+   `pin_init!(Self { ... })`.
    Declarations with no initializer, pure bindings such as
    `let state = self.state();`, out-parameter writes and thread-safety
    assertions are bookkeeping, not steps.

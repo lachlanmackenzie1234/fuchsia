@@ -1964,6 +1964,7 @@ fn constants(text: &str) -> Vec<Constant> {
         "END_TEST",
         "FFI_ALWAYS_INLINE",
         "DEBUG_ASSERT_IMPLEMENTED",
+        "ZX_CLOCK_MONOTONIC",
     ];
     let code = code_only(text);
     let mut out: Vec<Constant> = Vec::new();
@@ -2169,6 +2170,13 @@ impl ValueCtx<'_> {
             .any(|a| t.starts_with(a))
             || t.starts_with("debug_assert");
         if assert {
+            return Vec::new();
+        }
+        static UNINIT_TEMPLATE_DECL: std::sync::LazyLock<regex::Regex> =
+            std::sync::LazyLock::new(|| {
+                regex::Regex::new(r"^\s*[\w:]+\s*<[^=;()]*>\s+\w+\s*;\s*$").unwrap()
+            });
+        if UNINIT_TEMPLATE_DECL.is_match(t) {
             return Vec::new();
         }
         constants(text)

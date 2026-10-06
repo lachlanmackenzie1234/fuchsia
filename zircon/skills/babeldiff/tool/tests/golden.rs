@@ -957,3 +957,68 @@ pub unsafe extern "C" fn rust_event_dispatcher_create() {
     );
     assert!(!report.rust_facades.is_empty());
 }
+
+#[test]
+fn in_class_member_initializers_pair_with_rust_new() {
+    let cpp_old = r#"
+class Watchdog {
+ private:
+  AutounsignalEvent mem_state_signal_;
+  RelaxedAtomic<PressureLevel> mem_event_idx_ = PressureLevel::kNormal;
+  zx_duration_mono_t hysteresis_seconds_ = ZX_SEC(10);
+  Timer eviction_trigger_;
+  ktl::atomic<bool> continuous_eviction_active_ = false;
+  Thread* worker_thread_ = nullptr;
+};
+"#;
+    let cpp_new = r#"
+Watchdog::Watchdog() {
+  rust_watchdog_construct(&opaque_storage_);
+}
+"#;
+    let rust_new = r#"
+impl RelaxedAtomicPressureLevel {
+    const fn new(level: PressureLevel) -> Self {
+        Self(AtomicU8::new(level as u8))
+    }
+}
+
+impl WatchdogState {
+    pub fn new() -> impl PinInit<Self, core::convert::Infallible> {
+        pin_init!(Self {
+            mem_state_signal <- AutounsignalEvent::init(false),
+            mem_event_idx: RelaxedAtomicPressureLevel::new(PressureLevel::Normal),
+            hysteresis_seconds: UnsafeCell::new(zx_sec(10)),
+            eviction_trigger <- UnsafeCell::pin_init(Timer::init(kernel::timer::ZX_CLOCK_MONOTONIC)),
+            continuous_eviction_active: AtomicBool::new(false),
+            worker_thread: UnsafeCell::new(None),
+        })
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_watchdog_construct(storage: *mut MaybeUninit<WatchdogState>) {
+    let init = WatchdogState::new();
+    let _ = unsafe { pin_init::PinInit::__pinned_init(init, storage.cast()) };
+}
+"#;
+    let cs = ChangeSet {
+        cpp_old: vec![version("watchdog.h", cpp_old)],
+        cpp_new: vec![version("watchdog.cc", cpp_new)],
+        rust_new: vec![version("watchdog.rs", rust_new)],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    let pair = report
+        .pairs
+        .iter()
+        .find(|p| p.cpp.name == "Watchdog::Watchdog")
+        .expect("in-class member initializers should pair with WatchdogState::new");
+    assert_eq!(pair.rust.name, "WatchdogState::new");
+    assert!(pair.findings.is_empty(), "{:?}", pair.findings);
+    let helper = report
+        .unmatched_rust
+        .iter()
+        .find(|f| f.name == "RelaxedAtomicPressureLevel::new")
+        .expect("RelaxedAtomicPressureLevel::new should be in unmatched_rust");
+    assert_eq!(report.callers(helper), vec!["WatchdogState::new"]);
+}
