@@ -10,7 +10,10 @@ group("integration_input_tests") {
   deps = [
     "factory-reset-handler:tests",
     "mouse:tests",
-    "starnix-input:tests",
+
+    # TODO(https://fxbug.dev/502662433): Re-enable once the tests are updated for dynamic
+    # input device registration.
+    # "starnix-input:tests",
     "text-input:tests",
     "touch:tests",
     "virtual-keyboard:tests",
@@ -21,6 +24,7 @@ group("integration_input_tests") {
   # TODO(https://fxbug.dev/359323478): Figure out a better way to disable these tests without
   # relying on a global GN argument.
   if (data_filesystem_format == "minfs") {
-    deps -= [ "starnix-input:tests" ]
+    # TODO(https://fxbug.dev/502662433): Restore together with "starnix-input:tests" above.
+    # deps -= [ "starnix-input:tests" ]
   }
 }

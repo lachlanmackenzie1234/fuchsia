@@ -449,6 +449,37 @@ mod test {
         (media_buttons_listener, touch_buttons_listener)
     }
 
+    async fn init_device_listener(
+        device_listener_registry_stream: &mut fuiinput::DeviceListenerRegistryRequestStream,
+    ) -> (fuiinput::DeviceListenerProxy, fuiinput::DeviceIteratorRequestStream) {
+        let (device_iterator_client_end, device_iterator_stream) =
+            fidl::endpoints::create_request_stream::<fuiinput::DeviceIteratorMarker>();
+        let device_listener_proxy = match device_listener_registry_stream.next().await {
+            Some(Ok(fuiinput::DeviceListenerRegistryRequest::RegisterListener {
+                listener,
+                responder,
+            })) => {
+                let _ = responder.send(device_iterator_client_end);
+                listener.into_proxy()
+            }
+            _ => {
+                panic!("Failed to initialize device listener");
+            }
+        };
+        (device_listener_proxy, device_iterator_stream)
+    }
+
+    async fn drain_empty_device_iterator(
+        device_iterator_stream: &mut fuiinput::DeviceIteratorRequestStream,
+    ) {
+        match device_iterator_stream.next().await {
+            Some(Ok(fuiinput::DeviceIteratorRequest::GetNext { responder })) => {
+                responder.send(&[]).expect("failed to send empty batch");
+            }
+            _ => panic!("Failed to respond to existing devices iterator GetNext"),
+        }
+    }
+
     async fn start_touch_input_inspect_and_dimensions(
         current_task: &CurrentTask,
         x_max: i32,
@@ -478,8 +509,6 @@ mod test {
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
-        let (_device_listener_client, device_listener_server) =
-            fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
         let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
         relay.add_touch_device(
@@ -496,8 +525,7 @@ mod test {
                 mouse_source_client_end,
                 view_ref: view_ref_pair.view_ref,
                 registry_proxy: device_registry_proxy,
-                device_listener_server: Some(device_listener_server),
-                existing_devices_iterator: None,
+                device_listener_registry: None,
                 display_width: x_max,
                 display_height: y_max,
             },
@@ -534,8 +562,6 @@ mod test {
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
-        let (_device_listener_client, device_listener_server) =
-            fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
         let (touch_source_client_end, _touch_source_stream) =
             fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
@@ -558,8 +584,7 @@ mod test {
                 mouse_source_client_end,
                 view_ref: view_ref_pair.view_ref,
                 registry_proxy: device_registry_proxy,
-                device_listener_server: Some(device_listener_server),
-                existing_devices_iterator: None,
+                device_listener_registry: None,
                 display_width: 0,
                 display_height: 0,
             },
@@ -591,8 +616,6 @@ mod test {
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
-        let (_device_listener_client, device_listener_server) =
-            fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
         let (touch_source_client_end, _touch_source_stream) =
             fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
@@ -618,8 +641,7 @@ mod test {
                 mouse_source_client_end,
                 view_ref: view_ref_pair.view_ref,
                 registry_proxy: device_registry_proxy,
-                device_listener_server: Some(device_listener_server),
-                existing_devices_iterator: None,
+                device_listener_registry: None,
                 display_width: 0,
                 display_height: 0,
             },
@@ -663,8 +685,6 @@ mod test {
         let (device_registry_proxy, mut device_listener_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>(
             );
-        let (_device_listener_client, device_listener_server) =
-            fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
         let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
         relay.add_mouse_device(
@@ -681,8 +701,7 @@ mod test {
                 mouse_source_client_end,
                 view_ref: view_ref_pair.view_ref,
                 registry_proxy: device_registry_proxy,
-                device_listener_server: Some(device_listener_server),
-                existing_devices_iterator: None,
+                device_listener_registry: None,
                 display_width: 0,
                 display_height: 0,
             },
@@ -2189,8 +2208,6 @@ mod test {
                 fidl::endpoints::create_sync_proxy_and_stream::<
                     fuipolicy::DeviceListenerRegistryMarker,
                 >();
-            let (_device_listener_client, device_listener_server) =
-                fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
             let (mut relay, _relay_handle) = input_event_relay::new_input_relay();
             relay.add_touch_device(
@@ -2207,8 +2224,7 @@ mod test {
                     mouse_source_client_end,
                     view_ref: view_ref_pair.view_ref,
                     registry_proxy: device_registry_proxy,
-                    device_listener_server: Some(device_listener_server),
-                    existing_devices_iterator: None,
+                    device_listener_registry: None,
                     display_width: 700,
                     display_height: 700,
                 },
@@ -2992,6 +3008,26 @@ mod test {
         }
     }
 
+    async fn wait_for_device_listener_registered(
+        inspector: &fuchsia_inspect::Inspector,
+        expected: bool,
+    ) {
+        loop {
+            let hierarchy = fuchsia_inspect::reader::read(inspector).await.unwrap();
+            if let Some(relay_node) = hierarchy.get_child("input_events_relay") {
+                if let Some(prop) = relay_node.get_property("device_listener_registered") {
+                    if prop.boolean() == Some(expected) {
+                        break;
+                    }
+                }
+            }
+            fuchsia_async::Timer::new(
+                fuchsia_async::MonotonicDuration::from_millis(10).after_now(),
+            )
+            .await;
+        }
+    }
+
     #[::fuchsia::test]
     async fn test_dynamic_device_registration() {
         spawn_kernel_and_run(async move |current_task| {
@@ -3011,13 +3047,17 @@ mod test {
                     fuipolicy::DeviceListenerRegistryMarker,
                 >();
 
-            // 2. Create endpoints for the new DeviceListener protocol
-            let (device_listener_client, device_listener_server) =
-                fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
-            let device_listener_proxy = device_listener_client.into_proxy();
+            // 2. Create endpoints for the DeviceListenerRegistry protocol
+            let (device_listener_registry_proxy, mut device_listener_registry_stream) =
+                fidl::endpoints::create_sync_proxy_and_stream::<
+                    fuiinput::DeviceListenerRegistryMarker,
+                >();
+
+            let inspector = fuchsia_inspect::Inspector::default();
 
             // 3. Start the relays
             let (relay, _relay_handle) = input_event_relay::new_input_relay();
+            let relay = relay.with_inspect_node(inspector.root());
             relay.start_relays(
                 &kernel,
                 StartRelaysArgs {
@@ -3027,8 +3067,7 @@ mod test {
                     mouse_source_client_end,
                     view_ref: view_ref_pair.view_ref,
                     registry_proxy: device_registry_proxy,
-                    device_listener_server: Some(device_listener_server),
-                    existing_devices_iterator: None,
+                    device_listener_registry: Some(device_listener_registry_proxy),
                     display_width: 700,
                     display_height: 700,
                 },
@@ -3036,6 +3075,9 @@ mod test {
 
             let _ = init_keyboard_listener(&mut keyboard_stream).await;
             let _ = init_button_listeners(&mut device_listener_stream).await;
+            let (device_listener_proxy, mut device_iterator_stream) =
+                init_device_listener(&mut device_listener_registry_stream).await;
+            drain_empty_device_iterator(&mut device_iterator_stream).await;
 
             // 4. Send an Action::Added event for a Touch device
             let device_id = 42;
@@ -3131,6 +3173,13 @@ mod test {
             let mouse_devt = StarnixDeviceId::new(INPUT_MAJOR, 3);
             wait_for_device(kernel, mouse_devt, true).await;
 
+            assert_data_tree!(inspector, root: contains {
+                input_events_relay: contains {
+                    num_devices: 4u64,
+                    device_listener_registered: true,
+                }
+            });
+
             // 6. Send Action::Removed events
             let event_removed = fuiinput::DeviceEvent {
                 action: Some(fuiinput::Action::Removed),
@@ -3206,6 +3255,18 @@ mod test {
                 .expect("Failed to send dynamic Mouse device Removed event");
 
             wait_for_device(kernel, mouse_devt, false).await;
+
+            assert_data_tree!(inspector, root: contains {
+                input_events_relay: contains {
+                    num_devices: 1u64,
+                    device_listener_registered: true,
+                }
+            });
+
+            // Dropping the listener proxy closes the peer channel, which should cause the relay
+            // to mark device_listener_registered as false.
+            drop(device_listener_proxy);
+            wait_for_device_listener_registered(&inspector, false).await;
         })
         .await;
     }
@@ -3229,12 +3290,17 @@ mod test {
                     fuipolicy::DeviceListenerRegistryMarker,
                 >();
 
-            // 2. Create endpoints for DeviceIterator protocol
-            let (device_iterator_client_end, mut device_iterator_stream) =
-                fidl::endpoints::create_request_stream::<fuiinput::DeviceIteratorMarker>();
+            // 2. Create endpoints for DeviceListenerRegistry protocol
+            let (device_listener_registry_proxy, mut device_listener_registry_stream) =
+                fidl::endpoints::create_sync_proxy_and_stream::<
+                    fuiinput::DeviceListenerRegistryMarker,
+                >();
+
+            let inspector = fuchsia_inspect::Inspector::default();
 
             // 3. Start the relays with existing_devices_iterator
             let (relay, _relay_handle) = input_event_relay::new_input_relay();
+            let relay = relay.with_inspect_node(inspector.root());
             relay.start_relays(
                 &kernel,
                 StartRelaysArgs {
@@ -3244,8 +3310,7 @@ mod test {
                     mouse_source_client_end,
                     view_ref: view_ref_pair.view_ref,
                     registry_proxy: device_registry_proxy,
-                    device_listener_server: None,
-                    existing_devices_iterator: Some(device_iterator_client_end),
+                    device_listener_registry: Some(device_listener_registry_proxy),
                     display_width: 700,
                     display_height: 700,
                 },
@@ -3254,6 +3319,8 @@ mod test {
             // Respond to initial listener setup
             let _ = init_keyboard_listener(&mut keyboard_stream).await;
             let _ = init_button_listeners(&mut device_listener_stream).await;
+            let (_device_listener_proxy, mut device_iterator_stream) =
+                init_device_listener(&mut device_listener_registry_stream).await;
 
             // 4. Serve the existing devices iterator:
             // First batch yields a touch device and a keyboard device with Action::Added.
@@ -3307,6 +3374,86 @@ mod test {
 
             let keyboard_devt = StarnixDeviceId::new(INPUT_MAJOR, 1);
             wait_for_device(kernel, keyboard_devt, true).await;
+
+            assert_data_tree!(inspector, root: contains {
+                input_events_relay: contains {
+                    num_devices: 2u64,
+                    device_listener_registered: true,
+                }
+            });
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_dynamic_device_registration_failure() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+
+            // 1. Create endpoints for all standard protocols
+            let (touch_source_client_end, _touch_source_stream) =
+                fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
+            let (mouse_source_client_end, _mouse_source_stream) =
+                fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
+            let (keyboard_proxy, mut keyboard_stream) =
+                fidl::endpoints::create_sync_proxy_and_stream::<fuiinput3::KeyboardMarker>();
+            let view_ref_pair =
+                fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
+            let (device_registry_proxy, mut device_listener_stream) =
+                fidl::endpoints::create_sync_proxy_and_stream::<
+                    fuipolicy::DeviceListenerRegistryMarker,
+                >();
+
+            // 2. Create endpoints for DeviceListenerRegistry and immediately drop server
+            // to simulate registration failure (peer closed).
+            let (device_listener_registry_proxy, device_listener_registry_stream) =
+                fidl::endpoints::create_sync_proxy_and_stream::<
+                    fuiinput::DeviceListenerRegistryMarker,
+                >();
+            drop(device_listener_registry_stream);
+
+            let inspector = fuchsia_inspect::Inspector::default();
+
+            // 3. Start the relays
+            let (relay, _relay_handle) = input_event_relay::new_input_relay();
+            let relay = relay.with_inspect_node(inspector.root());
+            relay.start_relays(
+                &kernel,
+                StartRelaysArgs {
+                    event_proxy_mode: EventProxyMode::None,
+                    touch_source_client_end,
+                    keyboard_proxy,
+                    mouse_source_client_end,
+                    view_ref: view_ref_pair.view_ref,
+                    registry_proxy: device_registry_proxy,
+                    device_listener_registry: Some(device_listener_registry_proxy),
+                    display_width: 700,
+                    display_height: 700,
+                },
+            );
+
+            let keyboard_listener = init_keyboard_listener(&mut keyboard_stream).await;
+            let _ = init_button_listeners(&mut device_listener_stream).await;
+
+            // Synchronize with the relay thread by awaiting a two-way key event.
+            // Because keyboard events are only handled inside the event loop after registration
+            // has finished, this guarantees registration has completed.
+            let key_event = fuiinput3::KeyEvent {
+                timestamp: Some(0),
+                type_: Some(fuiinput3::KeyEventType::Pressed),
+                key: Some(fidl_fuchsia_input::Key::A),
+                ..Default::default()
+            };
+            let _ = keyboard_listener.on_key_event(&key_event).await;
+
+            wait_for_device_listener_registered(&inspector, false).await;
+
+            assert_data_tree!(inspector, root: contains {
+                input_events_relay: contains {
+                    num_devices: 0u64,
+                    device_listener_registered: false,
+                }
+            });
         })
         .await;
     }

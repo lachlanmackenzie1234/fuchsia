@@ -59,6 +59,21 @@
 
                 // TODO(https://fxbug.dev/522500185): Enable after reparenting races are fixed.
                 "WaitpidExitSignalTest.StoppedChildInOrphanedGroup",
+
+                // TODO(https://fxbug.dev/502662433): These tests assume statically registered input devices,
+                // which are no longer created. Re-enable once the tests are updated for
+                // dynamic input device registration.
+                "InputTest.DevicePropertiesMatchTouchProperties",
+                "InputTest.DevicePropertiesMatchKeyboardProperties",
+                "InputTest.DeviceCanBeRegisteredWithEpoll",
+                "InputTest.GetDeviceName",
+                "InputTest.CurrentStateQueriesSucceed",
+                "IoctlTest.EVIOCGNAME_Success",
+                "IoctlTest.EVIOCGNAME_TooSmall",
+                "UdevTest.AddInput",
+                "UinputTest.UiDevCreateDestroyKeyboardEvIoGid",
+                "UinputTest.UiDevCreateDestroyTouchscreenEvIoGid",
+                "UinputTest.UiDevCreateTouchscreenWithSize",
             ],
         },
         {

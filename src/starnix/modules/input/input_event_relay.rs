@@ -69,7 +69,7 @@ use starnix_core::device::kobject::Device;
 use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_counter};
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_logging::{log_debug, log_warn};
+use starnix_logging::{log_debug, log_error, log_warn};
 use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
     new_touch_buttons_bitvec, parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
@@ -80,7 +80,7 @@ use starnix_sync::{InputEventRelayOpenedFilesLock, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, uapi};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 const INPUT_RELAY_ROLE_NAME: &str = "fuchsia.starnix.kthread.input_relay";
@@ -103,8 +103,7 @@ pub struct StartRelaysArgs {
     pub mouse_source_client_end: ClientEnd<fuipointer::MouseSourceV2Marker>,
     pub view_ref: fuiviews::ViewRef,
     pub registry_proxy: fuipolicy::DeviceListenerRegistrySynchronousProxy,
-    pub device_listener_server: Option<ServerEnd<fuiinput::DeviceListenerMarker>>,
-    pub existing_devices_iterator: Option<ClientEnd<fuiinput::DeviceIteratorMarker>>,
+    pub device_listener_registry: Option<fuiinput::DeviceListenerRegistrySynchronousProxy>,
     pub display_width: i32,
     pub display_height: i32,
 }
@@ -312,6 +311,10 @@ pub const DEFAULT_TOUCH_DEVICE_ID: DeviceId = 0;
 pub const DEFAULT_KEYBOARD_DEVICE_ID: DeviceId = 1;
 pub const DEFAULT_MOUSE_DEVICE_ID: DeviceId = 2;
 
+const DEVICE_LISTENER_NOT_ATTEMPTED: u8 = 0;
+const DEVICE_LISTENER_REGISTERED: u8 = 1;
+const DEVICE_LISTENER_DISCONNECTED: u8 = 2;
+
 enum DeviceStateChange {
     Add(DeviceId, Box<DeviceState>, Sender<()>),
     Remove(DeviceId, Sender<()>),
@@ -326,6 +329,8 @@ pub fn new_input_relay() -> (InputEventsRelay, Arc<InputEventsRelayHandle>) {
             devices: SortedVecMap::new(),
             receiver: Some(receiver),
             num_unregistered_device_events: num_unregistered_device_events.clone(),
+            num_devices: Arc::new(AtomicU64::new(0)),
+            device_listener_registered: Arc::new(AtomicU8::new(DEVICE_LISTENER_NOT_ATTEMPTED)),
             _inspect_node: None,
         },
         Arc::new(InputEventsRelayHandle { sender, num_unregistered_device_events }),
@@ -453,10 +458,19 @@ pub struct InputEventsRelay {
     devices: SortedVecMap<DeviceId, DeviceState>,
     receiver: Option<UnboundedReceiver<DeviceStateChange>>,
     num_unregistered_device_events: Arc<AtomicU64>,
+    /// Number of devices currently tracked by the relay, exposed via inspect.
+    num_devices: Arc<AtomicU64>,
+    device_listener_registered: Arc<AtomicU8>,
     _inspect_node: Option<fuchsia_inspect::Node>,
 }
 
 impl InputEventsRelay {
+    /// Updates the inspect-visible device count. Must be called after every mutation of
+    /// `self.devices` once the relay has started.
+    fn update_num_devices(&self) {
+        self.num_devices.store(self.devices.len() as u64, Ordering::Relaxed);
+    }
+
     /// Adds a touch device to the relay prior to starting the relay loop.
     pub fn add_touch_device(
         &mut self,
@@ -466,6 +480,7 @@ impl InputEventsRelay {
     ) {
         self.devices
             .insert(device_id, DeviceState::new_touch(device_id, open_files, inspect_status));
+        self.update_num_devices();
     }
 
     /// Adds a keyboard device to the relay prior to starting the relay loop.
@@ -477,6 +492,7 @@ impl InputEventsRelay {
     ) {
         self.devices
             .insert(device_id, DeviceState::new_keyboard(device_id, open_files, inspect_status));
+        self.update_num_devices();
     }
 
     /// Adds a mouse device to the relay prior to starting the relay loop.
@@ -488,6 +504,7 @@ impl InputEventsRelay {
     ) {
         self.devices
             .insert(device_id, DeviceState::new_mouse(device_id, open_files, inspect_status));
+        self.update_num_devices();
     }
 
     /// Adds a pending mouse device to the relay prior to starting the relay loop.
@@ -498,18 +515,33 @@ impl InputEventsRelay {
         device_id: DeviceId,
     ) {
         self.devices.insert(device_id, DeviceState::new_pending_mouse(kernel, device, device_id));
+        self.update_num_devices();
     }
 
     fn record_inspect(&mut self, parent: &fuchsia_inspect::Node) {
         let inspect_node = parent.create_child("input_events_relay");
         let unregistered_counter = self.num_unregistered_device_events.clone();
+        let num_devices = self.num_devices.clone();
+        let device_listener_registered = self.device_listener_registered.clone();
         // `record_lazy_values` records an inline lazy node (LinkNodeDisposition::Inline),
         // exposing properties directly on `inspect_node` (input_events_relay).
         inspect_node.record_lazy_values("status", move || {
             let count = unregistered_counter.load(Ordering::Relaxed);
+            let num_devices = num_devices.load(Ordering::Relaxed);
+            let registration_state = device_listener_registered.load(Ordering::Relaxed);
             async move {
                 let inspector = fuchsia_inspect::Inspector::default();
                 inspector.root().record_uint("num_unregistered_device_events", count);
+                inspector.root().record_uint("num_devices", num_devices);
+                match registration_state {
+                    DEVICE_LISTENER_REGISTERED => {
+                        inspector.root().record_bool("device_listener_registered", true);
+                    }
+                    DEVICE_LISTENER_DISCONNECTED => {
+                        inspector.root().record_bool("device_listener_registered", false);
+                    }
+                    _ => {}
+                }
                 Ok(inspector)
             }
             .boxed()
@@ -530,6 +562,7 @@ impl InputEventsRelay {
         if self._inspect_node.is_none() {
             self.record_inspect(&kernel.inspect_node);
         }
+        self.update_num_devices();
 
         let display_width = args.display_width;
         let display_height = args.display_height;
@@ -540,12 +573,10 @@ impl InputEventsRelay {
             // touch
             let (touch_source_proxy, mut touch_waking_stream) =
                 setup_touch_relay(kernel, event_proxy_mode, args.touch_source_client_end);
-            let mut touch_future = touch_waking_stream.next().fuse();
 
             // mouse
             let (mouse_source_proxy, mut mouse_waking_stream) =
                 setup_mouse_relay(kernel, event_proxy_mode, args.mouse_source_client_end);
-            let mut mouse_future = mouse_waking_stream.next().fuse();
 
             // keyboard
             // `_keyboard_proxy` is load-bearing despite being unused: it holds the channel to
@@ -554,16 +585,37 @@ impl InputEventsRelay {
             // key delivery. Do not remove it as an unused binding.
             let (mut keyboard_event_stream, _keyboard_proxy) =
                 setup_keyboard_relay(args.keyboard_proxy, args.view_ref);
-            let mut keyboard_future = keyboard_event_stream.next().fuse();
 
             // button
             let (mut media_buttons_waking_stream, mut touch_buttons_waking_stream) =
                 setup_button_relay(kernel, args.registry_proxy, event_proxy_mode);
-            let mut media_buttons_future = media_buttons_waking_stream.next().fuse();
-            let mut touch_buttons_future = touch_buttons_waking_stream.next().fuse();
-            let mut receiver_future = receiver.next().fuse();
 
-            if let Some(iterator) = args.existing_devices_iterator {
+            let (mut device_listener_stream, existing_devices_iterator) =
+                if let Some(registry) = args.device_listener_registry {
+                    let (client_end, server_end) =
+                        fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
+                    let stream = setup_device_listener_relay(kernel, server_end, event_proxy_mode);
+                    match registry.register_listener(client_end, zx::MonotonicInstant::INFINITE) {
+                        Ok(iterator) => {
+                            self.device_listener_registered
+                                .store(DEVICE_LISTENER_REGISTERED, Ordering::Relaxed);
+                            (Some(stream), Some(iterator))
+                        }
+                        Err(e) => {
+                            log_error!("Failed to register device listener: {:?}", e);
+                            self.device_listener_registered
+                                .store(DEVICE_LISTENER_DISCONNECTED, Ordering::Relaxed);
+                            drop(stream);
+                            (None, None)
+                        }
+                    }
+                } else {
+                    self.device_listener_registered
+                        .store(DEVICE_LISTENER_DISCONNECTED, Ordering::Relaxed);
+                    (None, None)
+                };
+
+            if let Some(iterator) = existing_devices_iterator {
                 let iterator_proxy = iterator.into_proxy();
                 loop {
                     match iterator_proxy.get_next().await {
@@ -615,9 +667,12 @@ impl InputEventsRelay {
                 }
             }
 
-            let mut device_listener_stream = args
-                .device_listener_server
-                .map(|server| setup_device_listener_relay(kernel, server, event_proxy_mode));
+            let mut touch_future = touch_waking_stream.next().fuse();
+            let mut mouse_future = mouse_waking_stream.next().fuse();
+            let mut keyboard_future = keyboard_event_stream.next().fuse();
+            let mut media_buttons_future = media_buttons_waking_stream.next().fuse();
+            let mut touch_buttons_future = touch_buttons_waking_stream.next().fuse();
+            let mut receiver_future = receiver.next().fuse();
             let mut device_listener_future = futures::future::OptionFuture::from(
                 device_listener_stream.as_mut().map(|s| s.next()),
             );
@@ -745,15 +800,21 @@ impl InputEventsRelay {
                             }
                             Some(Some(Err(e))) => {
                                 log_warn!("DeviceListener stream error: {:?}", e);
+                                self.device_listener_registered
+                                    .store(DEVICE_LISTENER_DISCONNECTED, Ordering::Relaxed);
                                 device_listener_stream = None;
                                 device_listener_future = futures::future::OptionFuture::from(None);
                             }
                             Some(None) => {
                                 log_warn!("DeviceListener stream closed by peer");
+                                self.device_listener_registered
+                                    .store(DEVICE_LISTENER_DISCONNECTED, Ordering::Relaxed);
                                 device_listener_stream = None;
                                 device_listener_future = futures::future::OptionFuture::from(None);
                             }
                             None => {
+                                self.device_listener_registered
+                                    .store(DEVICE_LISTENER_DISCONNECTED, Ordering::Relaxed);
                                 device_listener_stream = None;
                                 device_listener_future = futures::future::OptionFuture::from(None);
                             }
@@ -777,10 +838,12 @@ impl InputEventsRelay {
                                 match event {
                                     DeviceStateChange::Add(id, device_state, sender) => {
                                         self.devices.insert(id, *device_state);
+                                        self.update_num_devices();
                                         let _ = sender.send(());
                                     }
                                     DeviceStateChange::Remove(id, sender) => {
                                         self.devices.remove(&id);
+                                        self.update_num_devices();
                                         let _ = sender.send(());
                                     }
                                 }
@@ -828,7 +891,7 @@ impl InputEventsRelay {
                     );
                 }
                 None => {
-                    log_warn!("touch event has not tracing id");
+                    log_warn!("touch event has no tracing id");
                 }
             }
         }
@@ -1056,6 +1119,7 @@ impl InputEventsRelay {
                                     .remove_device(current_task, starnix_device);
                             }
                         }
+                        self.update_num_devices();
                     }
                     action => {
                         log_warn!("Unexpected action in DeviceListener event: {:?}", action);
@@ -1661,6 +1725,7 @@ fn register_and_add_device(
         if let Some(old_starnix_device) = old_state.starnix_device {
             current_task.kernel().device_registry.remove_device(current_task, old_starnix_device);
         }
+        devices_relay.update_num_devices();
     }
 
     // Allocate the lowest available minor number for this device.
@@ -1680,6 +1745,7 @@ fn register_and_add_device(
         minor,
     };
     devices_relay.devices.insert(device_id, device_state);
+    devices_relay.update_num_devices();
     Ok(())
 }
 
@@ -1818,8 +1884,6 @@ pub async fn start_input_relays_for_test(
     let view_ref_pair = fuchsia_scenic::ViewRefPair::new().expect("Failed to create ViewRefPair");
     let (device_registry_proxy, mut device_listener_stream) =
         fidl::endpoints::create_sync_proxy_and_stream::<fuipolicy::DeviceListenerRegistryMarker>();
-    let (_device_listener_client, device_listener_server) =
-        fidl::endpoints::create_endpoints::<fuiinput::DeviceListenerMarker>();
 
     let (mut relay, relay_handle) = new_input_relay();
     // TODO(https://fxbug.dev/502662433): Default devices are no longer needed because
@@ -1849,8 +1913,7 @@ pub async fn start_input_relays_for_test(
             mouse_source_client_end,
             view_ref: view_ref_pair.view_ref,
             registry_proxy: device_registry_proxy,
-            device_listener_server: Some(device_listener_server),
-            existing_devices_iterator: None,
+            device_listener_registry: None,
             display_width: 700,
             display_height: 1200,
         },
@@ -2800,8 +2863,7 @@ mod test {
                     mouse_source_client_end,
                     view_ref: view_ref_pair.view_ref,
                     registry_proxy: device_registry_proxy,
-                    device_listener_server: None,
-                    existing_devices_iterator: None,
+                    device_listener_registry: None,
                     display_width: 700,
                     display_height: 1200,
                 },
@@ -2937,8 +2999,7 @@ mod test {
                     mouse_source_client_end,
                     view_ref: view_ref_pair.view_ref,
                     registry_proxy: device_registry_proxy,
-                    device_listener_server: None,
-                    existing_devices_iterator: None,
+                    device_listener_registry: None,
                     display_width: 0,
                     display_height: 0,
                 },
@@ -3034,6 +3095,8 @@ mod test {
             assert_data_tree!(inspector, root: contains {
                 input_events_relay: {
                     num_unregistered_device_events: 5u64,
+                    num_devices: 0u64,
+                    device_listener_registered: false,
                 }
             });
         })
