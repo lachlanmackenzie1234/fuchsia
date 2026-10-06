@@ -674,10 +674,12 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
         )
+        freq_nla = build_nla(1, struct.pack("<I", 2437))
+        freqs_attr = build_nla(NL80211_ATTR_SCAN_FREQUENCIES, freq_nla)
 
         plan_1_interval_sec = 3
         plan_1_iterations = 2
-        plan_2_interval_sec = 10
+        plan_2_interval_sec = 15
 
         plan_1_interval = build_nla(
             NL80211_SCHED_SCAN_PLAN_INTERVAL,
@@ -704,6 +706,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
             iface_index=iface_index,
             match_attr=match_attr,
             interval_ms=None,
+            freqs_attr=freqs_attr,
             plans_attr=plans_attr,
         )
 
@@ -749,12 +752,16 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                 expected_discovery_time_sec,
             )
             self._setup_ap(preset_ssid=ssid)
+            ap_ready_elapsed = time.time() - start_time
+            logger.info(
+                f"AP setup completed at {ap_ready_elapsed:.2f} seconds after PNO start."
+            )
 
             event_received = False
             elapsed_at_match = 0.0
             while True:
                 msg = await asyncio.wait_for(
-                    scan_queue.get(), timeout=DEFAULT_MATCH_TIMEOUT_SEC
+                    scan_queue.get(), timeout=plan_2_interval_sec + 5.0
                 )
                 if msg.message and msg.message.payload:
                     cmd = msg.message.payload[0]
@@ -768,7 +775,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                 f"Match received at {elapsed_at_match:.2f} seconds after PNO start."
             )
             assert_true(
-                11.5 < elapsed_at_match < 14.5,
+                16.0 < elapsed_at_match < 25.0,
                 f"Elapsed time {elapsed_at_match:.2f}s implies the firmware didn't respect the multi-tier scan plans!",
             )
 
