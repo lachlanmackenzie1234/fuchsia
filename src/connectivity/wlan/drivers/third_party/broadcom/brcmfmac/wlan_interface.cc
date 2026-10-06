@@ -571,14 +571,20 @@ void WlanInterface::GetSignalReport(GetSignalReportCompleter::Sync& completer) {
 
 void WlanInterface::SaeHandshakeResp(SaeHandshakeRespRequestView request,
                                      SaeHandshakeRespCompleter::Sync& completer) {
-  brcmf_if_sae_handshake_resp(wdev_->netdev, request);
+  std::shared_lock<std::shared_mutex> guard(lock_);
+  if (wdev_ != nullptr) {
+    brcmf_if_sae_handshake_resp(wdev_->netdev, request);
+  }
   completer.Reply();
 }
 
 void WlanInterface::SaeFrameTx(SaeFrameTxRequestView request,
                                SaeFrameTxCompleter::Sync& completer) {
-  const fuchsia_wlan_fullmac::wire::SaeFrame frame = request->frame;
-  brcmf_if_sae_frame_tx(wdev_->netdev, &frame);
+  std::shared_lock<std::shared_mutex> guard(lock_);
+  if (wdev_ != nullptr) {
+    const fuchsia_wlan_fullmac::wire::SaeFrame frame = request->frame;
+    brcmf_if_sae_frame_tx(wdev_->netdev, &frame);
+  }
   completer.Reply();
 }
 
