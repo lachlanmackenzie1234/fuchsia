@@ -58,11 +58,10 @@ impl UsbGadgetState {
 
     pub fn map_from_device_state(state: DeviceState, previous: Option<Self>) -> Option<Self> {
         match state {
-            DeviceState::NotAttached => Some(UsbGadgetState::Disconnected),
-            DeviceState::Attached => Some(UsbGadgetState::Connected),
-            DeviceState::Powered => Some(UsbGadgetState::Connected),
-            DeviceState::Default => Some(UsbGadgetState::Connected),
-            DeviceState::Address => Some(UsbGadgetState::Connected),
+            DeviceState::NotAttached | DeviceState::Attached | DeviceState::Powered => {
+                Some(UsbGadgetState::Disconnected)
+            }
+            DeviceState::Default | DeviceState::Address => Some(UsbGadgetState::Connected),
             DeviceState::Configured => Some(UsbGadgetState::Configured),
             DeviceState::Suspended => previous, // No change when suspended
             _ => {
@@ -206,11 +205,11 @@ mod tests {
         );
         assert_eq!(
             UsbGadgetState::map_from_device_state(DeviceState::Attached, None),
-            Some(UsbGadgetState::Connected)
+            Some(UsbGadgetState::Disconnected)
         );
         assert_eq!(
             UsbGadgetState::map_from_device_state(DeviceState::Powered, None),
-            Some(UsbGadgetState::Connected)
+            Some(UsbGadgetState::Disconnected)
         );
         assert_eq!(
             UsbGadgetState::map_from_device_state(DeviceState::Default, None),
