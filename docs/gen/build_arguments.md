@@ -4022,7 +4022,7 @@ configuration / Rust custom target definition.
 
 **Current value (from the default):** `["//build/config:cpu_baseline"]`
 
-From //zircon/kernel/switch/BUILD.gn:31
+From //zircon/kernel/switch/BUILD.gn:33
 
 ### experimental_mem_enabled
 
@@ -5021,7 +5021,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:26
+From //zircon/kernel/switch/BUILD.gn:28
 
 ### kernel_no_userabi
 
