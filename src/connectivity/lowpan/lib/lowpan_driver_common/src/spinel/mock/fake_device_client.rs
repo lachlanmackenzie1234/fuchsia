@@ -73,9 +73,8 @@ impl FakeSpinelDevice {
         properties.insert(Prop::Rcp(PropRcp::EnhAckProbing), vec![0, 0, 0, 0]);
         properties.insert(Prop::Mac(PropMac::Unknown(4868)), vec![]);
         properties.insert(Prop::Mac(PropMac::Unknown(4869)), vec![]);
-        // SPINEL_PROP_RADIO_COEX_ENABLE, set at init because the platform radio URL
-        // includes `enable-coex`.
-        properties.insert(Prop::Phy(PropPhy::Unknown(0x120d)), vec![0]);
+        // Set at init because the platform radio URL includes `enable-coex`.
+        properties.insert(Prop::Phy(PropPhy::RadioCoexEnable), vec![0]);
 
         properties.insert(Prop::Stream(PropStream::Net), vec![]);
         properties.insert(Prop::Stream(PropStream::NetInsecure), vec![]);
@@ -678,8 +677,7 @@ impl FakeSpinelDevice {
                 )
                 .unwrap();
             }
-            Prop::Rcp(PropRcp::Unknown(176)) => {
-                // RCP API Version
+            Prop::Rcp(PropRcp::ApiVersion) => {
                 spinel_write!(
                     &mut response,
                     "Ciii",
@@ -690,7 +688,7 @@ impl FakeSpinelDevice {
                 )
                 .unwrap();
             }
-            Prop::Phy(PropPhy::Unknown(0x120b)) => {
+            Prop::Phy(PropPhy::RadioCaps) => {
                 spinel_write!(&mut response, "Ciii", frame.header, Cmd::PropValueIs, prop, 0xFFFF)
                     .unwrap();
             }
