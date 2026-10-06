@@ -289,8 +289,7 @@ def load_toolchains():
     except (OSError, ValueError) as e:
         return None, str(e)
     toolchains = {}
-    for key in sorted(known):
-        outs = known[key]
+    for key, outs in sorted(known.items()):
         if isinstance(outs, list) and any(isinstance(o, str) and o.strip() for o in outs):
             toolchains.setdefault(key.split("(", 1)[0], []).append(key)
     return toolchains, None

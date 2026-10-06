@@ -181,7 +181,14 @@ def is_allowed_scope(path: str) -> bool:
     for prefix in ALLOWED_GLOBAL_PREFIXES:
         if norm.startswith(prefix):
             return True
-    if norm in ("tools/BUILD.gn", "src/BUILD.gn", "sdk/BUILD.gn"):
+    if norm in (
+        "tools/BUILD.gn",
+        "src/BUILD.gn",
+        "sdk/BUILD.gn",
+        "sdk/atom_lists.bzl",
+        "sdk/fidl/BUILD.gn",
+        "sdk/fidl/category_lists.bzl",
+    ):
         return True
     # Build files under bundles/ wire migrated targets and tests into CQ (test groups,
     # tests_barrier / bazel_target_test_suite_barrier of builder groups), which migrations
