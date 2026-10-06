@@ -439,7 +439,7 @@ impl From<&Error> for SerializableError {
     fn from(error: &Error) -> Self {
         match error {
             err @ Error::Unexpected(e) => {
-                Self::Unexpected { code: err.exit_code(), message: format!("{}", e) }
+                Self::Unexpected { code: err.exit_code(), message: format!("{:#}", e) }
             }
             err @ Error::IoError(e) => {
                 Self::IoError { code: err.exit_code(), message: format!("{}", e) }
@@ -504,6 +504,15 @@ mod test {
         assert_eq!(
             SerializableError::from(Error::Unexpected(anyhow::Error::msg("Cytherea".to_string()))),
             SerializableError::Unexpected { code: 1, message: "Cytherea".to_string() }
+        );
+        assert_eq!(
+            SerializableError::from(Error::Unexpected(
+                anyhow::anyhow!("inner error").context("outer error")
+            )),
+            SerializableError::Unexpected {
+                code: 1,
+                message: "outer error: inner error".to_string()
+            }
         );
         assert_eq!(
             SerializableError::from(Error::User(anyhow::Error::msg("Cytherea".to_string()))),
