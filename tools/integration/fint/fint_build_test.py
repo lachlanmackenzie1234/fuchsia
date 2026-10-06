@@ -190,9 +190,11 @@ class BuildArtifactsTest(unittest.TestCase):
         mock_run.return_value.returncode = 0
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = pathlib.Path(temp_dir)
-            build_dir = temp_path / "build"
+            checkout_dir = temp_path / "checkout"
+            build_dir = checkout_dir / "out" / "default"
             artifact_dir = temp_path / "artifact"
-            build_dir.mkdir()
+            checkout_dir.mkdir()
+            build_dir.mkdir(parents=True)
             artifact_dir.mkdir()
 
             # Create fake raw ninja_build_trace.json.gz
@@ -200,19 +202,20 @@ class BuildArtifactsTest(unittest.TestCase):
             raw_trace.write_text("raw-trace-content")
 
             # Create fake tool paths file to provide ninjatrace_prebuilt and buildstats_prebuilt
+            # using relative paths starting with ../.. from build_dir
             tool_paths_file = build_dir / fint_build.TOOL_PATHS_JSON
             tool_paths_file.write_text(
                 json.dumps(
                     [
                         {
                             "name": "ninjatrace_prebuilt",
-                            "path": "prebuilt/ninjatrace",
+                            "path": "../../prebuilt/tools/ninjatrace/linux-x64/ninjatrace",
                             "os": "linux",
                             "cpu": "x64",
                         },
                         {
                             "name": "buildstats_prebuilt",
-                            "path": "prebuilt/buildstats",
+                            "path": "../../prebuilt/tools/buildstats/linux-x64/buildstats",
                             "os": "linux",
                             "cpu": "x64",
                         },
@@ -222,6 +225,7 @@ class BuildArtifactsTest(unittest.TestCase):
 
             static_spec = static_pb2.Static()
             context_spec = context_pb2.Context(
+                checkout_dir=str(checkout_dir),
                 build_dir=str(build_dir),
                 artifact_dir=str(artifact_dir),
             )
@@ -233,10 +237,13 @@ class BuildArtifactsTest(unittest.TestCase):
                 verbose=False,
             )
 
+            executed_cmds: list[list[str]] = []
+
             # We must stub subprocess.run to touch the files they generate, since they are mocked
             def side_effect(
                 cmd: list[str],
             ) -> subprocess.CompletedProcess[bytes]:
+                executed_cmds.append(cmd)
                 if "ninjatrace" in cmd[0]:
                     (build_dir / fint_build.NINJATRACE_JSON_GZ).write_text(
                         "processed-trace"
@@ -250,6 +257,18 @@ class BuildArtifactsTest(unittest.TestCase):
             mock_run.side_effect = side_effect
 
             ctx.produce_build_artifacts(42)
+
+            # Verify that ninjatrace and buildstats tools were resolved relative to build_dir
+            expected_ninjatrace_tool = str(
+                build_dir
+                / "../../prebuilt/tools/ninjatrace/linux-x64/ninjatrace"
+            )
+            expected_buildstats_tool = str(
+                build_dir
+                / "../../prebuilt/tools/buildstats/linux-x64/buildstats"
+            )
+            self.assertEqual(executed_cmds[0][0], expected_ninjatrace_tool)
+            self.assertEqual(executed_cmds[1][0], expected_buildstats_tool)
 
             # Verify that ninjatrace.json.gz was copied to artifact_dir
             trace_dest = artifact_dir / fint_build.NINJATRACE_JSON_GZ
@@ -274,6 +293,92 @@ class BuildArtifactsTest(unittest.TestCase):
                 manifest_content.get("buildstatsJsonFiles"),
                 [str(stats_dest)],
             )
+
+    @mock.patch.object(subprocess, "run")
+    def test_produce_build_artifacts_with_subbuild_ninja_traces(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Verifies that subbuild traces are merged with ninjatrace tool resolved relative to build_dir."""
+        mock_run.return_value.returncode = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            checkout_dir = temp_path / "checkout"
+            build_dir = checkout_dir / "out" / "default"
+            artifact_dir = temp_path / "artifact"
+            checkout_dir.mkdir()
+            build_dir.mkdir(parents=True)
+            artifact_dir.mkdir()
+
+            # Create raw trace, ninja_subbuilds.json, and the ninjatrace2json.py script
+            raw_trace = build_dir / fint_build.NINJA_BUILD_TRACE_GZ
+            raw_trace.write_text("raw-trace-content")
+
+            subbuilds_json = build_dir / "ninja_subbuilds.json"
+            subbuilds_json.write_text("[]")
+
+            ninjatrace2json_script = (
+                checkout_dir / fint_build.NINJATRACE2JSON_PY_RELATIVE_PATH
+            )
+            ninjatrace2json_script.parent.mkdir(parents=True, exist_ok=True)
+            ninjatrace2json_script.write_text("#!/usr/bin/env python3\n")
+
+            tool_paths_file = build_dir / fint_build.TOOL_PATHS_JSON
+            tool_paths_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "ninjatrace_prebuilt",
+                            "path": "../../prebuilt/tools/ninjatrace/linux-x64/ninjatrace",
+                            "os": "linux",
+                            "cpu": "x64",
+                        },
+                    ]
+                )
+            )
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(
+                checkout_dir=str(checkout_dir),
+                build_dir=str(build_dir),
+                artifact_dir=str(artifact_dir),
+            )
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(
+                static_spec=static_spec,
+                context_spec=context_spec,
+                host=host,
+                verbose=False,
+            )
+
+            executed_cmds: list[list[str]] = []
+
+            def side_effect(
+                cmd: list[str],
+            ) -> subprocess.CompletedProcess[bytes]:
+                executed_cmds.append(cmd)
+                if "ninjatrace" in cmd[0]:
+                    (build_dir / fint_build.NINJATRACE_JSON_GZ).write_text(
+                        "processed-trace"
+                    )
+                return subprocess.CompletedProcess(cmd, 0)
+
+            mock_run.side_effect = side_effect
+
+            ctx.produce_build_artifacts(42)
+
+            # Step 1: raw ninjatrace prebuilt
+            expected_ninjatrace_tool = str(
+                build_dir
+                / "../../prebuilt/tools/ninjatrace/linux-x64/ninjatrace"
+            )
+            self.assertEqual(executed_cmds[0][0], expected_ninjatrace_tool)
+
+            # Step 3: ninjatrace2json.py merging subbuild traces
+            self.assertEqual(len(executed_cmds), 2)
+            merge_cmd = executed_cmds[1]
+            self.assertIn("--ninjatrace-path", merge_cmd)
+            idx = merge_cmd.index("--ninjatrace-path")
+            self.assertEqual(merge_cmd[idx + 1], expected_ninjatrace_tool)
 
     def test_produce_build_artifacts_with_ninja_traces_missing_tool_paths(
         self,
@@ -961,6 +1066,113 @@ class NinjaBuildWrapTest(unittest.TestCase):
                 # Exiting with success should write a new success stamp
                 self.assertTrue(stamp_path.exists())
                 mock_export.assert_called_once()
+
+
+class BuildContextToolPathsTest(unittest.TestCase):
+    """Tests BuildContext tool path resolution and cached properties."""
+
+    def test_resolve_tool_path_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            build_dir = pathlib.Path(tmp_dir) / "out" / "default"
+            build_dir.mkdir(parents=True)
+
+            tool_paths_file = build_dir / fint_build.TOOL_PATHS_JSON
+            tool_paths_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "ninjatrace_prebuilt",
+                            "path": "../../prebuilt/tools/ninjatrace",
+                            "os": "linux",
+                            "cpu": "x64",
+                        },
+                        {
+                            "name": "buildstats_prebuilt",
+                            "path": "../../prebuilt/tools/buildstats",
+                            "os": "linux",
+                            "cpu": "x64",
+                        },
+                    ]
+                )
+            )
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(build_dir=str(build_dir))
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+
+            expected_ninjatrace = build_dir / "../../prebuilt/tools/ninjatrace"
+            expected_buildstats = build_dir / "../../prebuilt/tools/buildstats"
+
+            self.assertEqual(
+                ctx.resolve_tool_path("ninjatrace_prebuilt"),
+                expected_ninjatrace,
+            )
+            self.assertEqual(
+                ctx.resolve_tool_path("buildstats_prebuilt"),
+                expected_buildstats,
+            )
+            self.assertEqual(ctx.ninjatrace_tool_path, expected_ninjatrace)
+            self.assertEqual(ctx.buildstats_tool_path, expected_buildstats)
+            self.assertIsNone(ctx.resolve_tool_path("nonexistent_tool"))
+
+    def test_resolve_tool_path_missing_or_invalid_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            build_dir = pathlib.Path(tmp_dir) / "out" / "default"
+            build_dir.mkdir(parents=True)
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(build_dir=str(build_dir))
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+
+            # When tool_paths.json does not exist
+            self.assertIsNone(ctx.resolve_tool_path("ninjatrace_prebuilt"))
+            self.assertIsNone(ctx.ninjatrace_tool_path)
+            self.assertIsNone(ctx.buildstats_tool_path)
+
+            # When tool_paths.json is invalid JSON
+            ctx_invalid = fint_build.BuildContext(
+                static_spec, context_spec, host
+            )
+            tool_paths_file = build_dir / fint_build.TOOL_PATHS_JSON
+            tool_paths_file.write_text("invalid json")
+            self.assertIsNone(
+                ctx_invalid.resolve_tool_path("ninjatrace_prebuilt")
+            )
+            self.assertIsNone(ctx_invalid.ninjatrace_tool_path)
+
+    def test_cached_properties(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            build_dir = pathlib.Path(tmp_dir) / "out" / "default"
+            build_dir.mkdir(parents=True)
+
+            tool_paths_file = build_dir / fint_build.TOOL_PATHS_JSON
+            tool_paths_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "ninjatrace_prebuilt",
+                            "path": "../../prebuilt/tools/ninjatrace",
+                            "os": "linux",
+                            "cpu": "x64",
+                        },
+                    ]
+                )
+            )
+
+            static_spec = static_pb2.Static()
+            context_spec = context_pb2.Context(build_dir=str(build_dir))
+            host = fint_build.HostProperties(os="linux", cpu="x64")
+            ctx = fint_build.BuildContext(static_spec, context_spec, host)
+
+            first_trace = ctx.ninjatrace_tool_path
+            self.assertIsNotNone(first_trace)
+
+            # Delete the file from disk; cached property should still return the cached Path
+            tool_paths_file.unlink()
+            second_trace = ctx.ninjatrace_tool_path
+            self.assertEqual(first_trace, second_trace)
 
 
 class MainExecutionTest(unittest.TestCase):

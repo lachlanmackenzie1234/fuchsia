@@ -672,6 +672,25 @@ class BuildContext:
             paths.append(ToolPathSpec.from_dict(item))
         return paths
 
+    def resolve_tool_path(self, tool_name: str) -> pathlib.Path | None:
+        """Resolves a host tool from tool_paths.json relative to build_dir."""
+        try:
+            paths = self.tool_paths
+        except ValueError:
+            return None
+        rel_path = lookup_tool_path(paths, tool_name, self.host)
+        return (self.build_dir / rel_path) if rel_path else None
+
+    @functools.cached_property
+    def ninjatrace_tool_path(self) -> pathlib.Path | None:
+        """Returns the resolved path to ninjatrace_prebuilt, if configured."""
+        return self.resolve_tool_path("ninjatrace_prebuilt")
+
+    @functools.cached_property
+    def buildstats_tool_path(self) -> pathlib.Path | None:
+        """Returns the resolved path to buildstats_prebuilt, if configured."""
+        return self.resolve_tool_path("buildstats_prebuilt")
+
     @functools.cached_property
     def clippy_targets(self) -> list[ClippyTargetSpec]:
         """Loads and returns the clippy/rust target mapping list."""
@@ -956,10 +975,12 @@ class BuildContext:
                 f"export_last_build_debug_symbols failed with exit code {res.returncode}"
             )
 
-    def _run_buildstats(self, buildstats_tool: str) -> pathlib.Path | None:
+    def _run_buildstats(self) -> pathlib.Path | None:
         """Runs the buildstats prebuilt tool on the raw trace to generate buildstats.json.gz (Step 2)."""
+        if not self.buildstats_tool_path:
+            return None
         stats_cmd = [
-            str(self.checkout_dir / buildstats_tool),
+            str(self.buildstats_tool_path),
             "--ninjatrace",
             str(self.processed_trace_path),
             "--output",
@@ -972,7 +993,7 @@ class BuildContext:
             return self.buildstats_json_path
         return None
 
-    def _merge_subbuild_traces(self, ninjatrace_tool: str) -> None:
+    def _merge_subbuild_traces(self) -> None:
         """Merges and interleaves nested sub-build traces into processed_trace_path in-place (Step 3)."""
         if not (
             (self.build_dir / "ninja_subbuilds.json").is_file()
@@ -988,7 +1009,7 @@ class BuildContext:
             "--ninja-path",
             str(self.checkout_dir / self.host.ninja_relative_path),
             "--ninjatrace-path",
-            str(self.checkout_dir / ninjatrace_tool),
+            str(self.ninjatrace_tool_path),
             "--subbuilds-in-place",
         ]
         if self.verbose:
@@ -1021,14 +1042,7 @@ class BuildContext:
             )
             return None, None
 
-        ninjatrace_tool = lookup_tool_path(
-            paths, "ninjatrace_prebuilt", self.host
-        )
-        buildstats_tool = lookup_tool_path(
-            paths, "buildstats_prebuilt", self.host
-        )
-
-        if not ninjatrace_tool:
+        if not self.ninjatrace_tool_path:
             msg(
                 "Warning: Skipping Ninja trace analysis: ninjatrace_prebuilt tool path not found in tool paths.",
                 file=sys.stderr,
@@ -1041,7 +1055,7 @@ class BuildContext:
         try:
             # Step 1: Run the raw ninjatrace prebuilt tool to generate a raw unmerged processed trace!
             cmd = [
-                str(self.checkout_dir / ninjatrace_tool),
+                str(self.ninjatrace_tool_path),
                 "-ninjabuildtrace",
                 str(self.raw_ninja_trace_path),
                 "-trace-json",
@@ -1055,13 +1069,12 @@ class BuildContext:
 
                 # Step 2: Run buildstats on this unmerged raw trace to generate buildstats.json.gz.
                 # This completely prevents any Go string-pid unmarshal crashes or subbuild double-counting!
-                if buildstats_tool:
-                    buildstats_out = self._run_buildstats(buildstats_tool)
+                buildstats_out = self._run_buildstats()
 
                 # Step 3: Run the in-tree ninjatrace2json.py script with --subbuilds-in-place.
                 # This chronologically merges and interleaves sub-build traces into processed_trace_path
                 # to produce the final, consolidated trace for Perfetto, with full safety guarantees!
-                self._merge_subbuild_traces(ninjatrace_tool)
+                self._merge_subbuild_traces()
         except OSError as e:
             msg(
                 f"Warning: Failed to execute Ninja trace post-processing: {e}",
