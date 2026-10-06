@@ -131,6 +131,7 @@ go_binary_host_tool(
   - `output_name` in GN -> `crate_name` in Bazel.
   - `with_unit_tests = true` in GN -> `with_host_unit_tests = True` in Bazel.
   - `features` in GN -> `crate_features` in Bazel.
+  - C/C++ library dependencies in GN `deps` -> `link_deps` in Bazel (Rust rules only allow Rust targets in `deps`).
 - **Third-Party Dependencies:** Third-party crate references MUST use the Bazel vendor path (e.g., `//third_party/rust_crates/vendor:anyhow`).
 
 ---

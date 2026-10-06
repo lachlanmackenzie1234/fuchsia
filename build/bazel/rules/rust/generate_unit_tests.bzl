@@ -29,7 +29,7 @@ def generate_unit_tests(
         with_host_unit_tests: If true, a host test target will be created.
         with_unit_tests: If true, a unit test target will be created.
         deps: Dependencies of the parent rustc_xxx() target.
-        test_deps: Extra dependencies for the test target, these will be appended
+        test_deps: Extra Rust dependencies for the test target, these will be appended
             to deps to form the full dependency list for the test target. Note that
             Bazel will complain if the same label appears in both deps and test_deps.
         visibility: Visibility of the test target.

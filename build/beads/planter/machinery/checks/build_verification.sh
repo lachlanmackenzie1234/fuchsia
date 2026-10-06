@@ -180,8 +180,8 @@ for d in dirs:
 LINKED_TEMPLATES = {"executable", "test", "rustc_binary", "rustc_test", "loadable_module", "shared_library", "rustc_cdylib", "fuchsia_driver"}
 LIBRARY_TEMPLATES = {"rustc_library", "rustc_macro", "rustc_staticlib", "static_library", "source_set"}
 GN_TARGET = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
-GN_DEP_LIST = re.compile(r"(?<![\w.])(?:public_deps|deps|non_rust_deps|test_deps|data_deps)\s*\+?=\s*\[([^\]]*)\]")
-GN_DEP_VAR = re.compile(r"(?<![\w.])(?:public_deps|deps|non_rust_deps|test_deps|data_deps)\s*\+?=\s*([A-Za-z_][^\n]*)")
+GN_DEP_LIST = re.compile(r"(?<![\w.])(?:public_deps|deps|non_rust_deps|link_deps|test_deps|data_deps)\s*\+?=\s*\[([^\]]*)\]")
+GN_DEP_VAR = re.compile(r"(?<![\w.])(?:public_deps|deps|non_rust_deps|link_deps|test_deps|data_deps)\s*\+?=\s*([A-Za-z_][^\n]*)")
 LIST_VAR = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\+?=\s*\[([^\]]*)\]")
 UNIT_TESTS = re.compile(r"(?<![\w.])with_unit_tests\s*=\s*true")
 
@@ -327,7 +327,7 @@ def dependent_labels():
         dep_vars = {
             m.group(1)
             for m in LIST_VAR.finditer(gn_code(text))
-            if m.group(1) not in ("public_deps", "deps", "non_rust_deps", "test_deps", "data_deps", "visibility")
+            if m.group(1) not in ("public_deps", "deps", "non_rust_deps", "link_deps", "test_deps", "data_deps", "visibility")
             and names_changed(m.group(2))
         }
         for name, (tmpl, body) in sorted(gn_blocks(text).items()):

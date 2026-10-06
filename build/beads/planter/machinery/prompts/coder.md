@@ -64,8 +64,9 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `"//sdk/lib/syslog:use.shard.cml"`; `"inspect/client.shard.cml"` needs
      `"//sdk/lib/inspect:{client,offer,use}.shard.cml"`).
 2. **Packaged binary & component (`fx_packaged_binary`, `fx_component`)**:
-   - Declare the binary (`fx_cc_binary` or `rustc_binary`) with `tags = ["manual"]` and include
-     `"//sdk/lib/fdio"` in `deps` (added implicitly in GN by `BUILDCONFIG.gn`).
+   - Declare the binary (`fx_cc_binary` or `rustc_binary`) with `tags = ["manual"]`. An
+     `fx_cc_binary` must include `"//sdk/lib/fdio"` in `deps` (added implicitly in GN by
+     `BUILDCONFIG.gn`); `rustc_binary` and `rustc_test` already add it on Fuchsia.
    - Wrap it with `fx_packaged_binary(name = "<n>_packaged_bin", binary = ":<bin>", binary_name = "<elf_name>")`,
      where `binary_name` matches `bin/<elf_name>` in the `.cml`'s `program.binary` (GN
      `output_name` / `name`), and pass `deps = [":<n>_packaged_bin"]` to
@@ -248,6 +249,9 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    `"//sdk/lib/zxio",  # @bazel2gn:path_overwrite://sdk/lib/zxio:zxio_static`).
 2. **Same edge kinds**: bazel2gn emits C/C++ `deps` as GN `public_deps` and
    `implementation_deps` as GN `deps`. For Rust rules every dependency becomes a private GN dep.
+   Rust rules only accept Rust targets in `deps`: list C/C++ libraries (e.g. `cc_library`,
+   `fx_cc_library`, `cc_import`) in `link_deps`, which bazel2gn emits as GN `link_deps` (same
+   semantics as GN `deps`). Moving a C/C++ label from GN `deps` to `link_deps` keeps the edge.
 3. **Rust `public_deps` that forward configs**: keep them with a package-local group above the
    sentinel (`group("<name>") { visibility = [ ":*" ] public_deps = [ "<label>" ] all_dependent_configs = [ ... ] }`)
    and point the BUILD.bazel entry at it with `# @bazel2gn:path_overwrite::<name>`.

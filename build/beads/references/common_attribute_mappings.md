@@ -12,6 +12,7 @@ The following attribute renamings apply across languages:
 | `headers` | `hdrs` | Public/interface header files (C++). |
 | `public_deps` | `deps` | Public/interface dependencies re-exported to consumers. |
 | `deps` | `implementation_deps` / `deps` | Internal direct target dependencies. Mapped to `implementation_deps` where supported (e.g. C++ rules), or `deps` otherwise. Strict dependency checking applies: every directly imported or included dependency must be listed. |
+| `deps` / `non_rust_deps` (C/C++ deps of Rust targets) | `link_deps` | Rust rules only allow Rust targets in `deps`. Native (C/C++) libraries linked into Rust targets go in `link_deps`, which bazel2gn emits as GN `link_deps` (same semantics as GN `deps`). |
 | `sdk_area` | `api_area` | API governance area (e.g. for IDK atoms and FIDL libraries). |
 | `sdk_category` | `category` | IDK publication category (`partner`, `internal`, `experimental`, etc.). |
 | `output_name` | `crate_name` / `name` | Output artifact or crate name. |

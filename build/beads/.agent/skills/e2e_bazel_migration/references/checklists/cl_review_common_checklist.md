@@ -34,6 +34,7 @@ This checklist defines the universal review criteria and standards for code chan
   - `sources` -> `srcs`
   - `public_deps` -> `deps`
   - `deps` -> `implementation_deps` or `deps`
+  - C/C++ dependencies of Rust targets -> `link_deps` (Rust rules only allow Rust targets in `deps`)
 * [ ] **Boolean Capitalization:** Boolean values in Starlark are capitalized (`True` / `False`).
 * [ ] **Value Parity:** Mapped attribute values match between GN and Bazel configurations.
 * [ ] **No Extra Attributes:** Extra attributes (except for `visibility` and platform compatibility constraints) are not added to `BUILD.bazel` if not present in `BUILD.gn`.

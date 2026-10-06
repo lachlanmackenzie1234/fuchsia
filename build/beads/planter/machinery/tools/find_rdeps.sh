@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-# Helper tool to discover true reverse dependencies (deps, public_deps, test_deps, proc_macro_deps, actual)
+# Helper tool to discover true reverse dependencies (deps, public_deps, test_deps, proc_macro_deps, link_deps, actual)
 # of a target package directory while filtering out:
 # 1. References inside visibility = [...] or visibility.gni allowlists
 # 2. Substring prefix collisions with sibling packages (e.g. //a/b-foo or //a/b/subpkg)
