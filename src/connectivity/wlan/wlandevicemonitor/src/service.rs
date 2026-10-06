@@ -445,6 +445,11 @@ async fn create_iface(
     iface_counter: &IfaceCounter,
     cfg: &wlandevicemonitor_config::Config,
 ) -> Result<(NewIface, zx::Vmo), Error> {
+    if sta_address != NULL_ADDR
+        && (!sta_address.is_unicast() || !sta_address.is_locally_administered())
+    {
+        return Err(format_err!("Invalid sta_address: {}", sta_address));
+    }
     let phy = phys.get(&phy_id).ok_or_else(|| format_err!("PHY not found: phy_id {}", phy_id))?;
 
     // Create the bootstrap channel. This channel is only used for initial communication
@@ -2745,7 +2750,7 @@ mod tests {
         assert_eq!(2, iface_counter.next_iface_id());
         assert_eq!(3, iface_counter.next_iface_id());
     }
-    #[test_case([0, 1, 2, 3, 4, 5]; "New PHY - MAC 00:01:02:03:04:05")]
+    #[test_case([2, 1, 2, 3, 4, 5]; "New PHY - MAC 02:01:02:03:04:05")]
     #[test_case(NULL_ADDR.to_array(); "New PHY - MAC 00:00:00:00:00:00")]
     fn create_iface_succeeds(sta_address: [u8; 6]) {
         let mut exec = fasync::TestExecutor::new();
@@ -2849,6 +2854,49 @@ mod tests {
             assert_eq!(vec![0], ifaces);
         });
     }
+
+    #[test_case([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]; "universally administered unicast")]
+    #[test_case([0x03, 0x01, 0x02, 0x03, 0x04, 0x05]; "locally administered multicast")]
+    #[test_case([0x01, 0x01, 0x02, 0x03, 0x04, 0x05]; "universally administered multicast")]
+    fn create_iface_fails_on_invalid_mac(sta_address: [u8; 6]) {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.phy_event_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        let (phy, mut phy_stream) = fake_phy_device();
+        let phy_id = 10;
+        test_values.phys.insert(phy_id, phy);
+
+        let create_iface_fut =
+            test_values.monitor_proxy.create_iface(&fidl_svc::DeviceMonitorCreateIfaceRequest {
+                phy_id: Some(phy_id),
+                role: Some(fidl_wlan_common::WlanMacRole::Client),
+                sta_address: Some(sta_address),
+                ..Default::default()
+            });
+        let mut create_iface_fut = pin!(create_iface_fut);
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        assert_matches!(
+            exec.run_until_stalled(&mut create_iface_fut),
+            Poll::Ready(Ok(Err(e))) => assert_eq!(e, fidl_svc::DeviceMonitorError::unknown())
+        );
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()), Poll::Pending);
+    }
+
     #[fuchsia::test]
     fn create_iface_fails_on_error_from_phy() {
         let mut exec = fasync::TestExecutor::new();
@@ -2876,7 +2924,7 @@ mod tests {
             test_values.monitor_proxy.create_iface(&fidl_svc::DeviceMonitorCreateIfaceRequest {
                 phy_id: Some(phy_id),
                 role: Some(fidl_wlan_common::WlanMacRole::Client),
-                sta_address: Some([0, 1, 2, 3, 4, 5]),
+                sta_address: Some([2, 1, 2, 3, 4, 5]),
                 ..Default::default()
             });
         let mut create_iface_fut = pin!(create_iface_fut);
@@ -2888,7 +2936,7 @@ mod tests {
             &mut exec,
             &mut phy_stream,
             fidl_wlan_common::WlanMacRole::Client,
-            [0, 1, 2, 3, 4, 5],
+            [2, 1, 2, 3, 4, 5],
             Err(zx::Status::NO_RESOURCES),
         );
 
@@ -2940,13 +2988,13 @@ mod tests {
             fidl_svc::DeviceMonitorCreateIfaceRequest {
                 phy_id: None,
                 role: Some(fidl_wlan_common::WlanMacRole::Client),
-                sta_address: Some([0, 1, 2, 3, 4, 5]),
+                sta_address: Some([2, 1, 2, 3, 4, 5]),
                 ..Default::default()
             },
             fidl_svc::DeviceMonitorCreateIfaceRequest {
                 phy_id: Some(phy_id),
                 role: None,
-                sta_address: Some([0, 1, 2, 3, 4, 5]),
+                sta_address: Some([2, 1, 2, 3, 4, 5]),
                 ..Default::default()
             },
             fidl_svc::DeviceMonitorCreateIfaceRequest {
@@ -3005,7 +3053,7 @@ mod tests {
         test_values.phys.insert(phy_id, phy);
 
         for (sta_address, phy_assigned_iface_id, sme_assigned_iface_id) in
-            [([0x0, 0x1, 0x2, 0x3, 0x4, 0x5], 123, 0), ([0x6, 0x7, 0x8, 0x9, 0xa, 0xb], 0x123, 1)]
+            [([0x2, 0x1, 0x2, 0x3, 0x4, 0x5], 123, 0), ([0x6, 0x7, 0x8, 0x9, 0xa, 0xb], 0x123, 1)]
         {
             let create_iface_fut = test_values.monitor_proxy.create_iface(
                 &fidl_svc::DeviceMonitorCreateIfaceRequest {

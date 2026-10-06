@@ -207,7 +207,8 @@ closed protocol DeviceMonitor {
         ///
         /// Excluding this field or providing a MAC address with all zeroes
         /// will result in the driver assigning a MAC address that may
-        /// or may not be randomized.
+        /// or may not be randomized. Any non-zero MAC address must be a
+        /// locally administered unicast address.
         3: sta_address ieee80211.MacAddr;
     }) -> (table {
         1: iface_id uint16;
