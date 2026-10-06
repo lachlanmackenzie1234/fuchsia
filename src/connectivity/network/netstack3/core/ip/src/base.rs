@@ -712,7 +712,7 @@ impl<
             // never modified by NAT. This means it can be used to recover the
             // destination before NAT was performed.
             let original = conn.original_tuple();
-            Some((original.dst_addr, original.dst_port_or_id))
+            Some((original.dst_addr, original.transport.dst_port_or_id()))
         })
     }
 }
@@ -2598,14 +2598,14 @@ struct EarlyDemuxResult<I: Ip, S> {
 impl<I: FilterIpExt, S> EarlyDemuxResult<I, S> {
     fn new<P: IpPacket<I>>(socket: S, packet: &P) -> Self {
         let src_port =
-            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port());
+            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port_or_id());
         Self { socket, src_addr: packet.src_addr(), src_port }
     }
 
     // Returns the socket if it's still the right socket to handle the packet.
     fn take_socket<P: IpPacket<I>>(self, packet: &P) -> Option<S> {
         let src_port =
-            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port());
+            packet.maybe_transport_packet().transport_packet_data().map(|t| t.src_port_or_id());
         (self.src_addr == packet.src_addr() && self.src_port == src_port).then_some(self.socket)
     }
 

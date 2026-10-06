@@ -73,7 +73,7 @@ use netstack3_core::testutil::{
 use netstack3_core::{BindingsContext, CoreCtx, IpExt, StackState};
 use netstack3_device::queue::{ReceiveQueueContext as _, ReceiveQueueHandler as _};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
-use netstack3_filter::{FilterIpContext, FilterIpExt, TransportProtocol};
+use netstack3_filter::{FilterIpContext, FilterIpExt, TransportTuple};
 use netstack3_ip::device::{
     IpDeviceConfigurationUpdate, Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate,
     SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
@@ -3269,11 +3269,12 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
 
     fn original_tuple<I: TestIpExt>(local_port: NonZeroU16) -> Tuple<I> {
         Tuple {
-            protocol: TransportProtocol::Udp,
             src_addr: I::LOOPBACK_ADDRESS.get(),
             dst_addr: I::TEST_ADDRS.remote_ip.get(),
-            src_port_or_id: local_port.get(),
-            dst_port_or_id: LISTENER_PORT.get(),
+            transport: TransportTuple::Udp {
+                src_port: local_port.get(),
+                dst_port: LISTENER_PORT.get(),
+            },
         }
     }
 
