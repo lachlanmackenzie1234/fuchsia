@@ -50,6 +50,7 @@ bazel2gn_verification_targets = [
   "//sdk/rust/zx:verify_bazel2gn",
   "//src/bringup/lib/netboot:verify_bazel2gn",
   "//src/connectivity/bluetooth/lib/packet-encoding:verify_bazel2gn",
+  "//src/connectivity/bluetooth/testing/test-harness-macro:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",
   "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
   "//src/developer/debug/ipc:verify_bazel2gn",
