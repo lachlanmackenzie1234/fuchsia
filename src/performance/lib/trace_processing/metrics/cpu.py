@@ -31,22 +31,68 @@ _DEFAULT_PERCENT_CUTOFF = 0.0
 _ONE_S_IN_NS = 1_000_000_000
 _NS_PER_MS = 1_000_000.0
 
+# NOTE(nathaniel): it would be nice to have these more clearly show
+# that while the fields of one class are a superset of the fields of
+# the other, the classes themselves aren't in a superclass-subclass
+# relationship. We would be able to do this with:
+#
+# _PROCESS_BREAKDOWN_METRIC_FIELDS = frozendict({
+#     'process_name': str,
+#     'cpu': int,
+#     'percent': float,
+#     'duration': float,
+#     'normalized_percent': NotRequired[float],
+#     'normalized_duration': NotRequired[float],
+#     'duration_per_rate': NotRequired[Mapping[str, float]],
+# })
+# _THREAD_BREAKDOWN_METRIC_FIELDS = _PROCESS_BREAKDOWN_METRIC_FIELDS | frozendict({
+#     'thread_name': str,
+#     'tid': int,
+# })
+# ProcessBreakdownMetric = TypedDict(
+#     "ProcessBreakdownMetric", _PROCESS_BREAKDOWN_METRIC_FIELDS, total=True, closed=True)
+# ThreadBreakdownMetric = TypedDict(
+#     "ThreadBreakdownMetric", _THREAD_BREAKDOWN_METRIC_FIELDS, total=True, closed=True)
+#
+# ... but the formal specification gets in the way: "[the dictionary from keys
+# to value type specifications] must be a dictionary display expression, not a
+# variable or other expression that evaluates to a dictionary at runtime"
+# (https://typing.python.org/en/latest/spec/typeddict.html#functional-syntax). 🙁
+ProcessBreakdownMetric = TypedDict(
+    "ProcessBreakdownMetric",
+    {
+        "process_name": str,
+        "cpu": int,
+        "percent": float,
+        "duration": float,
+        "normalized_percent": NotRequired[float],
+        "normalized_duration": NotRequired[float],
+        "duration_per_rate": NotRequired[Mapping[str, float]],
+    },
+    total=True,
+    # TODO(https://fxbug.dev/569952695): used closed=True when able.
+    # closed=True,
+)
+ThreadBreakdownMetric = TypedDict(
+    "ThreadBreakdownMetric",
+    {
+        "process_name": str,
+        "cpu": int,
+        "percent": float,
+        "duration": float,
+        "normalized_percent": NotRequired[float],
+        "normalized_duration": NotRequired[float],
+        "duration_per_rate": NotRequired[Mapping[str, float]],
+        "thread_name": str,
+        "tid": int,
+    },
+    total=True,
+    # TODO(https://fxbug.dev/569952695): used closed=True when able.
+    # closed=True,
+)
 
-class BreakdownMetric(TypedDict):
-    """Internal representation of a single CPU breakdown entry."""
-
-    process_name: str
-    thread_name: NotRequired[str]
-    tid: NotRequired[int]
-    cpu: int
-    percent: float
-    duration: float
-    normalized_percent: NotRequired[float]
-    normalized_duration: NotRequired[float]
-    duration_per_rate: NotRequired[dict[str, float]]
-
-
-Breakdown: TypeAlias = list[dict[str, metrics.JSON]]
+ProcessBreakdown: TypeAlias = Sequence[ProcessBreakdownMetric]
+ThreadBreakdown: TypeAlias = Sequence[ThreadBreakdownMetric]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -272,9 +318,13 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
 
         return results
 
+    # TODO(https://github.com/python/mypy/issues/18176): change this return
+    # specification to `-> tuple[str, ThreadBreakdown]`; the type-checker
+    # ought understand that a ThreadBreakdown is suitable to use where a
+    # metrics.JSON is needed.
     def process_freeform_metrics(
         self, model: trace_model.Model
-    ) -> tuple[str, Breakdown]:
+    ) -> tuple[str, metrics.JSON]:
         """
         Given trace_model.Model, iterates through all the SchedulingRecords and calculates the
         duration for each Process's Threads, and saves them by CPU.
@@ -287,11 +337,16 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             Breakdown: Per-process, per-thread CPU usage breakdown.
         """
         (breakdown, _) = self.process_metrics_and_get_total_time(model)
-        return self.FREEFORM_METRICS_FILENAME, breakdown
+        # TODO(https://github.com/python/mypy/issues/18176): eliminate this cast;
+        # the type-checker ought understand that a ThreadBreakdown is suitable
+        # to use where a metrics.JSON is needed.
+        return self.FREEFORM_METRICS_FILENAME, cast(
+            Sequence[Mapping[str, metrics.JSON]], breakdown
+        )
 
     def process_metrics_and_get_total_time(
         self, model: trace_model.Model
-    ) -> tuple[Breakdown, float]:
+    ) -> tuple[ThreadBreakdown, float]:
         """
         Given trace_model.Model, iterates through all the SchedulingRecords and calculates the
         duration for each Process's Threads, and saves them by CPU.
@@ -325,7 +380,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
         # compared to the total CPU duration.
         # If the percent spent is at or above our cutoff, add metric to
         # breakdown.
-        full_breakdown: list[BreakdownMetric] = []
+        full_breakdown: list[ThreadBreakdownMetric] = []
         for tid, cpu_stats_map in durations.tid_to_stats.items():
             if tid in tid_to_thread_name:
                 for cpu, stats in cpu_stats_map.items():
@@ -346,7 +401,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                     )
 
                     if percent >= self._percent_cutoff:
-                        metric: BreakdownMetric = {
+                        metric: ThreadBreakdownMetric = {
                             "process_name": tid_to_process_name[tid],
                             "thread_name": tid_to_thread_name[tid],
                             "tid": tid,
@@ -379,7 +434,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             reverse=True,
         )
         return (
-            cast(Breakdown, full_breakdown),
+            full_breakdown,
             durations.max_timestamp - durations.min_timestamp,
         )
 
@@ -607,40 +662,30 @@ class DurationsBreakdown:
         return durations
 
 
-def group_by_process_name(breakdown: Breakdown) -> Breakdown:
+def group_by_process_name(breakdown: ThreadBreakdown) -> ProcessBreakdown:
     """
     Given a breakdown, group the metrics by process_name only,
     ignoring thread name.
     """
-    # Cast to internal type for better type safety inside this function.
-    typed_breakdown = cast(list[BreakdownMetric], breakdown)
-    if not typed_breakdown:
-        return []
-
     # Group metrics by (cpu, process_name)
     grouped: collections.defaultdict[
-        tuple[int, str], list[BreakdownMetric]
+        tuple[int, str], list[ThreadBreakdownMetric]
     ] = collections.defaultdict(list)
-    for metric in typed_breakdown:
+    for metric in breakdown:
         grouped[(metric["cpu"], metric["process_name"])].append(metric)
 
-    consolidated_breakdown: list[BreakdownMetric] = [
-        _aggregate_metrics(metrics) for metrics in grouped.values()
-    ]
-
-    return cast(
-        Breakdown,
-        sorted(
-            consolidated_breakdown,
-            key=lambda m: (m["cpu"], m["percent"]),
-            reverse=True,
-        ),
+    return sorted(
+        map(_aggregate_thread_metrics, grouped.values()),
+        key=lambda m: (m["cpu"], m["percent"]),
+        reverse=True,
     )
 
 
-def _aggregate_metrics(metrics: list[BreakdownMetric]) -> BreakdownMetric:
+def _aggregate_thread_metrics(
+    metrics: Sequence[ThreadBreakdownMetric],
+) -> ProcessBreakdownMetric:
     """
-    Combines a list of thread-level metrics into a single process-level metric.
+    Combines a sequence of thread-level metrics into a single process-level metric.
 
     The combination rules are as follows:
     - Numerical fields (`percent`, `duration`, `normalized_percent`, `normalized_duration`)
@@ -651,13 +696,13 @@ def _aggregate_metrics(metrics: list[BreakdownMetric]) -> BreakdownMetric:
       at the process level.
 
     Args:
-        metrics: A non-empty list of BreakdownMetrics for the same process and CPU.
+        metrics: A non-empty sequence of ProcessBreakdownMetrics for the same process and CPU.
 
     Returns:
-        A single aggregated BreakdownMetric.
+        A single aggregated ProcessBreakdownMetric.
     """
     first = metrics[0]
-    merged: BreakdownMetric = {
+    merged: ProcessBreakdownMetric = {
         "process_name": first["process_name"],
         "cpu": first["cpu"],
         "percent": sum(m["percent"] for m in metrics),

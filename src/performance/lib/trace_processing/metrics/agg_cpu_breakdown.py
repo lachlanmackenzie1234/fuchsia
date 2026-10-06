@@ -3,7 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Any, TypedDict
+from collections.abc import Mapping
+from typing import Any, TypedDict, cast
 
 from reporting import metrics
 from trace_processing.metrics import cpu
@@ -29,7 +30,7 @@ class AggregateRecord(TypedDict):
     percent: float
 
 
-def record_from_dict(t: dict[str, metrics.JSON]) -> Record:
+def record_from_dict(t: Mapping[str, metrics.JSON]) -> Record:
     record: dict[str, Any] = {}
     for key, key_type in Record.__annotations__.items():
         assert key in t and isinstance(
@@ -62,7 +63,7 @@ class AggCpuBreakdownMetricsProcessor:
         self._total_time = total_time
 
     def aggregate_metrics(
-        self, breakdown: cpu.Breakdown
+        self, breakdown: cpu.ThreadBreakdown
     ) -> dict[float, list[AggregateRecord]]:
         """
         Given the breakdown of duration per thread, iterates through all the threads' durations for each
@@ -81,7 +82,12 @@ class AggCpuBreakdownMetricsProcessor:
         tid_to_process_name: dict[int, str] = {}
         for r in breakdown:
             # Save process and thread name for tid
-            t = record_from_dict(r)
+            t = record_from_dict(
+                # TODO(https://github.com/python/mypy/issues/18176): eliminate this
+                # cast and local field; the type-checker ought understand that a
+                # ThreadBreakdown is suitable to use where a metrics.JSON is needed.
+                cast(Mapping[str, metrics.JSON], r)
+            )
             tid = t["tid"]
             tid_to_process_name[tid] = t["process_name"]
             tid_to_thread_name[tid] = t["thread_name"]
