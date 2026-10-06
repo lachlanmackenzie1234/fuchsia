@@ -49,6 +49,7 @@ bazel2gn_verification_targets = [
   "//sdk/rust/zx-types:verify_bazel2gn",
   "//sdk/rust/zx:verify_bazel2gn",
   "//src/bringup/lib/netboot:verify_bazel2gn",
+  "//src/connectivity/bluetooth/lib/bt-obex/objects:verify_bazel2gn",
   "//src/connectivity/bluetooth/lib/packet-encoding:verify_bazel2gn",
   "//src/connectivity/bluetooth/testing/test-harness-macro:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",
