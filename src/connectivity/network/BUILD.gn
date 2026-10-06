@@ -37,11 +37,6 @@ group("netstack-for-tests") {
   deps = [ "netstack3:component-dropin" ]
 }
 
-group("netstack-debug-for-tests") {
-  testonly = true
-  deps = [ "netstack3:component-debug-dropin" ]
-}
-
 fuchsia_package("netstack2") {
   package_name = "netstack"
   deps = [ _netstack2_component ]
