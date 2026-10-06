@@ -599,8 +599,8 @@ pub struct FakeBindingsCtxState {
     pub rx_available: Vec<LoopbackDeviceId<FakeBindingsCtx>>,
     /// IDs with tx queue signaled available.
     pub tx_available: Vec<DeviceId<FakeBindingsCtx>>,
-    /// Recorded `(SocketInfo, Marks)` passed to `SocketOpsFilter::on_ingress`.
-    pub socket_ingress_filter_marks: Vec<(netstack3_base::socket::SocketInfo, Marks)>,
+    /// Recorded `(SocketInfo, Marks, PacketType)` passed to `SocketOpsFilter::on_ingress`.
+    pub packet_metadata: Vec<(netstack3_base::socket::SocketInfo, Marks, PacketType)>,
     /// Deferred resource removals.
     #[cfg(loom)]
     pub deferred_receivers: Vec<loom_notifiers::LoomReceiver>,
@@ -849,8 +849,9 @@ impl SocketOpsFilter<DeviceId<FakeBindingsCtx>> for FakeSocketOpsFilter<'_> {
         _device: &DeviceId<FakeBindingsCtx>,
         socket_info: netstack3_base::socket::SocketInfo,
         marks: &Marks,
+        packet_type: PacketType,
     ) -> netstack3_filter::SocketIngressFilterResult {
-        self.0.0.lock().state.socket_ingress_filter_marks.push((socket_info, *marks));
+        self.0.0.lock().state.packet_metadata.push((socket_info, *marks, packet_type));
         netstack3_filter::SocketIngressFilterResult::Accept
     }
 }

@@ -1256,7 +1256,7 @@ mod tests {
     use netstack3_base::testutil::FakeMatcherDeviceId;
     use netstack3_base::{
         IntoCoreTimerCtx, Mark, MarkDomain, MarkMatcher, MarkMatchers, Marks,
-        NetworkSerializationContext, TimerContext,
+        NetworkSerializationContext, PacketType, TimerContext,
     };
     use packet::{EmptyBuf, NestablePacketBuilder as _, NestableSerializer as _, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
@@ -1683,7 +1683,8 @@ mod tests {
             }],
         };
 
-        let mut metadata = FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 100)]));
+        let mut metadata =
+            FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 100)]), PacketType::OtherHost);
         assert_eq!(
             configure_nat::<LocalEgressHook, _, _, _, _, _>(
                 &mut core_ctx,

@@ -37,8 +37,9 @@ pub use conntrack::{
 };
 pub use context::{
     EitherIpProto, FilterBindingsContext, FilterBindingsTypes, FilterContext, FilterIpContext,
-    Marks, NatContext, SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult,
-    SocketOpsFilter, SocketOpsFilterBindingContext,
+    FrameDestination, LocalFrameDestination, Marks, NatContext, PacketType,
+    SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult, SocketOpsFilter,
+    SocketOpsFilterBindingContext,
 };
 pub use logic::{
     Accept, DropOrReject, DropPacket, FilterHandler, FilterImpl, FilterTimerId, IngressStopReason,
@@ -66,7 +67,7 @@ pub mod testutil {
     use packet::FragmentedByteSlice;
 
     use crate::{
-        FilterIpExt, IpPacket, Marks, SocketEgressFilterResult, SocketInfo,
+        FilterIpExt, IpPacket, Marks, PacketType, SocketEgressFilterResult, SocketInfo,
         SocketIngressFilterResult, SocketOpsFilter,
     };
 
@@ -104,6 +105,7 @@ pub mod testutil {
             _device: &D,
             _socket_info: SocketInfo,
             _marks: &Marks,
+            _packet_type: PacketType,
         ) -> SocketIngressFilterResult {
             SocketIngressFilterResult::Accept
         }

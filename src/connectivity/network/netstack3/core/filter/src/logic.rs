@@ -1021,6 +1021,10 @@ mod tests {
         fn marks(&self) -> &Marks {
             &self.marks
         }
+
+        fn packet_type(&self) -> netstack3_base::PacketType {
+            netstack3_base::PacketType::Host
+        }
     }
 
     #[test]

@@ -26,7 +26,8 @@ use netstack3_core::NetworkSerializationContext;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
     BindingsPacketMatcher, EitherIpProto, FilterIpExt, FilterIpPacket, FilterPacketMetadata,
-    Interfaces, SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult, SocketOpsFilter,
+    Interfaces, PacketType, SocketEgressFilterResult, SocketInfo, SocketIngressFilterResult,
+    SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, Marks};
 
@@ -911,6 +912,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
         device: &D,
         socket_info: SocketInfo,
         marks: &Marks,
+        _packet_type: PacketType,
     ) -> SocketIngressFilterResult {
         let state = self.state.read();
         let Some(prog) = state.root_cgroup_ingress.as_ref() else {
@@ -1257,6 +1259,7 @@ mod tests {
                     &device,
                     socket_info,
                     &marks,
+                    PacketType::Host,
                 );
 
                 assert!(result == SocketIngressFilterResult::Accept);

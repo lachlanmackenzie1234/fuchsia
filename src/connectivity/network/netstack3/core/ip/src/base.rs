@@ -502,6 +502,10 @@ impl<I: packet_formats::ip::IpExt, A, BT: FilterBindingsTypes + TxMetadataBindin
     fn marks(&self) -> &Marks {
         &self.marks
     }
+
+    fn packet_type(&self) -> PacketType {
+        self.packet_type
+    }
 }
 
 /// Send errors observed at or above the IP layer that carry a serializer.
@@ -2758,6 +2762,7 @@ fn dispatch_receive_ipv4_packet<
     );
 
     let marks = packet_metadata.marks;
+    let packet_type = packet_metadata.packet_type;
     packet_metadata.acknowledge_drop();
 
     match filter_verdict {
@@ -2813,7 +2818,8 @@ fn dispatch_receive_ipv4_packet<
     let (prefix, options, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv4HeaderInfo { prefix, options: options.as_ref() };
-    let mut receive_info = LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks };
+    let mut receive_info =
+        LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks, packet_type };
 
     core_ctx
         .dispatch_receive_ip_packet(
@@ -2890,6 +2896,7 @@ fn dispatch_receive_ipv6_packet<
     );
 
     let marks = packet_metadata.marks;
+    let packet_type = packet_metadata.packet_type;
     packet_metadata.acknowledge_drop();
 
     match filter_verdict {
@@ -2946,7 +2953,7 @@ fn dispatch_receive_ipv6_packet<
     let (fixed, extension, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv6HeaderInfo { fixed, extension };
-    let mut receive_info = LocalDeliveryPacketInfo { meta, header_info, marks };
+    let mut receive_info = LocalDeliveryPacketInfo { meta, header_info, marks, packet_type };
 
     core_ctx
         .dispatch_receive_ip_packet(

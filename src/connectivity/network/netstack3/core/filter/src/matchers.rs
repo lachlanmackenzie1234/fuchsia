@@ -162,7 +162,8 @@ mod tests {
 
     use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
     use netstack3_base::{
-        AddressMatcherType, MarkDomain, MarkMatcher, Marks, SegmentHeader, SubnetMatcher,
+        AddressMatcherType, MarkDomain, MarkMatcher, Marks, PacketType, SegmentHeader,
+        SubnetMatcher,
     };
 
     use super::*;
@@ -563,7 +564,7 @@ mod tests {
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 100)])),
+                &FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 100)]), PacketType::Host),
             ),
             true
         );
@@ -571,7 +572,7 @@ mod tests {
             matcher.matches(
                 &FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value(),
                 Interfaces { ingress: None, egress: None },
-                &FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 200)])),
+                &FakePacketMetadata::new(Marks::new([(MarkDomain::Mark1, 200)]), PacketType::Host),
             ),
             false
         );
