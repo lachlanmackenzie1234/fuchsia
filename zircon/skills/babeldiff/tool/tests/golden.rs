@@ -616,6 +616,42 @@ fn do_while_matches_loop_break() {
     assert!(issues.iter().any(|m| m.contains("condition tests")), "{issues:?}");
 }
 
+#[test]
+fn exhaustive_match_demotes_default_fallback_and_flow() {
+    let cpp = "const char* level_to_string(Level level) {\n  switch (level) {\n    case Level::kLow:\n      return \"Low\";\n    case Level::kHigh:\n      return \"High\";\n    default:\n      return \"Unknown\";\n  }\n}\n";
+    let rust = "pub fn level_to_string(level: Level) -> &'static str {\n    match level {\n        Level::Low => \"Low\",\n        Level::High => \"High\",\n    }\n}\n";
+    let cs = ChangeSet::from_files(&[
+        ("lamp.cc".into(), cpp.into()),
+        ("lamp.rs".into(), rust.into()),
+    ]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    let issues: Vec<&str> = p
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Issue)
+        .map(|f| f.message.as_str())
+        .collect();
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(p.findings.len(), 1, "{:?}", p.findings);
+    assert!(
+        p.findings[0]
+            .message
+            .contains("the Rust match covers every case, so it needs no default"),
+        "{:?}",
+        p.findings
+    );
+    for (_, a, b) in &p.summary.flow {
+        assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
+    }
+
+    // If a non-default C++ case is missing in Rust, it is still an issue.
+    let missing_case = "pub fn level_to_string(level: Level) -> &'static str {\n    match level {\n        Level::Low => \"Low\",\n    }\n}\n";
+    let issues = only_issues(cpp, missing_case);
+    assert!(!issues.is_empty(), "expected issue when a case is dropped");
+}
+
 fn version(path: &str, text: &str) -> babeldiff::input::Version {
     babeldiff::input::Version { path: path.into(), text: text.into(), changed: None }
 }

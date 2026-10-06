@@ -317,7 +317,10 @@ on narrow screens, and prints cleanly.
    a `case` turned `match` arm is one changed step. Aligned units are
    compared feature by feature, and `if` conditions test by test; unaligned
    ones are reported, and a unit that resembles one on the other side at a
-   different position is reported as possibly reordered.
+   different position is reported as possibly reordered. A C++ `default:`
+   arm that only panics, breaks or returns a fallback value is noted rather
+   than flagged when paired with an exhaustive Rust `match` that covers
+   every case.
 
 ## Library
 

@@ -435,9 +435,11 @@ fn lock_by_callback(a: &Unit, b: &Unit, cpp: &Function, rust: &Function, notes: 
     }
 }
 
-/// A C++ `default:` that only panics, against a Rust `match` with no
-/// wildcard arm: the compiler checks that the match covers every value, so
-/// the Rust needs no default.
+const EXHAUSTIVE_DEFAULT_WHY: &str = "the Rust match covers every case, so it needs no default";
+
+/// A C++ `default:` that only panics or returns a fallback value, against a
+/// Rust `match` with no wildcard arm: the compiler checks that the match
+/// covers every value, so the Rust needs no default.
 fn exhaustive_match(rows: &mut [Row], cpp: &Function, rust: &Function) {
     let has_match = rust.units.iter().any(|u| u.kind == UnitKind::Switch)
         && rust.lines.iter().any(|l| l.contains("match "));
@@ -448,6 +450,12 @@ fn exhaustive_match(rows: &mut [Row], cpp: &Function, rust: &Function) {
     if !has_match || wildcard {
         return;
     }
+    let all_cases_matched = !rows.iter().any(|r| {
+        r.marker == Marker::CppOnly
+            && row_unit(r, cpp, true).is_some_and(|v| {
+                v.kind == UnitKind::Case && !v.features.idents.iter().any(|i| i == "default")
+            })
+    });
     let mut k = 0;
     while k < rows.len() {
         let Some(u) =
@@ -470,16 +478,25 @@ fn exhaustive_match(rows: &mut [Row], cpp: &Function, rust: &Function) {
         {
             end += 1;
         }
-        let panics = (k + 1..end).all(|m| {
+        let unreachable_fallback = (k + 1..end).all(|m| {
             row_unit(&rows[m], cpp, true).is_some_and(|v| {
                 v.kind == UnitKind::Comment
                     || v.kind == UnitKind::Break
                     || v.features.calls.iter().any(|c| c == "panic" || c == "assert")
+                    || (all_cases_matched
+                        && v.kind == UnitKind::Return
+                        && v.features.ret == Some(Ret::Value)
+                        && v.features.calls.is_empty()
+                        && v.features.locks.is_empty()
+                        && v.features.errors.is_empty())
             })
         });
-        if panics {
-            for r in &mut rows[k..end] {
-                demote(r, "the Rust match covers every case, so it needs no default");
+        if unreachable_fallback {
+            demote(&mut rows[k], EXHAUSTIVE_DEFAULT_WHY);
+            for r in &mut rows[k + 1..end] {
+                if row_unit(r, cpp, true).is_some_and(|v| v.kind != UnitKind::Comment) {
+                    r.notes.clear();
+                }
             }
         }
         k = end;
@@ -1835,6 +1852,33 @@ pub fn summarize(cpp: &Function, rust: &Function, rows: &[Row]) -> Summary {
             }
         }
     }
+    let mut skipped_cpp = Vec::new();
+    let mut k = 0;
+    while k < rows.len() {
+        if rows[k]
+            .notes
+            .iter()
+            .any(|n| n.message.ends_with(EXHAUSTIVE_DEFAULT_WHY))
+        {
+            if let Some(i) = rows[k].cpp {
+                let depth = cpp.units[i].depth;
+                skipped_cpp.push(i);
+                k += 1;
+                while k < rows.len()
+                    && rows[k].marker == Marker::CppOnly
+                    && row_unit(&rows[k], cpp, true)
+                        .is_some_and(|v| v.depth > depth || v.kind == UnitKind::Comment)
+                {
+                    if let Some(ci) = rows[k].cpp {
+                        skipped_cpp.push(ci);
+                    }
+                    k += 1;
+                }
+                continue;
+            }
+        }
+        k += 1;
+    }
     let kinds: [(&'static str, &[UnitKind]); 6] = [
         ("if", &[UnitKind::If, UnitKind::ElseIf]),
         ("else", &[UnitKind::Else]),
@@ -1844,8 +1888,13 @@ pub fn summarize(cpp: &Function, rust: &Function, rows: &[Row]) -> Summary {
         ("break/continue", &[UnitKind::Break, UnitKind::Continue]),
     ];
     for (name, ks) in kinds {
-        let count = |f: &Function| f.units.iter().filter(|u| ks.contains(&u.kind)).count();
-        let (a, b) = (count(cpp), count(rust));
+        let a = cpp
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(i, u)| !skipped_cpp.contains(i) && ks.contains(&u.kind))
+            .count();
+        let b = rust.units.iter().filter(|u| ks.contains(&u.kind)).count();
         if a + b > 0 {
             s.flow.push((name, a, b));
         }
