@@ -244,5 +244,71 @@ TEST_F(UIStateProviderTest, ReconnectsOnListenerDisconnect) {
               }));
 }
 
+TEST_F(UIStateProviderTest, ResetsBackoffOnSuccess) {
+  Annotations annotations;
+
+  ui_state_provider_->GetOnUpdate(
+      [&annotations](const Annotations& cached_annotations) { annotations = cached_annotations; });
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kSystemUserActivityCurrentStateKey, ErrorOrString("unknown")),
+                           }));
+
+  server_.CloseConnection(ZX_ERR_PEER_CLOSED);
+  ASSERT_FALSE(server_.IsBound());
+
+  server_.SetState(fuchsia_ui_activity::State::kActive, zx::time_monotonic(0));
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations,
+              UnorderedElementsAreArray({
+                  Pair(kSystemUserActivityCurrentStateKey, ErrorOrString(Error::kConnectionError)),
+              }));
+  EXPECT_THAT(
+      ui_state_provider_->Get(),
+      UnorderedElementsAreArray({
+          Pair(kSystemUserActivityCurrentDurationKey, ErrorOrString(Error::kConnectionError)),
+      }));
+
+  RunLoopFor(zx::sec(1));
+  ASSERT_TRUE(server_.IsBound());
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kSystemUserActivityCurrentStateKey, ErrorOrString("active")),
+                           }));
+  EXPECT_THAT(ui_state_provider_->Get(),
+              UnorderedElementsAreArray({
+                  Pair(kSystemUserActivityCurrentDurationKey, ErrorOrString("000d00h00m01s")),
+              }));
+
+  server_.CloseConnection(ZX_ERR_PEER_CLOSED);
+  ASSERT_FALSE(server_.IsBound());
+
+  server_.SetState(fuchsia_ui_activity::State::kIdle, zx::time_monotonic(zx::sec(1).get()));
+
+  // Backoff should have been reset after the previous successful connection, so it should reconnect
+  // after 1s instead of 2s.
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations,
+              UnorderedElementsAreArray({
+                  Pair(kSystemUserActivityCurrentStateKey, ErrorOrString(Error::kConnectionError)),
+              }));
+  EXPECT_THAT(
+      ui_state_provider_->Get(),
+      UnorderedElementsAreArray({
+          Pair(kSystemUserActivityCurrentDurationKey, ErrorOrString(Error::kConnectionError)),
+      }));
+
+  RunLoopFor(zx::sec(1));
+  ASSERT_TRUE(server_.IsBound());
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kSystemUserActivityCurrentStateKey, ErrorOrString("idle")),
+                           }));
+  EXPECT_THAT(ui_state_provider_->Get(),
+              UnorderedElementsAreArray({
+                  Pair(kSystemUserActivityCurrentDurationKey, ErrorOrString("000d00h00m01s")),
+              }));
+}
+
 }  // namespace
 }  // namespace forensics::feedback

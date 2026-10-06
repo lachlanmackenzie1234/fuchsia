@@ -137,6 +137,7 @@ std::set<std::string> UIStateProvider::GetKeys() const {
 
 void UIStateProvider::OnStateChanged(OnStateChangedRequest& request,
                                      OnStateChangedCompleter::Sync& completer) {
+  backoff_->Reset();
   current_state_ = ErrorOrString(GetUIStateString(request.state()));
   last_transition_time_ = zx::time_monotonic(request.transition_time());
   completer.Reply();
