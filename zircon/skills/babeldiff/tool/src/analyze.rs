@@ -772,6 +772,10 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
         out
     };
     let mut cpp_used = vec![false; cpp.len()];
+    let touched_rust: HashSet<(String, usize)> = rust
+        .iter()
+        .map(|r| (r.path.clone(), r.start_line))
+        .collect();
     let mut rust_pool: Vec<Function> = rust;
     for (s, _) in &shims {
         if !rust_pool
@@ -1420,7 +1424,7 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
     report.unmatched_rust = rust_pool
         .into_iter()
         .zip(rust_used)
-        .filter(|(f, u)| !u && !f.is_ffi)
+        .filter(|(f, u)| !u && !f.is_ffi && touched_rust.contains(&(f.path.clone(), f.start_line)))
         .map(|(f, _)| f)
         .collect();
     let (facades, unmatched): (Vec<Function>, Vec<Function>) =
@@ -1455,8 +1459,21 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
             (f, callee)
         })
         .collect();
+    let used_shims: HashSet<String> = report
+        .pairs
+        .iter()
+        .filter_map(|p| match &p.link {
+            Link::Ffi { shim, .. } | Link::FfiName { shim, .. } => Some(shim.clone()),
+            _ => None,
+        })
+        .collect();
     report.shims = shims
         .into_iter()
+        .filter(|(shim, target)| {
+            touched_rust.contains(&(shim.path.clone(), shim.start_line))
+                || used_shims.contains(&shim.name)
+                || matches!(target, Target::One(t) if touched_rust.contains(&(t.path.clone(), t.start_line)))
+        })
         .map(|(shim, target)| match target {
             Target::One(t) => Shim {
                 shim,

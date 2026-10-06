@@ -916,3 +916,44 @@ impl Watchdog {
         vec!["Watchdog::wait_for_mem_change"]
     );
 }
+
+#[test]
+fn untouched_functions_and_shims_are_omitted_from_report() {
+    let rust_file = r#"
+impl EventDispatcher {
+    pub fn create() {
+        unsafe { cpp_event_dispatcher_create() };
+    }
+
+    pub fn user_signal_self(&self) {
+        unsafe { cpp_event_dispatcher_user_signal_self(self) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_event_dispatcher_create() {
+    EventDispatcher::create();
+}
+"#;
+    let changed: std::collections::BTreeSet<usize> = (7..=9).collect();
+    let cs = ChangeSet {
+        cpp_old: Vec::new(),
+        cpp_new: Vec::new(),
+        rust_new: vec![babeldiff::input::Version {
+            path: "event_dispatcher.rs".into(),
+            text: rust_file.into(),
+            changed: Some(changed),
+        }],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert!(report.shims.is_empty(), "{:?}", report.shims);
+    assert!(
+        report
+            .rust_facades
+            .iter()
+            .all(|(f, _)| f.name == "EventDispatcher::user_signal_self"),
+        "{:?}",
+        report.rust_facades
+    );
+    assert!(!report.rust_facades.is_empty());
+}
