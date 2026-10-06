@@ -28,24 +28,7 @@ import signal_utils
 from build.auth import gcloud
 from build.rbe import rbe_settings
 
-_FAKE_RBE_SETTINGS = rbe_settings.RbeSettings(
-    bazel_enable=False,
-    bazel_exec_strategy="",
-    bazel_download_outputs="all",
-    cxx_download_objects=False,
-    cxx_enable=False,
-    cxx_exec_strategy="",
-    cxx_minimalist_wrapper=False,
-    link_download_unstripped_outputs=False,
-    link_enable=False,
-    link_exec_strategy="",
-    rust_download_rlibs=False,
-    rust_download_unstripped_binaries=False,
-    rust_enable=False,
-    rust_exec_strategy="",
-    needs_reproxy=False,
-    needs_auth=False,
-)
+_FAKE_RBE_SETTINGS = rbe_settings.fake()
 
 
 def default_args() -> argparse.Namespace:
