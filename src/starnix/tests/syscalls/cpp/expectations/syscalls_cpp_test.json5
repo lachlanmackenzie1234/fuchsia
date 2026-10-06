@@ -64,9 +64,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/567481478): LOOP_CTL_REMOVE fails with EINVAL after LOOP_CLR_FD.
-                "LoopTest.RemoveAfterClearFd",
-
                 // TODO(https://fxbug.dev/564489293): Target error does not deliver EPOLLERR.
                 "EpollTest.TargetErrorDeliversEpollErr",
 

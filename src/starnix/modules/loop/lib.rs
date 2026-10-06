@@ -126,6 +126,10 @@ impl LoopDeviceState {
     fn set_k_device(&mut self, k_device: Device) {
         self.k_device = Some(k_device);
     }
+
+    fn clear(&mut self) {
+        *self = Self { k_device: self.k_device.take(), ..Default::default() };
+    }
 }
 
 #[derive(Debug, Default)]
@@ -472,7 +476,7 @@ impl FileOps for LoopDeviceFile {
             LOOP_CLR_FD => {
                 let mut state = self.device.state.lock();
                 state.check_bound()?;
-                *state = Default::default();
+                state.clear();
                 Ok(SUCCESS)
             }
             LOOP_SET_STATUS => {
@@ -628,6 +632,7 @@ impl LoopDeviceRegistry {
         Ok(())
     }
 
+    #[cfg(test)]
     fn get(&self, minor: u32) -> Result<Arc<LoopDevice>, Errno> {
         self.devices.lock().get(&minor).ok_or_else(|| errno!(ENODEV)).cloned()
     }
@@ -670,26 +675,21 @@ impl LoopDeviceRegistry {
         }
     }
 
-    fn remove(
-        &self,
-        current_task: &CurrentTask,
-        k_device: Option<Device>,
-        minor: u32,
-    ) -> Result<(), Errno> {
+    fn remove(&self, current_task: &CurrentTask, minor: u32) -> Result<(), Errno> {
         match self.devices.lock().entry(minor) {
-            Entry::Vacant(_) => Ok(()),
+            Entry::Vacant(_) => error!(ENODEV),
             Entry::Occupied(e) => {
-                if e.get().is_bound() {
-                    return error!(EBUSY);
-                }
+                let dev = {
+                    let mut state = e.get().state.lock();
+                    if state.backing_file.is_some() {
+                        return error!(EBUSY);
+                    }
+                    state.k_device.take().ok_or_else(|| errno!(EINVAL))?
+                };
                 e.remove();
                 let kernel = current_task.kernel();
                 let registry = &kernel.device_registry;
-                if let Some(dev) = &k_device {
-                    registry.remove_device(current_task, dev.clone());
-                } else {
-                    return error!(EINVAL);
-                }
+                registry.remove_device(current_task, dev);
                 Ok(())
             }
         }
@@ -746,12 +746,7 @@ impl FileOps for LoopControlDevice {
             }
             LOOP_CTL_REMOVE => {
                 let minor = arg.into();
-                let device = self.registry.get(minor)?;
-                let k_device = {
-                    let state = device.state.lock();
-                    state.k_device.clone()
-                };
-                self.registry.remove(current_task, k_device, minor)?;
+                self.registry.remove(current_task, minor)?;
                 Ok(minor.into())
             }
             _ => error!(ENOTTY),
@@ -938,6 +933,22 @@ mod tests {
             let size = memory.get_content_size();
             let memory_contents = memory.read_to_vec(0, size).unwrap();
             assert_eq!(memory_contents, expected_contents);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn remove_without_k_device_preserves_registry_entry() {
+        spawn_kernel_and_run(async |current_task| {
+            let registry = LoopDeviceRegistry::default();
+            let minor = 42;
+            registry
+                .devices
+                .lock()
+                .insert(minor, Arc::new(LoopDevice { number: minor, state: Default::default() }));
+
+            assert_eq!(registry.remove(current_task, minor), error!(EINVAL));
+            assert!(registry.get(minor).is_ok());
         })
         .await;
     }
