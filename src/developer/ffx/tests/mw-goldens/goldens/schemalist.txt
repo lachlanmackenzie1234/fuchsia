@@ -27,6 +27,8 @@ repository_create.json
 repository_publish.json
 repository_server_start.json
 repository_server_stop.json
+session_launch.json
+session_restart.json
 target_add.json
 target_bootloader_boot.json
 target_flash.json

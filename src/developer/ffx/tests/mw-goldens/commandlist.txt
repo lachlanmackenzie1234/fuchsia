@@ -27,6 +27,8 @@ ffx repository create
 ffx repository publish
 ffx repository server start
 ffx repository server stop
+ffx session launch
+ffx session restart
 ffx target add
 ffx target bootloader boot
 ffx target flash
