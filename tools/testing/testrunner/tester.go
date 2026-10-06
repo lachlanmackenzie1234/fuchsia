@@ -675,7 +675,6 @@ type FFXTester struct {
 type ffxTestRun struct {
 	result        *ffxutil.TestRunResult
 	output        string
-	errOutput     string
 	totalDuration time.Duration
 }
 
@@ -842,9 +841,8 @@ func (t *FFXTester) testWithFile(ctx context.Context, test testsharder.Test, std
 	origStdout := t.ffx.Stdout()
 	origStderr := t.ffx.Stderr()
 	var buf bytes.Buffer
-	var errBuf bytes.Buffer
 	stdout = io.MultiWriter(stdout, &buf)
-	stderr = io.MultiWriter(stderr, &buf, &errBuf)
+	stderr = io.MultiWriter(stderr, &buf)
 	t.ffx.SetStdoutStderr(stdout, stderr)
 	defer t.ffx.SetStdoutStderr(origStdout, origStderr)
 
@@ -857,7 +855,7 @@ func (t *FFXTester) testWithFile(ctx context.Context, test testsharder.Test, std
 	if runResult == nil && err == nil {
 		err = fmt.Errorf("no test result was found")
 	}
-	t.testRuns[test.PackageURL] = ffxTestRun{runResult, buf.String(), errBuf.String(), clock.Now(ctx).Sub(startTime)}
+	t.testRuns[test.PackageURL] = ffxTestRun{runResult, buf.String(), clock.Now(ctx).Sub(startTime)}
 	return err
 }
 
@@ -876,7 +874,7 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 	if testRun.result != nil {
 		testOutDir := testRun.result.GetTestOutputDir()
 		t.testOutDirs = append(t.testOutDirs, testOutDir)
-		testResult, err = processTestResult(testRun.result, test, testRun.errOutput, testRun.totalDuration, false)
+		testResult, err = processTestResult(testRun.result, test, testRun.totalDuration, false)
 		if !finalTestResult.IsMultipliedRun {
 			t.wg.Add(1)
 			go func() {
@@ -947,7 +945,7 @@ func failureReason(status runtests.TestStatus, timeout time.Duration, stderr ...
 	}
 }
 
-func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, errOutput string, totalDuration time.Duration, removeProfiles bool) (*runtests.TestDetails, error) {
+func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, totalDuration time.Duration, removeProfiles bool) (*runtests.TestDetails, error) {
 	testOutDir := runResult.GetTestOutputDir()
 	suiteResults, err := runResult.GetSuiteResults()
 	if err != nil {
@@ -970,7 +968,7 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 	default:
 		testResult.Status = runtests.TestFailure
 	}
-	testResult.FailureReason = failureReason(testResult.Status, test.Timeout, errOutput)
+	testResult.FailureReason = failureReason(testResult.Status, test.Timeout)
 	testResult.Tags = append(testResult.Tags, build.TestTag{Key: "test_outcome", Value: suiteResult.Outcome})
 
 	var suiteArtifacts []string
@@ -1036,7 +1034,7 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 			DisplayName:   testCase.Name,
 			CaseName:      testCase.Name,
 			Status:        status,
-			FailureReason: failureReason(status, test.Timeout, caseStderr, errOutput),
+			FailureReason: failureReason(status, test.Timeout, caseStderr),
 			Format:        "FTF",
 			OutputFiles:   artifacts,
 			OutputDir:     testCaseArtifactDir,

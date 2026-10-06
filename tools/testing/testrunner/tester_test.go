@@ -409,7 +409,6 @@ func TestFFXTester(t *testing.T) {
 		connErr               bool
 		experiments           []string
 		output                string
-		stderrOutput          string
 	}{
 		{
 			name:           "run v2 tests with ffx",
@@ -420,13 +419,6 @@ func TestFFXTester(t *testing.T) {
 			name:                  "ffx test fails",
 			expectedStatus:        runtests.TestFailure,
 			expectedFailureReason: runtests.FailureReasonFromMessage("unknown failure reason"),
-			experiments:           []string{"use_ffx_test"},
-		},
-		{
-			name:                  "ffx test fails with stderr",
-			expectedStatus:        runtests.TestFailure,
-			expectedFailureReason: runtests.FailureReasonFromMessage("There was an internal error running tests: Fidl(ClientRead(Other(Transport(None))))"),
-			stderrOutput:          "There was an internal error running tests: Fidl(ClientRead(Other(Transport(None))))\n",
 			experiments:           []string{"use_ffx_test"},
 		},
 		{
@@ -464,9 +456,8 @@ func TestFFXTester(t *testing.T) {
 				outcome = ffxutil.TestNotStarted
 			}
 			ffx := &ffxutil.MockFFXInstance{
-				TestOutcome:  outcome,
-				Output:       c.output,
-				StderrOutput: c.stderrOutput,
+				TestOutcome: outcome,
+				Output:      c.output,
 			}
 			localOutputDir := t.TempDir()
 			experiments := botanist.GetExperiments(c.experiments)
@@ -1287,7 +1278,7 @@ func TestProcessTestResult(t *testing.T) {
 		},
 	}
 
-	testDetails, err := processTestResult(runResult, test, "", 5*time.Second, false)
+	testDetails, err := processTestResult(runResult, test, 5*time.Second, false)
 	if err != nil {
 		t.Fatalf("processTestResult failed: %s", err)
 	}
