@@ -178,6 +178,7 @@ class BazelRepositoryMap(object):
             "rules_python++python+pythons_hub": self.IGNORED_REPO,
             "rules_shell+": self.IGNORED_REPO,
             "package_metadata+": self.IGNORED_REPO,
+            "test_fuchsia_products": self.IGNORED_REPO,
         }
 
         if not explicit_fuchsia_sdk:
@@ -328,7 +329,23 @@ def _write_launcher_files(
     bazel_repo_map: BazelRepositoryMap,
 ) -> None:
     """Write launcher configuration, link or copy launcher script, and write companion .json."""
+    launcher_path = launcher_path.absolute()
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
+
+    bazel_launcher_script = (
+        Path(__file__).parent / "bazel_launcher.sh"
+    ).absolute()
+    if launcher_path == bazel_launcher_script:
+        raise ValueError(
+            f"Launcher path cannot be the template script itself: {launcher_path}"
+        )
+
+    launcher_path.unlink(missing_ok=True)
+    try:
+        launcher_path.hardlink_to(bazel_launcher_script)
+    except OSError:
+        shutil.copy2(bazel_launcher_script, launcher_path)
+    launcher_path.chmod(0o755)
 
     def fmt_array(name: str, items: T.Sequence[str]) -> str:
         if not items:
@@ -375,17 +392,6 @@ def _write_launcher_files(
     config_lines.append("")
     config_path = Path(f"{launcher_path}.config")
     config_path.write_text("\n".join(config_lines))
-
-    bazel_launcher_script = (
-        Path(__file__).parent.resolve() / "bazel_launcher.sh"
-    )
-    if launcher_path.resolve() != bazel_launcher_script.resolve():
-        launcher_path.unlink(missing_ok=True)
-        try:
-            launcher_path.hardlink_to(bazel_launcher_script)
-        except OSError:
-            shutil.copy2(bazel_launcher_script, launcher_path)
-        launcher_path.chmod(0o755)
 
     metadata_path = Path(f"{launcher_path}.json")
     metadata_path.write_text(
@@ -753,11 +759,11 @@ def generate_launcher_from_args(
         )
 
     final_launcher_path = (
-        launcher_path.resolve()
+        launcher_path.absolute()
         if launcher_path
         else (
             output_base.parent / f"{output_base.name}.launcher.bazel"
-        ).resolve()
+        ).absolute()
     )
 
     _write_launcher_files(
