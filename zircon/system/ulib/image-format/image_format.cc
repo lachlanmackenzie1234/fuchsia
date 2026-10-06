@@ -26,6 +26,8 @@
 using safemath::CheckAdd;
 using safemath::CheckDiv;
 using safemath::CheckedNumeric;
+using safemath::CheckMin;
+using safemath::CheckMod;
 using safemath::CheckMul;
 using safemath::CheckSub;
 
@@ -117,7 +119,10 @@ CheckedNumeric<T> CheckRoundUp(CheckedNumeric<T> val, CheckedNumeric<U> multiple
   static_assert(std::is_unsigned_v<T>);
   static_assert(std::is_unsigned_v<U>);
   static_assert(sizeof(T) >= sizeof(U));
-  return CheckMul(CheckDiv(CheckAdd(val, CheckSub(multiple, 1)), multiple), multiple);
+  auto div = CheckDiv(val, multiple);
+  auto mod = CheckMod(val, multiple);
+  auto has_remainder = CheckMin(mod, decltype(div)(1));
+  return CheckMul(CheckAdd(div, has_remainder), multiple);
 }
 
 CheckedNumeric<uint64_t> arm_transaction_elimination_row_size(CheckedNumeric<uint32_t> width) {
