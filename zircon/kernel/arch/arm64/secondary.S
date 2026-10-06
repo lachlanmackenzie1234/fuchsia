@@ -74,7 +74,14 @@ resume_context          .req x24
   // Set up the mmu
 
   // Invalidate the entire TLB
+  mrs tmp, CurrentEL
+  cmp tmp, #(2 << 2)
+  beq .Ltlbi_el2_1
   tlbi vmalle1is
+  b .Ltlbi_done_1
+.Ltlbi_el2_1:
+  tlbi alle2is
+.Ltlbi_done_1:
   dsb sy
   isb
 
@@ -120,7 +127,14 @@ resume_context          .req x24
   isb
 
   // Invalidate the entire TLB
+  mrs tmp, CurrentEL
+  cmp tmp, #(2 << 2)
+  beq .Ltlbi_el2_2
   tlbi vmalle1
+  b .Ltlbi_done_2
+.Ltlbi_el2_2:
+  tlbi alle2
+.Ltlbi_done_2:
   dsb sy
   isb
 

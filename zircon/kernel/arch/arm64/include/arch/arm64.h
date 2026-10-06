@@ -87,9 +87,7 @@ void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
 void arm64_fpu_save_state(Thread* t);
 void arm64_fpu_restore_state(const Thread* t);
 
-// TODO(https://fxbug.dev/393619961): Identically 1 today, but should one day
-// be dynamic.
-constexpr uint64_t arm64_get_boot_el() { return 1; }
+inline uint64_t arm64_get_boot_el() { return __arm_rsr64("CurrentEL") >> 2; }
 
 // Called during clock selection (if it is called at all) before secondary CPUs
 // have started.
