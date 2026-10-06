@@ -1242,12 +1242,16 @@ fn single_statement(n: Node) -> Option<Node> {
     (stmts.len() == 1).then(|| stmts[0])
 }
 
-/// Blanks out Clang thread-safety annotations (`TA_REQ(lock_)` and friends),
-/// which the parser can't place and which otherwise split a method in two.
-/// Lengths and line breaks are kept, so positions don't move.
+/// Blanks out Clang thread-safety and inline annotations (`TA_REQ(lock_)`,
+/// `FFI_ALWAYS_INLINE` and friends), which the parser can't place and which
+/// otherwise split a method in two or swallow the return type. Lengths and
+/// line breaks are kept, so positions don't move.
 fn mask_annotations(src: &str) -> String {
     static TA: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\b(?:__)?TA_[A-Z_]+\b(?:\s*\((?:[^()]|\([^()]*\))*\))?").unwrap()
+        Regex::new(
+            r"\b(?:(?:__)?TA_[A-Z_]+\b(?:\s*\((?:[^()]|\([^()]*\))*\))?|FFI_ALWAYS_INLINE\b|__ALWAYS_INLINE\b|__NO_INLINE\b)",
+        )
+        .unwrap()
     });
     let masked = TA.replace_all(src, |c: &regex::Captures| {
         c[0].chars()
@@ -1294,5 +1298,20 @@ mod tests {
         // Array subscripts and plain captures are left alone.
         let plain = "a[i] = b[j]; auto g = [&x](int y) { return y; };";
         assert_eq!(super::rewrite_init_captures(plain), plain);
+    }
+
+    #[test]
+    fn extracts_multiline_ffi_always_inline_function() {
+        let src = "extern \"C\" {\nFFI_ALWAYS_INLINE zx_status_t\ncpp_memory_watchdog_halt_token_wait_for_ack(const Deadline* deadline) {\n  return HaltToken::Get().WaitForAck(*deadline);\n}\n}\n";
+        let file = super::extract("memory_watchdog.cc", src);
+        assert_eq!(file.functions.len(), 1);
+        assert_eq!(
+            file.functions[0].base,
+            "cpp_memory_watchdog_halt_token_wait_for_ack"
+        );
+        assert_eq!(
+            file.functions[0].name,
+            "cpp_memory_watchdog_halt_token_wait_for_ack"
+        );
     }
 }
