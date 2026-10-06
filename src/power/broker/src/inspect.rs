@@ -80,7 +80,6 @@ impl ElementData {
     const CURRENT_LEVEL: &str = "current_level";
     const REQUIRED_LEVEL: &str = "required_level";
     const LEASES: &str = "leases";
-    const SYNTHETIC: &str = "synthetic";
 
     fn new(
         node: inspect::Node,
@@ -104,22 +103,6 @@ impl ElementData {
             name,
             valid_levels,
             _node: node,
-        }
-    }
-
-    fn synthetic(node: inspect::Node, name: &str, valid_levels: &[IndexedPowerLevel]) -> Self {
-        let name = node.create_string(ELEMENT_NAME, name);
-        node.record_bool(Self::SYNTHETIC, true);
-        let valid_levels = Self::create_valid_levels(&node, valid_levels);
-        let leases_node = node.create_child(Self::LEASES);
-        Self {
-            current_level: None,
-            required_level: None,
-            _node: node,
-            name,
-            valid_levels,
-            leases: Default::default(),
-            leases_node,
         }
     }
 
@@ -284,20 +267,13 @@ impl TopologyInspect {
         &self,
         element_id: ElementID,
         name: &str,
-        synthetic: bool,
         valid_levels: &[IndexedPowerLevel],
         current_level: Option<fpb::PowerLevel>,
         required_level: Option<fpb::PowerLevel>,
     ) -> igraph::Vertex<ElementData> {
-        if synthetic {
-            self.graph.add_vertex(element_id, |meta_node| {
-                ElementData::synthetic(meta_node, name, &valid_levels)
-            })
-        } else {
-            self.graph.add_vertex(element_id.clone(), |meta_node| {
-                ElementData::new(meta_node, name, &valid_levels, current_level, required_level)
-            })
-        }
+        self.graph.add_vertex(element_id.clone(), |meta_node| {
+            ElementData::new(meta_node, name, &valid_levels, current_level, required_level)
+        })
     }
 
     fn emit_add_element_event(
@@ -328,12 +304,17 @@ impl TopologyInspect {
                 if !dependencies.is_empty() {
                     let deps_node = node.create_child("dependencies");
                     for (i, (dep, on_required_element_removal)) in dependencies.iter().enumerate() {
+                        // `dependent` is always set here: root dependencies are rejected by
+                        // Topology::add_dependency and never reach this writer.
+                        let Some(dependent) = &dep.dependent else {
+                            log::error!(dep:?; "Cannot record inspect event for root dependency.");
+                            continue;
+                        };
                         let dep_node = deps_node.create_child(format!("{i}"));
                         // No need to record the dependent_element event since that must be the
                         // element we are adding.
-                        // dep_node.record_uint(DEP_ELEMENT, *dep.dependent.element_id);
                         dep_node.record_uint(REQ_ELEMENT, *dep.requires.element_id as u64);
-                        dep_node.record_uint(DEPENDENT_LEVEL, dep.dependent.level.level as u64);
+                        dep_node.record_uint(DEPENDENT_LEVEL, dependent.level.level as u64);
                         dep_node.record_uint(REQUIRED_LEVEL, dep.requires.level.level as u64);
                         if *on_required_element_removal
                             == OnRequiredElementRemoval::RemoveWithRequiredElement
@@ -355,13 +336,17 @@ impl TopologyInspect {
         on_required_element_removal: OnRequiredElementRemoval,
         write_inspect_event: bool,
     ) {
-        let (dp_id, rq_id) = (dep.dependent.element_id, dep.requires.element_id);
+        let Some(dependent) = &dep.dependent else {
+            log::error!(dep:?; "Cannot add inspect edge for root dependency.");
+            return;
+        };
+        let (dp_id, rq_id) = (dependent.element_id, dep.requires.element_id);
         let (Some(dp), Some(rq)) = (elements.get(&dp_id), elements.get(&rq_id)) else {
             // elements[dp_id] and elements[rq_id] guaranteed by prior validation
             log::error!(dep:?; "Failed to add inspect for dependency.");
             return;
         };
-        let (dp_level, rq_level) = (dep.dependent.level, dep.requires.level);
+        let (dp_level, rq_level) = (dependent.level, dep.requires.level);
         let mut inspect_edges = dp.inspect_edges.borrow_mut();
         match inspect_edges.get_mut(&rq_id) {
             None => {
@@ -399,8 +384,11 @@ impl TopologyInspect {
     }
 
     pub fn on_remove_dependency(&self, elements: &HashMap<ElementID, Element>, dep: &Dependency) {
-        // elements[dp_id] and elements[rq_id] guaranteed by prior validation
-        let (dp_id, rq_id) = (&dep.dependent.element_id, &dep.requires.element_id);
+        let Some(dependent) = &dep.dependent else {
+            log::error!(dep:?; "Cannot remove inspect edge for root dependency.");
+            return;
+        };
+        let (dp_id, rq_id) = (&dependent.element_id, &dep.requires.element_id);
         let Some(dp) = elements.get(dp_id) else {
             log::error!(dp_id:?; "Missing element for removal");
             return;
@@ -409,7 +397,7 @@ impl TopologyInspect {
         let Some(edge) = dp_edges.get_mut(rq_id) else {
             return;
         };
-        let dp_level = dep.dependent.level;
+        let dp_level = dependent.level;
         edge.maybe_update_meta(|meta| {
             meta.remove(dp_level.level);
         });
@@ -690,7 +678,6 @@ impl AddElementInspectWriter {
             topology.inspect().create_element_vertex(
                 element.id,
                 &element.name,
-                element.synthetic,
                 &element.valid_levels,
                 self.current_level,
                 self.required_level,
