@@ -594,6 +594,22 @@ impl<'a> Ctx<'a> {
             self.block(alt, depth + 1, false, fcx, b);
             return;
         }
+        if let Some((err_arm, err_val)) = value.and_then(|v| self.unwrap_match(v)) {
+            // `let h = match foo() { Ok(h) => h, Err(status) => { ... } };`
+            // is `let-else` when the `Err` payload is needed in the failure
+            // block, matching C++ `status = foo(&h); if (status != ZX_OK) { ... }`.
+            let skip = [err_val];
+            let mut f = self.features(n, &skip);
+            f.checks_error = true;
+            b.push(UnitKind::If, line, ts::line(err_arm), depth, f);
+            let inner_fcx = FnCtx { returns_value: false, returns_result: false };
+            if err_val.kind() == "block" {
+                self.block(err_val, depth + 1, false, inner_fcx, b);
+            } else {
+                self.expression(err_val, err_val, depth + 1, false, inner_fcx, b);
+            }
+            return;
+        }
         if let Some(v) = value {
             let compound = matches!(
                 v.kind(),
@@ -628,6 +644,44 @@ impl<'a> Ctx<'a> {
                 last.features.plumbing = true;
             }
         }
+    }
+
+    /// Detects `match expr { Ok(x) => x, Err(e) => { ... } }` used as the
+    /// right-hand side of a `let` binding, returning `(err_arm, err_value)`.
+    fn unwrap_match<'t>(&self, v: Node<'t>) -> Option<(Node<'t>, Node<'t>)> {
+        if v.kind() != "match_expression" {
+            return None;
+        }
+        let body = v.child_by_field_name("body")?;
+        let arms: Vec<Node<'t>> = ts::named_children(body)
+            .into_iter()
+            .filter(|c| c.kind() == "match_arm")
+            .collect();
+        if arms.len() != 2 {
+            return None;
+        }
+        let is_ok_passthrough = |arm: Node<'t>| {
+            let pat = arm.child_by_field_name("pattern")?;
+            let val = arm.child_by_field_name("value")?;
+            let pt = self.text(pat).trim();
+            ((pt.starts_with("Ok(") || pt.starts_with("Some(")) && val.kind() == "identifier")
+                .then_some(())
+        };
+        let (ok_idx, err_idx) = if is_ok_passthrough(arms[0]).is_some() {
+            (0, 1)
+        } else if is_ok_passthrough(arms[1]).is_some() {
+            (1, 0)
+        } else {
+            return None;
+        };
+        let _ = ok_idx;
+        let err_arm = arms[err_idx];
+        let err_pat = self.text(err_arm.child_by_field_name("pattern")?).trim();
+        if !(err_pat.starts_with("Err(") || err_pat == "None" || err_pat == "_") {
+            return None;
+        }
+        let err_val = err_arm.child_by_field_name("value")?;
+        Some((err_arm, err_val))
     }
 
     fn if_expression(
@@ -704,6 +758,32 @@ impl<'a> Ctx<'a> {
         } else {
             UnitKind::If
         };
+        let mut line = line;
+        // `let status = foo(); if let Err(status) = status { ... }` checks
+        // the call itself, just as C++ `status = foo(); if (status != ZX_OK)`
+        // merges the call into the `if` unit.
+        if let Some(var) = cond.and_then(|c| is_err_var(self.text(c))) {
+            if let Some(prev) = b.units.last() {
+                if !is_else_if
+                    && kind == UnitKind::If
+                    && prev.kind == UnitKind::Stmt
+                    && prev.depth == d
+                    && prev.file.is_none()
+                    && !prev.features.propagates
+                    && ts::mentions(self.lines, prev, var)
+                    && !prev.features.calls.is_empty()
+                {
+                    let prev = b.units.pop().unwrap();
+                    line = prev.start_line;
+                    f.checks_error = true;
+                    f.calls.splice(0..0, prev.features.calls);
+                    f.names.extend(prev.features.names);
+                    f.idents.extend(prev.features.idents);
+                    f.errors.extend(prev.features.errors);
+                    f.locks.extend(prev.features.locks);
+                }
+            }
+        }
         b.push(kind, line, header_end, d, f);
         if let Some(c) = cons {
             self.block(c, d + 1, tail, fcx, b);
@@ -939,11 +1019,16 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
 /// its body under that lock, where the C++ has a guard on the stack and
 /// the same statements in place. The lock is credited to the closure's
 /// `let`, so the guard lines up there and the body follows it.
-/// The variable an `x.is_err()` condition tests.
+/// The variable an `x.is_err()` or `let Err(..) = x` condition tests.
 fn is_err_var(cond: &str) -> Option<&str> {
-    static IS_ERR: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^\(?\s*(\w+)\.is_err\(\)\s*\)?$").unwrap());
-    IS_ERR.captures(cond.trim()).map(|c| c.get(1).unwrap().as_str())
+    static IS_ERR: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^\(?\s*(?:(\w+)\.is_err\(\)|let\s+Err\s*\([^)]*\)\s*=\s*(\w+))\s*\)?$")
+            .unwrap()
+    });
+    IS_ERR
+        .captures(cond.trim())
+        .and_then(|c| c.get(1).or_else(|| c.get(2)))
+        .map(|m| m.as_str())
 }
 
 fn relocate_closures(units: &mut [Unit], lines: &[String]) {

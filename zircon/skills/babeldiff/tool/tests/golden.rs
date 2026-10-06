@@ -1022,3 +1022,44 @@ pub unsafe extern "C" fn rust_watchdog_construct(storage: *mut MaybeUninit<Watch
         .expect("RelaxedAtomicPressureLevel::new should be in unmatched_rust");
     assert_eq!(report.callers(helper), vec!["WatchdogState::new"]);
 }
+
+#[test]
+fn status_assignment_and_let_match_align_with_cpp_status_checks() {
+    let cpp = r#"
+void init_and_shutdown(zx_instant_mono_t deadline) {
+  zx_status_t status = EventDispatcher::Create(0, &event, &rights);
+  if (status != ZX_OK) {
+    panic("create failed: %d\n", status);
+  }
+  status = dlog_shutdown(deadline);
+  if (status != ZX_OK) {
+    printf("dlog_shutdown failed: %d\n", status);
+  }
+}
+"#;
+    let rust = r#"
+pub fn init_and_shutdown(deadline: zx_instant_mono_t) {
+    let handle = match EventDispatcher::create(0) {
+        Ok((h, _rights)) => h,
+        Err(status) => {
+            panic!("create failed: {}\n", status.into_raw());
+        }
+    };
+    let status = dlog_shutdown(deadline);
+    if let Err(status) = status {
+        kprintln!("dlog_shutdown failed: {}", status.into_raw());
+    }
+}
+"#;
+    let cs = ChangeSet::from_files(&[
+        ("init.cc".into(), cpp.into()),
+        ("init.rs".into(), rust.into()),
+    ]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    let p = &report.pairs[0];
+    assert!(p.findings.is_empty(), "{:?}", p.findings);
+    for (_, a, b) in &p.summary.flow {
+        assert_eq!(a, b, "flow counts should match: {:?}", p.summary.flow);
+    }
+}

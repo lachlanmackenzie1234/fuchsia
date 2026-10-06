@@ -280,6 +280,9 @@ on narrow screens, and prints cleanly.
    `if (status != ZX_OK) return status;` reads as `?`, and so do a status
    chained through `if (status == ZX_OK) status = B();` to a final
    `return status;` and a status set in each branch and checked once;
+   `status = foo(); if (status != ZX_OK) { ... }` lines up with
+   `let status = foo(); if let Err(status) = status { ... }` and with
+   `let h = match foo() { Ok(h) => h, Err(status) => { ... } };`;
    `if (!ac.check()) return ZX_ERR_NO_MEMORY;` after an allocation reads as
    `try_new(..).ok_or(NO_MEMORY)?`;
    `return c ? A : B;` as `if c { A } else { B }`,
