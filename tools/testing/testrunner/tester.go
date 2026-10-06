@@ -78,6 +78,11 @@ const (
 
 	// The default timeout for package resolution.
 	defaultPackageResolutionTimeout = 2 * time.Minute
+
+	// The default timeout for power-cycling the target. This should be less
+	// than testTimeoutGracePeriod so that power-cycling can complete before
+	// the outer test timeout is reached.
+	defaultPowerCycleTimeout = 20 * time.Second
 )
 
 // Tester describes the interface for all different types of testers.
@@ -127,12 +132,13 @@ func BaseTestResultFromTest(test testsharder.Test) *runtests.TestDetails {
 
 // SubprocessTester executes tests in local subprocesses.
 type SubprocessTester struct {
-	env            []string
-	dir            string
-	localOutputDir string
-	sProps         *sandboxingProps
-	testRuns       map[string]string
-	target         targets.FuchsiaTarget
+	env               []string
+	dir               string
+	localOutputDir    string
+	sProps            *sandboxingProps
+	testRuns          map[string]string
+	target            targets.FuchsiaTarget
+	powerCycleTimeout time.Duration
 }
 
 type sandboxingProps struct {
@@ -156,11 +162,12 @@ type SubprocessTesterOptions struct {
 // locally with a given working directory and environment.
 func NewSubprocessTester(opts SubprocessTesterOptions) (Tester, error) {
 	s := &SubprocessTester{
-		dir:            opts.Dir,
-		env:            opts.Env,
-		localOutputDir: opts.OutputDir,
-		testRuns:       make(map[string]string),
-		target:         opts.Target,
+		dir:               opts.Dir,
+		env:               opts.Env,
+		localOutputDir:    opts.OutputDir,
+		testRuns:          make(map[string]string),
+		target:            opts.Target,
+		powerCycleTimeout: defaultPowerCycleTimeout,
 	}
 	// If the caller provided a path to NsJail, then intialize sandboxing properties.
 	if opts.NsjailPath != "" {
@@ -259,9 +266,10 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		runnerEnv = append(runnerEnv, fmt.Sprintf("%s=%s", key, value))
 	}
 	r := newRunner(t.dir, runnerEnv)
+	testCmdCtx := ctx
 	if test.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, test.Timeout)
+		testCmdCtx, cancel = context.WithTimeout(ctx, test.Timeout)
 		defer cancel()
 	}
 	// './' is a package-level construct in os/exec whose use is recommended
@@ -495,7 +503,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			return testResult, nil
 		}
 	}
-	err := r.Run(ctx, testCmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Setpgid: true})
+	err := r.Run(testCmdCtx, testCmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Setpgid: true})
 	t.setTestRun(test, profileRelDir)
 	var exitErr *exec.ExitError
 	if err == nil {
@@ -509,8 +517,14 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		// check that's run in between tests so we explicitly check for
 		// it here so that we can recover the device before the next test.
 		if exitErr.ExitCode() == 40 {
-			r := &subprocess.Runner{Env: os.Environ()}
-			if err := setPowerState(ctx, r, "cycle"); err != nil {
+			powerCycleTimeout := defaultPowerCycleTimeout
+			if t.powerCycleTimeout > 0 {
+				powerCycleTimeout = t.powerCycleTimeout
+			}
+			powerCycleCtx, cancel := context.WithTimeout(ctx, powerCycleTimeout)
+			err := setPowerState(powerCycleCtx, r, "cycle")
+			cancel()
+			if err != nil {
 				return testResult, fmt.Errorf("failed to power cycle target: %w", err)
 			}
 		}

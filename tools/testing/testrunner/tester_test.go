@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
+	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder/metadata"
@@ -33,6 +35,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 	sshutilconstants "go.fuchsia.dev/fuchsia/tools/net/sshutil/constants"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
+	"go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants"
 )
 
 type fakeSSHClient struct {
@@ -91,16 +94,23 @@ type fakeCmdRunner struct {
 	runErrs  []error
 	runCalls int
 	lastCmd  []string
+	onRun    func(context.Context)
 }
 
-func (r *fakeCmdRunner) Run(_ context.Context, command []string, _ subprocess.RunOptions) error {
+func (r *fakeCmdRunner) Run(ctx context.Context, command []string, _ subprocess.RunOptions) error {
 	r.runCalls++
 	r.lastCmd = command
-	if r.runErrs == nil {
-		return nil
+	if r.onRun != nil {
+		r.onRun(ctx)
+	}
+	if len(r.runErrs) == 0 {
+		return ctx.Err()
 	}
 	err, remainingErrs := r.runErrs[0], r.runErrs[1:]
 	r.runErrs = remainingErrs
+	if err == nil {
+		return ctx.Err()
+	}
 	return err
 }
 
@@ -366,6 +376,77 @@ func TestSubprocessTester(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("power cycles target on exit code 40 with expired test context", func(t *testing.T) {
+		exit40Err := exec.Command("sh", "-c", "exit 40").Run()
+		t.Setenv(constants.DMCPathEnvKey, "/path/to/dmc")
+		t.Setenv(botanistconstants.NodenameEnvKey, "device-nodename")
+
+		for _, tc := range []struct {
+			name              string
+			powerCycleTimeout time.Duration
+			hangPowerCycle    bool
+			wantErr           bool
+		}{
+			{
+				name:              "succeeds within power cycle timeout",
+				powerCycleTimeout: time.Second,
+			},
+			{
+				name:              "fails when power cycle times out",
+				powerCycleTimeout: time.Nanosecond,
+				hangPowerCycle:    true,
+				wantErr:           true,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var runner *fakeCmdRunner
+				runner = &fakeCmdRunner{
+					runErrs: []error{exit40Err},
+					onRun: func(ctx context.Context) {
+						if runner.runCalls == 1 || tc.hangPowerCycle {
+							<-ctx.Done()
+						}
+					},
+				}
+				oldNewRunner := newRunner
+				t.Cleanup(func() {
+					newRunner = oldNewRunner
+				})
+				newRunner = func(dir string, env []string) cmdRunner {
+					return runner
+				}
+
+				tester := SubprocessTester{
+					localOutputDir:    tmpDir,
+					testRuns:          make(map[string]string),
+					powerCycleTimeout: tc.powerCycleTimeout,
+				}
+				outDir := filepath.Join(tmpDir, failingTest)
+				test := testsharder.Test{
+					Test:    build.Test{Path: failingTest},
+					Timeout: time.Nanosecond,
+				}
+				testResult, err := tester.Test(context.Background(), test, io.Discard, io.Discard, outDir)
+				if tc.wantErr {
+					if !errors.Is(err, context.DeadlineExceeded) {
+						t.Fatalf("tester.Test got error %v, want %v", err, context.DeadlineExceeded)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("tester.Test got unexpected error: %s", err)
+				}
+				if testResult.Status != runtests.TestFailure {
+					t.Errorf("tester.Test got status %s, want %s", testResult.Status, runtests.TestFailure)
+				}
+				wantCmd := []string{"/path/to/dmc", "set-power-state", "--nodename", "device-nodename", "--state", "cycle"}
+				if diff := cmp.Diff(wantCmd, runner.lastCmd); diff != "" {
+					t.Errorf("Unexpected power cycle command (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
 }
 
 type fakeDataSinkCopier struct {
