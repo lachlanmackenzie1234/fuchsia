@@ -26,7 +26,9 @@ use debug::ltrace::KernelConsoleWriter;
 use debug::ltracef;
 use zx_status::Status;
 #[allow(unused_imports)]
-use zx_types::{zx_restricted_state_t, zx_status_t, zx_thread_state_general_regs_t};
+use zx_types::{
+    ZX_ARM64_FEATURE_ISA_ARM32, zx_restricted_state_t, zx_status_t, zx_thread_state_general_regs_t,
+};
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -127,7 +129,6 @@ pub const ARM64_USER_RESTRICTED_VISIBLE_FLAGS: u32 = ARM_NCZV_FLAGS | ARM64_BTYP
 pub const ARM32_USER_RESTRICTED_VISIBLE_FLAGS: u32 =
     ARM_NCZV_FLAGS | ARM32_BIT_MODE | ARM32_BIT_THUMB_MODE | ARM32_GE_Q_BITS | ARM32_IT_BITS; // 0xfe0f_fc30
 pub const ARM32_BIT_MODE_REGISTER_COUNT: usize = 15;
-pub const ZX_ARM64_FEATURE_ISA_ARM32: u32 = 1 << 5;
 
 #[inline]
 fn arm64_feature_test(feature: u32) -> bool {
