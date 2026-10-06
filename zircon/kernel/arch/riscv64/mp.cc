@@ -18,7 +18,6 @@
 #include <arch/ops.h>
 #include <arch/riscv64.h>
 #include <arch/riscv64/mmu.h>
-#include <arch/riscv64/sbi.h>
 #include <dev/interrupt.h>
 #include <fbl/alloc_checker.h>
 #include <hwreg/array.h>

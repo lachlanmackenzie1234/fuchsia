@@ -105,7 +105,6 @@ if (toolchain_base_environment == "kernel") {
       "riscv64_context_switch.S",
       "riscv64_ffi.cc",
       "riscv64_user_copy.S",
-      "sbi.cc",
       "spinlock.cc",
       "stvec.S",
       "timer.cc",

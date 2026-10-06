@@ -50,11 +50,6 @@ FFI_ALWAYS_INLINE uint32_t cpp_int_handler_finish(uint64_t* state) {
   return int_handler_finish(reinterpret_cast<int_handler_saved_state_t*>(state)) ? 1 : 0;
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint64_t cpp_riscv64_cpu_mask_to_hart_mask(uint32_t cmask) {
-  return riscv64_cpu_mask_to_hart_mask(cmask);
-}
-
 void cpp_print_current_thread_backtrace() {
   Backtrace bt;
   Thread::Current::GetBacktrace(bt);

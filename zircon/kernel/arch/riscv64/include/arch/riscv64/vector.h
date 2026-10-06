@@ -21,7 +21,6 @@
 #include <zircon/syscalls/debug.h>
 
 #include <arch/riscv64.h>
-#include <arch/riscv64/feature.h>
 #include <ktl/byte.h>
 #include <ktl/memory.h>
 #include <ktl/optional.h>
