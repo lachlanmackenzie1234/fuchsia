@@ -352,7 +352,6 @@
       "third_party/intel/**": true,
       "third_party/iperf/**": true,
       "third_party/jellyfish/**": true,
-      "third_party/jinja2/**": true,
       "third_party/json5.vim/**": true,
       "third_party/libc-tests/**": true,
       "third_party/libffi/**": true,

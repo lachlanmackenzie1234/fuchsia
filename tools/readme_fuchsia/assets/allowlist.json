@@ -33,7 +33,6 @@
         "third_party/gvisor_syscall_tests/README.fuchsia",
         "third_party/half/README.fuchsia",
         "third_party/jellyfish/README.fuchsia",
-        "third_party/jinja2/README.fuchsia",
         "third_party/libpcap/README.fuchsia",
         "third_party/mesa-migrating/README.fuchsia",
         "third_party/mobly/README.fuchsia",
