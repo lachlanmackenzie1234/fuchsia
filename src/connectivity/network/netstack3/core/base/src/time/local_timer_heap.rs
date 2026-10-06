@@ -94,7 +94,7 @@ where
     /// Returns the scheduled instant and associated value for `timer`, if it's
     /// scheduled.
     pub fn get(&self, timer: &K) -> Option<(BC::Instant, &V)> {
-        self.heap.map.get(timer).map(|MapEntry { time, value }| (*time, value))
+        self.heap.map.get(timer).map(|MapEntry { time, value, synced_with_heap: _ }| (*time, value))
     }
 
     /// Cancels `timer`, returning the scheduled instant and associated value if
@@ -109,7 +109,10 @@ where
 
     /// Gets an iterator over the installed timers.
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V, &BC::Instant)> {
-        self.heap.map.iter().map(|(k, MapEntry { time, value })| (k, value, time))
+        self.heap
+            .map
+            .iter()
+            .map(|(k, MapEntry { time, value, synced_with_heap: _ })| (k, value, time))
     }
 
     fn heal_and_reschedule(&mut self, bindings_ctx: &mut BC) {
@@ -178,15 +181,26 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
             .unwrap_or(true);
         let (heap_entry, prev) = match map.entry(key) {
             hash_map::Entry::Occupied(mut o) => {
-                let MapEntry { time, value } = o.insert(MapEntry { time: at, value });
-                // Only create a new entry if the already scheduled time is
-                // later than the new value.
-                let heap_entry = (at < time).then(|| HeapEntry { time: at, key: o.key().clone() });
+                let MapEntry { time: prev_time, value: _, synced_with_heap } = o.get();
+                // Only create a new `HeapEntry` if the already scheduled time
+                // is later than the new time. The new `MapEntry` is synced
+                // with the heap if we created a new `HeapEntry` or if the two
+                // times match and the old `MapEntry` was synced with the heap.
+                let (synced_with_heap, heap_entry) = match at.cmp(prev_time) {
+                    core::cmp::Ordering::Less => {
+                        (true, Some(HeapEntry { time: at, key: o.key().clone() }))
+                    }
+                    core::cmp::Ordering::Equal => (*synced_with_heap, None),
+                    core::cmp::Ordering::Greater => (false, None),
+                };
+                let MapEntry { time, value, synced_with_heap: _ } =
+                    o.insert(MapEntry { time: at, value, synced_with_heap });
                 (heap_entry, Some((time, value)))
             }
             hash_map::Entry::Vacant(v) => {
                 let heap_entry = Some(HeapEntry { time: at, key: v.key().clone() });
-                let _: &mut MapEntry<_, _> = v.insert(MapEntry { time: at, value });
+                let _: &mut MapEntry<_, _> =
+                    v.insert(MapEntry { time: at, value, synced_with_heap: true });
                 (heap_entry, None)
             }
         };
@@ -205,7 +219,8 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
         let Self { heap, map } = self;
         // The front of the heap will be changed if we're cancelling the top.
         let was_front = heap.peek().is_some_and(|HeapEntry { time: _, key: top }| key == top);
-        let prev = map.remove(key).map(|MapEntry { time, value }| (time, value));
+        let prev =
+            map.remove(key).map(|MapEntry { time, value, synced_with_heap: _ }| (time, value));
         (prev, was_front)
     }
 
@@ -233,22 +248,29 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
             // cloning it is faster than possibly hashing it more than once.
             match map.entry(key.clone()) {
                 hash_map::Entry::Vacant(_) => {
-                    // Timer has been canceled. Pop and continue looking.
+                    // This `HeapEntry` is stale. This may happen if either
+                    //   1) the original timer was canceled, or
+                    //   2) the original timer was rescheduled to an earlier
+                    //      time, and has since fired.
+                    // Pop and continue looking.
                     let _: HeapEntry<_, _> = binary_heap::PeekMut::pop(peek_mut);
                     changed_heap = true;
                 }
-                hash_map::Entry::Occupied(map_entry) => {
-                    let MapEntry { time: scheduled_for, value: _ } = map_entry.get();
+                hash_map::Entry::Occupied(mut map_entry) => {
+                    let MapEntry { time: scheduled_for, value: _, synced_with_heap } =
+                        map_entry.get_mut();
 
                     match heap_time.cmp(scheduled_for) {
                         core::cmp::Ordering::Equal => {
                             // Map and heap agree on firing time, this is the top of
                             // the heap.
+                            *synced_with_heap = true;
                             break f(*scheduled_for).then(|| {
                                 let HeapEntry { time: _, key } =
                                     binary_heap::PeekMut::pop(peek_mut);
                                 changed_heap = true;
-                                let MapEntry { time: _, value } = map_entry.remove();
+                                let MapEntry { time: _, value, synced_with_heap: _ } =
+                                    map_entry.remove();
                                 (key, value)
                             });
                         }
@@ -256,9 +278,15 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
                             // When rescheduling a timer, we only touch the heap
                             // if rescheduling to an earlier time. In this case
                             // the map is telling us this is scheduled for
-                            // later, so we must put it back in the heap.
+                            // later. We check `synced_with_heap` to determine
+                            // whether this entry is stale and should be dropped
+                            // or whether the entry must be resynchronized and
+                            // put back in the heap.
                             let HeapEntry { time: _, key } = binary_heap::PeekMut::pop(peek_mut);
-                            heap.push(HeapEntry { time: *scheduled_for, key });
+                            if !*synced_with_heap {
+                                heap.push(HeapEntry { time: *scheduled_for, key });
+                                *synced_with_heap = true;
+                            }
                             changed_heap = true;
                         }
                         core::cmp::Ordering::Greater => {
@@ -289,10 +317,13 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
 }
 
 /// The entry kept in [`LocalTimerHeap`]'s internal hash map.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 struct MapEntry<T, V> {
     time: T,
     value: V,
+    /// Whether `heap` contains a [`HeapEntry`] corresponding to this
+    /// [`MapEntry`] with a matching `time`.
+    synced_with_heap: bool,
 }
 
 /// A reusable struct to place a value and a timestamp in a [`BinaryHeap`].
@@ -337,18 +368,23 @@ mod testutil {
     impl<K, V, BC> LocalTimerHeap<K, V, BC>
     where
         K: Hash + Eq + Clone + Debug,
-        V: Debug + Eq + PartialEq,
+        V: Debug + Eq + Clone + PartialEq,
         BC: TimerContext,
     {
         /// Asserts installed timers with an iterator of `(key, value, instant)`
         /// tuples.
         #[track_caller]
         pub fn assert_timers(&self, timers: impl IntoIterator<Item = (K, V, BC::Instant)>) {
-            let map = timers
-                .into_iter()
-                .map(|(k, value, time)| (k, MapEntry { value, time }))
+            let wanted = timers.into_iter().map(|(k, v, i)| (k, (v, i))).collect::<HashMap<_, _>>();
+            let actual = self
+                .heap
+                .map
+                .iter()
+                .map(|(k, MapEntry { value, time, synced_with_heap: _ })| {
+                    (k.clone(), (value.clone(), *time))
+                })
                 .collect::<HashMap<_, _>>();
-            assert_eq!(&self.heap.map, &map);
+            assert_eq!(actual, wanted);
         }
 
         /// Like [`LocalTimerHeap::assert_timers`], but asserts based on a
@@ -374,7 +410,7 @@ mod testutil {
                 .map
                 .iter()
                 .min_by_key(|(_key, MapEntry { time, .. })| time)
-                .map(|(key, MapEntry { time: _, value })| (key, value));
+                .map(|(key, MapEntry { time: _, value, synced_with_heap: _ })| (key, value));
             assert_eq!(top, Some((key, value)));
         }
 
@@ -503,7 +539,7 @@ mod tests {
                 .heap
                 .map
                 .iter()
-                .map(|(k, MapEntry { time, value: () })| (*k, *time))
+                .map(|(k, MapEntry { time, value: (), synced_with_heap: _ })| (*k, *time))
                 .collect::<HashMap<_, _>>();
             assert_eq!(got, want);
         }
@@ -517,6 +553,7 @@ mod tests {
     const T2: FakeInstant = FakeInstant { offset: Duration::from_secs(2) };
     const T3: FakeInstant = FakeInstant { offset: Duration::from_secs(3) };
     const T4: FakeInstant = FakeInstant { offset: Duration::from_secs(4) };
+    const T5: FakeInstant = FakeInstant { offset: Duration::from_secs(5) };
 
     #[test]
     fn schedule_instant() {
@@ -668,6 +705,57 @@ mod tests {
         heap.assert_map_entries([]);
         assert_eq!(heap.next_wakeup.scheduled, None);
         assert_eq!(heap.pop(&mut ctx), None);
+    }
+
+    #[test]
+    fn reschedule_later_heals_stale_entries() {
+        let mut ctx = FakeTimerCtx::default();
+        let mut heap = LocalTimerHeap::new(&mut ctx, ());
+
+        // Schedule TIMER1 at T3, then reschedule earlier to T2 and T1.
+        // All three entries are in `heap`.
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T3), None);
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T2), Some((T3, ())));
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T1), Some((T2, ())));
+        heap.assert_heap_entries([(T1, TIMER1), (T2, TIMER1), (T3, TIMER1)]);
+        heap.assert_map_entries([(T1, TIMER1)]);
+
+        // Rescheduling TIMER1 to a later instant T4 heals all three earlier
+        // entries from `heap` and replaces them with a single entry at T4.
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T4), Some((T1, ())));
+        heap.assert_heap_entries([(T4, TIMER1)]);
+        heap.assert_map_entries([(T4, TIMER1)]);
+        assert_eq!(heap.next_wakeup.scheduled, Some(T4));
+    }
+
+    #[test]
+    fn reschedule_later_heals_stale_entries_with_multiple_timers() {
+        let mut ctx = FakeTimerCtx::default();
+        let mut heap = LocalTimerHeap::new(&mut ctx, ());
+
+        // Schedule TIMER1 at T4, and TIMER2 at T3. Then reschedule TIMER1
+        // earlier to T2 and T1.
+        // All four entries are in `heap`.
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T4), None);
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER2, (), T3), None);
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T2), Some((T4, ())));
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T1), Some((T2, ())));
+        heap.assert_heap_entries([(T1, TIMER1), (T2, TIMER1), (T3, TIMER2), (T4, TIMER1)]);
+        heap.assert_map_entries([(T1, TIMER1), (T3, TIMER2)]);
+
+        // Rescheduling TIMER1 from T1 to T5 heals the entries up until the
+        // next valid entry (T3, TIMER2). Stale entries after it are not healed.
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), T5), Some((T1, ())));
+        heap.assert_heap_entries([(T3, TIMER2), (T4, TIMER1), (T5, TIMER1)]);
+        heap.assert_map_entries([(T3, TIMER2), (T5, TIMER1)]);
+
+        // When TIMER2 fires at T3, `pop_if` heals the remaining stale entry
+        // (T4, TIMER1).
+        assert_eq!(heap.next_wakeup.scheduled, Some(T3));
+        ctx.instant.time = T3;
+        assert_eq!(heap.pop(&mut ctx), Some((TIMER2, ())));
+        heap.assert_heap_entries([(T5, TIMER1)]);
+        heap.assert_map_entries([(T5, TIMER1)]);
     }
 
     // Regression test for a bug where the timer heap would not reschedule the
