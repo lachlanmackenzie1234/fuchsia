@@ -327,7 +327,7 @@
              path="third_party/github.com/jd/tenacity/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/jd/tenacity"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="de409a00c18b1d26a030292f7820ee26cdad2aa1"/>
+             revision="d4e868d6b8368c00b5a1fad54de36c2c8c3a0fb3"/>
     <project name="third_party/github.com/google/mobly"
              path="third_party/mobly/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/mobly"
