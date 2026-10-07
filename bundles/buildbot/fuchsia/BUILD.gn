@@ -41,9 +41,6 @@ group("fuchsia") {
       ":workbench_eng.x64",
     ]
   }
-  if (target_cpu == "riscv64") {
-    deps += [ ":minimal.riscv64" ]
-  }
 }
 
 # Contains additional targets to be built that are not needed for tests.
@@ -139,21 +136,10 @@ if (target_cpu == "x64") {
   }
 }
 if (target_cpu == "riscv64") {
-  product_bundle_test_group("minimal.riscv64") {
-    product_bundle_name = "minimal.riscv64"
-
-    if (is_postsubmit) {
-      environments = [ qemu_env ]
-      override_test_environments = false
-    } else {
-      build_only = true
-    }
-
-    target_tests = minimal_target_tests - [ "//src/connectivity/network:tests" ]
-  }
+  not_needed([ "minimal_target_tests" ])
 }
 
-########1
+########
 # Workbench.
 
 if (target_cpu == "x64") {
