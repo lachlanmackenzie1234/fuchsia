@@ -62,8 +62,8 @@ pub mod testing {
         ResolvedAlias, apply_assignments, is_assignment_flat, parse_simple_command_args,
         resolve_alias_loop, split_assignment_flat,
     };
-    pub use super::spawn::spawn_command_with_redirection;
-    pub use super::state::Frame;
+    pub use super::spawn::{SpawnedProcess, spawn_command_with_redirection};
+    pub use super::state::{Frame, StateBackupGuard};
 }
 
 /// Represents the outcome of evaluating a shell command or statement.
@@ -97,8 +97,14 @@ pub fn eval_string(
     ctx: &mut ExecutionContext,
 ) -> Result<EvalOutcome, String> {
     let mut builder = ASTBuilder::new();
-    let tokens = tokenize(command_string).map_err(|err| err.to_string())?;
-    let cmds = parse_script(&mut builder, &tokens).map_err(|err| err.to_string())?;
+    let tokens = tokenize(command_string).map_err(|err| {
+        state.set_last_status(EXIT_SYNTAX_ERROR);
+        err.to_string()
+    })?;
+    let cmds = parse_script(&mut builder, &tokens).map_err(|err| {
+        state.set_last_status(EXIT_SYNTAX_ERROR);
+        err.to_string()
+    })?;
     let cmd_ptr = builder.add_sequence_or_single(&cmds);
     eval_command(&mut builder, cmd_ptr, state, ctx)
 }
@@ -129,6 +135,7 @@ pub fn eval_command(
         return Ok(outcome);
     }
     let outcome = eval_command_inner(builder, cmd_ptr, state, ctx);
+    state.take_cmd_sub_status();
     if let Ok(EvalOutcome::Code(exit_code)) = &outcome {
         state.set_last_status(*exit_code);
     }
@@ -175,6 +182,7 @@ fn eval_command_inner(
                 builder,
             )?;
             let exit_code = wait_for_process_to_exit(&proc, ctx)?;
+            state.set_last_status(exit_code);
             Ok(state.handle_outcome(EvalOutcome::Code(exit_code)))
         }
         CommandTag::FUNCTION_DEF => {

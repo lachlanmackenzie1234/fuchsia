@@ -37,7 +37,7 @@ pub fn is_assignment_flat(arg: &[WordPart], buf: &relative::Buffer) -> bool {
 
 fn run_command_substitution(
     cmd: &Command,
-    state: &ShellState,
+    state: &mut ShellState,
     ctx: &ExecutionContext,
     source_buf: &relative::Buffer,
 ) -> Result<BString, String> {
@@ -66,6 +66,11 @@ fn run_command_substitution(
 
     proc.wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE)
         .map_err(|e| format!("Wait for subshell failed: {}", zx_status_str(e)))?;
+
+    let info = proc
+        .info()
+        .map_err(|e| format!("Failed to get subshell process info: {}", zx_status_str(e)))?;
+    state.record_cmd_sub_status(info.return_code as i32);
 
     let mut output = output_bytes;
     while output.last() == Some(&b'\n') {
@@ -902,6 +907,18 @@ fn extract_parenthesized_bytes<'a>(
     BStr::new(&bytes[start_index..end_index])
 }
 
+fn eval_command_substitution_bytes(
+    inner_bytes: &[u8],
+    state: &mut ShellState,
+    context: &ExecutionContext,
+) -> Result<BString, String> {
+    let mut sub_builder = ASTBuilder::new();
+    let command_pointer =
+        parse_subshell_command(&mut sub_builder, inner_bytes).map_err(|e| e.to_string())?;
+    let command = sub_builder.get_ref(command_pointer);
+    run_command_substitution(command, state, context, &sub_builder)
+}
+
 fn expand_dollar(
     bytes: &[u8],
     index: &mut usize,
@@ -925,11 +942,7 @@ fn expand_dollar(
             let value = evaluate_arithmetic(expanded_inner.as_bstr(), state, context)?;
             result_bytes.extend_from_slice(value.to_string().as_bytes());
         } else {
-            let mut sub_builder = ASTBuilder::new();
-            let command_pointer = parse_subshell_command(&mut sub_builder, inner_bytes.as_bytes())
-                .map_err(|e| e.to_string())?;
-            let command = sub_builder.get_ref(command_pointer);
-            let value = run_command_substitution(command, state, context, &sub_builder)?;
+            let value = eval_command_substitution_bytes(inner_bytes.as_bytes(), state, context)?;
             result_bytes.extend_from_slice(value.as_bytes());
         }
     } else if *index + 1 < bytes.len() && bytes[*index + 1] == b'{' {
@@ -1009,6 +1022,39 @@ pub fn expand_string(
             b'$' => {
                 expand_dollar(bytes, &mut index, state, context, &mut result_bytes)?;
             }
+            b'`' => {
+                index += 1;
+                let mut inner_bytes = Vec::new();
+                let mut closed = false;
+                while index < bytes.len() {
+                    let ch = bytes[index];
+                    if ch == b'`' {
+                        index += 1;
+                        closed = true;
+                        break;
+                    }
+                    if ch == b'\\' && index + 1 < bytes.len() {
+                        let next_ch = bytes[index + 1];
+                        if next_ch == b'`' || next_ch == b'\\' || next_ch == b'$' {
+                            inner_bytes.push(next_ch);
+                            index += 2;
+                            continue;
+                        } else if next_ch == b'\n' {
+                            index += 2;
+                            continue;
+                        }
+                    }
+                    inner_bytes.push(ch);
+                    index += 1;
+                }
+                if closed {
+                    let value = eval_command_substitution_bytes(&inner_bytes, state, context)?;
+                    result_bytes.extend_from_slice(value.as_bytes());
+                } else {
+                    result_bytes.push(b'`');
+                    result_bytes.extend_from_slice(&inner_bytes);
+                }
+            }
             _ => {
                 result_bytes.push(byte);
                 index += 1;
@@ -1031,10 +1077,20 @@ pub fn expand_prompt(
         Some(s) => s.as_ref(),
         None => default_prompt,
     };
-    match expand_string(prompt_raw, state, context) {
+    let saved_status = state.get_var(BStr::new("?"));
+    let saved_cmd_sub = state.take_cmd_sub_status();
+    let res = match expand_string(prompt_raw, state, context) {
         Ok(expanded) => expanded,
         Err(_) => BString::from(default_prompt),
+    };
+    state.take_cmd_sub_status();
+    if let Some(code) = saved_cmd_sub {
+        state.record_cmd_sub_status(code);
     }
+    if let Some(status) = saved_status {
+        state.set_var(BStr::new("?"), status.as_bstr());
+    }
+    res
 }
 
 /// Extracts the literal command string if the argument word consists solely of a single unquoted

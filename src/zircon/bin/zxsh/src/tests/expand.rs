@@ -622,3 +622,50 @@ fn test_expand_prompt() {
         "default> "
     );
 }
+
+#[test]
+fn test_command_substitution_records_status() {
+    let mut state = ShellState::new();
+    let ctx = ExecutionContext::initial().unwrap();
+    let mut builder = ASTBuilder::new();
+
+    // 1. WordPart::CMD_SUB records exit status in $? and last_cmd_sub_status
+    let sub_tokens = tokenize(BStr::new("printf ok; exit 33")).unwrap();
+    let sub_cmds = parse_script(&mut builder, &sub_tokens).unwrap();
+    let sub_root = builder.add_sequence_or_single(&sub_cmds);
+    let res = check_expand(
+        &mut builder,
+        &[ResolvedWordPart::CommandSubstitution(sub_root)],
+        &mut state,
+        &ctx,
+    );
+    assert_eq!(res, vec![BString::from("ok")]);
+    assert_eq!(state.get_var(BStr::new("?")), Some(BString::from("33")));
+    assert_eq!(state.take_cmd_sub_status(), Some(33));
+    assert_eq!(state.take_cmd_sub_status(), None);
+
+    // 2. expand_string with $(...) records exit status
+    let s = expand_string(BStr::new("val=$(printf hi; exit 12)"), &mut state, &ctx).unwrap();
+    assert_eq!(s, "val=hi");
+    assert_eq!(state.get_var(BStr::new("?")), Some(BString::from("12")));
+    assert_eq!(state.take_cmd_sub_status(), Some(12));
+
+    // 3. expand_string with backticks `...` and backslash escapes records exit status
+    let bt = expand_string(BStr::new("`printf '%s' 'a\\\\b\\`c\\$d'; exit 19`"), &mut state, &ctx)
+        .unwrap();
+    assert_eq!(bt, "a\\b`c$d");
+    assert_eq!(state.get_var(BStr::new("?")), Some(BString::from("19")));
+    assert_eq!(state.take_cmd_sub_status(), Some(19));
+
+    // 4. expand_string with unclosed backtick preserves literal
+    let unclosed = expand_string(BStr::new("`unclosed"), &mut state, &ctx).unwrap();
+    assert_eq!(unclosed, "`unclosed");
+
+    // 5. expand_prompt preserves $? and last_cmd_sub_status even if prompt runs $(...)
+    state.record_cmd_sub_status(44);
+    state.set_var(BStr::new("MY_PS"), BStr::new("$(printf prompt; exit 88)> "));
+    let prompt = expand_prompt(BStr::new("MY_PS"), BStr::new("$ "), &mut state, &ctx);
+    assert_eq!(prompt, "prompt> ");
+    assert_eq!(state.get_var(BStr::new("?")), Some(BString::from("44")));
+    assert_eq!(state.take_cmd_sub_status(), Some(44));
+}

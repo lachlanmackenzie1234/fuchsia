@@ -5,15 +5,15 @@
 use crate::args::{OptionItem, OptionParser};
 use crate::errors::zx_status_str;
 use crate::eval::{
-    ClosedWriter, EXIT_CANNOT_EXEC, EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR,
-    EvalOutcome, ExecutionContext, RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA,
-    RLIMIT_FSIZE, RLIMIT_LOCKS, RLIMIT_MEMLOCK, RLIMIT_NOFILE, RLIMIT_NPROC, RLIMIT_RSS,
-    RLIMIT_RTPRIO, RLIMIT_STACK, Rlimit, ShellPath, ShellState, clone_fd_to_action, eval_string,
+    ClosedWriter, EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_SUCCESS, EXIT_SYNTAX_ERROR, EvalOutcome,
+    ExecutionContext, RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA, RLIMIT_FSIZE,
+    RLIMIT_LOCKS, RLIMIT_MEMLOCK, RLIMIT_NOFILE, RLIMIT_NPROC, RLIMIT_RSS, RLIMIT_RTPRIO,
+    RLIMIT_STACK, Rlimit, ShellPath, ShellState, clone_fd_to_action, eval_string,
     wait_for_process_to_exit,
 };
 use crate::fd::Fd;
 use crate::path::canonicalize_logical_path;
-use crate::process::{spawn_command, spawn_command_with_path};
+use crate::process::{spawn_command, spawn_command_with_path, spawn_status_to_exit_code};
 use crate::string::{
     LineChar, is_valid_var_name, parse_int, parse_mode_mask, parse_non_negative_int,
     path_buf_to_bstring, single_quote, split_ifs_read, split_key_value,
@@ -194,12 +194,7 @@ fn parse_status_code(
     ctx: &mut ExecutionContext,
 ) -> Result<i32, EvalOutcome> {
     if args.is_empty() {
-        let code = state
-            .get_var(b"?")
-            .as_ref()
-            .and_then(|v| parse_int::<i32>(v.as_bytes()))
-            .unwrap_or(EXIT_SUCCESS);
-        Ok(code)
+        Ok(state.trap_exit_status().unwrap_or_else(|| state.last_status()))
     } else {
         match parse_non_negative_int(args[0].as_bytes()) {
             Some(code) => Ok(code),
@@ -791,14 +786,7 @@ fn execute_external_process(
                     zx_status_str(status)
                 );
             }
-            let code = if status == zx::Status::NOT_FOUND {
-                EXIT_NOT_FOUND
-            } else if status == zx::Status::ACCESS_DENIED {
-                EXIT_CANNOT_EXEC
-            } else {
-                EXIT_FAILURE
-            };
-            return EvalOutcome::Code(code);
+            return EvalOutcome::Code(spawn_status_to_exit_code(status));
         }
     };
     match wait_for_process_to_exit(&proc, ctx) {
@@ -895,14 +883,12 @@ pub fn builtin_exec(
         Err(status) => {
             if status == zx::Status::NOT_FOUND {
                 write_err!(ctx, "exec: {}: not found", cmd_name);
-                return Ok(EvalOutcome::Exit(EXIT_NOT_FOUND));
             } else if status == zx::Status::ACCESS_DENIED {
                 write_err!(ctx, "exec: {}: Permission denied", cmd_name);
-                return Ok(EvalOutcome::Exit(EXIT_CANNOT_EXEC));
             } else {
                 write_err!(ctx, "exec: failed to spawn {}: {}", cmd_name, zx_status_str(status));
-                return Ok(EvalOutcome::Exit(EXIT_FAILURE));
             }
+            return Ok(EvalOutcome::Exit(spawn_status_to_exit_code(status)));
         }
     };
 

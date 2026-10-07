@@ -23,12 +23,44 @@ pub struct BgJob {
     pub cmd: BString,
 }
 
-/// A RAII guard that temporarily modifies variable state and restores the original values on drop.
+/// A RAII guard that temporarily modifies variable state and restores the original values and
+/// export status on drop.
 pub struct StateBackupGuard<'a> {
     /// Mutable reference to the active shell state.
     pub state: &'a mut ShellState,
-    /// List of backed-up variables: `(var_name, previous_value_or_none_if_unset)`.
-    pub backups: Vec<(BString, Option<BString>)>,
+    /// List of backed-up variables: `(var_name, previous_value_or_none_if_unset, was_exported)`.
+    pub backups: Vec<(BString, Option<BString>, bool)>,
+}
+
+impl<'a> StateBackupGuard<'a> {
+    /// Creates a new `StateBackupGuard` wrapping the given shell state.
+    pub fn new(state: &'a mut ShellState) -> Self {
+        Self { state, backups: Vec::new() }
+    }
+
+    /// Records the current value and export status of `name` if not already backed up by this
+    /// guard.
+    pub fn backup_var(&mut self, name: impl VarName) {
+        let name = name.to_bstr();
+        if self.backups.iter().any(|(backed_up_name, _, _)| backed_up_name.as_bstr() == name) {
+            return;
+        }
+        let old_val = self.state.get_var(name);
+        let was_exported = self.state.exported().contains(name);
+        self.backups.push((name.to_owned(), old_val, was_exported));
+    }
+
+    /// Commits the variable modifications made under this guard to the underlying shell state so
+    /// their values are not reverted on drop, restoring only unexported status unless `allexport`
+    /// (`set -a`) is enabled.
+    pub fn commit(&mut self) {
+        let allexport = self.state.opt_allexport;
+        for (var_name, _, was_exported) in self.backups.drain(..) {
+            if !was_exported && !allexport {
+                self.state.unexport_var(var_name.as_bstr());
+            }
+        }
+    }
 }
 
 impl<'a> std::fmt::Debug for StateBackupGuard<'a> {
@@ -39,11 +71,16 @@ impl<'a> std::fmt::Debug for StateBackupGuard<'a> {
 
 impl<'a> Drop for StateBackupGuard<'a> {
     fn drop(&mut self) {
-        for (var_name, old_val) in &self.backups {
+        for (var_name, old_val, was_exported) in self.backups.iter().rev() {
             if let Some(val) = old_val {
-                let _ = self.state.set_var(var_name.as_bstr(), val.as_bstr());
+                self.state.set_var(var_name.as_bstr(), val.as_bstr());
             } else {
-                let _ = self.state.unset_var(var_name.as_bstr());
+                self.state.unset_var(var_name.as_bstr());
+            }
+            if *was_exported {
+                self.state.export_var(var_name.as_bstr());
+            } else {
+                self.state.unexport_var(var_name.as_bstr());
             }
         }
     }
@@ -290,6 +327,12 @@ pub struct ShellState {
     pub optopt_offset: usize,
     /// Counter tracking loop nesting depth for `break` and `continue`.
     pub loop_nest: u32,
+    /// Exit status of the most recent command substitution (`$(...)` or `` `...` ``) during the
+    /// current command evaluation.
+    last_cmd_sub_status: Option<i32>,
+    /// Exit status of the command immediately preceding the active trap action, used by bare
+    /// `exit` / `return` inside traps per POSIX.
+    trap_exit_status: Option<i32>,
 }
 
 impl ShellState {
@@ -408,6 +451,8 @@ impl Deserialize for ShellState {
             last_bg_pid: None,
             optopt_offset,
             loop_nest: 0,
+            last_cmd_sub_status: None,
+            trap_exit_status: None,
         };
         state.set_options_from_string(options_str.as_ref());
 
@@ -535,6 +580,8 @@ impl ShellState {
             last_bg_pid: None,
             optopt_offset: 1,
             loop_nest: 0,
+            last_cmd_sub_status: None,
+            trap_exit_status: None,
         };
 
         for opt in &args.options_to_set {
@@ -669,13 +716,16 @@ impl ShellState {
             _ => {}
         }
 
+        self.lookup_var(name).cloned()
+    }
+
+    fn lookup_var(&self, name: &BStr) -> Option<&BString> {
         for frame in self.frames.iter().rev() {
             if let Some(val) = frame.local_vars.get(name) {
-                return Some(val.clone());
+                return Some(val);
             }
         }
-
-        self.vars.get(name).cloned()
+        self.vars.get(name)
     }
 
     /// Returns `true` if the specified variable is marked read-only.
@@ -715,20 +765,23 @@ impl ShellState {
         if !self.prepare_var_mutation(name) {
             return;
         }
+        let mut updated_frame = false;
         for frame in self.frames.iter_mut().rev() {
             if frame.local_vars.contains_key(name) {
                 frame.local_vars.insert(name.to_owned(), val.to_owned());
-                return;
+                updated_frame = true;
+                break;
             }
         }
-        self.vars.insert(name.to_owned(), val.to_owned());
+        if !updated_frame {
+            self.vars.insert(name.to_owned(), val.to_owned());
+        }
         if self.opt_allexport {
             self.export_var(name);
         }
     }
 
     /// Sets the value of a variable and marks it for export to child environment processes.
-    #[allow(dead_code)]
     pub fn set_and_export_var(&mut self, name: impl VarName, val: impl VarName) {
         let name = name.to_bstr();
         self.set_var(name, val);
@@ -740,11 +793,49 @@ impl ShellState {
         self.vars.insert(BString::from("?"), BString::from(status.to_string()));
     }
 
+    /// Returns the numeric value of the special status variable `?` (defaulting to `0`).
+    pub fn last_status(&self) -> i32 {
+        self.vars
+            .get(BStr::new(b"?"))
+            .and_then(|v| parse_int::<i32>(v.as_bytes()))
+            .unwrap_or(EXIT_SUCCESS)
+    }
+
+    /// Sets the pre-trap exit status used by bare `exit` / `return` inside trap actions,
+    /// returning the previous value.
+    pub fn set_trap_exit_status(&mut self, status: Option<i32>) -> Option<i32> {
+        std::mem::replace(&mut self.trap_exit_status, status)
+    }
+
+    /// Returns the pre-trap exit status if currently executing inside a trap action.
+    pub fn trap_exit_status(&self) -> Option<i32> {
+        self.trap_exit_status
+    }
+
+    /// Records the exit status code of a completed command substitution (`$(...)` or `` `...` ``).
+    pub fn record_cmd_sub_status(&mut self, status: i32) {
+        self.set_last_status(status);
+        self.last_cmd_sub_status = Some(status);
+    }
+
+    /// Takes and clears the most recent command substitution exit status recorded during the
+    /// current command evaluation.
+    pub fn take_cmd_sub_status(&mut self) -> Option<i32> {
+        self.last_cmd_sub_status.take()
+    }
+
     /// Marks the specified variable for export to child environment processes.
     pub fn export_var(&mut self, name: impl VarName) {
         let name = name.to_bstr();
         assert_valid_name(name);
         self.exported.insert(name.to_owned());
+    }
+
+    /// Removes the export mark from the specified variable without unsetting its value.
+    pub fn unexport_var(&mut self, name: impl VarName) {
+        let name = name.to_bstr();
+        assert_valid_name(name);
+        self.exported.remove(name);
     }
 
     /// Removes a variable from the innermost active local frame or global scope.
@@ -889,6 +980,9 @@ impl ShellState {
             frame
                 .local_vars
                 .insert(name.to_owned(), val.unwrap_or_else(|| BStr::new(b"")).to_owned());
+            if val.is_some() && self.opt_allexport {
+                self.export_var(name);
+            }
         }
     }
 
@@ -896,7 +990,7 @@ impl ShellState {
     pub fn vars(&self) -> ShellEnv {
         let mut res = Vec::new();
         for k in self.exported.iter() {
-            if let Some(v) = self.vars.get(k) {
+            if let Some(v) = self.lookup_var(k.as_bstr()) {
                 res.push((k.clone(), v.clone()));
             }
         }

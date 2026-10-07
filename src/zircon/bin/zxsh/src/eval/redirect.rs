@@ -93,8 +93,10 @@ pub fn eval_redirect(
 
     let is_exec = is_exec_command(builder, sub_cmd_ptr);
     let mut new_context = ctx.try_clone()?;
-    apply_redirects(redirects, state, &mut new_context, builder)?;
-    let outcome = eval_command(builder, sub_cmd_ptr, state, &mut new_context)?;
+    let res = apply_redirects(redirects, state, &mut new_context, builder)
+        .and_then(|()| eval_command(builder, sub_cmd_ptr, state, &mut new_context));
+    state.take_cmd_sub_status();
+    let outcome = res?;
     if is_exec && matches!(outcome, EvalOutcome::Code(0)) {
         *ctx = new_context;
     }

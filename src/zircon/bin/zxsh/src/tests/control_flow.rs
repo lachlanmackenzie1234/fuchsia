@@ -256,3 +256,47 @@ fn test_ps4_xtrace_expansion() {
     let res = eval_str("true", &mut state, &mut ctx);
     assert_eq!(res, EvalOutcome::Code(0));
 }
+
+#[test]
+fn test_control_flow_nonexistent_command_with_errexit() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+    state.opt_errexit = true;
+
+    // 1. `nonexistent_cmd || VAR=fallback` executes the right-hand side and succeeds with 0 under `set -e`.
+    let res = eval_str("/nonexistent_zxsh_cmd || FALLBACK=ok", &mut state, &mut ctx);
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert_eq!(state.get_var("FALLBACK").unwrap(), "ok");
+    assert_eq!(state.get_var("?").unwrap(), "0");
+
+    // 2. `if nonexistent_cmd; then ... else ... fi` executes the else branch under `set -e`.
+    let res = eval_str(
+        "if /nonexistent_zxsh_cmd; then BRANCH=then; else BRANCH=else_taken; fi",
+        &mut state,
+        &mut ctx,
+    );
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert_eq!(state.get_var("BRANCH").unwrap(), "else_taken");
+
+    // 3. `nonexistent_cmd && VAR=skipped` short-circuits with status 127 whenerrexit is disabled.
+    state.opt_errexit = false;
+    let res = eval_str("/nonexistent_zxsh_cmd && SKIPPED=yes", &mut state, &mut ctx);
+    assert_eq!(res, EvalOutcome::Code(127));
+    assert!(state.get_var("SKIPPED").is_none());
+    assert_eq!(state.get_var("?").unwrap(), "127");
+}
+
+#[test]
+fn test_control_flow_background_nonexistent_command_wait() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    let res = eval_str("/nonexistent_zxsh_bg_cmd &", &mut state, &mut ctx);
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert!(state.last_bg_pid.is_some(), "expected $! (last_bg_pid) to be set");
+    assert_eq!(state.bg_jobs.len(), 1);
+
+    let wait_res = eval_str("wait $!", &mut state, &mut ctx);
+    assert_eq!(wait_res, EvalOutcome::Code(127));
+    assert_eq!(state.get_var("?").unwrap(), "127");
+}

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::collections::FlatMap;
-use crate::eval::testing::Frame;
+use crate::eval::testing::{Frame, StateBackupGuard};
 use crate::eval::{ExecutionContext, ShellState};
 use crate::fd::Fd;
 use bstr::{BStr, BString, ByteSlice};
@@ -119,6 +119,86 @@ fn test_shell_env() {
     let cstr_strs: Vec<_> = cstrings.iter().map(|s| s.to_str().unwrap()).collect();
     assert!(cstr_strs.contains(&"FOO=bar"));
     assert!(cstr_strs.contains(&"PATH=/custom/bin:/another/bin"));
+}
+
+#[test]
+fn test_vars_resolves_local_variables_in_frames() {
+    let mut state = ShellState::new();
+    state.set_and_export_var(BStr::new("SHARED"), BStr::new("global_val"));
+
+    // Push outer function frame: `local FOO=local_val; export FOO` and `local SHARED=outer_val`
+    state.frames.push(Frame { local_vars: FlatMap::new(), args: vec![] });
+    state.declare_local(BStr::new("FOO"), Some(BStr::new("local_val")));
+    state.export_var(BStr::new("FOO"));
+    state.declare_local(BStr::new("SHARED"), Some(BStr::new("outer_val")));
+
+    let env = state.vars();
+    assert!(env.iter().any(|(k, v)| k == "FOO" && v == "local_val"));
+    assert!(env.iter().any(|(k, v)| k == "SHARED" && v == "outer_val"));
+
+    // Push inner function frame shadowing `FOO` and testing `opt_allexport` on `declare_local` & `set_var`
+    state.frames.push(Frame { local_vars: FlatMap::new(), args: vec![] });
+    state.declare_local(BStr::new("FOO"), Some(BStr::new("inner_val")));
+    state.opt_allexport = true;
+    state.declare_local(BStr::new("AUTO_LOCAL"), Some(BStr::new("auto_val")));
+    state.declare_local(BStr::new("LATER_LOCAL"), None);
+    state.set_var(BStr::new("LATER_LOCAL"), BStr::new("later_val"));
+    state.opt_allexport = false;
+
+    let inner_env = state.vars();
+    assert!(inner_env.iter().any(|(k, v)| k == "FOO" && v == "inner_val"));
+    assert!(inner_env.iter().any(|(k, v)| k == "SHARED" && v == "outer_val"));
+    assert!(inner_env.iter().any(|(k, v)| k == "AUTO_LOCAL" && v == "auto_val"));
+    assert!(inner_env.iter().any(|(k, v)| k == "LATER_LOCAL" && v == "later_val"));
+
+    // Pop inner frame
+    state.frames.pop();
+    let outer_env = state.vars();
+    assert!(outer_env.iter().any(|(k, v)| k == "FOO" && v == "local_val"));
+
+    // Pop outer frame: `FOO` has no global value so it is not in `vars()`, `SHARED` falls back to global
+    state.frames.pop();
+    let global_env = state.vars();
+    assert!(!global_env.iter().any(|(k, _)| k == "FOO"));
+    assert!(global_env.iter().any(|(k, v)| k == "SHARED" && v == "global_val"));
+}
+
+#[test]
+fn test_state_backup_guard_and_unexport_var() {
+    let mut state = ShellState::new();
+    // 1. Exported but unset variable (`export UNSET_EXP`)
+    state.export_var(BStr::new("UNSET_EXP"));
+    // 2. Unexported set variable
+    state.set_var(BStr::new("UNEXP_SET"), BStr::new("orig"));
+
+    {
+        let mut guard = StateBackupGuard::new(&mut state);
+        guard.backup_var(BStr::new("UNSET_EXP"));
+        guard.backup_var(BStr::new("UNSET_EXP")); // duplicate backup ignored
+        guard.state.set_and_export_var(BStr::new("UNSET_EXP"), BStr::new("temp"));
+
+        guard.backup_var(BStr::new("UNEXP_SET"));
+        guard.state.set_and_export_var(BStr::new("UNEXP_SET"), BStr::new("temp2"));
+
+        let debug_str = format!("{:?}", guard);
+        assert!(debug_str.contains("StateBackupGuard"));
+        assert_eq!(guard.backups.len(), 2);
+    }
+
+    // UNSET_EXP should be unset again, but still marked exported!
+    assert_eq!(state.get_var(BStr::new("UNSET_EXP")), None);
+    assert!(state.exported().contains(BStr::new("UNSET_EXP")));
+
+    // UNEXP_SET should be restored to "orig" and unexported!
+    assert_eq!(state.get_var(BStr::new("UNEXP_SET")), Some(BString::from("orig")));
+    assert!(!state.exported().contains(BStr::new("UNEXP_SET")));
+}
+
+#[test]
+#[should_panic(expected = "name cannot contain '='")]
+fn test_unexport_var_with_equals_panics() {
+    let mut state = ShellState::new();
+    state.unexport_var(BStr::new("A=B"));
 }
 
 #[test]
