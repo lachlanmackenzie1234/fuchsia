@@ -61,10 +61,6 @@
                 // fails in sys_pidfd_getfd.
                 "PidFdTest/PidFdGetFdTest.PidFdGetFd/DeniedWithoutPtrace",
 
-                // TODO: https://fxbug.dev/570460433 - Check FileObject::can_read() before
-                // security::file_permission().
-                "PipeTest.WrongDirectionReturnsEbadfBeforePermissionCheck",
-
                 // TODO: https://fxbug.dev/297440106 - Fix zombies to remain in "/proc/<pid>" with correct labels.
                 "ProcAttrTest.ZombieProcPid",
                 "ProcAttrTest.ZombieCurrentAttr",

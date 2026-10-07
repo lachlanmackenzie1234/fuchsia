@@ -24,10 +24,6 @@
         "PerfEventTest.OpenEventsNoPerfmonWithSysAdmin",
         "PerfEventTest.OpenEventsNoTracepointNoPerfmon",
 
-        // TODO(https://fxbug.dev/570460433) - Check FileObject::can_read() before
-        // security::file_permission().
-        "PipeTest.WrongDirectionReturnsEbadfBeforePermissionCheck",
-
         // Starnix does not generate the sys_nice capability denial that Linux does
         // because Starnix avoids the unnecessary capability check when EUIDs match.
         "SchedTest.SchedSetschedulerDeniedWithoutSetsched",
