@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{InputDevice, InputDeviceInfo, InputDeviceStatus, InputFile, uinput};
+use crate::{
+    InputDevice, InputDeviceInfo, InputDeviceInfoHandle, InputDeviceStatus, InputFile, uinput,
+};
 
 // Add a fuchsia-specific vendor ID. 0xfc1a is currently not allocated
 // to any vendor in the USB spec.
@@ -60,8 +62,13 @@ use fidl_fuchsia_ui_pointer::{
 };
 use fidl_fuchsia_ui_policy as fuipolicy;
 use fidl_fuchsia_ui_views as fuiviews;
+#[cfg(test)]
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use futures::channel::oneshot::{self, Sender};
+#[cfg(test)]
+use futures::channel::oneshot;
+#[cfg(test)]
+use futures::channel::oneshot::Sender;
+#[cfg(test)]
 use futures::executor::block_on;
 use futures::{FutureExt as _, StreamExt as _};
 use sorted_vec_map::SortedVecMap;
@@ -76,7 +83,10 @@ use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
 use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
 use starnix_modules_input_event_conversion::mouse_fuchsia_to_linux::FuchsiaMouseEventToLinuxMouseEventConverter;
 use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
-use starnix_sync::{InputEventRelayOpenedFilesLock, LockDepMutex};
+use starnix_sync::{
+    InputEventRelayOpenedFilesLock, InputRelayDeviceInfosLock, InputRelayDisplaySizeLock,
+    LockDepMutex,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, uapi};
 use std::collections::VecDeque;
@@ -216,6 +226,7 @@ struct DeviceState {
 }
 
 impl DeviceState {
+    #[cfg(test)]
     fn new_touch(
         device_id: DeviceId,
         open_files: OpenedFiles,
@@ -233,6 +244,7 @@ impl DeviceState {
         }
     }
 
+    #[cfg(test)]
     fn new_keyboard(
         device_id: DeviceId,
         open_files: OpenedFiles,
@@ -315,42 +327,50 @@ const DEVICE_LISTENER_NOT_ATTEMPTED: u8 = 0;
 const DEVICE_LISTENER_REGISTERED: u8 = 1;
 const DEVICE_LISTENER_DISCONNECTED: u8 = 2;
 
+// TODO(https://fxbug.dev/502662433): Migrate `add_touch_device` and `add_keyboard_device`
+// in tests to `DeviceListener`, and remove `DeviceStateChange` and this channel.
+#[cfg(test)]
 enum DeviceStateChange {
     Add(DeviceId, Box<DeviceState>, Sender<()>),
-    Remove(DeviceId, Sender<()>),
 }
 
 pub fn new_input_relay() -> (InputEventsRelay, Arc<InputEventsRelayHandle>) {
+    #[cfg(test)]
     let (sender, receiver) = unbounded();
     let num_unregistered_device_events = Arc::new(AtomicU64::new(0));
+    let device_infos = Arc::new(LockDepMutex::new(SortedVecMap::new()));
+    let display_size = Arc::new(LockDepMutex::new(None));
 
     (
         InputEventsRelay {
             devices: SortedVecMap::new(),
+            #[cfg(test)]
             receiver: Some(receiver),
             num_unregistered_device_events: num_unregistered_device_events.clone(),
             num_devices: Arc::new(AtomicU64::new(0)),
             device_listener_registered: Arc::new(AtomicU8::new(DEVICE_LISTENER_NOT_ATTEMPTED)),
             _inspect_node: None,
+            device_infos: device_infos.clone(),
+            display_size: display_size.clone(),
         },
-        Arc::new(InputEventsRelayHandle { sender, num_unregistered_device_events }),
+        Arc::new(InputEventsRelayHandle {
+            #[cfg(test)]
+            sender,
+            num_unregistered_device_events,
+            device_infos,
+            display_size,
+        }),
     )
 }
 
 /// Handle for managing input devices registered with the input event relay.
-///
-/// # Lifecycle Requirement
-/// Calls to [`Self::add_touch_device`], [`Self::add_keyboard_device`],
-/// [`Self::add_mouse_device`], [`Self::add_pending_mouse_device`], and
-/// [`Self::remove_device`] communicate with the relay
-/// over a channel and synchronously block until the relay thread acknowledges the change.
-/// Therefore, [`InputEventsRelay::start_relays`] must be called **before** invoking any of these
-/// methods on the handle, or the calling thread will deadlock waiting for the relay thread.
-/// Only call these handle methods after [`InputEventsRelay::start_relays`]; for initial devices,
-/// use the [`InputEventsRelay`] `&mut self` `add_*` methods before `start_relays`.
 pub struct InputEventsRelayHandle {
+    #[cfg(test)]
     sender: UnboundedSender<DeviceStateChange>,
     num_unregistered_device_events: Arc<AtomicU64>,
+    pub(crate) device_infos:
+        Arc<LockDepMutex<SortedVecMap<DeviceId, InputDeviceInfoHandle>, InputRelayDeviceInfosLock>>,
+    pub(crate) display_size: Arc<LockDepMutex<Option<(i32, i32)>, InputRelayDisplaySizeLock>>,
 }
 
 impl InputEventsRelayHandle {
@@ -359,12 +379,26 @@ impl InputEventsRelayHandle {
         self.num_unregistered_device_events.load(Ordering::Relaxed)
     }
 
+    /// Updates or inserts metadata (such as device name and input ID) for a uinput device.
+    pub(crate) fn update_uinput_device(
+        &self,
+        device_id: DeviceId,
+        input_id: uapi::input_id,
+        name: String,
+    ) {
+        let mut device_infos = self.device_infos.lock();
+        if let Some(info) = device_infos.get(&device_id) {
+            *info.lock() = InputDeviceInfo { input_id, name };
+        } else {
+            device_infos.insert(device_id, InputDeviceInfo::new(input_id, name));
+        }
+    }
+
     /// Adds a touch device to the relay.
     ///
     /// # Precondition / Lifecycle
-    /// Only call after [`InputEventsRelay::start_relays`]. For initial devices, use the
-    /// [`InputEventsRelay`] `&mut self` [`InputEventsRelay::add_touch_device`] method before
-    /// `start_relays`.
+    /// Only call after [`InputEventsRelay::start_relays`].
+    #[cfg(test)]
     pub fn add_touch_device(
         &self,
         device_id: DeviceId,
@@ -383,9 +417,8 @@ impl InputEventsRelayHandle {
     /// Adds a keyboard device to the relay.
     ///
     /// # Precondition / Lifecycle
-    /// Only call after [`InputEventsRelay::start_relays`]. For initial devices, use the
-    /// [`InputEventsRelay`] `&mut self` [`InputEventsRelay::add_keyboard_device`] method before
-    /// `start_relays`.
+    /// Only call after [`InputEventsRelay::start_relays`].
+    #[cfg(test)]
     pub fn add_keyboard_device(
         &self,
         device_id: DeviceId,
@@ -400,68 +433,20 @@ impl InputEventsRelayHandle {
         ));
         let _ = block_on(receiver);
     }
-
-    /// Adds a mouse device to the relay.
-    ///
-    /// # Precondition / Lifecycle
-    /// Only call after [`InputEventsRelay::start_relays`]. For initial devices, use the
-    /// [`InputEventsRelay`] `&mut self` [`InputEventsRelay::add_mouse_device`] method before
-    /// `start_relays`.
-    pub fn add_mouse_device(
-        &self,
-        device_id: DeviceId,
-        open_files: OpenedFiles,
-        inspect_status: Option<Arc<InputDeviceStatus>>,
-    ) {
-        let (sender, receiver) = oneshot::channel();
-        let _ = self.sender.unbounded_send(DeviceStateChange::Add(
-            device_id,
-            Box::new(DeviceState::new_mouse(device_id, open_files, inspect_status)),
-            sender,
-        ));
-        let _ = block_on(receiver);
-    }
-
-    /// Adds a pending mouse device to the relay.
-    ///
-    /// # Precondition / Lifecycle
-    /// Only call after [`InputEventsRelay::start_relays`]. For initial devices, use the
-    /// [`InputEventsRelay`] `&mut self` [`InputEventsRelay::add_pending_mouse_device`] method
-    /// before `start_relays`.
-    pub fn add_pending_mouse_device(
-        &self,
-        kernel: Arc<Kernel>,
-        device: crate::InputDevice,
-        device_id: DeviceId,
-    ) {
-        let (sender, receiver) = oneshot::channel();
-        let _ = self.sender.unbounded_send(DeviceStateChange::Add(
-            device_id,
-            Box::new(DeviceState::new_pending_mouse(kernel, device, device_id)),
-            sender,
-        ));
-        let _ = block_on(receiver);
-    }
-
-    /// Removes a device from the relay.
-    ///
-    /// # Precondition / Lifecycle
-    /// Only call after [`InputEventsRelay::start_relays`].
-    pub fn remove_device(&self, device_id: DeviceId) {
-        let (sender, receiver) = oneshot::channel();
-        let _ = self.sender.unbounded_send(DeviceStateChange::Remove(device_id, sender));
-        let _ = block_on(receiver);
-    }
 }
 
 pub struct InputEventsRelay {
     devices: SortedVecMap<DeviceId, DeviceState>,
+    #[cfg(test)]
     receiver: Option<UnboundedReceiver<DeviceStateChange>>,
     num_unregistered_device_events: Arc<AtomicU64>,
     /// Number of devices currently tracked by the relay, exposed via inspect.
     num_devices: Arc<AtomicU64>,
     device_listener_registered: Arc<AtomicU8>,
     _inspect_node: Option<fuchsia_inspect::Node>,
+    device_infos:
+        Arc<LockDepMutex<SortedVecMap<DeviceId, InputDeviceInfoHandle>, InputRelayDeviceInfosLock>>,
+    display_size: Arc<LockDepMutex<Option<(i32, i32)>, InputRelayDisplaySizeLock>>,
 }
 
 impl InputEventsRelay {
@@ -472,6 +457,7 @@ impl InputEventsRelay {
     }
 
     /// Adds a touch device to the relay prior to starting the relay loop.
+    #[cfg(test)]
     pub fn add_touch_device(
         &mut self,
         device_id: DeviceId,
@@ -484,6 +470,7 @@ impl InputEventsRelay {
     }
 
     /// Adds a keyboard device to the relay prior to starting the relay loop.
+    #[cfg(test)]
     pub fn add_keyboard_device(
         &mut self,
         device_id: DeviceId,
@@ -567,7 +554,13 @@ impl InputEventsRelay {
         let display_width = args.display_width;
         let display_height = args.display_height;
         let event_proxy_mode = args.event_proxy_mode;
+        #[cfg(test)]
         let mut receiver = self.receiver.take().expect("start_relays called once");
+        *self.display_size.lock() = if display_width > 0 && display_height > 0 {
+            Some((display_width, display_height))
+        } else {
+            None
+        };
         let f = async move |current_task: &CurrentTask| {
             let kernel = current_task.kernel();
             // touch
@@ -672,7 +665,11 @@ impl InputEventsRelay {
             let mut keyboard_future = keyboard_event_stream.next().fuse();
             let mut media_buttons_future = media_buttons_waking_stream.next().fuse();
             let mut touch_buttons_future = touch_buttons_waking_stream.next().fuse();
+            #[cfg(test)]
             let mut receiver_future = receiver.next().fuse();
+            #[cfg(not(test))]
+            let mut receiver_future =
+                futures::future::Fuse::<futures::future::Pending<()>>::terminated();
             let mut device_listener_future = futures::future::OptionFuture::from(
                 device_listener_stream.as_mut().map(|s| s.next()),
             );
@@ -833,16 +830,12 @@ impl InputEventsRelay {
                         }
                     }
                     e = receiver_future => {
+                        #[cfg(test)]
                         match e {
                             Some(event) => {
                                 match event {
                                     DeviceStateChange::Add(id, device_state, sender) => {
                                         self.devices.insert(id, *device_state);
-                                        self.update_num_devices();
-                                        let _ = sender.send(());
-                                    }
-                                    DeviceStateChange::Remove(id, sender) => {
-                                        self.devices.remove(&id);
                                         self.update_num_devices();
                                         let _ = sender.send(());
                                     }
@@ -854,6 +847,8 @@ impl InputEventsRelay {
                                 receiver_future = futures::future::Fuse::terminated();
                             }
                         }
+                        #[cfg(not(test))]
+                        let _ = e;
                     }
                     complete => break,
                 }
@@ -1111,6 +1106,7 @@ impl InputEventsRelay {
                             log_warn!("DeviceEvent missing device_id");
                             return;
                         };
+                        self.device_infos.lock().remove(&device_id);
                         if let Some(device_state) = self.devices.remove(&device_id) {
                             if let Some(starnix_device) = device_state.starnix_device {
                                 current_task
@@ -1699,7 +1695,16 @@ fn register_and_add_device(
     } else {
         return error!(ENOTSUP);
     };
-    let info = InputDeviceInfo::new(default_input_id, default_name);
+    let info = {
+        let mut device_infos = devices_relay.device_infos.lock();
+        if let Some(info) = device_infos.get(&device_id) {
+            info.clone()
+        } else {
+            let info = InputDeviceInfo::new(default_input_id, default_name);
+            device_infos.insert(device_id, info.clone());
+            info
+        }
+    };
 
     let input_device = match &device_type {
         InputDeviceType::Touch(_) => InputDevice::new_touch(

@@ -9,7 +9,7 @@ use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
-use starnix_sync::{InputDeviceFileNodesLock, LockDepMutex};
+use starnix_sync::{InputDeviceFileNodesLock, InputDeviceInfoLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::input_id;
@@ -184,11 +184,11 @@ pub struct InputDeviceInfo {
     pub name: String,
 }
 
-pub type InputDeviceInfoHandle = Arc<InputDeviceInfo>;
+pub type InputDeviceInfoHandle = Arc<LockDepMutex<InputDeviceInfo, InputDeviceInfoLock>>;
 
 impl InputDeviceInfo {
     pub fn new(input_id: input_id, name: String) -> InputDeviceInfoHandle {
-        Arc::new(Self { input_id, name })
+        Arc::new(LockDepMutex::new(Self { input_id, name }))
     }
 }
 
@@ -3055,8 +3055,7 @@ mod test {
 
             let inspector = fuchsia_inspect::Inspector::default();
 
-            // 3. Start the relays
-            let (relay, _relay_handle) = input_event_relay::new_input_relay();
+            let (relay, relay_handle) = input_event_relay::new_input_relay();
             let relay = relay.with_inspect_node(inspector.root());
             relay.start_relays(
                 &kernel,
@@ -3079,8 +3078,17 @@ mod test {
                 init_device_listener(&mut device_listener_registry_stream).await;
             drain_empty_device_iterator(&mut device_iterator_stream).await;
 
-            // 4. Send an Action::Added event for a Touch device
+            // 4. Send an Action::Added event for a Touch device with pre-populated device_infos
             let device_id = 42;
+            let prepopulated_input_id =
+                uapi::input_id { bustype: 25, vendor: 26, product: 27, version: 28 };
+            let prepopulated_name = "prepopulated_touch_device".to_string();
+            relay_handle.update_uinput_device(
+                device_id,
+                prepopulated_input_id,
+                prepopulated_name.clone(),
+            );
+
             let descriptor = fuiinput::DeviceDescriptor {
                 touch: Some(fuiinput::TouchDescriptor::default()),
                 device_information: Some(fuiinput::DeviceInformation {
@@ -3103,6 +3111,16 @@ mod test {
             // 5. Wait for the device to be registered in the kernel's device registry (minor 0).
             let touch_devt = StarnixDeviceId::new(INPUT_MAJOR, 0);
             wait_for_device(kernel, touch_devt, true).await;
+
+            // Verify that register_and_add_device reused the pre-populated device_infos.
+            let info = relay_handle
+                .device_infos
+                .lock()
+                .get(&device_id)
+                .expect("device_info exists")
+                .clone();
+            assert_eq!(info.lock().input_id, prepopulated_input_id);
+            assert_eq!(info.lock().name, prepopulated_name);
 
             // Test ConsumerControl (standalone buttons) registration
             let buttons_device_id = 43;
@@ -3193,6 +3211,7 @@ mod test {
 
             // Wait for the touch device to be removed from the kernel's device registry
             wait_for_device(kernel, touch_devt, false).await;
+            assert!(relay_handle.device_infos.lock().get(&device_id).is_none());
 
             // Re-add a device to verify that the freed minor number (0) is recycled.
             let replacement_device_id = 46;

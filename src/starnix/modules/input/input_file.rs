@@ -611,7 +611,7 @@ impl FileOps for InputFile {
                 Ok(SUCCESS)
             }
             uapi::EVIOCGID => {
-                let input_id = self.info.input_id;
+                let input_id = self.info.lock().input_id;
                 current_task.write_object(UserRef::new(user_addr), &input_id)?;
                 Ok(SUCCESS)
             }
@@ -700,9 +700,12 @@ impl FileOps for InputFile {
                     EVIOCGBIT_EV_MSC_BASE => write_bits(&self.supported_misc_features.bytes),
                     EVIOCGBIT_EV_SND_BASE => write_bits(&[]),
                     EVIOCGPROP_BASE => write_bits(&self.properties.bytes),
-                    EVIOCGNAME_BASE => write_string(self.info.name.as_bytes()),
+                    EVIOCGNAME_BASE => {
+                        let name = self.info.lock().name.clone();
+                        write_string(name.as_bytes())
+                    }
                     EVIOCGPHYS_BASE => {
-                        let phys = format!("starnix/{}", self.info.name);
+                        let phys = format!("starnix/{}", self.info.lock().name);
                         write_string(phys.as_bytes())
                     }
                     EVIOCGUNIQ_BASE => {
