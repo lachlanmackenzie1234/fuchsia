@@ -438,12 +438,16 @@ class FuchsiaDevice(
         run_isolated_server = True
         vendor_keys_path = None
         enabled = True
+        attempts = adb_transport._DEFAULT_RUN_ATTEMPTS
 
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
             run_isolated_server = adb_config.get("run_isolated_server", True)
             vendor_keys_path = adb_config.get("vendor_keys_path")
             enabled = adb_config.get("enabled", True)
+            attempts = adb_config.get(
+                "attempts", adb_transport._DEFAULT_RUN_ATTEMPTS
+            )
 
         # Note - An existing ADB implementation in //vendor/google is used by
         # some Lacewing tests. Running two ADB server implementations against
@@ -489,6 +493,7 @@ class FuchsiaDevice(
             run_isolated_server=run_isolated_server,
             vendor_keys_path=vendor_keys_path,
             ffx_transport=self.ffx,
+            attempts=attempts,
         )
         self.register_for_on_device_close(adb_obj.close)
         return adb_obj

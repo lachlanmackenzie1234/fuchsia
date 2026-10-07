@@ -25,6 +25,13 @@ if (is_host) {
     # This test drives the DUT's USB peripheral from the host, so it can only
     # run on Iris devices hosted by a Fuchsia cell.
     environments = [ iris_cell_env ]
+    honeydew_config = {
+      transports = {
+        adb = {
+          attempts = 1
+        }
+      }
+    }
   }
 }
 

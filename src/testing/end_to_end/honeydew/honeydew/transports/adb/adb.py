@@ -309,6 +309,7 @@ class Adb:
             device-side adbd processes during recovery.
         run_isolated_server: Whether to run an isolated ADB server.
         vendor_keys_path: Path to custom vendor keys.
+        attempts: Default maximum number of attempts for ADB commands.
 
     Raises:
         NotSupportedError: If ADB transport is not supported on the device.
@@ -323,11 +324,13 @@ class Adb:
         ffx_transport: ffx.FFX,
         run_isolated_server: bool = True,
         vendor_keys_path: str | None = None,
+        attempts: int = _DEFAULT_RUN_ATTEMPTS,
     ) -> None:
         self._device_name: str = device_name
         self._serial_number: str = serial_number
         self._ffx: ffx.FFX = ffx_transport
         self._run_isolated_server: bool = run_isolated_server
+        self._attempts: int = attempts
         (
             self._vendor_keys_path,
             self._temp_vendor_keys_dir,
@@ -585,7 +588,7 @@ class Adb:
     def check_connection(
         self,
         timeout: float | None = _DEFAULT_CHECK_CONNECTION_TIMEOUT_SECS,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Checks the ADB connection from host to Fuchsia device.
 
@@ -593,13 +596,14 @@ class Adb:
             timeout: Maximum amount of time in seconds to wait for connection
                 and boot complete. Defaults to 300.0 seconds.
             attempts: Maximum number of attempts to run the `wait-for-device`
-                command. Defaults to 3.
+                command. Defaults to the instance's configured default attempts.
 
         Raises:
             AdbUnauthorizedError: If the device is unauthorized for ADB connections.
             AdbConnectionError: If ADB fails to connect to the device or wait for
                 boot complete.
         """
+        attempts = self._attempts if attempts is None else attempts
         try:
             _LOGGER.info(
                 "Checking ADB connection from host to %s...",
@@ -631,7 +635,7 @@ class Adb:
         cmd: list[str],
         timeout: float | None = None,
         include_serial: bool = True,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> str:
         """Runs an ADB command and returns the output.
 
@@ -643,7 +647,8 @@ class Adb:
                 required or for commands expected to fail fast.
             include_serial: Whether to include '-s <serial_number>' in the command.
                 Defaults to True. Should be set to False for commands like 'adb devices'.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
 
         Returns:
             The combined stdout and stderr of the command.
@@ -653,6 +658,7 @@ class Adb:
             adb_errors.AdbTimeoutError: If the command times out.
             adb_errors.AdbCommandError: If the command fails.
         """
+        attempts = self._attempts if attempts is None else attempts
         timeout_per_attempt: float | None = None
         if timeout is not None:
             timeout_per_attempt = timeout / attempts
@@ -758,18 +764,20 @@ class Adb:
     def root(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Restarts ADB daemon on device as the root user.
 
         Args:
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
 
         Raises:
             AdbTimeoutError: If the command times out.
             AdbCommandError: If the command fails.
         """
+        attempts = self._attempts if attempts is None else attempts
         _LOGGER.info("Enabling root-privileges on %s.", self._device_name)
         start_time: float = time.time()
         self.run(["root"], timeout=timeout, attempts=attempts)
@@ -787,18 +795,20 @@ class Adb:
     def unroot(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Restarts ADB daemon on device as the shell user.
 
         Args:
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
 
         Raises:
             AdbTimeoutError: If the command times out.
             AdbCommandError: If the command fails.
         """
+        attempts = self._attempts if attempts is None else attempts
         _LOGGER.info("Disabling root-privileges on %s.", self._device_name)
         start_time: float = time.time()
         self.run(["unroot"], timeout=timeout, attempts=attempts)
@@ -817,7 +827,7 @@ class Adb:
     def use_adb_root(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> _AdbRootContextManager:
         """Temporarily runs adb as root within a context.
 
@@ -837,18 +847,20 @@ class Adb:
 
         Args:
             timeout: Maximum amount of time in seconds to wait for root/unroot commands.
-            attempts: Maximum number of attempts to run the root/unroot commands. Defaults to 3.
+            attempts: Maximum number of attempts to run the root/unroot commands. Defaults to the
+                instance's configured default attempts.
 
         Returns:
             A context manager enabling root on enter and restoring previous root state on exit.
         """
+        attempts = self._attempts if attempts is None else attempts
         return _AdbRootContextManager(self, timeout=timeout, attempts=attempts)
 
     @contextlib.contextmanager
     def use_su_root(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> Iterator[None]:
         """Temporarily enables running adb as root within a context using su_root.
 
@@ -856,7 +868,8 @@ class Adb:
 
         Args:
             timeout: Maximum amount of time in seconds to wait for root/unroot commands.
-            attempts: Maximum number of attempts to run the root/unroot commands. Defaults to 3.
+            attempts: Maximum number of attempts to run the root/unroot commands. Defaults to the
+                instance's configured default attempts.
 
         Usage:
         ```
@@ -864,6 +877,7 @@ class Adb:
             ... do something ...
         ```
         """
+        attempts = self._attempts if attempts is None else attempts
         adbd_was_root = self._is_su_root
         if not adbd_was_root:
             self.su_root(timeout=timeout, attempts=attempts)
@@ -877,13 +891,14 @@ class Adb:
     def su_root(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Restarts ADB daemon on device as the root user.
 
         Args:
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
         """
         _LOGGER.info("Enabling root-privileges on %s.", self._device_name)
         # When using a USB-based connection, use 'su root' instead of 'root',
@@ -895,13 +910,14 @@ class Adb:
     def su_unroot(
         self,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Restarts ADB daemon on device as the shell user.
 
         Args:
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
         """
         _LOGGER.info("Disabling root-privileges on %s.", self._device_name)
         _LOGGER.debug("No longer using 'su root'.")
@@ -912,7 +928,7 @@ class Adb:
         prop_name: str,
         value: str,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> None:
         """Sets a system property on the device via `adb shell setprop <prop_name> <value>`.
 
@@ -920,11 +936,13 @@ class Adb:
             prop_name: Name of the system property to set.
             value: Value to set the system property to.
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
 
         Raises:
             AdbCommandError: If the command fails or times out.
         """
+        attempts = self._attempts if attempts is None else attempts
         _LOGGER.debug(
             "Setting property '%s' = '%s' on %s",
             prop_name,
@@ -941,14 +959,15 @@ class Adb:
         self,
         prop_name: str,
         timeout: float | None = None,
-        attempts: int = _DEFAULT_RUN_ATTEMPTS,
+        attempts: int | None = None,
     ) -> str:
         """Gets a system property from the device via `adb shell getprop <prop_name>`.
 
         Args:
             prop_name: Name of the system property to get.
             timeout: Maximum amount of time in seconds to wait for the command to finish.
-            attempts: Maximum number of attempts to run the command. Defaults to 3.
+            attempts: Maximum number of attempts to run the command. Defaults to the instance's
+                configured default attempts.
 
         Returns:
             The value of the property stripped of whitespace.
@@ -956,6 +975,7 @@ class Adb:
         Raises:
             AdbCommandError: If the command fails or times out.
         """
+        attempts = self._attempts if attempts is None else attempts
         value = self.run(
             ["shell", "getprop", shlex.quote(prop_name)],
             timeout=timeout,

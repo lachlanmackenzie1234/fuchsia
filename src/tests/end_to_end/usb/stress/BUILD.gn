@@ -6,6 +6,14 @@ import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 
 if (is_host) {
+  _honeydew_config = {
+    transports = {
+      adb = {
+        attempts = 1
+      }
+    }
+  }
+
   python_mobly_test("usb_virtual_disconnect_test") {
     main_source = "test_usb_disconnect.py"
     libraries = [
@@ -35,6 +43,7 @@ if (is_host) {
 
     environments = [ sorrel_env ]
     timeout_secs = 600
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("usb_disconnect_test") {
@@ -62,6 +71,7 @@ if (is_host) {
       sorrel_env,
     ]
     timeout_secs = 600
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("usb_disconnect_stress_test") {
@@ -77,6 +87,7 @@ if (is_host) {
     local_config_source = "UsbDisconnectTestbed.yaml"
     environments = [ iris_env ]
     timeout_secs = 7200
+    honeydew_config = _honeydew_config
   }
 
   # Verifies that the device stays discoverable over mDNS across repeated
@@ -104,6 +115,7 @@ if (is_host) {
       sorrel_env,
     ]
     timeout_secs = 1800
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("cdc_stress_test") {
@@ -127,6 +139,7 @@ if (is_host) {
       iris_env,
     ]
     timeout_secs = 900
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("usb_fastboot_loop_test") {
@@ -146,6 +159,7 @@ if (is_host) {
       sorrel_env,
     ]
     timeout_secs = 900
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("adb_root_unroot_stress_test") {
@@ -159,6 +173,7 @@ if (is_host) {
     }
     environments = [ sorrel_env ]
     timeout_secs = 600
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("adb_fastboot_stress_test") {
@@ -172,6 +187,7 @@ if (is_host) {
     }
     environments = [ sorrel_env ]
     timeout_secs = 1200
+    honeydew_config = _honeydew_config
   }
 
   python_mobly_test("adb_random_stress_test") {
@@ -185,6 +201,7 @@ if (is_host) {
     }
     environments = [ sorrel_env ]
     timeout_secs = 1200
+    honeydew_config = _honeydew_config
   }
 }
 
