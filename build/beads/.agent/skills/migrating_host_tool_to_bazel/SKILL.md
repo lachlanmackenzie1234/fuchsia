@@ -21,15 +21,22 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
    fx build --host //{directory_path}:{target_name}
    ```
 
-2. **Inspect Dependency Tree:**
-   Get the full dependency tree of the host tool target:
+2. **Inspect Dependency Tree & Compute Migration Order:**
+   Analyze the recursive dependency and unit-test DAG using `analyzing-migration-dag` (see `../analyzing_migration_dag/SKILL.md`) to detect hard blockers and sort unmigrated upstream dependencies into topological migration waves:
+
+   ```bash
+   python3 build/beads/.agent/skills/analyzing_migration_dag/scripts/analyze_migration_dag.py \
+     "<target_label>"
+   ```
+
+   You can also inspect the host toolchain dependency tree directly in GN:
 
    ```bash
    # <target_label> e.g. "//path/to/directory:target_name"
    fx gn desc $(fx get-build-dir) "<target_label>(//build/toolchain:host_x64)" deps --tree
    ```
 
-   Ensure all dependencies of the host tool target are buildable in Bazel. If not, recursively migrate missing dependencies first using this skill:
+   Ensure all dependencies of the host tool target are buildable in Bazel. If not, recursively migrate missing dependencies first in topological wave order (Wave 0 to Wave $N$) using this skill:
 
    ```bash
    # Keep the @ prefix when building Bazel targets with `fx build`.
