@@ -279,7 +279,10 @@ class AspectManifestOutputsTest(unittest.TestCase):
         )
 
         self.assertEqual(outputs.source_files_manifest_paths, [expected_src])
-        self.assertEqual(outputs.debug_symbol_manifest_paths, [expected_dbg])
+        self.assertEqual(
+            outputs.debug_symbol_manifest_paths,
+            [f"@@//fake/pkg:fake_bin,{expected_dbg}"],
+        )
         self.assertEqual(outputs.rust_analyzer_manifest_paths, [expected_rust])
         self.assertEqual(
             outputs.genquery_output_files,
@@ -361,7 +364,9 @@ class AspectManifestOutputsTest(unittest.TestCase):
         expected = os.path.join(
             "fake-out", "bin", "fake/real.debug_symbols.json"
         )
-        self.assertEqual(outputs.debug_symbol_manifest_paths, [expected])
+        self.assertEqual(
+            outputs.debug_symbol_manifest_paths, [f"@@//fake:target,{expected}"]
+        )
 
 
 if __name__ == "__main__":

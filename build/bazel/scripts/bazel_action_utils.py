@@ -480,12 +480,12 @@ class AspectManifestOutputs:
         ]
 
         debug_symbols = [
-            f
-            for f in stream.get_output_group_files(
-                "debug_symbol_manifest", execroot
+            f"{build_utils.canonicalize_label(label)},{file_path}"
+            for label, file_path in stream.get_target_output_group_files(
+                "debug_symbol_manifest", execroot=execroot
             )
-            if "buildfiles_genquery" not in f
-            and f.endswith(".debug_symbols.json")
+            if "buildfiles_genquery" not in file_path
+            and file_path.endswith(".debug_symbols.json")
         ]
 
         rust_manifests = [

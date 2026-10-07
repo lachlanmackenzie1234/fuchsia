@@ -4,6 +4,7 @@
 
 """Aspects related to debug symbols for the Fuchsia build system."""
 
+load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinariesInfo", "FuchsiaUnstrippedBinaryInfo")
 load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
 load("//build/bazel/aspects:utils.bzl", "get_target_deps_from_attributes")
