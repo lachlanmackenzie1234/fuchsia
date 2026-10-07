@@ -6,8 +6,9 @@
 
 use super::channel_dispatcher::ChannelDispatcher;
 use super::handle::{HandleOwner, HandleRef, HandleValue};
+use super::handle_table::HandleTableWriteGuard;
 use super::message_packet::MessagePacket;
-use super::process_dispatcher::{HandleTableWriteGuard, ProcessDispatcher};
+use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use core::mem::{MaybeUninit, align_of, size_of};
@@ -85,7 +86,7 @@ fn finish_get_handles(proc: &ProcessDispatcher, msg: &mut MessagePacket) {
     let handles_ptr = msg.handles();
     {
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = HandleTableWriteGuard::new(proc));
+        ksync::lock!(let guard = proc.handle_table().write_lock());
         for i in 0..num_handles {
             // SAFETY: `i < num_handles`, and ownership of each `Handle*` is transferred from `msg`
             // to `proc`'s handle table (`msg.set_owns_handles(false)` is called below).
@@ -128,18 +129,20 @@ pub trait ReadHandles: Copy {
 
 impl ReadHandles for UserOutPtr<zx_handle_t> {
     fn get_handles(self, proc: &ProcessDispatcher, msg: &mut MessagePacket) -> Result<(), Status> {
+        let handle_table = proc.handle_table();
         get_handles_with(self, proc, msg, |handle_ref| {
-            proc.map_handle_to_value(handle_ref).raw_value()
+            handle_table.map_handle_to_value(handle_ref).raw_value()
         })
     }
 }
 
 impl ReadHandles for UserOutPtr<zx_handle_info_t> {
     fn get_handles(self, proc: &ProcessDispatcher, msg: &mut MessagePacket) -> Result<(), Status> {
+        let handle_table = proc.handle_table();
         get_handles_with(self.reinterpret::<RawHandleInfo>(), proc, msg, |handle_ref| {
             let disp = handle_ref.dispatcher_ref();
             RawHandleInfo {
-                handle: proc.map_handle_to_value(handle_ref).raw_value(),
+                handle: handle_table.map_handle_to_value(handle_ref).raw_value(),
                 type_: disp.get_type(),
                 rights: handle_ref.rights(),
                 unused: 0,
@@ -216,10 +219,12 @@ fn duplicate_handle_for_transfer(
 // This helper is used by zx_channel_write.
 fn get_handle_for_message_locked(
     guard: &HandleTableWriteGuard<'_>,
+    proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_val: zx_handle_t,
 ) -> Result<HandleOwner, Status> {
-    let source = guard.remove_handle(HandleValue::new(handle_val)).ok_or(Status::BAD_HANDLE)?;
+    let source =
+        guard.remove_handle(proc, HandleValue::new(handle_val)).ok_or(Status::BAD_HANDLE)?;
     move_handle_for_transfer(source, channel, ZX_OBJ_TYPE_NONE, ZX_RIGHT_SAME_RIGHTS)
 }
 
@@ -228,6 +233,7 @@ fn get_handle_for_message_locked(
 // This helper is used by zx_channel_write_etc.
 fn get_handle_disposition_for_message_locked(
     guard: &HandleTableWriteGuard<'_>,
+    proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_disposition: &mut RawHandleDisposition,
 ) -> Result<HandleOwner, Status> {
@@ -245,7 +251,7 @@ fn get_handle_disposition_for_message_locked(
     // other operations (including invalid operations) we immediately remove the source handle
     // from the handle table and then attempt to move it.
     guard
-        .get_handle(HandleValue::new(handle_disposition.handle))
+        .get_handle(proc, HandleValue::new(handle_disposition.handle))
         .ok_or(Status::BAD_HANDLE)
         .and_then(|source| match handle_disposition.operation {
             ZX_HANDLE_OP_DUPLICATE => duplicate_handle_for_transfer(
@@ -297,7 +303,7 @@ fn put_handles_from_user<'a, T: FromBytes>(
     let mut result = Ok(());
     {
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = HandleTableWriteGuard::new(proc));
+        ksync::lock!(let guard = proc.handle_table().write_lock());
         for (ix, item) in items.iter_mut().enumerate() {
             let handle = get_handle(&guard, item);
             if let Err(err) = handle
@@ -353,7 +359,7 @@ impl WriteHandles for UserInPtr<zx_handle_t> {
             else {
                 break;
             };
-            let _ = proc.remove_handles(chunk);
+            let _ = proc.handle_table().remove_handles(proc, chunk);
             offset += chunk_size;
         }
     }
@@ -368,7 +374,7 @@ impl WriteHandles for UserInPtr<zx_handle_t> {
             [MaybeUninit::<zx_handle_t>::uninit(); ZX_CHANNEL_MAX_MSG_HANDLES as usize];
         let (_handles, result) =
             put_handles_from_user(self, &mut handles, proc, msg, |guard, &mut handle_val| {
-                get_handle_for_message_locked(guard, channel, handle_val)
+                get_handle_for_message_locked(guard, proc, channel, handle_val)
             })?;
         result
     }
@@ -407,7 +413,7 @@ impl WriteHandles for UserInOutPtr<zx_handle_disposition_t> {
             }
             // SAFETY: The first `chunk_size` elements of `handles` were initialized above.
             let handles = unsafe { slice::from_raw_parts(handles.as_ptr().cast(), chunk_size) };
-            let _ = proc.remove_handles(handles);
+            let _ = proc.handle_table().remove_handles(proc, handles);
             offset += chunk_size;
         }
     }
@@ -427,7 +433,7 @@ impl WriteHandles for UserInOutPtr<zx_handle_disposition_t> {
             proc,
             msg,
             |guard, disposition| {
-                get_handle_disposition_for_message_locked(guard, channel, disposition)
+                get_handle_disposition_for_message_locked(guard, proc, channel, disposition)
             },
         )?;
 

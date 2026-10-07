@@ -369,7 +369,8 @@ pub fn sys_vmo_replace_as_executable(
     };
 
     let orig_handle =
-        ProcessDispatcher::with_current(|up| up.remove_handle(handle)).ok_or(Status::BAD_HANDLE)?;
+        ProcessDispatcher::with_current(|up| up.handle_table().remove_handle(up, handle))
+            .ok_or(Status::BAD_HANDLE)?;
     if orig_handle.dispatcher().get_type() != ZX_OBJ_TYPE_VMO {
         return Err(Status::BAD_HANDLE);
     }

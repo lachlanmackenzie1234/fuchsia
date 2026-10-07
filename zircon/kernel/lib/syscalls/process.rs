@@ -160,7 +160,9 @@ pub fn sys_process_start(
             Ok(proc) => proc,
             Err(err) => {
                 if arg1_handle.raw_value() != ZX_HANDLE_INVALID {
-                    let _ = ProcessDispatcher::with_current(|up| up.remove_handle(arg1_handle));
+                    let _ = ProcessDispatcher::with_current(|up| {
+                        up.handle_table().remove_handle(up, arg1_handle)
+                    });
                 }
                 return Err(err);
             }
@@ -171,14 +173,16 @@ pub fn sys_process_start(
             Ok(t) => t,
             Err(err) => {
                 if arg1_handle.raw_value() != ZX_HANDLE_INVALID {
-                    let _ = ProcessDispatcher::with_current(|up| up.remove_handle(arg1_handle));
+                    let _ = ProcessDispatcher::with_current(|up| {
+                        up.handle_table().remove_handle(up, arg1_handle)
+                    });
                 }
                 return Err(err);
             }
         };
 
     let arg_handle = if arg1_handle.raw_value() != ZX_HANDLE_INVALID {
-        ProcessDispatcher::with_current(|up| up.remove_handle(arg1_handle))
+        ProcessDispatcher::with_current(|up| up.handle_table().remove_handle(up, arg1_handle))
     } else {
         None
     };

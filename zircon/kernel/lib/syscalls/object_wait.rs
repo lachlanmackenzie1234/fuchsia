@@ -7,9 +7,7 @@
 use crate::kernel::deadline::Deadline;
 use crate::kernel::event::Event;
 use crate::kernel::thread::Interruptible;
-use crate::object::{
-    AutoBlocked, Blocked, HandleTableReadGuard, HandleValue, ProcessDispatcher, WaitSignalObserver,
-};
+use crate::object::{AutoBlocked, Blocked, HandleValue, ProcessDispatcher, WaitSignalObserver};
 use crate::platform_rs::timer::InstantUnknown;
 use crate::user_copy::{UserInOutPtr, UserOutPtr};
 use debug::ltracef;
@@ -38,9 +36,9 @@ pub fn sys_object_wait_one(
     let mut wait_signal_observer = WaitSignalObserver::new();
 
     let slack_deadline = ProcessDispatcher::with_current(|up| {
-        pin_init::stack_pin_init!(let guard = HandleTableReadGuard::new(up));
+        pin_init::stack_pin_init!(let guard = up.handle_table().read_lock());
 
-        let handle = guard.get_handle(handle_value).ok_or(Status::BAD_HANDLE)?;
+        let handle = guard.get_handle(up, handle_value).ok_or(Status::BAD_HANDLE)?;
         if !handle.has_rights(ZX_RIGHT_WAIT) {
             return Err(Status::ACCESS_DENIED);
         }
@@ -116,11 +114,11 @@ pub fn sys_object_wait_many(
     // We may need to unwind (which can be done outside the lock).
     let mut num_added = 0;
     let begin_result = ProcessDispatcher::with_current(|up| {
-        pin_init::stack_pin_init!(let guard = HandleTableReadGuard::new(up));
+        pin_init::stack_pin_init!(let guard = up.handle_table().read_lock());
 
         for (ix, item) in items[..count].iter().enumerate() {
             let handle =
-                guard.get_handle(HandleValue::new(item.handle)).ok_or(Status::BAD_HANDLE)?;
+                guard.get_handle(up, HandleValue::new(item.handle)).ok_or(Status::BAD_HANDLE)?;
             if !handle.has_rights(ZX_RIGHT_WAIT) {
                 return Err(Status::ACCESS_DENIED);
             }

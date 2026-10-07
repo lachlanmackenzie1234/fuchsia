@@ -26,6 +26,8 @@ mod guest;
 mod guest_dispatcher;
 mod guest_dispatcher_ffi;
 mod handle;
+mod handle_table;
+mod handle_table_ffi;
 mod io_buffer_dispatcher;
 mod io_buffer_dispatcher_ffi;
 mod io_buffer_shared_region_dispatcher;
@@ -96,6 +98,7 @@ pub use fifo_dispatcher::FifoDispatcher;
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
 pub use handle::{HandleOwner, HandleRef, HandleValue, KernelHandle};
+pub use handle_table::{HandleTable, HandleTableReadGuard, HandleTableWriteGuard};
 pub use io_buffer_dispatcher::IoBufferDispatcher;
 pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;
@@ -109,9 +112,7 @@ pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use pager_dispatcher::PagerDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
 pub use port_dispatcher::PortDispatcher;
-pub use process_dispatcher::{
-    CurrentProcessDispatcher, HandleTableReadGuard, HandleTableWriteGuard, ProcessDispatcher,
-};
+pub use process_dispatcher::{CurrentProcessDispatcher, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource::{
     StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,

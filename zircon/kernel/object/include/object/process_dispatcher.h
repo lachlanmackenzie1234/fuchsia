@@ -70,22 +70,12 @@ zx_status_t cpp_process_dispatcher_make_and_add_handle_from_ref(ProcessDispatche
                                                                 Dispatcher* dispatcher,
                                                                 zx_rights_t rights,
                                                                 zx_handle_t* out_handle);
-zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle,
-                                            ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_disp,
-                                            zx_rights_t* out_rights);
-Handle* cpp_process_dispatcher_remove_handle(ProcessDispatcher* process, zx_handle_t handle_value);
+const HandleTable* cpp_process_dispatcher_handle_table(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_enforce_basic_policy(ProcessDispatcher* process,
                                                         uint32_t policy);
 int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
 void cpp_process_dispatcher_get_timer_slack_policy(const ProcessDispatcher* process,
                                                    TimerSlack* out_slack);
-void* cpp_process_dispatcher_handle_table_lock(const ProcessDispatcher* process);
-Handle* cpp_process_dispatcher_handle_table_get_handle_locked(ProcessDispatcher* process,
-                                                              zx_handle_t handle_value);
-zx_koid_t cpp_process_dispatcher_handle_table_koid(const ProcessDispatcher* process);
-zx_status_t cpp_process_dispatcher_get_dispatcher_with_rights(
-    ProcessDispatcher* process, zx_handle_t handle_value, zx_obj_type_t type, zx_rights_t rights,
-    ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_disp);
 zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_set_critical_to_job(ProcessDispatcher* process,
                                                        JobDispatcher* job, bool retcode_nonzero);

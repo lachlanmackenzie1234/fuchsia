@@ -14,10 +14,9 @@ use super::dispatcher_ffi::{
     cpp_dispatcher_update_state_locked,
 };
 use super::handle::{HandleRef, HandleValue};
-use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
+use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
 use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
 use kalloc::AllocError;
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
@@ -655,18 +654,9 @@ impl Dispatcher {
     pub fn get_dispatcher_and_rights(
         handle: HandleValue,
     ) -> Result<(fbl::RefPtr<Dispatcher>, zx_rights_t), Status> {
-        let mut ref_ptr = MaybeUninit::<fbl::RefPtr<Dispatcher>>::uninit();
-        let mut actual_rights = MaybeUninit::<zx_rights_t>::uninit();
-        // SAFETY: ref_ptr and actual_rights point to valid, writable uninitialized memory.
-        unsafe {
-            let status = cpp_handle_table_get_dispatcher(
-                handle,
-                ref_ptr.as_mut_ptr(),
-                actual_rights.as_mut_ptr(),
-            );
-            Status::ok(status)?;
-            Ok((ref_ptr.assume_init(), actual_rights.assume_init()))
-        }
+        ProcessDispatcher::with_current(|up| {
+            up.handle_table().get_dispatcher_and_rights(up, handle)
+        })
     }
 }
 
