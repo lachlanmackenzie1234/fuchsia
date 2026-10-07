@@ -50,7 +50,15 @@ impl std::fmt::Debug for Config {
             .field("start_time_mono", &self.start_time_mono)
             .field("allow_attach_to_existing_attempt", &self.allow_attach_to_existing_attempt)
             .field("manifest_range", &self.manifest_range)
-            .field("manifest_headers", &self.manifest_headers)
+            // Only print the names of the headers, to avoid logging potentially sensitive data.
+            .field(
+                "manifest_header_names",
+                &self
+                    .manifest_headers
+                    .iter()
+                    .map(|h| String::from_utf8_lossy(&h.name))
+                    .collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
