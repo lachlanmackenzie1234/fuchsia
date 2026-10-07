@@ -44,15 +44,22 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
   ~UsbFunction() override;
   uint64_t config_generation() const { return config_generation_; }
 
-  // If SetConfigured(true, ...) is called from an already configured state,
-  // then a deconfigure/reconfigure sequence is performed to reset the function
-  // state.
+  // Configures or unconfigures the function driver via UsbFunctionInterface.SetConfigured().
+  // If SetConfigured(true, ...) is called from an already configured state, a
+  // deconfigure/reconfigure sequence is performed to reset the function state.
+  // `completer` is invoked exactly once on `dispatcher_` with ZX_OK on success or an error status
+  // if the FIDL call fails.
   void SetConfigured(bool configured, usb_speed_t speed,
                      fit::callback<void(zx_status_t)> completer);
+  // Selects `alt_setting` for `interface` via UsbFunctionInterface.SetInterface().
+  // `completer` is invoked exactly once on `dispatcher_` with the result of the FIDL call.
   void SetInterface(uint8_t interface, uint8_t alt_setting,
                     fit::callback<void(zx_status_t)> completer);
-  zx::result<std::vector<uint8_t>> Control(const fdescriptor::wire::UsbSetup& setup,
-                                           cpp20::span<uint8_t> write_buffer);
+  // Forwards a setup control request to the function driver via UsbFunctionInterface.Control().
+  // `completer` is invoked exactly once on `dispatcher_` with the read payload on success or an
+  // error status on failure.
+  void Control(const fdescriptor::wire::UsbSetup& setup, std::span<const uint8_t> write_buffer,
+               fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
   size_t function_index() const { return index_; }
   std::string name() const { return name_; }
   void RequestRemoval();

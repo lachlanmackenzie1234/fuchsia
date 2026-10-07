@@ -594,42 +594,56 @@ void UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting,
       });
 }
 
-// TODO(https://fxbug.dev/493657863): This call should be async like
-// SetConfigured and SetInterface once we can guarantee a single-dispatch of
-// RequestRecipient::kDevice requests to
-// bound functions.
-zx::result<std::vector<uint8_t>> UsbFunction::Control(const fdescriptor::wire::UsbSetup& setup,
-                                                      cpp20::span<uint8_t> write_buffer) {
+void UsbFunction::Control(const fdescriptor::wire::UsbSetup& setup,
+                          std::span<const uint8_t> write_buffer,
+                          fit::callback<void(zx::result<std::vector<uint8_t>>)> completer) {
   TRACE_DURATION("usb-peripheral", __func__);
   if (!function_intf_.is_valid()) {
     fdf::error("Control failed as the interface is invalid.");
-    return zx::error(ZX_ERR_BAD_STATE);
+    completer(zx::error(ZX_ERR_BAD_STATE));
+    return;
   }
 
-  fidl::VectorView<uint8_t> write_data =
-      fidl::VectorView<uint8_t>::FromExternal(write_buffer.data(), write_buffer.size());
+  fidl::Arena arena;
+  fidl::VectorView<uint8_t> write_data(arena, write_buffer.size());
+  if (!write_buffer.empty()) {
+    std::memcpy(write_data.data(), write_buffer.data(), write_buffer.size());
+  }
   size_t expected_read_size = le16toh(setup.w_length);
 
-  auto result = function_intf_.sync()->Control(setup, write_data);
-  if (!result.ok()) {
-    fdf::error("UsbFunctionInterface.Control FIDL call failed: {}", result.FormatDescription());
-    return zx::error(result.status());
-  }
-  if (result->is_error()) {
-    fdf::error("UsbFunctionInterface.Control error: {}",
-               zx_status_get_string(result->error_value()));
-    return zx::error(result->error_value());
-  }
+  function_intf_->Control(setup, write_data)
+      .ThenExactlyOnce(
+          [expected_read_size, completer = std::move(completer)](
+              fidl::WireUnownedResult<ffunction::UsbFunctionInterface::Control>& result) mutable {
+            if (!result.ok()) {
+              fdf::error("UsbFunctionInterface.Control FIDL call failed: {}",
+                         result.FormatDescription());
+              completer(zx::error(result.status()));
+              return;
+            }
+            if (result->is_error()) {
+              if (result->error_value() == ZX_ERR_NOT_SUPPORTED) {
+                fdf::debug("UsbFunctionInterface.Control not supported: {}",
+                           zx_status_get_string(result->error_value()));
+              } else {
+                fdf::error("UsbFunctionInterface.Control error: {}",
+                           zx_status_get_string(result->error_value()));
+              }
+              completer(zx::error(result->error_value()));
+              return;
+            }
 
-  ffunction::wire::UsbFunctionInterfaceControlResponse* response = result->value();
-  size_t actual_read = response->read.size();
-  if (actual_read > expected_read_size) {
-    fdf::error("Control read too much data: {} > {}", actual_read, expected_read_size);
-    return zx::error(ZX_ERR_BUFFER_TOO_SMALL);
-  }
+            ffunction::wire::UsbFunctionInterfaceControlResponse* response = result->value();
+            size_t actual_read = response->read.size();
+            if (actual_read > expected_read_size) {
+              fdf::error("Control read too much data: {} > {}", actual_read, expected_read_size);
+              completer(zx::error(ZX_ERR_BUFFER_TOO_SMALL));
+              return;
+            }
 
-  std::vector<uint8_t> read_data_vec(response->read.begin(), response->read.end());
-  return zx::ok(std::move(read_data_vec));
+            std::vector<uint8_t> read_data_vec(response->read.begin(), response->read.end());
+            completer(zx::ok(std::move(read_data_vec)));
+          });
 }
 
 zx_status_t UsbFunction::CommonEndpointSetStall(uint8_t ep_address) {

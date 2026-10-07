@@ -167,6 +167,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   static constexpr std::string_view kChildNodeName = "usb-peripheral";
 
   UsbPeripheral() : fdf::DriverBase2(kDriverName) {}
+  ~UsbPeripheral() override { intf_srv_.Stop(); }
 
   static constexpr uint8_t kMaxInterfaces = UsbConfiguration::MAX_INTERFACES;
   static constexpr uint8_t kMaxStrings = 255;
@@ -326,9 +327,23 @@ class UsbPeripheral : public fdf::DriverBase2,
     fbl::Mutex* lock_ = nullptr;
   };
 
-  // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
-  // here can be folded into the FIDL endpoint implementation and calling code.
-  void CommonControl(const fdescriptor::wire::UsbSetup& setup, cpp20::span<uint8_t> write_buffer,
+  bool OnDispatcher() const;
+  void RunOnDispatcher(fit::closure task);
+  // Sequentially dispatches a control request to `functions` starting at `index`. When
+  // `is_device_recipient` is true, advances to the next function if the current function does not
+  // handle the request. `completer` is invoked once with the response data or an error status
+  // (synchronously if no functions remain, or on `dispatcher()` otherwise).
+  void DispatchControlToFunctions(const fdescriptor::wire::UsbSetup& setup,
+                                  std::vector<uint8_t> write_data,
+                                  std::vector<std::shared_ptr<UsbFunction>> functions, size_t index,
+                                  bool is_device_recipient,
+                                  fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
+
+  // Handles a USB control transfer from the DCI driver. `completer` is invoked exactly once
+  // (synchronously for immediate descriptor/status replies, or asynchronously on `dispatcher()`
+  // when delegated to `SetConfiguration`, `SetInterface`, or function drivers).
+  void CommonControl(const fdescriptor::wire::UsbSetup& setup,
+                     std::span<const uint8_t> write_buffer,
                      fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
   zx_status_t InitializeDci(fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDci> dci_client_end);
 
@@ -342,9 +357,12 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   // Returns the index of the function that was added.
   zx::result<size_t> AddFunction(UsbConfiguration& config, FunctionDescriptor desc);
-  // Begins the process of clearing the functions.
+  // Begins the process of clearing all functions. If provided, `callback` is invoked once all
+  // function child nodes have been removed and `functions_` is empty.
   void ClearFunctions(std::optional<fit::callback<void()>> callback = std::nullopt);
   void CheckAllFunctionsCleared();
+  // Completes controller stop and child node removal after function teardown. If provided,
+  // `callback` is registered to run once all functions are cleared.
   void CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFunction>> to_teardown,
                                  std::optional<fit::callback<void()>> callback)
       __TA_EXCLUDES(lock_);
@@ -353,8 +371,13 @@ class UsbPeripheral : public fdf::DriverBase2,
   zx_status_t AddFunctionDevices() __TA_REQUIRES(lock_);
   zx_status_t GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index, void* buffer,
                             size_t length, size_t* out_actual);
+  // Selects `alt_setting` for `interface`. `completer` is invoked exactly once on `dispatcher()`
+  // with ZX_OK or an error status once the target function's SetInterface() completes.
   void SetInterface(uint8_t interface, uint8_t alt_setting,
                     fit::callback<void(zx_status_t)> completer) __TA_EXCLUDES(lock_);
+  // Applies `configuration` across all functions. `completer` is invoked exactly once (on
+  // `dispatcher()`, or synchronously if rejected/canceled) with ZX_OK, ZX_ERR_CANCELED if
+  // superseded or interrupted by disconnect/teardown, or the first function error encountered.
   void SetConfiguration(uint8_t configuration, fit::callback<void(zx_status_t)> completer)
       __TA_EXCLUDES(lock_);
   zx_status_t SetDefaultConfig(std::vector<FunctionDescriptor>& functions);
@@ -461,7 +484,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // other than StandardRequest::SET_CONFIGURATION or requests targeting descriptors
   uint8_t configuration_ = 0;
   // USB connection speed.
-  usb_speed_t speed_ = 0;
+  usb_speed_t speed_ __TA_GUARDED(lock_) = 0;
 
   // Registered listener
   fidl::WireSharedClient<fuchsia_hardware_usb_peripheral::Events> listener_;
@@ -481,8 +504,6 @@ class UsbPeripheral : public fdf::DriverBase2,
   std::set<uint8_t> stalled_eps_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
-
-  std::optional<async::Executor> executor_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
@@ -512,7 +533,11 @@ class UsbPeripheral : public fdf::DriverBase2,
   std::optional<PendingSetConfiguration> pending_set_configuration_ __TA_GUARDED(lock_);
   bool clearing_functions_ __TA_GUARDED(lock_) = false;
 
-  // Must be last so promises bound to this scope are destroyed before other members.
+  // Must be declared last so that `scope_` and `executor_` are destroyed first, abandoning any
+  // in-flight promises (and their `fit::defer` cleanups) while all other members remain valid.
+  // `scope_` binds scheduled fpromise continuations to UsbPeripheral's lifetime so tasks cannot
+  // dereference a dangling `this` pointer if UsbPeripheral is destroyed while tasks are queued.
+  std::unique_ptr<async::Executor> executor_;
   fpromise::scope scope_;
 };
 

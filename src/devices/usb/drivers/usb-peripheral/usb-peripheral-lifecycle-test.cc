@@ -3437,11 +3437,8 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_OverlappingSetConfigurationCall
 // Verifies that while UsbFunctionInterface::Control() is in flight, the function driver can make
 // synchronous UsbFunction FIDL calls (e.g. DisableEndpoint) back into usb-peripheral and the DCI
 // driver can concurrently invoke UsbDciInterface::SetSpeed() without deadlocking.
-// Marked DISABLED_ because UsbFunction::Control() currently makes a synchronous FIDL call on
-// UsbPeripheral::dispatcher(), blocking incoming UsbFunction and UsbDciInterface requests on that
-// dispatcher.
 TEST_F(UnmanagedUsbPeripheralReadyTest,
-       DISABLED_FunctionControlCallingUsbFunctionAndSetConnectedDoesNotDeadlock) {
+       FunctionControlCallingUsbFunctionAndSetConnectedDoesNotDeadlock) {
   usb_peripheral_config::Config config;
   config.functions() = {"test"};
   StartDriverWithConfig(config);

@@ -80,6 +80,20 @@ struct formatter<fendpoint::wire::EndpointInfo> : formatter<string_view> {
 
 namespace usb_peripheral {
 
+bool UsbPeripheral::OnDispatcher() const {
+  fdf_dispatcher_t* current = fdf_dispatcher_get_current_dispatcher();
+  return (current && fdf_dispatcher_get_async_dispatcher(current) == dispatcher()) ||
+         (!current && async_get_default_dispatcher() == dispatcher());
+}
+
+void UsbPeripheral::RunOnDispatcher(fit::closure task) {
+  if (OnDispatcher()) {
+    task();
+  } else {
+    async::PostTask(dispatcher(), std::move(task));
+  }
+}
+
 bool UsbPeripheral::IsPeripheralStopping() const {
   fbl::AutoLock lock(&lock_);
   // Return true if the peripheral is undergoing teardown or the driver is stopping.
@@ -156,7 +170,7 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   TRACE_DURATION("usb-peripheral", __func__);
   inspector_ = context.CreateInspector(this);
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
-  executor_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  executor_ = std::make_unique<async::Executor>(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   usb_peripheral_node_ = inspector_->root().CreateChild("usb-peripheral");
   dci_inspect_.Init(usb_peripheral_node_, "dci_metrics");
   {
@@ -1284,6 +1298,7 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
   fdf::info("Configuration {}", configuration);
 
   std::vector<std::shared_ptr<UsbFunction>> functions_to_configure;
+  usb_speed_t speed = 0;
 
   fit::callback<void(zx_status_t)> canceled_completer;
   bool deferred = false;
@@ -1322,6 +1337,7 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
           functions_to_configure.push_back(functions_[function_index]);
         }
       }
+      speed = speed_;
     }
   }
 
@@ -1332,82 +1348,89 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
     return;
   }
 
-  // Call SetConfigured for all functions in parallel and outside the lock.
-  std::vector<fpromise::promise<void, zx_status_t>> promises;
-  for (auto& function : functions_to_configure) {
-    fpromise::bridge<void, zx_status_t> bridge;
-    bool config_match = (function->configuration() == (configuration - 1));
-    function->SetConfigured(
-        config_match, speed_,
-        [completer = std::move(bridge.completer), configured](zx_status_t status) mutable {
-          if (status == ZX_OK || !configured) {
-            // Ignore errors when unconfiguring.
-            completer.complete_ok();
-          } else {
-            completer.complete_error(status);
-          }
-        });
-    promises.push_back(bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED)));
-  }
-
-  auto join_task =
-      fpromise::join_promise_vector(std::move(promises))
-          .then([this, configuration, completer = std::move(completer)](
-                    fpromise::result<std::vector<fpromise::result<void, zx_status_t>>>&
-                        results) mutable {
-            zx_status_t final_status = ZX_OK;
-            if (results.is_ok()) {
-              for (auto& res : results.value()) {
-                if (res.is_error()) {
-                  final_status = res.error();
-                  fdf::error("Failed to set interface: {}", zx_status_get_string(final_status));
-                  break;
-                }
-              }
+  auto start_configure = [this, configuration, configured, speed,
+                          functions_to_configure = std::move(functions_to_configure),
+                          completer = std::move(completer)]() mutable {
+    // Call SetConfigured for all functions in parallel and outside the lock.
+    std::vector<fpromise::promise<void, zx_status_t>> promises;
+    for (auto& function : functions_to_configure) {
+      fpromise::bridge<void, zx_status_t> bridge;
+      bool config_match = (function->configuration() == (configuration - 1));
+      function->SetConfigured(
+          config_match, speed,
+          [completer = std::move(bridge.completer), configured](zx_status_t status) mutable {
+            if (status == ZX_OK || !configured) {
+              // Ignore errors when unconfiguring.
+              completer.complete_ok();
             } else {
-              final_status = ZX_ERR_CANCELED;
+              completer.complete_error(status);
             }
+          });
+      promises.push_back(bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED)));
+    }
 
-            if (final_status == ZX_OK) {
-              std::vector<uint8_t> eps_to_clear;
-              {
-                fbl::AutoLock lock(&lock_);
-                configuration_ = configuration;
-
-                // USB 2.0 § 9.4.7: SetConfiguration resets the halt status and data toggle of each
-                // endpoint to not halted. Collect both active function endpoints and previously
-                // stalled endpoints to ensure hardware state is cleared.
-                for (uint8_t ep : stalled_eps_) {
-                  eps_to_clear.push_back(ep);
-                }
-                stalled_eps_.clear();
-
-                for (size_t ep_idx = 1; ep_idx < std::size(endpoint_map_); ++ep_idx) {
-                  if (endpoint_map_[ep_idx].has_value()) {
-                    uint8_t ep_addr = EpIndexToAddress(static_cast<uint8_t>(ep_idx));
-                    if (std::find(eps_to_clear.begin(), eps_to_clear.end(), ep_addr) ==
-                        eps_to_clear.end()) {
-                      eps_to_clear.push_back(ep_addr);
-                    }
+    auto join_task =
+        fpromise::join_promise_vector(std::move(promises))
+            .then([this, configuration, completer = std::move(completer)](
+                      fpromise::result<std::vector<fpromise::result<void, zx_status_t>>>&
+                          results) mutable {
+              zx_status_t final_status = ZX_OK;
+              if (results.is_ok()) {
+                for (auto& res : results.value()) {
+                  if (res.is_error()) {
+                    final_status = res.error();
+                    fdf::error("Failed to set configuration: {}",
+                               zx_status_get_string(final_status));
+                    break;
                   }
                 }
+              } else {
+                final_status = ZX_ERR_CANCELED;
+              }
 
-                // USB 2.0 § 9.4.7: SetConfiguration also selects default alternate setting 0 for
-                // each interface.
-                if (configuration_ > 0 && configuration_ <= configurations_.size()) {
-                  std::fill(std::begin(configurations_[configuration_ - 1].alternate_setting),
-                            std::end(configurations_[configuration_ - 1].alternate_setting), 0);
+              if (final_status == ZX_OK) {
+                std::vector<uint8_t> eps_to_clear;
+                {
+                  fbl::AutoLock lock(&lock_);
+                  configuration_ = configuration;
+
+                  // USB 2.0 § 9.4.7: SetConfiguration resets the halt status and data toggle of
+                  // each endpoint to not halted. Collect both active function endpoints and
+                  // previously stalled endpoints to ensure hardware state is cleared.
+                  for (uint8_t ep : stalled_eps_) {
+                    eps_to_clear.push_back(ep);
+                  }
+                  stalled_eps_.clear();
+
+                  for (size_t ep_idx = 1; ep_idx < std::size(endpoint_map_); ++ep_idx) {
+                    if (endpoint_map_[ep_idx].has_value()) {
+                      uint8_t ep_addr = EpIndexToAddress(static_cast<uint8_t>(ep_idx));
+                      if (std::find(eps_to_clear.begin(), eps_to_clear.end(), ep_addr) ==
+                          eps_to_clear.end()) {
+                        eps_to_clear.push_back(ep_addr);
+                      }
+                    }
+                  }
+
+                  // USB 2.0 § 9.4.7: SetConfiguration also selects default alternate setting 0 for
+                  // each interface.
+                  if (configuration_ > 0 && configuration_ <= configurations_.size()) {
+                    std::fill(std::begin(configurations_[configuration_ - 1].alternate_setting),
+                              std::end(configurations_[configuration_ - 1].alternate_setting), 0);
+                  }
+                }
+                for (uint8_t ep_addr : eps_to_clear) {
+                  UsbDciEndpointClearStall(ep_addr);
                 }
               }
-              for (uint8_t ep_addr : eps_to_clear) {
-                UsbDciEndpointClearStall(ep_addr);
-              }
-            }
-            completer(final_status);
-          })
-          .wrap_with(scope_);
+              completer(final_status);
+            })
+            .wrap_with(scope_);
 
-  executor_->schedule_task(std::move(join_task).wrap_with(scope_));
+    executor_->schedule_task(std::move(join_task).wrap_with(scope_));
+  };
+
+  RunOnDispatcher(std::move(start_configure));
 }
 
 void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
@@ -1453,63 +1476,69 @@ void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
   }
 
   if (function) {
-    auto func_idx = function->function_index();
-    fpromise::bridge<zx_status_t, void> bridge;
-    function->SetInterface(interface, alt_setting,
-                           [completer = std::move(bridge.completer)](zx_status_t status) mutable {
-                             completer.complete_ok(status);
-                           });
+    auto start_set_interface = [this, function = std::move(function), interface, alt_setting,
+                                target_config, completer = std::move(completer)]() mutable {
+      auto func_idx = function->function_index();
+      fpromise::bridge<zx_status_t, void> bridge;
+      function->SetInterface(interface, alt_setting,
+                             [completer = std::move(bridge.completer)](zx_status_t status) mutable {
+                               completer.complete_ok(status);
+                             });
 
-    auto task =
-        bridge.consumer.promise_or(fpromise::ok(ZX_ERR_CANCELED))
-            .then([this, function, interface, alt_setting, target_config, func_idx,
-                   completer =
-                       std::move(completer)](fpromise::result<zx_status_t, void>& result) mutable {
-              zx_status_t status = result.is_ok() ? result.value() : ZX_ERR_CANCELED;
-              if (status == ZX_OK) {
-                // USB 2.0 § 9.4.5: A SetInterface request for an interface resets the halt
-                // status and data toggle sequence to 0 for each endpoint associated with that
-                // interface. Query descriptor endpoints outside lock_ to avoid holding lock_
-                // during descriptor traversal.
-                std::optional<std::vector<uint8_t>> iface_eps =
-                    function->GetEndpointsForInterface(interface, alt_setting);
+      auto task =
+          bridge.consumer.promise_or(fpromise::ok(ZX_ERR_CANCELED))
+              .then([this, function, interface, alt_setting, target_config, func_idx,
+                     completer = std::move(completer)](
+                        fpromise::result<zx_status_t, void>& result) mutable {
+                zx_status_t status = result.is_ok() ? result.value() : ZX_ERR_CANCELED;
+                if (status == ZX_OK) {
+                  // USB 2.0 § 9.4.5: A SetInterface request for an interface resets the halt
+                  // status and data toggle sequence to 0 for each endpoint associated with that
+                  // interface. Query descriptor endpoints outside lock_ to avoid holding lock_
+                  // during descriptor traversal.
+                  std::optional<std::vector<uint8_t>> iface_eps =
+                      function->GetEndpointsForInterface(interface, alt_setting);
 
-                std::vector<uint8_t> eps_to_clear;
-                {
-                  fbl::AutoLock lock(&lock_);
-                  if (configuration_ == target_config && configuration_ > 0 &&
-                      configuration_ <= configurations_.size()) {
-                    configurations_[configuration_ - 1].alternate_setting[interface] = alt_setting;
+                  std::vector<uint8_t> eps_to_clear;
+                  {
+                    fbl::AutoLock lock(&lock_);
+                    if (configuration_ == target_config && configuration_ > 0 &&
+                        configuration_ <= configurations_.size()) {
+                      configurations_[configuration_ - 1].alternate_setting[interface] =
+                          alt_setting;
 
-                    if (iface_eps.has_value()) {
-                      // Descriptors are present. Unconditionally clear stalls and reset data
-                      // toggles for all endpoints associated with this specific interface and
-                      // alternate setting.
-                      eps_to_clear = std::move(*iface_eps);
-                    } else {
-                      // Fallback ONLY if descriptors are genuinely missing (e.g. mock test
-                      // functions). Start from ep_idx = 1 since Endpoint 0 (control pipe) is never
-                      // assigned to functions.
-                      for (size_t ep_idx = 1; ep_idx < std::size(endpoint_map_); ++ep_idx) {
-                        if (endpoint_map_[ep_idx] == func_idx) {
-                          uint8_t ep_addr = EpIndexToAddress(static_cast<uint8_t>(ep_idx));
-                          eps_to_clear.push_back(ep_addr);
+                      if (iface_eps.has_value()) {
+                        // Descriptors are present. Unconditionally clear stalls and reset data
+                        // toggles for all endpoints associated with this specific interface and
+                        // alternate setting.
+                        eps_to_clear = std::move(*iface_eps);
+                      } else {
+                        // Fallback ONLY if descriptors are genuinely missing (e.g. mock test
+                        // functions). Start from ep_idx = 1 since Endpoint 0 (control pipe) is
+                        // never assigned to functions.
+                        for (size_t ep_idx = 1; ep_idx < std::size(endpoint_map_); ++ep_idx) {
+                          if (endpoint_map_[ep_idx] == func_idx) {
+                            uint8_t ep_addr = EpIndexToAddress(static_cast<uint8_t>(ep_idx));
+                            eps_to_clear.push_back(ep_addr);
+                          }
                         }
                       }
                     }
                   }
+                  // Note: UsbDciEndpointClearStall explicitly acquires lock_ and removes each
+                  // ep_addr from stalled_eps_, maintaining driver protocol state tracking as well
+                  // as hardware state.
+                  for (uint8_t ep_addr : eps_to_clear) {
+                    UsbDciEndpointClearStall(ep_addr);
+                  }
                 }
-                // Note: UsbDciEndpointClearStall explicitly acquires lock_ and removes each
-                // ep_addr from stalled_eps_, maintaining driver protocol state tracking as well as
-                // hardware state.
-                for (uint8_t ep_addr : eps_to_clear) {
-                  UsbDciEndpointClearStall(ep_addr);
-                }
-              }
-              completer(status);
-            });
+                completer(status);
+              });
 
-    executor_->schedule_task(std::move(task).wrap_with(scope_));
+      executor_->schedule_task(std::move(task).wrap_with(scope_));
+    };
+
+    RunOnDispatcher(std::move(start_set_interface));
     return;
   }
 
@@ -1803,8 +1832,54 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
   return ZX_OK;
 }
 
+void UsbPeripheral::DispatchControlToFunctions(
+    const fdescriptor::wire::UsbSetup& setup, std::vector<uint8_t> write_data,
+    std::vector<std::shared_ptr<UsbFunction>> functions, size_t index, bool is_device_recipient,
+    fit::callback<void(zx::result<std::vector<uint8_t>>)> completer) {
+  while (index < functions.size() && !functions[index]) {
+    ++index;
+  }
+  if (index >= functions.size()) {
+    if (is_device_recipient) {
+      fdf::debug(
+          "CommonControl: USB_RECIP_DEVICE request {:#02X} (req: {:#02X}) not handled by any function",
+          setup.bm_request_type, setup.b_request);
+    }
+    completer(zx::error(ZX_ERR_NOT_SUPPORTED));
+    return;
+  }
+
+  if (!OnDispatcher()) {
+    async::PostTask(dispatcher(), [this, setup, write_data = std::move(write_data),
+                                   functions = std::move(functions), index, is_device_recipient,
+                                   completer = std::move(completer)] mutable {
+      DispatchControlToFunctions(setup, std::move(write_data), std::move(functions), index,
+                                 is_device_recipient, std::move(completer));
+    });
+    return;
+  }
+
+  std::shared_ptr<UsbFunction> function = functions[index];
+  std::vector<uint8_t> next_write_data;
+  if (is_device_recipient && index + 1 < functions.size()) {
+    next_write_data = write_data;
+  }
+  function->Control(
+      setup, write_data,
+      [this, setup, write_data = std::move(next_write_data), functions = std::move(functions),
+       index, is_device_recipient,
+       completer = std::move(completer)](zx::result<std::vector<uint8_t>> result) mutable {
+        if (result.is_ok() || !is_device_recipient) {
+          completer(std::move(result));
+          return;
+        }
+        DispatchControlToFunctions(setup, std::move(write_data), std::move(functions), index + 1,
+                                   is_device_recipient, std::move(completer));
+      });
+}
+
 void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
-                                  cpp20::span<uint8_t> write_buffer,
+                                  std::span<const uint8_t> write_buffer,
                                   fit::callback<void(zx::result<std::vector<uint8_t>>)> completer) {
   uint8_t request_type = setup.bm_request_type;
   uint8_t direction = request_type & fdescriptor::kEndpointDirectionMask;
@@ -1901,13 +1976,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
           dev_error = ZX_ERR_BAD_STATE;
         } else {
           const auto& configuration = configurations_[configuration_ - 1];
-          const auto& interface_map = configuration.interface_map;
-
-          for (auto function_index : interface_map) {
-            if (function_index.has_value()) {
-              if (function_index.value() < functions_.size()) {
-                funcs_to_call.push_back(functions_[function_index.value()]);
-              }
+          for (size_t function_index : configuration.functions) {
+            if (function_index < functions_.size() && functions_[function_index]) {
+              funcs_to_call.push_back(functions_[function_index]);
             }
           }
         }
@@ -1917,19 +1988,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
         return;
       }
 
-      for (auto& function : funcs_to_call) {
-        auto result = function->Control(setup, write_buffer);
-        if (result.is_ok()) {
-          completer(std::move(result));
-          return;
-        }
-      }
-
-      // Exhausted all interfaces, no one handled it.
-      fdf::debug(
-          "CommonControl: USB_RECIP_DEVICE request {:#02X} (req: {:#02X}) not handled by any function",
-          request_type, request);
-      completer(zx::error(ZX_ERR_NOT_SUPPORTED));
+      DispatchControlToFunctions(
+          setup, std::vector<uint8_t>(write_buffer.begin(), write_buffer.end()),
+          std::move(funcs_to_call), 0, /*is_device_recipient=*/true, std::move(completer));
       return;
     }
     case fidl::ToUnderlying(fdescriptor::RequestRecipient::kInterface): {
@@ -1996,7 +2057,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
 
       if (function) {
-        completer(function->Control(setup, write_buffer));
+        DispatchControlToFunctions(
+            setup, std::vector<uint8_t>(write_buffer.begin(), write_buffer.end()),
+            {std::move(function)}, 0, /*is_device_recipient=*/false, std::move(completer));
         return;
       }
       break;
@@ -2078,7 +2141,9 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
       // delegate to the function driver for the endpoint
       if (function) {
-        completer(function->Control(setup, write_buffer));
+        DispatchControlToFunctions(
+            setup, std::vector<uint8_t>(write_buffer.begin(), write_buffer.end()),
+            {std::move(function)}, 0, /*is_device_recipient=*/false, std::move(completer));
         return;
       }
       break;
@@ -2444,7 +2509,8 @@ void UsbPeripheral::Stop(fdf::StopCompleter completer) {
     fbl::AutoLock lock(&lock_);
     stopping_driver_ = true;
 
-    on_complete = [completer = std::move(completer)]() mutable {
+    on_complete = [this, completer = std::move(completer)] mutable {
+      intf_srv_.Stop();
       fdf::info("UsbPeripheral::Stop: Functions cleared, replying to completer");
       completer(zx::ok());
     };
