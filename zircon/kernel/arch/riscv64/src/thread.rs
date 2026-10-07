@@ -381,7 +381,7 @@ pub unsafe extern "C" fn arch_context_switch(
     let current_fpu_status = super::fpu::riscv64_fpu_status();
     let current_vector_status = super::vector::riscv64_vector_status();
     // SAFETY: `old_thread` is valid per this function's contract.
-    if !unsafe { crate::kernel::thread::is_user_state_saved(old_thread.cast()) } {
+    if !unsafe { crate::kernel::thread::is_user_state_saved_locked(old_thread.cast()) } {
         // Save the fpu and vector state for the old (current) thread, depending on
         // whether the fpu or vector hardware is currently in the initial state.
         debug_assert_eq!(old_thread, crate::kernel::thread::current_get().cast());
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn arch_context_switch(
     // SAFETY: `new_thread` is valid per this function's contract, and
     // `cpp_arch_set_restricted_flag` only writes the per-CPU flag word.
     unsafe {
-        let in_restricted = crate::kernel::thread::is_in_restricted_mode(new_thread.cast());
+        let in_restricted = crate::kernel::thread::in_restricted(new_thread.cast());
         cpp_arch_set_restricted_flag(in_restricted);
     }
 
