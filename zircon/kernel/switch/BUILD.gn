@@ -83,10 +83,6 @@ compiler_config("static-pic-link") {
     rebase_path(inputs[0], root_build_dir),
   ]
 
-  if (is_gcc && current_os == "fuchsia") {
-    c_family_flags = [ "-fpie" ]
-  }
-
   rustflags = []
   if (toolchain_environment == "kernel") {
     rust_target_edits = [
@@ -342,22 +338,10 @@ foreach(level,
 config("warnings") {
   cflags = [
     "-Wformat=2",
+    "-Wmissing-declarations",
+    "-Wshadow",
     "-Wvla",
   ]
-
-  # GCC supports `-Wformat-signedness` but Clang currently does not.
-  if (is_gcc) {
-    cflags += [ "-Wformat-signedness" ]
-  }
-
-  # TODO(https://fxbug.dev/42159114): Eventually enable -Wshadow for GCC.  It's currently
-  # disabled because GCC is more aggressive than Clang.
-  if (!is_gcc) {
-    cflags += [
-      "-Wmissing-declarations",
-      "-Wshadow",
-    ]
-  }
 
   cflags_c = [ "-Wmissing-prototypes" ]
 }
