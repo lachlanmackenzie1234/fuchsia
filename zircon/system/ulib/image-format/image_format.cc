@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <map>
+#include <numeric>
 #include <set>
 
 #include <fbl/algorithm.h>
@@ -305,15 +306,21 @@ class IntelTiledFormats : public ImageFormatSet {
     }
     CheckedNumeric<uint32_t> constraints_min_bytes_per_row =
         constraints.min_bytes_per_row().has_value() ? constraints.min_bytes_per_row().value() : 0;
-    CheckedNumeric<uint32_t> constraints_bytes_per_row_divisor =
-        constraints.bytes_per_row_divisor().has_value()
-            ? constraints.bytes_per_row_divisor().value()
-            : 1;
+    uint32_t bytes_per_row_divisor = constraints.bytes_per_row_divisor().has_value()
+                                         ? constraints.bytes_per_row_divisor().value()
+                                         : 1;
+    if (bytes_per_row_divisor == 0) {
+      return kInvalidCheckedNumeric32;
+    }
 
     const auto& tiling_data = GetTilingData(GetTilingTypeForPixelFormat(pixel_format_and_modifier));
 
-    constraints_bytes_per_row_divisor =
-        CheckRoundUp(constraints_bytes_per_row_divisor, tiling_data.bytes_per_row_per_tile);
+    // The row bytes must be a multiple of both the constraints' divisor and the tile width in
+    // bytes, so use their least common multiple.
+    const uint32_t bytes_per_row_per_tile = tiling_data.bytes_per_row_per_tile.ValueOrDie();
+    CheckedNumeric<uint32_t> constraints_bytes_per_row_divisor =
+        CheckMul(bytes_per_row_divisor / std::gcd(bytes_per_row_divisor, bytes_per_row_per_tile),
+                 bytes_per_row_per_tile);
 
     // This code should match the code in garnet/public/rust/fuchsia-framebuffer/src/sysmem.rs.
     CheckedNumeric<uint32_t> non_padding_bytes_per_row =
