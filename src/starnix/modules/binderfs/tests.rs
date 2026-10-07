@@ -4241,19 +4241,84 @@ pub mod tests {
                 buffers_size: (u64::MAX / 2) & !7,
             };
 
-            // Submit the reply.
-            assert_eq!(
-                device
-                    .handle_reply(&receiver.context(current_task), &mut Vec::new(), reply)
-                    .expect_err("transaction should have failed"),
-                TransactionError::Failure
-            );
-
+            // Submit the reply. It cannot be delivered, but the receiving thread is done with the
+            // transaction, so it gets a BR_TRANSACTION_COMPLETE rather than an error.
+            device
+                .handle_reply(&receiver.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply");
             assert!(receiver.thread.lock().transactions.is_empty());
+            assert_matches!(
+                receiver.thread.lock().command_queue.pop_front(),
+                Some(QueuedCommand { command: Command::TransactionComplete, .. })
+            );
+            assert!(receiver.thread.lock().command_queue.is_empty());
+
+            // The failure is reported to the sending thread instead, which ends its transaction.
             assert_matches!(
                 sender.thread.lock().command_queue.pop_front(),
                 Some(QueuedCommand { command: Command::FailedReply, .. })
             );
+            assert!(sender.thread.lock().command_queue.is_empty());
+            assert!(sender.thread.lock().transactions.is_empty());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn reply_without_transaction_to_reply_to_keeps_pending_transaction() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let sender = BinderProcessFixture::new_current(current_task, &device);
+            let receiver = BinderProcessFixture::new_current(current_task, &device);
+            send_two_way_transaction(current_task, &device, &sender, &receiver);
+
+            // The sending thread is waiting for the reply to its own transaction, so it has
+            // nothing to reply to.
+            let reply = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            assert_eq!(
+                device.handle_reply(&sender.context(current_task), &mut Vec::new(), reply),
+                Err(TransactionError::Malformed(errno!(EINVAL)))
+            );
+
+            // Its transaction is still pending, and completes when the receiving thread replies.
+            assert_matches!(
+                sender.thread.lock().transactions.last(),
+                Some(TransactionRole::Sender(_))
+            );
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &receiver.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("receiver handle_thread_read");
+            device
+                .handle_reply(&receiver.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply");
+
+            let bytes_read = device
+                .handle_thread_read(
+                    &sender.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("sender handle_thread_read");
+            let command_size = std::mem::size_of::<u32>();
+            assert_eq!(
+                bytes_read,
+                2 * command_size + std::mem::size_of::<binder_transaction_data>()
+            );
+            let commands = current_task
+                .read_objects_to_array::<u32, 2>(UserRef::new(read_buffer_addr))
+                .expect("read commands");
+            assert_eq!(commands[0], uapi::binder_driver_return_protocol_BR_TRANSACTION_COMPLETE);
+            assert_eq!(commands[1], uapi::binder_driver_return_protocol_BR_REPLY);
+            assert!(sender.thread.lock().transactions.is_empty());
         })
         .await;
     }

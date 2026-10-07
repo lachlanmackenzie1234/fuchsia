@@ -37,7 +37,7 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
     binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
     binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_frozen_state_info,
-    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, errno, error,
+    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, error,
 };
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -390,30 +390,55 @@ impl BinderThreadState {
         self.command_queue.push_back(command);
     }
 
-    /// Get the binder process and thread to reply to, or fail if there is no ongoing transaction or
-    /// the calling process/thread are dead.
+    /// Pops the transaction this thread is replying to, and returns the peer that sent it, which
+    /// may be dead. Fails if this thread is not handling a transaction.
     pub fn pop_transaction_caller(
         &mut self,
-    ) -> Result<
-        (TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>, fuchsia_trace::Id),
-        TransactionError,
-    > {
-        let transaction = self.transactions.pop().ok_or_else(|| errno!(EINVAL))?;
-        match transaction {
-            TransactionRole::Receiver { peer, trace_id } => {
+    ) -> Result<(WeakBinderPeer, fuchsia_trace::Id), TransactionError> {
+        match self.transactions.pop() {
+            Some(TransactionRole::Receiver { peer, trace_id }) => {
                 log_trace!(
                     "binder transaction popped from thread {} for peer {:?}",
                     self.tid,
                     peer
                 );
-                let (process, thread) = peer.upgrade().ok_or(TransactionError::Dead)?;
-                Ok((process, thread, trace_id))
+                Ok((peer, trace_id))
             }
-            TransactionRole::Sender(_) => {
+            Some(transaction @ TransactionRole::Sender(_)) => {
+                // The thread is waiting for the reply to its own transaction, which must stay on
+                // its transaction stack.
+                self.transactions.push(transaction);
                 log_warn!("caller got confused, nothing to reply to!");
                 error!(EINVAL)?
             }
+            None => error!(EINVAL)?,
         }
+    }
+
+    /// Notifies this thread that the reply to the transaction it sent to `target_proc` could not
+    /// be delivered because of `error`, and pops that transaction from its transaction stack.
+    ///
+    /// Does nothing if this thread is not waiting for the reply to a transaction sent to
+    /// `target_proc`, e.g. if the transaction already completed with a `DeadReply`.
+    pub fn deliver_failed_reply(
+        &mut self,
+        target_proc: u64,
+        error: &TransactionError,
+        trace_id: fuchsia_trace::Id,
+    ) {
+        if !matches!(
+            self.transactions.last(),
+            Some(TransactionRole::Sender(sender)) if sender.target_proc == target_proc
+        ) {
+            log_trace!(
+                "binder thread {} is not waiting for a reply from process {}",
+                self.tid,
+                target_proc
+            );
+            return;
+        }
+        self.transactions.pop();
+        self.enqueue_command(QueuedCommand::new(error.to_command(), trace_id));
     }
 
     pub fn has_pending_transactions(&self) -> bool {
@@ -802,35 +827,27 @@ impl TransactionError {
     /// Dispatches the error, by potentially queueing a command to `binder_thread` and/or returning
     /// an error.
     pub fn dispatch(&self, binder_thread: &BinderThread) -> Result<(), Errno> {
-        self.dispatch_with_trace_id(binder_thread, fuchsia_trace::Id::new())
+        log_trace!("Dispatching transaction error {:?} for thread {}", self, binder_thread.tid);
+        if let TransactionError::Malformed(err) = self {
+            log_warn!(
+                "binder thread {} sent a malformed transaction: {:?}",
+                binder_thread.tid,
+                &err
+            );
+        }
+        binder_thread.lock().enqueue_command(self.to_command().into());
+        Ok(())
     }
 
-    /// Dispatches the error with a specific `trace_id`.
-    pub fn dispatch_with_trace_id(
-        &self,
-        binder_thread: &BinderThread,
-        trace_id: fuchsia_trace::Id,
-    ) -> Result<(), Errno> {
-        log_trace!("Dispatching transaction error {:?} for thread {}", self, binder_thread.tid);
-        binder_thread.lock().enqueue_command(QueuedCommand::new(
-            match self {
-                TransactionError::Malformed(err) => {
-                    log_warn!(
-                        "binder thread {} sent a malformed transaction: {:?}",
-                        binder_thread.tid,
-                        &err
-                    );
-                    // Negate the value, as the binder runtime assumes error values are already
-                    // negative.
-                    Command::Error(err.return_value() as i32)
-                }
-                TransactionError::Failure => Command::FailedReply,
-                TransactionError::Dead => Command::DeadReply,
-                TransactionError::Frozen => Command::FrozenReply,
-            },
-            trace_id,
-        ));
-        Ok(())
+    /// Returns the command that notifies a binder thread of the error.
+    fn to_command(&self) -> Command {
+        match self {
+            // Negate the value, as the binder runtime assumes error values are already negative.
+            TransactionError::Malformed(err) => Command::Error(err.return_value() as i32),
+            TransactionError::Failure => Command::FailedReply,
+            TransactionError::Dead => Command::DeadReply,
+            TransactionError::Frozen => Command::FrozenReply,
+        }
     }
 }
 

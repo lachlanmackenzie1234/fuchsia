@@ -1224,6 +1224,13 @@ impl BinderDriver {
     }
 
     /// A binder thread is sending a reply to a transaction.
+    ///
+    /// As in Linux, once the transaction being replied to has been popped from the replying
+    /// thread's transaction stack, the replying thread receives a BR_TRANSACTION_COMPLETE even if
+    /// the reply cannot be delivered. The failure is only reported to the thread that sent the
+    /// transaction, if it is still alive. Userspace does not expect a failure in response to its
+    /// BC_REPLY: libbinder may defer writing a BC_REPLY until its looper reads the next command,
+    /// and aborts on such a failure.
     pub fn handle_reply(
         &self,
         context: &OperationContext<'_>,
@@ -1238,9 +1245,13 @@ impl BinderDriver {
             "offsets_size" => data.transaction_data.offsets_size as u64
         );
         // Find the process and thread that initiated the transaction. This reply is for them.
-        let (target_proc, target_thread, trace_id) =
-            context.binder_thread.lock().pop_transaction_caller()?;
-        let mut send_reply = || -> Result<(), TransactionError> {
+        let (peer, trace_id) = context.binder_thread.lock().pop_transaction_caller()?;
+        let Some((target_proc, target_thread)) = peer.upgrade() else {
+            // The thread that initiated the transaction is dead, so there is nobody to reply to.
+            context.binder_thread.lock().enqueue_command(Command::TransactionComplete.into());
+            return Ok(());
+        };
+        let mut send_reply = || -> Result<TransactionBuffers, TransactionError> {
             let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
 
             // Copy the transaction data to the target process.
@@ -1263,11 +1274,15 @@ impl BinderDriver {
                 .into(),
             );
 
-            // Atomically enqueue the reply on the target thread and the
-            // transaction complete command on the local thread.
-            {
-                let (mut target_thread, mut binder_thread) =
-                    BinderThread::ordered_lock(&target_thread, context.binder_thread);
+            Ok(buffers)
+        };
+        let reply_result = send_reply();
+        // Atomically enqueue the reply or failure on the target thread and the transaction
+        // complete command on the local thread.
+        let (mut target_thread, mut binder_thread) =
+            BinderThread::ordered_lock(&target_thread, context.binder_thread);
+        match reply_result {
+            Ok(buffers) => {
                 target_thread.enqueue_command(QueuedCommand::new(
                     Command::Reply(TransactionData {
                         peer_pid: Some(context.binder_proc.key.clone()),
@@ -1282,17 +1297,19 @@ impl BinderDriver {
                     }),
                     trace_id,
                 ));
-
-                binder_thread.enqueue_command(Command::TransactionComplete.into());
             }
-
-            Ok(())
-        };
-        if let Err(e) = send_reply() {
-            // Sending to the target process failed, notify of the transaction failure.
-            let _ = e.dispatch_with_trace_id(&target_thread, trace_id);
-            return Err(e);
+            Err(e) => {
+                if let TransactionError::Malformed(err) = &e {
+                    log_warn!(
+                        "binder thread {} sent a malformed reply: {:?}",
+                        context.binder_thread.tid,
+                        err
+                    );
+                }
+                target_thread.deliver_failed_reply(context.binder_proc.identifier, &e, trace_id);
+            }
         }
+        binder_thread.enqueue_command(Command::TransactionComplete.into());
         Ok(())
     }
 
