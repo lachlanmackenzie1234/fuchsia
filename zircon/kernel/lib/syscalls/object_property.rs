@@ -6,11 +6,13 @@
 
 //! Implementation of the `zx_object_get_property` and `zx_object_set_property` syscalls in Rust.
 //!
-//! Handles property queries and modifications for dispatcher types ported to Rust (e.g. `Dispatcher`,
-//! `ProcessDispatcher`, `SocketDispatcher`, `JobDispatcher`), delegating unported or subsystem-specific
-//! property queries to C++ FFI helpers.
+//! Handles property queries and modifications for dispatcher types ported to Rust (e.g.
+//! `Dispatcher`, `ProcessDispatcher`, `SocketDispatcher`, `JobDispatcher`, `VmObjectDispatcher`),
+//! delegating unported or subsystem-specific property queries to C++ FFI helpers.
 
-use crate::object::{Dispatcher, HandleValue, JobDispatcher, ProcessDispatcher, SocketDispatcher};
+use crate::object::{
+    Dispatcher, HandleValue, JobDispatcher, ProcessDispatcher, SocketDispatcher, VmObjectDispatcher,
+};
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
 use core::mem::MaybeUninit;
@@ -21,7 +23,8 @@ use zx_types::{
     ZX_MAX_NAME_LEN, ZX_PROP_JOB_KILL_ON_OOM, ZX_PROP_NAME, ZX_PROP_PROCESS_BREAK_ON_LOAD,
     ZX_PROP_PROCESS_DEBUG_ADDR, ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID,
     ZX_PROP_PROCESS_VDSO_BASE_ADDRESS, ZX_PROP_SOCKET_RX_THRESHOLD, ZX_PROP_SOCKET_TX_THRESHOLD,
-    ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_SET_PROPERTY, zx_rights_t, zx_status_t,
+    ZX_PROP_VMO_CONTENT_SIZE, ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_SET_PROPERTY, ZX_RIGHT_WRITE,
+    zx_rights_t, zx_status_t,
 };
 
 const LOCAL_TRACE: u32 = 0;
@@ -147,6 +150,7 @@ pub fn sys_object_get_property(
         }
         ZX_PROP_SOCKET_RX_THRESHOLD => get_scalar_property!(SocketDispatcher, get_read_threshold),
         ZX_PROP_SOCKET_TX_THRESHOLD => get_scalar_property!(SocketDispatcher, get_write_threshold),
+        ZX_PROP_VMO_CONTENT_SIZE => get_scalar_property!(VmObjectDispatcher, get_stream_size),
         #[cfg(target_arch = "x86_64")]
         ZX_PROP_REGISTER_FS | ZX_PROP_REGISTER_GS => {
             require_current_thread(&dispatcher)?;
@@ -158,7 +162,7 @@ pub fn sys_object_get_property(
             };
             copy_scalar_to_user(value, size, val as usize)
         }
-        // C++-only dispatchers (e.g. ExceptionDispatcher, StreamDispatcher, VmObjectDispatcher)
+        // C++-only dispatchers (e.g. ExceptionDispatcher, StreamDispatcher)
         _ => {
             // SAFETY: Call C++ FFI helper for properties on C++ dispatchers.
             let status = unsafe {
@@ -233,6 +237,12 @@ pub fn sys_object_set_property(
         ZX_PROP_SOCKET_TX_THRESHOLD => {
             set_scalar_property!(SocketDispatcher, set_write_threshold)
         }
+        ZX_PROP_VMO_CONTENT_SIZE => {
+            if (rights & ZX_RIGHT_WRITE) == 0 {
+                return Err(Status::ACCESS_DENIED);
+            }
+            set_scalar_property!(VmObjectDispatcher, set_stream_size)
+        }
         ZX_PROP_JOB_KILL_ON_OOM => {
             let job = dispatcher.downcast::<JobDispatcher>().ok_or(Status::WRONG_TYPE)?;
             let val = copy_scalar_from_user::<usize>(value, size)?;
@@ -245,7 +255,7 @@ pub fn sys_object_set_property(
             }
             Ok(())
         }
-        // C++-only dispatchers (e.g. ExceptionDispatcher, StreamDispatcher, VmObjectDispatcher)
+        // C++-only dispatchers (e.g. ExceptionDispatcher, StreamDispatcher)
         _ => {
             // SAFETY: Call C++ FFI helper for properties on C++ dispatchers.
             let status = unsafe {

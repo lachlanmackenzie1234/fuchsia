@@ -12,7 +12,6 @@
 #include <object/exception_dispatcher.h>
 #include <object/stream_dispatcher.h>
 #include <object/thread_dispatcher.h>
-#include <object/vm_object_dispatcher.h>
 
 #include "object_property_priv.h"
 
@@ -45,18 +44,6 @@ zx_status_t cpp_object_get_property_cpp_types(const Dispatcher* dispatcher, uint
       bool second_chance = exception->IsSecondChance();
       return value.reinterpret<uint32_t>().copy_to_user(
           second_chance ? ZX_EXCEPTION_STRATEGY_SECOND_CHANCE : ZX_EXCEPTION_STRATEGY_FIRST_CHANCE);
-    }
-    case ZX_PROP_VMO_CONTENT_SIZE: {
-      if (size < sizeof(uint64_t)) {
-        return ZX_ERR_BUFFER_TOO_SMALL;
-      }
-      auto vmo = DownCastDispatcher<const VmObjectDispatcher>(dispatcher);
-      if (!vmo) {
-        return ZX_ERR_WRONG_TYPE;
-      }
-
-      uint64_t stream_size = vmo->GetStreamSize();
-      return value.reinterpret<uint64_t>().copy_to_user(stream_size);
     }
     case ZX_PROP_STREAM_MODE_APPEND: {
       if (size < sizeof(uint8_t)) {
@@ -128,24 +115,6 @@ zx_status_t cpp_object_set_property_cpp_types(Dispatcher* dispatcher, uint32_t p
         return ZX_ERR_INVALID_ARGS;
       }
       return ZX_OK;
-    }
-    case ZX_PROP_VMO_CONTENT_SIZE: {
-      if ((rights & ZX_RIGHT_WRITE) == 0) {
-        return ZX_ERR_ACCESS_DENIED;
-      }
-      if (size < sizeof(uint64_t)) {
-        return ZX_ERR_BUFFER_TOO_SMALL;
-      }
-      auto vmo = DownCastDispatcher<VmObjectDispatcher>(dispatcher);
-      if (!vmo) {
-        return ZX_ERR_WRONG_TYPE;
-      }
-      uint64_t stream_size = 0;
-      zx_status_t status = value.reinterpret<const uint64_t>().copy_from_user(&stream_size);
-      if (status != ZX_OK) {
-        return status;
-      }
-      return vmo->SetStreamSize(stream_size);
     }
     case ZX_PROP_STREAM_MODE_APPEND: {
       if (size < sizeof(uint8_t)) {

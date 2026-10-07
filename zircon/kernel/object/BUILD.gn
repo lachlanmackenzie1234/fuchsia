@@ -311,6 +311,7 @@ kernel_rust_mod("object-rs") {
     "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
+    "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",

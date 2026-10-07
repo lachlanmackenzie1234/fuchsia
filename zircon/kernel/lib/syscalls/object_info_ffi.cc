@@ -42,7 +42,6 @@
 #include <object/stream_dispatcher.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
-#include <object/vm_object_dispatcher.h>
 #include <vm/compression.h>
 #include <vm/discardable_vmo_tracker.h>
 #include <vm/memory_stats.h>

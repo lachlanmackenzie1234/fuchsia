@@ -132,6 +132,18 @@ FFI_ALWAYS_INLINE zx_koid_t cpp_vm_object_get_page_source_koid(const VmObject* v
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_paged(const VmObject* vmo);
+FFI_ALWAYS_INLINE uint32_t cpp_vm_object_num_mappings(const VmObject* vmo);
+FFI_ALWAYS_INLINE uint32_t cpp_vm_object_share_count(const VmObject* vmo);
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_user_pager_backed(const VmObject* vmo);
+FFI_ALWAYS_INLINE VmObject::ChildType cpp_vm_object_child_type(const VmObject* vmo);
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_heap_allocation_bytes(const VmObject* vmo);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_cache_op(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                     VmObject::CacheOpType type);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_prefetch_range(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range_untracked(VmObject* vmo, uint64_t offset,
+                                                                 uint64_t len);
+FFI_ALWAYS_INLINE void cpp_vm_object_set_user_stream_size(VmObject* vmo, StreamSizeManager* ssm);
 
 __END_CDECLS
 

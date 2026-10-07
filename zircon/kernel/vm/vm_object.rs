@@ -8,6 +8,7 @@ use super::arch_vm_aspace::ArchMmuFlags;
 use super::attribution::AttributionCounts;
 use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
+use super::stream_size_manager::StreamSizeManager;
 use super::vm_object_paged::VmObjectPaged;
 use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
@@ -30,7 +31,8 @@ use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};
 
 pub use bindings::{
-    Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
+    Resizability, SnapshotType, VmObject_CacheOpType as CacheOpType,
+    VmObject_ChildType as ChildType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
 };
 pub use zx_types::zx_vmo_lock_state_t;
 
@@ -437,6 +439,71 @@ impl VmObject {
     pub fn num_children(&self) -> u32 {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_num_children(self.as_raw()) }
+    }
+
+    /// Returns the number of mappings of the VMO.
+    pub fn num_mappings(&self) -> u32 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_num_mappings(self.as_raw()) }
+    }
+
+    /// Returns an estimate of the number of unique VmAspaces that this object is mapped into.
+    pub fn share_count(&self) -> u32 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_share_count(self.as_raw()) }
+    }
+
+    /// Returns whether the VMO is backed by a user pager.
+    pub fn is_user_pager_backed(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_user_pager_backed(self.as_raw()) }
+    }
+
+    /// Returns the child type of the VMO.
+    pub fn child_type(&self) -> ChildType {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_child_type(self.as_raw()) }
+    }
+
+    /// Returns the number of bytes allocated in the kernel heap by this VMO.
+    pub fn heap_allocation_bytes(&self) -> usize {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_heap_allocation_bytes(self.as_raw()) as usize }
+    }
+
+    /// Performs the specified cache operation on a range of the VMO.
+    pub fn cache_op(&self, offset: u64, len: u64, op: CacheOpType) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe { bindings::cpp_vm_object_cache_op(self.as_raw(), offset, len, op) };
+        Status::ok(status)
+    }
+
+    /// Prefetches a range of pages in the VMO.
+    pub fn prefetch_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status = unsafe { bindings::cpp_vm_object_prefetch_range(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Zeroes a range of the VMO and untracks it from dirty tracking.
+    pub fn zero_range_untracked(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let status =
+            unsafe { bindings::cpp_vm_object_zero_range_untracked(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Provides the VMO with a user defined queryable byte aligned size.
+    pub fn set_user_stream_size(&self, ssm: Option<RefPtr<StreamSizeManager>>) {
+        let raw_ssm = match ssm {
+            Some(ssm) => RefPtr::into_raw(ssm).cast_mut().cast(),
+            None => core::ptr::null_mut(),
+        };
+        // SAFETY: `self.as_raw()` is a valid pointer and `raw_ssm` is either null or a valid
+        // pointer whose ownership is transferred to `cpp_vm_object_set_user_stream_size`.
+        unsafe {
+            bindings::cpp_vm_object_set_user_stream_size(self.as_raw(), raw_ssm);
+        }
     }
 
     /// execute lookup_fn on a given range of physical addresses within the vmo. Only pages that are

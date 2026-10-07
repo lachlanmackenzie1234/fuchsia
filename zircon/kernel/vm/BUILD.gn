@@ -1232,13 +1232,25 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_supply_pages",
     "cpp_vm_object_read_user",
     "cpp_vm_object_write_user",
+    "cpp_vm_object_num_mappings",
+    "cpp_vm_object_share_count",
+    "cpp_vm_object_is_user_pager_backed",
+    "cpp_vm_object_child_type",
+    "cpp_vm_object_heap_allocation_bytes",
+    "cpp_vm_object_cache_op",
+    "cpp_vm_object_prefetch_range",
+    "cpp_vm_object_zero_range_untracked",
+    "cpp_vm_object_set_user_stream_size",
   ]
   type_allowlist = [
     "EvictionHint",
     "Resizability",
     "SnapshotType",
+    "StreamSizeManager",
     "SupplyOptions",
     "VmObject",
+    "VmObject_CacheOpType",
+    "VmObject_ChildType",
     "VmObjectChildObserver",
     "VmObjectReadWriteOptions",
     "arch_mmu_flags_t",
@@ -1257,8 +1269,6 @@ kernel_bindgen_crate("vm-object-bindings") {
     "zx_vmo_lock_state_t",
     "VmObject_AttributionCounts",
     "VmObject_ChildObserverLock",
-    "VmObject_ChildType",
-    "VmObject_CacheOpType",
     "VmObject_DirtyRangeEnumerateFunction",
     "VmObject_GlobalList",
     "VmObject_LookupFunction",
@@ -1268,6 +1278,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_RangeChangeOp",
   ]
   opaque_types = [
+    "StreamSizeManager",
     "VmObject",
     "VmObjectChildObserver",
   ]
@@ -1275,6 +1286,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "Resizability",
     "SnapshotType",
     "SupplyOptions",
+    "VmObject_CacheOpType",
+    "VmObject_ChildType",
     "VmObject_EvictionHint",
   ]
   function_blocklist = [ "VmObject_.*" ]

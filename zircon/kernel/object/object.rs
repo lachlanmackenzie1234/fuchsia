@@ -130,5 +130,7 @@ pub use user_handles::{ReadHandles, WriteHandles};
 pub use vcpu::Vcpu;
 pub use vcpu_dispatcher::VcpuDispatcher;
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
-pub use vm_object_dispatcher::{InitialMutability, VmObjectDispatcher};
+pub use vm_object_dispatcher::{
+    InitialMutability, VmObjectDispatcher, VmoOwnership, vmo_to_info_entry,
+};
 pub use wait_signal_observer::WaitSignalObserver;
