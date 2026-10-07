@@ -6,11 +6,12 @@
 
 import itertools
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
-import fuchsia_async_extension
+import fidl_fuchsia_wlan_internal as fidl_security
+import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_config, hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -18,10 +19,10 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
 from mobly import asserts, signals, test_runner
-from mobly.config_parser import TestRunConfig
-from mobly.records import TestResultRecord
 from openwrt_access_point.lib import capabilities
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -74,66 +75,46 @@ class TestParams:
     n_mode: str
     security: Security
     # TODO(http://b/290396383): Type AP capabilities as enums
-    n_capabilities: list[Any]
+    n_capabilities: list[str]
 
 
-class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
+class WlanPhyCompliance11NTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests for validating 11n PHYS.
 
     Test Bed Requirement:
-    * One Android device or Fuchsia device
+    * One Fuchsia device
     * One Access Point
     """
 
-    access_point: AccessPoint | None = None
-    openwrt_ap: Any | None = None
+    phy: wlan_core.Phy
 
-    async def _get_client_iface(self) -> wlan_core.ClientIface:
-        phy = await self.dut.device.honeydew_fd.wlan_core.ensure_single_phy()
-        client_ifaces = await phy.get_client_ifaces()
-        if client_ifaces:
-            return client_ifaces[0]
-        return await phy.create_client_iface()
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        if not self.openwrt_ap and not self.access_point:
+            raise signals.TestAbortClass("Requires at least one access point")
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        self.phy = await self.dut.wlan_core.ensure_single_phy()
 
-    def _connect_and_validate_channel(
-        self,
-        target_ssid: str,
-        target_security: DeprecatedSecurityMode,
-        target_channel: int,
-        target_pwd: str | None = None,
-    ) -> None:
-        async def _connect_and_validate() -> None:
-            await self.dut.device.honeydew_fd.wlan_policy.save_network(
-                target_ssid,
-                target_security.fuchsia_security_type(),
-                target_pwd=target_pwd,
-            )
-            await self.dut.device.honeydew_fd.wlan_policy.connect(
-                target_ssid,
-                target_security.fuchsia_security_type(),
-            )
-            iface = await self._get_client_iface()
-            status = await iface.status()
-            if status.connected is None:
-                raise signals.TestFailure(
-                    f"Expected connected status, got: {status}"
-                )
-            got_channel = status.connected.primary.number
-            asserts.assert_equal(
-                got_channel,
-                target_channel,
-                f"Connected to wrong channel. Expected channel {target_channel}, "
-                f"got {got_channel}.",
-            )
-
-        fuchsia_async_extension.get_loop().run_until_complete(
-            _connect_and_validate()
+        # 802.11n operates on both 2.4 GHz and 5 GHz. The PHY initializes in
+        # the worldwide (WW) regulatory domain, which disables 5 GHz
+        # transmission, so set country to US to enable the 5 GHz channels
+        # used below.
+        await self.phy.set_country(
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
 
-    def __init__(self, config: TestRunConfig) -> None:
-        super().__init__(config)
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_core.destroy_all_ifaces()
 
-    def pre_run(self) -> None:
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_core.destroy_all_ifaces()
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
+
+    async def pre_run(self) -> None:
         test_args: list[tuple[TestParams]] = (
             self._generate_24_HT20_test_args()
             + self._generate_24_HT40_lower_test_args()
@@ -182,35 +163,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
             arg_sets=test_args,
         )
 
-    def setup_class(self) -> None:
-        super().setup_class()
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-        else:
-            raise signals.TestAbortClass(
-                "At least one access point is required"
-            )
-
-        self.dut = self.get_dut()
-
-        if self.access_point:
-            self.access_point.stop_all_aps()
-
-    def teardown_test(self) -> None:
-        self.dut.disconnect()
-        self.download_logs()
-        if self.access_point:
-            self.access_point.stop_all_aps()
-
-    def on_fail(self, record: TestResultRecord) -> None:
-        super().on_fail(record)
-        if self.access_point:
-            self.access_point.stop_all_aps()
-
-    def setup_and_connect(self, test: TestParams) -> None:
+    async def setup_and_connect(self, test: TestParams) -> None:
         """Start hostapd and associate the DUT.
 
         Args:
@@ -237,8 +190,14 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
         else:
             raise ValueError(f"Invalid channel bandwidth: {test.chbw}")
 
-        if test.security == SecurityWpa2():
-            password = AccessPointConfig.random_string(20)
+        match test.security:
+            case SecurityOpen():
+                protocol = fidl_security.Protocol.OPEN
+            case SecurityWpa2():
+                password = AccessPointConfig.random_string(20)
+                protocol = fidl_security.Protocol.WPA2_PERSONAL
+            case _:
+                raise signals.TestError(f"unsupported security {test.security}")
 
         if self.openwrt_ap:
             band = Band.BAND_2G if test.frequency == "2.4GHz" else Band.BAND_5G
@@ -292,9 +251,9 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
 
-            self._connect_and_validate_channel(
+            await self._connect_and_validate_channel(
                 ssid,
-                ConfigMapper.to_hostapd_security(test.security),
+                protocol,
                 target_channel=channel,
                 target_pwd=password,
             )
@@ -342,12 +301,38 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                 ssid=ssid,
                 security=security_profile,
             )
-            self._connect_and_validate_channel(
+            await self._connect_and_validate_channel(
                 ssid,
-                ConfigMapper.to_hostapd_security(test.security),
+                protocol,
                 target_channel=channel,
                 target_pwd=password,
             )
+
+    async def _connect_and_validate_channel(
+        self,
+        target_ssid: str,
+        target_security: fidl_security.Protocol,
+        target_channel: int,
+        target_pwd: str | None = None,
+    ) -> None:
+        iface = await self.phy.create_client_iface()
+        await iface.scan_and_connect(
+            ssid=target_ssid,
+            password=target_pwd,
+            security=target_security,
+        )
+        status = await iface.status()
+        if status.connected is None:
+            raise signals.TestFailure(
+                f"Expected connected status, got: {status}"
+            )
+        got_channel = status.connected.primary.number
+        asserts.assert_equal(
+            got_channel,
+            target_channel,
+            f"Connected to wrong channel. Expected channel {target_channel}, "
+            f"got {got_channel}.",
+        )
 
     def _generate_24_HT20_test_args(self) -> list[tuple[TestParams]]:
         test_args: list[tuple[TestParams]] = []
