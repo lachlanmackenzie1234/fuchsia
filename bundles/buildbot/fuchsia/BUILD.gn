@@ -135,6 +135,9 @@ if (target_cpu == "x64") {
     target_tests = [ "//src/ui:tests" ]
   }
 }
+if (target_cpu == "riscv64") {
+  not_needed([ "minimal_target_tests" ])
+}
 
 ########
 # Workbench.
