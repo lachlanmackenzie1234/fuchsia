@@ -266,12 +266,22 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
         }
 
         if let AudioGatewayConfig::Enabled(_) = &profiles.hfp.audio_gateway {
-            let audio_config = get_hfp_audio_config(profiles, media_config)?;
             builder.platform_bundle("bluetooth_hfp_ag")?;
+        }
+        if let HandsFreeConfig::Enabled(_) = &profiles.hfp.hands_free {
+            builder.platform_bundle("bluetooth_hfp_hf")?;
+        }
+        if matches!(profiles.hfp.audio_gateway, AudioGatewayConfig::Enabled(_))
+            || matches!(profiles.hfp.hands_free, HandsFreeConfig::Enabled(_))
+        {
+            let audio_config = get_hfp_audio_config(profiles, media_config)?;
 
             // ThreeWayCalling, RejectIncomingVoiceCall, EchoCancelingAndNoiseReduction,
-            // AttachPhoneNumberToVoiceTag, and EnhancedCallControls are not configurable in
-            // assembly and use the default values defined in bt-hfp-audio-gateway.cml.
+            // AttachPhoneNumberToVoiceTag, EnhancedCallControls, CallWaitingOrThreeWayCalling,
+            // CliPresentationCapability, VoiceRecognitionActivation, RemoteVolumeControl,
+            // EnhancedVoiceRecognition, and EnhancedVoiceRecognitionWithText are not configurable
+            // in assembly and use the default values defined in bt-hfp-audio-gateway.cml and
+            // bt-hfp-hands-free.cml.
             builder.set_config_capability(
                 "fuchsia.bluetooth.ControllerEncodingCvsd",
                 Config::new(
@@ -300,37 +310,6 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
                     audio_config.offload_type.into(),
                 ),
             )?;
-        }
-        if let HandsFreeConfig::Enabled(hfp_hf_features) = &profiles.hfp.hands_free {
-            let audio_config = get_hfp_audio_config(profiles, media_config)?;
-            builder.platform_bundle("bluetooth_hfp_hf")?;
-
-            let mut hfp_hf_config =
-                builder.package("bt-hfp-hands-free").component("meta/bt-hfp-hands-free.cm")?;
-            hfp_hf_config
-                .field("ec_or_nr", hfp_hf_features.echo_canceling_and_noise_reduction)?
-                .field("call_waiting_or_three_way_calling", hfp_hf_features.three_way_calling)?
-                .field("cli_presentation_capability", hfp_hf_features.calling_line_identification)?
-                .field("voice_recognition_activation", hfp_hf_features.voice_recognition)?
-                .field("remote_volume_control", hfp_hf_features.remote_volume_control)?
-                .field(
-                    "wide_band_speech",
-                    audio_config.hfp_supported_codecs.contains(&HfpCodecId::Msbc),
-                )?
-                .field("enhanced_voice_recognition", hfp_hf_features.enhanced_voice_recognition)?
-                .field(
-                    "enhanced_voice_recognition_with_text",
-                    hfp_hf_features.voice_recognition_text,
-                )?
-                .field(
-                    "controller_encoding_cvsd",
-                    audio_config.controller_encodes.contains(&HfpCodecId::Cvsd),
-                )?
-                .field(
-                    "controller_encoding_msbc",
-                    audio_config.controller_encodes.contains(&HfpCodecId::Msbc),
-                )?
-                .field("offload_type", audio_config.offload_type)?;
         }
         if profiles.map.mce_enabled {
             builder.platform_bundle("bluetooth_map_mce")?;
