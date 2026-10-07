@@ -423,19 +423,18 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         async with ConnectTransactionEventHandler(client) as ctx:
             txn_queue = ctx.txn_queue
 
+            protocol = test_params.origin_security_mode.to_fidl_wlan_internal()
+
             match test_params.origin_security_mode:
                 case SecurityOpen():
-                    protocol = fidl_security.Protocol.OPEN
                     credentials = None
                 case SecurityWep():
-                    protocol = fidl_security.Protocol.WEP
                     credentials = fidl_security.Credentials(
                         wep=fidl_security.WepCredentials(
                             TEST_WEP_PASSWORD_LITERAL.encode("ascii")
                         )
                     )
                 case SecurityWpa():
-                    protocol = fidl_security.Protocol.WPA1
                     if roam_params.origin_password is None:
                         raise signals.TestError("Password is required for WPA.")
                     credentials = fidl_security.Credentials(
@@ -446,7 +445,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         )
                     )
                 case SecurityWpa2() | SecurityWpaWpa2Mixed():
-                    protocol = fidl_security.Protocol.WPA2_PERSONAL
                     if roam_params.origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA2/WPA_WPA2."
@@ -459,7 +457,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         )
                     )
                 case SecurityWpa3() | SecurityWpa2Wpa3Mixed():
-                    protocol = fidl_security.Protocol.WPA3_PERSONAL
                     if roam_params.origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA3/WPA2_WPA3."

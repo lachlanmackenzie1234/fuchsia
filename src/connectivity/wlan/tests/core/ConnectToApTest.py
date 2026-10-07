@@ -4,7 +4,6 @@
 
 import logging
 
-import fidl_fuchsia_wlan_internal as fidl_security
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion import utils
@@ -16,8 +15,7 @@ from antlion.controllers.ap_lib.hostapd_constants import (
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from mobly import signals, test_runner
-from mobly.asserts import fail
+from mobly import test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -92,15 +90,7 @@ class ConnectToApTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ),
             )
 
-        protocol = fidl_security.Protocol.OPEN
-        if isinstance(security, SecurityOpen):
-            pass
-        elif isinstance(security, SecurityWpa2):
-            if password is None:
-                raise signals.TestError("Password is required for WPA2")
-            protocol = fidl_security.Protocol.WPA2_PERSONAL
-        else:
-            fail(f"Unsupported security mode: {security}")
+        protocol = security.to_fidl_wlan_internal()
 
         await iface.scan_and_connect(
             ssid=ssid, password=password, security=protocol

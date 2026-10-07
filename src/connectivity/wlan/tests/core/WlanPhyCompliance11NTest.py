@@ -212,17 +212,9 @@ class WlanPhyCompliance11NTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             dut_country = KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
 
         await self.phy.set_country(dut_country)
-
-        match params.security:
-            case SecurityOpen():
-                protocol = fidl_security.Protocol.OPEN
-            case SecurityWpa2():
-                password = AccessPointConfig.random_string(20)
-                protocol = fidl_security.Protocol.WPA2_PERSONAL
-            case _:
-                raise signals.TestError(
-                    f"unsupported security {params.security}"
-                )
+        protocol = params.security.to_fidl_wlan_internal()
+        if protocol != fidl_security.Protocol.OPEN:
+            password = AccessPointConfig.random_string(20)
 
         if self.openwrt_ap:
             band = (
