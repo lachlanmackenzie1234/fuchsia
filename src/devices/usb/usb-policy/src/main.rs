@@ -20,6 +20,7 @@ use fuchsia_component::client::Service;
 use fidl_fuchsia_hardware_usb_policy::DeviceState;
 use fuchsia_async::TimeoutExt as _;
 
+use futures::channel::mpsc as fmpsc;
 use futures::{FutureExt, StreamExt};
 
 use log::warn;
@@ -78,9 +79,19 @@ impl UsbPolicySharedState {
 
     pub fn set_controller(&self, state: Arc<controller::ControllerState>) {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(old) = inner.controller.take() {
+            old.close();
+        }
         inner.controller = Some(state);
         for sender in inner.waiters.drain(..) {
             let _ = sender.send(());
+        }
+    }
+
+    pub fn clear_controller(&self) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(old) = inner.controller.take() {
+            old.close();
         }
     }
 
@@ -253,6 +264,42 @@ async fn run_configuration_server(
     }
 }
 
+async fn wait_for_state_change(
+    current_state: controller::UsbState,
+    mut rx: fmpsc::UnboundedReceiver<controller::UsbState>,
+    shared_state: &Arc<UsbPolicySharedState>,
+) -> (controller::UsbState, fmpsc::UnboundedReceiver<controller::UsbState>) {
+    loop {
+        match rx.next().await {
+            Some(mut new_state) => {
+                // Drain any additional buffered states
+                while let Some(Some(latest_state)) = rx.next().now_or_never() {
+                    new_state = latest_state;
+                }
+                if new_state != current_state {
+                    return (new_state, rx);
+                }
+            }
+            None => {
+                if current_state.device_state != DeviceState::NotAttached {
+                    // The controller was dropped while attached/configured; notify client.
+                    return (
+                        controller::UsbState { device_state: DeviceState::NotAttached, address: 0 },
+                        rx,
+                    );
+                }
+                // Already NotAttached or notified; wait for the next controller.
+                let state = shared_state.wait_for_controller().await;
+                let (new_initial, new_rx) = state.subscribe();
+                rx = new_rx;
+                if new_initial != current_state {
+                    return (new_initial, rx);
+                }
+            }
+        }
+    }
+}
+
 async fn run_provider_server(
     mut stream: usb_policy::PolicyProviderRequestStream,
     shared_state: Arc<UsbPolicySharedState>,
@@ -262,38 +309,27 @@ async fn run_provider_server(
     let mut current_state = initial_state;
     // We haven't sent anything to the client yet, so the first WatchDeviceState
     // should get `current_state`.
-    let mut state_changed = true;
+    let mut is_first_call = true;
 
     while let Some(request_result) = stream.next().await {
         match request_result {
             Ok(request) => match request {
                 usb_policy::PolicyProviderRequest::WatchDeviceState { responder } => {
-                    if !state_changed {
-                        // Wait until we get an update from rx
-                        if let Some(new_state) = rx.next().await {
-                            current_state = new_state;
-                            state_changed = true;
-
-                            // Drain any additional buffered states
-                            while let Some(Some(latest_state)) = rx.next().now_or_never() {
-                                current_state = latest_state;
-                            }
-                        } else {
-                            // The sender was dropped, meaning the controller is gone.
-                            break;
-                        }
+                    if !is_first_call {
+                        let (new_state, new_rx) =
+                            wait_for_state_change(current_state, rx, &shared_state).await;
+                        current_state = new_state;
+                        rx = new_rx;
                     }
+                    is_first_call = false;
 
-                    if state_changed {
-                        let update = fpolicy::DeviceStateUpdate {
-                            state: Some(current_state.device_state),
-                            address: Some(current_state.address),
-                            ..Default::default()
-                        };
-                        if let Err(e) = responder.send(Ok(&update)) {
-                            warn!("Failed to send PolicyProvider response: {:?}", e);
-                        }
-                        state_changed = false;
+                    let update = fpolicy::DeviceStateUpdate {
+                        state: Some(current_state.device_state),
+                        address: Some(current_state.address),
+                        ..Default::default()
+                    };
+                    if let Err(e) = responder.send(Ok(&update)) {
+                        warn!("Failed to send PolicyProvider response: {:?}", e);
                     }
                 }
                 usb_policy::PolicyProviderRequest::_UnknownMethod { .. } => {
@@ -471,25 +507,32 @@ async fn run_usb_policy_service() -> Result<(), Error> {
     let shared_state_clone = shared_state.clone();
     let scope = fuchsia_async::Scope::new();
     let _task = scope.spawn(async move {
-        let result = async {
-            let client = Service::open(fpolicy::ServiceMarker)?;
-            let instance = client.watch_for_any().await?;
-            let controller = instance.connect_to_controller()?;
-            let inspector = fuchsia_inspect::component::inspector();
-            let inspect_node = inspector.root().create_child("usb_state_history");
-            let controller_state = Arc::new(controller::ControllerState::new(
-                controller,
-                DeviceState::NotAttached,
-                0,
-                inspect_node,
-            ));
-            shared_state_clone.set_controller(controller_state.clone());
-            let _ = controller_state.monitor_device_state().await;
-            Ok::<(), anyhow::Error>(())
-        }
-        .await;
-        if let Err(e) = result {
-            warn!("Background discovery failed: {:?}", e);
+        loop {
+            let result = async {
+                let client = Service::open(fpolicy::ServiceMarker)?;
+                let instance = client.watch_for_any().await?;
+                let controller = instance.connect_to_controller()?;
+                let inspector = fuchsia_inspect::component::inspector();
+                let inspect_node = inspector.root().create_child("usb_state_history");
+                let controller_state = Arc::new(controller::ControllerState::new(
+                    controller,
+                    DeviceState::NotAttached,
+                    0,
+                    inspect_node,
+                ));
+                shared_state_clone.set_controller(controller_state.clone());
+                let monitor_res = controller_state.monitor_device_state().await;
+                shared_state_clone.clear_controller();
+                monitor_res
+            }
+            .await;
+            if let Err(e) = result {
+                warn!("Background discovery failed: {:?}", e);
+                fuchsia_async::Timer::new(zx::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(500),
+                ))
+                .await;
+            }
         }
     });
 
@@ -802,5 +845,134 @@ mod tests {
             adb_enum.details,
             Some("Enumerating / Waiting for host configuration".to_string())
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_provider_server_reconnects_across_controller_lifecycle()
+    -> Result<(), anyhow::Error> {
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        let (provider_proxy, stream) =
+            create_proxy_and_stream::<usb_policy::PolicyProviderMarker>();
+
+        // Start provider server
+        fasync::Task::local(run_provider_server(stream, shared_state.clone())).detach();
+
+        // 1. Initial controller attaches in Configured state.
+        let (controller_proxy_1, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let controller_state_1 = Arc::new(controller::ControllerState::new(
+            controller_proxy_1,
+            DeviceState::Configured,
+            10,
+            fuchsia_inspect::Inspector::default().root().create_child("test_1"),
+        ));
+        shared_state.set_controller(controller_state_1.clone());
+
+        let update_1 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_1.state, Some(DeviceState::Configured));
+        assert_eq!(update_1.address, Some(10));
+
+        // 2. Controller is stopped / removed (e.g. host mode transition).
+        shared_state.clear_controller();
+        drop(controller_state_1);
+
+        // Client gets notified of disconnection (NotAttached).
+        let update_2 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_2.state, Some(DeviceState::NotAttached));
+        assert_eq!(update_2.address, Some(0));
+
+        // 3. New controller is bound (e.g. switching back to peripheral mode).
+        let (controller_proxy_2, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let controller_state_2 = Arc::new(controller::ControllerState::new(
+            controller_proxy_2,
+            DeviceState::Attached,
+            33,
+            fuchsia_inspect::Inspector::default().root().create_child("test_2"),
+        ));
+        shared_state.set_controller(controller_state_2);
+
+        // Client hanging-get immediately receives the new controller's state.
+        let update_3 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_3.state, Some(DeviceState::Attached));
+        assert_eq!(update_3.address, Some(33));
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_provider_server_reconnects_when_replacement_starts_not_attached()
+    -> Result<(), anyhow::Error> {
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        let (provider_proxy, stream) =
+            create_proxy_and_stream::<usb_policy::PolicyProviderMarker>();
+
+        // Start provider server
+        fasync::Task::local(run_provider_server(stream, shared_state.clone())).detach();
+
+        // 1. Initial controller attaches in Configured state.
+        let (controller_proxy_1, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let controller_state_1 = Arc::new(controller::ControllerState::new(
+            controller_proxy_1,
+            DeviceState::Configured,
+            10,
+            fuchsia_inspect::Inspector::default().root().create_child("test_1"),
+        ));
+        shared_state.set_controller(controller_state_1.clone());
+
+        let update_1 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_1.state, Some(DeviceState::Configured));
+        assert_eq!(update_1.address, Some(10));
+
+        // 2. Controller 1 drops; client receives NotAttached.
+        shared_state.clear_controller();
+        drop(controller_state_1);
+
+        let update_2 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_2.state, Some(DeviceState::NotAttached));
+        assert_eq!(update_2.address, Some(0));
+
+        // 3. Replacement controller 2 starts as NotAttached and drops immediately without updates.
+        let (controller_proxy_2, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let controller_state_2 = Arc::new(controller::ControllerState::new(
+            controller_proxy_2,
+            DeviceState::NotAttached,
+            0,
+            fuchsia_inspect::Inspector::default().root().create_child("test_2"),
+        ));
+        shared_state.set_controller(controller_state_2);
+        shared_state.clear_controller();
+
+        // 4. Replacement controller 3 attaches with Attached state and address 42.
+        let (controller_proxy_3, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let controller_state_3 = Arc::new(controller::ControllerState::new(
+            controller_proxy_3,
+            DeviceState::Attached,
+            42,
+            fuchsia_inspect::Inspector::default().root().create_child("test_3"),
+        ));
+        shared_state.set_controller(controller_state_3);
+
+        let update_3 = provider_proxy
+            .watch_device_state()
+            .await?
+            .map_err(|e| format_err!("watch failed: {:?}", e))?;
+        assert_eq!(update_3.state, Some(DeviceState::Attached));
+        assert_eq!(update_3.address, Some(42));
+
+        Ok(())
     }
 }
