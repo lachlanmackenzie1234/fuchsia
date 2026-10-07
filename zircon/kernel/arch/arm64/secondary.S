@@ -50,7 +50,7 @@ resume_context          .req x24
   // garbage and run afoul of EL1 sp alignment checks if blindly installed.
   mov tmp, xzr
   mov sp, tmp
-  bl ArmDropToEl1WithoutEl2Monitor
+  bl ArmDropToEl1
 
   // Make sure no old exception handlers are installed.
   msr vbar_el1, xzr
