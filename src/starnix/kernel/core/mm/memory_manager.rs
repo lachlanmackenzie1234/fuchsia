@@ -14,7 +14,7 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Pid, Task};
+use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::dynamic_file::{
@@ -5035,12 +5035,16 @@ fn compute_pseudo_pfn(koid: zx::Koid, vmo_page_idx: u64) -> u64 {
 /// Implements `/proc/<pid>/pagemap`.
 #[derive(Clone)]
 pub struct ProcPagemapFile {
-    pid: Pid,
+    mm: Weak<MemoryManager>,
+    can_read_pfn: bool,
 }
 
 impl ProcPagemapFile {
-    pub fn new(pid: Pid) -> Self {
-        Self { pid }
+    pub fn new(current_task: &CurrentTask, task: &Task) -> Self {
+        let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
+        let can_read_pfn =
+            security::is_task_capable_noaudit(current_task, starnix_uapi::auth::CAP_SYS_ADMIN);
+        Self { mm, can_read_pfn }
     }
 }
 
@@ -5051,12 +5055,11 @@ impl FileOps for ProcPagemapFile {
     fn read(
         &self,
         _file: &FileObject,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
         offset: usize,
         dst: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let task = self.pid.get_task()?;
-        let Ok(mm) = task.mm() else {
+        let Some(mm) = self.mm.upgrade() else {
             return Ok(0);
         };
 
@@ -5073,8 +5076,7 @@ impl FileOps for ProcPagemapFile {
         let total_bytes_needed = unaligned_offset + to_read;
         let num_pages = (total_bytes_needed + entry_size - 1) / entry_size;
 
-        let can_read_pfn =
-            security::is_task_capable_noaudit(current_task, starnix_uapi::auth::CAP_SYS_ADMIN);
+        let can_read_pfn = self.can_read_pfn;
 
         let compute_mapping_pfn =
             |state: &MemoryManagerState, mm_mapping: &Mapping, addr: UserAddress| -> u64 {

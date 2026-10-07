@@ -267,11 +267,11 @@ impl FsNodeOps for TaskDirectoryNode {
             b"timerslack_ns" => Box::new(TimerslackNsFile::new_node(tid)),
             b"wchan" => Box::new(BytesFile::new_node(b"0".to_vec())),
             b"clear_refs" => Box::new(ClearRefsFile::new_node(tid)),
-            b"pagemap" => {
-                Box::new(PtraceCheckedNode::new_node(tid, PTRACE_MODE_READ_FSCREDS, |task| {
-                    Ok(ProcPagemapFile::new(task.tid.clone()))
-                }))
-            }
+            b"pagemap" => Box::new(PtraceCheckedNode::new_node_with_current_task(
+                tid,
+                PTRACE_MODE_READ_FSCREDS,
+                |current_task, task| Ok(ProcPagemapFile::new(current_task, &task)),
+            )),
             b"task" => Box::new(TaskListDirectory::new_node(tid.get_task()?.pid.clone())),
             name => unreachable!(
                 "entry \"{:?}\" should be supported to keep in sync with task_entries()",
@@ -799,13 +799,25 @@ impl PtraceCheckedNode {
         F: Fn(Arc<Task>) -> Result<O, Errno> + Send + Sync + 'static,
         O: FileOps,
     {
+        Self::new_node_with_current_task(tid, mode, move |_current_task, task| create_ops(task))
+    }
+
+    pub fn new_node_with_current_task<F, O>(
+        tid: Pid,
+        mode: PtraceAccessMode,
+        create_ops: F,
+    ) -> impl FsNodeOps
+    where
+        F: Fn(&CurrentTask, Arc<Task>) -> Result<O, Errno> + Send + Sync + 'static,
+        O: FileOps,
+    {
         SimpleFileNode::new(move |current_task: &CurrentTask| {
             let task = tid.get_task()?;
             // proc-pid nodes for kthreads do not require ptrace access checks.
             if task.mm().is_ok() {
                 current_task.check_ptrace_access_mode(mode, &task).map_err(|_| errno!(EACCES))?;
             }
-            create_ops(task)
+            create_ops(current_task, task)
         })
     }
 }
