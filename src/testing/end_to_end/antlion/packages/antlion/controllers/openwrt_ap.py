@@ -30,8 +30,8 @@ from antlion.controllers.openwrt_lib.openwrt_constants import (
 from antlion.controllers.openwrt_lib.openwrt_constants import (
     OpenWrtWifiSetting,
 )
-from antlion.types import ControllerConfig, Json
 from libs.ssh import connection, settings
+from libs.types import ControllerConfig, Json
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"

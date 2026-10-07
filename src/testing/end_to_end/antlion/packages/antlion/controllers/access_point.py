@@ -43,7 +43,6 @@ from antlion.controllers.utils_lib.commands import (
     route,
 )
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
-from antlion.types import ControllerConfig, Json
 from antlion.validation import MapValidator
 from honeydew.typing.custom_types import MacAddress
 from libs.commands import (
@@ -53,6 +52,7 @@ from libs.commands import (
 from libs.commands.date import LinuxDateCommand
 from libs.proc.runner import CalledProcessError
 from libs.ssh import connection, settings
+from libs.types import ControllerConfig, Json
 from mobly import logger
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "AccessPoint"

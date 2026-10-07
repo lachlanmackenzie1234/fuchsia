@@ -176,7 +176,6 @@ python_library("antlion") {
     "test_utils/abstract_devices/wmm_transceiver.py",
     "test_utils/fuchsia/__init__.py",
     "test_utils/fuchsia/wmm_test_cases.py",
-    "types.py",
     "utils.py",
     "validation.py",
   ]

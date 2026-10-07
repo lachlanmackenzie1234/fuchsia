@@ -26,10 +26,10 @@ from antlion.controllers.android_lib import events as android_events
 from antlion.controllers.android_lib import logcat, services
 from antlion.controllers.sl4a_lib import sl4a_manager
 from antlion.event import event_bus
-from antlion.types import ControllerConfig, Json
 from libs.proc import job
 from libs.proc.runner import Runner
 from libs.ssh import connection, settings
+from libs.types import ControllerConfig, Json
 from mobly import logger
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "AndroidDevice"
