@@ -33,14 +33,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 _REFLECTION_CLI = "/google/bin/releases/gemini-agents-reflection/reflection_cli"
 _DEFAULT_SHARED_TELEMETRY_PATH = (
     "/google/data/rw/users/ch/chadnorvell/autoda/dashboard/data/"
     "skill_invocations.jsonl"
 )
-_DEFAULT_SKILL_VERSION = "1.1.0"
+_DEFAULT_SKILL_VERSION = "1.2.0"
 
 
 def read_skill_version(skill_md_path: Path) -> str:
@@ -217,7 +217,7 @@ def upsert_jsonl_record(jsonl_path: Path, record: Dict[str, Any]) -> bool:
                         if same_conv and (same_bug or not obj.get("bug_id")):
                             merged = dict(obj)
                             for k, v in record.items():
-                                if v:
+                                if v != "" and v is not None:
                                     merged[k] = v
                             existing_lines.append(
                                 json.dumps(merged, sort_keys=False)
@@ -250,10 +250,12 @@ def normalize_verification_mode(raw_mode: str) -> str:
     return val
 
 
-def read_spec_verification_mode(conversation_id: str) -> str:
-    """Reads `verification_mode:` from `<appDataDir>/brain/<conversation_id>/bug_spec.md` if present."""
+def read_spec_frontmatter_fields(
+    conversation_id: str,
+) -> Tuple[str, str, Optional[int]]:
+    """Reads (verification_mode, adversarial_review, adversarial_review_rounds) from bug_spec.md."""
     if not conversation_id:
-        return ""
+        return "", "", None
     brain_root = (
         Path(
             os.environ.get(
@@ -265,17 +267,32 @@ def read_spec_verification_mode(conversation_id: str) -> str:
     )
     spec_path = brain_root / conversation_id / "bug_spec.md"
     if not spec_path.is_file():
-        return ""
+        return "", "", None
+    mode = ""
+    adv_review = ""
+    adv_rounds: Optional[int] = None
     try:
         content = spec_path.read_text(encoding="utf-8", errors="replace")[:4096]
-        m = re.search(
+        m_mode = re.search(
             r"(?m)^verification_mode\s*:\s*[\"']?([^\"'\n]+)[\"']?", content
         )
-        if m:
-            return normalize_verification_mode(m.group(1))
+        if m_mode:
+            mode = normalize_verification_mode(m_mode.group(1))
+        m_adv = re.search(
+            r"(?m)^adversarial_review\s*:\s*[\"']?([^\"'\n]+)[\"']?", content
+        )
+        if m_adv:
+            val = m_adv.group(1).strip().lower()
+            if "pending" not in val:
+                adv_review = val
+        m_rounds = re.search(
+            r"(?m)^adversarial_review_rounds\s*:\s*(\d+)", content
+        )
+        if m_rounds:
+            adv_rounds = int(m_rounds.group(1))
     except OSError:
         pass
-    return ""
+    return mode, adv_review, adv_rounds
 
 
 def _get_fuchsia_metrics_dir() -> Path:
@@ -371,6 +388,17 @@ def main() -> int:
         help="Selected verification mode ('Mode A', 'Mode B', or 'Mode C').",
     )
     parser.add_argument(
+        "--adversarial-review",
+        default="",
+        help="Adversarial review policy ('enabled' or 'skipped').",
+    )
+    parser.add_argument(
+        "--adversarial-review-rounds",
+        type=int,
+        default=None,
+        help="Number of adversarial review rounds executed (0..3).",
+    )
+    parser.add_argument(
         "--skill-version",
         default="",
         help="Optional override for skill version.",
@@ -405,16 +433,23 @@ def main() -> int:
         conv_id
     )
     final_model = args.model.strip() or resolved_model
-    verification_mode = normalize_verification_mode(
-        args.verification_mode
-    ) or read_spec_verification_mode(conv_id)
+    spec_mode, spec_adv, spec_rounds = read_spec_frontmatter_fields(conv_id)
+    verification_mode = (
+        normalize_verification_mode(args.verification_mode) or spec_mode
+    )
+    adv_review = args.adversarial_review.strip().lower() or spec_adv
+    adv_rounds = (
+        args.adversarial_review_rounds
+        if args.adversarial_review_rounds is not None
+        else spec_rounds
+    )
 
     try:
         user = os.environ.get("USER") or getpass.getuser()
     except Exception:  # pylint: disable=broad-except
         user = "unknown"
 
-    record = {
+    record: Dict[str, Any] = {
         "timestamp": (
             datetime.datetime.now(datetime.timezone.utc).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
@@ -430,7 +465,10 @@ def main() -> int:
         "model_id": model_id,
         "model_version": model_version,
         "verification_mode": verification_mode,
+        "adversarial_review": adv_review,
     }
+    if adv_rounds is not None:
+        record["adversarial_review_rounds"] = adv_rounds
 
     metrics_enabled = is_fx_metrics_enabled(fuchsia_dir)
     shared_ok = False
