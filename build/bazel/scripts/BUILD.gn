@@ -131,21 +131,11 @@ if (is_host) {
     deps = [ ":remote_services_utils" ]
   }
 
-  python_library("starlark_utils") {
-    sources = [ "starlark_utils.py" ]
-  }
-
-  python_build_time_tests("starlark_utils_test") {
-    tests = [ "starlark_utils_test.py" ]
-    deps = [ ":starlark_utils" ]
-  }
-
   python_library("workspace_utils") {
     sources = [ "workspace_utils.py" ]
     library_deps = [
       ":bazel_build_flags",
       ":build_utils",
-      ":starlark_utils",
     ]
   }
 
@@ -354,7 +344,6 @@ group("tests") {
     ":minimal_workspace_test($host_toolchain)",
     ":remote_services_utils_test($host_toolchain)",
     ":runfiles_utils_test($host_toolchain)",
-    ":starlark_utils_test($host_toolchain)",
     ":stdio_redirection_test($host_toolchain)",
     ":workspace_utils_test($host_toolchain)",
   ]

@@ -22,6 +22,7 @@ load(
     "//build/bazel/rules/components:fx_component.bzl",
     "resolve_test_type_realm",
 )
+load(":fx_test_environment.bzl", "FxTestEnvironmentInfo")
 
 # The repository that test packages are published to. This matches the default
 # used by the GN `fuchsia_test_package()` template.
@@ -65,61 +66,42 @@ FuchsiaTestInfo, _new_fuchsia_test_info = provider(
     init = _fuchsia_test_info_init,
 )
 
-_ALLOWED_ENV_KEYS = (
-    "dimensions",
-    "emulator",
-    "netboot",
-    "service_account",
-    "tags",
-)
+# `attr.label_list` can't tell an omitted `environments` apart from
+# `environments = []`, so the default is this placeholder instead. That way an
+# explicit `[]` (e.g. from a `select()`) fails rather than silently running the
+# test in the default environments. The placeholder doesn't provide
+# FxTestEnvironmentInfo, which is why `environments` checks providers here
+# rather than with `providers = [...]`.
+_DEFAULT_ENVIRONMENTS = Label("//build/bazel/rules/testing:default_environments")
 
-def _validate_environment(env):
-    if type(env) != type({}):
-        fail("Each entry in 'environments' must be a dict, got {}.".format(type(env)))
-    for key in env:
-        if key not in _ALLOWED_ENV_KEYS:
-            fail(
-                "Unknown environment field '{}'; allowed fields are {}.".format(
-                    key,
-                    ", ".join(_ALLOWED_ENV_KEYS),
-                ),
-            )
-    dimensions = env.get("dimensions")
-    if type(dimensions) != type({}) or not dimensions:
-        fail("Each environment must specify a non-empty 'dimensions' dict.")
-    if "tags" in dimensions:
-        fail("'tags' are only valid in an environment dict, not in 'dimensions'.")
-    if "dimensions" in dimensions:
-        fail(
-            "Found nested 'dimensions' field in environment dimensions. " +
-            "Did you set `dimensions = some_env` instead of `dimensions = some_env[\"dimensions\"]`?",
-        )
-    emulator = env.get("emulator")
-    if emulator != None:
-        if type(emulator) != type({}):
-            fail("Environment 'emulator' field must be a dict, got {}.".format(type(emulator)))
-        if not emulator.get("name"):
-            fail("The 'emulator' dict requires a unique 'name'.")
-        if emulator.get("uefi") and (
-            not emulator.get("vbmeta_key") or not emulator.get("vbmeta_key_metadata")
-        ):
-            fail(
-                "Emulator environments with 'uefi' set to True must provide " +
-                "'vbmeta_key' and 'vbmeta_key_metadata'.",
-            )
-
-def _decode_environments(ctx):
-    environments = json.decode(ctx.attr.environments_json)
-    if environments == None:
+def _collect_environments(ctx):
+    if [t.label for t in ctx.attr.environments] == [_DEFAULT_ENVIRONMENTS]:
         return []
-    if type(environments) != type([]):
-        fail("Test 'environments' must be a list of environment dicts, got {}.".format(type(environments)))
-    if not environments:
-        fail("Test 'environments' must not be empty. Build-only tests should use 'build_only = True' instead of specifying an empty set of environments.")
     if ctx.attr.build_only:
         fail("build_only tests should not specify environments")
-    for env in environments:
-        _validate_environment(env)
+
+    # GN's test_spec() rejects empty environments too.
+    if not ctx.attr.environments:
+        fail("`environments` is empty. Use `build_only = True` if the test " +
+             "shouldn't run in this configuration, or omit `environments` to " +
+             "use the default environments.")
+
+    environments = []
+    seen = {}
+    for target in ctx.attr.environments:
+        if FxTestEnvironmentInfo not in target:
+            fail("`environments` entry {} is not an `fx_test_environment()`.".format(
+                target.label,
+            ))
+        env = target[FxTestEnvironmentInfo].environment
+
+        # build_tests_json.py dedupes too, but deduping here keeps
+        # FuchsiaTestInfo readable when e.g. both `:emu_env` and `:aemu_env`
+        # are listed.
+        key = json.encode(env)
+        if key not in seen:
+            seen[key] = True
+            environments.append(env)
     return environments
 
 def _fx_test_impl(ctx):
@@ -200,7 +182,7 @@ def _fx_test_impl(ctx):
             test_label = ctx.label,
             os = current_platform.os,
             cpu = current_platform.cpu,
-            environments = _decode_environments(ctx),
+            environments = _collect_environments(ctx),
             build_only = ctx.attr.build_only,
             max_log_severity = ctx.attr.max_log_severity,
             package_name = package_info.package_name,
@@ -212,7 +194,43 @@ def _fx_test_impl(ctx):
         ctx.attr.package[FuchsiaDebugSymbolInfo],
     ]
 
-_fx_test = rule(
+fx_test = rule(
+    doc = """Exposes the test components of a Fuchsia package to the Fuchsia test runners (`fx test` and infra).
+
+    Every component in the `package`'s `test_components` becomes a separate
+    test, which is run on a Fuchsia device or emulator as
+    `fuchsia-pkg://fuchsia.com/<package_name>#meta/<component_name>.cm`.
+
+    Defining this target is not enough to make the tests visible to `fx test`
+    and infra builders: the target must also be listed in a GN
+    `bazel_test_suite()` target that is reachable from the build graph. See
+    //docs/development/build/bazel_concepts/tests.md.
+
+    This is a test rule so that these targets can be grouped with
+    `test_suite()` and found with the `tests()` query function, exactly like
+    `host_test()` targets. Its executable is a stub that always fails, because
+    Fuchsia device tests cannot be run with `bazel test`; they must be run
+    with `fx test` or by infra.
+
+    Example usage:
+    ```bazel
+    fx_package(
+        name = "pkg_tests_package",
+        package_name = "pkg_tests",
+        test_components = [":pkg_test_component"],
+        ...
+    )
+
+    fx_test(
+        name = "pkg_tests",
+        package = ":pkg_tests_package",
+        environments = [
+            "//build/testing/environments:aemu_env",
+            "//build/testing/environments:nuc11_env",
+        ],
+    )
+    ```
+    """,
     implementation = _fx_test_impl,
     test = True,
     attrs = {
@@ -221,12 +239,16 @@ _fx_test = rule(
             providers = [FuchsiaPackageInfo],
             mandatory = True,
         ),
-        "environments_json": attr.string(
-            doc = "The JSON-encoded `environments` argument of the `fx_test()` macro, or `null` if it was omitted.",
-            default = "null",
+        "environments": attr.label_list(
+            doc = "The infra test environments that the test should run in, " +
+                  "such as `//build/testing/environments:emu_env` or an " +
+                  "`fx_test_environment()` target. If omitted, the test runs " +
+                  "in the build's default test environments, exactly like GN " +
+                  "tests that don't set `environments`.",
+            default = [_DEFAULT_ENVIRONMENTS],
         ),
         "build_only": attr.bool(
-            doc = "True if the test should only be built, not run.",
+            doc = "True if the test should only be built, not run. Environments must not be specified if this is true.",
             default = False,
         ),
         "max_log_severity": attr.string(
@@ -235,7 +257,14 @@ _fx_test = rule(
             values = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"],
         ),
         "test_type": attr.string(
-            doc = "The non-hermetic test realm type to run the test components in. See `fx_test()`.",
+            doc = "The non-hermetic test realm type to run the test components " +
+                  "in (e.g. `starnix` or `system`). Can also be specified per " +
+                  "component on `fx_test_component()`. Must be a key of " +
+                  "`_TYPE_MONIKER_MAP` in //build/bazel/rules/components/fx_component.bzl. " +
+                  "If omitted, tests run in the default hermetic test realm " +
+                  "unless overridden on `fx_test_component()`. See " +
+                  "https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#non-hermetic_tests " +
+                  "for valid types.",
         ),
         "_current_platform": attr.label(
             default = "@//build/bazel:current_platform",
@@ -248,96 +277,3 @@ _fx_test = rule(
         ),
     },
 )
-
-def fx_test(
-        name,
-        package,
-        environments = None,
-        build_only = False,
-        max_log_severity = "WARN",
-        test_type = None,
-        **kwargs):
-    """Exposes the test components of a Fuchsia package to the Fuchsia test runners (`fx test` and infra).
-
-    Every component in the `package`'s `test_components` becomes a separate
-    test, which is run on a Fuchsia device or emulator as
-    `fuchsia-pkg://fuchsia.com/<package_name>#meta/<component_name>.cm`.
-
-    Defining this target is not enough to make the tests visible to `fx test`
-    and infra builders: the target must also be listed in a GN
-    `bazel_test_suite()` target that is reachable from the build graph. See
-    //docs/development/build/bazel_concepts/tests.md.
-
-    This wraps a test rule so that these targets can be grouped with
-    `test_suite()` and found with the `tests()` query function, exactly like
-    `host_test()` targets. Its executable is a stub that always fails, because
-    Fuchsia device tests cannot be run with `bazel test`; they must be run
-    with `fx test` or by infra.
-
-    Example usage:
-    ```bazel
-    load("@fuchsia_build_info//:environments.bzl", "aemu_env", "nuc11_env")
-
-    fx_package(
-        name = "pkg_tests_package",
-        package_name = "pkg_tests",
-        test_components = [":pkg_test_component"],
-        ...
-    )
-
-    fx_test(
-        name = "pkg_tests",
-        package = ":pkg_tests_package",
-        environments = [aemu_env, nuc11_env],
-    )
-    ```
-
-    Args:
-        name: The target name.
-        package: The `fx_package()` target containing the test components.
-        environments: Optional list of environment dicts (see
-            `@fuchsia_build_info//:environments.bzl`) specifying which target
-            environments the test should run in. If omitted, defaults to the
-            build's default test environments, exactly like GN tests that
-            don't set `environments`. Must not be an empty list, and must be a
-            plain list rather than a `select()`.
-        build_only: True if the test should only be built, not run. Environments
-            must not be specified if `build_only` is true.
-        max_log_severity: The maximum log severity allowed before the test
-            fails. Defaults to `"WARN"`.
-        test_type: The non-hermetic test realm type to run the test components
-            in (e.g. `"starnix"` or `"system"`). Can also be specified per
-            component on `fx_test_component()`. Must be a key of
-            `_TYPE_MONIKER_MAP` in //build/bazel/rules/components/fx_component.bzl,
-            which maps it to the test realm moniker. If omitted, tests run in
-            the default hermetic test realm unless overridden on
-            `fx_test_component()`. See
-            https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#non-hermetic_tests
-            for valid types.
-        **kwargs: Additional common rule attributes forwarded to the underlying
-            test rule (e.g. `visibility`, `tags`, `target_compatible_with`).
-    """
-
-    # Bazel has no attribute type for a list of dicts, and its dict-typed
-    # attributes (`attr.string_dict`, `attr.string_list_dict`) only hold flat
-    # string values, which can't represent nested fields like `dimensions` or
-    # `emulator`. So serialize `environments` to a JSON string here and decode
-    # it again in `_fx_test_impl`. This happens in the macro, at loading time,
-    # which is also why `environments` can't be a `select()`.
-    #
-    # Validation is deliberately left to `_fx_test_impl`: a `fail()` at
-    # loading time would break every target in the package, and couldn't be
-    # covered by analysis failure tests. The impl only sees the JSON-decoded
-    # value, so tuples and structs are accepted as lists and dicts.
-    if type(environments) == "select":
-        fail("`fx_test()` does not support select() for 'environments'.")
-
-    _fx_test(
-        name = name,
-        package = package,
-        environments_json = json.encode(environments),
-        build_only = build_only,
-        max_log_severity = max_log_severity,
-        test_type = test_type,
-        **kwargs
-    )
