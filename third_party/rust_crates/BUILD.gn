@@ -6881,10 +6881,10 @@ rustc_library("criterion-plot-v0_8_2") {
   applicable_licenses = [ ":criterion-plot-v0_8_2.license" ]
 }
 
-rustc_library("critical-section-v1_2_0") {
+rustc_library("critical-section-v1_3_0") {
   crate_name = "critical_section"
   source_root = "//third_party/rust_crates/empty/critical-section/src/lib.rs"
-  output_name = "critical_section-843d04fac961c6b6"
+  output_name = "critical_section-ec07bf36af045b0c"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -6896,8 +6896,8 @@ rustc_library("critical-section-v1_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=843d04fac961c6b6",
-    "-Cextra-filename=-843d04fac961c6b6",
+    "-Cmetadata=ec07bf36af045b0c",
+    "-Cextra-filename=-ec07bf36af045b0c",
   ]
 
   visibility = [ ":*" ]
@@ -15444,7 +15444,7 @@ rustc_library("once_cell-v1_21_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":critical-section-v1_2_0" ]
+  deps += [ ":critical-section-v1_3_0" ]
   deps += [ ":portable-atomic-v1_14_0" ]
 
   rustenv = []
@@ -17147,11 +17147,11 @@ rustc_library("portable-atomic-v1_14_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("portable-atomic-util-v0_2_0") {
+rustc_library("portable-atomic-util-v0_2_4") {
   crate_name = "portable_atomic_util"
   source_root =
       "//third_party/rust_crates/empty/portable-atomic-util/src/lib.rs"
-  output_name = "portable_atomic_util-9c2e100405220363"
+  output_name = "portable_atomic_util-3ee0ad2da858d716"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -17163,8 +17163,8 @@ rustc_library("portable-atomic-util-v0_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9c2e100405220363",
-    "-Cextra-filename=-9c2e100405220363",
+    "-Cmetadata=3ee0ad2da858d716",
+    "-Cextra-filename=-3ee0ad2da858d716",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
@@ -19409,7 +19409,7 @@ rustc_library("ringbuf-v0_5_1") {
 
   deps = []
   deps += [ ":portable-atomic-v1_14_0" ]
-  deps += [ ":portable-atomic-util-v0_2_0" ]
+  deps += [ ":portable-atomic-util-v0_2_4" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
 
   rustenv = []
@@ -20451,7 +20451,7 @@ rustc_library("same-file-v1_0_6") {
 
   deps = []
   if (false) {
-    deps += [ ":winapi-util-v0_1_5" ]
+    deps += [ ":winapi-util-v0_1_9" ]
   }
 
   rustenv = []
@@ -23520,7 +23520,7 @@ rustc_library("termcolor-v1_4_1") {
 
   deps = []
   if (false) {
-    deps += [ ":winapi-util-v0_1_5" ]
+    deps += [ ":winapi-util-v0_1_9" ]
   }
 
   rustenv = []
@@ -26463,7 +26463,7 @@ rustc_library("walkdir-v2_5_0") {
   deps = []
   deps += [ ":same-file-v1_0_6" ]
   if (false) {
-    deps += [ ":winapi-util-v0_1_5" ]
+    deps += [ ":winapi-util-v0_1_9" ]
   }
 
   rustenv = []
@@ -26745,10 +26745,10 @@ rustc_library("winapi-v0_3_9") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("winapi-util-v0_1_5") {
+rustc_library("winapi-util-v0_1_9") {
   crate_name = "winapi_util"
   source_root = "//third_party/rust_crates/empty/winapi-util/src/lib.rs"
-  output_name = "winapi_util-d22658bf7990adbd"
+  output_name = "winapi_util-68051e4fc70506d6"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -26760,8 +26760,8 @@ rustc_library("winapi-util-v0_1_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d22658bf7990adbd",
-    "-Cextra-filename=-d22658bf7990adbd",
+    "-Cmetadata=68051e4fc70506d6",
+    "-Cextra-filename=-68051e4fc70506d6",
   ]
 
   visibility = [ ":*" ]
