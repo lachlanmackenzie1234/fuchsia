@@ -120,6 +120,7 @@ bazel2gn_verification_targets = [
   "//src/lib/assembly/release_info:verify_bazel2gn",
   "//src/lib/assembly/tool:verify_bazel2gn",
   "//src/lib/assembly/util:verify_bazel2gn",
+  "//src/lib/async-utils:verify_bazel2gn",
   "//src/lib/bitrs:verify_bazel2gn",
   "//src/lib/buf-read-ext:verify_bazel2gn",
   "//src/lib/chunked-compression:verify_bazel2gn",
