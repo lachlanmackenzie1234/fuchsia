@@ -1191,7 +1191,7 @@ impl CurrentTask {
             //   under PR_SET_DUMPABLE in prctl(2).
             let dumpable =
                 if resolved_program.secure_exec { DumpPolicy::Disable } else { DumpPolicy::User };
-            *mm.dumpable.lock() = dumpable;
+            mm.dumpable.store(dumpable);
 
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
@@ -2110,7 +2110,7 @@ impl CurrentTask {
         //      PR_SET_DUMPABLE in prctl(2)), and the caller does not have
         //      the CAP_SYS_PTRACE capability in the user namespace of the
         //      target process.
-        let dumpable = *target.mm()?.dumpable.lock();
+        let dumpable = target.mm()?.dumpable.load();
         match dumpable {
             DumpPolicy::User => (),
             DumpPolicy::Disable => security::check_task_capable(self, CAP_SYS_PTRACE)?,

@@ -26,6 +26,7 @@ use crate::vfs::{
 };
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
+use crossbeam::atomic::AtomicCell;
 use flyweights::FlyByteStr;
 use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
@@ -35,8 +36,7 @@ use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{
-    LockDepMutex, MemoryManagerCachedStatsLock, MmDumpable, RwLock, RwLockWriteGuard,
-    ordered_write_lock,
+    LockDepMutex, MemoryManagerCachedStatsLock, RwLock, RwLockWriteGuard, ordered_write_lock,
 };
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
@@ -208,6 +208,8 @@ pub enum DumpPolicy {
     /// Corresponds to SUID_DUMP_USER.
     User,
 }
+
+static_assertions::const_assert!(AtomicCell::<DumpPolicy>::is_lock_free());
 
 // Supported types of membarriers.
 pub enum MembarrierType {
@@ -3210,7 +3212,7 @@ pub struct MemoryManager {
     pub state: RwLock<MemoryManagerState>,
 
     /// Whether this address space is dumpable.
-    pub dumpable: LockDepMutex<DumpPolicy, MmDumpable>,
+    pub dumpable: AtomicCell<DumpPolicy>,
 
     /// Maximum valid user address for this vmar.
     pub maximum_valid_user_address: UserAddress,
@@ -3382,7 +3384,7 @@ impl MemoryManager {
             .into(),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
             // certain conditions as specified in the prctl(2) man page.
-            dumpable: LockDepMutex::new(DumpPolicy::User),
+            dumpable: AtomicCell::new(DumpPolicy::User),
             maximum_valid_user_address: UserAddress::from_ptr(
                 user_vmar_info.base + user_vmar_info.len,
             ),
@@ -3666,8 +3668,7 @@ impl MemoryManager {
             target_state.forkable_state = state.forkable_state.clone();
         }
 
-        let self_dumpable = *source_mm.dumpable.lock();
-        *target.dumpable.lock() = self_dumpable;
+        target.dumpable.store(source_mm.dumpable.load());
 
         Ok(target)
     }

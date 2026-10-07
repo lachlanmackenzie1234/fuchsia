@@ -353,6 +353,7 @@ _starnix_core_deps = [
   "//third_party/rust_crates:bitflags",
   "//third_party/rust_crates:bstr",
   "//third_party/rust_crates:byteorder",
+  "//third_party/rust_crates:crossbeam",
   "//third_party/rust_crates:derivative",
   "//third_party/rust_crates:dyn-clone",
   "//third_party/rust_crates:flyweights",

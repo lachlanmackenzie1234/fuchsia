@@ -938,18 +938,16 @@ pub fn sys_prctl(
         }
         PR_SET_DUMPABLE => {
             let mm = current_task.mm()?;
-            let mut dumpable = mm.dumpable.lock();
-            *dumpable = match arg2 {
+            mm.dumpable.store(match arg2 {
                 0 => DumpPolicy::Disable,
                 1 => DumpPolicy::User,
                 _ => return error!(EINVAL),
-            };
+            });
             Ok(().into())
         }
         PR_GET_DUMPABLE => {
             let mm = current_task.mm()?;
-            let dumpable = mm.dumpable.lock();
-            Ok(match *dumpable {
+            Ok(match mm.dumpable.load() {
                 DumpPolicy::Disable => 0.into(),
                 DumpPolicy::User => 1.into(),
             })
