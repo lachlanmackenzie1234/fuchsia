@@ -866,6 +866,7 @@ async fn create_container(
     }
 
     log_info!("Creating init process.");
+    node.record_int("init_started_at", zx::MonotonicInstant::get().into_nanos());
     let init_task =
         create_init_process(&kernel, init_pid, initial_name, Arc::clone(&fs_context), &rlimits)
             .with_source_context(|| format!("creating init task: {:?}", start_info.program.init))?;
