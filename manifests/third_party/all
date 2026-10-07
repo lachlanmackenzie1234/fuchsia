@@ -309,7 +309,7 @@
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="00385d53df311c18bf97dd4489c8ed02f912bfa2"/>
     <project name="third_party/markupsafe"
-             path="third_party/markupsafe"
+             path="third_party/markupsafe/markupsafe"
              remote="https://fuchsia.googlesource.com/third_party/markupsafe"
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="e2977858f9fbad61d2d3c3f2c998c95963d3b39b"/>
