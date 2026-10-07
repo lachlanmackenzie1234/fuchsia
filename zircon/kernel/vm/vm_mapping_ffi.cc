@@ -63,4 +63,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
   *out_mapping = fbl::ExportToRawPtr(&res);
   return ZX_OK;
 }
+FFI_ALWAYS_INLINE void cpp_vm_mapping_mark_mergeable(VmMapping* mapping) {
+  VmMapping::MarkMergeable(fbl::ImportFromRawPtr(mapping));
+}
 }  // extern "C"

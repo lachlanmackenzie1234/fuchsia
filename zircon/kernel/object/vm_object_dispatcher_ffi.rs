@@ -64,6 +64,9 @@ unsafe extern "C" {
         disp: *mut VmObjectDispatcher,
         cache_policy: u32,
     ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_ensure_stream_size_manager(
+        disp: *mut VmObjectDispatcher,
+    ) -> zx_status_t;
     pub(crate) fn cpp_vm_object_dispatcher_create_child(
         disp: *mut VmObjectDispatcher,
         options: u32,

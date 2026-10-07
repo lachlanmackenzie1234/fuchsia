@@ -87,7 +87,6 @@ source_set("object") {
     "vcpu_dispatcher_ffi.cc",
     "virtual_interrupt_dispatcher.cc",
     "vm_address_region_dispatcher.cc",
-    "vm_address_region_dispatcher_ffi.cc",
     "vm_object_dispatcher.cc",
     "wait_signal_observer.cc",
   ]

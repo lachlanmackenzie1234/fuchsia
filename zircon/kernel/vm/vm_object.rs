@@ -127,6 +127,12 @@ impl VmObject {
         unsafe { bindings::cpp_vm_object_is_resizable(self.as_raw()) }
     }
 
+    /// Returns whether the VMO is discardable.
+    pub fn is_discardable(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_discardable(self.as_raw()) }
+    }
+
     /// Returns whether the VMO is paged.
     pub fn is_paged(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.

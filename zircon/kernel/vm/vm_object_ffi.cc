@@ -34,6 +34,10 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_is_resizable(const VmObject* vmo) {
   return vmo->is_resizable();
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_discardable(const VmObject* vmo) {
+  return vmo->is_discardable();
+}
+
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo) {
   return vmo->is_contiguous();
 }

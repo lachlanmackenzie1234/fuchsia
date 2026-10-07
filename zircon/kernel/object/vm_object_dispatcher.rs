@@ -236,6 +236,17 @@ impl VmObjectDispatcher {
         Status::ok(status)
     }
 
+    /// Ensures that a `StreamSizeManager` is allocated and attached to the underlying VMO.
+    pub fn ensure_stream_size_manager(&self) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `VmObjectDispatcher` reference.
+        let status = unsafe {
+            super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_ensure_stream_size_manager(
+                self.as_ffi_mut(),
+            )
+        };
+        Status::ok(status)
+    }
+
     /// Creates a child VMO clone/slice/reference.
     pub fn create_child(
         &self,

@@ -43,6 +43,14 @@ impl VmMapping {
         self.to_mut_ptr().cast()
     }
 
+    /// Marks a mapping as eligible for merging with adjacent compatible mappings.
+    pub fn mark_mergeable(mapping: RefPtr<VmMapping>) {
+        // SAFETY: `RefPtr::into_raw` transfers ownership of the reference to `ImportFromRawPtr`.
+        unsafe {
+            bindings::cpp_vm_mapping_mark_mergeable(RefPtr::into_raw(mapping).cast_mut().cast())
+        }
+    }
+
     /// Destroys this mapping, unmapping all pages and removing dependencies on the underlying VMO.
     pub fn destroy(&self) -> Result<(), Status> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.

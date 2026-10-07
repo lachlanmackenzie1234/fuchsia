@@ -31,6 +31,10 @@ zx_status_t cpp_vm_address_region_unmap(VmAddressRegion* vmar, vaddr_t base, siz
 zx_status_t cpp_vm_address_region_protect(VmAddressRegion* vmar, vaddr_t base, size_t size,
                                           arch_mmu_flags_t new_arch_mmu_flags,
                                           VmAddressRegionOpChildren op_children);
+zx_status_t cpp_vm_address_region_range_op(VmAddressRegion* vmar, VmAddressRegion::RangeOpType op,
+                                           vaddr_t base, size_t len,
+                                           VmAddressRegionOpChildren op_children, void* buffer,
+                                           size_t buffer_size);
 zx_status_t cpp_vm_address_region_reserve_space(VmAddressRegion* vmar, const char* name,
                                                 size_t base, size_t size,
                                                 arch_mmu_flags_t arch_mmu_flags);
@@ -59,6 +63,7 @@ zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t 
 zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
                                          arch_mmu_flags_t new_arch_mmu_flags);
 zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
+void cpp_vm_mapping_mark_mergeable(VmMapping* mapping);
 const VmObject* cpp_vm_mapping_vmo(VmMapping* mapping);
 
 __END_CDECLS

@@ -596,6 +596,12 @@ cpp_vm_object_dispatcher_set_mapping_cache_policy(VmObjectDispatcher* disp, uint
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t
+cpp_vm_object_dispatcher_ensure_stream_size_manager(VmObjectDispatcher* disp) {
+  return disp->stream_size_manager().status_value();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_create_child(
     VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
     ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo) {

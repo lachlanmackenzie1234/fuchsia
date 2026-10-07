@@ -9,6 +9,7 @@ use super::vm_aspace::VmAspace;
 use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
 use crate::kernel::types::VAddr;
+use crate::user_copy::UserInOutPtr;
 use core::ffi::CStr;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, OpaqueRefCountedFacade, Recyclable, RefCounted, RefPtr};
@@ -264,6 +265,30 @@ impl VmAddressRegion {
                 size,
                 new_arch_mmu_flags,
                 op_children,
+            )
+        })
+    }
+
+    /// Performs a VMO or mapping operation (`op`) across mappings in `[base, base + len)`.
+    pub fn range_op(
+        &self,
+        op: RangeOpType,
+        base: VAddr,
+        len: usize,
+        op_children: VmAddressRegionOpChildren,
+        buffer: UserInOutPtr<u8>,
+        buffer_size: usize,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
+        Status::ok(unsafe {
+            bindings::cpp_vm_address_region_range_op(
+                self.as_ffi_ptr(),
+                op,
+                base.0,
+                len,
+                op_children,
+                buffer.as_ptr().cast(),
+                buffer_size,
             )
         })
     }

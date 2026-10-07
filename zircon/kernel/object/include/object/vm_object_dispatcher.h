@@ -47,6 +47,7 @@ zx_status_t cpp_vm_object_dispatcher_range_op(VmObjectDispatcher* disp, uint32_t
                                               size_t buffer_size, zx_rights_t rights);
 zx_status_t cpp_vm_object_dispatcher_set_mapping_cache_policy(VmObjectDispatcher* disp,
                                                               uint32_t cache_policy);
+zx_status_t cpp_vm_object_dispatcher_ensure_stream_size_manager(VmObjectDispatcher* disp);
 zx_status_t cpp_vm_object_dispatcher_create_child(
     VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
     ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo);

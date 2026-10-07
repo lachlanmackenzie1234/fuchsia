@@ -48,7 +48,6 @@ source_set("impl") {
     "system_ffi.cc",
     "test.cc",
     "thread_ffi.cc",
-    "vmar.cc",
   ]
   deps = [
     ":dispatch",

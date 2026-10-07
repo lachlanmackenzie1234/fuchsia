@@ -197,4 +197,9 @@ constexpr size_t kResourceDispatcherStateSize = 128 + kLockClassIdSize;
 constexpr size_t kResourceDispatcherStateAlign = 8;
 constexpr size_t kResourceDispatcherStateOffset = 48;
 
+// Size, alignment, and offset for VmAddressRegionDispatcherState.
+constexpr size_t kVmAddressRegionDispatcherStateSize = 56 + kLockClassIdSize;
+constexpr size_t kVmAddressRegionDispatcherStateAlign = 8;
+constexpr size_t kVmAddressRegionDispatcherStateOffset = 48;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

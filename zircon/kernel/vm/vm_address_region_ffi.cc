@@ -51,6 +51,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_protect(VmAddressRegion* vma
                                                             VmAddressRegionOpChildren op_children) {
   return vmar->Protect(base, size, new_arch_mmu_flags, op_children);
 }
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_range_op(VmAddressRegion* vmar,
+                                                             VmAddressRegion::RangeOpType op,
+                                                             vaddr_t base, size_t len,
+                                                             VmAddressRegionOpChildren op_children,
+                                                             void* buffer, size_t buffer_size) {
+  return vmar->RangeOp(op, base, len, op_children, make_user_inout_ptr(buffer), buffer_size);
+}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_reserve_space(VmAddressRegion* vmar,
                                                                   const char* name, size_t base,
                                                                   size_t size,
