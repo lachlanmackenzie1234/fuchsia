@@ -191,8 +191,8 @@
     },
     {
         "package": "fuchsia/prebuilt/third_party/firmware/vim3",
-        "version": "u-boot:83b8ef28f93500ef74993a145c4ef113bbbf21e1",
-        "instance_id": "CiE5i_I874rXvMd0Raxj8SS-k68qUktCMWcWYDjPukIC"
+        "version": "u-boot:7963bb3826b86b0192a024876a33d3a62dc18c7e",
+        "instance_id": "yJPx_up9lKoILOEHtaJ725oOfzvTsQk1892Rj9LfWSYC"
     },
     {
         "package": "fuchsia/sdk-samples/fortune-teller/debug-symbols-x64",
