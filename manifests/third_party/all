@@ -595,7 +595,7 @@
              path="third_party/pypng/src"
              remote="https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="eab40666f01c2616705fe00bd855e98685253a09"/>
+             revision="dfa73a91cb362703b0453ae7675592ab4822d49b"/>
     <project name="third_party/github.com/ridiculousfish/libdivide"
              path="third_party/github.com/ridiculousfish/libdivide/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide"
