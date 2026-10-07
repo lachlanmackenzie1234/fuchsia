@@ -345,10 +345,6 @@ where the project will be located relative to the jiri root.
    jiri manifest `<project>` tags without committing them, you can run:
    *  **Command:** `jiri update -local-manifest-project=<project> -local-manifest-project=<another-project>`
 
-*  **Search across jiri projects**: To perform a grep search across all
-   jiri projects you can run:
-  *  **Command:** `jiri grep <text>`: Search across projects.
-
 # Git usage guidelines
 
 ## Working with Git in a Multi-repo Environment
