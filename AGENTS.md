@@ -20,10 +20,11 @@ save considerable time when iterating during development, especially when
 updating build definitions, so use them when interacting directly with
 the user.
 
-To run a test, run `fx test <name of test>`. `fx test` handles starting an
-emulator and package repository automatically. You can list available tests
-with `fx test --dry`. You can get JSON output by adding the arguments
-`--logpath -`. Run `fx test --help` for more information.
+To run a test, run `fx -t <target> test <name of test>` (see
+[`src/testing/skills/fx-test/SKILL.md`](src/testing/skills/fx-test/SKILL.md)).
+`fx test` handles starting an emulator and package repository automatically. You
+can list available tests with `fx test --dry`. You can get JSON output by adding
+the arguments `--logpath -`. Run `fx test --help` for more information.
 
 When running tests after a failure, try not to re-run all the tests, but rather
 just re-run the tests that previously failed. In order to understand what tests
