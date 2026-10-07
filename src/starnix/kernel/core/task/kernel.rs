@@ -64,7 +64,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::CpuFeatureFlags;
 
@@ -410,6 +410,13 @@ pub struct Kernel {
     ///   2 - Unprivileged BPF is not permitted, but can be enabled by a privileged task.
     pub disable_unprivileged_bpf: AtomicU8,
 
+    /// Controls use of perf_event_open(2) by tasks without CAP_PERFMON (or CAP_SYS_ADMIN):
+    ///   -1 - No capability required.
+    ///    0 - Capability required for tracepoint events.
+    ///    1 - Capability additionally required for CPU-wide events.
+    ///    2 - Capability additionally required for kernel profiling (default).
+    pub perf_event_paranoid: AtomicI32,
+
     /// Control handle to the running container's ComponentController.
     pub container_control_handle:
         LockDepMutex<Option<ComponentControllerControlHandle>, ComponentControllerLock>,
@@ -576,6 +583,7 @@ impl Kernel {
             ptrace_scope: AtomicU8::new(0), // Disable YAMA checks by default.
             restrict_dmesg: AtomicBool::new(false),
             disable_unprivileged_bpf: AtomicU8::new(0), // Enable unprivileged BPF by default.
+            perf_event_paranoid: AtomicI32::new(2),
             build_version: OnceCell::new(),
             stats: Arc::new(KernelStats::default()),
             delayed_releaser: Default::default(),

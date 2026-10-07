@@ -36,6 +36,7 @@ use starnix_uapi::arch32::{
     perf_event_sample_format_PERF_SAMPLE_TIME, perf_event_type_PERF_RECORD_LOST,
     perf_event_type_PERF_RECORD_SAMPLE,
 };
+use starnix_uapi::auth::{CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_HIGHEST_ADDRESS;
@@ -53,7 +54,7 @@ use starnix_uapi::{
     perf_event_read_format_PERF_FORMAT_TOTAL_TIME_RUNNING, tid_t, uapi,
 };
 
-use crate::security::{self, TargetTaskType};
+use crate::security::{self, PerfEventOpenType, PerfEventTarget, PerfEventType};
 use crate::task::Kernel;
 use crate::task::tracing::{LinuxIdentity, PidKoidSession};
 
@@ -1178,20 +1179,72 @@ pub fn sys_perf_event_open(
         return error!(EINVAL);
     }
 
-    let target_task_type = match tid {
-        -1 => TargetTaskType::AllTasks,
-        0 => TargetTaskType::CurrentTask,
+    let target = match tid {
+        -1 => PerfEventTarget::AllTasks,
+        0 => PerfEventTarget::CurrentTask,
         _ => {
             track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
             return error!(ENOSYS);
         }
     };
-    security::check_perf_event_open_access(
-        current_task,
-        target_task_type,
-        &perf_event_attrs,
-        perf_event_attrs.type_.try_into()?,
-    )?;
+    let event_type: PerfEventType = perf_event_attrs.type_.try_into()?;
+
+    // Check access to open any perf_event first, before any capability check, so that it is
+    // evaluated and audited first.
+    security::check_perf_event_open_access(current_task, PerfEventOpenType::Open)?;
+
+    // Only require CAP_PERFMON (or CAP_SYS_ADMIN) when `perf_event_paranoid` exceeds the
+    // threshold for the requested event.
+    // TODO(https://fxbug.dev/398914921): Starnix currently starts a job-wide profiler session
+    // regardless of `target`, so apply the CPU-wide threshold (`paranoid > 0`) to all targets
+    // until sampling is scoped to the target task.
+    let paranoid = current_task.kernel().perf_event_paranoid.load(Ordering::Relaxed);
+    let requires_capability = (paranoid > 1 && perf_event_attrs.exclude_kernel() == 0)
+        || paranoid > 0
+        || (paranoid > -1 && event_type == PerfEventType::Tracepoint);
+    // Exceptionally, a tracepoint perf event on the current task that excludes the kernel never
+    // requires a capability. The kernel and CPU access checks below do not apply to such an event.
+    let is_exempt = matches!(
+        (event_type, perf_event_attrs.exclude_kernel(), &target),
+        (PerfEventType::Tracepoint, 1, PerfEventTarget::CurrentTask)
+    );
+    // CAP_SYS_ADMIN is checked without auditing, so that nothing is audit-logged if the caller has
+    // either capability, and only CAP_PERFMON is audit-logged if it has neither.
+    if requires_capability
+        && !is_exempt
+        && !security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN)
+    {
+        security::check_task_capable(current_task, CAP_PERFMON).map_err(|_| errno!(EACCES))?;
+    }
+
+    // Check access to monitor the kernel when `exclude_kernel` is 0.
+    if perf_event_attrs.exclude_kernel() == 0 {
+        security::check_perf_event_open_access(current_task, PerfEventOpenType::Kernel)?;
+    }
+
+    // Check access to monitor CPU-wide activity when
+    // - type is PERF_TYPE_SOFTWARE or
+    // - type is PERF_TYPE_HARDWARE or
+    // - type is in [CACHE, TRACEPOINT, BREAKPOINT, RAW) and pid == -1
+    // - or when a low `perf_event_paranoid` waived the capability requirement
+    //   (TODO(https://fxbug.dev/398914921): sampling is currently job-wide regardless of
+    //   target task or event type).
+    let check_cpu = !requires_capability
+        || match event_type {
+            PerfEventType::Software | PerfEventType::Hardware => true,
+            PerfEventType::HwCache
+            | PerfEventType::Tracepoint
+            | PerfEventType::Breakpoint
+            | PerfEventType::Raw => matches!(target, PerfEventTarget::AllTasks),
+        };
+    if check_cpu {
+        security::check_perf_event_open_access(current_task, PerfEventOpenType::Cpu)?;
+    }
+
+    // Check access to monitor tracepoints when the type is PERF_TYPE_TRACEPOINT.
+    if event_type == PerfEventType::Tracepoint {
+        security::check_perf_event_open_access(current_task, PerfEventOpenType::Tracepoint)?;
+    }
 
     // Channel used to send info between notifier and spawned task thread.
     // We somewhat arbitrarily picked 8 for now in case we get a bunch of ioctls that are in

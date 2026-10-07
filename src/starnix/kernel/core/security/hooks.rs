@@ -56,9 +56,9 @@ use crate::vfs::{
 };
 use ebpf::MapFlags;
 use linux_uapi::{
-    perf_event_attr, perf_type_id, perf_type_id_PERF_TYPE_BREAKPOINT,
-    perf_type_id_PERF_TYPE_HARDWARE, perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_RAW,
-    perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
+    perf_type_id, perf_type_id_PERF_TYPE_BREAKPOINT, perf_type_id_PERF_TYPE_HARDWARE,
+    perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_RAW, perf_type_id_PERF_TYPE_SOFTWARE,
+    perf_type_id_PERF_TYPE_TRACEPOINT,
 };
 use selinux::{FileSystemMountOptions, InitialSid, SecurityPermission, SecurityServer, TaskAttrs};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug};
@@ -212,15 +212,30 @@ impl TryFrom<perf_type_id> for PerfEventType {
     }
 }
 
-/// The target task type. Used in the `check_perf_event_open_access` LSM hook.
+/// The target of a `perf_event_open()` call.
 #[derive(PartialEq, Eq)]
-pub enum TargetTaskType<'a> {
+pub enum PerfEventTarget<'a> {
     /// Monitor all tasks/activities.
     AllTasks,
     /// Only monitor the current task.
     CurrentTask,
     /// Only monitor a specific task.
     Task(&'a Task),
+}
+
+/// Identifies which stage of the `perf_event_open()` syscall a permission check is being made
+/// for. The syscall calls the `check_perf_event_open_access` hook once for each stage that
+/// applies to the requested event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PerfEventOpenType {
+    /// Opening any perf_event.
+    Open,
+    /// Monitoring CPU-wide activity.
+    Cpu,
+    /// Monitoring kernel activity.
+    Kernel,
+    /// Monitoring tracepoint activity.
+    Tracepoint,
 }
 
 /// Executes the `hook` closure if SELinux is enabled, and has a policy loaded.
@@ -2026,23 +2041,20 @@ pub fn check_bpf_prog_access(
     })
 }
 
-/// Checks whether `current_task` has the correct permissions to monitor the given target task or
-/// tasks.
+/// Checks whether `current_task` has the correct permissions for the given stage of a
+/// `perf_event_open()` call. Called by `perf_event_open()` once for each stage that applies to
+/// the new event.
 /// Corresponds to the `perf_event_open` LSM hook.
 pub fn check_perf_event_open_access(
     current_task: &CurrentTask,
-    target_task_type: TargetTaskType<'_>,
-    attr: &perf_event_attr,
-    event_type: PerfEventType,
+    perf_event_open_type: PerfEventOpenType,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_perf_event_open_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::perf_event::check_perf_event_open_access(
             security_server,
             current_task,
-            target_task_type,
-            attr,
-            event_type,
+            perf_event_open_type,
         )
     })
 }

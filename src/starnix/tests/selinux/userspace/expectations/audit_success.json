@@ -1250,6 +1250,12 @@
             ]
         },
         {
+            "name": "PerfEventTest.OpenEventsNoPermissionsChecksOpenBeforeCapabilities",
+            "audit_expectations": [
+                "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tcontext=test_u:test_r:test_perf_event_no_permissions_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
             "name": "PerfEventTest.OpenEventsNoTracepoint",
             "audit_expectations": []
         },
@@ -1278,6 +1284,18 @@
             "audit_expectations": [
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
                 "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.ParanoidMinusOneRequiresCpuPermission",
+            "audit_expectations": [
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest.ParanoidMinusOneStillRequiresOpenPermission",
+            "audit_expectations": [
+                "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_open_t:s0 tcontext=test_u:test_r:test_perf_event_no_open_t:s0 tclass=perf_event permissive=0"
             ]
         },
         {

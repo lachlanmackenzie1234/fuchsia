@@ -16,13 +16,21 @@
 
 #include <atomic>
 #include <chrono>
+#include <string>
 #include <thread>
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/perf_event.h>
 
+#include "src/lib/files/file.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "test_helper.h"
+
+#ifndef CAP_PERFMON
+#define CAP_PERFMON 38
+#endif
 
 namespace {
 
@@ -1158,6 +1166,183 @@ TEST(PerfEventOpenTest, GroupLeaderCleanup) {
     EXPECT_NE(syscall(__NR_close, fd_a2), EXIT_FAILURE);
     EXPECT_NE(syscall(__NR_close, fd_b), EXIT_FAILURE);
     EXPECT_NE(syscall(__NR_close, fd_b2), EXIT_FAILURE);
+  }
+}
+
+// Calls perf_event_open() for all tasks on CPU 0 (pid == -1) if `all_tasks`, otherwise for the
+// calling task on any CPU (pid == 0). Closes the returned file descriptor, if any.
+int TryPerfEventOpen(uint32_t type, uint64_t config, bool all_tasks, bool exclude_kernel) {
+  perf_event_attr attr = {};
+  attr.type = type;
+  attr.size = sizeof(attr);
+  attr.config = config;
+  attr.disabled = 1;
+  attr.exclude_kernel = exclude_kernel;
+  int fd = sys_perf_event_open(&attr, all_tasks ? -1 : 0, all_tasks ? 0 : -1, -1, 0);
+  if (fd >= 0) {
+    close(fd);
+    return 0;
+  }
+  return fd;
+}
+
+int TrySoftwareEvent(bool all_tasks, bool exclude_kernel) {
+  return TryPerfEventOpen(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_CLOCK, all_tasks, exclude_kernel);
+}
+
+// Starnix does not validate tracepoint IDs, so any ID works there. Other kernels may reject the ID,
+// so only call this on Starnix.
+int TryTracepointEvent(bool all_tasks, bool exclude_kernel) {
+  return TryPerfEventOpen(PERF_TYPE_TRACEPOINT, 1, all_tasks, exclude_kernel);
+}
+
+// These tests run without SELinux, so they only exercise the `perf_event_paranoid` capability
+// gate. Checks where Starnix deliberately differs from Linux are only run on Starnix.
+class PerfEventParanoidTest : public ::testing::Test {
+ protected:
+  void SetUp() override {  // NOLINT(readability-convert-member-functions-to-static)
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "Need CAP_SYS_ADMIN to change perf_event_paranoid";
+    }
+  }
+
+  // Runs `action` in a child process that has no capabilities.
+  static void RunWithoutCapabilities(fit::function<void()> action) {
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      test_helper::DropAllCapabilities();
+      ASSERT_FALSE(test_helper::HasCapability(CAP_PERFMON));
+      ASSERT_FALSE(test_helper::HasCapability(CAP_SYS_ADMIN));
+      action();
+    });
+    EXPECT_TRUE(helper.WaitForChildren());
+  }
+};
+
+TEST_F(PerfEventParanoidTest, DefaultIsTwo) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "The default perf_event_paranoid value varies between Linux distributions";
+  }
+  std::string value;
+  ASSERT_TRUE(files::ReadFileToString(test_helper::kPerfEventParanoidPath, &value))
+      << strerror(errno);
+  EXPECT_EQ(value, "2\n");
+}
+
+TEST_F(PerfEventParanoidTest, WriteAndReadBack) {
+  test_helper::ScopedPerfEventParanoid restore(2);
+  for (int value : {-1, 0, 1, 3, 2}) {
+    ASSERT_TRUE(files::WriteFile(test_helper::kPerfEventParanoidPath, std::to_string(value)))
+        << strerror(errno);
+    std::string read_value;
+    ASSERT_TRUE(files::ReadFileToString(test_helper::kPerfEventParanoidPath, &read_value))
+        << strerror(errno);
+    EXPECT_EQ(read_value, std::to_string(value) + "\n");
+  }
+  EXPECT_FALSE(files::WriteFile(test_helper::kPerfEventParanoidPath, "invalid"));
+  EXPECT_EQ(errno, EINVAL);
+}
+
+TEST_F(PerfEventParanoidTest, MinusOneAllowsEventsWithoutCapabilities) {
+  test_helper::ScopedPerfEventParanoid paranoid(-1);
+  RunWithoutCapabilities([] {
+    for (bool all_tasks : {false, true}) {
+      for (bool exclude_kernel : {false, true}) {
+        EXPECT_THAT(TrySoftwareEvent(all_tasks, exclude_kernel), SyscallSucceeds())
+            << "all_tasks=" << all_tasks << " exclude_kernel=" << exclude_kernel;
+        if (test_helper::IsStarnix()) {
+          EXPECT_THAT(TryTracepointEvent(all_tasks, exclude_kernel), SyscallSucceeds())
+              << "all_tasks=" << all_tasks << " exclude_kernel=" << exclude_kernel;
+        }
+      }
+    }
+  });
+}
+
+TEST_F(PerfEventParanoidTest, ZeroRequiresCapabilityForTracepoints) {
+  test_helper::ScopedPerfEventParanoid paranoid(0);
+  RunWithoutCapabilities([] {
+    for (bool all_tasks : {false, true}) {
+      for (bool exclude_kernel : {false, true}) {
+        EXPECT_THAT(TrySoftwareEvent(all_tasks, exclude_kernel), SyscallSucceeds())
+            << "all_tasks=" << all_tasks << " exclude_kernel=" << exclude_kernel;
+      }
+    }
+    // Linux only requires the capability for raw tracepoint samples at this level.
+    if (test_helper::IsStarnix()) {
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/true, /*exclude_kernel=*/true),
+                  SyscallFailsWithErrno(EACCES));
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/false, /*exclude_kernel=*/false),
+                  SyscallFailsWithErrno(EACCES));
+      // Tracepoints on the calling task that exclude the kernel never require a capability.
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/false, /*exclude_kernel=*/true),
+                  SyscallSucceeds());
+    }
+  });
+}
+
+TEST_F(PerfEventParanoidTest, OneRequiresCapabilityForCpuWideEvents) {
+  test_helper::ScopedPerfEventParanoid paranoid(1);
+  RunWithoutCapabilities([] {
+    for (bool exclude_kernel : {false, true}) {
+      EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/true, exclude_kernel),
+                  SyscallFailsWithErrno(EACCES))
+          << "exclude_kernel=" << exclude_kernel;
+      // Starnix samples job-wide regardless of the target (https://fxbug.dev/398914921), so it
+      // also requires the capability for events on the calling task.
+      if (test_helper::IsStarnix()) {
+        EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/false, exclude_kernel),
+                    SyscallFailsWithErrno(EACCES))
+            << "exclude_kernel=" << exclude_kernel;
+      }
+    }
+  });
+}
+
+TEST_F(PerfEventParanoidTest, TwoRequiresCapability) {
+  test_helper::ScopedPerfEventParanoid paranoid(2);
+  RunWithoutCapabilities([] {
+    EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/true, /*exclude_kernel=*/false),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/true, /*exclude_kernel=*/true),
+                SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/false, /*exclude_kernel=*/false),
+                SyscallFailsWithErrno(EACCES));
+    if (test_helper::IsStarnix()) {
+      // Starnix samples job-wide regardless of the target (https://fxbug.dev/398914921), so it
+      // also requires the capability for events on the calling task.
+      EXPECT_THAT(TrySoftwareEvent(/*all_tasks=*/false, /*exclude_kernel=*/true),
+                  SyscallFailsWithErrno(EACCES));
+
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/true, /*exclude_kernel=*/true),
+                  SyscallFailsWithErrno(EACCES));
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/false, /*exclude_kernel=*/false),
+                  SyscallFailsWithErrno(EACCES));
+      // Tracepoints on the calling task that exclude the kernel never require a capability.
+      EXPECT_THAT(TryTracepointEvent(/*all_tasks=*/false, /*exclude_kernel=*/true),
+                  SyscallSucceeds());
+    }
+  });
+}
+
+TEST_F(PerfEventParanoidTest, PerfmonOrSysAdminAllowsEvents) {
+  test_helper::ScopedPerfEventParanoid paranoid(2);
+  for (int dropped_cap : {CAP_PERFMON, CAP_SYS_ADMIN}) {
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      test_helper::UnsetCapabilityEffective(dropped_cap);
+      ASSERT_FALSE(test_helper::HasCapabilityEffective(dropped_cap));
+      ASSERT_TRUE(test_helper::HasCapabilityEffective(dropped_cap == CAP_PERFMON ? CAP_SYS_ADMIN
+                                                                                 : CAP_PERFMON));
+      for (bool all_tasks : {false, true}) {
+        for (bool exclude_kernel : {false, true}) {
+          EXPECT_THAT(TrySoftwareEvent(all_tasks, exclude_kernel), SyscallSucceeds())
+              << "dropped_cap=" << dropped_cap << " all_tasks=" << all_tasks
+              << " exclude_kernel=" << exclude_kernel;
+        }
+      }
+    });
+    EXPECT_TRUE(helper.WaitForChildren());
   }
 }
 

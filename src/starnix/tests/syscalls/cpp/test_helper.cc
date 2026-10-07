@@ -323,6 +323,18 @@ ScopedTempSymlink::~ScopedTempSymlink() {
   }
 }
 
+ScopedPerfEventParanoid::ScopedPerfEventParanoid(int value) {
+  restore_ = files::ReadFileToString(kPerfEventParanoidPath, &previous_value_);
+  EXPECT_TRUE(restore_) << strerror(errno);
+  EXPECT_TRUE(files::WriteFile(kPerfEventParanoidPath, std::to_string(value))) << strerror(errno);
+}
+
+ScopedPerfEventParanoid::~ScopedPerfEventParanoid() {
+  if (restore_) {
+    EXPECT_TRUE(files::WriteFile(kPerfEventParanoidPath, previous_value_)) << strerror(errno);
+  }
+}
+
 void waitForChildSucceeds(unsigned int waitFlag, int cloneFlags, int (*childRunFunction)(void *),
                           int (*parentRunFunction)(void *)) {
   CloneHelper cloneHelper;

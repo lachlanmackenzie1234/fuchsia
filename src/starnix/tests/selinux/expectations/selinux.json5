@@ -211,7 +211,7 @@
                 "notify/018",
 
                 // TODO: https://fxbug.dev/494562003
-                "perf_event/005",
+                "perf_event/006",
 
                 // TODO: https://fxbug.dev/398696740
                 "sem/001",

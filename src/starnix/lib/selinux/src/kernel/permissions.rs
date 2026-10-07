@@ -1100,6 +1100,8 @@ class_permission_enum! {
         Open("open"),
         /// Permission to read a perf event.
         Read("read"),
+        /// Permission to monitor tracepoints.
+        Tracepoint("tracepoint"),
         /// Permission to write a perf event.
         Write("write"),
         // keep-sorted end

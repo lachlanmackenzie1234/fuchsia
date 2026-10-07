@@ -208,6 +208,22 @@ class ScopedTempSymlink {
   std::string path_;
 };
 
+inline constexpr char kPerfEventParanoidPath[] = "/proc/sys/kernel/perf_event_paranoid";
+
+// Sets `perf_event_paranoid` to `value` while in scope, then restores the previous value.
+class ScopedPerfEventParanoid {
+ public:
+  explicit ScopedPerfEventParanoid(int value);
+  ~ScopedPerfEventParanoid();
+
+  ScopedPerfEventParanoid(const ScopedPerfEventParanoid &) = delete;
+  ScopedPerfEventParanoid &operator=(const ScopedPerfEventParanoid &) = delete;
+
+ private:
+  bool restore_ = false;
+  std::string previous_value_;
+};
+
 #define HANDLE_EINTR(x)                                     \
   ({                                                        \
     decltype(x) eintr_wrapper_result;                       \

@@ -137,11 +137,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873800")),
             mode,
         );
-        dir.entry(
-            "perf_event_paranoid",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873896")),
-            mode,
-        );
+        dir.entry("perf_event_paranoid", PerfEventParanoid::new_node(), mode);
         dir.entry(
             "randomize_va_space",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873202")),
@@ -557,6 +553,28 @@ impl BytesFileOps for UnprivilegedBpfDisabled {
     }
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         Ok(format!("{}\n", current_task.kernel().disable_unprivileged_bpf.load(Ordering::Relaxed))
+            .into_bytes()
+            .into())
+    }
+}
+
+struct PerfEventParanoid {}
+
+impl PerfEventParanoid {
+    fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self {})
+    }
+}
+
+impl BytesFileOps for PerfEventParanoid {
+    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
+        let value: i32 = fs_args::parse(FsString::from(data).as_ref())?;
+        current_task.kernel().perf_event_paranoid.store(value, Ordering::Relaxed);
+        Ok(())
+    }
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(format!("{}\n", current_task.kernel().perf_event_paranoid.load(Ordering::Relaxed))
             .into_bytes()
             .into())
     }
