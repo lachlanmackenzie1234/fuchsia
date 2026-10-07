@@ -11,10 +11,7 @@ from iperf import (
 
 from . import (
     access_point,
-    adb,
-    android_device,
     attenuator,
-    fastboot,
     fuchsia_device,
     openwrt_ap,
     packet_capture,
@@ -26,10 +23,7 @@ from . import (
 # using antlion.controllers instead of "from antlion.controller import ..."
 __all__ = [
     "access_point",
-    "adb",
-    "android_device",
     "attenuator",
-    "fastboot",
     "fuchsia_device",
     "iperf_client",
     "iperf_server",

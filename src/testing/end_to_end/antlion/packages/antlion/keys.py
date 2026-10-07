@@ -30,7 +30,6 @@ class Config(enum.Enum):
     key_test_failure_tracebacks = "test_failure_tracebacks"
     # Config names for controllers packaged in ACTS.
     key_access_point = "AccessPoint"
-    key_android_device = "AndroidDevice"
     key_attenuator = "Attenuator"
     key_bluetooth_pts_device = "BluetoothPtsDevice"
     key_fuchsia_device = "FuchsiaDevice"
@@ -48,7 +47,6 @@ class Config(enum.Enum):
     ikey_summary_writer = "summary_writer"
     # module name of controllers packaged in ACTS.
     m_key_access_point = "access_point"
-    m_key_android_device = "android_device"
     m_key_attenuator = "attenuator"
     m_key_bluetooth_pts_device = "bluetooth_pts_device"
     m_key_fuchsia_device = "fuchsia_device"
@@ -66,7 +64,6 @@ class Config(enum.Enum):
     # Controller names packaged with ACTS.
     builtin_controller_names = [
         key_access_point,
-        key_android_device,
         key_attenuator,
         key_bluetooth_pts_device,
         key_fuchsia_device,

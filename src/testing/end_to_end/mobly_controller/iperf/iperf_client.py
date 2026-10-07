@@ -13,11 +13,10 @@ import os
 import subprocess
 import threading
 from abc import ABC, abstractmethod
+from typing import Any
 
 from antlion import context
 from antlion.capabilities.ssh import SSHConfig
-from antlion.controllers.adb_lib.error import AdbCommandError
-from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.fuchsia_lib.ssh import SSHProvider
 from libs.commands.date import LinuxDateCommand
 from libs.types import ControllerConfig, Json
@@ -271,9 +270,7 @@ class IPerfClientOverSsh(IPerfClientBase):
 class IPerfClientOverAdb(IPerfClientBase):
     """Class that handles iperf3 operations over ADB devices."""
 
-    def __init__(
-        self, android_device: AndroidDevice, test_interface: str | None = None
-    ):
+    def __init__(self, android_device: Any, test_interface: str | None = None):
         """Creates a new IPerfClientOverAdb object.
 
         Args:
@@ -330,7 +327,7 @@ class IPerfClientOverAdb(IPerfClientBase):
             clean_out = out.split("\n")
             if "error" in clean_out[0].lower():
                 raise IPerfError(clean_out)
-        except (subprocess.TimeoutExpired, AdbCommandError):
+        except subprocess.TimeoutExpired:
             logging.warning("TimeoutError: Iperf measurement failed.")
 
         full_out_path = self._get_full_file_path(tag)
