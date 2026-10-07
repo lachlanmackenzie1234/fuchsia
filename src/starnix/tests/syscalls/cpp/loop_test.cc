@@ -260,6 +260,74 @@ TEST_F(LoopTest, BackingFile) {
   ASSERT_TRUE(buffer.str().ends_with("/data/hello_world.txt\n"));
 }
 
+TEST_F(LoopTest, SysfsLoopDirectoryLifecycle) {
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
+  ASSERT_TRUE(backing_file.is_valid());
+
+  int test_minor = AddUnusedLoopDevice();
+  ASSERT_GE(test_minor, 0);
+
+  std::string device_path = "/dev/loop" + std::to_string(test_minor);
+  std::string sys_device_dir = "/sys/block/loop" + std::to_string(test_minor);
+  std::string sys_loop_dir = sys_device_dir + "/loop";
+  std::string sys_backing_file = sys_loop_dir + "/backing_file";
+
+  fbl::unique_fd loop_fd;
+  // Detach the backing file and remove the loop device on every exit path, including early returns
+  // from failed assertions. If removal fails, also unlink the leaked /dev/loop<N> node so that
+  // subsequent tests scanning /dev do not fail. A successful removal deletes the node itself, and
+  // unlinking it afterwards could delete a node re-created by a concurrently running test.
+  auto cleanup = fit::defer([&] {
+    if (loop_fd.is_valid()) {
+      ioctl(loop_fd.get(), LOOP_CLR_FD, 0);
+      loop_fd.reset();
+    }
+    if (RemoveLoopDeviceRetryingOnBusy(test_minor) < 0) {
+      unlink(device_path.c_str());
+    }
+  });
+
+  ASSERT_SUCCESS(access(sys_device_dir.c_str(), F_OK));
+
+  // On an unbound loop device, the `loop` sysfs attribute group directory must not exist.
+  EXPECT_THAT(access(sys_loop_dir.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+
+  // Attaching a backing file with `bind_request` creates the `loop` attribute group, and detaching
+  // it via LOOP_CLR_FD removes the group.
+  auto check_lifecycle = [&](unsigned long bind_request, auto bind_arg) {
+    loop_fd.reset(open(device_path.c_str(), O_RDWR));
+    ASSERT_TRUE(loop_fd.is_valid()) << strerror(errno);
+    ASSERT_SUCCESS(ioctl(loop_fd.get(), bind_request, bind_arg));
+    EXPECT_THAT(access(sys_loop_dir.c_str(), F_OK), SyscallSucceeds());
+    EXPECT_THAT(access(sys_backing_file.c_str(), F_OK), SyscallSucceeds());
+
+    ASSERT_SUCCESS(ioctl(loop_fd.get(), LOOP_CLR_FD, 0));
+    loop_fd.reset();
+    // On Linux, the backing file and `loop` attribute group are detached on last close after
+    // LOOP_CLR_FD, and udev may briefly hold the device open. Starnix does not run udev, so there
+    // is nothing to wait for.
+    if (!test_helper::IsStarnix()) {
+      for (int attempt = 0; attempt < 50 && access(sys_loop_dir.c_str(), F_OK) == 0; ++attempt) {
+        usleep(100'000);
+      }
+    }
+    EXPECT_THAT(access(sys_loop_dir.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  };
+
+  {
+    SCOPED_TRACE("LOOP_SET_FD");
+    ASSERT_NO_FATAL_FAILURE(check_lifecycle(LOOP_SET_FD, backing_file.get()));
+  }
+  {
+    SCOPED_TRACE("LOOP_CONFIGURE");
+    loop_config config = {
+        .fd = static_cast<uint32_t>(backing_file.get()),
+        .block_size = 4096,
+    };
+    ASSERT_NO_FATAL_FAILURE(check_lifecycle(LOOP_CONFIGURE, &config));
+  }
+}
+
 TEST_F(LoopTest, BlkGetSize64) {
   fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
