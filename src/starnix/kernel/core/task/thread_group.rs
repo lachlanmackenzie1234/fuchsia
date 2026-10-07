@@ -2235,6 +2235,22 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             .ok_or_else(|| errno!(ESRCH))
     }
 
+    /// Returns a running task with an intact file table in the current thread group, preferring
+    /// the thread group leader.
+    pub fn get_running_task_with_files(&self) -> Result<Arc<Task>, Errno> {
+        if let Ok(task) = self.base.leader.get_task() {
+            if task.is_running() && task.files().is_ok() {
+                return Ok(task);
+            }
+        }
+        self.tasks
+            .iter()
+            .find_map(|info| {
+                info.tid.get_task().ok().filter(|task| task.is_running() && task.files().is_ok())
+            })
+            .ok_or_else(|| errno!(ESRCH))
+    }
+
     /// Returns a task representative of the [`ThreadGroup`] for signal access checks.
     ///
     /// Prefers a running task, but falls back to the first available non-running task.

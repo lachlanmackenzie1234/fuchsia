@@ -8,7 +8,7 @@ use crate::process::{BinderProcess, BinderProcessGuard};
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
 use starnix_core::task::{
-    EventHandler, Kernel, Pid, SimpleWaiter, WaitCanceler, WaitQueue, Waiter,
+    EventHandler, Kernel, Pid, SimpleWaiter, Task, WaitCanceler, WaitQueue, Waiter,
 };
 
 use starnix_logging::{log_trace, log_warn};
@@ -242,6 +242,12 @@ impl BinderThread {
     ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {
         let (g1, g2) = ordered_lock(&t1.state, &t2.state);
         (BinderThreadGuard { guard: g1, thread: t1 }, BinderThreadGuard { guard: g2, thread: t2 })
+    }
+
+    /// Returns the task associated with this thread, if it is running and has an intact file
+    /// table.
+    pub fn get_task(&self) -> Option<Arc<Task>> {
+        self.tid.get_task().ok().filter(|task| task.is_running() && task.files().is_ok())
     }
 }
 

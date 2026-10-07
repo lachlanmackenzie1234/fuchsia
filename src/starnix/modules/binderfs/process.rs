@@ -1182,5 +1182,5 @@ impl HandleTable {
 
 /// Returns a task in the process keyed by `key`.
 fn get_task_for_thread_group(key: &Pid) -> Option<Arc<Task>> {
-    key.get_thread_group().ok().and_then(|tg| tg.read().get_running_task().ok())
+    key.get_thread_group().ok().and_then(|tg| tg.read().get_running_task_with_files().ok())
 }

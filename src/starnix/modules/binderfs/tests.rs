@@ -5863,4 +5863,328 @@ pub mod tests {
         })
         .await;
     }
+
+    fn create_fd_reply(
+        current_task: &CurrentTask,
+        code: u32,
+        cookie: binder_uintptr_t,
+    ) -> (FileHandle, binder_transaction_data_sg) {
+        let file = PanickingFile::new_file(current_task);
+        let server_fd =
+            current_task.add_file(file.clone(), FdFlags::CLOEXEC).expect("add server file");
+        let reply_data_bytes = struct_with_union_into_bytes!(binder_fd_object {
+            hdr.type_: BINDER_TYPE_FD,
+            pad_flags: 0,
+            cookie: cookie,
+            __bindgen_anon_1.fd: server_fd.raw() as u32,
+        });
+        let reply_data_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+        let reply_offsets_addr = (reply_data_addr
+            + current_task
+                .write_memory(reply_data_addr, &reply_data_bytes)
+                .expect("write reply fd object"))
+        .unwrap();
+        let offset_zero: binder_uintptr_t = 0;
+        current_task
+            .write_object(UserRef::new(reply_offsets_addr), &offset_zero)
+            .expect("write reply offsets");
+
+        let reply = binder_transaction_data_sg {
+            transaction_data: binder_transaction_data {
+                code,
+                data_size: reply_data_bytes.len() as u64,
+                offsets_size: std::mem::size_of::<binder_uintptr_t>() as u64,
+                data: binder_transaction_data__bindgen_ty_2 {
+                    ptr: binder_transaction_data__bindgen_ty_2__bindgen_ty_1 {
+                        buffer: reply_data_addr.ptr() as u64,
+                        offsets: reply_offsets_addr.ptr() as u64,
+                    },
+                },
+                ..binder_transaction_data::default()
+            },
+            buffers_size: 0,
+        };
+        (file, reply)
+    }
+
+    fn assert_received_fd_reply(
+        target_thread: &BinderThread,
+        target_task: &CurrentTask,
+        expected_cookie: binder_uintptr_t,
+        expected_file: &FileHandle,
+    ) {
+        assert_matches!(
+            target_thread.lock().command_queue.pop_front(),
+            Some(QueuedCommand { command: Command::TwoWayTransactionComplete, .. })
+        );
+        let reply_buffer = match target_thread.lock().command_queue.pop_front() {
+            Some(QueuedCommand {
+                command: Command::Reply(TransactionData { buffers, .. }),
+                ..
+            }) => buffers.data,
+            other => panic!("expected Command::Reply on target thread, got {:?}", other),
+        };
+
+        let translated_fd_obj: binder_fd_object = target_task
+            .task
+            .read_object(UserRef::new(reply_buffer.address))
+            .expect("read translated binder_fd_object from target thread memory");
+        assert_eq!(translated_fd_obj.hdr.type_, BINDER_TYPE_FD);
+        assert_eq!(translated_fd_obj.cookie, expected_cookie);
+        // SAFETY: `binder_fd_object` was written by the binder driver with the `fd` union
+        // variant initialized.
+        let client_fd = FdNumber::from_raw(unsafe { translated_fd_obj.__bindgen_anon_1.fd } as i32);
+        let received_file = target_task
+            .files()
+            .get_allowing_opath(client_fd)
+            .expect("transferred fd should exist in target thread file table");
+        assert!(Arc::ptr_eq(&received_file, expected_file));
+    }
+
+    #[fuchsia::test]
+    async fn test_reply_with_fd_during_thread_churn() {
+        spawn_kernel_and_run(async |current_task| {
+            const OBJECT_ADDR: UserAddress = UserAddress::const_from(0x01);
+            const TRANSACTION_CODE: u32 = 100;
+            const FD_COOKIE: binder_uintptr_t = 0x55AA;
+            const CHURN_THREAD_COUNT: usize = 8;
+
+            let device = BinderDevice::default();
+            let client = BinderProcessFixture::new(current_task, &device);
+            let server = BinderProcessFixture::new_current(current_task, &device);
+
+            let (_, guard) =
+                register_binder_object(&server.proc, OBJECT_ADDR, (OBJECT_ADDR + 1u64).unwrap());
+            let handle_server = client
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            let clone_flags = (starnix_uapi::CLONE_VM
+                | starnix_uapi::CLONE_THREAD
+                | starnix_uapi::CLONE_SIGHAND
+                | starnix_uapi::CLONE_FILES) as u64;
+
+            // Spawn churning threads in the client process before and after the worker thread so
+            // unordered iteration over ThreadGroup::tasks encounters mid-exit threads.
+            let mut churn_tasks = Vec::with_capacity(CHURN_THREAD_COUNT);
+            for _ in 0..(CHURN_THREAD_COUNT / 2) {
+                churn_tasks.push(client.task().clone_task_for_test(clone_flags, None));
+            }
+
+            let worker_task = client.task().clone_task_for_test(clone_flags, None);
+            let worker_thread = client
+                .proc
+                .lock()
+                .find_or_register_thread(&worker_task.task)
+                .expect("register worker thread");
+
+            for _ in 0..(CHURN_THREAD_COUNT / 2) {
+                churn_tasks.push(client.task().clone_task_for_test(clone_flags, None));
+            }
+
+            // Have the client worker thread initiate a synchronous transaction to the server.
+            let worker_context = OperationContext {
+                current_task: &worker_task,
+                binder_proc: &client.proc,
+                binder_thread: &worker_thread,
+                memory_accessor: worker_task.as_memory_accessor().expect("as_memory_accessor"),
+            };
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: TRANSACTION_CODE,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: handle_server.into() },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_transaction(&worker_context, &mut Vec::new(), transaction)
+                .expect("handle_transaction from worker");
+
+            // Dequeue the transaction on the server so server.thread records the caller on its
+            // transaction stack.
+            let server_read_buffer = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &server.context(current_task),
+                    &UserBuffer { address: server_read_buffer, length: *PAGE_SIZE as usize },
+                )
+                .expect("server reads transaction");
+
+            // While the leader is running with an intact file table, get_task() prioritizes it.
+            assert!(Arc::ptr_eq(&client.proc.get_task().expect("get_task"), &client.task().task));
+
+            // Simulate concurrent thread teardown in the client process: clear the file descriptor
+            // table on the leader thread and all churning threads while they are still marked
+            // running (the window in CurrentTask::exit between clearing running_state.files and
+            // clearing task.running_state).
+            *client.task().running_state().files.lock() = None;
+            assert!(client.task().task.is_running());
+            assert!(client.task().task.files().is_err());
+            assert!(client.thread.get_task().is_none());
+            for churn_task in &churn_tasks {
+                *churn_task.running_state().files.lock() = None;
+                assert!(churn_task.task.is_running());
+                assert!(churn_task.task.files().is_err());
+            }
+
+            // Both direct thread task lookup and process-level running task selection must resolve
+            // to the live worker task with an intact file table.
+            assert!(Arc::ptr_eq(&worker_thread.get_task().expect("get_task"), &worker_task.task));
+            assert!(Arc::ptr_eq(&client.proc.get_task().expect("get_task"), &worker_task.task));
+
+            // Prepare a synchronous reply from the server containing a BINDER_TYPE_FD object.
+            let (file, reply) = create_fd_reply(current_task, TRANSACTION_CODE, FD_COOKIE);
+
+            device
+                .handle_reply(&server.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply with fd should succeed during thread churn");
+
+            // Verify the worker thread received TwoWayTransactionComplete followed by Reply (not
+            // DeadReply), and that the transferred FD was installed in the worker's file table.
+            assert_received_fd_reply(&worker_thread, &worker_task, FD_COOKIE, &file);
+
+            // Verify that if `worker_task` clears its file table while a sibling thread retains
+            // a live `FdTable`, `handle_reply` does not fall back to another thread's file table
+            // and instead delivers `DeadReply`.
+            assert_matches!(
+                server.thread.lock().command_queue.pop_front(),
+                Some(QueuedCommand { command: Command::TransactionComplete, .. })
+            );
+            device
+                .handle_transaction(&worker_context, &mut Vec::new(), transaction)
+                .expect("second handle_transaction from worker");
+            device
+                .handle_thread_read(
+                    &server.context(current_task),
+                    &UserBuffer { address: server_read_buffer, length: *PAGE_SIZE as usize },
+                )
+                .expect("server reads second transaction");
+
+            let unshared_files = worker_task.running_state().fork_files();
+            *churn_tasks[0].running_state().files.lock() = unshared_files;
+            *worker_task.running_state().files.lock() = None;
+            assert!(worker_thread.get_task().is_none());
+            assert!(Arc::ptr_eq(&client.proc.get_task().expect("get_task"), &churn_tasks[0].task));
+
+            device
+                .handle_reply(&server.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply should complete when caller thread files are gone");
+            assert_matches!(
+                worker_thread.lock().command_queue.pop_front(),
+                Some(QueuedCommand { command: Command::TwoWayTransactionComplete, .. })
+            );
+            assert_matches!(
+                worker_thread.lock().command_queue.pop_front(),
+                Some(QueuedCommand { command: Command::DeadReply, .. })
+            );
+
+            // If the remaining live thread also clears its file table, no live task with an
+            // intact file table remains in the process.
+            *churn_tasks[0].running_state().files.lock() = None;
+            assert!(worker_thread.get_task().is_none());
+            assert!(client.proc.get_task().is_none());
+
+            // Clean up auxiliary tasks and threads.
+            worker_thread.release(current_task.kernel());
+            for churn_task in &churn_tasks {
+                churn_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+            }
+            worker_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_reply_to_auxiliary_thread_when_leader_exits() {
+        spawn_kernel_and_run(async |current_task| {
+            const OBJECT_ADDR: UserAddress = UserAddress::const_from(0x01);
+            const TRANSACTION_CODE: u32 = 200;
+            const FD_COOKIE: binder_uintptr_t = 0x77CC;
+
+            let device = BinderDevice::default();
+            let mut client = BinderProcessFixture::new(current_task, &device);
+            let server = BinderProcessFixture::new_current(current_task, &device);
+
+            let (_, guard) =
+                register_binder_object(&server.proc, OBJECT_ADDR, (OBJECT_ADDR + 1u64).unwrap());
+            let handle_server = client
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            // Spawn an auxiliary binder thread in the client process.
+            let clone_flags = (starnix_uapi::CLONE_VM
+                | starnix_uapi::CLONE_THREAD
+                | starnix_uapi::CLONE_SIGHAND
+                | starnix_uapi::CLONE_FILES) as u64;
+            let aux_task = client.task().clone_task_for_test(clone_flags, None);
+            let aux_thread = client
+                .proc
+                .lock()
+                .find_or_register_thread(&aux_task.task)
+                .expect("register auxiliary thread");
+            aux_thread.lock().registration = RegistrationState::Auxilliary;
+
+            // Send a synchronous transaction from the auxiliary thread to the server.
+            let aux_context = OperationContext {
+                current_task: &aux_task,
+                binder_proc: &client.proc,
+                binder_thread: &aux_thread,
+                memory_accessor: aux_task.as_memory_accessor().expect("as_memory_accessor"),
+            };
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: TRANSACTION_CODE,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: handle_server.into() },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_transaction(&aux_context, &mut Vec::new(), transaction)
+                .expect("handle_transaction from auxiliary thread");
+
+            // Dequeue the transaction on the server.
+            let server_read_buffer = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &server.context(current_task),
+                    &UserBuffer { address: server_read_buffer, length: *PAGE_SIZE as usize },
+                )
+                .expect("server reads transaction");
+
+            // Before the leader exits, get_task() prioritizes the leader.
+            assert!(Arc::ptr_eq(&client.proc.get_task().expect("get_task"), &client.task().task));
+
+            // Exit the client thread group leader while the auxiliary thread remains alive and
+            // waiting for the reply.
+            client.proc.lock().unregister_thread(client.task(), &client.thread.tid);
+            let leader_task = client.task.take().expect("client leader task");
+            leader_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+            drop(leader_task);
+
+            assert!(client.proc.key.get_task().is_err());
+            assert!(client.thread.get_task().is_none());
+            assert!(aux_task.task.is_running());
+            assert!(Arc::ptr_eq(&aux_thread.get_task().expect("get_task"), &aux_task.task));
+            assert!(Arc::ptr_eq(&client.proc.get_task().expect("get_task"), &aux_task.task));
+
+            // Send a synchronous reply containing an FD from the server to the auxiliary thread.
+            let (file, reply) = create_fd_reply(current_task, TRANSACTION_CODE, FD_COOKIE);
+
+            device
+                .handle_reply(&server.context(current_task), &mut Vec::new(), reply)
+                .expect("handle_reply to auxiliary thread after leader exits");
+
+            assert_received_fd_reply(&aux_thread, &aux_task, FD_COOKIE, &file);
+
+            aux_thread.release(current_task.kernel());
+            aux_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+        })
+        .await;
+    }
 }

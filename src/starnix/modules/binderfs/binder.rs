@@ -1252,7 +1252,7 @@ impl BinderDriver {
             return Ok(());
         };
         let mut send_reply = || -> Result<TransactionBuffers, TransactionError> {
-            let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
+            let target_task = target_thread.get_task().ok_or(TransactionError::Dead)?;
 
             // Copy the transaction data to the target process.
             let (buffers, transaction_state) = self.copy_transaction_buffers(
