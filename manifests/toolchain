@@ -183,7 +183,7 @@
     <!-- Python3 interpreter, used for host tools after bootstrap.
     -->
     <package name="infra/3pp/tools/cpython3/${platform}"
-             version="version:3@3.14.8.chromium.1"
+             version="version:3@3.13.14.chromium.1"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/python3/{{.OS}}-{{.Arch}}"/>
 
