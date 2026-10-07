@@ -914,34 +914,9 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
             info!("fidl_wlanix::WifiRequest::Start");
             let _wake_lease = power_manager.take_wake_lease("wlanix-power-up").await;
             let mut result: Result<(), i32> = Ok(());
-            let mut driver_started: bool = true;
+            let mut all_phys_powered_up: bool = true;
             let phy_ids = iface_manager.list_phys().await?;
             for phy_id in phy_ids {
-                // Get the current state from the driver.
-                let power_state = iface_manager.get_power_state(phy_id).await?;
-
-                if !power_state {
-                    if let Err(e) = iface_manager.power_up(phy_id).await {
-                        error!(
-                            "Failed to start phy {} in response to WifiRequest::Start: {}",
-                            phy_id, e
-                        );
-                        // Attempt to power the chip back down, to ensure we're in a low-power
-                        // state after the failure to power up.
-                        if let Err(e) = iface_manager.power_down(phy_id).await {
-                            error!(
-                                "Failed to stop phy {} to recover from failed WifiRequest::Start: {}",
-                                phy_id, e
-                            )
-                        };
-                        telemetry_sender.send(TelemetryEvent::ChipPowerUpFailure);
-                        driver_started = false;
-                        result = Err(zx::sys::ZX_ERR_BAD_STATE);
-                    }
-                } else {
-                    warn!("Phy {} already started", phy_id);
-                }
-
                 // Query the PHY driver for its power element dependency token. When the driver
                 // doesn't support control via power elements, this will return None.
                 let power_elem_dependency_token = iface_manager
@@ -957,8 +932,7 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                         .duplicate_handle(zx::Rights::SAME_RIGHTS)
                         .inspect_err(|e| {
                             warn!("Failed to duplicate token: {}", e);
-                            driver_started = false;
-                            result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                            all_phys_powered_up = false;
                         })
                         .ok()
                 });
@@ -989,8 +963,7 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                                 "Failed to acquire power dependency lease {:?} for phy {}: {:?}",
                                 lease_name, phy_id, e
                             );
-                            driver_started = false;
-                            result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                            all_phys_powered_up = false;
                         }
                     }
                 } else {
@@ -998,18 +971,22 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                     info!("Skipping power element leases due to missing dependency token")
                 }
             }
+
+            // Check that we were able to start all phys
             let mut state = state.lock();
-            state.started = driver_started;
-            if driver_started {
+            state.started = all_phys_powered_up;
+            if all_phys_powered_up {
                 maybe_run_callback(
                     "WifiEventCallbackProxy::OnStart",
                     fidl_wlanix::WifiEventCallbackProxy::on_start,
                     &mut state.callback,
                 );
-
                 let event = wlan_telemetry::ClientConnectionsToggleEvent::Enabled;
                 telemetry_sender.send(TelemetryEvent::ClientConnectionsToggle { event });
             } else {
+                // At least one phy failed to power up, return error and power them all down
+                result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                telemetry_sender.send(TelemetryEvent::ChipPowerUpFailure);
                 state.power_dependency_leases.clear();
             }
             responder.send(result).context("send Start response")?;
@@ -1018,56 +995,33 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
         fidl_wlanix::WifiRequest::Stop { responder } => {
             info!("fidl_wlanix::WifiRequest::Stop");
             let _wake_lease = power_manager.take_wake_lease("wlanix-power-down").await;
-            let mut result: Result<(), i32> = Ok(());
-            let mut driver_stopped: bool = true;
-            let phy_ids = iface_manager.list_phys().await?;
-            for phy_id in phy_ids {
-                // Get the current state from the driver.
-                let power_state = iface_manager.get_power_state(phy_id).await?;
-
-                // If powered up, attempt to power it down.
-                if power_state {
-                    // Tear down all ifaces before calling power_down.
-                    for iface in iface_manager.list_ifaces() {
-                        if let Err(e) = iface_manager.destroy_iface(iface).await {
-                            telemetry_sender.send(TelemetryEvent::IfaceDestructionFailure);
-                            error!(
-                                "Failed to destroy iface {} in response to WifiRequest::Stop: {}",
-                                iface, e
-                            );
-                        } else {
-                            info!("Successfully deleted iface {} in phy {}", iface, phy_id);
-                        }
-                    }
-                    if let Err(e) = iface_manager.power_down(phy_id).await {
-                        error!(
-                            "Failed to stop phy {} in response to WifiRequest::Stop: {}",
-                            phy_id, e
-                        );
-                        driver_stopped = false;
-                        result = Err(zx::sys::ZX_ERR_BAD_STATE);
-                        telemetry_sender.send(TelemetryEvent::ChipPowerDownFailure);
-                    }
+            // Tear down all ifaces.
+            for iface in iface_manager.list_ifaces() {
+                if let Err(e) = iface_manager.destroy_iface(iface).await {
+                    telemetry_sender.send(TelemetryEvent::IfaceDestructionFailure);
+                    error!(
+                        "Failed to destroy iface {} in response to WifiRequest::Stop: {}",
+                        iface, e
+                    );
                 } else {
-                    warn!("Phy {} already stopped", phy_id);
+                    info!("Successfully deleted iface {}", iface);
                 }
             }
             let mut state = state.lock();
-            state.started = !driver_stopped;
-            if driver_stopped {
-                state.power_dependency_leases.clear();
-                state.rssi_monitor_cmd_id = None;
-                state.sta_iface_callback = None;
-                maybe_run_callback(
-                    "WifiEventCallbackProxy::OnStop",
-                    fidl_wlanix::WifiEventCallbackProxy::on_stop,
-                    &mut state.callback,
-                );
-
-                let event = wlan_telemetry::ClientConnectionsToggleEvent::Disabled;
-                telemetry_sender.send(TelemetryEvent::ClientConnectionsToggle { event });
-            }
-            responder.send(result).context("send Stop response")?;
+            state.started = false;
+            state.rssi_monitor_cmd_id = None;
+            state.sta_iface_callback = None;
+            // Release our power element leases
+            state.power_dependency_leases.clear();
+            // Inform the HAL and telemetry
+            maybe_run_callback(
+                "WifiEventCallbackProxy::OnStop",
+                fidl_wlanix::WifiEventCallbackProxy::on_stop,
+                &mut state.callback,
+            );
+            let event = wlan_telemetry::ClientConnectionsToggleEvent::Disabled;
+            telemetry_sender.send(TelemetryEvent::ClientConnectionsToggle { event });
+            responder.send(Ok(())).context("send Stop response")?;
         }
 
         fidl_wlanix::WifiRequest::GetState { responder } => {
@@ -3777,7 +3731,6 @@ mod tests {
                 vec![
                     ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
                 ]
             );
@@ -3836,7 +3789,6 @@ mod tests {
                 vec![
                     ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
                 ]
             );
@@ -3879,10 +3831,8 @@ mod tests {
                 vec![
                     ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
                 ]
             );
@@ -3900,7 +3850,6 @@ mod tests {
     fn test_wifi_start_stop_start() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
 
-        // PowerUp
         let start_fut = test_helper.wifi_proxy.start();
         let mut start_fut = pin!(start_fut);
         assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut), Poll::Pending);
@@ -3915,7 +3864,6 @@ mod tests {
         let mut get_state_fut1 = pin!(get_state_fut1);
         assert_matches!(test_helper.exec.run_until_stalled(&mut get_state_fut1), Poll::Pending);
 
-        // PowerUp again
         let start_fut2 = test_helper.wifi_proxy.start();
         let mut start_fut2 = pin!(start_fut2);
         assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut2), Poll::Pending);
@@ -3958,16 +3906,10 @@ mod tests {
                 vec![
                     ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
-                    ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
                     ifaces::test_utils::IfaceManagerCall::ListIfaces,
                     ifaces::test_utils::IfaceManagerCall::DestroyIface(1),
-                    ifaces::test_utils::IfaceManagerCall::PowerDown(1),
                     ifaces::test_utils::IfaceManagerCall::ListPhys,
-                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
-                    ifaces::test_utils::IfaceManagerCall::PowerUp(1),
                     ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
                 ]
             );
@@ -3983,8 +3925,8 @@ mod tests {
 
     #[fuchsia::test]
     fn test_wifi_start_fails() {
-        let (mut test_helper, mut test_fut) =
-            setup_wifi_test_with_iface_manager(TestIfaceManager::new().mock_power_up_failure());
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+        test_helper.power_manager.mock_power_element_lease_failure();
 
         // Precondition: chip is off
         let get_state_fut = test_helper.wifi_proxy.get_state();
@@ -3997,35 +3939,50 @@ mod tests {
         );
         assert_eq!(response.is_started, Some(false));
 
-        // Also ensure the fake iface manager has matching chip power off
-        *test_helper.iface_manager.power_state.lock() = false;
-
         // Clear any previous calls from test setup
         *test_helper.iface_manager.calls.lock() = vec![];
+        *test_helper.power_manager.calls.lock() = vec![];
 
-        // Power up
+        // Start
         let start_fut = test_helper.wifi_proxy.start();
         let mut start_fut = pin!(start_fut);
         assert_matches!(test_helper.exec.run_until_stalled(&mut start_fut), Poll::Pending);
         assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
-        // Expect a failure to power up, and a metric logged for it
+        // Expect a failure to start
         let response = assert_matches!(
             test_helper.exec.run_until_stalled(&mut start_fut),
             Poll::Ready(Ok(response)) => response
         );
-        assert!(response.is_err());
+        assert_matches!(response, Err(zx::sys::ZX_ERR_BAD_STATE));
+
+        // State remains not started
+        let get_state_fut = test_helper.wifi_proxy.get_state();
+        let mut get_state_fut = pin!(get_state_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut get_state_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_state_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_eq!(response.is_started, Some(false));
+
+        // Expect calls to list phys, get power state, and get power element dependency token
+        let calls = test_helper.iface_manager.calls.lock();
+        assert_eq!(
+            *calls,
+            vec![
+                ifaces::test_utils::IfaceManagerCall::ListPhys,
+                ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+            ]
+        );
+
+        // Expect that a ChipPowerUpFailure telemetry event was sent
         assert_matches!(
             test_helper.telemetry_receiver.try_recv(),
             Ok(TelemetryEvent::ChipPowerUpFailure)
         );
-
-        // Expect we turn the chip back off after failure to start
-        let calls = test_helper.iface_manager.calls.lock();
-        assert_matches!(&calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
-        assert_matches!(&calls[1], ifaces::test_utils::IfaceManagerCall::GetPowerState(_));
-        assert_matches!(&calls[2], ifaces::test_utils::IfaceManagerCall::PowerUp(_));
-        assert_matches!(&calls[3], ifaces::test_utils::IfaceManagerCall::PowerDown(_));
+        assert_matches!(test_helper.telemetry_receiver.try_recv(), Err(_));
     }
 
     #[fuchsia::test]
@@ -4061,10 +4018,6 @@ mod tests {
         assert!(!calls.is_empty());
         assert_matches!(
             &calls[calls.len() - 1],
-            ifaces::test_utils::IfaceManagerCall::PowerDown(_)
-        );
-        assert_matches!(
-            &calls[calls.len() - 2],
             ifaces::test_utils::IfaceManagerCall::DestroyIface(_)
         );
 
@@ -8362,7 +8315,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_wifi_stop_failure_logs_telemetry() {
-        let iface_manager = TestIfaceManager::new().mock_power_down_failure();
+        let iface_manager = TestIfaceManager::new().mock_destroy_client_iface_failure();
         let (mut test_helper, mut test_fut) = setup_wifi_test_with_iface_manager(iface_manager);
 
         let stop_fut = test_helper.wifi_proxy.stop();
@@ -8374,11 +8327,11 @@ mod tests {
             test_helper.exec.run_until_stalled(&mut stop_fut),
             Poll::Ready(Ok(response)) => response
         );
-        assert_matches!(response, Err(_));
+        assert_matches!(response, Ok(()));
 
         assert_matches!(
             test_helper.telemetry_receiver.try_recv(),
-            Ok(TelemetryEvent::ChipPowerDownFailure)
+            Ok(TelemetryEvent::IfaceDestructionFailure)
         );
     }
 

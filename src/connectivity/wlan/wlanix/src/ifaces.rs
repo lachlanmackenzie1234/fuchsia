@@ -53,9 +53,6 @@ pub(crate) trait IfaceManager: Send + Sync {
     fn list_ifaces(&self) -> Vec<u16>;
     async fn get_country(&self, phy_id: u16) -> Result<[u8; 2], Error>;
     async fn set_country(&self, phy_id: u16, country: [u8; 2]) -> Result<(), Error>;
-    async fn power_down(&self, phy_id: u16) -> Result<(), Error>;
-    async fn power_up(&self, phy_id: u16) -> Result<(), Error>;
-    async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error>;
     async fn get_power_element_dependency_token(
         &self,
         phy_id: u16,
@@ -131,39 +128,6 @@ impl IfaceManager for DeviceMonitorIfaceManager {
         match zx::Status::ok(result) {
             Ok(()) => Ok(()),
             Err(e) => Err(e.into()),
-        }
-    }
-
-    async fn power_down(&self, phy_id: u16) -> Result<(), Error> {
-        let result = self.monitor_svc.power_down(phy_id).await.map_err(Into::<Error>::into)?;
-        match result {
-            Ok(()) => Ok(()),
-            Err(e) => match zx::Status::ok(e) {
-                Ok(()) => Ok(()),
-                Err(e) => Err(e.into()),
-            },
-        }
-    }
-
-    async fn power_up(&self, phy_id: u16) -> Result<(), Error> {
-        let result = self.monitor_svc.power_up(phy_id).await.map_err(Into::<Error>::into)?;
-        match result {
-            Ok(()) => Ok(()),
-            Err(e) => match zx::Status::ok(e) {
-                Ok(()) => Ok(()),
-                Err(e) => Err(e.into()),
-            },
-        }
-    }
-
-    async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error> {
-        let result = self.monitor_svc.get_power_state(phy_id).await.map_err(Into::<Error>::into)?;
-        match result {
-            Ok(power_state) => Ok(power_state),
-            Err(e) => match zx::Status::ok(e) {
-                Err(e) => Err(e.into()),
-                Ok(()) => Err(format_err!("get_power_state returned error with ok status")),
-            },
         }
     }
 
@@ -1567,9 +1531,6 @@ pub mod test_utils {
         CreateClientIface(u16),
         GetClientIface(u16),
         DestroyIface(u16),
-        PowerDown(u16),
-        PowerUp(u16),
-        GetPowerState(u16),
         GetPowerElementDependencyToken(u16),
         ResetTxPowerScenario(u16),
         SetTxPowerScenario { phy_id: u16, scenario: fidl_internal::TxPowerScenario },
@@ -1580,11 +1541,8 @@ pub mod test_utils {
         pub client_iface: Mutex<Option<Arc<TestClientIface>>>,
         pub calls: Arc<Mutex<Vec<IfaceManagerCall>>>,
         country: Arc<Mutex<[u8; 2]>>,
-        pub power_state: Arc<Mutex<bool>>,
         mock_create_client_iface_result: Result<u16, Error>,
         mock_destroy_client_iface_result: Result<(), Error>,
-        mock_power_up_result: Result<(), Error>,
-        mock_power_down_result: Result<(), Error>,
         mock_reset_tx_power_scenario_result: Result<(), Error>,
         mock_set_tx_power_scenario_result: Result<(), Error>,
         mock_reset_phy_result: Result<(), Error>,
@@ -1599,11 +1557,8 @@ pub mod test_utils {
                 client_iface: Mutex::new(None),
                 calls: Arc::new(Mutex::new(vec![])),
                 country: Arc::new(Mutex::new(*b"XX")),
-                power_state: Arc::new(Mutex::new(true)),
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
-                mock_power_up_result: Ok(()),
-                mock_power_down_result: Ok(()),
                 mock_reset_tx_power_scenario_result: Ok(()),
                 mock_set_tx_power_scenario_result: Ok(()),
                 mock_reset_phy_result: Ok(()),
@@ -1658,14 +1613,6 @@ pub mod test_utils {
                 )),
                 ..self
             }
-        }
-
-        pub fn mock_power_up_failure(self) -> Self {
-            Self { mock_power_up_result: Err(format_err!("mocked PowerUp failure")), ..self }
-        }
-
-        pub fn mock_power_down_failure(self) -> Self {
-            Self { mock_power_down_result: Err(format_err!("mocked PowerDown failure")), ..self }
         }
 
         pub fn mock_reset_tx_power_scenario_failure(self) -> Self {
@@ -1798,33 +1745,6 @@ pub mod test_utils {
                 Err(e) => bail!("{e}"),
             }
             Ok(())
-        }
-
-        async fn power_down(&self, phy_id: u16) -> Result<(), Error> {
-            self.calls.lock().push(IfaceManagerCall::PowerDown(phy_id));
-            match &self.mock_power_down_result {
-                Ok(()) => {
-                    *self.power_state.lock() = false;
-                    Ok(())
-                }
-                Err(e) => bail!("{e}"),
-            }
-        }
-
-        async fn power_up(&self, phy_id: u16) -> Result<(), Error> {
-            self.calls.lock().push(IfaceManagerCall::PowerUp(phy_id));
-            match &self.mock_power_up_result {
-                Ok(()) => {
-                    *self.power_state.lock() = true;
-                    Ok(())
-                }
-                Err(e) => bail!("{e}"),
-            }
-        }
-
-        async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error> {
-            self.calls.lock().push(IfaceManagerCall::GetPowerState(phy_id));
-            Ok(*self.power_state.lock())
         }
 
         async fn get_power_element_dependency_token(

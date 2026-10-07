@@ -576,14 +576,6 @@ void Device::GetPowerSaveMode(GetPowerSaveModeCompleter::Sync& completer) {
   completer.Reply(zx::ok(response));
 }
 
-void Device::PowerDown(PowerDownCompleter::Sync& completer) {
-  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-}
-
-void Device::PowerUp(PowerUpCompleter::Sync& completer) {
-  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-}
-
 void Device::Reset(ResetCompleter::Sync& completer) {
   if (!brcmf_pub_) {
     BRCMF_ERR("brmcf_pub_ is null");

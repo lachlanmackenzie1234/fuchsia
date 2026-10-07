@@ -145,14 +145,7 @@ pub(crate) async fn handle_monitor_request(
             let status = into_status_and_opt(result).0;
             responder.send(zx::Status::result_into_raw(status))?;
         }
-        DeviceMonitorRequest::PowerDown { phy_id, responder } => {
-            let status = power_down(phys, phy_id).await;
-            responder.send(status.map_err(|e| e.into_raw()))?;
-        }
-        DeviceMonitorRequest::PowerUp { phy_id, responder } => {
-            let status = power_up(phys, phy_id).await;
-            responder.send(status.map_err(|e| e.into_raw()))?;
-        }
+
         DeviceMonitorRequest::Reset { phy_id, responder } => {
             let status = reset(phys, phy_id).await;
             responder.send(status.map_err(|e| e.into_raw()))?;
@@ -308,23 +301,6 @@ async fn clear_country(
     };
 
     phy.proxy.clear_country().await.map_phy_status(req.phy_id, "ClearCountry")
-}
-
-async fn power_down(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
-    let phy = match phys.get(&phy_id) {
-        None => return Err(zx::Status::NOT_FOUND),
-        Some(p) => p,
-    };
-
-    phy.proxy.power_down().await.map_phy_status(phy_id, "PowerDown")
-}
-
-async fn power_up(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
-    let phy = match phys.get(&phy_id) {
-        None => return Err(zx::Status::NOT_FOUND),
-        Some(p) => p,
-    };
-    phy.proxy.power_up().await.map_phy_status(phy_id, "PowerUp")
 }
 
 async fn reset(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
@@ -978,28 +954,6 @@ mod tests {
         responder
             .send(response.as_ref().map_err(|s| s.into_raw()))
             .expect("failed to send response");
-    }
-
-    fn expect_power_down(
-        exec: &mut fasync::TestExecutor,
-        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
-        result: Result<(), zx::Status>,
-    ) {
-        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
-            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerDown { responder }))) => responder
-        );
-        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
-    }
-
-    fn expect_power_up(
-        exec: &mut fasync::TestExecutor,
-        stream: &mut fidl_fuchsia_wlan_phy::WlanPhyRequestStream,
-        result: Result<(), zx::Status>,
-    ) {
-        let responder = assert_matches!(exec.run_until_stalled(&mut stream.next()),
-            Poll::Ready(Some(Ok(fidl_fuchsia_wlan_phy::WlanPhyRequest::PowerUp { responder }))) => responder
-        );
-        responder.send(result.map_err(|s| s.into_raw())).expect("failed to send response");
     }
 
     fn expect_get_power_state(
@@ -1731,132 +1685,7 @@ mod tests {
 
         assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(_)));
     }
-    #[fuchsia::test]
-    fn test_power_down_succeeds() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
 
-        let req_fut = super::power_down(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        expect_power_down(&mut exec, &mut phy_stream, Ok(()));
-
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
-    }
-    #[fuchsia::test]
-    fn test_power_down_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
-
-        let req_fut = super::power_down(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        expect_power_down(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
-
-        assert_eq!(
-            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
-            exec.run_until_stalled(&mut req_fut)
-        );
-    }
-    #[fuchsia::test]
-    fn test_power_down_request_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
-
-        let req_fut = super::power_down(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        // Drop stream to cause peer closed error
-        drop(phy_stream);
-
-        assert_eq!(Poll::Ready(Err(zx::Status::INTERNAL)), exec.run_until_stalled(&mut req_fut));
-    }
-    #[fuchsia::test]
-    fn test_power_down_no_phy_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let _phy = fake_phy_device();
-        let phy_id = 10u16;
-
-        let req_fut = super::power_down(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut req_fut));
-    }
-    #[fuchsia::test]
-    fn test_power_up_succeeds() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
-
-        let req_fut = super::power_up(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        expect_power_up(&mut exec, &mut phy_stream, Ok(()));
-
-        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
-    }
-    #[fuchsia::test]
-    fn test_power_up_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, mut phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
-
-        let req_fut = super::power_up(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        expect_power_up(&mut exec, &mut phy_stream, Err(zx::Status::NOT_SUPPORTED));
-
-        assert_eq!(
-            Poll::Ready(Err(zx::Status::NOT_SUPPORTED)),
-            exec.run_until_stalled(&mut req_fut)
-        );
-    }
-    #[fuchsia::test]
-    fn test_power_up_request_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let (phy, phy_stream) = fake_phy_device();
-        let phy_id = 10u16;
-        test_values.phys.insert(phy_id, phy);
-
-        let req_fut = super::power_up(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut req_fut));
-
-        // Drop stream to cause peer closed error
-        drop(phy_stream);
-
-        assert_eq!(Poll::Ready(Err(zx::Status::INTERNAL)), exec.run_until_stalled(&mut req_fut));
-    }
-    #[fuchsia::test]
-    fn test_power_up_no_phy_fails() {
-        let mut exec = fasync::TestExecutor::new();
-        let test_values = test_setup();
-        let _phy = fake_phy_device();
-        let phy_id = 10u16;
-
-        let req_fut = super::power_up(&test_values.phys, phy_id);
-        let mut req_fut = pin!(req_fut);
-        assert_eq!(Poll::Ready(Err(zx::Status::NOT_FOUND)), exec.run_until_stalled(&mut req_fut));
-    }
     #[fuchsia::test]
     fn test_reset_succeeds() {
         let mut exec = fasync::TestExecutor::new();
