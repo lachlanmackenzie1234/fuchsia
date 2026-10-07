@@ -441,6 +441,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.ui.focus:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ui.gfx:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ui.input.accessibility:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.ui.input.internal:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ui.input3:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ui.input:verify_bazel2gn",
   "//sdk/fidl/fuchsia.ui.keyboard.focus:verify_bazel2gn",
