@@ -233,6 +233,7 @@ bazel2gn_verification_targets = [
   "//src/starnix/lib/page_buf:verify_bazel2gn",
   "//src/starnix/lib/range_map:verify_bazel2gn",
   "//src/starnix/lib/selinux/src/new_policy/derive_macros:verify_bazel2gn",
+  "//src/starnix/lib/selinux:verify_bazel2gn",
   "//src/starnix/lib/split_enum_storage:verify_bazel2gn",
   "//src/starnix/lib/starnix_c_file_buffer:verify_bazel2gn",
   "//src/starnix/lib/starnix_crypto:verify_bazel2gn",
