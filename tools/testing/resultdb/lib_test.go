@@ -1619,6 +1619,7 @@ func TestTestCaseToResultSink_StructuredTestID_TargetTest(t *testing.T) {
 					SuiteName:   "FrobnicatedSuite",
 					CaseName:    "VerifyOutput",
 					Status:      runtests.TestSuccess,
+					Format:      "GoogleTest",
 				},
 			},
 		},
@@ -1656,6 +1657,7 @@ func TestTestCaseToResultSink_StructuredTestID_HostTest(t *testing.T) {
 					SuiteName:   "AbseilHardeningTest",
 					CaseName:    "TestFeatureA",
 					Status:      runtests.TestSuccess,
+					Format:      "GoogleTest",
 				},
 			},
 		},
@@ -1946,6 +1948,7 @@ func TestTestCaseToResultSink_StructuredTestID_Exoneration(t *testing.T) {
 					SuiteName:   "Suite",
 					CaseName:    "ExoneratedCase",
 					Status:      runtests.TestExonerated,
+					Format:      "GoogleTest",
 				},
 			},
 		},
@@ -2132,6 +2135,7 @@ func TestTestCaseToResultSink_StructuredTestID_LeadingDisallowedChars(t *testing
 							SuiteName: tc.suiteName,
 							CaseName:  tc.caseName,
 							Status:    runtests.TestSuccess,
+							Format:    "GoogleTest",
 						},
 					},
 				},
@@ -2155,6 +2159,67 @@ func TestTestCaseToResultSink_StructuredTestID_LeadingDisallowedChars(t *testing
 				t.Errorf("legacy TestId diff: got %q, want %q", res.TestId, tc.wantLegacyID)
 			}
 		})
+	}
+}
+
+func TestTestCaseToResultSink_StructuredTestID_FlatScheme(t *testing.T) {
+	outputRoot := t.TempDir()
+	detail := &runtests.TestDetails{
+		Name:      "//scripts/shac/tests:cml_test",
+		Status:    runtests.TestSuccess,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "test_cml_format",
+					SuiteName:   ":shac",
+					CaseName:    "test_cml_format",
+					Status:      runtests.TestSuccess,
+					Format:      "shac",
+				},
+				{
+					DisplayName: "InlineDirTest.InlineDirPino",
+					SuiteName:   "",
+					CaseName:    "InlineDirTest.InlineDirPino",
+					Status:      runtests.TestSuccess,
+					Format:      "FTF",
+				},
+				{
+					SuiteName: "some_suite",
+					CaseName:  "some_case",
+					Status:    runtests.TestSuccess,
+					Format:    "flat",
+				},
+			},
+		},
+	}
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	// ResultDB scheme "flat" defines only the case level; fine_name must be empty.
+	want0 := &sinkpb.TestIdentifier{
+		FineName:           "",
+		CaseNameComponents: []string{"test_cml_format"},
+	}
+	if !proto.Equal(results[0].TestIdStructured, want0) {
+		t.Errorf("results[0].TestIdStructured diff: got %+v, want %+v", results[0].TestIdStructured, want0)
+	}
+
+	want1 := &sinkpb.TestIdentifier{
+		FineName:           "",
+		CaseNameComponents: []string{"InlineDirTest.InlineDirPino"},
+	}
+	if !proto.Equal(results[1].TestIdStructured, want1) {
+		t.Errorf("results[1].TestIdStructured diff: got %+v, want %+v", results[1].TestIdStructured, want1)
+	}
+
+	want2 := &sinkpb.TestIdentifier{
+		FineName:           "",
+		CaseNameComponents: []string{"some_case"},
+	}
+	if !proto.Equal(results[2].TestIdStructured, want2) {
+		t.Errorf("results[2].TestIdStructured diff: got %+v, want %+v", results[2].TestIdStructured, want2)
 	}
 }
 
@@ -2239,6 +2304,15 @@ func TestDetermineScheme(t *testing.T) {
 			detail: &runtests.TestDetails{
 				TestResult: runtests.TestResult{
 					Cases: []runtests.TestCaseResult{{Format: "FTF"}},
+				},
+			},
+			wantScheme: "flat",
+		},
+		{
+			name: "shac format maps to flat",
+			detail: &runtests.TestDetails{
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{{Format: "shac"}},
 				},
 			},
 			wantScheme: "flat",

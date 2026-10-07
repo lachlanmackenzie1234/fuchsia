@@ -145,9 +145,7 @@ func determineScheme(test *runtests.TestDetails) string {
 	}
 
 	switch strings.ToLower(format) {
-	case "single":
-		return "single"
-	case "ftf", "flat":
+	case "ftf", "flat", "shac":
 		return "flat"
 	case "googletest", "gtest":
 		return "gtest"
@@ -400,6 +398,8 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 
 	testIdentifier := testIdentifierFromCase
 	switch scheme {
+	case "flat":
+		testIdentifier = testIdentifierFromFlat
 	case "go":
 		label := testDetail.SourceLabel
 		if label == "" {
@@ -513,6 +513,13 @@ func testIdentifierFromRust(testCase *runtests.TestCaseResult) (string, string) 
 // testIdentifierFromCase returns the fineName and caseName using the default mapping.
 func testIdentifierFromCase(testCase *runtests.TestCaseResult) (string, string) {
 	return testCase.SuiteName, testCase.CaseName
+}
+
+// testIdentifierFromFlat returns the fineName and caseName for tests under the "flat" scheme.
+// In ResultDB, scheme "flat" defines only the test case level; coarse_name and
+// fine_name must be empty.
+func testIdentifierFromFlat(testCase *runtests.TestCaseResult) (string, string) {
+	return "", testCase.CaseName
 }
 
 // testDetailsToResultSink converts TestDetail defined in /tools/testing/runtests/runtests.go
