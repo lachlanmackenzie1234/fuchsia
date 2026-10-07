@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import os
 import platform
 import random
 import re
-import signal
 import socket
 import string
 import subprocess
@@ -36,11 +34,6 @@ FUCHSIA_MDNS_TYPE = "_fuchsia._udp.local."
 # Default max seconds it takes to Duplicate Address Detection to finish before
 # assigning an IPv6 address.
 DAD_TIMEOUT_SEC = 30
-
-
-class ActsUtilsError(Exception):
-    """Generic error raised for exceptions in ACTS utils."""
-
 
 ascii_letters_and_digits = string.ascii_letters + string.digits
 
@@ -101,107 +94,6 @@ def exe_cmd(*cmds: Any) -> bytes:
     if not err:
         return out
     raise OSError(err)
-
-
-def _assert_subprocess_running(proc: subprocess.Popen[bytes]) -> None:
-    """Checks if a subprocess has terminated on its own.
-
-    Args:
-        proc: A subprocess returned by subprocess.Popen.
-
-    Raises:
-        ActsUtilsError is raised if the subprocess has stopped.
-    """
-    ret = proc.poll()
-    if ret is not None:
-        out, err = proc.communicate()
-        raise ActsUtilsError(
-            "Process %d has terminated. ret: %d, stderr: %s,"
-            " stdout: %s" % (proc.pid, ret, str(err), str(out))
-        )
-
-
-def start_standing_subprocess(
-    cmd: str, check_health_delay: int = 0, shell: bool = True
-) -> subprocess.Popen[bytes]:
-    """Starts a long-running subprocess.
-
-    This is not a blocking call and the subprocess started by it should be
-    explicitly terminated with stop_standing_subprocess.
-
-    For short-running commands, you should use exe_cmd, which blocks.
-
-    You can specify a health check after the subprocess is started to make sure
-    it did not stop prematurely.
-
-    Args:
-        cmd: string, the command to start the subprocess with.
-        check_health_delay: float, the number of seconds to wait after the
-                            subprocess starts to check its health. Default is 0,
-                            which means no check.
-
-    Returns:
-        The subprocess that got started.
-    """
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=shell,
-        preexec_fn=os.setpgrp,
-    )
-    logging.debug("Start standing subprocess with cmd: %s", cmd)
-    if check_health_delay > 0:
-        time.sleep(check_health_delay)
-        _assert_subprocess_running(proc)
-    return proc
-
-
-def stop_standing_subprocess(
-    proc: subprocess.Popen[bytes], kill_signal: signal.Signals = signal.SIGTERM
-) -> None:
-    """Stops a subprocess started by start_standing_subprocess.
-
-    Before killing the process, we check if the process is running, if it has
-    terminated, ActsUtilsError is raised.
-
-    Catches and ignores the PermissionError which only happens on Macs.
-
-    Args:
-        proc: Subprocess to terminate.
-    """
-    pid = proc.pid
-    logging.debug("Stop standing subprocess %d", pid)
-    _assert_subprocess_running(proc)
-    try:
-        os.killpg(pid, kill_signal)
-    except PermissionError:
-        pass
-
-
-def wait_for_standing_subprocess(
-    proc: subprocess.Popen[bytes], timeout: int | None = None
-) -> None:
-    """Waits for a subprocess started by start_standing_subprocess to finish
-    or times out.
-
-    Propagates the exception raised by the subprocess.wait(.) function.
-    The subprocess.TimeoutExpired exception is raised if the process timed-out
-    rather then terminating.
-
-    If no exception is raised: the subprocess terminated on its own. No need
-    to call stop_standing_subprocess() to kill it.
-
-    If an exception is raised: the subprocess is still alive - it did not
-    terminate. Either call stop_standing_subprocess() to kill it, or call
-    wait_for_standing_subprocess() to keep waiting for it to terminate on its
-    own.
-
-    Args:
-        p: Subprocess to wait for.
-        timeout: An integer number of seconds to wait before timing out.
-    """
-    proc.wait(timeout)
 
 
 def is_valid_ipv4_address(address: str) -> bool:

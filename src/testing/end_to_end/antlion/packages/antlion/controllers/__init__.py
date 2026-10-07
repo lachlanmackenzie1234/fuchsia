@@ -16,7 +16,6 @@ from . import (
     openwrt_ap,
     packet_capture,
     pdu,
-    sniffer,
 )
 
 # Reexport so static type checkers can find these modules when importing and
@@ -30,5 +29,4 @@ __all__ = [
     "openwrt_ap",
     "packet_capture",
     "pdu",
-    "sniffer",
 ]
