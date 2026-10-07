@@ -84,6 +84,23 @@ TEST(FsTest, ReadWriteOPathFdWithoutPermissionsReturnsEbadf) {
   }));
 }
 
+// Verify that readlink() on a directory fails with EINVAL, without checking the read permission
+// needed to read symbolic links. `realpath()` relies on this when resolving paths through
+// directories that a domain can search but not read.
+TEST(FsTest, ReadlinkOnDirectoryFailsWithoutCheck) {
+  // Create a directory with the specific label.
+  auto fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", kDirLabel);
+  test_helper::ScopedTempDir temp_dir;
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  // Run as a domain that can search, but not read, the directory.
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_read_t:s0", [&]() {
+    char buf[1024];
+    EXPECT_THAT(readlink(temp_dir.path().c_str(), buf, sizeof(buf)), SyscallFailsWithErrno(EINVAL));
+  }));
+}
+
 constexpr char kFallocateFileLabel[] = "test_u:object_r:test_fs_fallocate_file_t:s0";
 
 // Verify that fallocate succeeds for a domain with write permission.

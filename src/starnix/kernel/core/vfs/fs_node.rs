@@ -1531,6 +1531,10 @@ impl FsNode {
     // This method does not attempt to update the atime of the node.
     // Use `NamespaceNode::readlink` which checks the mount flags and updates the atime accordingly.
     pub fn readlink(&self, current_task: &CurrentTask) -> Result<SymlinkTarget, Errno> {
+        // Only symbolic links can be read, so other nodes fail before any access checks.
+        if !self.is_lnk() {
+            return error!(EINVAL);
+        }
         // TODO: 378864856 - Is there a permission check here other than security checks?
         security::check_fs_node_read_link_access(current_task, self)?;
         self.ops().readlink(self, current_task)

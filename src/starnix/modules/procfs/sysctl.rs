@@ -20,7 +20,7 @@ use starnix_uapi::file_mode::mode;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
 use starnix_uapi::{errno, error, uapi};
 use std::borrow::Cow;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 use uuid::Uuid;
 
 pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
@@ -294,6 +294,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874302")),
             mode,
         );
+        dir.entry("swappiness", SwappinessFile::new_node(), mode);
         dir.entry(
             "watermark_scale_factor",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874321")),
@@ -797,5 +798,38 @@ impl BytesFileOps for DropCachesFile {
             _ => return error!(EINVAL),
         }
         Ok(())
+    }
+}
+
+/// `/proc/sys/vm/swappiness` holds the relative I/O cost of swapping compared to filesystem
+/// paging, as a value between 0 and 200 (see
+/// https://docs.kernel.org/admin-guide/sysctl/vm.html#swappiness).
+///
+/// Starnix does not swap memory, so the value is stored but has no other effect.
+struct SwappinessFile {
+    value: AtomicU32,
+}
+
+impl SwappinessFile {
+    const DEFAULT: u32 = 60;
+    const MAX: u32 = 200;
+
+    fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self { value: AtomicU32::new(Self::DEFAULT) })
+    }
+}
+
+impl BytesFileOps for SwappinessFile {
+    fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let value: u32 = fs_args::parse(FsString::from(data).as_ref())?;
+        if value > Self::MAX {
+            return error!(EINVAL);
+        }
+        self.value.store(value, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        Ok(format!("{}\n", self.value.load(Ordering::Relaxed)).into_bytes().into())
     }
 }

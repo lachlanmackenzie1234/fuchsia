@@ -229,10 +229,6 @@
                 "shm/004",
                 "shm/007",
 
-                // TODO: https://fxbug.dev/398696742
-                "sysctl/001",
-                "sysctl/002",
-
                 // TODO: https://fxbug.dev/398663323
                 "tun_tap/001",
                 "tun_tap/002",
