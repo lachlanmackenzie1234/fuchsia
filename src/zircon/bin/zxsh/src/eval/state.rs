@@ -641,7 +641,10 @@ impl ShellState {
     /// Looks up a variable or special parameter value by name (e.g. `$?`, `$#`, `$1`, `$-`,
     /// `$VAR`).
     pub fn get_var(&self, name: impl VarName) -> Option<BString> {
-        let name = name.to_bstr();
+        self.get_var_impl(name.to_bstr())
+    }
+
+    fn get_var_impl(&self, name: &BStr) -> Option<BString> {
         if let Some(idx) = parse_int::<usize>(name) {
             if idx == 0 {
                 return Some(self.script_name.clone());
@@ -740,7 +743,10 @@ impl ShellState {
 
     /// Marks the specified variable as read-only.
     pub fn make_readonly(&mut self, name: impl VarName) {
-        let name = name.to_bstr();
+        self.make_readonly_impl(name.to_bstr());
+    }
+
+    fn make_readonly_impl(&mut self, name: &BStr) {
         assert_valid_name(name);
         self.readonly.insert(name.to_owned());
     }
@@ -760,8 +766,10 @@ impl ShellState {
 
     /// Sets the value of a variable in the innermost active local frame or global scope.
     pub fn set_var(&mut self, name: impl VarName, val: impl VarName) {
-        let name = name.to_bstr();
-        let val = val.to_bstr();
+        self.set_var_impl(name.to_bstr(), val.to_bstr());
+    }
+
+    fn set_var_impl(&mut self, name: &BStr, val: &BStr) {
         if !self.prepare_var_mutation(name) {
             return;
         }
@@ -777,15 +785,18 @@ impl ShellState {
             self.vars.insert(name.to_owned(), val.to_owned());
         }
         if self.opt_allexport {
-            self.export_var(name);
+            self.export_var_impl(name);
         }
     }
 
     /// Sets the value of a variable and marks it for export to child environment processes.
     pub fn set_and_export_var(&mut self, name: impl VarName, val: impl VarName) {
-        let name = name.to_bstr();
-        self.set_var(name, val);
-        self.export_var(name);
+        self.set_and_export_var_impl(name.to_bstr(), val.to_bstr());
+    }
+
+    fn set_and_export_var_impl(&mut self, name: &BStr, val: &BStr) {
+        self.set_var_impl(name, val);
+        self.export_var_impl(name);
     }
 
     /// Sets the special status variable `?` to the given numerical exit code.
@@ -826,7 +837,10 @@ impl ShellState {
 
     /// Marks the specified variable for export to child environment processes.
     pub fn export_var(&mut self, name: impl VarName) {
-        let name = name.to_bstr();
+        self.export_var_impl(name.to_bstr());
+    }
+
+    fn export_var_impl(&mut self, name: &BStr) {
         assert_valid_name(name);
         self.exported.insert(name.to_owned());
     }
@@ -840,7 +854,10 @@ impl ShellState {
 
     /// Removes a variable from the innermost active local frame or global scope.
     pub fn unset_var(&mut self, name: impl VarName) {
-        let name = name.to_bstr();
+        self.unset_var_impl(name.to_bstr());
+    }
+
+    fn unset_var_impl(&mut self, name: &BStr) {
         if !self.prepare_var_mutation(name) {
             return;
         }

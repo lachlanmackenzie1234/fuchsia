@@ -231,7 +231,6 @@ fn run_builtin_impl(
     state: &mut ShellState,
     ctx: &mut ExecutionContext,
 ) -> Result<EvalOutcome, String> {
-    let name = name.to_bstr();
     let entry = lookup_builtin(name).ok_or_else(|| format!("builtin not found: {}", name))?;
 
     match entry.func {

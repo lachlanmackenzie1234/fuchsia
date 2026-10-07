@@ -6,6 +6,7 @@ use super::ExecutionContext;
 use super::arithmetic::evaluate_arithmetic;
 use super::glob::{WordChar, expand_glob, match_glob, word_chars_to_bstring};
 use super::state::ShellState;
+use crate::builtins::is_builtin;
 use crate::collections::FlatSet;
 use crate::errors::{io_err_str, zx_status_str};
 use crate::parser::ast::*;
@@ -77,57 +78,6 @@ fn run_command_substitution(
         output.pop();
     }
     Ok(BString::from(output))
-}
-
-fn is_builtin(name: &BStr) -> bool {
-    matches!(
-        name.as_bytes(),
-        b"." | b"["
-            | b":"
-            | b"alias"
-            | b"break"
-            | b"cd"
-            | b"chdir"
-            | b"command"
-            | b"continue"
-            | b"cp"
-            | b"dm"
-            | b"dump"
-            | b"echo"
-            | b"eval"
-            | b"exec"
-            | b"exit"
-            | b"export"
-            | b"false"
-            | b"getopts"
-            | b"hash"
-            | b"k"
-            | b"list"
-            | b"local"
-            | b"ls"
-            | b"mkdir"
-            | b"msleep"
-            | b"mv"
-            | b"power"
-            | b"printf"
-            | b"pwd"
-            | b"read"
-            | b"readonly"
-            | b"return"
-            | b"rm"
-            | b"set"
-            | b"shift"
-            | b"test"
-            | b"times"
-            | b"trap"
-            | b"true"
-            | b"type"
-            | b"ulimit"
-            | b"umask"
-            | b"unalias"
-            | b"unset"
-            | b"wait"
-    )
 }
 
 enum Modifier<'a> {
