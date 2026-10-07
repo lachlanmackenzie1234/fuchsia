@@ -386,6 +386,10 @@ config("scheduler") {
     "SCHEDULER_LOCK_SPIN_TRACING_ENABLED=$scheduler_lock_spin_tracing_enabled",
     "WAIT_QUEUE_DEPTH_TRACING_ENABLED=$wait_queue_depth_tracing_enabled",
   ]
+  rustflags = []
+  if (scheduler_lock_spin_tracing_enabled) {
+    rustflags += [ "--cfg=scheduler_lock_spin_tracing_enabled" ]
+  }
 }
 
 config("persistent_ram_config") {
