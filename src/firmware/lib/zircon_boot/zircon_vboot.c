@@ -325,6 +325,26 @@ static bool ZirconVBootSlotVerifyInternal(ZirconBootOps* zb_ops, zbi_header_t* i
     return false;
   }
 
+  if (!unlocked) {
+    // On a locked device, reject any vbmeta whose top-level header carries
+    // HASHTREE_DISABLED or VERIFICATION_DISABLED. avb_slot_verify() returns OK
+    // for a validly-signed vbmeta with VERIFICATION_DISABLED even under
+    // AVB_SLOT_VERIFY_FLAGS_NONE, having loaded "zircon" with no hash check.
+    if (verify_data->num_vbmeta_images < 1) {
+      zircon_boot_dlog("No top-level vbmeta image returned\n");
+      return false;
+    }
+    AvbVBMetaImageHeader toplevel;
+    avb_vbmeta_image_header_to_host_byte_order(
+        (const AvbVBMetaImageHeader*)verify_data->vbmeta_images[0].vbmeta_data, &toplevel);
+    if (toplevel.flags != 0) {
+      zircon_boot_dlog(
+          "Rejecting slot %s on locked device: top-level vbmeta flags=0x%x (must be 0)\n",
+          ab_suffix, toplevel.flags);
+      return false;
+    }
+  }
+
   // Increase rollback index values to match the verified slot only if
   // it has already successfully booted.
   if (has_successfully_booted) {
