@@ -72,8 +72,6 @@ to fallible and async functions.
 Examples:
 
 ```rust
-use zx;
-
 struct Data {}
 
 impl Data {
@@ -127,7 +125,6 @@ Examples:
 
 ```rust
 use fdf_component::{Driver, Node};
-use zx;
 
 struct DisplayDriver {
     // We must keep the Node alive for the lifetime of the driver.
@@ -179,8 +176,7 @@ fixed in-memory representation.
 with deterministic field offsets and alignments.
 
 **Guideline:** For every type that needs a fixed in-memory representation, have
-unit tests checking each type's size and alignment, and each type member's
-offset.
+unit tests checking each type's size and alignment, and each field's offset.
 
 **Explanation:** Translating from vendor documentation to Rust is non-trivial,
 and we use tests to reduce the risk of errors.
@@ -208,14 +204,16 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 bitfield! {
     #[repr(transparent)]
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
-    struct CommandFlags(u32) {}
+    struct CommandFlags(u32);
+
+    /* ... */
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 struct Command {
-    pub flags: CommandFlags;
-    pub id: u32;
+    pub flags: CommandFlags,
+    pub id: u32,
 }
 
 #[cfg(test)]
@@ -243,7 +241,8 @@ mod tests {
 **Explanation:** Matches the established recommendation in
 [The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths].
 
-**Guideline:** Bring into scope the top-level module of the `zx` crate.
+**Guideline:** Refer to `zx` items through the `zx::` path. Do not bring
+individual items such as `zx::Status` into scope.
 
 **Explanation:**
 The `zx` crate exports generic type names such as `Channel` and `Event`, which
@@ -271,21 +270,20 @@ Examples:
 
 ```rust
 use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
-use fidl_next;
 
 pub async fn use_buffer_collection(
     sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
 ) {
-  /* ... */
-  log::warn!("Failed to get hardware pixel formats, falling back to safe set");
-  /* ... */
+    /* ... */
+    log::warn!("Failed to get hardware pixel formats, falling back to safe set");
+    /* ... */
 }
 ```
 
 ## MMIO region management
 
 **Guideline:** Use the `MmioRegion<VmoMemory, Arc<VmoMemory>>` type for all MMIO
-*memory regions.
+memory regions.
 
 **Explanation:** `std::sync::Arc` meets the `MmioSplit` trait constraints,
 allowing any module to further subdivide the MMIO region it receives. `Arc` is
@@ -322,14 +320,14 @@ async fn map_mmio_range(
 }
 
 impl FunctionalUnit {
-    pub fn new(mmio: MmioRegion<VmoMemory, Arc<VmoMemory>>) {
+    pub fn new(mut mmio: MmioRegion<VmoMemory, Arc<VmoMemory>>) -> Self {
         // Subunit 1 manages the MMIO range 0x0000..0x1000.
         let subunit1_mmio = mmio.split_off(0x1000);
         let subunit1 = SubUnit1::new(subunit1_mmio);
 
         // Subunit 2 manages the MMIO range 0x1000..0x2000.
         let subunit2_mmio = mmio.split_off(0x1000);
-        let subunit2 = SubUnit1::new(subunit1_mmio);
+        let subunit2 = SubUnit2::new(subunit2_mmio);
 
         // Subunit 3 manages the MMIO range from 0x2000 onwards.
         let subunit3 = SubUnit3::new(mmio);
@@ -369,7 +367,6 @@ Examples:
 ```rust
 use std::num::NonZero;
 use std::ptr::NonNull;
-use zx;
 
 #[repr(...)]
 #[derive(...)]
@@ -432,23 +429,21 @@ Use [Inspect][inspect-readme] for data that changes often.
 Examples:
 
 ```rust
-use zx;
-
 /// Errors if the hardware returns an invalid version.
 ///
 /// All error conditions are logged.
 pub fn read_version() -> Result<u32, zx::Status> {
-    debug!("read_version()");
+    log::debug!("read_version()");
 
     let version_value: u32 = read_from_register();
 
     // TODO(https://fxbug.dev/12345678): We suspect that the crashes are
     // correlated with specific hardware versions. Reduce the log level to DEBUG
     // after proving or disproving the hypothesis.
-    info!("Component version: {}", version_value);
+    log::info!("Component version: {version_value}");
 
     if version_value == 0 {
-        log::warn!("Invalid version, device may be off: {}", version_value);
+        log::warn!("Invalid version, device may be off: {version_value}");
         // ...
     }
     // ...
@@ -482,8 +477,6 @@ logging.
 Examples:
 
 ```rust
-use zx;
-
 /// Errors if the hardware returns an invalid version.
 ///
 /// All error conditions are logged.
@@ -641,6 +634,13 @@ signatures. Our C++ tools support this pattern by checking that the comment
 matches the argument name in the function declaration. Rust tools do not have
 this support, so the comments risk becoming stale.
 
+**Guideline:** Do not use tuple indexing expressions (`.0`, `.1`) on
+tuples or tuple structs with more than one field. Define structs with named
+fields, or destructure values whose types you don't control.
+
+**Explanation:** Human reviewers have a hard time tracking what code like `.1`
+refers to.
+
 Examples:
 
 ```rust
@@ -651,22 +651,37 @@ enum Polarity {
     ActiveLow,
 }
 
-struct Timing {
+/// Argument for [`set_device_timing`].
+struct DeviceTiming {
     pub horizontal_sync_polarity: Polarity,
     pub vertical_sync_polarity: Polarity,
     pub horizontal_active: NonZero<u32>,
     pub vertical_active: NonZero<u32>,
 }
 
-fn set_device_timing(timing: Timing) { /* ... */ }
+fn set_device_timing(device_timing: DeviceTiming) { /* ... */ }
 
 pub fn initialize_device() {
-    set_device_timing(Timing {
+    set_device_timing(DeviceTiming {
         horizontal_sync_polarity: Polarity::ActiveHigh,
         vertical_sync_polarity: Polarity::ActiveHigh,
-        horizontal_active: 640,
-        vertical_active: 480,
+        horizontal_active: const { NonZero::new(640).unwrap() },
+        vertical_active: const { NonZero::new(480).unwrap() },
     });
+}
+
+pub struct Point {
+    pub x: u32,
+    pub y: u32,
+}
+
+// Returning a struct to avoid tuple indexing expressions.
+pub fn cursor_position() -> Point { /* ... */ }
+
+pub fn connect() {
+    // `zx::Channel::create()` returns `(zx::Channel, zx::Channel)`.
+    let (driver_channel, device_channel) = zx::Channel::create();
+    /* ... */
 }
 ```
 
