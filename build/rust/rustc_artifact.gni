@@ -274,7 +274,6 @@ template("rustc_artifact") {
                [
                  "original_target_name",
                  "disable_clippy",
-                 "lint_config",
                ])
   }
 
@@ -355,6 +354,9 @@ template("rustc_artifact") {
     configs = []
     if (defined(invoker.configs)) {
       configs = invoker.configs
+    }
+    if (defined(invoker.lint_config)) {
+      configs += [ invoker.lint_config ]
     }
 
     # By default, only the "2024" edition is allowed. To use an older edition,
