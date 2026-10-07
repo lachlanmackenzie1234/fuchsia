@@ -216,7 +216,7 @@ fuchsia_sdk_ext.local(
     buildifier = "@fuchsia_build_config//:host_prebuilts/buildifier",
     # The @fuchsia_sdk repository is populated from the same content as @fuchsia_in_tree_idk.
     # LINT.IfChange
-    local_sdk_version_file = "//:fuchsia_build_generated/fuchsia_in_tree_idk.hash",
+    local_idk_version_file = "//:fuchsia_build_generated/fuchsia_in_tree_idk.hash",
     # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py)
     path = "@@fuchsia_in_tree_idk+",
     visibility_templates = {
@@ -244,7 +244,7 @@ fuchsia_sdk_repository(
     local_idk_repos = ["@fuchsia_internal_only_idk"],
     # The @internal_sdk repository is populated from the same content as @fuchsia_internal_only_idk.
     # LINT.IfChange
-    local_sdk_version_file = "//:fuchsia_build_generated/fuchsia_internal_only_idk.hash",
+    local_idk_version_file = "//:fuchsia_build_generated/fuchsia_internal_only_idk.hash",
     # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py)
     # NOTE: It's unclear why @@rules_fuchsia++fuchsia_sdk_ext+fuchsia_sdk does
     # NOT work here. Leaving it as-is for now since this target is planned to be
