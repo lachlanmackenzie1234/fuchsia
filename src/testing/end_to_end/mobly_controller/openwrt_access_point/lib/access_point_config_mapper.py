@@ -75,10 +75,13 @@ class AccessPointConfigMapper:
 
         mapping = {
             capabilities.N_CAPABILITY_LDPC: hostapd_constants.N_CAPABILITY_LDPC,
+            capabilities.N_CAPABILITY_GREENFIELD: hostapd_constants.N_CAPABILITY_GREENFIELD,
             capabilities.N_CAPABILITY_SHORT_GI_20: hostapd_constants.N_CAPABILITY_SGI20,
             capabilities.N_CAPABILITY_SHORT_GI_40: hostapd_constants.N_CAPABILITY_SGI40,
             capabilities.N_CAPABILITY_TX_STBC: hostapd_constants.N_CAPABILITY_TX_STBC,
             capabilities.N_CAPABILITY_RX_STBC1: hostapd_constants.N_CAPABILITY_RX_STBC1,
+            capabilities.N_CAPABILITY_RX_STBC12: hostapd_constants.N_CAPABILITY_RX_STBC12,
+            capabilities.N_CAPABILITY_RX_STBC123: hostapd_constants.N_CAPABILITY_RX_STBC123,
             capabilities.N_CAPABILITY_MAX_AMSDU_7935: hostapd_constants.N_CAPABILITY_MAX_AMSDU_7935,
             capabilities.N_CAPABILITY_HT40_PLUS: hostapd_constants.N_CAPABILITY_HT40_PLUS,
             capabilities.N_CAPABILITY_HT20: hostapd_constants.N_CAPABILITY_HT20,

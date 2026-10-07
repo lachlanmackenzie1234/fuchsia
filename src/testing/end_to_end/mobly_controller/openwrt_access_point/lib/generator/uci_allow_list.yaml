@@ -17,6 +17,7 @@ targets:
       - ieee80211d
       - spectrum_mgmt_required
       - local_pwr_constraint
+      - noscan
 
   - name: "bss"
     schema: "wireless.wifi-iface.json"

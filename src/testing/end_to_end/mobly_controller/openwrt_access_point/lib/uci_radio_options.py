@@ -46,3 +46,6 @@ class UciRadioOptions(TypedDict, total=False):
 
     local_pwr_constraint: int
     """Add Power Constraint element to Beacon and Probe Response frame"""
+
+    noscan: bool
+    """Do not scan for overlapping BSSs in HT40+/- mode."""
