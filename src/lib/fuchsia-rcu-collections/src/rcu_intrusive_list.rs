@@ -118,6 +118,11 @@ impl<T, A: RcuListAdapter<T>> RcuIntrusiveList<T, A> {
         Self { head, tail, _marker: std::marker::PhantomData }
     }
 
+    /// Returns whether the list is currently empty without dereferencing any node links.
+    pub fn is_empty(&self, scope: &RcuReadScope) -> bool {
+        self.head.read(scope).is_null()
+    }
+
     /// Pushes a new element to the front of the list.
     ///
     /// Properly initializes `link.prev` to null and `link.next` to the former head (or null
@@ -368,11 +373,6 @@ impl<T, A: RcuListAdapter<T>> RcuIntrusiveList<T, A> {
             callback(A::from_link(current));
             current = next;
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_empty(&self, scope: &RcuReadScope) -> bool {
-        self.head.read(scope).is_null()
     }
 
     /// Returns a cursor that can be used to traverse and modify the list.
