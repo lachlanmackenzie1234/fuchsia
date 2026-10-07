@@ -177,7 +177,6 @@ python_library("antlion") {
     "test_utils/fuchsia/__init__.py",
     "test_utils/fuchsia/wmm_test_cases.py",
     "utils.py",
-    "validation.py",
   ]
   library_deps = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",

@@ -17,13 +17,13 @@ from dataclasses import dataclass
 from typing import IO, Mapping
 
 from antlion.net import wait_for_port
-from antlion.validation import MapValidator
 from libs.proc.runner import (
     CalledProcessError,
     CalledProcessTransportError,
     Runner,
 )
 from libs.types import Json
+from libs.validation import MapValidator
 from mobly import logger, signals
 
 DEFAULT_SSH_PORT: int = 22
