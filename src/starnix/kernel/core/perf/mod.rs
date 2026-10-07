@@ -780,11 +780,22 @@ struct PerfRecordSample<'a> {
 
 async fn set_up_profiler(
     sample_period: zx::MonotonicDuration,
+    want_stack_samples: bool,
 ) -> Result<(profiler::SessionProxy, fidl::AsyncSocket), Errno> {
-    // Configuration for how we want to sample.
+    // Configuration for how we want to sample. Events that asked for register
+    // and stack state (PERF_SAMPLE_REGS_USER / PERF_SAMPLE_STACK_USER) need
+    // raw stack snapshots, which only the DWARF strategy captures. Events that
+    // just want a callchain (PERF_SAMPLE_CALLCHAIN) are served by the
+    // in-kernel sampler, which unwinds via frame pointers without suspending
+    // the sampled thread.
+    let strategy = if want_stack_samples {
+        profiler::CallgraphStrategy::Dwarf
+    } else {
+        profiler::CallgraphStrategy::FramePointer
+    };
     let sample = profiler::Sample {
         callgraph: Some(profiler::CallgraphConfig {
-            strategy: Some(profiler::CallgraphStrategy::FramePointer),
+            strategy: Some(strategy),
             ..Default::default()
         }),
         ..Default::default()
@@ -1312,6 +1323,14 @@ pub fn sys_perf_event_open(
 
     let sample_period = sampling_period(&perf_event_file.attr);
 
+    // Events that request register and stack state need the profiler to
+    // capture raw stacks (the DWARF strategy); callchain-only events are
+    // unwound by the in-kernel sampler via frame pointers.
+    let want_stack_samples = (perf_event_file.sample_type
+        & (perf_event_sample_format_PERF_SAMPLE_REGS_USER as u64
+            | perf_event_sample_format_PERF_SAMPLE_STACK_USER as u64))
+        != 0;
+
     // SeqLock does not get instantiated with metadata values until mmap() is called.
     let seq_lock =
         Arc::new(OnceLock::<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>::new());
@@ -1335,14 +1354,15 @@ pub fn sys_perf_event_open(
                 continue;
             };
 
-            let (session_proxy, client) = match set_up_profiler(sample_period).await {
-                Ok(session) => session,
-                Err(e) => {
-                    log_warn!("Failed to profile: {}", e);
-                    let _ = profiling_complete_receiver.send(());
-                    continue;
-                }
-            };
+            let (session_proxy, client) =
+                match set_up_profiler(sample_period, want_stack_samples).await {
+                    Ok(session) => session,
+                    Err(e) => {
+                        log_warn!("Failed to profile: {}", e);
+                        let _ = profiling_complete_receiver.send(());
+                        continue;
+                    }
+                };
 
             // Record pid/koid mappings before the profiler starts sampling
             // so every sampled thread can be resolved. Dropping the session
