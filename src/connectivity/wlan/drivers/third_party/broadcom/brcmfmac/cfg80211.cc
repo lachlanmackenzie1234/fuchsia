@@ -2034,11 +2034,16 @@ void brcmf_return_roam_start(struct net_device* ndev) {
   std::copy(target_bss_info_bssid.begin(), target_bss_info_bssid.end(), selected_bss.bssid.begin());
 
   selected_bss.capability_info = target_bss_info->capability;
-  selected_bss.primary =
-      chanspec_to_primary_channel_number(&cfg->d11inf, target_bss_info->chanspec);
-  selected_bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, target_bss_info->chanspec);
-  selected_bss.vht_secondary_80_channel =
-      chanspec_to_secondary80(&cfg->d11inf, target_bss_info->chanspec);
+
+  const auto target_ch = chanspec_to_channel(&cfg->d11inf, target_bss_info->chanspec);
+  if (target_ch.is_error()) {
+    BRCMF_ERR("Failed to decode target BSS chanspec 0x%x: %s", target_bss_info->chanspec,
+              target_ch.status_string());
+    return;
+  }
+  selected_bss.primary = target_ch->primary;
+  selected_bss.bandwidth = target_ch->cbw;
+  selected_bss.vht_secondary_80_channel = {.band = target_ch->primary.band, .number = 0};
 
   if (target_bss_info->ie_length > 0) {
     uint8_t* ie_ptr = cfg->target_bss_info_buf + target_bss_info->ie_offset;
@@ -2354,27 +2359,23 @@ done:
   return err;
 }
 
-static zx_status_t brcmf_get_ctrl_channel(brcmf_if* ifp, uint16_t* chanspec_out,
-                                          uint8_t* ctl_chan_out) {
+static zx::result<brcmu_chan> brcmf_get_channel_info(brcmf_if* ifp) {
+  if (ifp == nullptr || ifp->drvr == nullptr || ifp->drvr->config == nullptr) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   bcme_status_t fw_err;
-  zx_status_t err;
+  chanspec_t chanspec = 0;
 
   // Get chanspec of the given IF from firmware.
-  err = brcmf_fil_iovar_data_get(ifp, "chanspec", chanspec_out, sizeof(uint16_t), &fw_err);
+  zx_status_t err = brcmf_fil_iovar_data_get(ifp, "chanspec", &chanspec, sizeof(chanspec), &fw_err);
   if (err != ZX_OK) {
     BRCMF_ERR("Failed to retrieve chanspec: %s, fw err %s", zx_status_get_string(err),
               brcmf_fil_get_errstr(fw_err));
-    return err;
+    return zx::error(err);
   }
 
-  // Get the control channel given chanspec
-  err = chspec_ctlchan(*chanspec_out, ctl_chan_out);
-  if (err != ZX_OK) {
-    BRCMF_ERR("Failed to get control channel from chanspec: 0x%x status: %s", *chanspec_out,
-              zx_status_get_string(err));
-    return err;
-  }
-  return ZX_OK;
+  return chanspec_to_channel(&ifp->drvr->config->d11inf, chanspec);
 }
 
 // Log driver and FW packet counters along with current channel and signal strength
@@ -2395,9 +2396,8 @@ static void brcmf_log_client_stats(struct brcmf_cfg80211_info* cfg) {
                brcmf_fil_get_errstr(fw_err));
   }
   // Get channel information from firmware.
-  uint16_t chanspec;
-  uint8_t ctl_chan = 0;
-  err = brcmf_get_ctrl_channel(ifp, &chanspec, &ctl_chan);
+  const auto channel_info_result = brcmf_get_channel_info(ifp);
+  uint8_t ctl_chan = channel_info_result.is_ok() ? channel_info_result.value().primary.number : 0;
 
   // Get the current rate
   uint32_t fw_rate = 0;
@@ -3254,9 +3254,14 @@ static void brcmf_return_scan_result(struct net_device* ndev, uint16_t chanspec,
   bss.capability_info = capability;
 
   // The rest of the stack expects the control channel to be provided in the BssDescription.
-  bss.primary = chanspec_to_primary_channel_number(&cfg->d11inf, chanspec);
-  bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec);
-  bss.vht_secondary_80_channel = chanspec_to_secondary80(&cfg->d11inf, chanspec);
+  const auto ch = chanspec_to_channel(&cfg->d11inf, chanspec);
+  if (ch.is_error()) {
+    BRCMF_ERR("Failed to decode BSS chanspec 0x%x: %s", chanspec, ch.status_string());
+    return;
+  }
+  bss.primary = ch->primary;
+  bss.bandwidth = ch->cbw;
+  bss.vht_secondary_80_channel = {.band = ch->primary.band, .number = 0};
   bss.rssi_dbm = clamp_to_type<int8_t>(rssi_dbm, std::numeric_limits<int8_t>::min(), 0);
   bss.snr_db = static_cast<int8_t>(snr_db);
   bss.ies = ::fidl::VectorView<uint8_t>::FromExternal(ie, ie_len);
@@ -3295,15 +3300,19 @@ static zx_status_t brcmf_inform_single_bss(struct net_device* ndev, struct brcmf
     return ZX_OK;
   }
 
-  if (!bi->ctl_ch) {
-    bi->ctl_ch = chanspec_to_primary_channel_number(&cfg->d11inf, bi->chanspec).number;
-  } else {
-    uint16_t derived_channel =
-        chanspec_to_primary_channel_number(&cfg->d11inf, bi->chanspec).number;
-    if (bi->ctl_ch != derived_channel) {
-      BRCMF_WARN("Received channel (%3d) does not match derived channel (%3d).", bi->ctl_ch,
-                 derived_channel);
+  const auto bi_ch = chanspec_to_channel(&cfg->d11inf, bi->chanspec);
+  if (bi_ch.is_ok()) {
+    if (!bi->ctl_ch) {
+      bi->ctl_ch = bi_ch->primary.number;
+    } else {
+      uint16_t derived_channel = bi_ch->primary.number;
+      if (bi->ctl_ch != derived_channel) {
+        BRCMF_WARN("Received channel (%3d) does not match derived channel (%3d).", bi->ctl_ch,
+                   derived_channel);
+      }
     }
+  } else {
+    BRCMF_WARN("Failed to decode BSS chanspec 0x%x: %s", bi->chanspec, bi_ch.status_string());
   }
   channel = bi->ctl_ch;
 
@@ -5114,18 +5123,22 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
   }
   list = (struct brcmf_chanspec_list*)pbuf;
   for (uint32_t i = 0; i < list->count; i++) {
-    struct brcmu_chan ch;
-    ch.chspec = static_cast<uint16_t>(list->element[i]);
-    cfg->d11inf.decchspec(&ch);
+    const chanspec_t chspec = static_cast<chanspec_t>(list->element[i]);
+    const auto ch = chanspec_to_channel(&cfg->d11inf, chspec);
+    if (ch.is_error()) {
+      BRCMF_WARN("Skipping invalid chanspec 0x%x: %s", chspec, ch.status_string());
+      continue;
+    }
+    const auto primary_chan = ch->primary;
 
     // Find the appropriate band
     fuchsia_wlan_fullmac::BandCapability* band_cap = nullptr;
-    if (ch.band == BRCMU_CHAN_BAND_2G) {
+    if (primary_chan.band == fuchsia_wlan_ieee80211::wire::WlanBand::kTwoGhz) {
       band_cap = band_cap_2ghz;
-    } else if (ch.band == BRCMU_CHAN_BAND_5G) {
+    } else if (primary_chan.band == fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz) {
       band_cap = band_cap_5ghz;
     } else {
-      BRCMF_ERR("unrecognized band for channel %d", ch.control_ch_num);
+      BRCMF_ERR("unrecognized band for channel %d", primary_chan.number);
       continue;
     }
     if (band_cap == nullptr) {
@@ -5136,9 +5149,8 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
     // brcm specifies each channel + bw + sb configuration individually. Until we
     // offer that level of resolution, just filter out duplicates.
     fuchsia_wlan_ieee80211::ChannelNumber new_chan;
-    new_chan.band(ch.band == BRCMU_CHAN_BAND_2G ? fuchsia_wlan_ieee80211::WlanBand::kTwoGhz
-                                                : fuchsia_wlan_ieee80211::WlanBand::kFiveGhz);
-    new_chan.number(ch.control_ch_num);
+    new_chan.band(fidl::ToNatural(primary_chan.band));
+    new_chan.number(primary_chan.number);
     auto& op_chans = band_cap->primary_channels().value();
     if (std::find_if(op_chans.begin(), op_chans.end(), [&](const auto& item) {
           return item.number() == new_chan.number() && item.band() == new_chan.band();
@@ -5808,7 +5820,6 @@ zx_status_t brcmf_if_get_signal_report(net_device* ndev,
     BRCMF_IFDBG(WLANIF, ndev, "interface not ready -- skipping get signal report");
     return ZX_ERR_INTERNAL;
   }
-  struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
   if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFG)) {
     return ZX_ERR_NOT_SUPPORTED;
@@ -5843,16 +5854,15 @@ zx_status_t brcmf_if_get_signal_report(net_device* ndev,
                brcmf_fil_get_errstr(fw_err));
   }
 
-  uint16_t chanspec = 0;
-  uint8_t ctl_chan = 0;
-  status = brcmf_get_ctrl_channel(ifp, &chanspec, &ctl_chan);
-  if (status == ZX_OK) {
-    connection_signal_report_builder
-        .primary(chanspec_to_primary_channel_number(&cfg->d11inf, chanspec))
-        .bandwidth(chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec))
-        .vht_secondary_80_channel(chanspec_to_secondary80(&cfg->d11inf, chanspec));
+  const auto channel_info_result = brcmf_get_channel_info(ifp);
+  if (channel_info_result.is_ok()) {
+    const auto& channel_info = channel_info_result.value();
+    connection_signal_report_builder.primary(channel_info.primary)
+        .bandwidth(channel_info.cbw)
+        .vht_secondary_80_channel(fuchsia_wlan_ieee80211::wire::ChannelNumber{
+            .band = channel_info.primary.band, .number = 0});
   } else {
-    BRCMF_INFO("Failed to get control channel: %s", zx_status_get_string(status));
+    BRCMF_INFO("Failed to get control channel: %s", channel_info_result.status_string());
   }
 
   *out_signal_report =
@@ -5982,19 +5992,17 @@ static zx_status_t brcmf_clear_firmware_connection_state(brcmf_if* ifp) {
 // Sync driver channel to match firmware channel.
 static zx_status_t sync_driver_channel_to_firmware_channel(struct brcmf_if* ifp) {
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
-  zx_status_t status = ZX_OK;
-  chanspec_t fw_chanspec;
-  uint8_t fw_ctl_chan;
-  status = brcmf_get_ctrl_channel(ifp, &fw_chanspec, &fw_ctl_chan);
-  if (status != ZX_OK) {
+  const auto channel_info_result = brcmf_get_channel_info(ifp);
+  if (channel_info_result.is_error()) {
     BRCMF_ERR(
-        "Synchronizing driver channel to firmware channel impossible, channel lookup failed: %d",
-        status);
-    return status;
+        "Synchronizing driver channel to firmware channel impossible, channel lookup failed: %s",
+        channel_info_result.status_string());
+    return channel_info_result.status_value();
   }
-  BRCMF_DBG(CONN, "Setting driver channel to chanspec 0x%x", fw_chanspec);
-  cfg->channel = fw_chanspec;
-  return status;
+  const auto& channel_info = channel_info_result.value();
+  BRCMF_DBG(CONN, "Setting driver channel to chanspec 0x%x", channel_info.chspec);
+  cfg->channel = channel_info.chspec;
+  return ZX_OK;
 }
 
 zx_status_t brcmf_update_bss_info(struct brcmf_if* ifp) {
@@ -6671,11 +6679,7 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
     return ZX_ERR_INVALID_ARGS;
   }
 
-  uint16_t chanspec = 0;
-  uint8_t ctl_chan;
   fuchsia_wlan_fullmac_wire::WlanFullmacChannelSwitchInfo info = {};
-  zx_status_t err = ZX_OK;
-  struct brcmf_cfg80211_info* cfg = nullptr;
   struct wireless_dev* wdev = nullptr;
 
   if (e != nullptr) {
@@ -6687,7 +6691,6 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
     return ZX_ERR_BAD_STATE;
   }
 
-  cfg = ifp->drvr->config;
   wdev = ndev_to_wdev(ndev);
 
   // For client IF, ensure it is connected.
@@ -6698,14 +6701,16 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
       return ZX_ERR_BAD_STATE;
     }
   }
-  if ((err = brcmf_get_ctrl_channel(ifp, &chanspec, &ctl_chan)) != ZX_OK) {
-    return err;
+  const auto channel_info_result = brcmf_get_channel_info(ifp);
+  if (channel_info_result.is_error()) {
+    return channel_info_result.status_value();
   }
+  const auto& channel_info = channel_info_result.value();
   BRCMF_DBG(CONN, "Channel switch ind IF: %d chanspec: 0x%x control channel: %d", ifp->ifidx,
-            chanspec, ctl_chan);
-  info.new_primary_channel = chanspec_to_primary_channel_number(&cfg->d11inf, chanspec);
-  info.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, chanspec);
-  info.vht_secondary_80_channel = chanspec_to_secondary80(&cfg->d11inf, chanspec);
+            channel_info.chspec, channel_info.primary.number);
+  info.new_primary_channel = channel_info.primary;
+  info.bandwidth = channel_info.cbw;
+  info.vht_secondary_80_channel = {.band = channel_info.primary.band, .number = 0};
 
   // Inform wlanif of the channel switch.
   auto arena = fdf::Arena::Create(0, 0);
@@ -8579,7 +8584,11 @@ zx_status_t brcmf_cfg80211_attach(struct brcmf_pub* drvr) {
     goto cfg_out;
   }
   cfg->d11inf.io_type = (uint8_t)io_type;
-  brcmu_d11_attach(&cfg->d11inf);
+  err = brcmu_d11_attach(&cfg->d11inf);
+  if (err != ZX_OK) {
+    BRCMF_ERR("Failed to attach D11: %s", zx_status_get_string(err));
+    goto cfg_out;
+  }
 
   // NOTE: linux first verifies that 40 MHz operation is enabled in 2.4 GHz channels.
   err = brcmf_enable_bw40_2g(cfg);

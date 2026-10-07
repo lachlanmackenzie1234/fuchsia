@@ -285,7 +285,9 @@ zx_status_t SimFirmware::SetupInternalVmo() {
 SimFirmware::SimFirmware(brcmf_simdev* simdev) : simdev_(simdev), hw_(simdev->env) {
   // Configure the chanspec encode/decoder
   d11_inf_.io_type = kIoType;
-  brcmu_d11_attach(&d11_inf_);
+  if (brcmu_d11_attach(&d11_inf_) != ZX_OK) {
+    ZX_PANIC("Unable to attach D11");
+  }
 
   // Configure the (simulated) hardware => (simulated) firmware callbacks
   SimHardware::EventHandlers handlers = {
@@ -1805,7 +1807,9 @@ fuchsia_wlan_ieee80211::wire::ChannelNumber SimFirmware::GetIfChannel(bool is_ap
   uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
   ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
 
-  return chanspec_to_operating_channel_number(&d11_inf_, chanspec);
+  const auto ch = chanspec_to_channel(&d11_inf_, chanspec);
+  ZX_ASSERT_MSG(ch.is_ok(), "Failed to decode client chanspec: 0x%x", chanspec);
+  return ch->primary;
 }
 
 fuchsia_wlan_ieee80211::wire::ChannelBandwidth SimFirmware::GetIfChannelBandwidth(bool is_ap) {
@@ -1814,7 +1818,9 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth SimFirmware::GetIfChannelBandwidt
   uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
   ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
 
-  return chanspec_to_channel_bandwidth(&d11_inf_, chanspec);
+  const auto ch = chanspec_to_channel(&d11_inf_, chanspec);
+  ZX_ASSERT_MSG(ch.is_ok(), "Failed to decode client chanspec: 0x%x", chanspec);
+  return ch->cbw;
 }
 
 fuchsia_wlan_ieee80211::wire::ChannelNumber SimFirmware::GetIfSecondary80(bool is_ap) {
@@ -1823,7 +1829,9 @@ fuchsia_wlan_ieee80211::wire::ChannelNumber SimFirmware::GetIfSecondary80(bool i
   uint16_t chanspec = iface_tbl_[kClientIfidx].chanspec;
   ZX_ASSERT_MSG(chanspec != 0, "No chanspec assigned to client.");
 
-  return chanspec_to_secondary80(&d11_inf_, chanspec);
+  const auto ch = chanspec_to_channel(&d11_inf_, chanspec);
+  ZX_ASSERT_MSG(ch.is_ok(), "Failed to decode client chanspec: 0x%x", chanspec);
+  return {.band = ch->primary.band, .number = 0};
 }
 
 // This routine for now only handles Disassoc Request meant for the SoftAP IF.
@@ -3818,10 +3826,14 @@ void SimFirmware::ResetSimFirmware() {
 }
 
 SimFirmware::DerivedChannelInfo SimFirmware::ExtractChannelInfo(uint16_t chanspec) {
+  const auto ch = chanspec_to_channel(&d11_inf_, chanspec);
+  if (ch.is_error()) {
+    return {};
+  }
   return {
-      .primary = chanspec_to_operating_channel_number(&d11_inf_, chanspec),
-      .bandwidth = chanspec_to_channel_bandwidth(&d11_inf_, chanspec),
-      .vht_secondary_80_channel = chanspec_to_secondary80(&d11_inf_, chanspec),
+      .primary = ch->primary,
+      .bandwidth = ch->cbw,
+      .vht_secondary_80_channel = {.band = ch->primary.band, .number = 0},
   };
 }
 
