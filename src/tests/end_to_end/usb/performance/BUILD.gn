@@ -5,14 +5,6 @@
 import("//build/testing/environments.gni")
 import("//build/testing/perf/test.gni")
 
-_honeydew_config = {
-  transports = {
-    adb = {
-      attempts = 1
-    }
-  }
-}
-
 python_perf_test("adb_throughput_test") {
   main_source = "test_adb_throughput.py"
   expected_metric_names_filepaths = [
@@ -34,7 +26,6 @@ python_perf_test("adb_throughput_test") {
     storage_transfer_file_size_bytes = 50000000
   }
   environments = [ sorrel_env ]
-  honeydew_config = _honeydew_config
 }
 
 # Large variation with larger storage transfer size (500 MB)
@@ -58,7 +49,6 @@ python_perf_test("adb_throughput_large_test") {
     storage_transfer_file_size_bytes = 500000000
   }
   environments = [ iris_env ]
-  honeydew_config = _honeydew_config
 }
 
 group("tests") {

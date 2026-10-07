@@ -785,42 +785,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj.__dict__.pop("adb", None)
         self.fd_fc_obj._device_info = device_info
 
-    @mock.patch.object(
-        adb_transport.Adb,
-        "check_connection",
-        autospec=True,
-    )
-    @mock.patch.object(
-        adb_transport.Adb,
-        "verify_supported",
-        autospec=True,
-    )
-    def test_adb_transport_custom_attempts_config(
-        self,
-        mock_verify_supported: mock.Mock,
-        mock_check_connection: mock.Mock,
-    ) -> None:
-        """Test case to verify honeydew_config.transports.adb.attempts is passed to Adb."""
-        device_info: custom_types.DeviceInfo = self.fd_fc_obj._device_info
-        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
-            name=_INPUT_ARGS["device_name"],
-            serial_number="12345678",
-            ip_port=None,
-            serial_socket=None,
-        )
-        old_config = self.fd_fc_obj._config
-        self.fd_fc_obj.__dict__.pop("adb", None)
-        self.fd_fc_obj._config = {"transports": {"adb": {"attempts": 1}}}
-        try:
-            adb_inst: adb_transport.Adb = self.fd_fc_obj.adb
-            self.assertEqual(adb_inst._attempts, 1)
-            mock_verify_supported.assert_called_once()
-            mock_check_connection.assert_called_once()
-        finally:
-            self.fd_fc_obj.__dict__.pop("adb", None)
-            self.fd_fc_obj._config = old_config
-            self.fd_fc_obj._device_info = device_info
-
     # List all the tests related to affordances
     def test_session(self) -> None:
         """Test case to make sure fuchsia_device supports session
