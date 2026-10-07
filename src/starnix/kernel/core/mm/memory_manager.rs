@@ -4786,7 +4786,10 @@ impl ProcSmapsFile {
                 };
                 let zx_start = zx_mapping.base;
                 let zx_end = zx_start + zx_mapping.size;
-                assert!(zx_end > mm_start, "Zircon mapping that isn't mapped from starnix: {zx_details:?}");
+                assert!(
+                    zx_end > mm_start,
+                    "Zircon mapping that isn't mapped from starnix: {zx_details:?}"
+                );
                 if zx_start >= mm_end {
                     // This mapping starts in a later MemoryManager mapping
                     break;
@@ -5288,6 +5291,21 @@ mod tests {
         let adusted_mapping_flags = mapping_flags.with_access_flags(new_access_flags);
         assert_eq!(adusted_mapping_flags.access_flags(), new_access_flags);
         assert_eq!(adusted_mapping_flags.options(), options);
+    }
+
+    #[::fuchsia::test]
+    fn test_mapping_flags_populate_is_not_stored() {
+        // POPULATE is a creation only option and must be stripped when used in creating the actual
+        // MappingFlags.
+        let options = MappingOptions::ANONYMOUS | MappingOptions::POPULATE;
+        let access_flags = ProtectionFlags::READ | ProtectionFlags::WRITE;
+        let mapping_flags = MappingFlags::from_access_flags_and_options(access_flags, options);
+        assert!(!mapping_flags.contains(MappingFlags::LOCKED));
+        assert_eq!(mapping_flags.options(), MappingOptions::ANONYMOUS);
+
+        // A locked mapping must not report `POPULATE` as one of its options.
+        let locked_flags = mapping_flags | MappingFlags::LOCKED;
+        assert_eq!(locked_flags.options(), MappingOptions::ANONYMOUS);
     }
 
     #[::fuchsia::test]
