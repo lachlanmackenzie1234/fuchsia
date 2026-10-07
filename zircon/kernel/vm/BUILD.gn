@@ -52,12 +52,14 @@ source_set("vm") {
     "stream_size_manager.cc",
     "vm.cc",
     "vm_address_region.cc",
+    "vm_address_region_ffi.cc",
     "vm_address_region_or_mapping.cc",
     "vm_aspace.cc",
     "vm_aspace_ffi.cc",
     "vm_cow_pages.cc",
     "vm_cow_pages_ffi.cc",
     "vm_mapping.cc",
+    "vm_mapping_ffi.cc",
     "vm_object.cc",
     "vm_object_ffi.cc",
     "vm_object_paged.cc",
@@ -885,7 +887,7 @@ kernel_bindgen_crate("vmm-bindings") {
 
 kernel_bindgen_crate("vm-address-region-bindings") {
   visibility = [ ":*" ]
-  headers = [ "include/vm/vm_address_region.h" ]
+  headers = [ "include/vm/vm_address_region_ffi.h" ]
   non_rust_deps = [ ":vm" ]
   output_name = "vm_address_region_bindings.rs"
   cpp = true
@@ -895,10 +897,42 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VMAR_FLAG_.*",
     "VMAR_CAN_RWX_FLAGS",
   ]
+  function_allowlist = [
+    "cpp_vm_address_region_aspace",
+    "cpp_vm_address_region_base",
+    "cpp_vm_address_region_create_sub_vmar",
+    "cpp_vm_address_region_create_vm_mapping",
+    "cpp_vm_address_region_destroy",
+    "cpp_vm_address_region_flags",
+    "cpp_vm_address_region_free",
+    "cpp_vm_address_region_get_ref_counted",
+    "cpp_vm_address_region_has_parent",
+    "cpp_vm_address_region_name",
+    "cpp_vm_address_region_protect",
+    "cpp_vm_address_region_reserve_space",
+    "cpp_vm_address_region_set_memory_priority",
+    "cpp_vm_address_region_size",
+    "cpp_vm_address_region_unmap",
+    "cpp_vm_mapping_aspace",
+    "cpp_vm_mapping_base",
+    "cpp_vm_mapping_debug_protect",
+    "cpp_vm_mapping_debug_unmap",
+    "cpp_vm_mapping_decommit_range",
+    "cpp_vm_mapping_destroy",
+    "cpp_vm_mapping_flags",
+    "cpp_vm_mapping_force_writable",
+    "cpp_vm_mapping_free",
+    "cpp_vm_mapping_get_ref_counted",
+    "cpp_vm_mapping_map_range",
+    "cpp_vm_mapping_object_offset",
+    "cpp_vm_mapping_size",
+    "cpp_vm_mapping_vmo",
+  ]
   type_allowlist = [
     "ActivateInsertRegions",
     "DestroyRemoveFromParent",
     "DestroyUnmap",
+    "LifeCycleState",
     "MemoryPriority",
     "Mergeable",
     "RangeOpType",
@@ -907,16 +941,19 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VmAddressRegionOpChildren",
     "VmAddressRegionOrMapping",
     "VmMapping",
+    "arch_mmu_flags_t",
   ]
   type_blocklist = [
-    "arch_mmu_flags_t",
-    "fbl_RefPtr",
-    "vaddr_t",
+    "VmAspace",
     "VmAddressRegion_AttributionCounts",
     "VmAddressRegion_MapResult",
     "VmMapping_AttributionCounts",
     "VmMapping_CurrentlyFaulting",
     "VmMapping_FlagsRange",
+    "VmObject",
+    "fbl_RefPtr",
+    "vaddr_t",
+    "zx_status_t",
   ]
   opaque_types = [
     "VmAddressRegion",
@@ -925,6 +962,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   ]
   rustified_enum = [
     "VmAddressRegionOpChildren",
+    "VmAddressRegionOrMapping_LifeCycleState",
     "VmAddressRegionOrMapping_MemoryPriority",
     "VmAddressRegion_RangeOpType",
     "VmMapping_ActivateInsertRegions",
@@ -940,12 +978,20 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
-  edition = "2024"
-  raw_lines = [ "#![no_std]" ]
-  expect_lints = [
-    "non_camel_case_types",
-    "non_upper_case_globals",
+  deps = [
+    ":vm-object-bindings",
+    "//sdk/rust/zx-types",
   ]
+
+  edition = "2024"
+  raw_lines = [
+    "#![no_std]",
+    "use vm_object_bindings::VmObject;",
+    "pub use zx_types::{zx_status_t, zx_vaddr_t as vaddr_t};",
+    "pub type fbl_RefPtr = core::ffi::c_void;",
+    "pub type VmAspace = core::ffi::c_void;",
+  ]
+  expect_lints = [ "non_camel_case_types" ]
 }
 
 kernel_bindgen_crate("attribution-bindings") {
