@@ -215,6 +215,10 @@
                 // quietly succeeds on writes instead of issuing EINVAL.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_modules_disabled",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_modules_disabled",
+
+                // TODO(https://fxbug.dev/565365826): Unlinking the watched hard link first still pins its
+                // DirEntryHandle in InotifyState::watches.
+                "InotifyTest.UnlinkWatchedHardLinkFirstEmitsDeleteSelfOnLastUnlink",
             ],
         },
     ],
