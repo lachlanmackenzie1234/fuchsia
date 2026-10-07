@@ -3284,25 +3284,24 @@ zx_status_t brcmf_sdio_recovery(struct brcmf_bus* bus) TA_NO_THREAD_SAFETY_ANALY
 
   if ((error = brcmf_sdio_request_card_reset(sdiod)) != ZX_OK) {
     BRCMF_ERR("Failed to reset sdio - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
+    drvr->fw_reloading.unlock();
     return error;
   }
 
   if ((error = brcmf_sdiod_probe(sdiod, true)) != ZX_OK) {
     BRCMF_ERR("Failed to probe sdio - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
+    drvr->fw_reloading.unlock();
     return error;
   }
 
+  // brcmf_sdio_load_files() will unlock drvr->fw_reloading.
   if ((error = brcmf_sdio_load_files(drvr, true)) != ZX_OK) {
     BRCMF_ERR("Failed to reload images - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
     return error;
   }
 
   if ((error = brcmf_bus_started(sdiod->drvr, true)) != ZX_OK) {
     BRCMF_ERR("Initialization after bus started failed.");
-    brcmf_proto_bcdc_detach(drvr);
     return error;
   }
 
@@ -3856,7 +3855,7 @@ static zx_status_t brcmf_sdio_suspend(struct brcmf_bus* bus) TA_NO_THREAD_SAFETY
 
   if ((error = brcmf_sdio_request_card_reset(sdiod)) != ZX_OK) {
     BRCMF_ERR("Failed to reset sdio - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
+    drvr->fw_reloading.unlock();
     return error;
   }
   return ZX_OK;
@@ -3869,19 +3868,19 @@ static zx_status_t brcmf_sdio_resume(struct brcmf_bus* bus) TA_NO_THREAD_SAFETY_
 
   if ((error = brcmf_sdiod_probe(sdiod, true)) != ZX_OK) {
     BRCMF_ERR("Failed to probe sdio - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
+    // This was locked in the call to brcmf_sdio_suspend().
+    drvr->fw_reloading.unlock();
     return error;
   }
 
+  // drvr->fw_reloading will be unlocked by brcmf_sdio_load_files.
   if ((error = brcmf_sdio_load_files(drvr, true)) != ZX_OK) {
     BRCMF_ERR("Failed to reload images - error: %s", zx_status_get_string(error));
-    brcmf_proto_bcdc_detach(drvr);
     return error;
   }
 
   if ((error = brcmf_bus_started(sdiod->drvr, true)) != ZX_OK) {
     BRCMF_ERR("Initialization after bus started failed.");
-    brcmf_proto_bcdc_detach(drvr);
     return error;
   }
 

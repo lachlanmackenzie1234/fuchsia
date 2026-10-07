@@ -686,50 +686,57 @@ void brcmf_remove_interface_locked(struct brcmf_pub* drvr, struct brcmf_if* ifp,
   brcmf_del_if(drvr, ifp->bsscfgidx, rtnl_locked);
 }
 
+static void brcmf_stop_all_workitems(struct brcmf_pub* drvr) {
+  if (drvr->config) {
+    drvr->config->signal_report_work.Cancel();
+    drvr->config->escan_timeout_work.Cancel();
+    drvr->config->disconnect_timeout_work.Cancel();
+    drvr->config->connect_timeout_work.Cancel();
+    drvr->config->roam_timeout_work.Cancel();
+    drvr->config->ap_start_timeout_work.Cancel();
+  }
+}
+
 void brcmf_recovery_worker(WorkItem* work) {
   struct brcmf_pub* drvr = containerof(work, struct brcmf_pub, recovery_work);
   struct brcmf_bus* bus = drvr->bus_if;
-  zx_status_t error = ZX_OK;
 
   drvr->device->GetInspect()->LogFwRecoveryTriggered();
 
   auto finish_recovery_worker = fit::defer([drvr] {
-    drvr->recovery_trigger->ClearStatistics();
-    // Notice that here we set drvr_resetting but not fw_reloading to false, drvr_resetting is set
-    // to true before the worker is added into the workqueue, and fw_loading is set to false in
-    // brcmf_sdio_load_files(), which marks that the firmware loading is finished.
-    drvr->drvr_resetting.store(false);
-    drvr->device->OnRecoveryComplete();
+    // Even if recovery fails, continue to destroy all interfaces.
+    // DestroyAllIfaces must be called on the driver dispatcher's async_dispatcher since it removes
+    // the Fullmac service from the OutgoingDirectory, which must be accessed from the same
+    // dispatcher it was created on.
+    async_dispatcher_t* driver_dispatcher =
+        fdf_dispatcher_get_async_dispatcher(drvr->device->GetDriverDispatcher());
+
+    async::PostTask(driver_dispatcher, [drvr]() mutable {
+      drvr->device->DestroyAllIfaces([drvr] {
+        drvr->recovery_trigger->ClearStatistics();
+        // Notice that here we set drvr_resetting but not fw_reloading to false, drvr_resetting is
+        // set to true before the worker is added into the workqueue, and fw_loading is set to false
+        // in brcmf_sdio_load_files(), which marks that the firmware loading is finished.
+        drvr->drvr_resetting.store(false);
+        drvr->device->OnRecoveryComplete();
+      });
+    });
   });
 
-  // Do clean up in cfg80211 layer.
+  zx_status_t error = ZX_OK;
   if ((error = brcmf_reset(drvr)) != ZX_OK) {
     BRCMF_ERR("Reset cfg80211 layer failed -- error: %s", zx_status_get_string(error));
-    brcmf_detach(drvr);
+    brcmf_stop_all_workitems(drvr);
     return;
   }
 
   if ((error = brcmf_bus_recovery(bus)) != ZX_OK) {
     BRCMF_ERR("Bus recovery failed -- error: %s", zx_status_get_string(error));
-    brcmf_detach(drvr);
+    brcmf_stop_all_workitems(drvr);
     return;
   }
 
   drvr->device->GetInspect()->LogFwRecovered();
-
-  // DestroyAllIfaces must be called on the driver dispatcher's async_dispatcher since it removes
-  // the Fullmac service from the OutgoingDirectory, which must be accessed from the same dispatcher
-  // it was created on.
-  async_dispatcher_t* driver_dispatcher =
-      fdf_dispatcher_get_async_dispatcher(drvr->device->GetDriverDispatcher());
-
-  // Move finish_recovery_worker into this task so that it's called when the task finishes.
-  async::PostTask(driver_dispatcher, [drvr, finish_recovery_worker =
-                                                std::move(finish_recovery_worker)]() mutable {
-    drvr->device->DestroyAllIfaces([finish_recovery_worker = std::move(finish_recovery_worker)] {
-      // finish_recovery_worker will be called at the end of scope here
-    });
-  });
 }
 
 zx_status_t brcmf_attach(brcmf_pub* drvr) {
@@ -860,14 +867,7 @@ void brcmf_detach(brcmf_pub* drvr) {
   brcmf_bus_change_state(drvr->bus_if, BRCMF_BUS_DOWN);
 
   /* Cancel all work items to ensure they don't access freed memory. */
-  if (drvr->config) {
-    drvr->config->signal_report_work.Cancel();
-    drvr->config->escan_timeout_work.Cancel();
-    drvr->config->disconnect_timeout_work.Cancel();
-    drvr->config->connect_timeout_work.Cancel();
-    drvr->config->roam_timeout_work.Cancel();
-    drvr->config->ap_start_timeout_work.Cancel();
-  }
+  brcmf_stop_all_workitems(drvr);
   /* make sure primary interface removed last */
   for (int i = BRCMF_MAX_IFS - 1; i > -1; i--) {
     brcmf_remove_interface(drvr->iflist[i], false);

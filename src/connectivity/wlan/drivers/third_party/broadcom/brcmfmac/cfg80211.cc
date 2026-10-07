@@ -8681,7 +8681,6 @@ zx_status_t brcmf_suspend_chip(brcmf_pub* drvr) {
 
   if (status = brcmf_reset(drvr); status != ZX_OK) {
     BRCMF_ERR("Reset cfg80211 layer failed -- error: %s", zx_status_get_string(status));
-    brcmf_detach(drvr);
     return status;
   }
   if (status = brcmf_bus_suspend(drvr->bus_if); status != ZX_OK) {
