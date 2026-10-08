@@ -734,3 +734,57 @@ macro_rules! kernel_object_always {
         }
     };
 }
+
+/// Writes a context switch record for the given threads when the given trace category is enabled.
+///
+/// # Arguments:
+/// - category: Filter category for the event. Expects a string literal or expression.
+/// - cpu: The CPU number on which the context switch occurred.
+/// - outgoing_state: The state of the outgoing thread (`zx_thread_state_t`).
+/// - outgoing_tid: The KOID of the outgoing thread.
+/// - incoming_tid: The KOID of the incoming thread.
+/// - ...: List of key => value argument pairs.
+#[macro_export]
+macro_rules! context_switch {
+    ($category:tt, $cpu:expr, $outgoing_state:expr, $outgoing_tid:expr, $incoming_tid:expr $(, $key:tt => $val:expr)* $(,)?) => {
+        {
+            let category = $crate::resolve_category!($category);
+            if crate::ktrace_rs::KTrace::category_enabled(category) {
+                crate::ktrace_rs::KTrace::emit_context_switch(
+                    $cpu as u16,
+                    $outgoing_state as u32,
+                    $outgoing_tid as u64,
+                    $incoming_tid as u64,
+                    &[
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                    ],
+                );
+            }
+        }
+    };
+}
+
+/// Writes a thread wakeup record for the given thread when the given trace category is enabled.
+///
+/// # Arguments:
+/// - category: Filter category for the event. Expects a string literal or expression.
+/// - cpu: The target CPU number on which the thread is waking.
+/// - incoming_tid: The KOID of the waking thread.
+/// - ...: List of key => value argument pairs.
+#[macro_export]
+macro_rules! thread_wakeup {
+    ($category:tt, $cpu:expr, $incoming_tid:expr $(, $key:tt => $val:expr)* $(,)?) => {
+        {
+            let category = $crate::resolve_category!($category);
+            if crate::ktrace_rs::KTrace::category_enabled(category) {
+                crate::ktrace_rs::KTrace::emit_thread_wakeup(
+                    $cpu as u16,
+                    $incoming_tid as u64,
+                    &[
+                        $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
+                    ],
+                );
+            }
+        }
+    };
+}

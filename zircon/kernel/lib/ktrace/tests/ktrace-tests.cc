@@ -673,8 +673,8 @@ class KTraceTests {
       return arch_curr_cpu_num();
     }();
 
-    // The total bytes written by the 19 macro events is 856 bytes.
-    constexpr size_t total_size = 856;
+    // The total bytes written by the 21 macro events is 936 bytes.
+    constexpr size_t total_size = 936;
     uint8_t actual[total_size];
     auto copy_out = [&](uint32_t offset, ktl::span<ktl::byte> src) {
       memcpy(actual + offset, src.data(), src.size());
@@ -996,6 +996,46 @@ class KTraceTests {
       ASSERT_EQ(2u, arg_header & 0xfu);
       ASSERT_EQ(142u, arg_header >> 32);
       offset += 48;
+    }
+
+    // 20. ContextSwitch with 2 arguments (size 48 bytes = 6 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(8u, header & 0xfu);             // kScheduler
+      ASSERT_EQ(6u, (header >> 4) & 0xfffu);    // Size
+      ASSERT_EQ(2u, (header >> 16) & 0xfu);     // Arg count = 2
+      ASSERT_EQ(2u, (header >> 20) & 0xffffu);  // CPU number = 2
+      ASSERT_EQ(3u, (header >> 36) & 0xfu);     // Outgoing thread state = 3
+      ASSERT_EQ(0u, (header >> 40) & 0xffu);    // Outgoing thread ref = 0
+      ASSERT_EQ(0u, (header >> 48) & 0xffu);    // Incoming thread ref = 0
+      ASSERT_EQ(1u, (header >> 60) & 0xfu);     // Event type = kContextSwitch (1)
+      // get_word(1) is timestamp
+      ASSERT_EQ(120u, get_word(2));  // Outgoing tid
+      ASSERT_EQ(121u, get_word(3));  // Incoming tid
+      uint64_t arg1_header = get_word(4);
+      ASSERT_EQ(2u, arg1_header & 0xfu);   // kUint32
+      ASSERT_EQ(122u, arg1_header >> 32);  // value = 122
+      uint64_t arg2_header = get_word(5);
+      ASSERT_EQ(2u, arg2_header & 0xfu);   // kUint32
+      ASSERT_EQ(123u, arg2_header >> 32);  // value = 123
+      offset += 48;
+    }
+
+    // 21. ThreadWakeup with 1 argument (size 32 bytes = 4 words)
+    {
+      uint64_t header = get_word(0);
+      ASSERT_EQ(8u, header & 0xfu);             // kScheduler
+      ASSERT_EQ(4u, (header >> 4) & 0xfffu);    // Size
+      ASSERT_EQ(1u, (header >> 16) & 0xfu);     // Arg count = 1
+      ASSERT_EQ(5u, (header >> 20) & 0xffffu);  // CPU number = 5
+      ASSERT_EQ(0u, (header >> 36) & 0xffu);    // Waking thread ref = 0
+      ASSERT_EQ(2u, (header >> 60) & 0xfu);     // Event type = kThreadWakeup (2)
+      // get_word(1) is timestamp
+      ASSERT_EQ(124u, get_word(2));  // Waking tid
+      uint64_t arg1_header = get_word(3);
+      ASSERT_EQ(2u, arg1_header & 0xfu);   // kUint32
+      ASSERT_EQ(125u, arg1_header >> 32);  // value = 125
+      offset += 32;
     }
 
     ASSERT_EQ(total_size, offset);

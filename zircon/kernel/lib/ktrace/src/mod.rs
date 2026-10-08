@@ -14,8 +14,9 @@ use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use core::{ffi, ptr, slice};
 pub use fxt_layout::{
-    ArgumentHeader, ArgumentType, EventRecordHeader, EventType, KernelObjectRecordHeader,
-    LargeRecordHeader, RecordHeader, RecordType, StringRefHeader,
+    ArgumentHeader, ArgumentType, ContextSwitchRecordHeader, EventRecordHeader, EventType,
+    KernelObjectRecordHeader, LargeRecordHeader, RecordHeader, RecordType, SchedulerEventType,
+    StringRefHeader, ThreadWakeupRecordHeader,
 };
 use kalloc::Box;
 use kstring::interned_category::InternedCategory;
@@ -961,6 +962,94 @@ impl KTrace {
                     let _ = res.write_word(c);
                 }
 
+                let _ = res.commit();
+            }
+        });
+    }
+
+    /// Low-level helper to write an FXT context switch record.
+    ///
+    /// This is not inlined to reduce code size at the instrumentation sites.
+    #[inline(never)]
+    #[cold]
+    pub fn emit_context_switch(
+        cpu: u16,
+        outgoing_thread_state: u32,
+        outgoing_tid: u64,
+        incoming_tid: u64,
+        args: &[Argument<'_>],
+    ) {
+        let _ = Self::with_instance(|ktrace| {
+            let _guard = InterruptDisableGuard::new();
+            if !ktrace.writes_enabled() {
+                return;
+            }
+
+            let base_size = 4; // Header, Timestamp, Outgoing TID, Incoming TID
+            let args = if args.len() > 15 { &args[..15] } else { args };
+            let args_size: usize = args.iter().map(|a| a.size_words()).sum();
+            let total_size_words = base_size + args_size;
+
+            if total_size_words > 0xfff {
+                return;
+            }
+
+            let mut header = ContextSwitchRecordHeader::default();
+            header
+                .set_record_size(total_size_words as u16)
+                .set_arg_count(args.len() as u8)
+                .set_cpu_number(cpu)
+                .set_thread_state((outgoing_thread_state & 0xf) as u8);
+
+            let timestamp = KTrace::timestamp();
+            // SAFETY: Interrupts are disabled by InterruptDisableGuard.
+            if let Ok(mut res) = unsafe { ktrace.reserve(header.bits()) } {
+                let _ = res.write_word(timestamp.0 as u64);
+                let _ = res.write_word(outgoing_tid);
+                let _ = res.write_word(incoming_tid);
+                for arg in args {
+                    let _ = arg.write(&mut res);
+                }
+                let _ = res.commit();
+            }
+        });
+    }
+
+    /// Low-level helper to write an FXT thread wakeup record.
+    ///
+    /// This is not inlined to reduce code size at the instrumentation sites.
+    #[inline(never)]
+    #[cold]
+    pub fn emit_thread_wakeup(cpu: u16, incoming_tid: u64, args: &[Argument<'_>]) {
+        let _ = Self::with_instance(|ktrace| {
+            let _guard = InterruptDisableGuard::new();
+            if !ktrace.writes_enabled() {
+                return;
+            }
+
+            let base_size = 3; // Header, Timestamp, Incoming TID
+            let args = if args.len() > 15 { &args[..15] } else { args };
+            let args_size: usize = args.iter().map(|a| a.size_words()).sum();
+            let total_size_words = base_size + args_size;
+
+            if total_size_words > 0xfff {
+                return;
+            }
+
+            let mut header = ThreadWakeupRecordHeader::default();
+            header
+                .set_record_size(total_size_words as u16)
+                .set_arg_count(args.len() as u8)
+                .set_cpu_number(cpu);
+
+            let timestamp = KTrace::timestamp();
+            // SAFETY: Interrupts are disabled by InterruptDisableGuard.
+            if let Ok(mut res) = unsafe { ktrace.reserve(header.bits()) } {
+                let _ = res.write_word(timestamp.0 as u64);
+                let _ = res.write_word(incoming_tid);
+                for arg in args {
+                    let _ = arg.write(&mut res);
+                }
                 let _ = res.commit();
             }
         });
@@ -1958,6 +2047,38 @@ mod tests {
         expect_eq!((ev_raw >> 24) & 0xff, 0);
         expect_eq!((ev_raw >> 32) & 0xffff, 10);
         expect_eq!((ev_raw >> 48) & 0xffff, 20);
+
+        // ContextSwitchRecordHeader
+        let mut cs = ContextSwitchRecordHeader::default();
+        cs.set_record_size(6).set_arg_count(2).set_cpu_number(0x1234).set_thread_state(3);
+        expect_eq!(cs.record_type(), RecordType::Scheduler);
+        expect_eq!(cs.record_size(), 6);
+        expect_eq!(cs.arg_count(), 2);
+        expect_eq!(cs.cpu_number(), 0x1234);
+        expect_eq!(cs.thread_state(), 3);
+        expect_eq!(cs.event_type(), SchedulerEventType::ContextSwitch);
+        let cs_raw = cs.bits();
+        expect_eq!(cs_raw & 0xf, 8);
+        expect_eq!((cs_raw >> 4) & 0xfff, 6);
+        expect_eq!((cs_raw >> 16) & 0xf, 2);
+        expect_eq!((cs_raw >> 20) & 0xffff, 0x1234);
+        expect_eq!((cs_raw >> 36) & 0xf, 3);
+        expect_eq!((cs_raw >> 60) & 0xf, 1);
+
+        // ThreadWakeupRecordHeader
+        let mut tw = ThreadWakeupRecordHeader::default();
+        tw.set_record_size(4).set_arg_count(1).set_cpu_number(0x5678);
+        expect_eq!(tw.record_type(), RecordType::Scheduler);
+        expect_eq!(tw.record_size(), 4);
+        expect_eq!(tw.arg_count(), 1);
+        expect_eq!(tw.cpu_number(), 0x5678);
+        expect_eq!(tw.event_type(), SchedulerEventType::ThreadWakeup);
+        let tw_raw = tw.bits();
+        expect_eq!(tw_raw & 0xf, 8);
+        expect_eq!((tw_raw >> 4) & 0xfff, 4);
+        expect_eq!((tw_raw >> 16) & 0xf, 1);
+        expect_eq!((tw_raw >> 20) & 0xffff, 0x5678);
+        expect_eq!((tw_raw >> 60) & 0xf, 2);
     }
 }
 
@@ -2053,4 +2174,15 @@ pub unsafe extern "C" fn rust_ktrace_test_macros() {
     {
         let _cpu_scope = cpu_begin_scope!("kernel:sched", "rust_cpu_scope", "val" => 142u32);
     }
+
+    context_switch!(
+        "kernel:sched",
+        2u16,
+        3u32,
+        120u64,
+        121u64,
+        "outgoing_weight" => 122u32,
+        "incoming_weight" => 123u32
+    );
+    thread_wakeup!("kernel:sched", 5u16, 124u64, "weight" => 125u32);
 }
