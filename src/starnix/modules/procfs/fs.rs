@@ -12,19 +12,14 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{PROC_SUPER_MAGIC, statfs};
 
-struct ProcFsHandle(FileSystemHandle);
-
-/// Returns `kernel`'s procfs instance, initializing it if needed.
+/// Returns a new procfs instance.
+///
+/// Each mount of procfs creates a new instance with its own mount options.
 pub fn proc_fs(
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
-    Ok(current_task
-        .kernel()
-        .expando
-        .get_or_init(|| ProcFsHandle(ProcFs::new_fs(current_task, options)))
-        .0
-        .clone())
+    Ok(ProcFs::new_fs(current_task, options))
 }
 
 /// `ProcFs` is a filesystem that exposes runtime information about a `Kernel` instance.

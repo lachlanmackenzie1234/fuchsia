@@ -1081,7 +1081,7 @@ impl DynamicFileSource for ProcMountsFileSource {
                 // Report the union of the FileSystem and Mount flags, as well as any FileSystem-
                 // or LSM-specific options.
                 mount.flags(),
-                security::sb_show_options(&task.kernel(), &mount.fs)?,
+                mount.fs.format_options(&task.kernel())?,
             )?;
             writeln!(sink, " 0 0")?;
             Ok(())
@@ -1196,8 +1196,9 @@ impl DynamicFileSource for ProcMountinfoFile {
                 mount.fs.name(),
                 mount.fs.options.source_for_display(),
                 mount.fs_flags(),
-                // LSM options are associated with the FileSystem rather than the Mount.
-                security::sb_show_options(&task.kernel(), &mount.fs)?
+                // Options (including LSM options) are associated with the FileSystem rather than
+                // the Mount.
+                mount.fs.format_options(&task.kernel())?,
             )?;
             Ok(())
         })?;

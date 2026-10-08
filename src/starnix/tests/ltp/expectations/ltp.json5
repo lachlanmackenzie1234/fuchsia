@@ -179,6 +179,14 @@
                 "madvise02",
                 "madvise08",
                 "membarrier01",
+
+                // TODO(https://fxbug.dev/568892309): Requires cgroup v1 memory controller.
+                "madvise09",
+                "memcg_control",
+                "memcg_regression",
+                "memcg_test_3",
+                "memcontrol02",
+                "swapon01",
                 "mincore01",
                 "mincore02",
                 "mincore03",

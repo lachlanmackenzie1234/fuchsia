@@ -479,6 +479,15 @@ impl FileSystem {
         self.ops.name()
     }
 
+    /// Returns the filesystem-specific mount options for display in /proc/mounts and
+    /// /proc/[pid]/mountinfo, each preceded by a comma: the LSM options followed by the remaining
+    /// mount parameters.
+    pub fn format_options(&self, kernel: &Kernel) -> Result<FsString, Errno> {
+        let mut result = FsString::from(security::sb_show_options(kernel, self)?.to_string());
+        result.extend_from_slice(&self.options.params.format_options());
+        Ok(result)
+    }
+
     pub fn manages_timestamps(&self) -> bool {
         self.ops.manages_timestamps()
     }
