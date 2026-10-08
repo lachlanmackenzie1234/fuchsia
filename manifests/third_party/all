@@ -412,7 +412,7 @@
              path="third_party/pigweed/src"
              remote="https://fuchsia.googlesource.com/third_party/pigweed.googlesource.com/pigweed/pigweed"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="1ade98c29af1924d4701bdffd47686a0198d5b12"/>
+             revision="1ce36b0bf89ca2391ad3f7e2f00bde2bbd3141cf"/>
     <project name="third_party/github.com/google/python_portpicker"
              path="third_party/python_portpicker/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/python_portpicker"
