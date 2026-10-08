@@ -110,7 +110,7 @@ constexpr char kCurrentBuildProductVersionPath[] = "/data/build_product_version.
 constexpr char kDataRegisterPath[] = "/tmp/data_register.json";
 constexpr char kKernelBootOptionsPath[] = "/boot/kernel/boot-options.txt";
 
-constexpr zx::duration kSystemTimeTrackerWritePeriod = zx::sec(1);
+constexpr zx::duration kSystemTimeTrackerWritePeriod = zx::min(1);
 
 constexpr size_t kRedactionIdCacheCapacity = 1500;
 
