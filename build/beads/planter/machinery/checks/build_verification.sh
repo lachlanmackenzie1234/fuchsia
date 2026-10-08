@@ -402,25 +402,51 @@ def bazel_tests_export_notes():
 
 FIDL_MACROS = {"fidl_library", "_fidl_library", "fidl_ir"}
 VALIDATE_JSON_MACROS = {"validate_json", "validate_json5", "_validate_json_action"}
+FDOMAIN_UNSUPPORTED_HANDLE_RE = re.compile(
+    r"\bzx\.Handle\s*:\s*(?:LOG|DEBUGLOG|INTERRUPT|MSI|IOMMU|BTI|PMT|PAGER|PCI_DEVICE|PROFILE|SUSPEND_TOKEN|VCPU)\b"
+)
+
+
+def _dir_has_fdomain_unsupported_handles(d):
+    abs_d = os.path.join(workdir, d)
+    try:
+        names = os.listdir(abs_d)
+    except OSError:
+        return False
+    for fn in sorted(names):
+        if fn.endswith(".fidl"):
+            content = read(f"{d}/{fn}") or ""
+            if FDOMAIN_UNSUPPORTED_HANDLE_RE.search(content):
+                return True
+    return False
 
 
 def validate_json_exclusions(d):
-    """Returns `-//<d>:<target>` exclusions for `_validate_json_action` targets in `d/BUILD.bazel`.
-    `//build/bazel/aspects:assert_no_deps.bzl` iterates `getattr(ctx.rule.attr, "data", [])`, which
-    crashes with `Error: type 'Target' is not iterable` when `:all` applies `assert_no_deps_aspect`
-    at the top level to `_validate_json_action` (`data = attr.label(...)`). Excluding `<name>_validate_ir_json`
-    from top-level `:all` still runs IR JSON validation via `:<name>`'s `_validation` output group."""
+    """Returns `-//<d>:<target>` exclusions for `_validate_json_action` targets in `d/BUILD.bazel`
+    (and `<name>_rust_fdomain{,_flex}` when `.fidl` sources use `zx.Handle` subtypes missing from
+    `fdomain_client`). `//build/bazel/aspects:assert_no_deps.bzl` iterates
+    `getattr(ctx.rule.attr, "data", [])`, which crashes with `Error: type 'Target' is not iterable`
+    when `:all` applies `assert_no_deps_aspect` at the top level to `_validate_json_action`
+    (`data = attr.label(...)`). Excluding `<name>_validate_ir_json` from top-level `:all` still runs
+    IR JSON validation via `:<name>`'s `_validation` output group."""
     text = read(f"{d}/BUILD.bazel")
     if not text:
         return []
     out = []
     seen = set()
+    skip_fdomain = _dir_has_fdomain_unsupported_handles(d)
 
     def _add(target):
         lbl = f"-//{d}:{target}"
         if lbl not in seen:
             seen.add(lbl)
             out.append(lbl)
+
+    def _add_fidl(tname, fn):
+        _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
+        if fn in {"fidl_library", "_fidl_library"} and skip_fdomain:
+            _add(f"{tname}_rust_fdomain")
+            _add(f"{tname}_rust_fdomain_flex")
 
     try:
         tree = ast.parse(text)
@@ -434,8 +460,7 @@ def validate_json_exclusions(d):
                 continue
             for kw in node.keywords:
                 if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
-                    tname = kw.value.value
-                    _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
+                    _add_fidl(kw.value.value, fn)
     except SyntaxError:
         for m in re.finditer(
             r"\b(fidl_library|_fidl_library|fidl_ir|validate_json5?|_validate_json_action)\s*\(([^)]*)\)",
@@ -445,8 +470,7 @@ def validate_json_exclusions(d):
             fn, args_body = m.group(1), m.group(2)
             nm = re.search(r'\bname\s*=\s*"([^"]+)"', args_body)
             if nm:
-                tname = nm.group(1)
-                _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
+                _add_fidl(nm.group(1), fn)
     return out
 
 

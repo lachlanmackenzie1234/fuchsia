@@ -428,6 +428,7 @@ for pkg_dir in sorted(candidate_dirs):
                     continue
                 unmigrated_deps = []
                 declare_args_deps = []
+                gn_blocked_dep = False
                 for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', gbody):
                     dep_pkg = dm.group(1).strip("/")
                     if (
@@ -445,8 +446,33 @@ for pkg_dir in sorted(candidate_dirs):
                             dep_gn_txt = open(dep_gn, encoding="utf-8").read()
                             if "declare_args(" in dep_gn_txt and f"//{dep_pkg}" not in declare_args_deps:
                                 declare_args_deps.append(f"//{dep_pkg}")
+                            if GN_ONLY_ATTR_RE.search(dep_gn_txt) or re.search(
+                                r"\bloadable_module\s*\(|\(\$[a-zA-Z0-9_]*toolchain\)", dep_gn_txt
+                            ):
+                                gn_blocked_dep = True
+                            else:
+                                for sub_dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', dep_gn_txt):
+                                    sub_pkg = sub_dm.group(1).strip("/")
+                                    sub_gn = os.path.join(workdir, sub_pkg, "BUILD.gn")
+                                    sub_bazel = os.path.join(workdir, sub_pkg, "BUILD.bazel")
+                                    if os.path.isfile(sub_gn) and not os.path.isfile(sub_bazel):
+                                        sub_txt = open(sub_gn, encoding="utf-8").read()
+                                        if GN_ONLY_ATTR_RE.search(sub_txt) or re.search(
+                                            r"\bloadable_module\s*\(|\(\$[a-zA-Z0-9_]*toolchain\)", sub_txt
+                                        ):
+                                            gn_blocked_dep = True
+                                            break
                         except Exception:
                             pass
+                if (
+                    gname not in bazel_names
+                    and gn_blocked_dep
+                    and any(
+                        t["rule"] in CONVERTIBLE_BAZEL_RULES and t["skip_line"] is None
+                        for t in bazel_targets
+                    )
+                ):
+                    continue
 
                 attr_hints = []
                 if gtmpl == "rustc_binary":
@@ -539,72 +565,7 @@ for pkg_dir in sorted(candidate_dirs):
                         ),
                     })
 
-    if gn_info and gn_info["has_sentinel"]:
-        # Tests move to Bazel; bazel2gn must not generate any test into BUILD.gn.
-        for t in bazel_targets:
-            if t["rule"] in BAZEL2GN_TEST_RULES and t["skip_line"] is None:
-                findings.append({
-                    "source": "migration_sanity",
-                    "category": "test_generated_by_bazel2gn",
-                    "severity": "error",
-                    "file": bazel_rel,
-                    "line": t["line"],
-                    "message": (
-                        f"Test target `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no `# @bazel2gn:skip`, "
-                        "so bazel2gn generates it into BUILD.gn. Tests move to Bazel and are not translated to GN."
-                    ),
-                    "remediation": (
-                        f"Put `# @bazel2gn:skip` directly above `{t['rule']}(name = \"{t['name']}\")`, export the test "
-                        "through a hand-written `bazel_test_suite` above the sentinel (package it with `fx_test` if it "
-                        f"runs on a device), and re-run `fx bazel2gn -d {pkg_dir}`."
-                    ),
-                })
-            if t["rule"] in RUST_UNIT_TEST_OWNERS:
-                for attr, lineno in t["unskipped_test_attrs"]:
-                    findings.append({
-                        "source": "migration_sanity",
-                        "category": "test_generated_by_bazel2gn",
-                        "severity": "error",
-                        "file": bazel_rel,
-                        "line": lineno,
-                        "message": (
-                            f"`{attr}` on `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no "
-                            "`# @bazel2gn:skip`, so bazel2gn generates GN unit tests. Tests move to Bazel and are "
-                            "not translated to GN."
-                        ),
-                        "remediation": (
-                            f"Put `# @bazel2gn:skip` on the line directly above `{attr} = ...` (and above every other "
-                            "test-only attribute of the target), package `:" + t["name"] + "_test` with `fx_test` "
-                            "(device) or export it as a host test, list it in a `bazel_test_suite` above the sentinel, "
-                            f"and re-run `fx bazel2gn -d {pkg_dir}`."
-                        ),
-                    })
-        post = re.sub(r"#[^\n]*", "", gn_info["post_text"])
-        for pat, what in (
-            (r"\bwith_unit_tests\s*=", "with_unit_tests"),
-            (r"\btest_deps\s*=", "test_deps"),
-            (r"^\s*rustc_test\(", "rustc_test("),
-            (r"^\s*go_test\(", "go_test("),
-        ):
-            m = re.search(pat, post, re.M)
-            if not m:
-                continue
-            findings.append({
-                "source": "migration_sanity",
-                "category": "test_generated_by_bazel2gn",
-                "severity": "error",
-                "file": gn_rel,
-                "line": gn_info["pre_text"].count("\n") + post.count("\n", 0, m.start()) + 1,
-                "message": (
-                    f"The bazel2gn-generated section of '{gn_rel}' contains `{what}`: tests move to Bazel and "
-                    "bazel2gn must not translate them."
-                ),
-                "remediation": (
-                    f"Mark the test targets and test attributes in '{bazel_rel}' with `# @bazel2gn:skip`, re-run "
-                    f"`fx bazel2gn -d {pkg_dir}`, and export the Bazel tests through `bazel_test_suite`."
-                ),
-            })
-
+    gn_kept_pkg_test_deps = set()
     if gn_info and FX_TEST_AVAILABLE:
         bazel_test_pkg_names = {t["package_name"] for t in fx_pkgs}
         bazel_rules = {t["name"]: t["rule"] for t in bazel_targets}
@@ -675,6 +636,56 @@ for pkg_dir in sorted(candidate_dirs):
                 deps += re.findall(r'"([^"]+)"', dm.group(1))
             return "cc" if all(bazel_buildable(d) for d in deps) else None
 
+        def depends_on_rustc_dylib(seed_texts):
+            """Whether any direct or transitive first-party dep defines a rustc_dylib / rust_dylib_library."""
+            dylib_re = re.compile(r"\b(?:rustc_dylib|rust_dylib_library)\s*\(")
+            dep_pkg_re = re.compile(r'"//([^":(\s]+)(?::([^"(\s]+))?"')
+            vis_re = re.compile(r"\b(?:default_)?visibility\s*\+?=\s*\[[^\]]*\]")
+            trans_strip_re = re.compile(
+                r"\b(?:(?:default_)?visibility|[A-Za-z0-9_]*test_deps|[A-Z0-9_]*TEST_DEPS)\s*\+?=\s*\[[^\]]*\]"
+            )
+            queue = []
+            seen = {pkg_dir}
+            for raw in seed_texts:
+                txt = vis_re.sub("", re.sub(r"#[^\n]*", "", raw))
+                if dylib_re.search(txt):
+                    return True
+                for m in dep_pkg_re.finditer(txt):
+                    p, t = m.group(1).strip("/"), m.group(2) or ""
+                    if (
+                        p
+                        and t not in ("__pkg__", "__subpackages__", "*")
+                        and not p.startswith(("build/", "prebuilt/", "third_party/", "out/"))
+                        and p not in seen
+                    ):
+                        seen.add(p)
+                        queue.append(p)
+            visited = 0
+            while queue and visited < 256:
+                cur = queue.pop(0)
+                visited += 1
+                for fn in ("BUILD.bazel", "BUILD.gn"):
+                    fp = os.path.join(workdir, cur, fn)
+                    if not os.path.isfile(fp):
+                        continue
+                    try:
+                        txt = trans_strip_re.sub("", re.sub(r"#[^\n]*", "", open(fp, encoding="utf-8").read()))
+                    except OSError:
+                        continue
+                    if dylib_re.search(txt):
+                        return True
+                    for m in dep_pkg_re.finditer(txt):
+                        p, t = m.group(1).strip("/"), m.group(2) or ""
+                        if (
+                            p
+                            and t not in ("__pkg__", "__subpackages__", "*")
+                            and not p.startswith(("build/", "prebuilt/", "third_party/", "out/"))
+                            and p not in seen
+                        ):
+                            seen.add(p)
+                            queue.append(p)
+            return False
+
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             if gtmpl not in GN_TEST_PACKAGE_TEMPLATES:
                 continue
@@ -717,14 +728,29 @@ for pkg_dir in sorted(candidate_dirs):
             labels = []
             for lm in re.finditer(r"\b(?:deps|test_components)\s*\+?=\s*\[([^\]]*)\]", gbody):
                 labels += re.findall(r'"([^"]+)"', lm.group(1))
+            pkg_test_deps = set()
+            seed_texts = [gbody, open(bazel_abs, encoding="utf-8").read()]
             for l in labels:
-                local = l[1:] if l.startswith(":") else ""
+                local = l[1:] if l.startswith(":") and "(" not in l else ""
+                if local:
+                    pkg_test_deps.add(local)
+                    comp = gn_info["pre_targets"].get(local)
+                    if comp and comp[0] in ("fuchsia_test_component", "fuchsia_unittest_component", "fuchsia_component"):
+                        for cm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", comp[2]):
+                            for cl in re.findall(r'"([^"]+)"', cm.group(1)):
+                                if cl.startswith(":") and "(" not in cl:
+                                    pkg_test_deps.add(cl[1:])
                 owner = gn_info["pre_targets"].get(local) or gn_info["pre_targets"].get(re.sub(r"_test$", "", local))
-                if owner and GN_ONLY_ATTR_RE.search(owner[2]):
-                    blockers.append("GN-only attributes (see gn_attr_parity)")
+                if owner:
+                    seed_texts.append(owner[2])
+                    if GN_ONLY_ATTR_RE.search(owner[2]):
+                        blockers.append("GN-only attributes (see gn_attr_parity)")
             # Unknown or unbuildable tests never trigger it.
             langs = {test_language(l) for l in labels}
+            if "rust" in langs and depends_on_rustc_dylib(seed_texts):
+                blockers.append("rustc_dylib dependency (duplicate default_runfiles .so in fx_packaged_binary)")
             if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
+                gn_kept_pkg_test_deps.update(pkg_test_deps)
                 continue
             is_rust = "rust" in langs
             findings.append({
@@ -757,6 +783,84 @@ for pkg_dir in sorted(candidate_dirs):
                     "`# @bazel2gn:skip` in a dual-build package); then replace the GN package and executable with "
                     f"`bazel_test_suite(\"{gname}\") {{ target_tests = [ \"//{pkg_dir}:<fx_test>\" ] }}` listed in "
                     "`group(\"tests\")`. If a real blocker keeps it in GN, name it in the summary and dispute this finding."
+                ),
+            })
+
+    if gn_info and gn_info["has_sentinel"]:
+        # Tests move to Bazel; bazel2gn must not generate any test into BUILD.gn unless a blocked
+        # GN test package above the sentinel depends on the generated test target.
+        for t in bazel_targets:
+            if t["rule"] in BAZEL2GN_TEST_RULES and t["skip_line"] is None and t["name"] not in gn_kept_pkg_test_deps:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "test_generated_by_bazel2gn",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": t["line"],
+                    "message": (
+                        f"Test target `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no `# @bazel2gn:skip`, "
+                        "so bazel2gn generates it into BUILD.gn. Tests move to Bazel and are not translated to GN."
+                    ),
+                    "remediation": (
+                        f"Put `# @bazel2gn:skip` directly above `{t['rule']}(name = \"{t['name']}\")`, export the test "
+                        "through a hand-written `bazel_test_suite` above the sentinel (package it with `fx_test` if it "
+                        f"runs on a device), and re-run `fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+            if t["rule"] in RUST_UNIT_TEST_OWNERS and (t["name"] + "_test") not in gn_kept_pkg_test_deps:
+                for attr, lineno in t["unskipped_test_attrs"]:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "test_generated_by_bazel2gn",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": lineno,
+                        "message": (
+                            f"`{attr}` on `{t['rule']}(name = \"{t['name']}\")` in '{bazel_rel}' has no "
+                            "`# @bazel2gn:skip`, so bazel2gn generates GN unit tests. Tests move to Bazel and are "
+                            "not translated to GN."
+                        ),
+                        "remediation": (
+                            f"Put `# @bazel2gn:skip` on the line directly above `{attr} = ...` (and above every other "
+                            "test-only attribute of the target), package `:" + t["name"] + "_test` with `fx_test` "
+                            "(device) or export it as a host test, list it in a `bazel_test_suite` above the sentinel, "
+                            f"and re-run `fx bazel2gn -d {pkg_dir}`."
+                        ),
+                    })
+        post = re.sub(r"#[^\n]*", "", gn_info["post_text"])
+        post_check = post
+        if gn_kept_pkg_test_deps:
+            for pm in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', post, re.M):
+                pname = pm.group(2)
+                if pname in gn_kept_pkg_test_deps or (pname + "_test") in gn_kept_pkg_test_deps:
+                    end_i = find_closing_brace(post, pm.end() - 1) + 1
+                    post_check = (
+                        post_check[: pm.start()]
+                        + re.sub(r"[^\n]", " ", post_check[pm.start() : end_i])
+                        + post_check[end_i:]
+                    )
+        for pat, what in (
+            (r"\bwith_unit_tests\s*=", "with_unit_tests"),
+            (r"\btest_deps\s*=", "test_deps"),
+            (r"^\s*rustc_test\(", "rustc_test("),
+            (r"^\s*go_test\(", "go_test("),
+        ):
+            m = re.search(pat, post_check, re.M)
+            if not m:
+                continue
+            findings.append({
+                "source": "migration_sanity",
+                "category": "test_generated_by_bazel2gn",
+                "severity": "error",
+                "file": gn_rel,
+                "line": gn_info["pre_text"].count("\n") + post.count("\n", 0, m.start()) + 1,
+                "message": (
+                    f"The bazel2gn-generated section of '{gn_rel}' contains `{what}`: tests move to Bazel and "
+                    "bazel2gn must not translate them."
+                ),
+                "remediation": (
+                    f"Mark the test targets and test attributes in '{bazel_rel}' with `# @bazel2gn:skip`, re-run "
+                    f"`fx bazel2gn -d {pkg_dir}`, and export the Bazel tests through `bazel_test_suite`."
                 ),
             })
 

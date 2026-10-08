@@ -39,7 +39,7 @@
         },
         {
             "name": "build_only_scope",
-            "description": "Fails if the migration change (HEAD commit, uncommitted, or untracked files) modifies any non-build file (anything other than BUILD.gn/BUILD.bazel/BUILD/*.BUILD.bazel/*.BUILD/*.gni/*.bzl/MODULE.bazel). Migrations must not edit source code. A newly added non-shard .cml file is allowed when the nearest BUILD.bazel declares an fx_test_component whose manifest points at it (hand-written test manifest replacing the one GN's fuchsia_unittest_package generated, for C++ and Rust tests alike).",
+            "description": "Fails if the migration change (HEAD commit, uncommitted, or untracked files) modifies any non-build file (anything other than BUILD.gn/BUILD.bazel/BUILD/*.BUILD.bazel/*.BUILD/*.gni/*.bzl/MODULE.bazel/*.MODULE.bazel). Migrations must not edit source code. A newly added non-shard .cml file is allowed when the nearest BUILD.bazel declares an fx_test_component whose manifest points at it (hand-written test manifest replacing the one GN's fuchsia_unittest_package generated, for C++ and Rust tests alike).",
             "script_file": "build_only_scope.sh",
             "enabled": true
         },
