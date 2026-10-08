@@ -105,7 +105,8 @@ def migrated_dependency_packages():
     """Packages this change migrates because a target (transitively) depends on them.
 
     A dependency package is in scope when its BUILD.bazel is added or modified in this change
-    and a BUILD.bazel of a target package, or of another such dependency package, references it.
+    and is reachable from a target package's BUILD.bazel through non-visibility label
+    references (including across already-migrated intermediate BUILD.bazel files).
     """
     added = set(git_lines(["diff", "--name-only", "--diff-filter=AM", change_base])) | set(untracked)
     candidates = {
@@ -115,22 +116,29 @@ def migrated_dependency_packages():
         and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
     }
     candidates -= set(target_dirs)
-    label_re = re.compile(r'"@?//([^":]*)')
+    if not candidates:
+        return set()
+    label_re = re.compile(r'"@?//([^":]+)(?::([^"\s]+))?"')
     found, seen, frontier = set(), set(), list(target_dirs)
-    while frontier:
+    while frontier and found != candidates:
         pkg = frontier.pop()
-        if pkg in seen:
+        if pkg in seen or not pkg:
             continue
         seen.add(pkg)
+        if pkg not in candidates and pkg.startswith(("third_party/rust_crates/vendor", "build/bazel/")):
+            continue
         try:
             with open(os.path.join(workdir, pkg, "BUILD.bazel"), encoding="utf-8") as f:
                 text = f.read()
         except OSError:
             continue
-        for ref in label_re.findall(text):
-            ref = ref.strip("/")
-            if ref in candidates and ref not in found:
+        for m in label_re.finditer(text):
+            ref, target = m.group(1).strip("/"), m.group(2) or ""
+            if not ref or target in ("__pkg__", "__subpackages__"):
+                continue
+            if ref in candidates:
                 found.add(ref)
+            if ref not in seen:
                 frontier.append(ref)
     return found
 
