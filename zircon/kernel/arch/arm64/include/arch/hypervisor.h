@@ -156,7 +156,9 @@ class Vcpu {
   // stage of our migration function callback.
   Thread* thread_ TA_GUARDED(Thread::get_list_lock());
   ktl::atomic<bool> kicked_ = false;
-  // Allocate El2State in its own page-aligned page.
+  // We allocate El2State in its own page as it is passed between EL1 and EL2,
+  // which have different address space mappings. This ensures that El2State
+  // will not cross a page boundary and be incorrectly accessed in EL2.
   hypervisor::PagePtr<El2State> el2_state_;
   GichState gich_state_;
   uint64_t hcr_;

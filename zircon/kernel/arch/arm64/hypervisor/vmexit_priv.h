@@ -69,17 +69,11 @@ struct SmcInstruction {
 
 // System register associated with a system instruction.
 enum class SystemRegister : uint16_t {
-  AFSR0_EL1       = 0b11000000 << 8 /* op */ | 0b01010001 /* cr */,
-  AFSR1_EL1       = 0b11001000 << 8 /* op */ | 0b01010001 /* cr */,
-  ESR_EL1         = 0b11000000 << 8 /* op */ | 0b01010010 /* cr */,
-  FAR_EL1         = 0b11000000 << 8 /* op */ | 0b01100000 /* cr */,
   MAIR_EL1        = 0b11000000 << 8 /* op */ | 0b10100010 /* cr */,
-  AMAIR_EL1       = 0b11000000 << 8 /* op */ | 0b10100011 /* cr */,
   SCTLR_EL1       = 0b11000000 << 8 /* op */ | 0b00010000 /* cr */,
   TCR_EL1         = 0b11010000 << 8 /* op */ | 0b00100000 /* cr */,
   TTBR0_EL1       = 0b11000000 << 8 /* op */ | 0b00100000 /* cr */,
   TTBR1_EL1       = 0b11001000 << 8 /* op */ | 0b00100000 /* cr */,
-  CONTEXTIDR_EL1  = 0b11001000 << 8 /* op */ | 0b11010000 /* cr */,
 
   // Debug Registers, trapped by MDCR_EL2.TDOSA = 1
   OSLAR_EL1       = 0b10100000 << 8 /* op */ | 0b00010000 /* cr */,
