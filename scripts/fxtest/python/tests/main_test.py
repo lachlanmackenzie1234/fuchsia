@@ -4350,3 +4350,84 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(ret, 0)
         mock_get_dev_env.assert_awaited_once()
+
+    async def test_non_hermetic_test_worker_not_starved_when_hermetic_queue_empty(
+        self,
+    ) -> None:
+        """Test that worker tasks are not starved/exited when hermetic queue is empty
+        while multiple non-hermetic tests are executing or queued."""
+        flags = args.parse_args(["--parallel", "4"])
+        recorder = event.EventRecorder()
+        app = main.AsyncMain(
+            flags,
+            [],
+            recorder,
+            asyncio.Event(),
+            asyncio.Event(),
+        )
+
+        mock_test_1 = mock.MagicMock(spec=test_list_file.Test)
+        mock_test_1.info.is_hermetic.return_value = False
+        mock_test_1.needs_device.return_value = False
+        mock_test_1.name.return_value = "non_hermetic_1"
+
+        mock_test_2 = mock.MagicMock(spec=test_list_file.Test)
+        mock_test_2.info.is_hermetic.return_value = False
+        mock_test_2.needs_device.return_value = False
+        mock_test_2.name.return_value = "non_hermetic_2"
+
+        test_selections = selection_types.TestSelections(
+            selected=[mock_test_1, mock_test_2],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        exec_env = mock.MagicMock()
+
+        workers_alive_during_test_1 = []
+
+        async def fake_run_test_1(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            await asyncio.sleep(0.05)
+            executor_tasks = [
+                t
+                for t in asyncio.all_tasks()
+                if "test_executor" in t.get_coro().__name__ and not t.done()
+            ]
+            workers_alive_during_test_1.append(len(executor_tasks))
+            return mock.MagicMock(return_code=0)
+
+        async def fake_run_test_2(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            return mock.MagicMock(return_code=0)
+
+        with (
+            mock.patch(
+                "execution.TestExecution.run", new_callable=mock.AsyncMock
+            ) as mock_run,
+            mock.patch.object(
+                execution.TestExecution,
+                "command_line",
+                return_value=["fake_cmd"],
+            ),
+        ):
+
+            async def dispatch_run(
+                *args: typing.Any, **kwargs: typing.Any
+            ) -> typing.Any:
+                if mock_run.await_count <= 1:
+                    return await fake_run_test_1(*args, **kwargs)
+                return await fake_run_test_2(*args, **kwargs)
+
+            mock_run.side_effect = dispatch_run
+
+            app._exec_env = exec_env
+            success = await app._run_all_tests(test_selections)
+
+        self.assertTrue(success)
+        self.assertEqual(len(workers_alive_during_test_1), 1)
+        self.assertEqual(workers_alive_during_test_1[0], 4)

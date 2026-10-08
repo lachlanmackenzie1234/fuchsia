@@ -2069,11 +2069,18 @@ class AsyncMain:
                         to_run = run_state.non_hermetic_test_queue.get_nowait()
                         run_state.non_hermetic_running += 1
                         was_non_hermetic = True
-                    elif run_state.hermetic_test_queue.empty():
-                        return
-                    else:
+                    elif not run_state.hermetic_test_queue.empty():
                         to_run = run_state.hermetic_test_queue.get_nowait()
                         was_non_hermetic = False
+                    elif (
+                        run_state.hermetic_test_queue.empty()
+                        and run_state.non_hermetic_test_queue.empty()
+                    ):
+                        run_condition.notify_all()
+                        return
+                    else:
+                        await run_condition.wait()
+                        continue
                     run_state.total_running += 1
 
                 test_suite_id = recorder.emit_test_suite_started(
@@ -2223,7 +2230,7 @@ class AsyncMain:
                     run_state.total_running -= 1
                     if was_non_hermetic:
                         run_state.non_hermetic_running -= 1
-                    run_condition.notify()
+                    run_condition.notify_all()
 
         # Wait for the debugger to signal that it is ready.
         if maybe_debugger is not None:
