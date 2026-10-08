@@ -856,13 +856,13 @@
     },
     {
         "package": "infra/3pp/tools/cpython3/linux-amd64",
-        "version": "version:3@3.13.14.chromium.1",
-        "instance_id": "5aXCe3q9FUdLuBRKsO9UM55C21LZoj2DzNI8BgQDBDwC"
+        "version": "version:3@3.14.8.chromium.1",
+        "instance_id": "2N9HpAxl0D3bu5g33yf58u-ae-OBDdrvjEvMq1Sxg5kC"
     },
     {
         "package": "infra/3pp/tools/cpython3/linux-arm64",
-        "version": "version:3@3.13.14.chromium.1",
-        "instance_id": "PjWY4bmhdMv20I7y4LFKTcILMQNuSwxlT-egUapZBq0C"
+        "version": "version:3@3.14.8.chromium.1",
+        "instance_id": "7L78kaQUWuELmUMDdlu22HLYt_JPBFCjoRCbfx1XvkkC"
     },
     {
         "package": "infra/python/wheels/protobuf-py3",
@@ -870,9 +870,9 @@
         "instance_id": "cutiHuc7faTiBiWvoTtbsp9AHAaErwYjxnmf4Gm90OAC"
     },
     {
-        "package": "infra/python/wheels/pydantic_core/linux-amd64_cp313_cp313",
+        "package": "infra/python/wheels/pydantic_core/linux-amd64_cp314_cp314",
         "version": "version:2.46.5",
-        "instance_id": "4bu5s6M5JAcK0HWkYDbcYVHn3NHfhKc4SgYUDPB-aGgC"
+        "instance_id": "HfXwPrCa8QXzTbi6M3wYe7D0UAmilaF5I1uKWTjYpGgC"
     },
     {
         "package": "infra/rbe/client/linux-amd64",
