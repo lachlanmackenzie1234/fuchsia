@@ -25,10 +25,6 @@ pub struct RegisterState<T: RegisterStorage> {
     /// important to store, as the return value of a syscall overwrites `x0`, making it impossible
     /// to recover the original `x0` value in the case of syscall restart and strace output.
     pub orig_x0: u64,
-
-    /// The contents of the Exception Link Register. This register is used to jump to a code
-    /// location in restricted mode, as arm64 does not allow the PC to be set directly.
-    pub elr: u64,
 }
 
 impl<T: RegisterStorage> ArchSpecific for RegisterState<T> {
@@ -298,7 +294,6 @@ impl<T: RegisterStorage> RegisterState<T> {
             self.r[15] = self.pc;
         }
         self.orig_x0 = self.r[0];
-        self.elr = 0;
     }
 }
 
@@ -307,7 +302,6 @@ impl<T: RegisterStorage> std::fmt::Debug for RegisterState<T> {
         f.debug_struct("RegisterState")
             .field("real_registers", &self.real_registers)
             .field("orig_x0", &format_args!("{:#x}", &self.orig_x0))
-            .field("elr", &format_args!("{:#x}", &self.elr))
             .finish()
     }
 }
@@ -328,12 +322,12 @@ impl<T: RegisterStorage> std::ops::DerefMut for RegisterState<T> {
 
 impl From<RegisterState<HeapRegs>> for RegisterState<RegisterStorageEnum> {
     fn from(regs: RegisterState<HeapRegs>) -> Self {
-        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0, elr: regs.elr }
+        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0 }
     }
 }
 
 impl From<RegisterState<RegisterStorageEnum>> for RegisterState<HeapRegs> {
     fn from(regs: RegisterState<RegisterStorageEnum>) -> Self {
-        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0, elr: regs.elr }
+        Self { real_registers: regs.real_registers.into(), orig_x0: regs.orig_x0 }
     }
 }
