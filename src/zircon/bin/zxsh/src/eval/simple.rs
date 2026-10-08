@@ -5,34 +5,30 @@
 use super::execution_context::ExecutionContext;
 use super::expand::{
     ExpandedCommand, expand_alias, expand_argument, expand_assignment_value,
-    get_literal_command_name, needs_subshell_process,
+    get_literal_command_name,
 };
-use super::spawn::{
-    SpawnedProcess, spawn_command_with_redirection, spawn_subshell_vmo, wait_for_process_to_exit,
-};
+use super::spawn::{SpawnedProcess, spawn_external_command, wait_for_process_to_exit};
 use super::state::{Frame, ShellState, StateBackupGuard};
 use super::{EvalOutcome, eval_command};
 use crate::builtins::{is_builtin, is_special_builtin};
 use crate::collections::{FlatMap, FlatSet};
 use crate::parser::ast::{ASTBuilder, Command, WordPart, WordPartTag};
 use crate::relative;
-use crate::subshell::SubshellScriptArgs;
 use bstr::{BStr, BString, ByteSlice};
 
-pub fn parse_simple_command_args<'a>(
-    builder: &'a ASTBuilder,
-    cmd_ptr: relative::Ptr<Command>,
+pub fn split_simple_command_args(
+    cmd: &Command,
+    buf: &relative::Buffer,
 ) -> (Vec<relative::Slice<WordPart>>, Vec<relative::Slice<WordPart>>) {
     let mut assignments_refs = Vec::new();
     let mut cmd_args_refs = Vec::new();
     let mut parsing_assignments = true;
-    let cmd = builder.get_ref(cmd_ptr);
-    for &arg_slice in cmd.simple_args.as_slice(builder) {
-        let parts = arg_slice.as_slice(builder);
+    for &arg_slice in cmd.simple_args.as_slice(buf) {
+        let parts = arg_slice.as_slice(buf);
         if parts.is_empty() {
             cmd_args_refs.push(relative::Slice::empty());
             parsing_assignments = false;
-        } else if parsing_assignments && is_assignment_flat(parts, builder) {
+        } else if parsing_assignments && is_assignment_flat(parts, buf) {
             assignments_refs.push(arg_slice);
         } else {
             parsing_assignments = false;
@@ -40,6 +36,13 @@ pub fn parse_simple_command_args<'a>(
         }
     }
     (assignments_refs, cmd_args_refs)
+}
+
+pub fn parse_simple_command_args<'a>(
+    builder: &'a ASTBuilder,
+    cmd_ptr: relative::Ptr<Command>,
+) -> (Vec<relative::Slice<WordPart>>, Vec<relative::Slice<WordPart>>) {
+    split_simple_command_args(builder.get_ref(cmd_ptr), builder)
 }
 
 pub fn apply_assignments<'a>(
@@ -226,33 +229,7 @@ pub fn eval_simple(
         return eval_function_call(&func_bytes, cmd_name, &expanded_args[1..], guard, ctx);
     }
 
-    let is_subshell = {
-        let cmd = builder.get_ref(cmd_ptr);
-        needs_subshell_process(cmd, guard.state, builder)
-    };
-    let spawned = if is_subshell {
-        let cmd = builder.get_ref(cmd_ptr);
-        SpawnedProcess::Running(spawn_subshell_vmo(
-            cmd,
-            guard.state,
-            ctx,
-            None,
-            None,
-            None,
-            SubshellScriptArgs::Pass,
-            builder,
-        )?)
-    } else {
-        spawn_command_with_redirection(
-            builder,
-            cmd_ptr,
-            &mut *guard.state,
-            ctx,
-            ctx.stdin(),
-            ctx.stdout(),
-            ctx.stderr(),
-        )?
-    };
+    let spawned = spawn_external_command(expanded_args, &mut *guard.state, ctx);
     drop(guard);
 
     let exit_code = match spawned {

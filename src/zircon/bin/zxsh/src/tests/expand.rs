@@ -275,7 +275,7 @@ fn test_expand_string_and_heredoc() {
 
 #[test]
 fn test_needs_subshell_process() {
-    let state = ShellState::new();
+    let mut state = ShellState::new();
     let check_cmd = |s: &str, state: &ShellState| -> bool {
         let mut builder = ASTBuilder::new();
         let tokens = tokenize(BStr::new(s)).unwrap();
@@ -284,9 +284,37 @@ fn test_needs_subshell_process() {
         needs_subshell_process(cmd, state, &builder)
     };
 
+    // Builtins, prefix-assigned builtins, and composite-quoted builtins require subshell
     assert!(check_cmd("echo hello", &state));
+    assert!(check_cmd("FOO=bar echo hello", &state));
+    assert!(check_cmd("\"ec\"\"ho\" hello", &state));
+    assert!(check_cmd("e'ch'o hello", &state));
+
+    // Dynamic command names, bare assignments, and bare redirections require subshell
+    assert!(check_cmd("$cmd hello", &state));
+    assert!(check_cmd("$(echo grep) pattern", &state));
+    assert!(check_cmd("FOO=bar", &state));
+    assert!(check_cmd(">/dev/null", &state));
+
+    // Plain external commands (including with plain prefix assignments or plain $VAR args) do not require subshell
     assert!(!check_cmd("grep pattern", &state));
-    assert!(!check_cmd("FOO=bar", &state));
+    assert!(!check_cmd("FOO=bar grep $PATTERN", &state));
+    assert!(!check_cmd("grep pattern >/dev/null", &state));
+
+    // Side-effecting expansions in arguments, prefix assignments, or redirections require subshell
+    assert!(check_cmd("grep $((x = 1))", &state));
+    assert!(check_cmd("grep ${y:=default}", &state));
+    assert!(check_cmd("grep $(echo pattern)", &state));
+    assert!(check_cmd("FOO=$((x = 1)) grep pattern", &state));
+    assert!(check_cmd("grep pattern >$((x = 1))", &state));
+
+    // Functions and aliases require subshell
+    state.add_function(BString::from("my_fn"), vec![0]);
+    assert!(check_cmd("my_fn arg", &state));
+    assert!(check_cmd("FOO=1 my_fn arg", &state));
+
+    state.aliases.insert(BString::from("my_alias"), BString::from("grep"));
+    assert!(check_cmd("my_alias pattern", &state));
 
     let mut builder = ASTBuilder::new();
     let sub_ptr = builder.add_unary_command(CommandTag::SUBSHELL, relative::Ptr::null());

@@ -34,6 +34,29 @@ pub enum SpawnedProcess {
     Failed(i32),
 }
 
+pub fn spawn_external_command(
+    mut expanded_args: Vec<BString>,
+    state: &mut ShellState,
+    ctx: &ExecutionContext,
+) -> SpawnedProcess {
+    if let Some(resolved_path) = state.resolve_command_path(expanded_args[0].as_ref()) {
+        expanded_args[0] = resolved_path;
+    }
+
+    let mut actions = get_spawn_actions(ctx, None, None, None);
+    let vars = state.vars();
+
+    match spawn_command(&expanded_args, &vars, &mut actions) {
+        Ok(proc) => SpawnedProcess::Running(proc),
+        Err(status) => {
+            if let Some(mut err) = ctx.stderr() {
+                let _ = writeln!(err, "zxsh: {}: {}", expanded_args[0], zx_status_str(status));
+            }
+            SpawnedProcess::Failed(spawn_status_to_exit_code(status))
+        }
+    }
+}
+
 pub fn spawn_command_with_redirection(
     builder: &mut ASTBuilder,
     cmd_ptr: relative::Ptr<Command>,
@@ -104,7 +127,7 @@ pub fn spawn_command_with_redirection(
                     ResolvedAlias::Words(words) => words,
                 };
 
-            let (env_guard, mut expanded_args) = expand_command_and_env(
+            let (env_guard, expanded_args) = expand_command_and_env(
                 builder,
                 &assignments_refs,
                 &cmd_args,
@@ -124,27 +147,10 @@ pub fn spawn_command_with_redirection(
                 ));
             }
 
-            if let Some(resolved_path) =
-                env_guard.state.resolve_command_path(expanded_args[0].as_ref())
-            {
-                expanded_args[0] = resolved_path;
-            }
-
-            let mut actions = get_spawn_actions(&stage_context, None, None, None);
-
-            let vars = env_guard.state.vars();
+            let spawned =
+                spawn_external_command(expanded_args, &mut *env_guard.state, &stage_context);
             drop(env_guard);
-
-            match spawn_command(&expanded_args, &vars, &mut actions) {
-                Ok(proc) => Ok(SpawnedProcess::Running(proc)),
-                Err(status) => {
-                    if let Some(mut err) = stage_context.stderr() {
-                        let _ =
-                            writeln!(err, "zxsh: {}: {}", expanded_args[0], zx_status_str(status));
-                    }
-                    Ok(SpawnedProcess::Failed(spawn_status_to_exit_code(status)))
-                }
-            }
+            Ok(spawned)
         }
         _ => {
             let cmd = builder.get_ref(cmd_ptr);

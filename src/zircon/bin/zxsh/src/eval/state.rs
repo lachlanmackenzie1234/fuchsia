@@ -5,7 +5,7 @@
 use super::EvalOutcome;
 use crate::args::Args;
 use crate::collections::{FlatMap, FlatSet};
-use crate::serialization::{BStrExt, Deserialize, Serialize};
+use crate::serialization::{BStrExt, Deserialize, Serialize, deserialize_vec, serialize_slice};
 use crate::string::{parse_int, path_buf_to_bstring};
 use bstr::{BStr, BString, ByteSlice};
 use std::ffi::{CString, NulError};
@@ -151,12 +151,39 @@ impl<'a> std::ops::DerefMut for LoopNestGuard<'a> {
 }
 
 /// Represents a variable call stack frame (e.g. inside a shell function invocation).
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frame {
-    /// Variables declared as local within this function frame.
-    pub local_vars: FlatMap<BString, BString>,
+    /// Variables declared as local within this function frame (`None` when locally unset).
+    pub local_vars: FlatMap<BString, Option<BString>>,
     /// Positional parameters (`$1`, `$2`, etc.) active within this frame.
     pub args: Vec<BString>,
+}
+
+impl Serialize for Frame {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        self.local_vars.serialize_into(buf);
+        self.args.serialize_into(buf);
+    }
+}
+
+impl Deserialize for Frame {
+    fn deserialize(bytes: &[u8], offset: &mut usize) -> Result<Self, String> {
+        let local_vars = FlatMap::deserialize(bytes, offset)?;
+        let args = Vec::<BString>::deserialize(bytes, offset)?;
+        Ok(Self { local_vars, args })
+    }
+}
+
+impl Serialize for Vec<Frame> {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        serialize_slice(self, buf);
+    }
+}
+
+impl Deserialize for Vec<Frame> {
+    fn deserialize(bytes: &[u8], offset: &mut usize) -> Result<Self, String> {
+        deserialize_vec(bytes, offset)
+    }
 }
 
 /// An entry in the cached resolved command table (hash table).
@@ -333,6 +360,8 @@ pub struct ShellState {
     /// Exit status of the command immediately preceding the active trap action, used by bare
     /// `exit` / `return` inside traps per POSIX.
     trap_exit_status: Option<i32>,
+    /// Process ID (koid) of the invoked root shell (`$$`), preserved across subshells.
+    root_pid: zx::Koid,
 }
 
 impl ShellState {
@@ -393,6 +422,7 @@ impl Serialize for ShellState {
         self.vars.serialize_into(buf);
         self.exported.serialize_into(buf);
         self.functions.serialize_into(buf);
+        self.frames.serialize_into(buf);
         self.aliases.serialize_into(buf);
         self.readonly.serialize_into(buf);
         self.umask.serialize_into(buf);
@@ -403,6 +433,7 @@ impl Serialize for ShellState {
         self.traps.serialize_into(buf);
         self.cwd.serialize_into(buf);
         (self.optopt_offset as u32).serialize_into(buf);
+        self.root_pid.serialize_into(buf);
     }
 }
 
@@ -411,6 +442,7 @@ impl Deserialize for ShellState {
         let vars = FlatMap::deserialize(bytes, offset)?;
         let exported = FlatSet::deserialize(bytes, offset)?;
         let functions = FlatMap::deserialize(bytes, offset)?;
+        let frames = Vec::<Frame>::deserialize(bytes, offset)?;
         let aliases = FlatMap::deserialize(bytes, offset)?;
         let readonly = FlatSet::deserialize(bytes, offset)?;
         let umask = u32::deserialize(bytes, offset)?;
@@ -421,12 +453,13 @@ impl Deserialize for ShellState {
         let traps = FlatMap::deserialize(bytes, offset)?;
         let cwd = BString::deserialize(bytes, offset)?;
         let optopt_offset = u32::deserialize(bytes, offset)? as usize;
+        let root_pid = zx::Koid::deserialize(bytes, offset)?;
 
         let mut state = ShellState {
             vars,
             exported,
             functions,
-            frames: Vec::new(),
+            frames,
             aliases,
             umask,
             readonly,
@@ -453,6 +486,7 @@ impl Deserialize for ShellState {
             loop_nest: 0,
             last_cmd_sub_status: None,
             trap_exit_status: None,
+            root_pid,
         };
         state.set_options_from_string(options_str.as_ref());
 
@@ -537,6 +571,9 @@ impl ShellState {
         }
 
         let script_name = args.script_name.unwrap_or_else(|| BString::from(DEFAULT_SHELL_NAME));
+        let root_pid = fuchsia_runtime::process_self()
+            .koid()
+            .unwrap_or(zx::Koid::from_raw(zx::sys::ZX_KOID_INVALID));
 
         let mut state = Self {
             vars,
@@ -582,6 +619,7 @@ impl ShellState {
             loop_nest: 0,
             last_cmd_sub_status: None,
             trap_exit_status: None,
+            root_pid,
         };
 
         for opt in &args.options_to_set {
@@ -691,8 +729,7 @@ impl ShellState {
             b"@" => return Some(self.join_args(Some(b' '))),
             b"*" => return Some(self.join_args(self.ifs_join_sep())),
             b"$" => {
-                let koid = fuchsia_runtime::process_self().koid().unwrap().raw_koid();
-                return Some(BString::from(koid.to_string()));
+                return Some(BString::from(self.root_pid.raw_koid().to_string()));
             }
             b"!" => {
                 if let Some(pid) = self.last_bg_pid {
@@ -740,7 +777,7 @@ impl ShellState {
     fn lookup_var(&self, name: &BStr) -> Option<&BString> {
         for frame in self.frames.iter().rev() {
             if let Some(val) = frame.local_vars.get(name) {
-                return Some(val);
+                return val.as_ref();
             }
         }
         self.vars.get(name)
@@ -790,8 +827,8 @@ impl ShellState {
         }
         let mut updated_frame = false;
         for frame in self.frames.iter_mut().rev() {
-            if frame.local_vars.contains_key(name) {
-                frame.local_vars.insert(name.to_owned(), val.to_owned());
+            if let Some(slot) = frame.local_vars.get_mut(name) {
+                *slot = Some(val.to_owned());
                 updated_frame = true;
                 break;
             }
@@ -877,8 +914,8 @@ impl ShellState {
             return;
         }
         for frame in self.frames.iter_mut().rev() {
-            if frame.local_vars.contains_key(name) {
-                frame.local_vars.remove(name);
+            if let Some(slot) = frame.local_vars.get_mut(name) {
+                *slot = None;
                 return;
             }
         }
@@ -1011,7 +1048,7 @@ impl ShellState {
         if let Some(frame) = self.frames.last_mut() {
             frame
                 .local_vars
-                .insert(name.to_owned(), val.unwrap_or_else(|| BStr::new(b"")).to_owned());
+                .insert(name.to_owned(), Some(val.unwrap_or_else(|| BStr::new(b"")).to_owned()));
             if val.is_some() && self.opt_allexport {
                 self.export_var(name);
             }

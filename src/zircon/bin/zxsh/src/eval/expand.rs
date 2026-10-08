@@ -5,6 +5,7 @@
 use super::ExecutionContext;
 use super::arithmetic::evaluate_arithmetic;
 use super::glob::{WordChar, expand_glob, match_segment_glob, word_chars_to_bstring};
+use super::simple::{split_assignment_flat, split_simple_command_args};
 use super::state::ShellState;
 use crate::builtins::is_builtin;
 use crate::collections::FlatSet;
@@ -18,19 +19,6 @@ use crate::process::{clone_fd_to_action, make_pipe, read_fd_to_end};
 use crate::relative;
 use crate::subshell::{SubshellScriptArgs, spawn_subshell_process};
 use bstr::{BStr, BString, ByteSlice};
-
-pub fn is_assignment_flat(arg: &[WordPart], buf: &relative::Buffer) -> bool {
-    if arg.is_empty() {
-        return false;
-    }
-    if arg[0].tag == WordPartTag::LITERAL {
-        let s = arg[0].text.as_bstr(buf);
-        if let Some(pos) = s.as_bytes().iter().position(|&b| b == b'=') {
-            return is_valid_var_name(&s.as_bytes()[..pos]);
-        }
-    }
-    false
-}
 
 fn run_command_substitution(
     cmd: &Command,
@@ -893,6 +881,33 @@ pub fn expand_assignment_value(
     Ok(word_chars_list.first().map(|w| word_chars_to_bstring(w)).unwrap_or_default())
 }
 
+fn word_has_side_effects(
+    parts: &[WordPart],
+    state: &ShellState,
+    buffer: &relative::Buffer,
+) -> bool {
+    for part in parts {
+        match part.tag {
+            WordPartTag::LITERAL | WordPartTag::QUOTED_LITERAL => {}
+            WordPartTag::COMMAND_SUBSTITUTION
+            | WordPartTag::QUOTED_COMMAND_SUBSTITUTION
+            | WordPartTag::ARITHMETIC
+            | WordPartTag::QUOTED_ARITHMETIC => return true,
+            WordPartTag::VAR | WordPartTag::QUOTED_VAR => {
+                if state.opt_nounset {
+                    return true;
+                }
+                let var_text = part.text.as_bstr(buffer);
+                if !matches!(parse_modifier(var_text), Ok((_, None))) {
+                    return true;
+                }
+            }
+            _ => return true,
+        }
+    }
+    false
+}
+
 pub fn needs_subshell_process<'a>(
     mut command: &'a Command,
     state: &ShellState,
@@ -901,39 +916,88 @@ pub fn needs_subshell_process<'a>(
     loop {
         match command.tag {
             CommandTag::SIMPLE => {
-                let arguments = command.simple_args.as_slice(buffer);
-                let mut command_arguments = Vec::new();
-                let mut parsing_assignments = true;
-                for argument in arguments {
-                    let parts = argument.as_slice(buffer);
-                    if parsing_assignments && is_assignment_flat(parts, buffer) {
-                        // skip leading assignments
-                    } else {
-                        parsing_assignments = false;
-                        command_arguments.push(parts);
-                    }
-                }
+                let (assignments, command_arguments) = split_simple_command_args(command, buffer);
                 if command_arguments.is_empty() {
-                    return false;
-                } else {
-                    let first_argument = command_arguments[0];
-                    if first_argument.len() == 1 {
-                        let part = &first_argument[0];
-                        match part.tag {
-                            WordPartTag::LITERAL | WordPartTag::QUOTED_LITERAL => {
-                                let literal_string = part.text.as_bstr(buffer);
-                                return is_builtin(literal_string)
-                                    || state.get_function(literal_string).is_some()
-                                    || state.aliases.contains_key(literal_string);
-                            }
-                            _ => return false,
-                        }
-                    } else {
-                        return false;
+                    return true;
+                }
+
+                for assign_slice in &assignments {
+                    let parts = assign_slice.as_slice(buffer);
+                    let (name, _, _) = split_assignment_flat(parts, buffer);
+                    if state.is_readonly(name) || word_has_side_effects(parts, state, buffer) {
+                        return true;
                     }
                 }
+
+                for arg_slice in &command_arguments {
+                    let parts = arg_slice.as_slice(buffer);
+                    if word_has_side_effects(parts, state, buffer) {
+                        return true;
+                    }
+                }
+
+                let first_argument = command_arguments[0].as_slice(buffer);
+                if first_argument.is_empty() {
+                    return true;
+                }
+
+                let mut cmd_name = Vec::new();
+                for (part_index, part) in first_argument.iter().enumerate() {
+                    match part.tag {
+                        WordPartTag::LITERAL => {
+                            let literal = part.text.as_bstr(buffer);
+                            if part_index == 0 && (literal == "~" || literal.starts_with(b"~/")) {
+                                return true;
+                            }
+                            if !state.opt_noglob
+                                && literal
+                                    .as_bytes()
+                                    .iter()
+                                    .any(|&b| matches!(b, b'*' | b'?' | b'['))
+                            {
+                                return true;
+                            }
+                            cmd_name.extend_from_slice(literal.as_bytes());
+                        }
+                        WordPartTag::QUOTED_LITERAL => {
+                            cmd_name.extend_from_slice(part.text.as_bstr(buffer).as_bytes());
+                        }
+                        _ => return true,
+                    }
+                }
+
+                if cmd_name.is_empty() {
+                    return true;
+                }
+
+                let cmd_bstr = BStr::new(&cmd_name);
+                return is_builtin(cmd_bstr)
+                    || state.get_function(cmd_bstr).is_some()
+                    || state.aliases.contains_key(cmd_bstr);
             }
             CommandTag::REDIRECT => {
+                for redirect in command.redirects.as_slice(buffer) {
+                    match redirect.tag {
+                        RedirectTag::TO_FILE | RedirectTag::FROM_FILE => {
+                            if word_has_side_effects(
+                                redirect.filename.as_slice(buffer),
+                                state,
+                                buffer,
+                            ) {
+                                return true;
+                            }
+                        }
+                        RedirectTag::HERE_DOC => {
+                            if redirect.expand != 0 {
+                                let body = redirect.body.as_slice(buffer);
+                                if body.contains(&b'$') || body.contains(&b'`') {
+                                    return true;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 command = command.left.as_ref(buffer);
             }
             _ => return true,

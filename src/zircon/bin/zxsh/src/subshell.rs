@@ -188,7 +188,7 @@ pub fn spawn_subshell_process(
     let mut argv = vec![self_path_bstring];
     if script_args == SubshellScriptArgs::Pass {
         argv.push(state.script_name.clone());
-        argv.extend(state.args.clone());
+        argv.extend(state.get_args());
     }
 
     actions.push(fdio::SpawnAction::add_handle(

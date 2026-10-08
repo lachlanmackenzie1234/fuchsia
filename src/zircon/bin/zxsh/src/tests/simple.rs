@@ -561,3 +561,21 @@ fn test_command_substitution_exit_status() {
     assert_eq!(res, EvalOutcome::Exit(9));
     assert_eq!(state.get_var(BStr::new("?")), Some(BString::from("9")));
 }
+
+#[test]
+fn test_eval_simple_external_command_expands_once_and_dynamic_name() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // Side-effecting argument to an external command must be expanded exactly once.
+    state.set_var(BStr::new("x"), BStr::new("0"));
+    let res =
+        eval_string(b"/pkg/bin/zxsh -c ':' $((x += 1))".as_bstr(), &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+    assert_eq!(state.get_var(BStr::new("x")), Some(BString::from("1")));
+
+    // Dynamic variable expanding to an external binary executes directly without infinite recursion.
+    state.set_var(BStr::new("ext_cmd"), BStr::new("/pkg/bin/zxsh"));
+    let res = eval_string(b"$ext_cmd -c ':'".as_bstr(), &mut state, &mut ctx).unwrap();
+    assert_eq!(res, EvalOutcome::Code(0));
+}
