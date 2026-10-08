@@ -26,84 +26,23 @@ class BandType(StrEnum):
                 return 36
 
 
-CHANNEL_BANDWIDTH_20MHZ = 20
-CHANNEL_BANDWIDTH_40MHZ = 40
-CHANNEL_BANDWIDTH_80MHZ = 80
-CHANNEL_BANDWIDTH_160MHZ = 160
-
 # TODO(http://b/286584981): Replace with SecurityModeInt
-WEP = 0
-WPA1 = 1
 WPA2 = 2
-WPA3 = 2  # same as wpa2 and wpa2/wpa3, distinguished by wpa_key_mgmt
-MIXED = (
-    3  # applies to wpa/wpa2, and wpa/wpa2/wpa3, distinguished by wpa_key_mgmt
-)
-ENT = 4  # get the correct constant
 
 MAX_WPA_PSK_LENGTH = 64
 MIN_WPA_PSK_LENGTH = 8
-MAX_WPA_PASSWORD_LENGTH = 63
 WPA_STRICT_REKEY = 1
 WPA_DEFAULT_CIPHER = "TKIP"
 WPA2_DEFAULT_CIPER = "CCMP"
 WPA_GROUP_KEY_ROTATION_TIME = 600
 WPA_STRICT_REKEY_DEFAULT = True
 
-# TODO(http://b/286584981): Replace these with SecurityMode enum
-WEP_STRING = "wep"
-WPA_STRING = "wpa"
-WPA2_STRING = "wpa2"
-WPA_MIXED_STRING = "wpa/wpa2"
-WPA3_STRING = "wpa3"
-WPA2_WPA3_MIXED_STRING = "wpa2/wpa3"
-WPA_WPA2_WPA3_MIXED_STRING = "wpa/wpa2/wpa3"
-ENT_STRING = "ent"
-
 # TODO(http://b/286584981): Replace with KeyManagement
 ENT_KEY_MGMT = "WPA-EAP"
-WPA_PSK_KEY_MGMT = "WPA-PSK"
-SAE_KEY_MGMT = "SAE"
-DUAL_WPA_PSK_SAE_KEY_MGMT = "WPA-PSK SAE"
-
-# TODO(http://b/286584981): Replace with SecurityMode.security_mode_int
-SECURITY_STRING_TO_SECURITY_MODE_INT = {
-    WPA_STRING: WPA1,
-    WPA2_STRING: WPA2,
-    WPA_MIXED_STRING: MIXED,
-    WPA3_STRING: WPA3,
-    WPA2_WPA3_MIXED_STRING: WPA3,
-    WPA_WPA2_WPA3_MIXED_STRING: MIXED,
-    WEP_STRING: WEP,
-    ENT_STRING: ENT,
-}
-
-# TODO(http://b/286584981): Replace with SecurityMode.key_management
-SECURITY_STRING_TO_WPA_KEY_MGMT = {
-    WPA_STRING: WPA_PSK_KEY_MGMT,
-    WPA2_STRING: WPA_PSK_KEY_MGMT,
-    WPA_MIXED_STRING: WPA_PSK_KEY_MGMT,
-    WPA3_STRING: SAE_KEY_MGMT,
-    WPA2_WPA3_MIXED_STRING: DUAL_WPA_PSK_SAE_KEY_MGMT,
-    WPA_WPA2_WPA3_MIXED_STRING: DUAL_WPA_PSK_SAE_KEY_MGMT,
-}
-
-# TODO(http://b/286584981): Replace with SecurityMode.fuchsia_security_type
-SECURITY_STRING_TO_DEFAULT_TARGET_SECURITY = {
-    WEP_STRING: WEP_STRING,
-    WPA_STRING: WPA_STRING,
-    WPA2_STRING: WPA2_STRING,
-    WPA_MIXED_STRING: WPA2_STRING,
-    WPA3_STRING: WPA3_STRING,
-    WPA2_WPA3_MIXED_STRING: WPA3_STRING,
-    WPA_WPA2_WPA3_MIXED_STRING: WPA3_STRING,
-}
 
 IEEE8021X = 1
 WLAN0_STRING = "wlan0"
 WLAN1_STRING = "wlan1"
-WLAN2_STRING = "wlan2"
-WLAN3_STRING = "wlan3"
 WLAN0_GALE = "wlan-2400mhz"
 WLAN1_GALE = "wlan-5000mhz"
 WEP_DEFAULT_KEY = 0
@@ -116,22 +55,11 @@ AP_DEFAULT_WW_COMPATIBLE_CHANNEL = 1
 AP_DEFAULT_CHANNEL_2G = 6
 AP_DEFAULT_CHANNEL_5G = 36
 
-AP_DEFAULT_MAX_SSIDS_2G = 8
-AP_DEFAULT_MAX_SSIDS_5G = 8
 AP_SSID_LENGTH_2G = 8
-AP_SSID_MIN_LENGTH_2G = 1
-AP_SSID_MAX_LENGTH_2G = 32
 AP_PASSPHRASE_LENGTH_2G = 10
 AP_SSID_LENGTH_5G = 8
-AP_SSID_MIN_LENGTH_5G = 1
-AP_SSID_MAX_LENGTH_5G = 32
-AP_PASSPHRASE_LENGTH_5G = 10
 INTERFACE_2G_LIST = [WLAN0_STRING, WLAN0_GALE]
 INTERFACE_5G_LIST = [WLAN1_STRING, WLAN1_GALE]
-HIGH_BEACON_INTERVAL = 300
-LOW_BEACON_INTERVAL = 100
-HIGH_DTIM = 3
-LOW_DTIM = 1
 
 # A mapping of frequency to channel number.  This includes some
 # frequencies used outside the US.
@@ -277,9 +205,6 @@ N_CAPABILITIES_MAPPING = {
     N_CAPABILITY_SMPS_STATIC: "[SMPS-STATIC]",
     N_CAPABILITY_SMPS_DYNAMIC: "[SMPS-DYNAMIC]",
 }
-N_CAPABILITIES_MAPPING_INVERSE = {
-    v: k for k, v in N_CAPABILITIES_MAPPING.items()
-}
 N_CAPABILITY_HT40_MINUS_CHANNELS = object()
 N_CAPABILITY_HT40_PLUS_CHANNELS = object()
 AC_CAPABILITY_VHT160 = object()
@@ -355,9 +280,6 @@ AC_CAPABILITIES_MAPPING = {
     AC_CAPABILITY_TX_ANTENNA_PATTERN: "[TX-ANTENNA-PATTERN]",
     AC_CAPABILITY_MAX_MPDU_11454: "[MAX-MPDU-11454]",
     AC_CAPABILITY_MAX_MPDU_7991: "[MAX-MPDU-7991]",
-}
-AC_CAPABILITIES_MAPPING_INVERSE = {
-    v: k for k, v in AC_CAPABILITIES_MAPPING.items()
 }
 VHT_CHANNEL_WIDTH_40 = 0
 VHT_CHANNEL_WIDTH_80 = 1
@@ -440,10 +362,6 @@ CENTER_CHANNEL_MAP = {
     ),
 }
 
-OFDM_DATA_RATES = {"supported_rates": "60 90 120 180 240 360 480 540"}
-
-CCK_DATA_RATES = {"supported_rates": "10 20 55 110"}
-
 CCK_AND_OFDM_DATA_RATES = {
     "supported_rates": "10 20 55 110 60 90 120 180 240 360 480 540"
 }
@@ -458,147 +376,7 @@ WEP_AUTH = {
     "open_and_shared": {"auth_algs": 3},
 }
 
-WMM_11B_DEFAULT_PARAMS = {
-    "wmm_ac_bk_cwmin": 5,
-    "wmm_ac_bk_cwmax": 10,
-    "wmm_ac_bk_aifs": 7,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 3,
-    "wmm_ac_be_cwmin": 5,
-    "wmm_ac_be_cwmax": 7,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 2,
-    "wmm_ac_vi_cwmin": 4,
-    "wmm_ac_vi_cwmax": 5,
-    "wmm_ac_vi_txop_limit": 188,
-    "wmm_ac_vo_aifs": 2,
-    "wmm_ac_vo_cwmin": 3,
-    "wmm_ac_vo_cwmax": 4,
-    "wmm_ac_vo_txop_limit": 102,
-}
-
-WMM_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS = {
-    "wmm_ac_bk_cwmin": 4,
-    "wmm_ac_bk_cwmax": 10,
-    "wmm_ac_bk_aifs": 7,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 3,
-    "wmm_ac_be_cwmin": 4,
-    "wmm_ac_be_cwmax": 10,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 2,
-    "wmm_ac_vi_cwmin": 3,
-    "wmm_ac_vi_cwmax": 4,
-    "wmm_ac_vi_txop_limit": 94,
-    "wmm_ac_vo_aifs": 2,
-    "wmm_ac_vo_cwmin": 2,
-    "wmm_ac_vo_cwmax": 3,
-    "wmm_ac_vo_txop_limit": 47,
-}
-
-WMM_NON_DEFAULT_PARAMS = {
-    "wmm_ac_bk_cwmin": 5,
-    "wmm_ac_bk_cwmax": 9,
-    "wmm_ac_bk_aifs": 3,
-    "wmm_ac_bk_txop_limit": 94,
-    "wmm_ac_be_aifs": 2,
-    "wmm_ac_be_cwmin": 2,
-    "wmm_ac_be_cwmax": 8,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 1,
-    "wmm_ac_vi_cwmin": 7,
-    "wmm_ac_vi_cwmax": 10,
-    "wmm_ac_vi_txop_limit": 47,
-    "wmm_ac_vo_aifs": 1,
-    "wmm_ac_vo_cwmin": 6,
-    "wmm_ac_vo_cwmax": 10,
-    "wmm_ac_vo_txop_limit": 94,
-}
-
-WMM_DEGRADED_VO_PARAMS = {
-    "wmm_ac_bk_cwmin": 7,
-    "wmm_ac_bk_cwmax": 15,
-    "wmm_ac_bk_aifs": 2,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 2,
-    "wmm_ac_be_cwmin": 7,
-    "wmm_ac_be_cwmax": 15,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 2,
-    "wmm_ac_vi_cwmin": 7,
-    "wmm_ac_vi_cwmax": 15,
-    "wmm_ac_vi_txop_limit": 94,
-    "wmm_ac_vo_aifs": 10,
-    "wmm_ac_vo_cwmin": 7,
-    "wmm_ac_vo_cwmax": 15,
-    "wmm_ac_vo_txop_limit": 47,
-}
-
-WMM_DEGRADED_VI_PARAMS = {
-    "wmm_ac_bk_cwmin": 7,
-    "wmm_ac_bk_cwmax": 15,
-    "wmm_ac_bk_aifs": 2,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 2,
-    "wmm_ac_be_cwmin": 7,
-    "wmm_ac_be_cwmax": 15,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 10,
-    "wmm_ac_vi_cwmin": 7,
-    "wmm_ac_vi_cwmax": 15,
-    "wmm_ac_vi_txop_limit": 94,
-    "wmm_ac_vo_aifs": 2,
-    "wmm_ac_vo_cwmin": 7,
-    "wmm_ac_vo_cwmax": 15,
-    "wmm_ac_vo_txop_limit": 47,
-}
-
-WMM_IMPROVE_BE_PARAMS = {
-    "wmm_ac_bk_cwmin": 7,
-    "wmm_ac_bk_cwmax": 15,
-    "wmm_ac_bk_aifs": 10,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 2,
-    "wmm_ac_be_cwmin": 7,
-    "wmm_ac_be_cwmax": 15,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 10,
-    "wmm_ac_vi_cwmin": 7,
-    "wmm_ac_vi_cwmax": 15,
-    "wmm_ac_vi_txop_limit": 94,
-    "wmm_ac_vo_aifs": 10,
-    "wmm_ac_vo_cwmin": 7,
-    "wmm_ac_vo_cwmax": 15,
-    "wmm_ac_vo_txop_limit": 47,
-}
-
-WMM_IMPROVE_BK_PARAMS = {
-    "wmm_ac_bk_cwmin": 7,
-    "wmm_ac_bk_cwmax": 15,
-    "wmm_ac_bk_aifs": 2,
-    "wmm_ac_bk_txop_limit": 0,
-    "wmm_ac_be_aifs": 10,
-    "wmm_ac_be_cwmin": 7,
-    "wmm_ac_be_cwmax": 15,
-    "wmm_ac_be_txop_limit": 0,
-    "wmm_ac_vi_aifs": 10,
-    "wmm_ac_vi_cwmin": 7,
-    "wmm_ac_vi_cwmax": 15,
-    "wmm_ac_vi_txop_limit": 94,
-    "wmm_ac_vo_aifs": 10,
-    "wmm_ac_vo_cwmin": 7,
-    "wmm_ac_vo_cwmax": 15,
-    "wmm_ac_vo_txop_limit": 47,
-}
-
-WMM_ACM_BK = {"wmm_ac_bk_acm": 1}
-WMM_ACM_BE = {"wmm_ac_be_acm": 1}
-WMM_ACM_VI = {"wmm_ac_vi_acm": 1}
-WMM_ACM_VO = {"wmm_ac_vo_acm": 1}
-
 UAPSD_ENABLED = {"uapsd_advertisement_enabled": 1}
-
-UTF_8_SSID = {"utf8_ssid": 1}
 
 ENABLE_RRM_BEACON_REPORT = {"rrm_beacon_report": 1}
 ENABLE_RRM_NEIGHBOR_REPORT = {"rrm_neighbor_report": 1}
@@ -638,315 +416,6 @@ VENDOR_IE = {
         "assocresp_elements": "dd00"
     },
 }
-
-ENABLE_IEEE80211D = {"ieee80211d": 1}
-
-COUNTRY_STRING = {
-    "ALL": {"country3": "0x20"},
-    "OUTDOOR": {"country3": "0x4f"},
-    "INDOOR": {"country3": "0x49"},
-    "NONCOUNTRY": {"country3": "0x58"},
-    "GLOBAL": {"country3": "0x04"},
-}
-
-COUNTRY_CODE = {
-    "AFGHANISTAN": {"country_code": "AF"},
-    "ALAND_ISLANDS": {"country_code": "AX"},
-    "ALBANIA": {"country_code": "AL"},
-    "ALGERIA": {"country_code": "DZ"},
-    "AMERICAN_SAMOA": {"country_code": "AS"},
-    "ANDORRA": {"country_code": "AD"},
-    "ANGOLA": {"country_code": "AO"},
-    "ANGUILLA": {"country_code": "AI"},
-    "ANTARCTICA": {"country_code": "AQ"},
-    "ANTIGUA_AND_BARBUDA": {"country_code": "AG"},
-    "ARGENTINA": {"country_code": "AR"},
-    "ARMENIA": {"country_code": "AM"},
-    "ARUBA": {"country_code": "AW"},
-    "AUSTRALIA": {"country_code": "AU"},
-    "AUSTRIA": {"country_code": "AT"},
-    "AZERBAIJAN": {"country_code": "AZ"},
-    "BAHAMAS": {"country_code": "BS"},
-    "BAHRAIN": {"country_code": "BH"},
-    "BANGLADESH": {"country_code": "BD"},
-    "BARBADOS": {"country_code": "BB"},
-    "BELARUS": {"country_code": "BY"},
-    "BELGIUM": {"country_code": "BE"},
-    "BELIZE": {"country_code": "BZ"},
-    "BENIN": {"country_code": "BJ"},
-    "BERMUDA": {"country_code": "BM"},
-    "BHUTAN": {"country_code": "BT"},
-    "BOLIVIA": {"country_code": "BO"},
-    "BONAIRE": {"country_code": "BQ"},
-    "BOSNIA_AND_HERZEGOVINA": {"country_code": "BA"},
-    "BOTSWANA": {"country_code": "BW"},
-    "BOUVET_ISLAND": {"country_code": "BV"},
-    "BRAZIL": {"country_code": "BR"},
-    "BRITISH_INDIAN_OCEAN_TERRITORY": {"country_code": "IO"},
-    "BRUNEI_DARUSSALAM": {"country_code": "BN"},
-    "BULGARIA": {"country_code": "BG"},
-    "BURKINA_FASO": {"country_code": "BF"},
-    "BURUNDI": {"country_code": "BI"},
-    "CAMBODIA": {"country_code": "KH"},
-    "CAMEROON": {"country_code": "CM"},
-    "CANADA": {"country_code": "CA"},
-    "CAPE_VERDE": {"country_code": "CV"},
-    "CAYMAN_ISLANDS": {"country_code": "KY"},
-    "CENTRAL_AFRICAN_REPUBLIC": {"country_code": "CF"},
-    "CHAD": {"country_code": "TD"},
-    "CHILE": {"country_code": "CL"},
-    "CHINA": {"country_code": "CN"},
-    "CHRISTMAS_ISLAND": {"country_code": "CX"},
-    "COCOS_ISLANDS": {"country_code": "CC"},
-    "COLOMBIA": {"country_code": "CO"},
-    "COMOROS": {"country_code": "KM"},
-    "CONGO": {"country_code": "CG"},
-    "DEMOCRATIC_REPUBLIC_CONGO": {"country_code": "CD"},
-    "COOK_ISLANDS": {"country_code": "CK"},
-    "COSTA_RICA": {"country_code": "CR"},
-    "COTE_D_IVOIRE": {"country_code": "CI"},
-    "CROATIA": {"country_code": "HR"},
-    "CUBA": {"country_code": "CU"},
-    "CURACAO": {"country_code": "CW"},
-    "CYPRUS": {"country_code": "CY"},
-    "CZECH_REPUBLIC": {"country_code": "CZ"},
-    "DENMARK": {"country_code": "DK"},
-    "DJIBOUTI": {"country_code": "DJ"},
-    "DOMINICA": {"country_code": "DM"},
-    "DOMINICAN_REPUBLIC": {"country_code": "DO"},
-    "ECUADOR": {"country_code": "EC"},
-    "EGYPT": {"country_code": "EG"},
-    "EL_SALVADOR": {"country_code": "SV"},
-    "EQUATORIAL_GUINEA": {"country_code": "GQ"},
-    "ERITREA": {"country_code": "ER"},
-    "ESTONIA": {"country_code": "EE"},
-    "ETHIOPIA": {"country_code": "ET"},
-    "FALKLAND_ISLANDS_(MALVINAS)": {"country_code": "FK"},
-    "FAROE_ISLANDS": {"country_code": "FO"},
-    "FIJI": {"country_code": "FJ"},
-    "FINLAND": {"country_code": "FI"},
-    "FRANCE": {"country_code": "FR"},
-    "FRENCH_GUIANA": {"country_code": "GF"},
-    "FRENCH_POLYNESIA": {"country_code": "PF"},
-    "FRENCH_SOUTHERN_TERRITORIES": {"country_code": "TF"},
-    "GABON": {"country_code": "GA"},
-    "GAMBIA": {"country_code": "GM"},
-    "GEORGIA": {"country_code": "GE"},
-    "GERMANY": {"country_code": "DE"},
-    "GHANA": {"country_code": "GH"},
-    "GIBRALTAR": {"country_code": "GI"},
-    "GREECE": {"country_code": "GR"},
-    "GREENLAND": {"country_code": "GL"},
-    "GRENADA": {"country_code": "GD"},
-    "GUADELOUPE": {"country_code": "GP"},
-    "GUAM": {"country_code": "GU"},
-    "GUATEMALA": {"country_code": "GT"},
-    "GUERNSEY": {"country_code": "GG"},
-    "GUINEA": {"country_code": "GN"},
-    "GUINEA-BISSAU": {"country_code": "GW"},
-    "GUYANA": {"country_code": "GY"},
-    "HAITI": {"country_code": "HT"},
-    "HEARD_ISLAND_AND_MCDONALD_ISLANDS": {"country_code": "HM"},
-    "VATICAN_CITY_STATE": {"country_code": "VA"},
-    "HONDURAS": {"country_code": "HN"},
-    "HONG_KONG": {"country_code": "HK"},
-    "HUNGARY": {"country_code": "HU"},
-    "ICELAND": {"country_code": "IS"},
-    "INDIA": {"country_code": "IN"},
-    "INDONESIA": {"country_code": "ID"},
-    "IRAN": {"country_code": "IR"},
-    "IRAQ": {"country_code": "IQ"},
-    "IRELAND": {"country_code": "IE"},
-    "ISLE_OF_MAN": {"country_code": "IM"},
-    "ISRAEL": {"country_code": "IL"},
-    "ITALY": {"country_code": "IT"},
-    "JAMAICA": {"country_code": "JM"},
-    "JAPAN": {"country_code": "JP"},
-    "JERSEY": {"country_code": "JE"},
-    "JORDAN": {"country_code": "JO"},
-    "KAZAKHSTAN": {"country_code": "KZ"},
-    "KENYA": {"country_code": "KE"},
-    "KIRIBATI": {"country_code": "KI"},
-    "DEMOCRATIC_PEOPLE_S_REPUBLIC_OF_KOREA": {"country_code": "KP"},
-    "REPUBLIC_OF_KOREA": {"country_code": "KR"},
-    "KUWAIT": {"country_code": "KW"},
-    "KYRGYZSTAN": {"country_code": "KG"},
-    "LAO": {"country_code": "LA"},
-    "LATVIA": {"country_code": "LV"},
-    "LEBANON": {"country_code": "LB"},
-    "LESOTHO": {"country_code": "LS"},
-    "LIBERIA": {"country_code": "LR"},
-    "LIBYA": {"country_code": "LY"},
-    "LIECHTENSTEIN": {"country_code": "LI"},
-    "LITHUANIA": {"country_code": "LT"},
-    "LUXEMBOURG": {"country_code": "LU"},
-    "MACAO": {"country_code": "MO"},
-    "MACEDONIA": {"country_code": "MK"},
-    "MADAGASCAR": {"country_code": "MG"},
-    "MALAWI": {"country_code": "MW"},
-    "MALAYSIA": {"country_code": "MY"},
-    "MALDIVES": {"country_code": "MV"},
-    "MALI": {"country_code": "ML"},
-    "MALTA": {"country_code": "MT"},
-    "MARSHALL_ISLANDS": {"country_code": "MH"},
-    "MARTINIQUE": {"country_code": "MQ"},
-    "MAURITANIA": {"country_code": "MR"},
-    "MAURITIUS": {"country_code": "MU"},
-    "MAYOTTE": {"country_code": "YT"},
-    "MEXICO": {"country_code": "MX"},
-    "MICRONESIA": {"country_code": "FM"},
-    "MOLDOVA": {"country_code": "MD"},
-    "MONACO": {"country_code": "MC"},
-    "MONGOLIA": {"country_code": "MN"},
-    "MONTENEGRO": {"country_code": "ME"},
-    "MONTSERRAT": {"country_code": "MS"},
-    "MOROCCO": {"country_code": "MA"},
-    "MOZAMBIQUE": {"country_code": "MZ"},
-    "MYANMAR": {"country_code": "MM"},
-    "NAMIBIA": {"country_code": "NA"},
-    "NAURU": {"country_code": "NR"},
-    "NEPAL": {"country_code": "NP"},
-    "NETHERLANDS": {"country_code": "NL"},
-    "NEW_CALEDONIA": {"country_code": "NC"},
-    "NEW_ZEALAND": {"country_code": "NZ"},
-    "NICARAGUA": {"country_code": "NI"},
-    "NIGER": {"country_code": "NE"},
-    "NIGERIA": {"country_code": "NG"},
-    "NIUE": {"country_code": "NU"},
-    "NORFOLK_ISLAND": {"country_code": "NF"},
-    "NORTHERN_MARIANA_ISLANDS": {"country_code": "MP"},
-    "NORWAY": {"country_code": "NO"},
-    "OMAN": {"country_code": "OM"},
-    "PAKISTAN": {"country_code": "PK"},
-    "PALAU": {"country_code": "PW"},
-    "PALESTINE": {"country_code": "PS"},
-    "PANAMA": {"country_code": "PA"},
-    "PAPUA_NEW_GUINEA": {"country_code": "PG"},
-    "PARAGUAY": {"country_code": "PY"},
-    "PERU": {"country_code": "PE"},
-    "PHILIPPINES": {"country_code": "PH"},
-    "PITCAIRN": {"country_code": "PN"},
-    "POLAND": {"country_code": "PL"},
-    "PORTUGAL": {"country_code": "PT"},
-    "PUERTO_RICO": {"country_code": "PR"},
-    "QATAR": {"country_code": "QA"},
-    "RÉUNION": {"country_code": "RE"},
-    "ROMANIA": {"country_code": "RO"},
-    "RUSSIAN_FEDERATION": {"country_code": "RU"},
-    "RWANDA": {"country_code": "RW"},
-    "SAINT_BARTHELEMY": {"country_code": "BL"},
-    "SAINT_KITTS_AND_NEVIS": {"country_code": "KN"},
-    "SAINT_LUCIA": {"country_code": "LC"},
-    "SAINT_MARTIN": {"country_code": "MF"},
-    "SAINT_PIERRE_AND_MIQUELON": {"country_code": "PM"},
-    "SAINT_VINCENT_AND_THE_GRENADINES": {"country_code": "VC"},
-    "SAMOA": {"country_code": "WS"},
-    "SAN_MARINO": {"country_code": "SM"},
-    "SAO_TOME_AND_PRINCIPE": {"country_code": "ST"},
-    "SAUDI_ARABIA": {"country_code": "SA"},
-    "SENEGAL": {"country_code": "SN"},
-    "SERBIA": {"country_code": "RS"},
-    "SEYCHELLES": {"country_code": "SC"},
-    "SIERRA_LEONE": {"country_code": "SL"},
-    "SINGAPORE": {"country_code": "SG"},
-    "SINT_MAARTEN": {"country_code": "SX"},
-    "SLOVAKIA": {"country_code": "SK"},
-    "SLOVENIA": {"country_code": "SI"},
-    "SOLOMON_ISLANDS": {"country_code": "SB"},
-    "SOMALIA": {"country_code": "SO"},
-    "SOUTH_AFRICA": {"country_code": "ZA"},
-    "SOUTH_GEORGIA": {"country_code": "GS"},
-    "SOUTH_SUDAN": {"country_code": "SS"},
-    "SPAIN": {"country_code": "ES"},
-    "SRI_LANKA": {"country_code": "LK"},
-    "SUDAN": {"country_code": "SD"},
-    "SURINAME": {"country_code": "SR"},
-    "SVALBARD_AND_JAN_MAYEN": {"country_code": "SJ"},
-    "SWAZILAND": {"country_code": "SZ"},
-    "SWEDEN": {"country_code": "SE"},
-    "SWITZERLAND": {"country_code": "CH"},
-    "SYRIAN_ARAB_REPUBLIC": {"country_code": "SY"},
-    "TAIWAN": {"country_code": "TW"},
-    "TAJIKISTAN": {"country_code": "TJ"},
-    "TANZANIA": {"country_code": "TZ"},
-    "THAILAND": {"country_code": "TH"},
-    "TIMOR-LESTE": {"country_code": "TL"},
-    "TOGO": {"country_code": "TG"},
-    "TOKELAU": {"country_code": "TK"},
-    "TONGA": {"country_code": "TO"},
-    "TRINIDAD_AND_TOBAGO": {"country_code": "TT"},
-    "TUNISIA": {"country_code": "TN"},
-    "TURKEY": {"country_code": "TR"},
-    "TURKMENISTAN": {"country_code": "TM"},
-    "TURKS_AND_CAICOS_ISLANDS": {"country_code": "TC"},
-    "TUVALU": {"country_code": "TV"},
-    "UGANDA": {"country_code": "UG"},
-    "UKRAINE": {"country_code": "UA"},
-    "UNITED_ARAB_EMIRATES": {"country_code": "AE"},
-    "UNITED_KINGDOM": {"country_code": "GB"},
-    "UNITED_STATES": {"country_code": "US"},
-    "UNITED_STATES_MINOR_OUTLYING_ISLANDS": {"country_code": "UM"},
-    "URUGUAY": {"country_code": "UY"},
-    "UZBEKISTAN": {"country_code": "UZ"},
-    "VANUATU": {"country_code": "VU"},
-    "VENEZUELA": {"country_code": "VE"},
-    "VIETNAM": {"country_code": "VN"},
-    "VIRGIN_ISLANDS_BRITISH": {"country_code": "VG"},
-    "VIRGIN_ISLANDS_US": {"country_code": "VI"},
-    "WALLIS_AND_FUTUNA": {"country_code": "WF"},
-    "WESTERN_SAHARA": {"country_code": "EH"},
-    "YEMEN": {"country_code": "YE"},
-    "ZAMBIA": {"country_code": "ZM"},
-    "ZIMBABWE": {"country_code": "ZW"},
-    "NON_COUNTRY": {"country_code": "XX"},
-}
-
-ALL_CHANNELS_2G = {
-    1: {20, 40},
-    2: {20, 40},
-    3: {20, 40},
-    4: {20, 40},
-    5: {20, 40},
-    6: {20, 40},
-    7: {20, 40},
-    8: {20, 40},
-    9: {20, 40},
-    10: {20, 40},
-    11: {20, 40},
-    12: {20, 40},
-    13: {20, 40},
-    14: {20},
-}
-
-ALL_CHANNELS_5G = {
-    36: {20, 40, 80},
-    40: {20, 40, 80},
-    44: {20, 40, 80},
-    48: {20, 40, 80},
-    52: {20, 40, 80},
-    56: {20, 40, 80},
-    60: {20, 40, 80},
-    64: {20, 40, 80},
-    100: {20, 40, 80},
-    104: {20, 40, 80},
-    108: {20, 40, 80},
-    112: {20, 40, 80},
-    116: {20, 40, 80},
-    120: {20, 40, 80},
-    124: {20, 40, 80},
-    128: {20, 40, 80},
-    132: {20, 40, 80},
-    136: {20, 40, 80},
-    140: {20, 40, 80},
-    144: {20, 40, 80},
-    149: {20, 40, 80},
-    153: {20, 40, 80},
-    157: {20, 40, 80},
-    161: {20, 40, 80},
-    165: {20},
-}
-
-ALL_CHANNELS = ALL_CHANNELS_2G | ALL_CHANNELS_5G
 
 
 @unique

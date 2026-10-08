@@ -328,17 +328,6 @@ class Hostapd(object):
             raise Error("Internal error: current channel could not be parsed")
         return channel
 
-    def get_stas(self) -> set[MacAddress]:
-        """Return MAC addresses of all associated STAs."""
-        list_sta_result = self._run_hostapd_cli_cmd("list_sta")
-        stas = set()
-        for line in list_sta_result.splitlines():
-            # Each line must be a valid MAC address. Capture it.
-            m = re.match(r"((?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})", line)
-            if m:
-                stas.add(MacAddress(m.group(1)))
-        return stas
-
     def _sta(self, sta_mac: MacAddress) -> str:
         """Return hostapd's detailed info about an associated STA.
 

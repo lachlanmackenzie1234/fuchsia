@@ -61,7 +61,6 @@ python_library("antlion") {
     "controllers/ap_lib/__init__.py",
     "controllers/ap_lib/ap_get_interface.py",
     "controllers/ap_lib/ap_iwconfig.py",
-    "controllers/ap_lib/bridge_interface.py",
     "controllers/ap_lib/dhcp_config.py",
     "controllers/ap_lib/dhcp_server.py",
     "controllers/ap_lib/extended_capabilities.py",

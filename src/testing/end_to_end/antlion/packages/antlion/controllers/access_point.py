@@ -18,7 +18,6 @@ from antlion.capabilities.ssh import SSHConfig, SSHProvider
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.ap_get_interface import ApInterfaces
 from antlion.controllers.ap_lib.ap_iwconfig import ApIwconfig
-from antlion.controllers.ap_lib.bridge_interface import BridgeInterface
 from antlion.controllers.ap_lib.dhcp_config import DhcpConfig, Subnet
 from antlion.controllers.ap_lib.dhcp_server import DhcpServer, NoInterfaceError
 from antlion.controllers.ap_lib.extended_capabilities import (
@@ -56,7 +55,6 @@ from libs.validation import MapValidator
 from mobly import logger
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "AccessPoint"
-ACTS_CONTROLLER_REFERENCE_NAME = "access_points"
 
 
 class Error(Exception):
@@ -74,9 +72,6 @@ class _ApInstance:
 # 192.168.1 - 8 and the 5Ghz radio will be 192.168.9 - 16
 _AP_2GHZ_SUBNET_STR_DEFAULT = "192.168.1.0/24"
 _AP_5GHZ_SUBNET_STR_DEFAULT = "192.168.9.0/24"
-
-# The last digit of the ip for the bridge interface
-BRIDGE_IP_LAST = "100"
 
 
 def create(configs: list[ControllerConfig]) -> list[AccessPoint]:
@@ -184,7 +179,6 @@ class AccessPoint:
         self._dhcp: DhcpServer | None = None
         self._dhcp_bss: dict[str, Subnet] = dict()
         self._radvd: Radvd | None = None
-        self.bridge = BridgeInterface(self.ssh)
         self.iwconfig = ApIwconfig(self)
 
         # Check to see if wan_interface is specified in acts_config for tests
@@ -198,7 +192,6 @@ class AccessPoint:
         self.wlan_5g = self.wlan[1]
         self.lan = self.interfaces.get_lan_interface()
         self._initial_ap()
-        self.setup_bridge = False
 
         # Allow use of tcpdump
         self.tcpdump = LinuxTcpdumpCommand(self.ssh_provider)
@@ -605,26 +598,6 @@ class AccessPoint:
 
         self.ssh.run(f"ip link set {bridge_name} up")
 
-    def remove_bridge(self, bridge_name: str) -> None:
-        """Removes the specified bridge
-
-        Args:
-            bridge_name: The name of the bridge to remove.
-        """
-        # Check if the bridge exists.
-        #
-        # Cases where it may not are if we failed to initialize properly
-        #
-        # Or if we're doing 2.4Ghz and 5Ghz SSIDs and we've already torn
-        # down the bridge once, but we got called for each band.
-        result = self.ssh.run(f"brctl show {bridge_name}", ignore_status=True)
-
-        # If the bridge exists, we'll get an exit_status of 0, indicating
-        # success, so we can continue and remove the bridge.
-        if result.returncode == 0:
-            self.ssh.run(f"ip link set {bridge_name} down")
-            self.ssh.run(f"brctl delbr {bridge_name}")
-
     def get_bssid_from_ssid(
         self, ssid: str, band: hostapd_constants.BandType
     ) -> MacAddress:
@@ -720,32 +693,6 @@ class AccessPoint:
             self.stop_all_aps()
         self.ssh.close()
 
-    def generate_bridge_configs(
-        self, channel: int
-    ) -> tuple[str, str | None, str]:
-        """Generate a list of configs for a bridge between LAN and WLAN.
-
-        Args:
-            channel: the channel WLAN interface is brought up on
-            iface_lan: the LAN interface to bridge
-        Returns:
-            configs: tuple containing iface_wlan, iface_lan and bridge_ip
-        """
-
-        if channel < 15:
-            iface_wlan = self.wlan_2g
-            subnet_str = self._AP_2G_SUBNET_STR
-        else:
-            iface_wlan = self.wlan_5g
-            subnet_str = self._AP_5G_SUBNET_STR
-
-        iface_lan = self.lan
-
-        a, b, c, _ = subnet_str.strip("/24").split(".")
-        bridge_ip = f"{a}.{b}.{c}.{BRIDGE_IP_LAST}"
-
-        return (iface_wlan, iface_lan, bridge_ip)
-
     def ping(
         self,
         dest_ip: str,
@@ -826,13 +773,6 @@ class AccessPoint:
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
         return instance.hostapd.get_current_channel()
-
-    def get_stas(self, identifier: str) -> set[MacAddress]:
-        """Return MAC addresses of all associated STAs on the given AP."""
-        instance = self._aps.get(identifier)
-        if instance is None:
-            raise ValueError(f"Invalid identifier {identifier} given")
-        return instance.hostapd.get_stas()
 
     def sta_authenticated(self, identifier: str, sta_mac: MacAddress) -> bool:
         """Is STA authenticated?"""

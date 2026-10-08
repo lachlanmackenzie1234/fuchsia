@@ -91,14 +91,10 @@ class HostapdConfig(object):
         vht_channel_width: Any | None = None,
         vht_center_channel: int | None = None,
         ac_capabilities: list[Any] | None = None,
-        beacon_footer: str = "",
         spectrum_mgmt_required: bool | None = None,
-        scenario_name: str | None = None,
-        min_streams: int | None = None,
         wnm_features: FrozenSet[hostapd_constants.WnmFeature] = frozenset(),
         bss_settings: list[Any] | None = None,
         additional_parameters: dict[str, Any] | None = None,
-        set_ap_defaults_profile: str = "whirlwind",
         ap_max_inactivity: int | None = None,
         country: str | None = None,
     ) -> None:
@@ -134,19 +130,13 @@ class HostapdConfig(object):
             vht_channel_width: Object channel width
             vht_center_channel: Center channel of segment 0.
             ac_capabilities: List of AC_CAPABILITY_x defined above.
-            beacon_footer: Containing (not validated) IE data to be
-                placed at the end of the beacon.
             spectrum_mgmt_required: True if we require the DUT to support
                 spectrum management.
-            scenario_name: To be included in file names, instead
-                of the interface name.
-            min_streams: Number of spatial streams required.
             wnm_features: WNM features to enable on the AP.
             control_interface: The file name to use as the control interface.
             bss_settings: The settings for all bss.
             additional_parameters: A dictionary of additional parameters to add
                 to the hostapd config.
-            set_ap_defaults_profile: profile name to load defaults from
             ap_max_inactivity: See hostapd.conf's ap_max_inactivity setting.
             country: The two-character country code for the AP to beacon that
                 it is operating in. If none is provided, but one is required,
@@ -163,7 +153,6 @@ class HostapdConfig(object):
         if security is None:
             security = Security()
 
-        self.set_ap_defaults_profile = set_ap_defaults_profile
         self._interface = interface
         if channel is not None and frequency is not None:
             raise ValueError(
@@ -267,10 +256,7 @@ class HostapdConfig(object):
                     self._get_11ac_center_channel_from_channel(self.channel)
                 )
             self._ac_capabilities = set(ac_capabilities)
-        self._beacon_footer = beacon_footer
         self._spectrum_mgmt_required = spectrum_mgmt_required
-        self._scenario_name = scenario_name
-        self._min_streams = min_streams
         self._wnm_features = wnm_features
         self._additional_parameters = additional_parameters
 
@@ -305,28 +291,16 @@ class HostapdConfig(object):
     @property
     def _get_default_config(self) -> dict[str, str | int | None]:
         """Returns: dict of default options for hostapd."""
-        if self.set_ap_defaults_profile == "mistral":
-            return collections.OrderedDict(
-                [
-                    ("logger_syslog", "-1"),
-                    ("logger_syslog_level", "0"),
-                    # default RTS and frag threshold to ``off''
-                    ("rts_threshold", None),
-                    ("fragm_threshold", None),
-                    ("driver", hostapd_constants.DRIVER_NAME),
-                ]
-            )
-        else:
-            return collections.OrderedDict(
-                [
-                    ("logger_syslog", "-1"),
-                    ("logger_syslog_level", "0"),
-                    # default RTS and frag threshold to ``off''
-                    ("rts_threshold", "2347"),
-                    ("fragm_threshold", "2346"),
-                    ("driver", hostapd_constants.DRIVER_NAME),
-                ]
-            )
+        return collections.OrderedDict(
+            [
+                ("logger_syslog", "-1"),
+                ("logger_syslog_level", "0"),
+                # default RTS and frag threshold to ``off''
+                ("rts_threshold", "2347"),
+                ("fragm_threshold", "2346"),
+                ("driver", hostapd_constants.DRIVER_NAME),
+            ]
+        )
 
     @property
     def _hostapd_ht_capabilities(self) -> str:
@@ -453,85 +427,10 @@ class HostapdConfig(object):
         """Returns: bool, True if the ssid is hidden, false otherwise."""
         return self._hidden
 
-    @hidden.setter
-    def hidden(self, value: bool) -> None:
-        """Sets if this ssid is hidden.
-
-        Args:
-            value: If true the ssid will be hidden.
-        """
-        self.hidden = value
-
     @property
     def security(self) -> Security:
         """Returns: The security type being used."""
         return self._security
-
-    @security.setter
-    def security(self, value: Security) -> None:
-        """Sets the security options to use.
-
-        Args:
-            value: The type of security to use.
-        """
-        self._security = value
-
-    @property
-    def ht_packet_capture_mode(self) -> str | None:
-        """Get an appropriate packet capture HT parameter.
-
-        When we go to configure a raw monitor we need to configure
-        the phy to listen on the correct channel.  Part of doing
-        so is to specify the channel width for HT channels.  In the
-        case that the AP is configured to be either HT40+ or HT40-,
-        we could return the wrong parameter because we don't know which
-        configuration will be chosen by hostap.
-
-        Returns:
-            string, HT parameter for frequency configuration.
-
-        """
-        if not self.is_11n:
-            return None
-
-        if ht40_plus_allowed(self.channel):
-            return "HT40+"
-
-        if ht40_minus_allowed(self.channel):
-            return "HT40-"
-
-        return "HT20"
-
-    @property
-    def beacon_footer(self) -> str:
-        return self._beacon_footer
-
-    @beacon_footer.setter
-    def beacon_footer(self, value: str) -> None:
-        """Changes the beacon footer.
-
-        Args:
-            value: The beacon footer value.
-        """
-        self._beacon_footer = value
-
-    @property
-    def scenario_name(self) -> str | None:
-        return self._scenario_name
-
-    @property
-    def min_streams(self) -> int | None:
-        return self._min_streams
-
-    @property
-    def wnm_features(self) -> FrozenSet[hostapd_constants.WnmFeature]:
-        return self._wnm_features
-
-    @wnm_features.setter
-    def wnm_features(
-        self, value: FrozenSet[hostapd_constants.WnmFeature]
-    ) -> None:
-        self._wnm_features = value
 
     def __repr__(self) -> str:
         return (
@@ -556,19 +455,6 @@ class HostapdConfig(object):
                 self._spectrum_mgmt_required,
             )
         )
-
-    def supports_channel(self, value: int) -> bool:
-        """Check whether channel is supported by the current hardware mode.
-
-        @param value: channel to check.
-        @return True iff the current mode supports the band of the channel.
-
-        """
-        for freq, channel in hostapd_constants.CHANNEL_MAP.items():
-            if channel == value:
-                return self.supports_frequency(freq)
-
-        return False
 
     def supports_frequency(self, frequency: int) -> bool:
         """Check whether frequency is supported by the current hardware mode.
@@ -619,21 +505,6 @@ class HostapdConfig(object):
             return False
 
         return True
-
-    def add_bss(self, bss: BssSettings) -> None:
-        """Adds a new bss setting.
-
-        Args:
-            bss: The bss settings to add.
-        """
-        if bss.name in self._bss_lookup:
-            raise ValueError("A bss with the same name already exists.")
-
-        self._bss_lookup[bss.name] = bss
-
-    def remove_bss(self, bss_name: str) -> None:
-        """Removes a bss setting from the config."""
-        del self._bss_lookup[bss_name]
 
     def package_configs(self) -> list[dict[str, str | int | None]]:
         """Package the configs.
