@@ -176,9 +176,7 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FileOps fo
                 let bytes = value.as_bytes();
                 let start = offset.min(bytes.len());
                 let end = (offset + data.available()).min(bytes.len());
-                let slice = bytes[start..end].to_vec();
-                drop(contents_guard);
-                data.write(&slice)
+                data.write(&bytes[start..end])
             }
         }
     }
