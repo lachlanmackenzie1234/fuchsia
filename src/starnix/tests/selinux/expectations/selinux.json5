@@ -199,9 +199,6 @@
                 "msg/012",
                 "msg/013",
 
-                // TODO: https://fxbug.dev/448793080
-                "nlmsg/001",
-
                 // See https://fxbug.dev/398696738: Starnix doesn't support the fanotify syscall.
                 "notify/002",
                 "notify/006",
