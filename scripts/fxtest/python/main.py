@@ -2091,6 +2091,7 @@ class AsyncMain:
                     event.TestSuiteStatus.FAILED_TO_START
                 )
                 message: str | None = None
+                start_time = time.monotonic()
                 try:
                     if not to_run.abort_group.is_set():
                         # Only run if this group was not already aborted.
@@ -2179,6 +2180,7 @@ class AsyncMain:
                         # following run state code to trigger any waiting executors.
                         abort_all_tests_event.set()
                 finally:
+                    duration_seconds = time.monotonic() - start_time
                     recorder.emit_test_suite_ended(
                         test_suite_id, status, message
                     )
@@ -2222,7 +2224,7 @@ class AsyncMain:
                             log_path=None,
                             stdout_log_path=stdout_log_path,
                             stderr_log_path=stderr_log_path,
-                            duration_seconds=None,
+                            duration_seconds=duration_seconds,
                             message=message,
                         )
                     )

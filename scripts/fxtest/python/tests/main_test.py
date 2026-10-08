@@ -4484,3 +4484,57 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn("pkg1/package_manifest.json", written_manifests)
             self.assertIn("pkg2/package_manifest.json", written_manifests)
+
+    async def test_summary_records_actual_test_duration(
+        self,
+    ) -> None:
+        """Test that test_worker records actual execution duration into summary TestResult."""
+        flags = args.parse_args(["--parallel", "1"])
+        recorder = event.EventRecorder()
+        app = main.AsyncMain(
+            flags,
+            [],
+            recorder,
+            asyncio.Event(),
+            asyncio.Event(),
+        )
+
+        mock_test = mock.MagicMock(spec=test_list_file.Test)
+        mock_test.info.is_hermetic.return_value = True
+        mock_test.needs_device.return_value = False
+        mock_test.name.return_value = "duration_test"
+
+        test_selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        exec_env = mock.MagicMock()
+
+        async def fake_run(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> mock.MagicMock:
+            await asyncio.sleep(0.02)
+            return mock.MagicMock(return_code=0)
+
+        with (
+            mock.patch(
+                "execution.TestExecution.run", new_callable=mock.AsyncMock
+            ) as mock_run,
+            mock.patch.object(
+                execution.TestExecution,
+                "command_line",
+                return_value=["fake_cmd"],
+            ),
+        ):
+            mock_run.side_effect = fake_run
+            app._exec_env = exec_env
+            await app._run_all_tests(test_selections)
+
+        self.assertEqual(len(app._summary.tests), 1)
+        test_result = app._summary.tests[0]
+        self.assertIsNotNone(test_result.duration_seconds)
+        self.assertGreaterEqual(test_result.duration_seconds, 0.01)
