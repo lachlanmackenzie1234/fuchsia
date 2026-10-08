@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::args::parse_args;
 use crate::collections::FlatMap;
 use crate::eval::testing::{Frame, StateBackupGuard};
 use crate::eval::{ExecutionContext, ShellState};
@@ -446,4 +447,55 @@ fn test_local_unset_and_reassignment_scoping() {
          outer_after_inner=outer_reassigned\n\
          global_after=global\n"
     );
+}
+
+#[test]
+fn test_special_var_dash_and_arg0_and_login_option() {
+    let mut state = ShellState::new();
+    assert_eq!(state.get_var(BStr::new("-")), Some(BString::from("")));
+
+    // Enabling -I / ignoreeof reflects 'I' in $-
+    state.set_option_by_flag(b'I', true).unwrap();
+    assert_eq!(state.get_var(BStr::new("-")), Some(BString::from("I")));
+
+    state.set_option_by_name(BStr::new("ignoreeof"), false).unwrap();
+    assert_eq!(state.get_var(BStr::new("-")), Some(BString::from("")));
+
+    state.set_option_by_name(BStr::new("ignoreeof"), true).unwrap();
+    state.set_option_by_flag(b'e', true).unwrap();
+    assert_eq!(state.get_var(BStr::new("-")), Some(BString::from("eI")));
+
+    // set -l and set -o login are accepted as valid runtime options
+    assert!(state.set_option_by_flag(b'l', true).is_ok());
+    assert!(state.set_option_by_flag(b'l', false).is_ok());
+    assert!(state.set_option_by_name(BStr::new("login"), true).is_ok());
+    assert!(state.set_option_by_name(BStr::new("login"), false).is_ok());
+
+    // $0 defaults to argv[0] when invoked with -c without command_name operand
+    let parsed_c =
+        parse_args(&[BString::from("/boot/bin/sh"), BString::from("-c"), BString::from("echo $0")])
+            .unwrap();
+    let state_c = ShellState::with_args(parsed_c, FlatMap::new()).unwrap();
+    assert_eq!(state_c.get_var(BStr::new("0")), Some(BString::from("/boot/bin/sh")));
+
+    // $0 is overridden by command_name operand when provided after -c command_string
+    let parsed_c_named = parse_args(&[
+        BString::from("/boot/bin/sh"),
+        BString::from("-c"),
+        BString::from("echo $0"),
+        BString::from("custom_cmd_name"),
+        BString::from("arg1"),
+    ])
+    .unwrap();
+    let state_c_named = ShellState::with_args(parsed_c_named, FlatMap::new()).unwrap();
+    assert_eq!(state_c_named.get_var(BStr::new("0")), Some(BString::from("custom_cmd_name")));
+    assert_eq!(state_c_named.get_var(BStr::new("1")), Some(BString::from("arg1")));
+
+    // $0 defaults to argv[0] when invoked with -s
+    let parsed_s =
+        parse_args(&[BString::from("/boot/bin/zxsh"), BString::from("-s"), BString::from("pos1")])
+            .unwrap();
+    let state_s = ShellState::with_args(parsed_s, FlatMap::new()).unwrap();
+    assert_eq!(state_s.get_var(BStr::new("0")), Some(BString::from("/boot/bin/zxsh")));
+    assert_eq!(state_s.get_var(BStr::new("1")), Some(BString::from("pos1")));
 }

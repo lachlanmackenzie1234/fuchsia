@@ -251,7 +251,7 @@ fn run_builtin_impl(
         BuiltinType::Exit => essential::builtin_exit(args, state, ctx),
         BuiltinType::Export => with_io(ctx, args, state, essential::builtin_export),
         BuiltinType::False => Ok(EvalOutcome::Code(EXIT_FAILURE)),
-        BuiltinType::Fg => with_io(ctx, args, state, essential::builtin_fg),
+        BuiltinType::Fg => essential::builtin_fg(args, state, ctx),
         BuiltinType::Getopts => with_io(ctx, args, state, essential::builtin_getopts),
         BuiltinType::Hash => with_io(ctx, args, state, essential::builtin_hash),
         BuiltinType::Jobs => with_io(ctx, args, state, essential::builtin_jobs),
@@ -280,7 +280,7 @@ fn run_builtin_impl(
         BuiltinType::Umask => with_io(ctx, args, state, essential::builtin_umask),
         BuiltinType::Unalias => with_io(ctx, args, state, essential::builtin_unalias),
         BuiltinType::Unset => with_io(ctx, args, state, essential::builtin_unset),
-        BuiltinType::Wait => with_io(ctx, args, state, essential::builtin_wait),
+        BuiltinType::Wait => essential::builtin_wait(args, state, ctx),
     }
 }
 

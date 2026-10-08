@@ -1026,10 +1026,8 @@ pub fn builtin_type(
 pub fn builtin_wait(
     args: &[BString],
     state: &mut ShellState,
-    _stdin: &mut dyn Read,
-    _stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
+    ctx: &mut ExecutionContext,
+) -> Result<EvalOutcome, String> {
     let mut arg_idx = 0;
     if arg_idx < args.len() {
         let arg = &args[arg_idx];
@@ -1037,20 +1035,23 @@ pub fn builtin_wait(
             arg_idx += 1;
         } else if arg.starts_with(b"-") && arg != "-" {
             let flag_char = arg.as_bytes()[1] as char;
-            let _ = writeln!(stderr, "wait: Illegal option -{}", flag_char);
-            return EXIT_SYNTAX_ERROR;
+            write_err!(ctx, "wait: Illegal option -{}", flag_char);
+            return Ok(EvalOutcome::Code(EXIT_SYNTAX_ERROR));
         }
     }
 
     let operands = &args[arg_idx..];
 
     if operands.is_empty() {
-        for job in state.bg_jobs.drain(..) {
-            let _ = job
-                .process
-                .wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE);
+        while !state.bg_jobs.is_empty() {
+            let job = state.bg_jobs.remove(0);
+            let was_int = ctx.signal_state.is_pending(crate::tty::ShellSignals::INT);
+            let code = wait_for_process_to_exit(&job.process, ctx).unwrap_or(EXIT_FAILURE);
+            if was_int || job.process.info().map(|i| i.return_code as i32) != Ok(code) {
+                return Ok(EvalOutcome::Code(code));
+            }
         }
-        return EXIT_SUCCESS;
+        return Ok(EvalOutcome::Code(EXIT_SUCCESS));
     }
 
     let mut exit_code = EXIT_SUCCESS;
@@ -1059,19 +1060,10 @@ pub fn builtin_wait(
             match resolve_job(Some(arg), state) {
                 Ok(idx) => {
                     let job = state.bg_jobs.remove(idx);
-                    if job
-                        .process
-                        .wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE)
-                        .to_result()
-                        .is_ok()
-                    {
-                        if let Ok(info) = job.process.info() {
-                            exit_code = info.return_code as i32;
-                        }
-                    }
+                    exit_code = wait_for_process_to_exit(&job.process, ctx).unwrap_or(EXIT_FAILURE);
                 }
                 Err(err) => {
-                    let _ = writeln!(stderr, "wait: {}", err);
+                    write_err!(ctx, "wait: {}", err);
                     exit_code = EXIT_NOT_FOUND;
                 }
             }
@@ -1082,27 +1074,18 @@ pub fn builtin_wait(
                 .position(|j| j.process.koid().map(|k| k.raw_koid()).unwrap_or(0) == pid);
             if let Some(idx) = found_idx {
                 let job = state.bg_jobs.remove(idx);
-                if job
-                    .process
-                    .wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE)
-                    .to_result()
-                    .is_ok()
-                {
-                    if let Ok(info) = job.process.info() {
-                        exit_code = info.return_code as i32;
-                    }
-                }
+                exit_code = wait_for_process_to_exit(&job.process, ctx).unwrap_or(EXIT_FAILURE);
             } else {
-                let _ = writeln!(stderr, "wait: pid {}: no such job", pid);
+                write_err!(ctx, "wait: pid {}: no such job", pid);
                 exit_code = EXIT_NOT_FOUND;
             }
         } else {
-            let _ = writeln!(stderr, "wait: Illegal number: {}", arg);
-            return EXIT_SYNTAX_ERROR;
+            write_err!(ctx, "wait: Illegal number: {}", arg);
+            return Ok(EvalOutcome::Code(EXIT_SYNTAX_ERROR));
         }
     }
 
-    exit_code
+    Ok(EvalOutcome::Code(exit_code))
 }
 
 pub fn builtin_dot(
@@ -2029,15 +2012,13 @@ pub fn builtin_jobs(
 pub fn builtin_fg(
     args: &[BString],
     state: &mut ShellState,
-    _stdin: &mut dyn Read,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
+    ctx: &mut ExecutionContext,
+) -> Result<EvalOutcome, String> {
     let job_specs = match parse_fg_bg_args(args) {
         Ok(specs) => specs,
         Err(err) => {
-            let _ = writeln!(stderr, "fg: {}", err);
-            return 2;
+            write_err!(ctx, "fg: {}", err);
+            return Ok(EvalOutcome::Code(EXIT_SYNTAX_ERROR));
         }
     };
 
@@ -2049,25 +2030,18 @@ pub fn builtin_fg(
         let idx = match resolve_job(spec.as_ref(), state) {
             Ok(idx) => idx,
             Err(err) => {
-                let _ = writeln!(stderr, "fg: {}", err);
-                return 2;
+                write_err!(ctx, "fg: {}", err);
+                return Ok(EvalOutcome::Code(EXIT_SYNTAX_ERROR));
             }
         };
 
         let job = state.bg_jobs.remove(idx);
-        let _ = writeln!(stdout, "{}", job.cmd);
-        if job
-            .process
-            .wait_one(zx::Signals::PROCESS_TERMINATED, zx::MonotonicInstant::INFINITE)
-            .to_result()
-            .is_ok()
-        {
-            if let Ok(info) = job.process.info() {
-                exit_code = info.return_code as i32;
-            }
+        if let Some(mut stdout) = ctx.stdout() {
+            let _ = writeln!(stdout, "{}", job.cmd);
         }
+        exit_code = wait_for_process_to_exit(&job.process, ctx).unwrap_or(EXIT_FAILURE);
     }
-    exit_code
+    Ok(EvalOutcome::Code(exit_code))
 }
 
 pub fn builtin_bg(

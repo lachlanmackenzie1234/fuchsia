@@ -570,7 +570,8 @@ impl ShellState {
             readonly.insert(BString::from("PPID"));
         }
 
-        let script_name = args.script_name.unwrap_or_else(|| BString::from(DEFAULT_SHELL_NAME));
+        let script_name =
+            args.script_name.or(args.arg0).unwrap_or_else(|| BString::from(DEFAULT_SHELL_NAME));
         let root_pid = fuchsia_runtime::process_self()
             .koid()
             .unwrap_or(zx::Koid::from_raw(zx::sys::ZX_KOID_INVALID));
@@ -737,37 +738,7 @@ impl ShellState {
                 }
                 return Some(BString::default());
             }
-            b"-" => {
-                let mut opts = String::new();
-                if self.opt_errexit {
-                    opts.push('e');
-                }
-                if self.opt_xtrace {
-                    opts.push('x');
-                }
-                if self.opt_nounset {
-                    opts.push('u');
-                }
-                if self.opt_noglob {
-                    opts.push('f');
-                }
-                if self.opt_allexport {
-                    opts.push('a');
-                }
-                if self.opt_interactive {
-                    opts.push('i');
-                }
-                if self.opt_noclobber {
-                    opts.push('C');
-                }
-                if self.opt_noexec {
-                    opts.push('n');
-                }
-                if self.opt_verbose {
-                    opts.push('v');
-                }
-                return Some(BString::from(opts));
-            }
+            b"-" => return Some(self.options_string()),
             _ => {}
         }
 
@@ -962,7 +933,8 @@ impl ShellState {
             b"nounset" => self.opt_nounset = enable,
             b"interactive" => self.opt_interactive = enable,
             b"ignoreeof" => self.opt_ignoreeof = enable,
-            b"monitor" | b"notify" | b"nolog" | b"debug" | b"vi" | b"emacs" | b"stdin" => {}
+            b"monitor" | b"notify" | b"nolog" | b"debug" | b"vi" | b"emacs" | b"stdin"
+            | b"login" => {}
             _ => return Err(format!("unknown option: {}", name)),
         }
         Ok(())
@@ -981,7 +953,7 @@ impl ShellState {
             b'v' => self.opt_verbose = enable,
             b'x' => self.opt_xtrace = enable,
             b'I' => self.opt_ignoreeof = enable,
-            b'm' | b'b' | b's' | b'V' | b'E' => {}
+            b'm' | b'b' | b's' | b'V' | b'E' | b'l' => {}
             _ => return Err(()),
         }
         Ok(())

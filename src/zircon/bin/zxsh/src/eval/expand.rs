@@ -796,7 +796,8 @@ pub fn expand_argument(
         if state.opt_noglob {
             final_results.push(word_chars_to_bstring(&word));
         } else {
-            let matches = expand_glob(&word);
+            let cwd_path = state.cwd().to_path().unwrap_or_else(|_| std::path::Path::new("."));
+            let matches = expand_glob(&word, cwd_path);
             final_results.extend(matches);
         }
     }
