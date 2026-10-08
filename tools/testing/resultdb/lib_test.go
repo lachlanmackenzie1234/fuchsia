@@ -113,7 +113,7 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 		artifactNames = append(artifactNames, name)
 	}
 	sort.Strings(artifactNames)
-	if diff := cmp.Diff(artifactNames, []string{"dir-1/outputfile", "dir_2/outputfile"}); diff != "" {
+	if diff := cmp.Diff(artifactNames, []string{"outputfile", "outputfile_1"}); diff != "" {
 		t.Errorf("Diff in output files (-got +want):\n%s", diff)
 	}
 	expectedMetadata := resultpb.TestMetadata{
@@ -179,7 +179,7 @@ func TestSetTestDetailsToResultSink_FailureReason_ExceedsMaxSize(t *testing.T) {
 		artifactNames = append(artifactNames, name)
 	}
 	sort.Strings(artifactNames)
-	if diff := cmp.Diff(artifactNames, []string{"dir-1/outputfile", "dir_2/outputfile"}); diff != "" {
+	if diff := cmp.Diff(artifactNames, []string{"outputfile", "outputfile_1"}); diff != "" {
 		t.Errorf("Diff in output files (-got +want):\n%s", diff)
 	}
 }
@@ -299,7 +299,7 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 			artifactNames = append(artifactNames, name)
 		}
 		sort.Strings(artifactNames)
-		if diff := cmp.Diff(artifactNames, []string{"case/outputfile1", "case/outputfile2"}); diff != "" {
+		if diff := cmp.Diff(artifactNames, []string{"outputfile1", "outputfile2"}); diff != "" {
 			t.Errorf("Diff in output files (-got +want):\n%s", diff)
 		}
 		expectedMetadata := resultpb.TestMetadata{
@@ -318,6 +318,63 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 		if diff := cmp.Diff(result.TestMetadata.BugComponent.GetIssueTracker().ComponentId, expectedMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
 			t.Errorf("Diff in the bug component's component id (-got +want):\n%s", diff)
 		}
+	}
+}
+
+func TestSetTestCaseToResultSink_DuplicateArtifactNames(t *testing.T) {
+	outputRoot := t.TempDir()
+	files := []string{
+		"foo/case/dir1/outputfile",
+		"foo/case/dir2/outputfile",
+		"foo/case/dir3/outputfile",
+	}
+	for _, f := range files {
+		outputfile := filepath.Join(outputRoot, f)
+		if err := os.MkdirAll(filepath.Dir(outputfile), os.ModePerm); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(outputfile, []byte("output"), os.ModePerm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail := &runtests.TestDetails{
+		Name:      "foo",
+		Status:    runtests.TestSuccess,
+		StartTime: time.Now(),
+		TestResult: runtests.TestResult{
+			OutputDir: "foo",
+			Cases: []runtests.TestCaseResult{
+				{
+					DisplayName: "foo/bar",
+					SuiteName:   "foo",
+					CaseName:    "bar",
+					Status:      runtests.TestSuccess,
+					Format:      "Rust",
+					OutputFiles: []string{
+						"case/dir1/outputfile",
+						"case/dir2/outputfile",
+						"case/dir3/outputfile",
+					},
+				},
+			},
+		},
+	}
+
+	results, _, _ := testCaseToResultSink(detail.Cases, []*resultpb.StringPair{}, detail, outputRoot)
+	if len(results) != 1 {
+		t.Fatalf("Got %d test case results, want 1", len(results))
+	}
+	got := make(map[string]string)
+	for name, artifact := range results[0].Artifacts {
+		got[name] = artifact.GetFilePath()
+	}
+	want := map[string]string{
+		"outputfile":   filepath.Join(outputRoot, "foo/case/dir1/outputfile"),
+		"outputfile_1": filepath.Join(outputRoot, "foo/case/dir2/outputfile"),
+		"outputfile_2": filepath.Join(outputRoot, "foo/case/dir3/outputfile"),
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Artifacts differ (-want +got):\n%s", diff)
 	}
 }
 
