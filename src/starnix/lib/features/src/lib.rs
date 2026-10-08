@@ -61,6 +61,7 @@ pub enum Feature {
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     FakeIon,
     UnifiedTracing,
+    RemotevolInProcess,
 }
 
 /// Error returned when a feature is not recognized.
@@ -161,6 +162,7 @@ mod test {
             // TODO(https://fxbug.dev/485370648) remove when unnecessary
             (Feature::FakeIon, "fake_ion"),
             (Feature::UnifiedTracing, "unified_tracing"),
+            (Feature::RemotevolInProcess, "remotevol_in_process"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);

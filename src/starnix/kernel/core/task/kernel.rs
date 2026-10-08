@@ -134,6 +134,9 @@ pub struct KernelFeatures {
     /// Whether to expose a stub '/dev/ion' node, as a temporary workaround for compatibility.
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     pub fake_ion: bool,
+
+    /// Whether `remotevol` mounts the volume in-process rather than over FIDL.
+    pub remotevol_in_process: bool,
 }
 
 impl KernelFeatures {

@@ -189,6 +189,7 @@ impl Features {
                         cached_zx_map_info_bytes,
                         dirent_cache_size,
                         fake_ion,
+                        remotevol_in_process,
                     },
                 system_limits,
                 selinux,
@@ -325,6 +326,7 @@ impl Features {
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
                     inspect_node.record_bool("android_usb", *android_usb);
                     inspect_node.record_bool("fake_ion", *fake_ion);
+                    inspect_node.record_bool("remotevol_in_process", *remotevol_in_process);
                 });
             }
         });
@@ -484,6 +486,7 @@ pub fn parse_features(
             (Feature::FakeIon, _) => features.kernel.fake_ion = true,
             (Feature::AndroidUsb, _) => features.android_usb = true,
             (Feature::GoogleOdpm, _) => features.google_odpm = true,
+            (Feature::RemotevolInProcess, _) => features.kernel.remotevol_in_process = true,
         };
     }
 
