@@ -36,7 +36,8 @@ use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{
-    LockDepMutex, MemoryManagerCachedStatsLock, RwLock, RwLockWriteGuard, ordered_write_lock,
+    LockDepMutex, LockDepRwLock, LockDepWriteGuard, MemoryManagerCachedStatsLock,
+    MemoryManagerStateLock, ordered_write_lock,
 };
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
@@ -391,7 +392,7 @@ impl ReleasedMappings {
         self.doomed.len() + self.doomed_pins.len()
     }
 
-    fn finalize(&mut self, mm_state: RwLockWriteGuard<'_, MemoryManagerState>) {
+    fn finalize(&mut self, mm_state: LockDepWriteGuard<'_, MemoryManagerState>) {
         // Drop the state before the unmapped mappings, since dropping a mapping may acquire a lock
         // in `DirEntry`'s `drop`.
         std::mem::drop(mm_state);
@@ -3209,7 +3210,7 @@ pub struct MemoryManager {
     pub mapping_context: MappingContext,
 
     /// Mutable state for the memory manager.
-    pub state: RwLock<MemoryManagerState>,
+    pub state: LockDepRwLock<MemoryManagerState, MemoryManagerStateLock>,
 
     /// Whether this address space is dumpable.
     pub dumpable: AtomicCell<DumpPolicy>,
@@ -4057,6 +4058,7 @@ impl MemoryManager {
     }
 
     pub fn log_memory_map(&self, task: &Task, fault_address: UserAddress) {
+        let fs_context = task.fs();
         let state = self.state.read();
         log_warn!("Memory map for pid={}:", task.pid);
         let mut last_end = UserAddress::from_ptr(0);
@@ -4080,11 +4082,11 @@ impl MemoryManager {
 
             let name_str = match &map.name() {
                 MappingNameRef::File(file) => {
-                    let Ok(fs) = task.fs() else {
+                    let Ok(ref fs) = fs_context else {
                         log_warn!("Task {} is not running", task.get_tid());
                         continue;
                     };
-                    String::from_utf8_lossy(&file.name().path(&fs)).into_owned()
+                    String::from_utf8_lossy(&file.name().path(fs)).into_owned()
                 }
                 MappingNameRef::None | MappingNameRef::AioContext(_) => {
                     if map.flags().contains(MappingFlags::SHARED)
@@ -4741,9 +4743,9 @@ impl SequenceFileSource for ProcMapsFile {
         let Some(mm) = self.mm.upgrade() else {
             return Ok(None);
         };
+        let fs_context = task.fs().ok();
         let state = mm.state.read();
         if let Some((range, map)) = state.mappings.find_at_or_after(cursor) {
-            let fs_context = task.fs().ok();
             write_map(&task, fs_context.as_deref(), sink, &state, range, map)?;
             return Ok(Some(range.end));
         }
@@ -4855,13 +4857,13 @@ impl DynamicFileSource for ProcSmapsFile {
             mm.state.write().ensure_ranges_mapped_in_user_vmar(lazy_ranges, &mm.mapping_context)?;
         }
 
+        let fs_context = task.fs().ok();
+        let fs_context_ref = fs_context.as_deref();
+
         let state = mm.state.read();
         let committed_bytes_vec = mm.with_zx_mappings(current_task, |zx_mappings| {
             Self::compute_committed_bytes(&mm, &state, zx_mappings)
         });
-
-        let fs_context = task.fs().ok();
-        let fs_context_ref = fs_context.as_deref();
 
         let mut share_count_cache: HashMap<zx::Koid, u64> = HashMap::default();
 

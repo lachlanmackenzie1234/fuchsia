@@ -2208,6 +2208,7 @@ fn select(
             }
         });
     }
+    drop(ready_items);
 
     let write_fd_set =
         |addr: UserRef<__kernel_fd_set>, value: __kernel_fd_set| -> Result<(), Errno> {
@@ -2538,6 +2539,7 @@ pub fn poll(
         pollfds[ready_key].revents = return_events as i16;
         unique_ready_items.set(ready_key, true);
     }
+    drop(ready_items);
 
     for (index, poll_descriptor) in pollfds.iter().enumerate() {
         current_task.write_object(user_pollfds.at(index)?, poll_descriptor)?;
