@@ -589,6 +589,9 @@ class WmmTransceiver(object):
                     self.wlan_device.device, self._test_interface
                 )
             else:
+                assert isinstance(
+                    reserved_server, iperf_server.IPerfServerOverSsh
+                )
                 addresses = reserved_server.get_interface_ip_addresses(
                     self._test_interface
                 )
