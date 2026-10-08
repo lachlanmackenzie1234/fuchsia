@@ -15,11 +15,18 @@ Wait for 5 seconds and then re-check the row whether the "Owner" column is the c
    * If not, refer to [Find a package](#1-find-a-package) to find another package for the migration.
 
 
-## 3. Check the Buganizer Ticket
+## 3. Check for an existing migration CL
+
+After the ownership of the **migration package** is claimed, use the "fuchsia-gerrit-cli" skill to check whether the **migration package** has already been migrated and a CL has been generated for it (e.g., search all CL states for changes whose subject contains `[bazel_migration]` and whose affected files include the `BUILD.gn` or `BUILD.bazel` of the **migration package** directory).
+   * If such a CL is found, use the "gsheets" skill to update the "Migration Status" column of the **migration package** to "migrated", and then refer to [Find a package](#1-find-a-package) to find another package for the migration.
+   * Otherwise, continue to the next step.
+
+
+## 4. Check the Buganizer Ticket
 
 For the **migration package**, if the "Buganizer Ticket" column is empty, refer to [Buganizer ticket template](../assets/buganizer_ticket_template.md) to create a Buganizer ticket for this migration with "buganizer-cli" agent skill and write it to the "Buganizer Ticket" column.
    * If it fails to create the ticket, use the "Parent ID" defined in the [Buganizer ticket template](../assets/buganizer_ticket_template.md) as the Buganizer ticket number and write to the "Buganizer Ticket" column.
 
-## 4. Update Control Table
+## 5. Update Control Table
 
 After the ownership of the **migration package** is claimed, change "Migration Status" to "in-progress".
