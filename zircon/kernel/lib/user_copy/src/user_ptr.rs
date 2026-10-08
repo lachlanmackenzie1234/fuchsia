@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::arch_rs::{
-    UserCopyCaptureFaultsError, arch_copy_from_user, arch_copy_to_user,
+    CopyContext, UserCopyCaptureFaultsError, arch_copy_from_user, arch_copy_to_user,
     arch_copy_to_user_capture_faults,
 };
 use core::mem::MaybeUninit;
@@ -240,6 +240,7 @@ impl<T> UserOutPtr<T> {
                 self.ptr as *mut core::ffi::c_void,
                 src_bytes.as_ptr() as *const core::ffi::c_void,
                 src_bytes.len(),
+                CopyContext::BlockingAllowed,
             )
         }
     }
