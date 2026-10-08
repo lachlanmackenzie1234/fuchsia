@@ -6,61 +6,21 @@
 
 #include "lib/stall.h"
 
-#include <arch/interrupt.h>
 #include <kernel/percpu.h>
 #include <lk/init.h>
 
 StallAggregator StallAggregator::singleton_;
 
-void StallAccumulator::UpdateWithIrqDisabled(int op_contributors_progressing,
-                                             int op_contributors_stalling) {
-  // Check argument range.
-  ZX_DEBUG_ASSERT(-1 <= op_contributors_progressing && op_contributors_progressing <= +1);
-  ZX_DEBUG_ASSERT(-1 <= op_contributors_stalling && op_contributors_stalling <= +1);
-
-  Guard<SpinLock, NoIrqSave> guard{&lock_};
-  Consolidate();
-
-  // Apply variations.
-  num_contributors_progressing_ += op_contributors_progressing;
-  num_contributors_stalling_ += op_contributors_stalling;
-
-  // Check that we are counting correctly and we never decrement below zero.
-  ZX_DEBUG_ASSERT(num_contributors_progressing_ != SIZE_MAX);
-  ZX_DEBUG_ASSERT(num_contributors_stalling_ != SIZE_MAX);
-}
+StallAccumulator::StallAccumulator() { rust_stall_accumulator_init(this); }
 
 void StallAccumulator::Update(int op_contributors_progressing, int op_contributors_stalling) {
-  InterruptDisableGuard guard;
-  UpdateWithIrqDisabled(op_contributors_progressing, op_contributors_stalling);
+  rust_stall_accumulator_update(this, op_contributors_progressing, op_contributors_stalling);
 }
 
 StallAccumulator::Stats StallAccumulator::Flush() {
-  Guard<SpinLock, IrqSave> guard{&lock_};
-  Consolidate();
-
-  Stats result = accumulated_stats_;
-  accumulated_stats_ = {};
+  Stats result;
+  rust_stall_accumulator_flush(this, &result);
   return result;
-}
-
-void StallAccumulator::Consolidate() {
-  zx_instant_mono_t now = current_mono_time();
-  zx_duration_mono_t time_delta = now - last_consolidate_time_;
-
-  if (num_contributors_stalling_ > 0) {
-    accumulated_stats_.total_time_stall_some += time_delta;
-  }
-
-  if (num_contributors_stalling_ > 0 && num_contributors_progressing_ == 0) {
-    accumulated_stats_.total_time_stall_full += time_delta;
-  }
-
-  if (num_contributors_progressing_ > 0 || num_contributors_stalling_ > 0) {
-    accumulated_stats_.total_time_active += time_delta;
-  }
-
-  last_consolidate_time_ = now;
 }
 
 void StallAccumulator::ApplyContextSwitch(Thread *current_thread, Thread *next_thread) {
@@ -99,7 +59,7 @@ void StallAccumulator::ApplyContextSwitch(Thread *current_thread, Thread *next_t
                         "Stalling threads must have run at least once");
     StallAccumulator &last_accumulator =
         percpu::Get(next_state->last_cpu()).memory_stall_accumulator;
-    last_accumulator.UpdateWithIrqDisabled(0, -1);
+    rust_stall_accumulator_update_no_irq(&last_accumulator, 0, -1);
 
     // We now have new a stalling thread tied to the current_cpu.
     local_op_stalling += 1;
@@ -113,7 +73,8 @@ void StallAccumulator::ApplyContextSwitch(Thread *current_thread, Thread *next_t
 
   // Propagate changes (we can skip this to be faster if there are no changes).
   if (local_op_progressing != 0 || local_op_stalling != 0) {
-    local_accumulator.UpdateWithIrqDisabled(local_op_progressing, local_op_stalling);
+    rust_stall_accumulator_update_no_irq(&local_accumulator, local_op_progressing,
+                                         local_op_stalling);
   }
 }
 

@@ -68,6 +68,9 @@ pub mod persistent_debuglog_rs;
 #[path = "lib/root_resource_filter/src/mod.rs"]
 pub mod root_resource_filter;
 
+#[path = "lib/stall/src/mod.rs"]
+pub mod stall;
+
 #[path = "lib/syscalls/mod.rs"]
 pub mod syscalls_rs;
 

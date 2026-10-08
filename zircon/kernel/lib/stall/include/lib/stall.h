@@ -39,6 +39,12 @@ class StallAccumulator {
     zx_duration_mono_t total_time_active = 0;
   };
 
+  StallAccumulator();
+  StallAccumulator(const StallAccumulator &) = delete;
+  StallAccumulator(StallAccumulator &&) = delete;
+  StallAccumulator &operator=(const StallAccumulator &) = delete;
+  StallAccumulator &operator=(StallAccumulator &&) = delete;
+
   // Alter contributor counts by the given amount.
   //
   // Only values between -1 and +1 are accepted.
@@ -52,24 +58,45 @@ class StallAccumulator {
       TA_REQ(current_thread->get_lock(), next_thread->get_lock());
 
  private:
-  void UpdateWithIrqDisabled(int op_contributors_progressing, int op_contributors_stalling)
-      TA_EXCL(lock_);
-  void Consolidate() TA_REQ(lock_);
+  // Storage mirroring the Rust `StallAccumulator` in ../../src/mod.rs, which owns this object:
+  // Rust initializes it, acquires its lock and updates its counters. C++ only reserves the
+  // storage - a `struct percpu` holds one by value - and forwards the calls above over FFI, so
+  // none of these fields are ever read here.
+  //
+  // //zircon/kernel/kernel/percpu.rs asserts that the two layouts agree.
+  struct Storage {
+    // A Rust `ksync::KMutex<ksync::RawSpinlock>`, which mirrors `Lock<SpinLock>`.
+    alignas(Lock<SpinLock>) uint8_t lock[sizeof(Lock<SpinLock>)];
 
-  DECLARE_SPINLOCK(StallAccumulator) lock_;
+    // Number of progressing threads currently tracked by this structure.
+    size_t num_contributors_progressing;
 
-  // Number of progressing threads currently tracked by this structure.
-  size_t num_contributors_progressing_ TA_GUARDED(lock_) = 0;
+    // Number of stalling threads currently tracked by this structure.
+    size_t num_contributors_stalling;
 
-  // Number of stalling threads currently tracked by this structure.
-  size_t num_contributors_stalling_ TA_GUARDED(lock_) = 0;
+    // Timestamp of the last consolidate() call.
+    zx_instant_mono_t last_consolidate_time;
 
-  // Timestamp of the last Consolidate() call.
-  zx_instant_mono_t last_consolidate_time_ TA_GUARDED(lock_) = 0;
-
-  // Accumulated totals at the time of the last update.
-  Stats accumulated_stats_ TA_GUARDED(lock_);
+    // Accumulated totals at the time of the last update.
+    Stats accumulated_stats;
+  };
+  Storage storage_ = {};
 };
+
+extern "C" {
+
+void rust_stall_accumulator_init(StallAccumulator *accumulator);
+
+void rust_stall_accumulator_update(StallAccumulator *accumulator, int op_contributors_progressing,
+                                   int op_contributors_stalling);
+
+void rust_stall_accumulator_update_no_irq(StallAccumulator *accumulator,
+                                          int op_contributors_progressing,
+                                          int op_contributors_stalling);
+
+void rust_stall_accumulator_flush(StallAccumulator *accumulator,
+                                  StallAccumulator::Stats *out_stats);
+}
 
 // A stall observer that keeps a circular queue with the last N samples (where N corresponds to the
 // number of samples covering the requested time window).
