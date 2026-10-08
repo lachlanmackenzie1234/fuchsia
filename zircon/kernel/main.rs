@@ -77,7 +77,7 @@ pub mod topology;
 #[path = "lib/user_copy/src/mod.rs"]
 pub mod user_copy;
 
-#[path = "lib/userabi/vdso.rs"]
+#[path = "lib/userabi/userabi.rs"]
 pub mod userabi;
 
 #[path = "object/object.rs"]

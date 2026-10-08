@@ -303,6 +303,17 @@ variant("kernel_config") {
     rustflags += [ "--cfg=channel_message_body_tracing_enabled" ]
   }
 
+  if (kernel_extra_defines + [
+        "ENABLE_ENTROPY_COLLECTOR_TEST=1",
+        "ENABLE_ENTROPY_COLLECTOR_TEST",
+      ] -
+      [
+        "ENABLE_ENTROPY_COLLECTOR_TEST=1",
+        "ENABLE_ENTROPY_COLLECTOR_TEST",
+      ] != kernel_extra_defines) {
+    rustflags += [ "--cfg=enable_entropy_collector_test" ]
+  }
+
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]
   }
