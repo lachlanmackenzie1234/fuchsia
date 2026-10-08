@@ -488,6 +488,8 @@ failure_mode_checks:
     end_string: "PASS: TestPmmCheckerPanic"
   - start_string: "RUN   TestCrashAssert"
     end_string: "PASS: TestCrashAssert"
+  - start_string: "RUN   TestCrashRustPanic"
+    end_string: "PASS: TestCrashRustPanic"
   - start_string: "RUN   TestKernelLockupDetectorFatalCriticalSection"
     end_string: ": TestKernelLockupDetectorFatalCriticalSection"
   - start_string: "RUN   TestKernelLockupDetectorFatalHeartbeat"
