@@ -28,6 +28,7 @@ constexpr char kSnapshotPersistenceMaxCacheSizeKey[] = "snapshot_persistence_max
 
 constexpr char kCrashReportUploadPolicyKey[] = "crash_report_upload_policy";
 constexpr char kDailyPerProductCrashReportQuotaKey[] = "daily_per_product_crash_report_quota";
+constexpr char kDiskEnduranceKey[] = "disk_endurance";
 constexpr char kEnableDataRedactionKey[] = "enable_data_redaction";
 constexpr char kEnableHourlySnapshotsKey[] = "enable_hourly_snapshots";
 constexpr char kEnableLimitInspectDataKey[] = "enable_limit_inspect_data";
