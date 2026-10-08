@@ -335,6 +335,8 @@ for pkg_dir in sorted(candidate_dirs):
             )
             if tname in packaged_binaries and not in_pre_gn and not ref_in_pre_gn:
                 continue
+            if rule == "rustc_test":
+                continue
             if in_pre_gn and GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2]):
                 continue  # bazel2gn cannot emit its GN-only attributes (see gn_attr_parity).
             if t["skip_line"] is not None and (
@@ -944,6 +946,170 @@ for pkg_dir in sorted(candidate_dirs):
                                     f"Remove `\"{raw_ref}\"` from `{ptmpl}(\"{pname}\")` in '{parent_gn_rel}'."
                                 ),
                             })
+
+# 4. rust_unit_test_layout: Rust unit tests in BUILD.bazel are explicit rustc_test
+#    targets (host/device differences via select()), always `# @bazel2gn:skip`, with
+#    the device side exposed through fx_test_component/fx_package/fx_test.
+RUST_TEST_FLAGS = ("with_unit_tests", "with_host_unit_tests")
+for pkg_dir in sorted(candidate_dirs):
+    bazel_abs = os.path.join(workdir, pkg_dir, "BUILD.bazel")
+    bazel_rel = os.path.join(pkg_dir, "BUILD.bazel")
+    if not os.path.isfile(bazel_abs):
+        continue
+    try:
+        btext = open(bazel_abs, encoding="utf-8").read()
+        btree = ast.parse(btext, filename=bazel_abs)
+    except Exception:
+        continue
+    skip_lines = {t["name"]: t["skip_line"] for t in parse_bazel_targets(bazel_abs)}
+    rules_used = set()
+    rust_tests = []
+    for node in btree.body:
+        if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)):
+            continue
+        call = node.value
+        rule = call.func.id
+        rules_used.add(rule)
+        kws = {kw.arg: kw for kw in call.keywords if kw.arg}
+        name_kw = kws.get("name")
+        tname = name_kw.value.value if name_kw and isinstance(name_kw.value, ast.Constant) else "?"
+        for flag in RUST_TEST_FLAGS:
+            kw = kws.get(flag)
+            if kw is None:
+                continue
+            findings.append({
+                "source": "migration_sanity",
+                "category": "rust_unit_test_layout",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": kw.value.lineno,
+                "message": (
+                    f"`{rule}(name = \"{tname}\")` in '{bazel_rel}' sets `{flag}`. Bazel Rust rules must not "
+                    "generate unit tests implicitly via `with_unit_tests`/`with_host_unit_tests`."
+                ),
+                "remediation": (
+                    f"Remove `{flag}` (and `test_deps`) from `{tname}` and declare an explicit "
+                    "`rustc_test` (load from //build/bazel/rules/rust:defs.bzl) preceded by `# @bazel2gn:skip`, "
+                    "expressing host vs Fuchsia differences with `select()`. For the Fuchsia side add "
+                    "`fx_packaged_binary` (testonly) + `fx_test_component` + `fx_package(test_components = [...])` "
+                    "+ `fx_test` per docs/development/build/bazel_concepts/tests.md. Keep the GN test targets "
+                    "(rustc_test / with_unit_tests and fuchsia_unittest_package) hand-written above the "
+                    "BAZEL2GN SENTINEL in BUILD.gn so GN still builds both host and target tests."
+                ),
+            })
+        if rule == "rustc_test":
+            seg = ast.get_source_segment(btext, node) or ""
+            rust_tests.append((tname, node.lineno, "HOST_OS_CONSTRAINTS" in seg))
+            if skip_lines.get(tname) is None:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "rust_unit_test_layout",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": node.lineno,
+                    "message": f"`rustc_test(name = \"{tname}\")` in '{bazel_rel}' lacks `# @bazel2gn:skip`.",
+                    "remediation": (
+                        f"Add `# @bazel2gn:skip` directly above `rustc_test(name = \"{tname}\")` and keep the "
+                        "equivalent GN test definition above the BAZEL2GN SENTINEL in BUILD.gn."
+                    ),
+                })
+    device_tests = [t for t in rust_tests if not t[2]]
+    if device_tests and "fx_test" not in rules_used:
+        tname, tline, _ = device_tests[0]
+        findings.append({
+            "source": "migration_sanity",
+            "category": "rust_unit_test_layout",
+            "severity": "error",
+            "file": bazel_rel,
+            "line": tline,
+            "message": (
+                f"`rustc_test(name = \"{tname}\")` in '{bazel_rel}' is not host-only but the package declares "
+                "no `fx_test`, so the Fuchsia (target-side) test is missing."
+            ),
+            "remediation": (
+                "Add `fx_packaged_binary(testonly = True)`, `fx_component_manifest`, `fx_test_component`, "
+                "`fx_package(test_components = [...])` and `fx_test` (all `# @bazel2gn:skip`) per "
+                "docs/development/build/bazel_concepts/tests.md, or restrict the test with "
+                "`target_compatible_with = HOST_OS_CONSTRAINTS` if GN only built it for the host."
+            ),
+        })
+
+    # Test target hygiene: package-private plumbing, public GN-exported entry
+    # points, no "manual" tag, crate deps reused, <crate>_host_test naming.
+    calls = {}
+    for node in btree.body:
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)):
+            kws = {kw.arg: kw.value for kw in node.value.keywords if kw.arg}
+            n = kws.get("name")
+            if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                calls[n.value] = (node.value.func.id, kws, node.lineno)
+
+    def str_list(v):
+        if isinstance(v, ast.BinOp):
+            return str_list(v.left) + str_list(v.right)
+        if isinstance(v, ast.List):
+            return [e.value for e in v.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        return []
+
+    def is_true(v):
+        return isinstance(v, ast.Constant) and v.value is True
+
+    def hygiene(line, message, remediation):
+        findings.append({
+            "source": "migration_sanity",
+            "category": "rust_test_target_hygiene",
+            "severity": "error",
+            "file": bazel_rel,
+            "line": line,
+            "message": message,
+            "remediation": remediation,
+        })
+
+    crate_of_test = {}
+    for tname, (rule, kws, line) in calls.items():
+        if rule != "rustc_test":
+            continue
+        crate = kws.get("crate")
+        crate_name = crate.value.lstrip(":") if isinstance(crate, ast.Constant) and isinstance(crate.value, str) else None
+        crate_of_test[tname] = crate_name
+        if "manual" in str_list(kws.get("tags")):
+            hygiene(line, f"`rustc_test(name = \"{tname}\")` sets `tags = [\"manual\"]`.",
+                    "Remove the `manual` tag: unit tests must run with `fx bazel test //<dir>:all`.")
+        if crate_name and crate_name in calls:
+            lib_deps = set(str_list(calls[crate_name][1].get("deps")))
+            dup = sorted(lib_deps & set(str_list(kws.get("deps"))))
+            if dup:
+                hygiene(line,
+                        f"`rustc_test(name = \"{tname}\")` repeats deps of its crate `:{crate_name}`: {', '.join(dup)}.",
+                        "List only the GN test-only deps (test_deps) in the rustc_test. If it does not inherit "
+                        "the crate deps, hoist them into a module-level list (e.g. `_DEPS = [...]`) used as "
+                        "`deps = _DEPS` in the library and `deps = _DEPS + [<test-only deps>]` in the test.")
+
+    def vis_of(kws):
+        return str_list(kws.get("visibility")) if "visibility" in kws else None
+
+    for tname, (rule, kws, line) in calls.items():
+        exported = rule == "fx_test" or rule.startswith("wrap_host_")
+        plumbing = (rule in ("rustc_test", "fx_test_component")
+                    or (rule in ("fx_packaged_binary", "fx_component_manifest") and is_true(kws.get("testonly")))
+                    or (rule == "fx_package" and "test_components" in kws))
+        if exported:
+            if vis_of(kws) != ["//visibility:public"]:
+                hygiene(line, f"GN-exported test entry point `{rule}(name = \"{tname}\")` lacks public visibility.",
+                        "Set `visibility = [\"//visibility:public\"]` on the fx_test and the wrap_host_* host "
+                        "test (the only test targets GN and fx test reference).")
+        elif plumbing and vis_of(kws) not in ([":__pkg__"], ["//visibility:private"]):
+            hygiene(line, f"Test target `{rule}(name = \"{tname}\")` is not restricted to its package.",
+                    "Set `visibility = [\"//visibility:private\"]`: only the fx_test and wrap_host_* targets are public.")
+        if rule.startswith("wrap_host_"):
+            bn = kws.get("binary_name")
+            test = bn.value if isinstance(bn, ast.Constant) and isinstance(bn.value, str) else None
+            crate_name = crate_of_test.get(test)
+            if crate_name and tname not in (f"{crate_name}_host_test", f"{crate_name}-host_test"):
+                hygiene(line, f"Host test wrapper `{tname}` does not follow the `<crate>_host_test` naming.",
+                        f"Rename it to `{crate_name}_host_test` and update the BUILD.gn host_tests reference.")
 
 print(json.dumps(findings, indent=2))
 PYEOF

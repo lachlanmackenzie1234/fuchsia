@@ -259,10 +259,11 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 
 ## Lint Parity
 - An area `rust_lint_config` composes defaults from `//build/config/rust/lints` (`CLIPPY_WARN_PRODUCTION | _AREA_CLIPPY`, test variant `CLIPPY_WARN_DEFAULT | _AREA_CLIPPY`, `rustc = RUSTC_LINT_CONFIGS`) and needs a same-named GN `config()` next to it.
-- **Lints that fire only on Bazel test code**: when `with_unit_tests` plus a custom `lint_config`
-   fails on test code, drop `with_unit_tests`/`test_deps` from the library and declare an
-   explicit `rustc_test` named `<crate_name>_lib_test` with `lint_config` set to the area's
-   test-flavored `rust_lint_config` (e.g. `"//src/starnix/config:starnix_clippy_lints_test"`).
+- **Lints that fire only on Bazel test code**: set `lint_config` of the explicit `rustc_test`
+   to the area's test-flavored `rust_lint_config` (e.g.
+   `"//src/starnix/config:starnix_clippy_lints_test"`).
+- **Comments**: carry each migrated GN target's comments (and comments about it in parent
+   BUILD.gn files) over to the BUILD.bazel that now defines it.
 
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check and `build_verification` (`fx build`, GN

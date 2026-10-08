@@ -659,8 +659,11 @@ for rel_path in sorted(candidate_files):
             if val in preexisting_vis:
                 continue
             if val == "//visibility:public":
+                rule_id = node.func.id if isinstance(node.func, ast.Name) else ""
                 if (
                     not is_globally_used
+                    and rule_id != "fx_test"
+                    and not rule_id.startswith("wrap_host_")
                     and len(target_rdeps) > 0
                     and len(distinct_areas) <= 3
                     and len(narrow_vis) <= 10

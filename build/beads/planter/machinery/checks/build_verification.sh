@@ -530,7 +530,13 @@ REMEDIATION = {
 }
 
 findings = []
-if change_base != "HEAD":
+head_sha = (git_lines(["rev-parse", "HEAD"]) or [""])[0]
+uploaded_commit_env = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
+worktree_dirty_vs_head = bool(
+    git_lines(["diff", "--name-only", "HEAD", "--"])
+    or [u for u in git_lines(["ls-files", "--others", "--exclude-standard"]) if any(u == d or u.startswith(d + "/") for d in dirs)]
+)
+if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit_env or head_sha != uploaded_commit_env):
     toolchains_map, _ = load_toolchains()
     commit_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
     test_footer_lines = []
