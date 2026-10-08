@@ -757,12 +757,13 @@ fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> K
     }
 }
 
-pub(in crate::security) fn is_task_capable_noaudit(
+pub(in crate::security) fn is_creds_capable_noaudit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
+    creds: &Credentials,
     capability: starnix_uapi::auth::Capabilities,
 ) -> bool {
-    let sid = current_task_state(current_task).current_sid;
+    let sid = creds.security_state.current_sid;
     let permission = permission_from_capability(capability);
     is_internal_operation(current_task)
         || permission_check.has_permission(sid, sid, permission).permit()

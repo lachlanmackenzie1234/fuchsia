@@ -33,8 +33,8 @@ use starnix_task_command::TaskCommand;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{Releasable, release_on_error};
 use starnix_uapi::auth::{
-    CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
-    PTRACE_MODE_REALCREDS, PtraceAccessMode,
+    CAP_KILL, CAP_SYS_ADMIN, Credentials, FsCred, PTRACE_MODE_FSCREDS, PTRACE_MODE_REALCREDS,
+    PtraceAccessMode,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -2085,15 +2085,23 @@ impl CurrentTask {
         //
         //      -  The caller has the CAP_SYS_PTRACE capability in the user
         //         namespace of the target.
-        let target_creds = target.persistent_info.lock_creds();
-        if !(target_creds.uid == uid
-            && target_creds.euid == uid
-            && target_creds.saved_uid == uid
-            && target_creds.gid == gid
-            && target_creds.egid == gid
-            && target_creds.saved_gid == gid)
-        {
-            security::check_task_capable(self, CAP_SYS_PTRACE)?;
+        let creds_match = {
+            let check = |target_creds: &Credentials| {
+                target_creds.uid == uid
+                    && target_creds.euid == uid
+                    && target_creds.saved_uid == uid
+                    && target_creds.gid == gid
+                    && target_creds.egid == gid
+                    && target_creds.saved_gid == gid
+            };
+            if mode.contains(PtraceAccessMode::ATTACH) {
+                check(&target.persistent_info.lock_creds())
+            } else {
+                check(&target.real_creds())
+            }
+        };
+        if !creds_match {
+            security::check_task_ptrace_capable(self, mode)?;
         }
 
         // (4)  Deny access if the target process "dumpable" attribute has a
@@ -2101,10 +2109,16 @@ impl CurrentTask {
         //      PR_SET_DUMPABLE in prctl(2)), and the caller does not have
         //      the CAP_SYS_PTRACE capability in the user namespace of the
         //      target process.
-        let dumpable = target.mm()?.dumpable.load();
-        match dumpable {
-            DumpPolicy::User => (),
-            DumpPolicy::Disable => security::check_task_capable(self, CAP_SYS_PTRACE)?,
+        //      Kernel threads and zombies do not have an `mm`, and are treated
+        //      as dumpable like in Linux's `__ptrace_may_access`.
+        if let Ok(mm) = target.mm() {
+            let dumpable = mm.dumpable.load();
+            match dumpable {
+                DumpPolicy::User => (),
+                DumpPolicy::Disable => {
+                    security::check_task_ptrace_capable(self, mode)?;
+                }
+            }
         }
 
         // (5)  The kernel LSM security_ptrace_access_check() interface is
@@ -2222,8 +2236,10 @@ fn split_path(path: &FsStr) -> LookupVec<&FsStr> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::ptrace::{PtraceAttachType, ptrace_attach};
     use crate::testing::{create_task, spawn_kernel_and_run};
-    use starnix_uapi::auth::Credentials;
+    use starnix_uapi::auth::{Credentials, PTRACE_MODE_READ_FSCREDS};
     use std::sync::Arc;
 
     // This test will run `override_creds` and check it doesn't crash. This ensures that the
@@ -2252,6 +2268,67 @@ mod tests {
 
             assert!(running_state.fs().is_err());
             assert!(fs.upgrade().is_none(), "FsContext should be dropped by exit()");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_check_ptrace_access_mode() {
+        spawn_kernel_and_run(async move |current_task| {
+            let system_tg = current_task.kernel().kthreads.system_thread_group();
+            let system_task = system_tg.leader.get_task().unwrap();
+            let mode = PTRACE_MODE_READ_FSCREDS;
+
+            // Even root cannot ptrace_attach to the kernel system_task (which has no mm).
+            assert_eq!(
+                ptrace_attach(
+                    current_task,
+                    &system_tg.leader,
+                    PtraceAttachType::Attach,
+                    UserAddress::NULL
+                ),
+                error!(EPERM)
+            );
+
+            // Root has CAP_SYS_PTRACE and passes check_ptrace_access_mode on a kernel thread.
+            assert_eq!(current_task.check_ptrace_access_mode(mode, &system_task), Ok(()));
+
+            // Unprivileged caller cannot access a root-owned kernel thread.
+            let unpriv_creds = Arc::new(Credentials::with_ids(1000, 1000));
+            let res = current_task.override_creds(unpriv_creds.clone(), || {
+                current_task.check_ptrace_access_mode(mode, &system_task)
+            });
+            assert_eq!(res, error!(EPERM));
+
+            // Non-dumpable target requires CAP_SYS_PTRACE even with matching UID/GID.
+            let target_task = create_task(&current_task.kernel(), "target");
+            target_task.set_creds(Credentials::with_ids(1000, 1000));
+            target_task.mm().unwrap().dumpable.store(DumpPolicy::Disable);
+
+            let res = current_task.override_creds(unpriv_creds.clone(), || {
+                current_task.check_ptrace_access_mode(mode, &target_task)
+            });
+            assert_eq!(res, error!(EPERM));
+
+            assert_eq!(current_task.check_ptrace_access_mode(mode, &target_task), Ok(()));
+
+            // Non-running (exited/zombie) task has no `mm` and is treated as dumpable.
+            let exited_task_ref = Arc::clone(&target_task.task);
+            std::mem::drop(target_task);
+            assert!(exited_task_ref.mm().is_err());
+
+            let res = current_task.override_creds(unpriv_creds, || {
+                current_task.check_ptrace_access_mode(mode, &exited_task_ref)
+            });
+            assert_eq!(res, Ok(()));
+
+            let other_creds = Arc::new(Credentials::with_ids(2000, 2000));
+            let res = current_task.override_creds(other_creds, || {
+                current_task.check_ptrace_access_mode(mode, &exited_task_ref)
+            });
+            assert_eq!(res, error!(EPERM));
+
+            assert_eq!(current_task.check_ptrace_access_mode(mode, &exited_task_ref), Ok(()));
         })
         .await;
     }

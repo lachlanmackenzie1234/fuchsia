@@ -1248,7 +1248,7 @@ pub fn ptrace_attach(
 ) -> Result<SyscallResult, Errno> {
     let tracee = pid.get_task()?;
 
-    if tracee.thread_group == current_task.thread_group {
+    if tracee.thread_group == current_task.thread_group || tracee.mm().is_err() {
         return error!(EPERM);
     }
 

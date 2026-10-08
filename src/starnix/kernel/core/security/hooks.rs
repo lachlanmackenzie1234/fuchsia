@@ -1044,19 +1044,41 @@ pub fn is_task_capable_noaudit(
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
 ) -> bool {
+    check_task_capable_noaudit(current_task, capability).is_ok()
+}
+
+/// Checks if a task with the given `creds` has the specified `capability` without generating
+/// audit logs.
+/// Corresponds to the `capable()` LSM hook invoked with a no-audit flag set.
+pub fn check_creds_capable_noaudit(
+    current_task: &CurrentTask,
+    creds: &Credentials,
+    capability: starnix_uapi::auth::Capabilities,
+) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.is_task_capable_noaudit");
-    return common_cap::capable(current_task, capability).is_ok()
-        && if_selinux_else(
-            current_task,
-            |security_server| {
-                selinux_hooks::task::is_task_capable_noaudit(
-                    &selinux_hooks::build_permission_check(current_task, security_server),
-                    &current_task,
-                    capability,
-                )
-            },
-            || true,
-        );
+    common_cap::creds_capable(creds, capability)?;
+    let permitted = if_selinux_else(
+        current_task,
+        |security_server| {
+            selinux_hooks::task::is_creds_capable_noaudit(
+                &selinux_hooks::build_permission_check(current_task, security_server),
+                &current_task,
+                creds,
+                capability,
+            )
+        },
+        || true,
+    );
+    if permitted { Ok(()) } else { error!(EPERM) }
+}
+
+/// Checks if a task has the specified `capability` without generating audit logs.
+/// Corresponds to the `capable()` LSM hook invoked with a no-audit flag set.
+pub fn check_task_capable_noaudit(
+    current_task: &CurrentTask,
+    capability: starnix_uapi::auth::Capabilities,
+) -> Result<(), Errno> {
+    check_creds_capable_noaudit(current_task, &**current_task.current_creds(), capability)
 }
 
 /// Checks if a task has the specified `capability`.
@@ -1085,6 +1107,28 @@ pub fn check_task_capable(
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
     check_creds_capable(current_task, &**current_task.current_creds(), capability)
+}
+
+/// Checks if a task with the given `creds` has `CAP_SYS_PTRACE`, honoring `PTRACE_MODE_NOAUDIT`
+/// if set in `mode`.
+pub fn check_creds_ptrace_capable(
+    current_task: &CurrentTask,
+    creds: &Credentials,
+    mode: PtraceAccessMode,
+) -> Result<(), Errno> {
+    if mode.contains(PtraceAccessMode::NOAUDIT) {
+        check_creds_capable_noaudit(current_task, creds, starnix_uapi::auth::CAP_SYS_PTRACE)
+    } else {
+        check_creds_capable(current_task, creds, starnix_uapi::auth::CAP_SYS_PTRACE)
+    }
+}
+
+/// Checks if a task has `CAP_SYS_PTRACE`, honoring `PTRACE_MODE_NOAUDIT` if set in `mode`.
+pub fn check_task_ptrace_capable(
+    current_task: &CurrentTask,
+    mode: PtraceAccessMode,
+) -> Result<(), Errno> {
+    check_creds_ptrace_capable(current_task, &**current_task.current_creds(), mode)
 }
 
 /// Checks if creating a task is allowed.
@@ -2221,16 +2265,25 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mm::DumpPolicy;
     use crate::security;
     use crate::security::selinux_hooks::get_cached_sid;
     use crate::security::selinux_hooks::testing::{
         self, spawn_kernel_with_selinux_hooks_test_policy_and_run,
     };
-    use crate::testing::{create_task, spawn_kernel_and_run, spawn_kernel_with_selinux_and_run};
+    use crate::testing::{
+        create_task, create_task_with_security_context, spawn_kernel_and_run,
+        spawn_kernel_with_selinux_and_run,
+    };
     use linux_uapi::XATTR_NAME_SELINUX;
     use selinux::InitialSid;
-    use starnix_uapi::auth::PTRACE_MODE_ATTACH;
+    use starnix_uapi::auth::{
+        CAP_SYS_PTRACE, PTRACE_MODE_ATTACH, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_NOAUDIT,
+        PTRACE_MODE_READ_FSCREDS,
+    };
     use starnix_uapi::signals::SIGTERM;
+    use std::ffi::CString;
+    use std::sync::atomic::Ordering;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
     const VALID_SECURITY_CONTEXT_WITH_NUL: &[u8] = b"u:object_r:test_valid_t:s0\0";
@@ -3105,6 +3158,161 @@ mod tests {
                 .entry;
 
             assert_eq!(get_cached_sid(&dir_entry.node), Some(sid));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_check_ptrace_access_mode_noaudit() {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, _security_server| {
+            let tracer_task = create_task_with_security_context(
+                &current_task.kernel(),
+                "tracer_task",
+                &CString::new(b"u:object_r:test_ptrace_tracer_no_t:s0").unwrap(),
+            );
+            let tracee_task = create_task_with_security_context(
+                &current_task.kernel(),
+                "target_task",
+                &CString::new(b"u:object_r:test_ptrace_traced_t:s0").unwrap(),
+            );
+
+            // 1. Same UID/GID and dumpable: fails in `selinux_hooks::task::ptrace_access_check`.
+            let initial_denials = current_task.kernel().security_state.access_denial_count();
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(
+                    PTRACE_MODE_ATTACH_REALCREDS | PTRACE_MODE_NOAUDIT,
+                    &tracee_task
+                ),
+                error!(EACCES)
+            );
+            assert_eq!(current_task.kernel().security_state.access_denial_count(), initial_denials);
+
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &tracee_task),
+                error!(EACCES)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                initial_denials + 1
+            );
+
+            // 2. Mismatched UID/GID (Step 3 of `CurrentTask::check_ptrace_access_mode`):
+            //    fails in `security::check_task_ptrace_capable`.
+            let orig_tracee_creds = Credentials::clone(&tracee_task.current_creds());
+            let mut diff_uid_creds = orig_tracee_creds.clone();
+            diff_uid_creds.uid = 1000;
+            tracee_task.set_creds(diff_uid_creds);
+
+            let denials_before_uid = current_task.kernel().security_state.access_denial_count();
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(
+                    PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT,
+                    &tracee_task
+                ),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_uid
+            );
+
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS, &tracee_task),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_uid + 1
+            );
+            tracee_task.set_creds(orig_tracee_creds);
+
+            // 3. Non-dumpable target (Step 4 of `CurrentTask::check_ptrace_access_mode`):
+            //    fails in `security::check_task_ptrace_capable`.
+            tracee_task.mm().unwrap().dumpable.store(DumpPolicy::Disable);
+            let denials_before_dumpable =
+                current_task.kernel().security_state.access_denial_count();
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(
+                    PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT,
+                    &tracee_task
+                ),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_dumpable
+            );
+
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS, &tracee_task),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_dumpable + 1
+            );
+            tracee_task.mm().unwrap().dumpable.store(DumpPolicy::User);
+
+            // 4. `common_cap::check_ptrace_access` (when caller's capabilities are not a superset
+            //    of target's permitted capabilities): fails in `security::check_creds_ptrace_capable`.
+            let orig_caller_creds = Credentials::clone(&tracer_task.current_creds());
+            let mut reduced_cap_creds = orig_caller_creds.clone();
+            reduced_cap_creds.cap_effective = CAP_SYS_PTRACE;
+            tracer_task.set_creds(reduced_cap_creds);
+
+            let denials_before_common_cap =
+                current_task.kernel().security_state.access_denial_count();
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(
+                    PTRACE_MODE_READ_FSCREDS | PTRACE_MODE_NOAUDIT,
+                    &tracee_task
+                ),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_common_cap
+            );
+
+            assert_eq!(
+                tracer_task.check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS, &tracee_task),
+                error!(EPERM)
+            );
+            assert_eq!(
+                current_task.kernel().security_state.access_denial_count(),
+                denials_before_common_cap + 1
+            );
+            tracer_task.set_creds(orig_caller_creds);
+
+            // 5. `yama::ptrace_access_check` (`SCOPE_RESTRICTED` and `SCOPE_ADMIN_ONLY`):
+            //    fails in `security::check_task_ptrace_capable`.
+            for scope in [yama::SCOPE_RESTRICTED, yama::SCOPE_ADMIN_ONLY] {
+                current_task.kernel().ptrace_scope.store(scope, Ordering::Relaxed);
+                let denials_before_yama =
+                    current_task.kernel().security_state.access_denial_count();
+                assert_eq!(
+                    tracer_task.check_ptrace_access_mode(
+                        PTRACE_MODE_ATTACH_REALCREDS | PTRACE_MODE_NOAUDIT,
+                        &tracee_task
+                    ),
+                    error!(EPERM)
+                );
+                assert_eq!(
+                    current_task.kernel().security_state.access_denial_count(),
+                    denials_before_yama
+                );
+
+                assert_eq!(
+                    tracer_task
+                        .check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &tracee_task),
+                    error!(EPERM)
+                );
+                assert_eq!(
+                    current_task.kernel().security_state.access_denial_count(),
+                    denials_before_yama + 1
+                );
+            }
+            current_task.kernel().ptrace_scope.store(yama::SCOPE_CLASSIC, Ordering::Relaxed);
         })
         .await;
     }
