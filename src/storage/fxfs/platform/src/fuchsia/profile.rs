@@ -273,6 +273,8 @@ impl RecordingHandle for AttributeRecordingHandle {
     }
 
     fn abort_cleanup(self: Box<Self>) {
+        // TODO(https://fxbug.dev/507875809): How is this going to be cleaned up if it fails part
+        // way? How will we know that it is invalid and should be replaced?
         self.volume.store().filesystem().graveyard().queue_tombstone_attribute(
             self.volume.store().store_object_id(),
             self.handle.object_id(),
@@ -515,6 +517,9 @@ impl RecordedVolume for FileVolume {
     }
 
     async fn file_is_replayable(&self, id: &Self::IdType) -> bool {
+        if self.volume.store().crypt().is_none() {
+            return true;
+        }
         match self.volume.store().get_keys(*id).await {
             // If any keys are not the volume key id, then the file may not be readable later.
             // If there's more than one, then at least one is not the volume key.

@@ -9,7 +9,7 @@ use crate::fuchsia::file::{FlushType, FxFile};
 use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor};
 use crate::fuchsia::node::{FxNode, GetResult, NodeCache, OpenedNode};
 use crate::fuchsia::pager::Pager;
-use crate::fuchsia::profile::{FileRecordingHandle, ProfileState};
+use crate::fuchsia::profile::{AttributeRecordingHandle, FileRecordingHandle, ProfileState};
 use crate::fuchsia::symlink::FxSymlink;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
 use anyhow::{Error, bail, ensure};
@@ -32,13 +32,14 @@ use fxfs::errors::FxfsError;
 use fxfs::filesystem::{self, SyncOptions, TruncateGuard};
 use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
+use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::object_record::ObjectItem;
 use fxfs::object_store::project_id::ProjectIdExt;
 use fxfs::object_store::transaction::{LockKey, Options, ReservationOptions, lock_keys};
 use fxfs::object_store::{
-    DirType, HandleOptions, HandleOwner, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore,
-    ObjectValue, ProjectId,
+    AttributeId, AttributeKey, DataObjectHandle, DirType, HandleOptions, HandleOwner,
+    ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue, ProjectId,
 };
 use refaults_vmo::PageRefaultCounter;
 use std::future::Future;
@@ -357,34 +358,49 @@ impl FxVolume {
     pub async fn replay_xor_record_profile(
         self: &Arc<Self>,
         mut state: Box<dyn ProfileState>,
-        name: &str,
+        node: OpenedNode<dyn FxNode>,
     ) -> Result<(), Error> {
-        let profile_dir = self.get_profile_directory().await?;
-        let replay_handle = if let Some((id, descriptor, _)) = profile_dir.lookup(name).await? {
-            ensure!(matches!(descriptor, ObjectDescriptor::File), FxfsError::Inconsistent);
-            Some(Box::new(
-                ObjectStore::open_object(self, id, HandleOptions::default(), None).await?,
-            ))
-        } else {
-            None
-        };
+        let object_id = node.object_id();
+        let key = ObjectKey::attribute(
+            object_id,
+            AttributeId::PROFILE_RECORDING,
+            AttributeKey::Attribute,
+        );
+
+        let replay_handle =
+            if let Some(ObjectItem { value: ObjectValue::Attribute { size, .. }, .. }) =
+                self.store().tree().find(&key).await?
+            {
+                Some(Box::new(DataObjectHandle::new(
+                    self.clone(),
+                    object_id,
+                    false,
+                    AttributeId::PROFILE_RECORDING,
+                    size,
+                    HandleOptions::default(),
+                    false,
+                    &[],
+                )) as Box<dyn ReadObjectHandle>)
+            } else {
+                None
+            };
 
         if let Some(handle) = replay_handle {
             let mut profile_state = self.profile_state.lock();
             if let Some(guard) = self.scope().try_active_guard() {
                 state.replay_profile(handle, self.clone(), guard);
                 info!(
-                    "Replaying existing profile '{name}' for volume object {}",
+                    "Replaying existing profile for object {object_id} in volume object {}",
                     self.store.store_object_id()
                 );
             }
             *profile_state = Some(state);
         } else {
             info!(
-                "Recording new profile '{name}' for volume object {}",
+                "Recording new profile for object {object_id} in volume object {}",
                 self.store.store_object_id()
             );
-            let recording_handle = FileRecordingHandle::new(name, self.clone()).await?;
+            let recording_handle = AttributeRecordingHandle::new(node, self.clone()).await?;
             let mut profile_state = self.profile_state.lock();
             self.pager.set_recorder(Some(state.record_new(self, Box::new(recording_handle))));
             *profile_state = Some(state);
