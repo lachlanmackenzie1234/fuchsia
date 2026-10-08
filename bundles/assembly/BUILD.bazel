@@ -1100,6 +1100,24 @@ assembly_input_bundle(
     ],
 )
 
+# devscreen: a readable boot dashboard that replaces virtcon's logo tab on
+# display-only eng builds. Opt-in via
+# `platform.development_support.include_devscreen`.
+#
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "devscreen",
+    allowed_in = [
+        "standard::eng",
+    ],
+    base_packages = [
+        "//bundles/assembly/bazel_inputs/src/ui/bin/devscreen",
+    ],
+    core_shards = [
+        "//src/ui/bin/devscreen:meta/devscreen.core_shard.cml",
+    ],
+)
+
 # The netsvc AIB is included by all eng products.
 #
 # buildifier: leave-alone

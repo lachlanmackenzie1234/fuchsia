@@ -528,6 +528,10 @@ group("virtcon") {
   deps = [ "//bundles/assembly/bazel_inputs/src/bringup/bin/virtcon:package" ]
 }
 
+group("devscreen") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/ui/bin/devscreen" ]
+}
+
 group("netsvc") {
   deps = [ "//bundles/assembly/bazel_inputs/src/bringup/bin/netsvc:package" ]
 }
