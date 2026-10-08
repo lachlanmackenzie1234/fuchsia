@@ -8,7 +8,6 @@ import("//build/rust/rustc_binary.gni")
 netstack2_visibility = [
   ":*",
   "//src/connectivity/network/testing/netemul/configurable-netstack/tests:*",
-  "//src/connectivity/network/mdns/service:*",
   "//src/connectivity/weave/tests/weave_ip_forward:*",
 ]
 

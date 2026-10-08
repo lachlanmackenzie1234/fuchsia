@@ -1,8 +1,8 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [ "//src/connectivity/network/mdns/service/meta/netemul-test-ns2.shard.cml" ],
+    include: [ "//src/connectivity/network/mdns/service/meta/netemul-test.shard.cml" ],
     program: {
         netstacks: [
             {
@@ -10,11 +10,11 @@
                 interfaces: [
                     {
                         name: "local-ep",
-                        static_ips: [ "192.168.0.2/24" ],
+                        static_ips: [ "fe80::4607:bff:fe60:595e/24" ],
                     },
                     {
                         name: "local-ep2",
-                        static_ips: [ "192.168.0.3/24" ],
+                        static_ips: [ "fe80::4607:bff:fe60:595f/24" ],
                     },
                 ],
             },
@@ -23,7 +23,7 @@
                 interfaces: [
                     {
                         name: "remote-ep",
-                        static_ips: [ "192.168.0.1/24" ],
+                        static_ips: [ "fe80::4607:bff:fe60:595d/24" ],
                     },
                 ],
             },

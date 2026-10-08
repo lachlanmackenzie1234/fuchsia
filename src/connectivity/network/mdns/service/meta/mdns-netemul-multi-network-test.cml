@@ -85,6 +85,14 @@
             url: "#meta/remote-multi-network.cm",
         },
         {
+            name: "local-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
+        },
+        {
+            name: "remote-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
+        },
+        {
             name: "sync-manager",
             url: "#meta/sync-manager.cm",
         },
