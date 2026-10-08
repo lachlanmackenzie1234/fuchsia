@@ -85,6 +85,8 @@ source_set("singleton_display_service") {
     "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
     "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_cpp",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//sdk/fidl/fuchsia.ui.input.internal:fuchsia.ui.input.internal_cpp",
     "//sdk/lib/sys/cpp",
+    "//src/lib/fsl",
   ]
 }

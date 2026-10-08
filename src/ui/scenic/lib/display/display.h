@@ -81,6 +81,7 @@ class Display {
   // This event backs Scenic's `fuchsia.ui.input.internal.InputOwnership` API
   // (and legacy `fuchsia.ui.composition.internal.DisplayOwnership`).
   const zx::event& ownership_event() const { return ownership_event_; }
+  void set_ownership_event_for_testing(zx::event event) { ownership_event_ = std::move(event); }
 
   // Called by `DisplayManager`, non-test users of `Display` should probably not call this.
   void OnVsync(zx::time_monotonic timestamp, WireConfigStamp displayed_config_stamp);
