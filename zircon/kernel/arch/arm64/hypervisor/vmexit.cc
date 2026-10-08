@@ -117,8 +117,9 @@ zx::result<> handle_smc_instruction(uint32_t iss, GuestState* guest_state,
       memset(packet, 0, sizeof(*packet));
       packet->type = ZX_PKT_TYPE_GUEST_VCPU;
       packet->guest_vcpu.type = ZX_PKT_GUEST_VCPU_STARTUP;
-      packet->guest_vcpu.startup.id = guest_state->x[1];
+      packet->guest_vcpu.startup.target = guest_state->x[1];
       packet->guest_vcpu.startup.entry = guest_state->x[2];
+      packet->guest_vcpu.startup.context = guest_state->x[3];
       guest_state->x[0] = PSCI_SUCCESS;
       return zx::error(ZX_ERR_NEXT);
     case PSCI64_CPU_OFF:

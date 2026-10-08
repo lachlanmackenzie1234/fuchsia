@@ -1316,15 +1316,16 @@ pub struct zx_packet_guest_io_t {
 pub struct zx_packet_guest_vcpu_interrupt_t {
     pub mask: u64,
     pub vector: u8,
-    padding1: [PadByte; 7],
+    padding1: [PadByte; 15],
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_packet_guest_vcpu_startup_t {
-    pub id: u64,
+    pub target: u64,
     pub entry: zx_gpaddr_t,
+    pub context: u64,
 }
 
 #[repr(C)]
@@ -1348,7 +1349,6 @@ pub struct zx_packet_guest_vcpu_t {
     pub r#type: zx_packet_guest_vcpu_type_t,
     padding1: [PadByte; 4],
     pub union: zx_packet_guest_vcpu_union_t,
-    padding2: [PadByte; 8],
 }
 
 impl PartialEq for zx_packet_guest_vcpu_t {
