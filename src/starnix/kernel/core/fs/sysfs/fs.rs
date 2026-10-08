@@ -50,25 +50,7 @@ impl SysFs {
             dir.subdir("pstore", dir_mode, empty_dir);
         });
 
-        dir.subdir("block", dir_mode, |dir| {
-            dir.subdir("zram0", dir_mode, |dir| {
-                dir.entry(
-                    "backing_dev",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-                dir.entry(
-                    "recomp_algorithm",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-                dir.entry(
-                    "recompress",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-            });
-        });
+        dir.subdir("block", dir_mode, empty_dir);
 
         dir.subdir("bus", dir_mode, |dir| {
             dir.subdir("mmc", dir_mode, |dir| {
@@ -159,29 +141,7 @@ impl SysFs {
                     });
                 });
             });
-            dir.subdir("net", dir_mode, |dir| {
-                dir.subdir("eth0", dir_mode, |dir| {
-                    dir.entry(
-                        "address",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-                dir.subdir("sit0", dir_mode, |dir| {
-                    dir.entry(
-                        "address",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-                dir.subdir("wlan0", dir_mode, |dir| {
-                    dir.entry(
-                        "address",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
+            dir.subdir("net", dir_mode, empty_dir);
             dir.subdir("powercap", dir_mode, |_dir| {});
             dir.subdir("udc", dir_mode, |_dir| {});
         });

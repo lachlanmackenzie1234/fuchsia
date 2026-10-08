@@ -8,15 +8,17 @@ use crate::fs::devtmpfs::{devtmpfs_create_device, devtmpfs_remove_path};
 use crate::fs::sysfs::build_device_directory;
 use crate::task::{CurrentTask, Kernel, register_delayed_release};
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
+use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
-use starnix_logging::log_error;
+use starnix_logging::{bug_ref, log_error};
 use starnix_sync::{DeviceRegistryStateLevel, LockDepGuard, LockDepMutex, MappedLockDepGuard};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_id::{DYN_MAJOR_RANGE, DeviceId, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::ops::{Deref, Range};
@@ -505,13 +507,21 @@ impl DeviceRegistry {
     /// IFINDEX={index}
     /// ```
     ///
-    /// Currently, we only register the net devices by name and use an empty `uevent` file.
+    /// Currently, we only register the net devices by name and use an empty `uevent` file. The
+    /// `address` attribute is stubbed, so that reads by userspace are tracked.
     pub fn add_net_device(&self, name: &FsStr) -> Device {
         self.add_numberless_device(
             name,
             /* parent = */ None,
             self.objects.net_class(),
-            build_device_directory,
+            |device, dir| {
+                build_device_directory(device, dir);
+                dir.entry(
+                    "address",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o444),
+                );
+            },
         )
     }
 
@@ -1191,6 +1201,28 @@ mod tests {
                     .is_none()
             );
             assert!(registry.objects.root.lookup("devices/virtual/thermal".into()).is_none());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn registry_add_and_remove_net_device() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+
+            let wlan0 = registry.add_net_device("wlan0".into());
+            assert!(registry.objects.root.lookup("class/net/wlan0".into()).is_some());
+            assert!(
+                registry.objects.root.lookup("devices/virtual/net/wlan0/address".into()).is_some()
+            );
+            assert!(
+                registry.objects.root.lookup("devices/virtual/net/wlan0/uevent".into()).is_some()
+            );
+
+            registry.remove_net_device(wlan0);
+            assert!(registry.objects.root.lookup("class/net/wlan0".into()).is_none());
+            assert!(registry.objects.root.lookup("devices/virtual/net/wlan0".into()).is_none());
         })
         .await;
     }

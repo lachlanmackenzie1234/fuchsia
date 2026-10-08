@@ -81,6 +81,13 @@ fn build_zram_device_directory(
         StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322892951")),
         mode!(IFREG, 0o664),
     );
+    for name in ["backing_dev", "recomp_algorithm", "recompress"] {
+        dir.entry(
+            name,
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode!(IFREG, 0o444),
+        );
+    }
     dir.entry("mm_stat", MmStatFile::new_node(zram_device), mode!(IFREG, 0o444));
 }
 
