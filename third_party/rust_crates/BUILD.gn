@@ -11402,7 +11402,7 @@ rustc_library("hickory-net-v0_26_3") {
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":rand-v0_10_3" ]
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":thiserror-v2_0_20" ]
   deps += [ ":time-v0_3_55" ]
   deps += [ ":tinyvec-v1_11_0" ]
@@ -11454,7 +11454,7 @@ rustc_library("hickory-proto-v0_26_3") {
   deps += [ ":prefix-trie-v0_8_4" ]
   deps += [ ":rand-v0_10_3" ]
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":thiserror-v2_0_20" ]
   deps += [ ":time-v0_3_55" ]
   deps += [ ":tinyvec-v1_11_0" ]
@@ -20094,7 +20094,7 @@ rustc_library("rustls-v0_23_42") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":rustls-webpki-v0_103_13" ]
   deps += [ ":subtle-v2_6_1" ]
 
@@ -20112,7 +20112,7 @@ rustc_library("rustls-v0_23_42") {
   ]
 
   aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_0.actual"
+    pki_types = ":rustls-pki-types-v1_15_1.actual"
     webpki = ":rustls-webpki-v0_103_13.actual"
   }
   visibility = [ ":*" ]
@@ -20141,7 +20141,7 @@ rustc_library("rustls-native-certs-v0_8_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   if (true && !(current_os == "mac")) {
     deps += [ ":openssl-probe-v0_2_1" ]
   }
@@ -20161,7 +20161,7 @@ rustc_library("rustls-native-certs-v0_8_4") {
   ]
 
   aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_0.actual"
+    pki_types = ":rustls-pki-types-v1_15_1.actual"
   }
   visibility = [ ":*" ]
 
@@ -20189,7 +20189,7 @@ rustc_library("rustls-pemfile-v2_2_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
 
   rustenv = []
 
@@ -20202,26 +20202,26 @@ rustc_library("rustls-pemfile-v2_2_0") {
   ]
 
   aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_0.actual"
+    pki_types = ":rustls-pki-types-v1_15_1.actual"
   }
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":rustls-pemfile-v2_2_0.license" ]
 }
 
-license("rustls-pki-types-v1_15_0.license") {
+license("rustls-pki-types-v1_15_1.license") {
   public_package_name = "rustls_pki_types"
   license_files = [
-    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-pki-types-1.15.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustls-pki-types-v1_15_0") {
+rustc_library("rustls-pki-types-v1_15_1") {
   crate_name = "rustls_pki_types"
   source_root =
-      "//third_party/rust_crates/vendor/rustls-pki-types-1.15.0/src/lib.rs"
-  output_name = "rustls_pki_types-40f55b552558b4c5"
+      "//third_party/rust_crates/vendor/rustls-pki-types-1.15.1/src/lib.rs"
+  output_name = "rustls_pki_types-eb3bcf546df0b1e7"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20234,8 +20234,8 @@ rustc_library("rustls-pki-types-v1_15_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=40f55b552558b4c5",
-    "-Cextra-filename=-40f55b552558b4c5",
+    "-Cmetadata=eb3bcf546df0b1e7",
+    "-Cextra-filename=-eb3bcf546df0b1e7",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -20243,7 +20243,7 @@ rustc_library("rustls-pki-types-v1_15_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-pki-types-v1_15_0.license" ]
+  applicable_licenses = [ ":rustls-pki-types-v1_15_1.license" ]
 }
 
 rustc_macro("rustversion-v1_0_22") {
@@ -26601,7 +26601,7 @@ rustc_library("rustls-webpki-v0_102_8") {
 
   deps = []
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":untrusted-v0_9_0" ]
 
   rustenv = []
@@ -26617,7 +26617,7 @@ rustc_library("rustls-webpki-v0_102_8") {
   ]
 
   aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_0.actual"
+    pki_types = ":rustls-pki-types-v1_15_1.actual"
   }
   visibility = [ ":*" ]
 
@@ -26642,7 +26642,7 @@ rustc_library("rustls-webpki-v0_103_13") {
 
   deps = []
   deps += [ ":ring-v0_17_14" ]
-  deps += [ ":rustls-pki-types-v1_15_0" ]
+  deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":untrusted-v0_9_0" ]
 
   rustenv = []
@@ -26657,7 +26657,7 @@ rustc_library("rustls-webpki-v0_103_13") {
   ]
 
   aliased_deps = {
-    pki_types = ":rustls-pki-types-v1_15_0.actual"
+    pki_types = ":rustls-pki-types-v1_15_1.actual"
   }
   visibility = [ ":*" ]
 
