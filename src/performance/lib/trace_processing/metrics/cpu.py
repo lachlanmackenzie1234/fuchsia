@@ -450,23 +450,25 @@ def _get_cpu_rates(
     Returns:
         A dictionary keyed by cpu_index, containing CpuProcessingRateTimeline objects.
     """
-    power_events = list(
+    power_events = tuple(
         e
         for e in trace_utils.filter_events(
             model.all_events(),
             type=trace_model.CounterEvent,
         )
-        if e.name and e.name.startswith(_RATE_EVENT_NAME)
+        if e.name.startswith(_RATE_EVENT_NAME)
     )
 
-    rates_by_cpu: dict[int, list[ProcessingRateSample]] = {}
+    rates_by_cpu: collections.defaultdict[
+        int, list[ProcessingRateSample]
+    ] = collections.defaultdict(list)
     for event in power_events:
         # For "Rate" events, the CPU index is encoded in `event.id`.
         # When the CPU index is 0, the `event.id` field is omitted from the trace.
         cpu_idx = event.id if event.id is not None else 0
         rate = event.args.get("CPU", _DEFAULT_PROCESSING_RATE)
 
-        rates_by_cpu.setdefault(cpu_idx, []).append(
+        rates_by_cpu[cpu_idx].append(
             ProcessingRateSample(
                 timestamp_ms=DurationsBreakdown._timestamp_ms(event.start),
                 rate=rate,
