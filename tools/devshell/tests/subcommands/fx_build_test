@@ -167,7 +167,7 @@ EOF
 
   # args.json is parsed to look for enable_jobserver in Ninja build mode.
   # Ensure this is disabled by default.
-  touch "${TEST_BUILD_DIR}/args.json"
+  echo "{}" > "${TEST_BUILD_DIR}/args.json"
 
   # Force concurrency, see fx-cpu-count.
   mock_getconf=$(btf::make_mock_binary getconf)

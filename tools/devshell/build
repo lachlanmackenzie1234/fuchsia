@@ -846,17 +846,6 @@ function main {
       if [[ ! -f "${ninja_targets_list_file}" || "$(<"${ninja_targets_list_file}")" != "${ninja_targets_list}" ]]; then
         printf "%s" "${ninja_targets_list}" > "${ninja_targets_list_file}"
       fi
-
-      # If enable_jobserver is set in args.gn, add a --jobserver option to
-      # the Ninja command-line.
-      local enable_jobserver
-      enable_jobserver="$("$PREBUILT_JQ" .enable_jobserver "${FUCHSIA_BUILD_DIR}/args.json")"
-      if [[ "$enable_jobserver" == "true" ]]; then
-        if [[ -n "${verbose}" ]]; then
-          echo "Ninja jobserver mode is enabled."
-        fi
-        extra_switches+=(--jobserver)
-      fi
     fi
 
     local ninja_path="$PREBUILT_NINJA"

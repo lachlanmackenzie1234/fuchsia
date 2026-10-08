@@ -150,12 +150,47 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             source_dir / "build/scripts/top_build_wrap.sh",
         )
         self.assertEqual(context.args_gn, build_dir / "args.gn")
+        self.assertEqual(context.args_json, build_dir / "args.json")
         self.assertEqual(
             context.rsninja_sh, source_dir / "build/resultstore/rsninja.sh"
         )
         self.assertEqual(
             context.ninja_edge_weights_csv, build_dir / "ninja_edge_weights.csv"
         )
+
+    def test_enable_jobserver_default_false(self) -> None:
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            self.assertFalse(context.enable_jobserver)
+            self.mock_read_json.assert_called_once_with(context.args_json)
+
+    def test_enable_jobserver_true(self) -> None:
+        self.mock_read_json.return_value = {"enable_jobserver": True}
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            self.assertTrue(context.enable_jobserver)
+            self.mock_read_json.assert_called_once_with(context.args_json)
+
+    def test_enable_jobserver_non_boolean(self) -> None:
+        self.mock_read_json.return_value = {"enable_jobserver": "false"}
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            self.assertFalse(context.enable_jobserver)
+
+    def test_enable_jobserver_missing_file(self) -> None:
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=False):
+            self.assertFalse(context.enable_jobserver)
+            self.mock_read_json.assert_not_called()
+
+    def test_enable_jobserver_corrupted_file_raises(self) -> None:
+        self.mock_read_json.side_effect = main_build.BuildConfigurationError(
+            "Failed to parse args.json"
+        )
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            with self.assertRaises(main_build.BuildConfigurationError):
+                _ = context.enable_jobserver
 
     def test_loas_type_skip_when_no_auth(self) -> None:
         context = self.create_context(resultstore="none")
@@ -1531,6 +1566,7 @@ class InjectNinjaArgsTest(MainBuildTestBase):
             self.assertIn("--dirty_sources_list", injected)
             self.assertIn("--action_metrics_output", injected)
             self.assertIn("--chrome_trace", injected)
+            self.assertNotIn("--jobserver", injected)
             idx = injected.index("--chrome_trace")
             self.assertEqual(
                 injected[idx + 1],
@@ -1538,6 +1574,33 @@ class InjectNinjaArgsTest(MainBuildTestBase):
             )
             self.assertEqual(injected[-1], "target")
             mock_mkdir.assert_any_call(invocation.log_dir / "ninja_logs")
+
+    def test_injection_with_jobserver(self) -> None:
+        self.mock_read_json.return_value = {"enable_jobserver": True}
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            with self.mock_invocation_context():
+                invocation = main_build.BuildInvocation(context)
+                injected = invocation._inject_ninja_args(["ninja", "target"])
+                self.assertIn("--jobserver", injected)
+                self.assertEqual(injected[-1], "target")
+                self.mock_read_json.assert_called_once_with(context.args_json)
+
+    def test_injection_with_jobserver_no_duplicate(self) -> None:
+        self.mock_read_json.return_value = {"enable_jobserver": True}
+        context = self.create_context()
+        with mock.patch.object(main_build, "exists", return_value=True):
+            with self.mock_invocation_context():
+                invocation = main_build.BuildInvocation(context)
+                injected = invocation._inject_ninja_args(
+                    ["ninja", "--jobserver", "target"]
+                )
+                self.assertEqual(injected.count("--jobserver"), 1)
+                injected_pool = invocation._inject_ninja_args(
+                    ["ninja", "--jobserver-pool", "target"]
+                )
+                self.assertNotIn("--jobserver", injected_pool)
+                self.assertIn("--jobserver-pool", injected_pool)
 
 
 class NewBuildCommandExecutionTest(MainBuildTestBase):

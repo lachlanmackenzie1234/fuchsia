@@ -1046,6 +1046,18 @@ class FuchsiaBuildContext(object):
         return self.build_dir / "args.gn"
 
     @property
+    def args_json(self) -> pathlib.Path:
+        return self.build_dir / "args.json"
+
+    @functools.cached_property
+    def enable_jobserver(self) -> bool:
+        """Returns True if enable_jobserver is enabled in args.json."""
+        if not exists(self.args_json):
+            return False
+        data = read_json(self.args_json)
+        return isinstance(data, dict) and data.get("enable_jobserver") is True
+
+    @property
     def gn_trace_path(self) -> pathlib.Path:
         """Returns the path to the GN-generated trace file."""
         return self.build_dir / "fuchsia_gn_trace.json"
@@ -1545,7 +1557,7 @@ class BuildInvocation(object):
 
         ninja_bin = build_command[0]
         remaining_args = build_command[1:]
-        return [
+        injected = [
             ninja_bin,
             "--dirty_sources_list",
             str(dirty_sources),
@@ -1555,7 +1567,14 @@ class BuildInvocation(object):
             str(error_logging_output),
             "--chrome_trace",
             str(chrome_trace_output),
-        ] + list(remaining_args)
+        ]
+        if (
+            self.context.enable_jobserver
+            and "--jobserver" not in remaining_args
+            and "--jobserver-pool" not in remaining_args
+        ):
+            injected.append("--jobserver")
+        return injected + list(remaining_args)
 
 
 @dataclasses.dataclass
