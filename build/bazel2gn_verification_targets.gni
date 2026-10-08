@@ -158,6 +158,8 @@ bazel2gn_verification_targets = [
   "//src/lib/fidl/rust_next/fidl_next_codec:verify_bazel2gn",
   "//src/lib/fidl/rust_next/fidl_next_protocol:verify_bazel2gn",
   "//src/lib/fidl_codec/rust:verify_bazel2gn",
+  "//src/lib/fidl_table_validation/fidl_table_validation_derive:verify_bazel2gn",
+  "//src/lib/fidl_table_validation:verify_bazel2gn",
   "//src/lib/files:verify_bazel2gn",
   "//src/lib/from-enum:verify_bazel2gn",
   "//src/lib/fsl/handles:verify_bazel2gn",
