@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::commands::get_descriptor::GetDescriptorArgs;
+use crate::commands::list::ListArgs;
+use crate::commands::read::ReadArgs;
 use anyhow::Result;
 use argh::FromArgs;
 
 mod commands;
 mod common;
 mod descriptor_types;
-#[expect(dead_code, reason = "Used in subsequent CLs and unit tests")]
 mod indented_serializer;
 mod input_report_types;
 #[cfg(test)]
@@ -24,9 +26,9 @@ struct Args {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
 enum Subcommands {
-    List(commands::list::ListArgs),
-    GetDescriptor(commands::get_descriptor::GetDescriptorArgs),
-    Read(commands::read::ReadArgs),
+    List(ListArgs),
+    GetDescriptor(GetDescriptorArgs),
+    Read(ReadArgs),
 }
 
 #[fuchsia::main]
@@ -35,7 +37,7 @@ async fn main() -> Result<()> {
 
     match args.subcommand {
         Subcommands::List(list_args) => commands::list::run(list_args).await,
-        Subcommands::GetDescriptor(desc_args) => commands::get_descriptor::run(desc_args).await,
+        Subcommands::GetDescriptor(descriptor_args) => descriptor_args.run().await,
         Subcommands::Read(read_args) => commands::read::run(read_args).await,
     }
 }
