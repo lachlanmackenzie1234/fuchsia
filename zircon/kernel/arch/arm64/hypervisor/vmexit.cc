@@ -162,18 +162,23 @@ void clean_invalidate_cache(zx_paddr_t table, size_t index_shift) {
       clean_invalidate_cache(paddr, index_shift - adjust_shift);
     }
   }
-
-  // Invalidate guest i-cache,
-  arch::InvalidateGlobalInstructionCache();
 }
 
 zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* guest_state,
                                        hypervisor::GuestPhysicalAspace* gpa,
                                        zx_port_packet_t* packet) {
   const SystemInstruction si(iss);
-  const uint64_t reg = guest_state->x[si.xt];
+  const uint64_t reg = si.xt < GS_NUM_REGS ? guest_state->x[si.xt] : 0;
 
   switch (si.sysreg) {
+    case SystemRegister::AFSR0_EL1:
+      SET_SYSREG(afsr0_el1);
+    case SystemRegister::AFSR1_EL1:
+      SET_SYSREG(afsr1_el1);
+    case SystemRegister::ESR_EL1:
+      SET_SYSREG(esr_el1);
+    case SystemRegister::FAR_EL1:
+      SET_SYSREG(far_el1);
     case SystemRegister::MAIR_EL1:
       SET_SYSREG(mair_el1);
     case SystemRegister::SCTLR_EL1: {
@@ -181,7 +186,7 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
         return zx::error(ZX_ERR_NOT_SUPPORTED);
       }
 
-      uint32_t sctlr_el1 = reg & UINT32_MAX;
+      uint64_t sctlr_el1 = reg;
 
       // When the MMU and caches are off the HCR_EL2.DC control is used to force caching on. This
       // ensures that there are not conflicts due to the guest performing uncached accesses to
@@ -199,7 +204,7 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
         hcr &= ~(HCR_EL2_TVM | HCR_EL2_DC);
       }
 
-      LTRACEF("guest sctlr_el1: %#x\n", sctlr_el1);
+      LTRACEF("guest sctlr_el1: %#lx\n", sctlr_el1);
       LTRACEF("guest hcr_el2: %#lx\n", hcr);
 
       guest_state->system_state.sctlr_el1 = sctlr_el1;
@@ -212,13 +217,17 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
       SET_SYSREG(ttbr0_el1);
     case SystemRegister::TTBR1_EL1:
       SET_SYSREG(ttbr1_el1);
+    case SystemRegister::CONTEXTIDR_EL1:
+      SET_SYSREG(contextidr_el1);
+    case SystemRegister::AMAIR_EL1:
+      SET_SYSREG(amair_el1);
     case SystemRegister::OSLAR_EL1:
     case SystemRegister::OSLSR_EL1:
     case SystemRegister::OSDLR_EL1:
     case SystemRegister::DBGPRCR_EL1:
       next_pc(guest_state);
       // These registers are RAZ/WI. Their state is dictated by the host.
-      if (si.read) {
+      if (si.read && si.xt < GS_NUM_REGS) {
         guest_state->x[si.xt] = 0;
       }
       return zx::ok();
@@ -262,6 +271,10 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
       uint64_t set_way = BITS_SHIFT(reg, 31, 4);
       if (set_way == 0) {
         clean_invalidate_cache(gpa->arch_aspace().arch_table_phys(), MMU_GUEST_TOP_SHIFT);
+        // Invalidate the guest i-cache once after the recursive page table walk
+        // in clean_invalidate_cache completes, rather than at every level of the
+        // recursion.
+        arch::InvalidateGlobalInstructionCache();
       }
 
       // If the MMU or caches are off, start monitoring guest SCTLR register
@@ -275,7 +288,7 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
       // We (the host) can't guarantee that the we won't inadvertently cause
       // the cache lines to load again (e.g., through speculative CPU
       // accesses). Instead, we force caching on using the DC control.
-      uint32_t sctlr_el1 = guest_state->system_state.sctlr_el1;
+      uint64_t sctlr_el1 = guest_state->system_state.sctlr_el1;
       bool mmu_enabled = (sctlr_el1 & SCTLR_ELX_M) != 0;
       bool dcaches_enabled = (sctlr_el1 & SCTLR_ELX_C) != 0;
       if (!mmu_enabled || !dcaches_enabled) {
@@ -385,7 +398,7 @@ zx::result<> handle_data_abort(uint32_t iss, GuestState* guest_state,
       packet->guest_mem.xt = data_abort.xt;
       packet->guest_mem.read = data_abort.read;
       if (!data_abort.read) {
-        packet->guest_mem.data = guest_state->x[data_abort.xt];
+        packet->guest_mem.data = data_abort.xt < GS_NUM_REGS ? guest_state->x[data_abort.xt] : 0;
       }
       return zx::error(ZX_ERR_NEXT);
     default:
@@ -490,10 +503,10 @@ void timer_maybe_interrupt(GuestState* guest_state, GichState* gich_state) {
 zx::result<> vmexit_handler(uint64_t* hcr, GuestState* guest_state, GichState* gich_state,
                             hypervisor::GuestPhysicalAspace* gpa, hypervisor::TrapMap* traps,
                             zx_port_packet_t* packet) {
-  LTRACEF("guest esr_el1: %#x\n", guest_state->system_state.esr_el1);
+  LTRACEF("guest esr_el1: %#lx\n", guest_state->system_state.esr_el1);
   LTRACEF("guest esr_el2: %#x\n", guest_state->esr_el2);
   LTRACEF("guest elr_el2: %#lx\n", guest_state->system_state.elr_el2);
-  LTRACEF("guest spsr_el2: %#x\n", guest_state->system_state.spsr_el2);
+  LTRACEF("guest spsr_el2: %#lx\n", guest_state->system_state.spsr_el2);
 
   ExceptionSyndrome syndrome(guest_state->esr_el2);
   zx::result<> result = zx::ok();
