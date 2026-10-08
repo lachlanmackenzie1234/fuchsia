@@ -214,11 +214,12 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       DEBUG_ASSERT(aspace_->is_user() || aspace_->is_guest_physical() ||
                    vmar_flags & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING ||
                    vmo->DebugIsRangePinned(vmo_offset, size));
-      vmar = fbl::AdoptRef(new (&ac) VmMapping(*this, false, new_base, size, vmar_flags,
-                                               ktl::move(vmo), is_upper_bound ? 0 : vmo_offset,
-                                               arch_mmu_flags, VmMapping::Mergeable::NO));
+      vmar = fbl::AdoptRef<VmAddressRegionOrMapping>(new (&ac) VmMapping(
+          *this, false, new_base, size, vmar_flags, ktl::move(vmo), is_upper_bound ? 0 : vmo_offset,
+          arch_mmu_flags, VmMapping::Mergeable::NO));
     } else {
-      vmar = fbl::AdoptRef(new (&ac) VmAddressRegion(*this, new_base, size, vmar_flags, name));
+      vmar = fbl::AdoptRef<VmAddressRegionOrMapping>(
+          new (&ac) VmAddressRegion(*this, new_base, size, vmar_flags, name));
     }
 
     Guard<CriticalMutex> guard{lock()};
@@ -388,7 +389,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 
   AssertHeld(vmar->lock_ref());
   AssertHeld(vmar->region_lock_ref());
-  status = vmar->Activate();
+  status = vmar->ActivateImpl();
   if (status != ZX_OK) {
     // Activation can fail if an allocation needed to happen. Nothing can be done to rollback here
     // so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening in response
@@ -402,11 +403,11 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
   // lock and just made it alive, so that cannot happen.
   vmar->SetMemoryPriorityLocked(memory_priority_);
 
-  *out = ktl::move(vmar);
+  *out = fbl::RefPtr<VmAddressRegionOrMapping>(vmar.get());
   return ZX_OK;
 }
 
-zx_status_t VmAddressRegion::DestroyLocked() {
+zx_status_t VmAddressRegion::DestroyLockedImpl() {
   canary_.Assert();
   LTRACEF("%p '%s'\n", this, name_);
 
@@ -634,7 +635,7 @@ bool VmAddressRegion::has_parent() const {
   return parent_ != nullptr;
 }
 
-void VmAddressRegion::DumpLocked(uint depth, bool verbose) const {
+void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
   canary_.Assert();
   for (uint i = 0; i < depth; ++i) {
     printf("  ");
@@ -644,11 +645,12 @@ void VmAddressRegion::DumpLocked(uint depth, bool verbose) const {
          subregions_.size_slow());
   for (const auto& child : subregions_) {
     AssertHeld(child.second->lock_ref());
+    AssertHeld(child.second->region_lock_ref());
     child.second->DumpLocked(depth + 1, verbose);
   }
 }
 
-zx_status_t VmAddressRegion::Activate() {
+zx_status_t VmAddressRegion::ActivateImpl() {
   DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY);
 
   AssertHeld(parent_->lock_ref());
@@ -1217,7 +1219,7 @@ zx_status_t VmAddressRegion::SetMemoryPriority(MemoryPriority priority) {
   // unless we know we didn't have any children at the point we set the priority to avoid a needless
   // lock acquisition and pass.
   if (priority == MemoryPriority::HIGH && have_children) {
-    CommitHighMemoryPriority();
+    CommitHighMemoryPriorityImpl();
   }
   return ZX_OK;
 }
@@ -1256,7 +1258,7 @@ zx_status_t VmAddressRegion::SetMemoryPriorityLocked(MemoryPriority priority) {
   return ZX_OK;
 }
 
-void VmAddressRegion::CommitHighMemoryPriority() {
+void VmAddressRegion::CommitHighMemoryPriorityImpl() {
   canary_.Assert();
 
   Guard<CriticalMutex> guard{lock()};
@@ -1288,7 +1290,7 @@ void VmAddressRegion::CommitHighMemoryPriority() {
     }
     enumerator.pause();
     guard.CallUnlocked(
-        [mapping = ktl::move(mapping)]() mutable { mapping->CommitHighMemoryPriority(); });
+        [mapping = ktl::move(mapping)]() mutable { mapping->CommitHighMemoryPriorityImpl(); });
     // Since the lock was dropped we must re-validate before doing anything else.
     if (!validate()) {
       return;

@@ -315,7 +315,7 @@ zx_status_t VmAspace::Destroy() {
   if (root_vmar_) {
     AssertHeld(root_vmar_->region_lock_ref());
     AssertHeld(root_vmar_->lock_ref());
-    zx_status_t status = root_vmar_->DestroyLocked();
+    zx_status_t status = root_vmar_->DestroyLockedImpl();
     if (status != ZX_OK && status != ZX_ERR_BAD_STATE) {
       return status;
     }
@@ -491,7 +491,7 @@ zx_status_t VmAspace::AllocContiguous(const char* name, size_t size, void** ptr,
 zx_status_t VmAspace::FreeRegion(vaddr_t va) {
   DEBUG_ASSERT(!is_user());
 
-  fbl::RefPtr<VmAddressRegionOrMapping> root_vmar = RootVmar();
+  fbl::RefPtr<VmAddressRegion> root_vmar = RootVmar();
   if (!root_vmar) {
     return ZX_ERR_NOT_FOUND;
   }
@@ -522,7 +522,7 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAspace::FindRegion(vaddr_t va) {
   while (1) {
     fbl::RefPtr<VmAddressRegionOrMapping> next(vmar->FindRegion(va));
     if (!next) {
-      return vmar;
+      return fbl::RefPtr<VmAddressRegionOrMapping>(vmar.get());
     }
 
     if (next->is_mapping()) {
