@@ -3030,7 +3030,12 @@ static zx_status_t brcmf_sdio_bus_preinit(brcmf_bus* bus_if) {
     bus->tx_hdrlen += SDPCM_HWEXT_LEN;
   }
 
-  brcmf_bus_add_txhdrlen(sdiodev->drvr, bus->tx_hdrlen);
+  // Only increment drvr->hdrlen on startup. drvr->hdrlen does not get reinitialized during a
+  // firmware recovery or phy reset, so this prevents drvr->hdrlen from getting larger after each
+  // recovery/reset.
+  if (!sdiodev->drvr->drvr_resetting.load()) {
+    brcmf_bus_add_txhdrlen(sdiodev->drvr, bus->tx_hdrlen);
+  }
   bus_if->always_use_fws_queue = false;
 
 done:
