@@ -5047,6 +5047,200 @@ impl ProcPagemapFile {
             security::is_task_capable_noaudit(current_task, starnix_uapi::auth::CAP_SYS_ADMIN);
         Self { mm, can_read_pfn }
     }
+
+    // Bit 63 indicates the page is present in RAM, bit 61 indicates file-page or
+    // shared-anon, and bit 57 indicates an exclusively mapped page (anonymous private).
+    //
+    // On Linux, bit 63 indicates physical hardware residency in CPU page tables. Zircon
+    // uses demand paging and does not expose per-page commit/PTE status to userspace
+    // without faulting in the page. We treat all registered mappings as present so tools
+    // (e.g. procrank, librank, showmap) can query page sharing, while aggregate resident
+    // sizes (RSS) are obtained from /proc/<pid>/smaps.
+    #[inline]
+    fn compute_entry_flags(mm_mapping: &Mapping) -> u64 {
+        let is_shared = mm_mapping.flags().contains(MappingFlags::SHARED);
+        let is_file = matches!(mm_mapping.name(), MappingNameRef::File(_));
+        (1u64 << 63) | if is_shared || is_file { 1u64 << 61 } else { 1u64 << 57 }
+    }
+
+    #[inline]
+    fn compute_start_pfn(
+        mm: &MemoryManager,
+        state: &MemoryManagerState,
+        mm_mapping: &Mapping,
+        addr: UserAddress,
+        page_size: usize,
+    ) -> u64 {
+        let (koid, vmo_offset) = match state.get_mapping_backing(mm_mapping) {
+            MappingBacking::Memory(backing) => {
+                (backing.memory().get_koid(), backing.address_to_offset(addr))
+            }
+            MappingBacking::PrivateAnonymous => {
+                (mm.mapping_context.private_anonymous.backing.get_koid(), addr.ptr() as u64)
+            }
+        };
+        compute_pseudo_pfn(koid, vmo_offset / page_size as u64)
+    }
+
+    #[inline]
+    fn fill_contiguous_entries(slice: &mut [u64], flags: u64, start_pfn: u64, can_read_pfn: bool) {
+        if !can_read_pfn {
+            slice.fill(flags);
+            return;
+        }
+        if start_pfn + (slice.len() as u64) <= PAGEMAP_PFN_MASK {
+            let base_entry = flags | start_pfn;
+            for (i, entry) in slice.iter_mut().enumerate() {
+                *entry = base_entry + (i as u64);
+            }
+        } else {
+            for (i, entry) in slice.iter_mut().enumerate() {
+                let pfn = start_pfn.wrapping_add(i as u64) & PAGEMAP_PFN_MASK;
+                *entry = flags | pfn;
+            }
+        }
+    }
+
+    // Avoid inlining into `read` so the 4 KiB `chunk_buf` stack frame is not allocated on the
+    // single-page fast path.
+    #[inline(never)]
+    fn read_multi_page(
+        &self,
+        mm: &MemoryManager,
+        offset: usize,
+        to_read: usize,
+        dst: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        let entry_size = std::mem::size_of::<u64>();
+        let page_size = *PAGE_SIZE as usize;
+
+        let unaligned_offset = offset % entry_size;
+        let start_page_idx = offset / entry_size;
+        let total_bytes_needed = unaligned_offset + to_read;
+        let num_pages = (total_bytes_needed + entry_size - 1) / entry_size;
+        let can_read_pfn = self.can_read_pfn;
+
+        let Some(start_addr) = start_page_idx.checked_mul(page_size) else {
+            return Ok(0);
+        };
+        let read_start_vaddr = UserAddress::from(start_addr as u64);
+        let read_end_vaddr = start_page_idx
+            .checked_add(num_pages)
+            .and_then(|end_page| end_page.checked_mul(page_size))
+            .map_or_else(|| UserAddress::from(u64::MAX), |addr| UserAddress::from(addr as u64));
+
+        const CHUNK_PAGES: usize = 512;
+        let mut chunk_buf = SmallVec::<[u64; CHUNK_PAGES]>::new();
+        let mut pages_processed = 0;
+        let mut bytes_written_total = 0;
+
+        // Fast path: the entire requested range is contained within a single mapping.
+        // Perform only one B-tree lookup and one VMO KOID hash across all chunks, and release
+        // `mm.state.read()` before `dst.write_all` which may need `mm.state.write()` to
+        // materialize lazy mappings in the destination buffer.
+        let single_mapping_info = {
+            let state = mm.state.read();
+            if let Some((mm_range, mm_mapping)) = state.mappings.get(read_start_vaddr)
+                && mm_range.end >= read_end_vaddr
+            {
+                let flags = Self::compute_entry_flags(mm_mapping);
+                let base_pfn = if can_read_pfn {
+                    Self::compute_start_pfn(mm, &state, mm_mapping, read_start_vaddr, page_size)
+                } else {
+                    0
+                };
+                Some((flags, base_pfn))
+            } else {
+                None
+            }
+        };
+        if let Some((flags, base_pfn)) = single_mapping_info {
+            while pages_processed < num_pages && bytes_written_total < to_read {
+                let current_chunk_pages = std::cmp::min(CHUNK_PAGES, num_pages - pages_processed);
+                let chunk_start_pfn =
+                    base_pfn.wrapping_add(pages_processed as u64) & PAGEMAP_PFN_MASK;
+
+                chunk_buf.resize(current_chunk_pages, 0);
+                let chunk_slice = &mut chunk_buf[..current_chunk_pages];
+                Self::fill_contiguous_entries(chunk_slice, flags, chunk_start_pfn, can_read_pfn);
+
+                let byte_slice = chunk_slice.as_bytes();
+                let chunk_byte_offset = if pages_processed == 0 { unaligned_offset } else { 0 };
+                let chunk_available_bytes = byte_slice.len().saturating_sub(chunk_byte_offset);
+                let chunk_write_len =
+                    std::cmp::min(to_read - bytes_written_total, chunk_available_bytes);
+
+                dst.write_all(&byte_slice[chunk_byte_offset..chunk_byte_offset + chunk_write_len])?;
+                bytes_written_total += chunk_write_len;
+                pages_processed += current_chunk_pages;
+            }
+
+            return Ok(bytes_written_total);
+        }
+
+        // General path: spans multiple mappings or unmapped memory.
+        while pages_processed < num_pages && bytes_written_total < to_read {
+            let chunk_start_page = start_page_idx + pages_processed;
+            let current_chunk_pages = std::cmp::min(CHUNK_PAGES, num_pages - pages_processed);
+
+            let chunk_start_vaddr = match chunk_start_page.checked_mul(page_size) {
+                Some(addr) => UserAddress::from(addr as u64),
+                None => break,
+            };
+            let chunk_end_vaddr =
+                match (chunk_start_page + current_chunk_pages).checked_mul(page_size) {
+                    Some(addr) => UserAddress::from(addr as u64),
+                    None => UserAddress::from(u64::MAX),
+                };
+
+            chunk_buf.clear();
+            chunk_buf.resize(current_chunk_pages, 0);
+            let chunk_slice = &mut chunk_buf[..current_chunk_pages];
+
+            {
+                // Hold `mm.state.read()` only while snapshotting the pagemap entries for this
+                // chunk, and release it before `dst.write_all` which may need `mm.state.write()`
+                // to materialize lazy mappings in the destination buffer.
+                let state = mm.state.read();
+
+                for (mm_range, mm_mapping) in
+                    state.mappings.range(chunk_start_vaddr..chunk_end_vaddr)
+                {
+                    let flags = Self::compute_entry_flags(mm_mapping);
+
+                    let map_start_page = (mm_range.start.ptr() as usize) / page_size;
+                    let map_end_page = (mm_range.end.ptr() as usize) / page_size;
+
+                    let first_page = std::cmp::max(chunk_start_page, map_start_page);
+                    let last_page =
+                        std::cmp::min(chunk_start_page + current_chunk_pages, map_end_page);
+
+                    let first_page_vaddr = UserAddress::from((first_page * page_size) as u64);
+                    let start_pfn = if can_read_pfn {
+                        Self::compute_start_pfn(mm, &state, mm_mapping, first_page_vaddr, page_size)
+                    } else {
+                        0
+                    };
+
+                    let sub_slice = &mut chunk_slice
+                        [first_page - chunk_start_page..last_page - chunk_start_page];
+                    Self::fill_contiguous_entries(sub_slice, flags, start_pfn, can_read_pfn);
+                }
+            }
+
+            let byte_slice = chunk_slice.as_bytes();
+            let chunk_byte_offset = if pages_processed == 0 { unaligned_offset } else { 0 };
+            let chunk_available_bytes = byte_slice.len().saturating_sub(chunk_byte_offset);
+            let chunk_write_len =
+                std::cmp::min(to_read - bytes_written_total, chunk_available_bytes);
+
+            dst.write_all(&byte_slice[chunk_byte_offset..chunk_byte_offset + chunk_write_len])?;
+            bytes_written_total += chunk_write_len;
+            pages_processed += current_chunk_pages;
+        }
+
+        Ok(bytes_written_total)
+    }
 }
 
 impl FileOps for ProcPagemapFile {
@@ -5071,152 +5265,34 @@ impl FileOps for ProcPagemapFile {
 
         let entry_size = std::mem::size_of::<u64>();
         let page_size = *PAGE_SIZE as usize;
-
         let unaligned_offset = offset % entry_size;
-        let start_page_idx = offset / entry_size;
-        let total_bytes_needed = unaligned_offset + to_read;
-        let num_pages = (total_bytes_needed + entry_size - 1) / entry_size;
-
-        let can_read_pfn = self.can_read_pfn;
-
-        let compute_mapping_pfn =
-            |state: &MemoryManagerState, mm_mapping: &Mapping, addr: UserAddress| -> u64 {
-                if !can_read_pfn {
-                    return 0;
-                }
-                let (koid, vmo_offset) = match state.get_mapping_backing(mm_mapping) {
-                    MappingBacking::Memory(backing) => {
-                        (backing.memory().get_koid(), backing.address_to_offset(addr))
-                    }
-                    MappingBacking::PrivateAnonymous => {
-                        (mm.mapping_context.private_anonymous.backing.get_koid(), addr.ptr() as u64)
-                    }
-                };
-                compute_pseudo_pfn(koid, vmo_offset / page_size as u64)
-            };
-
-        // Bit 63 indicates the page is present in RAM, bit 61 indicates file-page or
-        // shared-anon, and bit 57 indicates an exclusively mapped page (anonymous private).
-        //
-        // On Linux, bit 63 indicates physical hardware residency in CPU page tables. Zircon
-        // uses demand paging and does not expose per-page commit/PTE status to userspace
-        // without faulting in the page. We treat all registered mappings as present so tools
-        // (e.g. procrank, librank, showmap) can query page sharing, while aggregate resident
-        // sizes (RSS) are obtained from /proc/<pid>/smaps.
-        let compute_entry_flags = |mm_mapping: &Mapping| -> u64 {
-            let is_shared = mm_mapping.flags().contains(MappingFlags::SHARED);
-            let is_file = matches!(mm_mapping.name(), MappingNameRef::File(_));
-            (1u64 << 63) | if is_shared || is_file { 1u64 << 61 } else { 1u64 << 57 }
-        };
 
         // Ultra-fast path for single-page reads (the dominant case in procrank/smapinfo).
-        if to_read == entry_size && unaligned_offset == 0 {
-            let start_vaddr = match start_page_idx.checked_mul(page_size) {
-                Some(addr) => UserAddress::from(addr as u64),
-                None => return Ok(0),
+        if unaligned_offset + to_read <= entry_size {
+            let start_page_idx = offset / entry_size;
+            let Some(addr) = start_page_idx.checked_mul(page_size) else {
+                return Ok(0);
             };
-            let entry = {
-                // Drop the read lock before writing to `dst`, as `dst.write_all` may fault on a
-                // lazy mapping in the same `MemoryManager` and acquire a write lock on `mm.state`.
-                let state = mm.state.read();
-                if let Some((_, mm_mapping)) = state.mappings.get(start_vaddr) {
-                    let flags = compute_entry_flags(mm_mapping);
-                    let pfn = compute_mapping_pfn(&state, mm_mapping, start_vaddr);
-                    flags | pfn
+            let start_vaddr = UserAddress::from(addr as u64);
+            let state = mm.state.read();
+            let entry = if let Some((_, mm_mapping)) = state.mappings.get(start_vaddr) {
+                let flags = Self::compute_entry_flags(mm_mapping);
+                let pfn = if self.can_read_pfn {
+                    Self::compute_start_pfn(&mm, &state, mm_mapping, start_vaddr, page_size)
                 } else {
                     0
-                }
-            };
-            dst.write_all(&entry.to_ne_bytes())?;
-            return Ok(entry_size);
-        }
-
-        const CHUNK_PAGES: usize = 512;
-        let mut chunk_buf = [0u64; CHUNK_PAGES];
-
-        let mut pages_processed = 0;
-        let mut bytes_written_total = 0;
-
-        while pages_processed < num_pages && bytes_written_total < to_read {
-            let chunk_start_page = start_page_idx + pages_processed;
-            let current_chunk_pages = std::cmp::min(CHUNK_PAGES, num_pages - pages_processed);
-            let chunk_slice = &mut chunk_buf[..current_chunk_pages];
-
-            let chunk_start_vaddr = match chunk_start_page.checked_mul(page_size) {
-                Some(addr) => UserAddress::from(addr as u64),
-                None => break,
-            };
-            let chunk_end_vaddr =
-                match (chunk_start_page + current_chunk_pages).checked_mul(page_size) {
-                    Some(addr) => UserAddress::from(addr as u64),
-                    None => UserAddress::from(u64::MAX),
                 };
-
-            {
-                // Hold `mm.state.read()` only while snapshotting the pagemap entries for this
-                // chunk, and release it before `dst.write_all` which may need `mm.state.write()`
-                // to materialize lazy mappings in the destination buffer.
-                let state = mm.state.read();
-
-                // Fast path: entire chunk is contained within a single mapping.
-                if let Some((mm_range, mm_mapping)) = state.mappings.get(chunk_start_vaddr)
-                    && mm_range.end >= chunk_end_vaddr
-                {
-                    let flags = compute_entry_flags(mm_mapping);
-                    let start_pfn = compute_mapping_pfn(&state, mm_mapping, chunk_start_vaddr);
-
-                    for (i, entry) in chunk_slice.iter_mut().enumerate() {
-                        let pfn = if can_read_pfn {
-                            (start_pfn.wrapping_add(i as u64)) & PAGEMAP_PFN_MASK
-                        } else {
-                            0
-                        };
-                        *entry = flags | pfn;
-                    }
-                } else {
-                    // General path: spans multiple mappings or unmapped memory.
-                    chunk_slice.fill(0);
-
-                    for (mm_range, mm_mapping) in
-                        state.mappings.range(chunk_start_vaddr..chunk_end_vaddr)
-                    {
-                        let flags = compute_entry_flags(mm_mapping);
-
-                        let map_start_page = (mm_range.start.ptr() as usize) / page_size;
-                        let map_end_page = (mm_range.end.ptr() as usize) / page_size;
-
-                        let first_page = std::cmp::max(chunk_start_page, map_start_page);
-                        let last_page =
-                            std::cmp::min(chunk_start_page + current_chunk_pages, map_end_page);
-
-                        let first_page_vaddr = UserAddress::from((first_page * page_size) as u64);
-                        let start_pfn = compute_mapping_pfn(&state, mm_mapping, first_page_vaddr);
-
-                        for page_idx in first_page..last_page {
-                            let pfn = if can_read_pfn {
-                                (start_pfn.wrapping_add((page_idx - first_page) as u64))
-                                    & PAGEMAP_PFN_MASK
-                            } else {
-                                0
-                            };
-                            chunk_slice[page_idx - chunk_start_page] = flags | pfn;
-                        }
-                    }
-                }
-            }
-
-            let byte_slice = chunk_slice.as_bytes();
-            let chunk_byte_offset = if pages_processed == 0 { unaligned_offset } else { 0 };
-            let chunk_available_bytes = byte_slice.len().saturating_sub(chunk_byte_offset);
-            let chunk_write_len =
-                std::cmp::min(to_read - bytes_written_total, chunk_available_bytes);
-
-            dst.write_all(&byte_slice[chunk_byte_offset..chunk_byte_offset + chunk_write_len])?;
-            bytes_written_total += chunk_write_len;
-            pages_processed += current_chunk_pages;
+                flags | pfn
+            } else {
+                0
+            };
+            drop(state);
+            let bytes = entry.to_ne_bytes();
+            dst.write_all(&bytes[unaligned_offset..unaligned_offset + to_read])?;
+            return Ok(to_read);
         }
 
-        Ok(bytes_written_total)
+        self.read_multi_page(&mm, offset, to_read, dst)
     }
 
     fn write(
@@ -6848,5 +6924,41 @@ mod tests {
             }
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    fn test_fill_contiguous_entries_vectorized() {
+        let mut slice = [0u64; 512];
+        let flags = 0x8000_0000_0000_0000;
+        let start_pfn = 0x1000;
+        ProcPagemapFile::fill_contiguous_entries(&mut slice, flags, start_pfn, true);
+        for (i, &entry) in slice.iter().enumerate() {
+            assert_eq!(entry, flags | (start_pfn + i as u64));
+        }
+    }
+
+    #[::fuchsia::test]
+    fn test_fill_contiguous_entries_overflow() {
+        let mut slice = [0u64; 10];
+        let flags = 0x8000_0000_0000_0000;
+        let start_pfn = PAGEMAP_PFN_MASK - 5;
+        ProcPagemapFile::fill_contiguous_entries(&mut slice, flags, start_pfn, true);
+        for (i, &entry) in slice.iter().enumerate() {
+            let expected_pfn = (start_pfn.wrapping_add(i as u64)) & PAGEMAP_PFN_MASK;
+            assert_eq!(entry, flags | expected_pfn);
+        }
+        assert_eq!(slice[5], flags | PAGEMAP_PFN_MASK);
+        assert_eq!(slice[6], flags | 0);
+    }
+
+    #[::fuchsia::test]
+    fn test_fill_contiguous_entries_unprivileged() {
+        let mut slice = [0u64; 10];
+        let flags = 0x8000_0000_0000_0000;
+        let start_pfn = 0x1000;
+        ProcPagemapFile::fill_contiguous_entries(&mut slice, flags, start_pfn, false);
+        for &entry in slice.iter() {
+            assert_eq!(entry, flags);
+        }
     }
 }
