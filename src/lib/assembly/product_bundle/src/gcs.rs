@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 //! Google Cloud Storage (`gs://`) URI utilities for loading Product Bundles.
-#![allow(dead_code)]
 
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use credentials::Credentials;
