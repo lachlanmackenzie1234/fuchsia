@@ -65,8 +65,16 @@
             url: "#meta/client.cm",
         },
         {
+            name: "client-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
+        },
+        {
             name: "server",
             url: "#meta/server.cm",
+        },
+        {
+            name: "server-netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
         },
         {
             name: "sync-manager",

@@ -37,6 +37,10 @@
             url: "#meta/client.cm",
         },
         {
+            name: "netstack",
+            url: "#meta/configurable-netstack-netstack3.cm",
+        },
+        {
             name: "device-name-provider",
             url: "#meta/device-name-provider.cm",
         },
