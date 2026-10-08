@@ -939,6 +939,51 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         # The command should only be called once for the test itself, as gemini analysis should be skipped.
         command_mock.assert_called_once()
 
+    @mock.patch("execution.run_command")
+    async def test_gemini_analysis_does_not_pass_api_key_in_command_line_args(
+        self, command_mock: mock.AsyncMock
+    ) -> None:
+        """Test that the Gemini API key is passed via environment variables,
+        not in CLI arguments or unredacted event logs."""
+        secret_key = "super_secret_gemini_key_12345"
+        exec_env = _make_exec_env(
+            "/fuchsia", "/out_dir", gemini_api_key=secret_key
+        )
+        flags = args.parse_args(
+            ["--gemini-analysis=2", "--env", f"GEMINI_API_KEY={secret_key}"]
+        )
+
+        test = execution.TestExecution(
+            test_list_file.Test(
+                tests_json_file.TestEntry(
+                    tests_json_file.TestSection(
+                        "foo", "//foo", "linux", path="ls"
+                    )
+                ),
+                test_list_file.TestListEntry("foo", [], execution=None),
+            ),
+            exec_env,
+            flags,
+        )
+
+        command_mock.return_value = self._make_command_output(
+            "some failure log", return_code=1
+        )
+
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        with self.assertRaises(execution.TestFailed):
+            await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+
+        self.assertEqual(command_mock.call_count, 2)
+        gemini_call = command_mock.call_args_list[1]
+        self.assertNotIn(secret_key, gemini_call.args)
+        self.assertNotIn("--api-key", gemini_call.args)
+        self.assertEqual(
+            gemini_call.kwargs.get("env", {}).get("GEMINI_API_KEY"), secret_key
+        )
+
 
 class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     def _make_command_output(

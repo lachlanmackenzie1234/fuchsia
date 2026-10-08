@@ -691,8 +691,6 @@ class TestExecution:
                         )
                         gemini_output = await run_command(
                             gemini_tool_path,
-                            "--api-key",
-                            api_key,
                             "--gemini-model",
                             flags.gemini_model,
                             "--verbosity",
@@ -701,6 +699,7 @@ class TestExecution:
                             parent=parent,
                             print_verbatim=True,
                             input_bytes=error_log.encode(),
+                            env={"GEMINI_API_KEY": api_key},
                         )
                         if not gemini_output or gemini_output.return_code != 0:
                             recorder.emit_warning_message(
@@ -935,8 +934,14 @@ async def run_command(
     event_id: event.Id | None = None
     abort_task: asyncio.Task[None] | None = None
     if recorder is not None:
+        logged_env = env
+        if env:
+            logged_env = {
+                k: ("<REDACTED>" if "API_KEY" in k.upper() else v)
+                for k, v in env.items()
+            }
         event_id = recorder.emit_program_start(
-            name, list(args), env, parent=parent, quiet_mode=quiet_mode
+            name, list(args), logged_env, parent=parent, quiet_mode=quiet_mode
         )
     try:
         started = await command.AsyncCommand.create(
