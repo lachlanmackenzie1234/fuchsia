@@ -71,6 +71,7 @@ section.
 
   - [VMO registration pattern][vmo-registration-pattern]
   - [Driver stack performance][driver-stack-performance]
+  - [Device firmware][device-firmware]
 
 - Guidelines
 
@@ -116,7 +117,6 @@ section.
   - [Device power management][device-power-management]
   - [Protocols in drivers][protocols-in-drivers]
   - [Composite devices][composite-devices]
-  - [Device firmware][device-firmware]
 
 ### Driver-specific guides
 
@@ -201,7 +201,7 @@ section.
 [protocols-in-drivers]: concepts/device_driver_model/protocol.md
 [platform-bus]: concepts/device_driver_model/platform-bus.md
 [composite-devices]: concepts/device_driver_model/composite.md
-[device-firmware]: concepts/device_driver_model/firmware.md
+[device-firmware]: best_practices/firmware.md
 [driver-architectures-overview]: concepts/driver_architectures/README.md
 [fuchsia-input-drivers]: concepts/driver_architectures/input_drivers/input.md
 [input-report-reader-library]: concepts/driver_architectures/input_drivers/input_report_reader.md

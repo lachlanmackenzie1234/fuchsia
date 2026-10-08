@@ -9,4 +9,3 @@
 - [Device protocol](protocol.md)
 - [Platform bus](platform-bus.md)
 - [Composite devices](composite.md)
-- [Device firmware](firmware.md)
