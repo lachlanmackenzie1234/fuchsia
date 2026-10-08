@@ -77,8 +77,9 @@ class Display {
 
   uint32_t max_layer_count() const { return max_layer_count_; }
 
-  // Event signaled by `DisplayManager` when ownership of the display
-  // changes. This event backs Scenic's `GetDisplayOwnershipEvent()` API.
+  // Event signaled by `DisplayManager` and `ViewTree` when ownership changes.
+  // This event backs Scenic's `fuchsia.ui.input.internal.InputOwnership` API
+  // (and legacy `fuchsia.ui.composition.internal.DisplayOwnership`).
   const zx::event& ownership_event() const { return ownership_event_; }
 
   // Called by `DisplayManager`, non-test users of `Display` should probably not call this.
