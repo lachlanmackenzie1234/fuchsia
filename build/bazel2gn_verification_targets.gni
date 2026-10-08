@@ -386,6 +386,7 @@ bazel2gn_verification_targets = [
   "//tools/testing/testrunner:verify_bazel2gn",
   "//zircon/system/ulib/sync:verify_bazel2gn",
   "//zircon/system/ulib/zircon-internal:verify_bazel2gn",
+  "//zircon/system/ulib/zxtest:verify_bazel2gn",
   "//zircon/vdso/zx:verify_bazel2gn",
 
   # keep-sorted end
