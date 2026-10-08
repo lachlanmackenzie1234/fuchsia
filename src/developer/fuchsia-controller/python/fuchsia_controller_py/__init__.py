@@ -27,6 +27,7 @@ __all__ = [
 ]
 
 from abc import ABC, abstractmethod
+from collections.abc import Buffer
 from typing import Any, Callable, Self
 
 # This is a placeholder to unblock the main thread from receiving signals in
@@ -142,7 +143,7 @@ class Socket(BaseHandle):
         else:
             self._socket = handle
 
-    def write(self, buffer: bytes) -> None:
+    def write(self, buffer: Buffer) -> None:
         """Writes data to the socket.
 
         Args:
@@ -421,7 +422,7 @@ class Channel(BaseHandle):
     def write(
         self,
         encoded_fidl_message: tuple[
-            bytes, list[tuple[int, int, int, int, int]]
+            Buffer, list[tuple[int, int, int, int, int]]
         ],
     ) -> None:
         """Writes data to the channel.
