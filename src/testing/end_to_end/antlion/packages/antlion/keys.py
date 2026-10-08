@@ -35,7 +35,6 @@ class Config(enum.Enum):
     key_fuchsia_device = "FuchsiaDevice"
     key_iperf_client = "IPerfClient"
     key_iperf_server = "IPerfServer"
-    key_openwrt_ap = "OpenWrtAP"
     key_packet_capture = "PacketCapture"
     key_pdu = "PduDevice"
     # Internal keys, used internally, not exposed to user's config files.
@@ -51,7 +50,6 @@ class Config(enum.Enum):
     m_key_fuchsia_device = "fuchsia_device"
     m_key_iperf_client = "iperf_client"
     m_key_iperf_server = "iperf_server"
-    m_key_openwrt_ap = "openwrt_ap"
     m_key_packet_capture = "packet_capture"
     m_key_pdu = "pdu"
 
@@ -67,7 +65,6 @@ class Config(enum.Enum):
         key_fuchsia_device,
         key_iperf_client,
         key_iperf_server,
-        key_openwrt_ap,
         key_packet_capture,
         key_pdu,
     ]

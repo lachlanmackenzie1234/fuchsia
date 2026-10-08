@@ -13,7 +13,6 @@ from . import (
     access_point,
     attenuator,
     fuchsia_device,
-    openwrt_ap,
     packet_capture,
     pdu,
 )
@@ -26,7 +25,6 @@ __all__ = [
     "fuchsia_device",
     "iperf_client",
     "iperf_server",
-    "openwrt_ap",
     "packet_capture",
     "pdu",
 ]

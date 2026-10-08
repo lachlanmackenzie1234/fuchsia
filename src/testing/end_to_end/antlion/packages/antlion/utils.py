@@ -17,7 +17,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import fuchsia_async_extension
 from libs.proc import job
@@ -72,28 +72,6 @@ def rand_hex_str(length: int) -> str:
     """
     letters = [random.choice(string.hexdigits) for i in range(length)]
     return "".join(letters)
-
-
-def exe_cmd(*cmds: Any) -> bytes:
-    """Executes commands in a new shell.
-
-    Args:
-        cmds: A sequence of commands and arguments.
-
-    Returns:
-        The output of the command run.
-
-    Raises:
-        OSError is raised if an error occurred during the command execution.
-    """
-    cmd = " ".join(cmds)
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
-    )
-    (out, err) = proc.communicate()
-    if not err:
-        return out
-    raise OSError(err)
 
 
 def is_valid_ipv4_address(address: str) -> bool:
