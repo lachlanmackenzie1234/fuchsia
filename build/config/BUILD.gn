@@ -1027,7 +1027,6 @@ config("Wno-conversion") {
     "//src/connectivity/bluetooth/hci/transport/uart/cpp:*",
     "//src/connectivity/bluetooth/hci/vendor/broadcom:*",
     "//src/connectivity/bluetooth/hci/vendor/intel:*",
-    "//src/connectivity/network/tools/nc/third_party/openbsd-netcat:*",
     "//src/connectivity/openthread/drivers/ot-radio:*",
     "//src/connectivity/openthread/tests/fake-drivers/fake-ot-radio:*",
     "//src/connectivity/telephony/drivers/qmi-fake-transport:*",
@@ -1162,7 +1161,6 @@ config("Wno-unused-but-set-parameter") {
 config("Wno-unused-but-set-variable") {
   cflags = [ "-Wno-unused-but-set-variable" ]
   visibility = [
-    "//src/connectivity/network/tools/nc/third_party/openbsd-netcat/*",
     "//src/connectivity/wlan/drivers/third_party/*",
     "//src/devices/power/drivers/fusb302/*",
     "//src/devices/usb/drivers/xhci/*",

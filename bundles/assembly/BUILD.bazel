@@ -1716,10 +1716,6 @@ assembly_input_bundle(
             "components": ["lowpanctl"],
         },
         {
-            "package": "nc",
-            "components": ["nc"],
-        },
-        {
             "package": "sockscripter",
             "components": ["sockscripter"],
         },
@@ -2161,7 +2157,6 @@ assembly_input_bundle(
         "eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/network/tools/nc",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/tools/sockscripter:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/mdns/util:mdns-util",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/net-cli",
