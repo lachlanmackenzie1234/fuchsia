@@ -363,6 +363,20 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/rust/config.gni)
+
+  # LINT.IfChange(experimental_cxx_version)
+  declaration = "//build/config/fuchsia_cxx_version.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "experimental_cxx_version"
+      value = experimental_cxx_version
+      type = "string_or_false"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/fuchsia_cxx_version.gni:experimental_cxx_version)
 }
 
 if (current_toolchain == default_toolchain) {

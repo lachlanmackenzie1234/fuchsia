@@ -36,6 +36,7 @@ if (zircon_toolchain != false) {
   enable_frame_pointers = zx_assert_level > 0
 }
 
+# LINT.IfChange(language)
 config("language") {
   cflags_c = [ "-std=c11" ]
   cflags_cc = [ "-std=c++$fuchsia_cxx_version" ]
@@ -45,6 +46,8 @@ config("language") {
   cflags_objc = cflags_c
   cflags_objcc = cflags_cc
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:language)
 
 # These configs can be used to override the C++ version for a particular
 # target.  This is used primarily for tests to specifically validate building
@@ -355,8 +358,11 @@ compiler_config("relative_paths") {
   rustflags = [ "-Zremap-cwd-prefix=." ]
 }
 
+# LINT.IfChange(debug)
 config("debug") {
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:debug)
 
 config("release") {
   defines = [ "NDEBUG=1" ]
@@ -368,11 +374,14 @@ config("exceptions") {
   ldflags = cflags_cc
 }
 
+# LINT.IfChange(no_exceptions)
 config("no_exceptions") {
   cflags_cc = [ "-fno-exceptions" ]
   cflags_objcc = cflags_cc
   ldflags = cflags_cc
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:no_exceptions)
 
 config("rtti") {
   cflags_cc = [ "-frtti" ]
@@ -1238,9 +1247,12 @@ config("executable_config") {
   }
 }
 
+# LINT.IfChange(default_libs)
 config("default_libs") {
   configs = []
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:default_libs)
 
 compiler_config("werror") {
   if (!use_ccache) {
@@ -1275,9 +1287,12 @@ compiler_config("werror") {
   }
 }
 
+# LINT.IfChange(no-template-backtrace-limit)
 config("no-template-backtrace-limit") {
   cflags_cc = [ "-ftemplate-backtrace-limit=0" ]
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:no-template-backtrace-limit)
 
 config("no-stack-protector") {
   cflags = [ "-fno-stack-protector" ]
@@ -1376,6 +1391,7 @@ config("zero-call-used-regs") {
   }
 }
 
+# LINT.IfChange(libcpp_remove_transitive_includes)
 # libc++ removed a number of transitive includes between version 14 and 15
 # but those were later re-added and conditionally gated on a new define in
 # https://reviews.llvm.org/D128661. In Fuchsia, we have already done the
@@ -1386,6 +1402,8 @@ config("zero-call-used-regs") {
 config("libcpp_remove_transitive_includes") {
   defines = [ "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES" ]
 }
+
+# LINT.ThenChange(//build/config/BUILD.bazel:libcpp_remove_transitive_includes)
 
 # Infinite loops are undefined behavior in C++ and thus can be optimized away
 # by the compiler. This config inhibits that optimization.
