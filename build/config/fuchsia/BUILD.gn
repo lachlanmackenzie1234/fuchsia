@@ -164,6 +164,7 @@ compiler_config("max-page-size") {
   }
 }
 
+# LINT.IfChange(shared_library_config)
 config("shared_library_config") {
   cflags = [ "-fPIC" ]
 
@@ -171,6 +172,8 @@ config("shared_library_config") {
   asmflags = cflags
   ldflags = cflags
 }
+
+# LINT.ThenChange(BUILD.bazel:shared_library_config)
 
 # LINT.IfChange(fdio_config)
 config("fdio_config") {
@@ -183,8 +186,11 @@ config("fdio_config") {
 
 # LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:fdio_config)
 
+# LINT.IfChange(executable_config)
 config("executable_config") {
 }
+
+# LINT.ThenChange(BUILD.bazel:executable_config)
 
 # LINT.IfChange(zircon_asserts)
 config("enable_zircon_asserts") {

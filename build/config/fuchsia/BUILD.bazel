@@ -30,6 +30,18 @@ build_flags(
 )
 # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:large_rust_stack)
 
+# LINT.IfChange(shared_library_config)
+build_flags(
+    name = "shared_library_config",
+    cflags = ["-fPIC"],
+    ldflags = ["-fPIC"],
+    # NOTE: commented out because build_flags() does not support asmflags.
+    # asmflags = ["-fPIC"],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(BUILD.gn:shared_library_config)
+
 # LINT.IfChange(fdio_config)
 build_flags(
     name = "fdio_config",
@@ -41,6 +53,13 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:fdio_config)
+
+# LINT.IfChange(executable_config)
+build_flags(
+    name = "executable_config",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:executable_config)
 
 # LINT.IfChange(zircon_asserts)
 build_flags(

@@ -14,6 +14,32 @@ build_flags(
 )
 # LINT.ThenChange(//build/config/BUILD.gn:debug)
 
+# LINT.IfChange(shared_library_config)
+build_flags(
+    name = "shared_library_config",
+    cflags = select({
+        "@platforms//os:linux": ["-fPIC"],
+        "//conditions:default": [],
+    }),
+    subflags = select({
+        "@platforms//os:fuchsia": ["//build/config/fuchsia:shared_library_config"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:shared_library_config)
+
+# LINT.IfChange(executable_config)
+build_flags(
+    name = "executable_config",
+    subflags = select({
+        "@platforms//os:fuchsia": ["//build/config/fuchsia:executable_config"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:executable_config)
+
 # LINT.IfChange(default_libs)
 build_flags(
     name = "default_libs",

@@ -1229,6 +1229,7 @@ compiler_config("symbol_no_undefined") {
   linker_flags = [ "--no-undefined" ]
 }
 
+# LINT.IfChange(shared_library_config)
 config("shared_library_config") {
   if (current_os == "fuchsia") {
     configs = [ "//build/config/fuchsia:shared_library_config" ]
@@ -1237,6 +1238,9 @@ config("shared_library_config") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:shared_library_config)
+
+# LINT.IfChange(executable_config)
 config("executable_config") {
   configs = []
 
@@ -1244,6 +1248,8 @@ config("executable_config") {
     configs += [ "//build/config/fuchsia:executable_config" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:executable_config)
 
 # LINT.IfChange(default_libs)
 config("default_libs") {
