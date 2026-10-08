@@ -68,7 +68,7 @@ are trusted by the system and that require access to input at this level. The
 system terminal Virtcon requires low level access to the keyboard. The
 Screen-Brightness program requires access to the brightness sensor. These are
 the types of programs that should be using `fuchsia.input.report` directly. The
-[`print-input-report-new`](/src/ui/tools/print-input-report-new) binary can be used as
+[`print-input-report`](/src/ui/tools/print-input-report) binary can be used as
 an example program for using low level input.
 
 ### Stateless Reports

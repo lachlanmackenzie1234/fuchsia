@@ -445,7 +445,7 @@ fuchsia_package("bootstrap_eng.bootfs_files_package") {
     "//src/sys/tools/package:bootfs",
     "//src/ui/backlight/bin/backlight:bootfs",
     "//src/ui/input/bin/hid:bootfs",
-    "//src/ui/tools/print-input-report-new:bootfs",
+    "//src/ui/tools/print-input-report:bootfs",
     "//src/zircon/tests/evil:bootfs",
   ]
 }

@@ -24,7 +24,7 @@ fidl_rust_next_allowlist = [
     "//src/tests/fidl/conformance_suite:__subpackages__",
     "//src/ui/input:__subpackages__",
     "//src/ui/lib/input_pipeline:__subpackages__",
-    "//src/ui/tools/print-input-report-new:__subpackages__",
+    "//src/ui/tools/print-input-report:__subpackages__",
     "//tools/fidl:__subpackages__",
     "//vendor/google:__subpackages__",
     "//zircon/kernel/lib/userabi/userboot:__subpackages__",
