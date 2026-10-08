@@ -55,6 +55,7 @@ rustc_library("product_bundle") {
   ]
 
   sources = [
+    "src/gcs.rs",
     "src/lib.rs",
     "src/product_bundle.rs",
     "src/product_bundle_builder.rs",
@@ -103,6 +104,7 @@ rustc_test("product_bundle_test") {
     "//third_party/rust_crates:zip",
   ]
   sources = [
+    "src/gcs.rs",
     "src/lib.rs",
     "src/product_bundle.rs",
     "src/product_bundle_builder.rs",

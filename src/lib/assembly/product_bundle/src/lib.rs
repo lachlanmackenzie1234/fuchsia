@@ -7,10 +7,12 @@
 //! Product Bundles are hermetic directories of assembled artifacts that can be
 //! emulated, flashed, and OTA'd.
 
+mod gcs;
 mod product_bundle;
 mod product_bundle_builder;
 mod v2;
 
+pub use gcs::is_gcs_uri;
 pub use product_bundle::{
     LoadedProductBundle, ProductBundle, ProductBundleExtractError, ProductBundleLoadError,
     ProductBundleWriteError, get_repositories,
