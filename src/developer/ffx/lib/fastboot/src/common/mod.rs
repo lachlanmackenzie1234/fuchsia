@@ -650,8 +650,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
         }
     };
 
-    // TODO(https://fxbug.dev/571125224): Temporarily disable streaming flash to unbrick devices.
-    if false && let Ok(true) = try_flash_stream().await {
+    if let Ok(true) = try_flash_stream().await {
         return Ok(());
     }
 
@@ -865,10 +864,8 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
-    // TODO(https://fxbug.dev/571125224): Temporarily disable streaming flash to unbrick devices.
-    if false
-        && let Ok(segment_size) =
-            get_hex_int::<u32>(STREAM_SEGMENT_SIZE, fastboot_interface).await.map(u64::from)
+    if let Ok(segment_size) =
+        get_hex_int::<u32>(STREAM_SEGMENT_SIZE, fastboot_interface).await.map(u64::from)
     {
         flash_partitions_stream(
             messenger,
@@ -1455,7 +1452,7 @@ mod test {
         )
         .await?;
         // There are four partitions, and it's easier to check for each one.
-        assert_eq!(state.lock().unwrap().get_var_call_count(STREAM_SEGMENT_SIZE), (false, 0));
+        assert_eq!(state.lock().unwrap().get_var_call_count(STREAM_SEGMENT_SIZE), (false, 6));
         server.close();
         let mut messages = vec![];
         while let Some(m) = server.recv().await {
@@ -1495,7 +1492,6 @@ mod test {
     }
 
     #[fuchsia::test]
-    #[ignore]
     async fn test_stream_flash() -> Result<()> {
         const SEGMENT_SIZE_BYTES: usize = 0x4000;
 
@@ -1588,7 +1584,6 @@ mod test {
     }
 
     #[fuchsia::test]
-    #[ignore]
     async fn test_stream_flash_sparse_image() -> Result<()> {
         let raw = (0u8..=255).cycle().take(4096);
         let data = multi_chain!(raw.clone(), raw.clone(), raw.clone(), raw.clone())
