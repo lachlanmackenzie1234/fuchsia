@@ -11,6 +11,7 @@ use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::file_server::serve_file_tagged;
+use crate::vfs::fs_args::MountParams;
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
@@ -31,7 +32,7 @@ use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
 use smallvec::{SmallVec, smallvec};
 use starnix_crypt::EncryptionKeyId;
-use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, track_stub};
 use starnix_sync::{
     DynamicLockDepRwLock, FuchsiaRemoteTargetLock, LockDepReadGuard, LockDepRwLock,
     LockDepWriteGuard,
@@ -284,12 +285,16 @@ impl FileSystemOps for RemoteFs {
         true
     }
 
-    fn update_flags(
+    fn reconfigure(
         &self,
         fs: &FileSystem,
         _current_task: &CurrentTask,
         mut flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
+        if !params.is_empty() {
+            track_stub!(TODO("https://fxbug.dev/322875506"), "MS_REMOUNT: Updating data");
+        }
         if !self.root_rights.contains(fio::PERM_WRITABLE) {
             flags |= FileSystemFlags::RDONLY;
         }

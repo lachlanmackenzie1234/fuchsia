@@ -6,6 +6,7 @@ use crate::fs::fuchsia::update_info_from_attrs;
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
+use crate::vfs::fs_args::MountParams;
 use crate::vfs::{
     CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType, DirentSink,
     FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
@@ -164,12 +165,16 @@ impl FileSystemOps for RemoteBundle {
     fn name(&self) -> &'static FsStr {
         "remote_bundle".into()
     }
-    fn update_flags(
+    fn reconfigure(
         &self,
         fs: &FileSystem,
         _current_task: &CurrentTask,
         flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
+        if !params.is_empty() {
+            track_stub!(TODO("https://fxbug.dev/322875506"), "MS_REMOUNT: Updating data");
+        }
         fs.options.flags.store(flags | FileSystemFlags::RDONLY, Ordering::Relaxed);
         Ok(())
     }

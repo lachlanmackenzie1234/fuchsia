@@ -8,6 +8,7 @@ use crate::task::{
     register_delayed_call,
 };
 use crate::time::utc;
+use crate::vfs::fs_args::MountParams;
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
@@ -757,13 +758,14 @@ impl Mount {
         self.fs.name()
     }
 
-    /// Reconfigures the flags for the `FileSystem` backing this mount point.
+    /// Reconfigures the flags and mount parameters for the `FileSystem` backing this mount point.
     pub fn reconfigure_fs(
         &self,
         current_task: &CurrentTask,
         flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
-        self.fs.update_flags(current_task, flags)
+        self.fs.reconfigure(current_task, flags, params)
     }
 
     /// Returns true if there is a submount on top of `dir_entry`.

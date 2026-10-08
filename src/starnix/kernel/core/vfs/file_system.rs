@@ -15,7 +15,7 @@ use linked_hash_map::LinkedHashMap;
 use ref_cast::RefCast;
 use smallvec::SmallVec;
 use starnix_crypt::CryptService;
-use starnix_logging::log_warn;
+use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{
     DynamicLockDepMutex, FileSystemEntriesLock, FileSystemPermanentLock, FsRename,
     FsRenameRecursive, FuseFsRenameLevel, LockDepMutex,
@@ -484,7 +484,7 @@ impl FileSystem {
     /// mount parameters.
     pub fn format_options(&self, kernel: &Kernel) -> Result<FsString, Errno> {
         let mut result = FsString::from(security::sb_show_options(kernel, self)?.to_string());
-        result.extend_from_slice(&self.options.params.format_options());
+        result.extend_from_slice(&self.show_options()?);
         Ok(result)
     }
 
@@ -499,15 +499,24 @@ impl FileSystem {
         self.ops.crypt_service()
     }
 
-    /// Reconfigures the MountFlags associated with the filesystem with the specified `flags`.
-    /// Filesystems may customize `FsNodeOps::update_flags()` to take action (e.g. flushing dirty
-    /// files when transitioning from read-write to read-only), or to reject reconfiguration.
-    pub fn update_flags(
+    /// Reconfigure the filesystem with the given flags and mount parameters.
+    ///
+    /// This is called during a remount operation (`MS_REMOUNT`), to allow the filesystem to update
+    /// internal resources as necessary to support the new flags and parameters, or to reject
+    /// reconfiguration.
+    pub fn reconfigure(
         &self,
         current_task: &CurrentTask,
         flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
-        self.ops.update_flags(self, current_task, flags)
+        self.ops.reconfigure(self, current_task, flags, params)
+    }
+
+    /// Returns filesystem-specific mount options to display in `/proc/mounts` and
+    /// `/proc/[pid]/mountinfo`.
+    pub fn show_options(&self) -> Result<FsString, Errno> {
+        self.ops.show_options(self)
     }
 
     pub fn sub_filesystems(&self) -> Vec<Arc<FileSystem>> {
@@ -559,18 +568,28 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// ```
     fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno>;
 
-    /// Reconfigure the filesystem with the given flags.
+    /// Reconfigure the filesystem with the given flags and mount parameters.
     ///
-    /// This is called during a remount operation (MS_REMOUNT), to allow the filesystem to update
-    /// internal resources as necessary to support the new flags.
-    fn update_flags(
+    /// This is called during a remount operation (`MS_REMOUNT`), to allow the filesystem to update
+    /// internal resources as necessary to support the new flags and parameters.
+    fn reconfigure(
         &self,
         fs: &FileSystem,
         _current_task: &CurrentTask,
         new_flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
+        if !params.is_empty() {
+            track_stub!(TODO("https://fxbug.dev/322875506"), "MS_REMOUNT: Updating data");
+        }
         fs.options.flags.store(new_flags, Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Returns filesystem-specific mount options to display in `/proc/mounts` and
+    /// `/proc/[pid]/mountinfo` (each preceded by a leading comma, e.g. `",gid=3009,hidepid=invisible"`).
+    fn show_options(&self, fs: &FileSystem) -> Result<FsString, Errno> {
+        Ok(fs.options.params.format_options())
     }
 
     fn name(&self) -> &'static FsStr;

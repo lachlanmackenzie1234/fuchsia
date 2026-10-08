@@ -5,6 +5,7 @@
 #![recursion_limit = "512"]
 
 use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{
     CacheMode, DirEntry, DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps,
     FileSystem, FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
@@ -171,16 +172,20 @@ impl FileSystemOps for LayeredFileSystemOps {
     fn name(&self) -> &'static FsStr {
         self.fs.base_fs.name()
     }
-    fn update_flags(
+    fn reconfigure(
         &self,
         fs: &FileSystem,
         current_task: &CurrentTask,
         new_flags: FileSystemFlags,
+        params: &MountParams,
     ) -> Result<(), Errno> {
-        self.fs.base_fs.update_flags(current_task, new_flags)?;
+        self.fs.base_fs.reconfigure(current_task, new_flags, params)?;
         let flags = self.fs.base_fs.options.flags.load(Ordering::Relaxed);
         fs.options.flags.store(flags, Ordering::Relaxed);
         Ok(())
+    }
+    fn show_options(&self, _fs: &FileSystem) -> Result<FsString, Errno> {
+        self.fs.base_fs.show_options()
     }
 }
 
