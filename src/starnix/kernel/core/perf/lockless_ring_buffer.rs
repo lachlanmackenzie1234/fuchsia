@@ -352,13 +352,6 @@ impl LocklessRingBuffer {
         tail_node: &Node,
         size: usize,
     ) -> Result<(usize, zx::BootInstant, zx::Duration<zx::BootTimeline>), ()> {
-        if !self.is_enabled() {
-            log_warn!(
-                "LocklessRingBuffer: canceling try_reserve_on_page because ring is disabled."
-            );
-            return Err(());
-        }
-
         // Atomically reserve space on the page using a bounded CAS loop.
         // By verifying that `current_offset + size <= PAGE_SIZE` before executing the CAS,
         // we guarantee that failed reservations never advance `write_offset`, keeping it exactly
