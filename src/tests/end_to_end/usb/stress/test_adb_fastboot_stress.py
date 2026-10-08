@@ -6,6 +6,7 @@
 import logging
 
 import fuchsia_base_test
+from honeydew.device_classes import android_device
 from honeydew.transports.fastboot import types as fastboot_types
 from mobly import test_runner
 
@@ -18,6 +19,8 @@ class AdbFastbootStressTest(fuchsia_base_test.FuchsiaBaseTest):
     Required Mobly Test Params:
         num_iterations (int): Number of times to execute the transition.
     """
+
+    dut: android_device.AndroidDevice
 
     async def pre_run(self) -> None:
         test_arg_tuple_list: list[tuple[int]] = []
@@ -33,6 +36,7 @@ class AdbFastbootStressTest(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_class(self) -> None:
         await super().setup_class()
+        assert isinstance(self.dut, android_device.AndroidDevice)
         # Ensure ADB is supported and enabled on this device before starting the test
         # (raises NotSupportedError or NotEnabledError otherwise).
         _ = self.dut.adb
