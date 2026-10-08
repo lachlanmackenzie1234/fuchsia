@@ -18,9 +18,10 @@ use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType,
     DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps,
-    FsStr, FsString, LookupVec, RenameContext, SeekTarget, SymlinkTarget, XattrOp, XattrStorage,
-    default_seek, fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
-    fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
+    FsStr, FsString, LookupVec, RenameContext, SeekTarget, StatxFlags, SymlinkTarget, XattrOp,
+    XattrStorage, default_seek, fileops_impl_directory, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink,
+    fs_node_impl_xattr_delegate,
 };
 use bstr::ByteSlice;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
@@ -1329,7 +1330,11 @@ impl FsNodeOps for RemoteNode {
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
+            return Ok(info.read());
+        }
         self.node.fetch_and_refresh_info(info)
     }
 
@@ -2086,7 +2091,11 @@ impl FsNodeOps for RemoteSymlink {
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
+            return Ok(info.read());
+        }
         self.node.fetch_and_refresh_info(info)
     }
 

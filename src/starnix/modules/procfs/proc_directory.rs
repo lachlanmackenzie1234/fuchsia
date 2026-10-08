@@ -8,6 +8,7 @@ use crate::cpuinfo::CpuinfoFile;
 use crate::device_tree::DeviceTreeSymlink;
 use crate::devices::DevicesFile;
 use crate::filesystems::FilesystemsFile;
+use crate::fs::{HidePid, ProcFs};
 use crate::kmsg::kmsg_file;
 use crate::loadavg::LoadavgFile;
 use crate::meminfo::MeminfoFile;
@@ -45,7 +46,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
-use starnix_uapi::{errno, pid_t};
+use starnix_uapi::{errno, error, pid_t};
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -191,14 +192,24 @@ impl FsNodeOps for ProcDirectoryNode {
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
                 let pid_entry = current_task.kernel().pids.get(pid).map_err(|_| errno!(ENOENT))?;
                 let task = pid_entry.get_process_task().ok_or_else(|| errno!(ENOENT))?;
+                let fs = entry.node.fs();
+                if let Some(proc_fs) = fs.downcast_ops::<ProcFs>() {
+                    if !proc_fs.has_pid_permissions(current_task, &task, HidePid::Invisible) {
+                        return error!(ENOENT);
+                    }
+                }
                 let dir = match task.running_state() {
-                    Ok(running_state) if task.tid == pid_entry => running_state
-                        .proc_pid_directory_cache
-                        .get_or_init(|| {
-                            pid_directory(current_task, &entry.node.fs(), &task, pid_entry)
-                        })
-                        .clone(),
-                    _ => pid_directory(current_task, &entry.node.fs(), &task, pid_entry),
+                    Ok(running_state) if task.tid == pid_entry => {
+                        let cached = running_state.proc_pid_directory_cache.get_or_init(|| {
+                            pid_directory(current_task, &fs, &task, pid_entry.clone())
+                        });
+                        if cached.try_fs().is_some_and(|cached_fs| Arc::ptr_eq(&cached_fs, &fs)) {
+                            cached.clone()
+                        } else {
+                            pid_directory(current_task, &fs, &task, pid_entry)
+                        }
+                    }
+                    _ => pid_directory(current_task, &fs, &task, pid_entry),
                 };
                 Ok(dir)
             }
@@ -241,9 +252,34 @@ impl FileOps for ProcDirectory {
         let mut pids = current_task.kernel().pids.process_ids();
         pids.sort();
 
+        let proc_fs = file.fs.downcast_ops::<ProcFs>();
+        let mount_opts = proc_fs.map(|fs| fs.load_mount_options());
+
         // The adjusted offset is used to figure out which task directories are to be listed.
         if let Some(start) = pids.iter().position(|pid| *pid as usize >= adjusted_offset) {
             for pid in &pids[start..] {
+                if let (Some(proc_fs), Some((pid_gid, hide_pid))) = (proc_fs, mount_opts) {
+                    if hide_pid >= HidePid::Invisible {
+                        let Some(task) = current_task
+                            .kernel()
+                            .pids
+                            .get(*pid)
+                            .ok()
+                            .and_then(|p| p.get_process_task())
+                        else {
+                            continue;
+                        };
+                        if !proc_fs.has_pid_permissions_with_opts(
+                            current_task,
+                            &task,
+                            HidePid::Invisible,
+                            pid_gid,
+                            hide_pid,
+                        ) {
+                            continue;
+                        }
+                    }
+                }
                 // TODO: Figure out if this inode number is fine, given the content of the task
                 // directories.
                 let inode_num = file.fs.allocate_ino();

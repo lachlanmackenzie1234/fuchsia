@@ -11,7 +11,7 @@ use crate::vfs::{
     CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirEntry, DirectoryEntryType, DirentSink,
     FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer, SeekTarget,
-    SymlinkTarget, ValueOrSize, default_seek, emit_dotdot, fileops_impl_directory,
+    StatxFlags, SymlinkTarget, ValueOrSize, default_seek, emit_dotdot, fileops_impl_directory,
     fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_dir_readonly, fs_node_impl_not_dir,
     fs_node_impl_symlink,
 };
@@ -223,7 +223,11 @@ impl FsNodeOps for File {
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
+            return Ok(info.read());
+        }
         let memory = self.inner.lock().get_memory()?;
         let content_size = memory.get_content_size();
         let attrs = zxio_node_attributes_t {

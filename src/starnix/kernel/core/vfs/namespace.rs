@@ -29,7 +29,7 @@ use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::{
     AtomicMountpointFlags, FileSystemFlags, MountFlags, MountpointFlags,
@@ -1636,11 +1636,19 @@ impl NamespaceNode {
             }
 
             let basename = basenames[0];
-            if basename.is_empty() || basename == "." {
+            if basename.is_empty() {
+                basenames = &basenames[1..];
+                continue;
+            }
+            if basename == "." {
+                current_namespace_node
+                    .check_access(current_task, AccessCheck::for_internal(Access::EXEC))?;
                 basenames = &basenames[1..];
                 continue;
             }
             if basename == ".." {
+                current_namespace_node
+                    .check_access(current_task, AccessCheck::for_internal(Access::EXEC))?;
                 let root = match &context.resolve_base {
                     ResolveBase::None => current_task.fs().root(),
                     ResolveBase::Beneath(node) => {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fs::{HidePid, ProcFs};
 use itertools::Itertools;
 use regex_lite::Regex;
 use starnix_core::mm::{
@@ -22,13 +23,15 @@ use starnix_core::vfs::pseudo::simple_file::{
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    CallbackSymlinkNode, CloseFreeSafe, DirEntry, DirEntryOps, DirectoryEntryType, DirentSink,
-    FdNumber, FileObject, FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
-    FsStr, FsString, ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget, default_seek,
-    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
-    fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
+    CallbackSymlinkNode, CheckAccessReason, CloseFreeSafe, DirEntry, DirEntryOps,
+    DirectoryEntryType, DirentSink, FdNumber, FileObject, FileOps, FileSystemHandle, FsNode,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, ProcMountinfoFile, ProcMountsFile,
+    SeekTarget, StatxFlags, SymlinkTarget, default_seek, emit_dotdot, fileops_impl_directory,
+    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_unbounded_seek,
+    fs_node_impl_dir_readonly, fs_node_impl_dir_readonly_ops,
 };
 use starnix_logging::{bug_ref, track_stub};
+use starnix_sync::{DynamicLockDepRwLock, LockDepReadGuard};
 
 use starnix_task_command::TaskCommand;
 use starnix_types::time::duration_to_scheduler_clock;
@@ -143,22 +146,67 @@ struct TaskDirectoryDirEntryOps {
 }
 
 impl DirEntryOps for TaskDirectoryDirEntryOps {
-    fn revalidate(
-        &self,
-        _current_task: &CurrentTask,
-        _dir_entry: &DirEntry,
-    ) -> Result<bool, Errno> {
-        Ok(self.target.get_task().is_ok())
+    fn revalidate(&self, current_task: &CurrentTask, dir_entry: &DirEntry) -> Result<bool, Errno> {
+        let Ok(target_task) = self.target.get_task() else {
+            return Ok(false);
+        };
+        if let Some(proc_fs) = dir_entry.node.fs().downcast_ops::<ProcFs>() {
+            if !proc_fs.has_pid_permissions(current_task, &target_task, HidePid::Invisible) {
+                return error!(ENOENT);
+            }
+        }
+        Ok(true)
     }
 }
 
 macro_rules! task_dir_impl_readonly {
     () => {
-        fs_node_impl_dir_readonly!();
-
         fn create_dir_entry_ops(&self) -> Box<dyn DirEntryOps> {
             Box::new(TaskDirectoryDirEntryOps { target: self.target.clone() })
         }
+
+        fn check_access(
+            &self,
+            node: &FsNode,
+            current_task: &CurrentTask,
+            permission_flags: security::PermissionFlags,
+            info: &DynamicLockDepRwLock<FsNodeInfo>,
+            reason: CheckAccessReason,
+            audit_context: security::Auditable<'_>,
+        ) -> Result<(), Errno> {
+            if let Some(proc_fs) = node.fs().downcast_ops::<ProcFs>() {
+                proc_fs.check_pid_access(current_task, &self.target, HidePid::NoAccess)?;
+            }
+            if permission_flags.as_access().contains(Access::WRITE) {
+                return error!(EROFS, format!("check_access failed: read-only directory"));
+            }
+            node.default_check_access_impl(
+                current_task,
+                permission_flags,
+                reason,
+                info.read(),
+                audit_context,
+            )
+        }
+
+        fn fetch_and_refresh_info<'a>(
+            &self,
+            node: &FsNode,
+            current_task: &CurrentTask,
+            info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+            _flags: StatxFlags,
+        ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+            if let (Some(proc_fs), Ok(target_task)) =
+                (node.fs().downcast_ops::<ProcFs>(), self.target.get_task())
+            {
+                if !proc_fs.has_pid_permissions(current_task, &target_task, HidePid::Invisible) {
+                    return error!(ENOENT);
+                }
+            }
+            Ok(info.read())
+        }
+
+        fs_node_impl_dir_readonly_ops!();
     };
 }
 
@@ -747,6 +795,11 @@ impl FsNodeOps for TaskListDirectory {
         // Make sure the tid belongs to this process.
         if task.pid != target_task.thread_group().leader {
             return error!(ENOENT);
+        }
+        if let Some(proc_fs) = entry.node.fs().downcast_ops::<ProcFs>() {
+            if !proc_fs.has_pid_permissions(current_task, &task, HidePid::Invisible) {
+                return error!(ENOENT);
+            }
         }
 
         Ok(tid_directory(&entry.node.fs(), &task))

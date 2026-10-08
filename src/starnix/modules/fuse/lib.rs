@@ -24,7 +24,7 @@ use starnix_core::vfs::{
     DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
     FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode,
-    PeekBufferSegmentsCallback, RenameContext, SeekTarget, SymlinkTarget, ValueOrSize,
+    PeekBufferSegmentsCallback, RenameContext, SeekTarget, StatxFlags, SymlinkTarget, ValueOrSize,
     WeakFileHandle, XattrOp, default_eof_offset, default_fcntl, default_seek,
     fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly,
 };
@@ -1620,7 +1620,11 @@ impl FsNodeOps for FuseNode {
         _node: &FsNode,
         current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
+            return Ok(info.read());
+        }
         // NOTE: Do not be tempted to always refresh information here; sadly, there are CTS tests
         // that rely on this only updating attributes if they have expired, and this matches what
         // Linux appears to do.

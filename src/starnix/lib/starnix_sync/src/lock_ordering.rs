@@ -44,6 +44,7 @@ lock_ordering! {
     DirEntryChildrenLevel => FileSystemEntriesLock,
     DirEntryChildrenLevel => FileSystemPermanentLock,
     DirEntryChildrenLevel => InotifyStateLock,
+    DirEntryChildrenLevel => MmDumpable,
     DirEntryChildrenLevel => NetstackDevicesLock,
     DirEntryChildrenLevel => NmfsNetworkManagerLock,
     DirEntryChildrenLevel => SeLinuxPendingEntriesLock,

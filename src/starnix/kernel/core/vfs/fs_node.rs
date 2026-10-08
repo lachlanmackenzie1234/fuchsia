@@ -775,6 +775,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _node: &FsNode,
         _current_task: &CurrentTask,
         info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        _flags: StatxFlags,
     ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
         Ok(info.read())
     }
@@ -920,33 +921,8 @@ macro_rules! fs_node_impl_symlink {
 }
 
 #[macro_export]
-macro_rules! fs_node_impl_dir_readonly {
+macro_rules! fs_node_impl_dir_readonly_ops {
     () => {
-        fn check_access(
-            &self,
-            node: &$crate::vfs::FsNode,
-            current_task: &$crate::task::CurrentTask,
-            permission_flags: $crate::security::PermissionFlags,
-            info: &starnix_sync::DynamicLockDepRwLock<$crate::vfs::FsNodeInfo>,
-            reason: $crate::vfs::CheckAccessReason,
-            audit_context: $crate::security::Auditable<'_>,
-        ) -> Result<(), starnix_uapi::errors::Errno> {
-            let access = permission_flags.as_access();
-            if access.contains(starnix_uapi::file_mode::Access::WRITE) {
-                return starnix_uapi::error!(
-                    EROFS,
-                    format!("check_access failed: read-only directory")
-                );
-            }
-            node.default_check_access_impl(
-                current_task,
-                permission_flags,
-                reason,
-                info.read(),
-                audit_context,
-            )
-        }
-
         fn mkdir(
             &self,
             _node: &$crate::vfs::FsNode,
@@ -999,6 +975,38 @@ macro_rules! fs_node_impl_dir_readonly {
             _child: &$crate::vfs::FsNodeHandle,
         ) -> Result<(), starnix_uapi::errors::Errno> {
             starnix_uapi::error!(EROFS, format!("unlink failed: {:?}", name))
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! fs_node_impl_dir_readonly {
+    () => {
+        $crate::vfs::fs_node_impl_dir_readonly_ops!();
+
+        fn check_access(
+            &self,
+            node: &$crate::vfs::FsNode,
+            current_task: &$crate::task::CurrentTask,
+            permission_flags: $crate::security::PermissionFlags,
+            info: &starnix_sync::DynamicLockDepRwLock<$crate::vfs::FsNodeInfo>,
+            reason: $crate::vfs::CheckAccessReason,
+            audit_context: $crate::security::Auditable<'_>,
+        ) -> Result<(), starnix_uapi::errors::Errno> {
+            let access = permission_flags.as_access();
+            if access.contains(starnix_uapi::file_mode::Access::WRITE) {
+                return starnix_uapi::error!(
+                    EROFS,
+                    format!("check_access failed: read-only directory")
+                );
+            }
+            node.default_check_access_impl(
+                current_task,
+                permission_flags,
+                reason,
+                info.read(),
+                audit_context,
+            )
         }
     };
 }
@@ -1154,6 +1162,7 @@ pub enum TimeUpdateType {
 
 // Public re-export of macros allows them to be used like regular rust items.
 pub use fs_node_impl_dir_readonly;
+pub use fs_node_impl_dir_readonly_ops;
 pub use fs_node_impl_not_dir;
 pub use fs_node_impl_symlink;
 pub use fs_node_impl_xattr_delegate;
@@ -1242,6 +1251,10 @@ impl FsNode {
 
     pub fn fs(&self) -> FileSystemHandle {
         self.fs.upgrade().expect("FileSystem did not live long enough")
+    }
+
+    pub fn try_fs(&self) -> Option<FileSystemHandle> {
+        self.fs.upgrade()
     }
 
     pub fn ops(&self) -> &dyn FsNodeOps {
@@ -2192,11 +2205,7 @@ impl FsNode {
         security::check_fs_node_getattr_access(current_task, self)?;
 
         // Ignore mask for now and fill in all of the fields.
-        let info = if flags.contains(StatxFlags::AT_STATX_DONT_SYNC) {
-            self.info()
-        } else {
-            self.fetch_and_refresh_info(current_task)?
-        };
+        let info = self.fetch_and_refresh_info_with_flags(current_task, flags)?;
         if mask & STATX__RESERVED == STATX__RESERVED {
             return error!(EINVAL);
         }
@@ -2398,7 +2407,15 @@ impl FsNode {
         &self,
         current_task: &CurrentTask,
     ) -> Result<LockDepReadGuard<'_, FsNodeInfo>, Errno> {
-        self.ops().fetch_and_refresh_info(self, current_task, &self.info)
+        self.fetch_and_refresh_info_with_flags(current_task, StatxFlags::empty())
+    }
+
+    pub fn fetch_and_refresh_info_with_flags(
+        &self,
+        current_task: &CurrentTask,
+        flags: StatxFlags,
+    ) -> Result<LockDepReadGuard<'_, FsNodeInfo>, Errno> {
+        self.ops().fetch_and_refresh_info(self, current_task, &self.info, flags)
     }
 
     pub fn update_info<F, T>(&self, mutator: F) -> T
