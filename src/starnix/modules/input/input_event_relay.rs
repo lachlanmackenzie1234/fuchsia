@@ -1118,6 +1118,7 @@ impl InputEventsRelay {
                         };
                         self.device_infos.lock().remove(&device_id);
                         if let Some(device_state) = self.devices.remove(&device_id) {
+                            self.update_num_devices();
                             if let Some(starnix_device) = device_state.starnix_device {
                                 current_task
                                     .kernel()
@@ -1125,7 +1126,6 @@ impl InputEventsRelay {
                                     .remove_device(current_task, starnix_device);
                             }
                         }
-                        self.update_num_devices();
                     }
                     action => {
                         log_warn!("Unexpected action in DeviceListener event: {:?}", action);
@@ -1737,10 +1737,10 @@ fn register_and_add_device(
     };
 
     if let Some(old_state) = devices_relay.devices.remove(&device_id) {
+        devices_relay.update_num_devices();
         if let Some(old_starnix_device) = old_state.starnix_device {
             current_task.kernel().device_registry.remove_device(current_task, old_starnix_device);
         }
-        devices_relay.update_num_devices();
     }
 
     // Allocate the lowest available minor number for this device.

@@ -3028,6 +3028,23 @@ mod test {
         }
     }
 
+    async fn wait_for_num_devices(inspector: &fuchsia_inspect::Inspector, expected: u64) {
+        loop {
+            let hierarchy = fuchsia_inspect::reader::read(inspector).await.unwrap();
+            if let Some(relay_node) = hierarchy.get_child("input_events_relay") {
+                if let Some(prop) = relay_node.get_property("num_devices") {
+                    if prop.uint() == Some(expected) {
+                        break;
+                    }
+                }
+            }
+            fuchsia_async::Timer::new(
+                fuchsia_async::MonotonicDuration::from_millis(10).after_now(),
+            )
+            .await;
+        }
+    }
+
     #[::fuchsia::test]
     async fn test_dynamic_device_registration() {
         spawn_kernel_and_run(async move |current_task| {
@@ -3191,6 +3208,7 @@ mod test {
             let mouse_devt = StarnixDeviceId::new(INPUT_MAJOR, 3);
             wait_for_device(kernel, mouse_devt, true).await;
 
+            wait_for_num_devices(&inspector, 4).await;
             assert_data_tree!(inspector, root: contains {
                 input_events_relay: contains {
                     num_devices: 4u64,
@@ -3275,6 +3293,7 @@ mod test {
 
             wait_for_device(kernel, mouse_devt, false).await;
 
+            wait_for_num_devices(&inspector, 1).await;
             assert_data_tree!(inspector, root: contains {
                 input_events_relay: contains {
                     num_devices: 1u64,
@@ -3394,6 +3413,7 @@ mod test {
             let keyboard_devt = StarnixDeviceId::new(INPUT_MAJOR, 1);
             wait_for_device(kernel, keyboard_devt, true).await;
 
+            wait_for_num_devices(&inspector, 2).await;
             assert_data_tree!(inspector, root: contains {
                 input_events_relay: contains {
                     num_devices: 2u64,
