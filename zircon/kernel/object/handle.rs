@@ -208,6 +208,18 @@ impl HandleOwner {
         // an owned `Handle*` or null.
         unsafe { Self::from_raw(cpp_handle_make(&mut generic, rights)) }
     }
+
+    /// Allocates a new `HandleOwner` wrapping `dispatcher` with `rights`.
+    pub fn make_from_ref<T>(dispatcher: RefPtr<T>, rights: zx_rights_t) -> Option<Self>
+    where
+        T: HasRefCount + Recyclable + DispatcherOps,
+    {
+        // SAFETY: `T` implements `DispatcherOps` and is layout-compatible with `Dispatcher`.
+        let raw_dispatcher = RefPtr::into_raw(unsafe { dispatcher.cast::<Dispatcher>() });
+        // SAFETY: `raw_dispatcher` carries an acquired reference count transferred to
+        // `cpp_handle_make_from_ref`, which returns an owned `Handle*` or null.
+        unsafe { Self::from_raw(cpp_handle_make_from_ref(raw_dispatcher.cast_mut(), rights)) }
+    }
 }
 
 impl Drop for HandleOwner {
@@ -293,6 +305,16 @@ unsafe extern "C" {
     /// `kernel_handle` must point to a valid `KernelHandle<Dispatcher>`.
     fn cpp_handle_make(
         kernel_handle: *mut KernelHandle<Dispatcher>,
+        rights: zx_rights_t,
+    ) -> *mut core::ffi::c_void;
+
+    /// Allocates a C++ `Handle` from an exported `fbl::RefPtr<Dispatcher>` with `rights`.
+    ///
+    /// # Safety
+    ///
+    /// `dispatcher` must be a valid pointer with an acquired reference count transferred to C++.
+    fn cpp_handle_make_from_ref(
+        dispatcher: *mut Dispatcher,
         rights: zx_rights_t,
     ) -> *mut core::ffi::c_void;
 

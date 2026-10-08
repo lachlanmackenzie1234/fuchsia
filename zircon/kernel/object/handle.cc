@@ -245,6 +245,11 @@ FFI_ALWAYS_INLINE Handle* cpp_handle_make(KernelHandle<Dispatcher>* kernel_handl
   return Handle::Make(ktl::move(*kernel_handle), rights).release();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Handle* cpp_handle_make_from_ref(Dispatcher* dispatcher, zx_rights_t rights) {
+  return Handle::Make(fbl::ImportFromRawPtr(dispatcher), rights).release();
+}
+
 Handle* cpp_handle_dup(const Handle* handle, zx_rights_t rights) {
   if (!handle) {
     return nullptr;
