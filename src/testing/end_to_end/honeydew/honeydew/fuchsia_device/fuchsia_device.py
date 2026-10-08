@@ -39,7 +39,6 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )
 from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
-from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.drivers import battery_manager
 from honeydew.affordances.drivers.fake_battery import (
     fake_battery as fake_battery_affordance,
@@ -161,7 +160,6 @@ _REBOOT_OFFLINE_TIMEOUT_SEC: int = 60
 
 
 class FuchsiaDevice(
-    device_knobs.DeviceKnobs,
     affordances_capable.RebootCapableDevice,
     affordances_capable.SuspendResumeCapableDevice,
     affordances_capable.FuchsiaDeviceLogger,
