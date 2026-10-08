@@ -231,14 +231,15 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
             println!("{}", output.bug_context("Error serializing args")?);
             return Ok(ExitStatus::from_raw(0));
         }
-        HelpState::ReturnHelp { command, output, code } => {
+        HelpState::ReturnHelp { command, mut output, code } => {
             let mut commands: String = Default::default();
             tools
                 .print_command_list(&mut commands)
                 .await
                 .bug_context("Error getting command list")?;
-            let full_output = format!("{output}\n{commands}");
-            return Err(Error::Help { command, output: full_output, code });
+            output = format!("{output}\n{commands}");
+            append_strict_help(&mut output, app.strict, code);
+            return Err(Error::Help { command, output, code });
         }
         HelpState::None => (),
     };
@@ -254,7 +255,7 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
         log::info!("No schema requested - calling try from args: {cmd:?}");
         match tools.try_from_args(&cmd).await {
             Ok(t) => t,
-            Err(Error::Help { command, output, code }) => {
+            Err(Error::Help { command, mut output, code }) => {
                 // TODO(b/303088345): Enhance argh to support custom help better.
                 // Check for machine json output and  help.
                 // This handles the sub command of ffx information.
@@ -286,6 +287,7 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
                     return Ok(ExitStatus::from_raw(0));
                 } else {
                     let command_clone = command.clone();
+                    append_strict_help(&mut output, app.strict, code);
                     let res: Result<ExitStatus, Error> = Err(Error::Help { command, output, code });
                     let enhanced_args = match send_enhanced_analytics().await {
                         true => Some(cmd.unredacted_args_for_analytics()),
@@ -395,6 +397,15 @@ pub async fn exit(
     };
 
     std::process::exit(exit_code);
+}
+
+/// append strict-mode notes to help output
+fn append_strict_help(output: &mut String, is_strict: bool, code: i32) {
+    if is_strict && code == 0 {
+        output.push_str(
+            "\nStrict Mode Notes:\n  When running with `--strict`, the following constraints apply:\n  - `--machine <format>` must be specified (e.g., `--machine json`).\n  - `--log-output <destination>` must be specified (unless `-c log.enabled=false`).\n  - `--target <target>` must be explicitly specified if the command requires a target.\n  - `--config` / `-c` values must be key=value pairs or valid JSON (environment variables and config files are not read).\n",
+        );
+    }
 }
 
 /// look through the command line args for `--machine <format>`
@@ -569,5 +580,20 @@ mod test {
 
             assert_eq!(json, json!(case));
         }
+    }
+
+    #[fuchsia::test]
+    fn test_append_strict_help() {
+        let mut output = String::from("Some help");
+        append_strict_help(&mut output, true, 0);
+        assert!(output.contains("Strict Mode Notes:"));
+
+        let mut output2 = String::from("Some help");
+        append_strict_help(&mut output2, false, 0);
+        assert!(!output2.contains("Strict Mode Notes:"));
+
+        let mut output3 = String::from("Some help");
+        append_strict_help(&mut output3, true, 1);
+        assert!(!output3.contains("Strict Mode Notes:"));
     }
 }

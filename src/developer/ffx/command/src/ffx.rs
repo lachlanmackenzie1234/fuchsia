@@ -82,6 +82,7 @@ impl FfxCommandLine {
         let arg0 = args.next().ok_or_else(|| bug!("No first argument in argument vector"))?;
         let args = Vec::from_iter(args);
         let args = Self::deduplicate_machine_flags(args);
+        let args = Self::reorder_help_flags(args);
         let command =
             wrapper_name.map_or_else(|| vec![Self::base_cmd(&arg0)], |s| s.split(" ").collect());
         let global =
@@ -232,6 +233,7 @@ impl FfxCommandLine {
         let mut args = argv.iter().map(AsRef::as_ref);
         let arg0 = args.next().ok_or_else(|| bug!("No first argument in argument vector"))?;
         let args = Vec::from_iter(args);
+        let args = Self::reorder_help_flags(args);
         let command =
             wrapper_name.map_or_else(|| vec![Self::base_cmd(&arg0)], |s| s.split(" ").collect());
         let global = Ffx::from_args_for_help(&args)?;
@@ -265,6 +267,65 @@ impl FfxCommandLine {
     /// Extract the base cmd from a path
     fn base_cmd(path: &str) -> &str {
         std::path::Path::new(path).file_name().map(|s| s.to_str()).flatten().unwrap_or(path)
+    }
+
+    /// Reorders help flags so that they don't block parsing of global flags,
+    /// or if a subcommand is present, moves them into the subcommand slice.
+    fn reorder_help_flags<'a>(args: Vec<&'a str>) -> Vec<&'a str> {
+        let mut help_flag = None;
+        let mut i = 0;
+        let mut global_flags = Vec::new();
+        while i < args.len() {
+            let item = args[i];
+            if item == "-h" || item == "--help" || item == "help" {
+                if help_flag.is_none() {
+                    help_flag = Some(item);
+                }
+                i += 1;
+                continue;
+            }
+            if item == "--" || (!item.starts_with("-") && item != "help") {
+                break;
+            }
+            global_flags.push(item);
+            if matches!(
+                item,
+                "-c" | "--config"
+                    | "-e"
+                    | "--env"
+                    | "--env-root"
+                    | "--machine"
+                    | "--stamp"
+                    | "-t"
+                    | "--target"
+                    | "--timeout"
+                    | "-l"
+                    | "--log-level"
+                    | "--isolate-dir"
+                    | "-o"
+                    | "--log-output"
+            ) {
+                if i + 1 < args.len() {
+                    global_flags.push(args[i + 1]);
+                    i += 1;
+                }
+            }
+            i += 1;
+        }
+
+        let mut subcommand = args[i..].to_vec();
+        if let Some(h) = help_flag {
+            if subcommand.is_empty() {
+                global_flags.push(h);
+            } else {
+                if !subcommand.iter().any(|&c| c == "-h" || c == "--help" || c == "help") {
+                    subcommand.push("--help");
+                }
+            }
+        }
+
+        global_flags.extend(subcommand);
+        global_flags
     }
 }
 
@@ -493,9 +554,12 @@ impl Ffx {
 
         // If we're given an isolation setting, use that. Otherwise do a normal detection of the environment.
         match (self, env_vars.get("FFX_ISOLATE_DIR").map(PathBuf::from)) {
-            (Ffx { strict: true, .. }, _) => {
-                match EnvironmentContext::strict(exe_kind, runtime_args) {
+            (Ffx { strict: true, subcommand, .. }, _) => {
+                let has_help = subcommand.iter().any(|c| c == "help" || c == "--help" || c == "-h");
+                match EnvironmentContext::strict(exe_kind.clone(), runtime_args) {
                     Ok(env) => Ok(env),
+                    Err(_) if has_help => EnvironmentContext::strict(exe_kind, Default::default())
+                        .map_err(|e| anyhow::Error::from(e).into()),
                     // TODO(b/368047122): This is some unfortunately awkward error conversion code that
                     // can't be done inside the config library as implementing
                     // `From<ffx_command::Error>` would create a circular dependency. Ideally the
@@ -1364,5 +1428,64 @@ mod test {
         assert!(ffx.should_format());
         let ffx = Ffx { machine: Some(MachineFormat::JsonPretty), ..Default::default() };
         assert!(ffx.should_format());
+    }
+
+    #[fuchsia::test]
+    fn test_ffx_help_strict() {
+        let cmd = FfxCommandLine::from_args_for_help(&vec![
+            "ffx".to_string(),
+            "--help".to_string(),
+            "--strict".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(cmd.global.strict, true);
+        assert_eq!(cmd.global.subcommand, vec!["--help"]);
+
+        let cmd = FfxCommandLine::from_args_for_help(&vec![
+            "ffx".to_string(),
+            "--strict".to_string(),
+            "--help".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(cmd.global.strict, true);
+        assert_eq!(cmd.global.subcommand, vec!["--help"]);
+
+        let cmd = FfxCommandLine::from_args_for_help(&vec![
+            "ffx".to_string(),
+            "--strict".to_string(),
+            "--help".to_string(),
+            "emu".to_string(),
+            "start".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(cmd.global.strict, true);
+        assert_eq!(cmd.global.subcommand, vec!["emu", "start", "--help"]);
+
+        let cmd = FfxCommandLine::from_args_for_help(&vec![
+            "ffx".to_string(),
+            "--help".to_string(),
+            "--strict".to_string(),
+            "emu".to_string(),
+            "start".to_string(),
+        ])
+        .unwrap();
+        assert_eq!(cmd.global.strict, true);
+        assert_eq!(cmd.global.subcommand, vec!["emu", "start", "--help"]);
+    }
+
+    #[fuchsia::test]
+    fn test_load_context_strict_help_fallback() {
+        let cmd = FfxCommandLine::from_args_for_help(&vec![
+            "ffx".to_string(),
+            "--strict".to_string(),
+            "-c".to_string(),
+            "foo=$BAR".to_string(),
+            "--help".to_string(),
+            "emu".to_string(),
+        ])
+        .unwrap();
+        let env_vars = std::collections::HashMap::new();
+        let ctx = cmd.global.load_context_with_env(ExecutableKind::Test, env_vars);
+        assert!(ctx.is_ok());
     }
 }
