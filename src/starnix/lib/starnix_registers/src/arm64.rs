@@ -87,8 +87,10 @@ impl<T: RegisterStorage> RegisterState<T> {
         (self.cpsr as u64) & IS_THUMB_MASK == IS_THUMB_MASK
     }
 
-    /// Saves any register state required to restart `syscall`.
-    pub fn save_registers_for_restart(&mut self, _syscall_number: u64) {
+    /// Saves any register state required to restart the syscall.
+    ///
+    /// Must be called at syscall entry, before `set_return_register` clobbers `x0`.
+    pub fn save_registers_for_restart(&mut self) {
         // The x0 register may be clobbered during syscall handling (for the return value), but is
         // needed when restarting a syscall.
         self.orig_x0 = self.r[0];
@@ -293,7 +295,6 @@ impl<T: RegisterStorage> RegisterState<T> {
             // done in zircon.
             self.r[15] = self.pc;
         }
-        self.orig_x0 = self.r[0];
     }
 }
 

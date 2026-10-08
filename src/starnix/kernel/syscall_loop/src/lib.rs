@@ -263,16 +263,12 @@ fn process_restricted_exit(
     error_context: &mut Option<ErrorContext>,
     exception_report_raw: *const zx::sys::zx_exception_report_t,
 ) -> Result<Option<ExitStatus>, Error> {
+    #[cfg(target_arch = "aarch64")]
     current_task.thread_state.registers.sync_stack_ptr();
 
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
-            let syscall_decl = SyscallDecl::from_number(
-                current_task.thread_state.registers.syscall_register(),
-                current_task.thread_state.arch_width(),
-            );
-
-            if let Some(new_error_context) = execute_syscall(current_task, syscall_decl) {
+            if let Some(new_error_context) = execute_syscall(current_task) {
                 *error_context = Some(new_error_context);
             }
         }
@@ -331,18 +327,20 @@ pub struct ErrorContext {
     pub error: Errno,
 }
 
-/// Executes the provided `syscall` in `current_task`.
+/// Executes the syscall for `current_task`.
 ///
 /// Returns an `ErrorContext` if the system call returned an error.
 #[inline(never)] // Inlining this function breaks the CFI directives used to unwind into user code.
-pub fn execute_syscall(
-    current_task: &mut CurrentTask,
-    syscall_decl: SyscallDecl,
-) -> Option<ErrorContext> {
+pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
+    current_task.thread_state.registers.save_registers_for_restart();
+
+    let syscall_decl = SyscallDecl::from_number(
+        current_task.thread_state.registers.syscall_register(),
+        current_task.thread_state.arch_width(),
+    );
+
     fuchsia_trace::duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
     let syscall = new_syscall(syscall_decl, current_task);
-
-    current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);
 
     if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
         ptrace_syscall_enter(current_task);
