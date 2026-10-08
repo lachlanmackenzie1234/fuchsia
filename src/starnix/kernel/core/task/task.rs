@@ -1498,15 +1498,8 @@ impl Task {
         let status = self.read();
         if status.exit_status.is_some() {
             TaskStateCode::Zombie
-        } else if status.run_state.is_blocked() {
-            let stop_state = self.load_stopped();
-            if stop_state.ptrace_only() && stop_state.is_stopped() {
-                TaskStateCode::TracingStop
-            } else {
-                TaskStateCode::Sleeping
-            }
         } else {
-            TaskStateCode::Running
+            status.run_state.state_code()
         }
     }
 

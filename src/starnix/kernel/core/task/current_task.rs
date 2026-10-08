@@ -11,7 +11,6 @@ use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_
 use crate::task::loader::{
     ResolvedProgram, load_executable, resolve_elf_interpreter, resolve_executable,
 };
-use crate::task::waiter::WaiterOptions;
 use crate::task::{
     CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
     RunState, SeccompFilter, SeccompFilterContainer, SeccompState, SeccompStateValue, Task,
@@ -551,15 +550,12 @@ impl CurrentTask {
             let mut state = self.write();
             assert!(!state.is_blocked());
 
-            if matches!(run_state, RunState::Frozen(_)) {
-                // Freeze is a kernel signal and is handled before other user signals. A frozen task
-                // ignores all other signals except SIGKILL until it is thawed.
+            if run_state.ignores_signals() {
+                // Tasks frozen or stopped ignore all other signals except SIGKILL.
                 if state.has_signal_pending(SIGKILL) {
                     return error!(EINTR);
                 }
-            } else if state.is_any_signal_pending() && !state.is_ptrace_listening() {
-                // A note on PTRACE_LISTEN - the thread cannot be scheduled
-                // regardless of pending signals.
+            } else if state.is_any_signal_pending() {
                 return error!(EINTR);
             }
             state.set_run_state(run_state.clone());
@@ -1936,7 +1932,7 @@ impl CurrentTask {
     /// Block the execution of `current_task` as long as the task is stopped and
     /// not terminated.
     fn block_while_stopped(&mut self) {
-        let waiter = Waiter::with_options(WaiterOptions::IGNORE_SIGNALS);
+        let waiter = Waiter::new();
         loop {
             // If we've exited, unstop the threads and return without notifying
             // waiters.
@@ -1950,8 +1946,7 @@ impl CurrentTask {
                 return;
             }
 
-            // Do the wait. Result is not needed, as this is not in a syscall.
-            let _: Result<(), Errno> = waiter.wait(self);
+            waiter.stop(self);
 
             // Maybe go from stopping to stopped, if we are currently stopping
             // again.
