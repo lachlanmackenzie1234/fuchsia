@@ -115,7 +115,6 @@ section.
   - [Device driver lifecycle][device-driver-lifecycle]
   - [Device power management][device-power-management]
   - [Protocols in drivers][protocols-in-drivers]
-  - [FIDL in drivers][fidl-in-drivers]
   - [Composite devices][composite-devices]
   - [Device firmware][device-firmware]
 
@@ -201,7 +200,6 @@ section.
 [device-power-management]: concepts/device_driver_model/device-power.md
 [protocols-in-drivers]: concepts/device_driver_model/protocol.md
 [platform-bus]: concepts/device_driver_model/platform-bus.md
-[fidl-in-drivers]: concepts/device_driver_model/fidl.md
 [composite-devices]: concepts/device_driver_model/composite.md
 [device-firmware]: concepts/device_driver_model/firmware.md
 [driver-architectures-overview]: concepts/driver_architectures/README.md
