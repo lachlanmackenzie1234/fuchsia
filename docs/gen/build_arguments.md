@@ -942,7 +942,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -3963,6 +3963,7 @@ From //zircon/kernel/params.gni:112
 
 ### experimental_cxx_version
 
+LINT.IfChange(experimental_cxx_version)
 **NOTE:** This is for **experimentation only** and should not normally be
 changed.  Set the version of the C++ standard to use when compiling. Must be
 one of the values in `_available_cxx_versions`.
@@ -3971,7 +3972,7 @@ instead use the `fuchsia_cxx_version` variable.
 
 **Current value (from the default):** `false`
 
-From //build/config/fuchsia_cxx_version.gni:35
+From //build/config/fuchsia_cxx_version.gni:12
 
 ### experimental_dso_enabled
 
