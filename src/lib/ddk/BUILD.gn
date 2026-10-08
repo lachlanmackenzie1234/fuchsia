@@ -324,7 +324,6 @@ static_library("ddk") {
     "//src/ui/input/lib/hid-input-report:*",
     "//src/ui/input/tests/hid:*",
     "//src/ui/light/drivers/aml-light:*",
-    "//src/ui/tools/print-input-report:*",
     "//src/virtualization/bin/vmm:*",
     "//third_party/pigweed/backends/pw_log:*",
     "//vendor/*",
