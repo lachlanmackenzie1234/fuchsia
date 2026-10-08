@@ -48,8 +48,6 @@ pub struct PolicyIndex {
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// Parsed binary policy.
     parsed_policy: ParsedPolicy,
-    /// "object_r" role used as a fallback for new file context transitions.
-    cached_object_r_role: RoleId,
     /// Cached [`ClassId`] for the "process" class, if defined by the policy.
     cached_process_class: Option<ClassId>,
 }
@@ -109,22 +107,9 @@ impl PolicyIndex {
             }
         }
 
-        // Locate the "object_r" role.
-        let cached_object_r_role = parsed_policy
-            .roles()
-            .get_by_name(b"object_r")
-            .ok_or_else(|| anyhow::anyhow!("missing 'object_r' role"))?
-            .id();
-
         let cached_process_class = classes.get(&KernelClass::Process).copied();
 
-        let index = Self {
-            classes,
-            permissions,
-            parsed_policy,
-            cached_object_r_role,
-            cached_process_class,
-        };
+        let index = Self { classes, permissions, parsed_policy, cached_process_class };
 
         Ok(index)
     }
@@ -216,7 +201,7 @@ impl PolicyIndex {
             // of whether the class is "process", or socket-like?
             return SecurityContext::new(
                 source.user(),
-                self.cached_object_r_role,
+                self.object_role(),
                 target.type_(),
                 source.low_level().clone(),
                 None,
@@ -229,7 +214,7 @@ impl PolicyIndex {
             if is_process_or_socket {
                 (source.role(), source.type_(), source.low_level(), source.high_level())
             } else {
-                (self.cached_object_r_role, target.type_(), source.low_level(), None)
+                (self.object_role(), target.type_(), source.low_level(), None)
             };
         let class_defaults = policy_class.defaults();
 
@@ -339,19 +324,6 @@ impl PolicyIndex {
             .kernel_permission_to_access_vector(ProcessPermission::DynTransition)
             .unwrap_or(AccessVector::NONE);
         perms
-    }
-
-    /// Returns the Id of the "object_r" role within the `parsed_policy`, for use when validating
-    /// Security Context fields.
-    pub fn object_role(&self) -> RoleId {
-        self.cached_object_r_role
-    }
-
-    /// Returns the [`SecurityContext`] defined by this policy for the specified
-    /// well-known (or "initial") Id.
-    pub fn initial_context(&self, id: crate::InitialSid) -> SecurityContext {
-        // All [`InitialSid`] have already been verified as resolvable, by `new()`.
-        SecurityContext::from_policy_context(self.parsed_policy.initial_context(id))
     }
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated

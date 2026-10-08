@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::MlsLevel;
-use super::security_context::SecurityContext;
+use super::{MlsLevel, SecurityContext};
 
 use crate::new_policy::traits::PolicyId;
 use crate::new_policy::{

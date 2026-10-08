@@ -3,14 +3,12 @@
 // found in the LICENSE file.
 
 use super::constraints::evaluate_constraint;
-use super::error::{ParseError, ValidateError};
+use super::error::ParseError;
 use super::parser::PolicyData;
-use super::security_context::SecurityContext;
 use super::{
-    AccessDecision, AccessVector, ClassId, SELINUX_AVD_FLAGS_PERMISSIVE, TypeId,
+    AccessDecision, AccessVector, ClassId, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, TypeId,
     XpermsAccessDecision, XpermsKind,
 };
-use crate::PolicyCap;
 use crate::new_policy::rules::{
     ExtendedPermissions, HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
@@ -41,11 +39,6 @@ impl Deref for ParsedPolicy {
 }
 
 impl ParsedPolicy {
-    /// Returns true if the specified capability is in the policy's enabled capabilities set.
-    pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
-        self.new_policy.policy_capabilities().contains(policy_cap)
-    }
-
     /// Computes the access granted to `source_type` on `target_type`, for the specified
     /// `target_class`. The result is a set of access vectors with bits set for each
     /// `target_class` permission, describing which permissions are allowed, and
@@ -251,17 +244,6 @@ impl ParsedPolicy {
             name,
         )
     }
-
-    pub(crate) fn initial_context(&self, mut id: crate::InitialSid) -> &crate::new_policy::Context {
-        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
-        if id == crate::InitialSid::Init && !need_init_sid {
-            id = crate::InitialSid::Kernel;
-        }
-        self.new_policy
-            .initial_sids()
-            .get_by_id(id as u32)
-            .expect("initial SID must be present in validated policy")
-    }
 }
 
 impl ParsedPolicy {
@@ -285,21 +267,6 @@ impl ParsedPolicy {
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        // Validate that all kernel-required initial SIDs are present in the policy.
-        let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
-        for initial_sid in crate::InitialSid::all_variants() {
-            if *initial_sid == crate::InitialSid::Init && !need_init_sid {
-                continue;
-            }
-            self.new_policy
-                .initial_sids()
-                .get_by_id(*initial_sid as u32)
-                .ok_or(ValidateError::MissingInitialSid { initial_sid: *initial_sid })?;
-        }
-
-        // To-do comments for cross-policy validations yet to be implemented go here.
-        // TODO(b/356569876): Determine which "bounds" should be verified for correctness here.
-
         Ok(())
     }
 }

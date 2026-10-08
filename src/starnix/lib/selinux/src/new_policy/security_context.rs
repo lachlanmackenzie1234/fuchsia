@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::new::{CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange};
-use super::{CategoryId, RoleId, TypeId, UserId};
+use super::traits::{HasName, HasPolicyId, PolicyId as _};
+use super::{
+    CategoryId, CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange, NewPolicy, RoleId, TypeId,
+    UserId,
+};
 use crate::NullessByteStr;
-use crate::kernel::PolicyIndex;
-use crate::new_policy::NewPolicy;
-use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId as _};
 
 use bstr::BString;
 
@@ -15,7 +15,7 @@ use thiserror::Error;
 
 /// Security context, a variable-length string associated with each SELinux object in the
 /// system. Contains mandatory `user:role:type` components and an optional
-/// [:range] component.
+/// `[:range]` component.
 ///
 /// Security contexts are configured by userspace atop Starnix, and mapped to
 /// [`SecurityId`]s for internal use in Starnix.
@@ -86,7 +86,7 @@ impl SecurityContext {
     /// Returns an error if the [`security_context`] is not a syntactically valid
     /// Security Context string, or the fields are not valid under the current policy.
     pub(super) fn from_string(
-        policy_index: &PolicyIndex,
+        policy: &NewPolicy,
         security_context: NullessByteStr<'_>,
     ) -> Result<Self, SecurityContextError> {
         let as_str = std::str::from_utf8(security_context.as_bytes())
@@ -115,39 +115,39 @@ impl SecurityContext {
         }
 
         // Resolve the user, role, type and security levels to identifiers.
-        let user = policy_index
+        let user = policy
             .users()
             .get_by_name(user.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownUser { name: user.into() })?
             .id();
-        let role = policy_index
+        let role = policy
             .roles()
             .get_by_name(role.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownRole { name: role.into() })?
             .id();
-        let type_ = policy_index
+        let type_ = policy
             .types()
             .get_by_name(type_.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownType { name: type_.into() })?
             .id();
 
-        let low_level = MlsLevel::from_string(policy_index, low_level)?;
-        let high_level = high_level.map(|x| MlsLevel::from_string(policy_index, x)).transpose()?;
+        let low_level = MlsLevel::from_string(policy, low_level)?;
+        let high_level = high_level.map(|x| MlsLevel::from_string(policy, x)).transpose()?;
 
         Ok(Self::new(user, role, type_, low_level, high_level))
     }
 
     /// Returns this [`SecurityContext`] serialized to a byte string.
-    pub(super) fn to_string(&self, policy_index: &PolicyIndex) -> Vec<u8> {
-        let mut levels = self.low_level().to_string(policy_index);
+    pub(super) fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
+        let mut levels = self.low_level().to_string(policy);
         if let Some(high_level) = self.high_level() {
             levels.push(b'-');
-            levels.extend(high_level.to_string(policy_index));
+            levels.extend(high_level.to_string(policy));
         }
-        let type_ = policy_index.types().get_by_id(self.type_()).unwrap();
+        let type_ = policy.types().get_by_id(self.type_()).unwrap();
         let parts: [&[u8]; 4] = [
-            policy_index.users().get_by_id(self.user()).unwrap().name(),
-            policy_index.roles().get_by_id(self.role()).unwrap().name(),
+            policy.users().get_by_id(self.user()).unwrap().name(),
+            policy.roles().get_by_id(self.role()).unwrap().name(),
             type_.name(),
             levels.as_slice(),
         ];
@@ -156,8 +156,8 @@ impl SecurityContext {
 
     /// Validates that this [`SecurityContext`]'s fields are consistent with policy constraints
     /// (e.g. that the role is valid for the user).
-    pub(super) fn validate(&self, policy_index: &PolicyIndex) -> Result<(), SecurityContextError> {
-        let user = policy_index.users().get_by_id(self.user()).unwrap();
+    pub(super) fn validate(&self, policy: &NewPolicy) -> Result<(), SecurityContextError> {
+        let user = policy.users().get_by_id(self.user()).unwrap();
 
         // Check that the security context's levels are internally consistent: i.e., that the
         // high level, if any, dominates the low level. This applies to every context, including
@@ -165,31 +165,31 @@ impl SecurityContext {
         if let Some(high_level) = self.high_level() {
             if !high_level.dominates(self.low_level()) {
                 return Err(SecurityContextError::InvalidSecurityRange {
-                    low: self.low_level().to_string(policy_index).into(),
-                    high: high_level.to_string(policy_index).into(),
+                    low: self.low_level().to_string(policy).into(),
+                    high: high_level.to_string(policy).into(),
                 });
             }
         }
 
         // Validation of the user/role/type relationships is skipped for the special "object_r"
         // role, which is applied by default to non-process/socket-like resources.
-        if self.role() == policy_index.object_role() {
+        if self.role() == policy.object_role() {
             return Ok(());
         }
 
         // Validate that the selected role is valid for this user.
         if !user.roles().contains(self.role()) {
             return Err(SecurityContextError::InvalidRoleForUser {
-                role: policy_index.roles().get_by_id(self.role()).unwrap().name().into(),
+                role: policy.roles().get_by_id(self.role()).unwrap().name().into(),
                 user: user.name().into(),
             });
         }
 
         // Validate that the selected type is valid for this role.
-        let role = policy_index.roles().get_by_id(self.role()).unwrap();
+        let role = policy.roles().get_by_id(self.role()).unwrap();
         if !role.types().contains(self.type_()) {
             return Err(SecurityContextError::InvalidTypeForRole {
-                type_: policy_index.types().get_by_id(self.type_()).unwrap().name().into(),
+                type_: policy.types().get_by_id(self.type_()).unwrap().name().into(),
                 role: role.name().into(),
             });
         }
@@ -201,7 +201,7 @@ impl SecurityContext {
         // 1. Check that the security context's low level is in the valid range for the user.
         if !(self.low_level().dominates(valid_low) && valid_high.dominates(self.low_level())) {
             return Err(SecurityContextError::InvalidLevelForUser {
-                level: self.low_level().to_string(policy_index).into(),
+                level: self.low_level().to_string(policy).into(),
                 user: user.name().into(),
             });
         }
@@ -210,7 +210,7 @@ impl SecurityContext {
         if let Some(high_level) = self.high_level() {
             if !(valid_high.dominates(high_level) && high_level.dominates(valid_low)) {
                 return Err(SecurityContextError::InvalidLevelForUser {
-                    level: high_level.to_string(policy_index).into(),
+                    level: high_level.to_string(policy).into(),
                     user: user.name().into(),
                 });
             }
@@ -223,7 +223,7 @@ impl SecurityContext {
 impl MlsLevel {
     /// Parses [`MlsLevel`] from the supplied string slice.
     pub(super) fn from_string(
-        policy_index: &PolicyIndex,
+        policy: &NewPolicy,
         level: &str,
     ) -> Result<Self, SecurityContextError> {
         if level.is_empty() {
@@ -239,7 +239,7 @@ impl MlsLevel {
         }
 
         // Lookup the sensitivity, and associated categories/ranges, if any.
-        let sensitivity = policy_index
+        let sensitivity = policy
             .sensitivities()
             .get_by_name(sensitivity.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownSensitivity { name: sensitivity.into() })?
@@ -249,14 +249,14 @@ impl MlsLevel {
         if let Some(categories_str) = categories_item {
             for entry in categories_str.split(",") {
                 if let Some((low_str, high_str)) = entry.split_once(".") {
-                    let low = Self::category_id_by_name(policy_index, low_str)?;
-                    let high = Self::category_id_by_name(policy_index, high_str)?;
+                    let low = Self::category_id_by_name(policy, low_str)?;
+                    let high = Self::category_id_by_name(policy, high_str)?;
                     if high <= low {
                         return Err(SecurityContextError::InvalidSyntax);
                     }
                     categories.insert_range(low, high);
                 } else {
-                    let id = Self::category_id_by_name(policy_index, entry)?;
+                    let id = Self::category_id_by_name(policy, entry)?;
                     categories.insert(id);
                 };
             }
@@ -266,10 +266,10 @@ impl MlsLevel {
     }
 
     fn category_id_by_name(
-        policy_index: &PolicyIndex,
+        policy: &NewPolicy,
         name: &str,
     ) -> Result<CategoryId, SecurityContextError> {
-        Ok(policy_index
+        Ok(policy
             .categories()
             .get_by_name(name.as_bytes())
             .ok_or_else(|| SecurityContextError::UnknownCategory { name: name.into() })?
@@ -344,15 +344,16 @@ pub enum SecurityContextError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::new::CategorySet;
-    use super::super::{Policy, PolicyId, SensitivityId, parse_policy_by_value};
+    use super::super::{CategorySet, SensitivityId};
     use super::*;
     use std::cmp::Ordering;
 
-    fn test_policy() -> Policy {
+    fn test_policy() -> NewPolicy {
         const TEST_POLICY: &[u8] =
             include_bytes!("../../testdata/micro_policies/security_context_tests_policy");
-        parse_policy_by_value(TEST_POLICY.to_vec()).unwrap().validate().unwrap()
+        let policy = NewPolicy::parse(TEST_POLICY).unwrap();
+        policy.validate().unwrap();
+        policy
     }
 
     // CategoryItem helper for tests.
@@ -362,27 +363,27 @@ mod tests {
         high: String,
     }
 
-    fn user_name(policy: &Policy, id: UserId) -> &str {
+    fn user_name(policy: &NewPolicy, id: UserId) -> &str {
         std::str::from_utf8(policy.users().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn role_name(policy: &Policy, id: RoleId) -> &str {
+    fn role_name(policy: &NewPolicy, id: RoleId) -> &str {
         std::str::from_utf8(policy.roles().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn type_name(policy: &Policy, id: TypeId) -> &str {
+    fn type_name(policy: &NewPolicy, id: TypeId) -> &str {
         std::str::from_utf8(policy.types().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn sensitivity_name(policy: &Policy, id: SensitivityId) -> &str {
+    fn sensitivity_name(policy: &NewPolicy, id: SensitivityId) -> &str {
         std::str::from_utf8(policy.sensitivities().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn category_name(policy: &Policy, id: CategoryId) -> &str {
+    fn category_name(policy: &NewPolicy, id: CategoryId) -> &str {
         std::str::from_utf8(policy.categories().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn category_span(policy: &Policy, category: &CategorySpan) -> CategoryItem {
+    fn category_span(policy: &NewPolicy, category: &CategorySpan) -> CategoryItem {
         CategoryItem {
             low: category_name(policy, category.low()).into(),
             high: category_name(policy, category.high()).into(),
@@ -390,7 +391,7 @@ mod tests {
     }
 
     fn category_spans(
-        policy: &Policy,
+        policy: &NewPolicy,
         iter: impl Iterator<Item = CategorySpan>,
     ) -> Vec<CategoryItem> {
         iter.map(|x| category_span(policy, &x)).collect()
