@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 #[derive(Debug, RcuDroppable)]
 enum ProcessEntry {
     ThreadGroup(Weak<ThreadGroup>),
-    Zombie,
+    Zombie(Weak<Task>),
 }
 
 impl ProcessEntry {
@@ -41,6 +41,27 @@ impl PidEntry {
         self.task.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
+    /// Returns a representative [`Task`] for this process, including when the thread-group
+    /// leader has exited or the process is an unreaped zombie.
+    pub fn get_process_task(&self) -> Option<Arc<Task>> {
+        if let Ok(task) = self.get_task() {
+            return Some(task);
+        }
+        let process = self.process.read()?;
+        match &*process {
+            ProcessEntry::ThreadGroup(thread_group) => {
+                if let Some(task) = thread_group.upgrade().and_then(|tg| tg.read().first_task()) {
+                    return Some(task);
+                }
+                match &*self.process.read()? {
+                    ProcessEntry::Zombie(task) => task.upgrade(),
+                    ProcessEntry::ThreadGroup(_) => None,
+                }
+            }
+            ProcessEntry::Zombie(task) => task.upgrade(),
+        }
+    }
+
     pub fn get_process(&self) -> Option<ProcessEntryRef> {
         let process = self.process.read()?;
         match &*process {
@@ -53,7 +74,7 @@ impl PidEntry {
                     None => ProcessEntryRef::Zombie,
                 })
             }
-            ProcessEntry::Zombie => Some(ProcessEntryRef::Zombie),
+            ProcessEntry::Zombie(_) => Some(ProcessEntryRef::Zombie),
         }
     }
 
@@ -127,6 +148,44 @@ pub enum ProcessEntryRef {
 }
 
 pub type Pid = Arc<PidEntry>;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum TaskEntryScope {
+    Task,
+    ThreadGroup,
+}
+
+/// Identifies the target process or thread for a `/proc/<pid>` or `/proc/<pid>/task/<tid>` node.
+#[derive(Clone, Debug)]
+pub struct TaskContainer {
+    pub pid: Pid,
+    pub tid: Pid,
+    pub scope: TaskEntryScope,
+}
+
+impl TaskContainer {
+    pub fn from_task(task: &Task) -> Self {
+        Self { pid: task.pid.clone(), tid: task.tid.clone(), scope: TaskEntryScope::Task }
+    }
+
+    pub fn from_pid(pid: Pid) -> Self {
+        Self { tid: pid.clone(), pid, scope: TaskEntryScope::ThreadGroup }
+    }
+
+    pub fn from_thread_group(pid: Pid, tid: Pid) -> Self {
+        Self { pid, tid, scope: TaskEntryScope::ThreadGroup }
+    }
+
+    pub fn get_task(&self) -> Result<Arc<Task>, Errno> {
+        if let Ok(task) = self.tid.get_task() {
+            return Ok(task);
+        }
+        if self.scope == TaskEntryScope::ThreadGroup && self.tid == self.pid {
+            return self.pid.get_process_task().ok_or_else(|| errno!(ESRCH));
+        }
+        error!(ESRCH)
+    }
+}
 
 /// The number of reserved PIDs in Linux. When wrapping around, PID allocation restarts at this value.
 pub const RESERVED_PIDS: u32 = 300;
@@ -254,23 +313,19 @@ impl<'a> PidTableGuard<'a> {
     }
 
     /// Replace process with the specified `pid` with a zombie.
-    pub fn kill_process(&mut self, pid: &Pid) {
+    pub fn kill_process(&mut self, pid: &Pid, zombie_task: Weak<Task>) {
         let scope = RcuReadScope::new();
         debug_assert_eq!(self.idr.lookup(pid.id as u32, &scope).as_ref(), Some(pid));
         assert!(matches!(pid.process.read().as_deref(), Some(ProcessEntry::ThreadGroup(_))));
 
-        // All tasks from the process are expected to be cleared from the table before the process
-        // becomes a zombie. Cannot verify this for all tasks here, check it just for the leader.
-        assert_eq!(pid.task.strong_count(&scope), 0);
-
-        pid.process.update(Some(ProcessEntry::Zombie));
+        pid.process.update(Some(ProcessEntry::Zombie(zombie_task)));
     }
 
     pub fn remove_zombie(&mut self, pid: &Pid) {
         let scope = RcuReadScope::new();
 
         self.remove_item(pid, |entry| {
-            assert!(matches!(entry.process.read().as_deref(), Some(ProcessEntry::Zombie)));
+            assert!(matches!(entry.process.read().as_deref(), Some(ProcessEntry::Zombie(_))));
             entry.process.update(None);
         });
 

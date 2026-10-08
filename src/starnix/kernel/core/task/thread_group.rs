@@ -675,7 +675,6 @@ impl ThreadGroup {
     /// ThreadGroup are always valid as they are still valid when removed.
     pub fn remove(&self, mut pids: PidTableGuard<'_>, task: &Arc<Task>) {
         task.set_ptrace_zombie(&mut pids);
-        pids.remove_task(&task.tid);
 
         let mut state = self.write();
 
@@ -683,6 +682,7 @@ impl ThreadGroup {
             // The task has never been added. The only expected case is that this thread group
             // is not running.
             debug_assert!(!state.is_running());
+            pids.remove_task(&task.tid);
             return;
         }
 
@@ -701,14 +701,17 @@ impl ThreadGroup {
             // Detach from any ptraced zombie tasks.
             let zombie_notifications = state.zombie_ptracees.detach_all(&mut pids);
 
-            // Replace PID table entry with a zombie.
+            // Replace PID table entry with a zombie before clearing `task.tid` so that
+            // lock-free RCU readers calling `PidEntry::get_process_task()` never observe
+            // an empty `ThreadGroup` before `ProcessEntry::Zombie` is published.
             let zombie = ZombieProcess::new(
                 task.clone(),
                 state.as_ref(),
                 exit_status,
                 state.exit_signal.clone(),
             );
-            pids.kill_process(&self.leader);
+            pids.kill_process(&self.leader, Arc::downgrade(task));
+            pids.remove_task(&task.tid);
 
             let session = state.leave_process_group(&mut pids);
 
@@ -866,6 +869,7 @@ impl ThreadGroup {
 
             self.write().set_exited();
         } else {
+            pids.remove_task(&task.tid);
             // From <https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html>:
             //
             //   The "parent" in this case is considered to be the thread that created
@@ -1995,6 +1999,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
     pub fn tasks(&self) -> Vec<Arc<Task>> {
         self.tasks.iter().flat_map(|info| info.tid.get_task().ok()).collect()
+    }
+
+    pub fn first_task(&self) -> Option<Arc<Task>> {
+        self.tasks.iter().find_map(|info| info.tid.get_task().ok())
     }
 
     pub fn task_ids(&self) -> impl Iterator<Item = tid_t> + '_ {

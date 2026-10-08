@@ -14,7 +14,7 @@ use crate::mm::{
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
-use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task};
+use crate::task::{CurrentTask, ExceptionResult, PageFaultExceptionReport, Task, TaskContainer};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::dynamic_file::{
@@ -4719,13 +4719,13 @@ pub struct MemoryStats {
 #[derive(Clone)]
 pub struct ProcMapsFile {
     mm: Weak<MemoryManager>,
-    task: Weak<Task>,
+    target: TaskContainer,
 }
 impl ProcMapsFile {
-    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
+    pub fn new(task: Arc<Task>, target: TaskContainer) -> DynamicFile<Self> {
         // "maps" is empty for kthreads, rather than inaccessible.
         let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
-        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
+        DynamicFile::new(Self { mm, target })
     }
 }
 
@@ -4738,7 +4738,7 @@ impl SequenceFileSource for ProcMapsFile {
         cursor: UserAddress,
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<UserAddress>, Errno> {
-        let task = Task::from_weak(&self.task)?;
+        let task = self.target.get_task()?;
         // /proc/<pid>/maps is empty for kthreads and tasks whose memory manager has changed.
         let Some(mm) = self.mm.upgrade() else {
             return Ok(None);
@@ -4756,13 +4756,13 @@ impl SequenceFileSource for ProcMapsFile {
 #[derive(Clone)]
 pub struct ProcSmapsFile {
     mm: Weak<MemoryManager>,
-    task: Weak<Task>,
+    target: TaskContainer,
 }
 impl ProcSmapsFile {
-    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
+    pub fn new(task: Arc<Task>, target: TaskContainer) -> DynamicFile<Self> {
         // "smaps" is empty for kthreads, rather than inaccessible.
         let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
-        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
+        DynamicFile::new(Self { mm, target })
     }
 
     /// Compute the commited bytes in each memory mapping, using the `zx_mappings`.
@@ -4835,7 +4835,7 @@ impl ProcSmapsFile {
 impl DynamicFileSource for ProcSmapsFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let page_size_kb = *PAGE_SIZE / 1024;
-        let task = Task::from_weak(&self.task)?;
+        let task = self.target.get_task()?;
         // /proc/<pid>/smaps is empty for kthreads and tasks whose memory manager has changed.
         let Some(mm) = self.mm.upgrade() else {
             return Ok(());
@@ -4943,19 +4943,19 @@ impl DynamicFileSource for ProcSmapsFile {
 #[derive(Clone)]
 pub struct ProcSmapsRollupFile {
     mm: Weak<MemoryManager>,
-    task: Weak<Task>,
+    target: TaskContainer,
 }
 impl ProcSmapsRollupFile {
     // Linux 6.6 allows open() without an mm and fails with ESRCH on read(). Linux 6.11+
     // fails with ESRCH on open(). Match Linux 6.6 since Starnix targets 6.6.
-    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
+    pub fn new(task: Arc<Task>, target: TaskContainer) -> DynamicFile<Self> {
         let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
-        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
+        DynamicFile::new(Self { mm, target })
     }
 }
 impl DynamicFileSource for ProcSmapsRollupFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
-        let _task = Task::from_weak(&self.task)?;
+        let _task = self.target.get_task()?;
         let Some(mm) = self.mm.upgrade() else {
             return error!(ESRCH);
         };

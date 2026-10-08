@@ -189,12 +189,18 @@ impl FsNodeOps for ProcDirectoryNode {
             None => {
                 let pid_string = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
-                let task = current_task.get_task(pid)?;
-                let running_state = task.running_state()?;
-                let pd = running_state
-                    .proc_pid_directory_cache
-                    .get_or_init(|| pid_directory(current_task, &entry.node.fs(), &task));
-                Ok(pd.clone())
+                let pid_entry = current_task.kernel().pids.get(pid).map_err(|_| errno!(ENOENT))?;
+                let task = pid_entry.get_process_task().ok_or_else(|| errno!(ENOENT))?;
+                let dir = match task.running_state() {
+                    Ok(running_state) if task.tid == pid_entry => running_state
+                        .proc_pid_directory_cache
+                        .get_or_init(|| {
+                            pid_directory(current_task, &entry.node.fs(), &task, pid_entry)
+                        })
+                        .clone(),
+                    _ => pid_directory(current_task, &entry.node.fs(), &task, pid_entry),
+                };
+                Ok(dir)
             }
         }
     }

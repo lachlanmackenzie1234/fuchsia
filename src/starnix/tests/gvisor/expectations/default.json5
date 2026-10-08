@@ -629,7 +629,6 @@
                 "ProcSysVmMmapMinAddr.HasNumericValue",
                 "ProcSysVmOvercommitMemory.HasNumericValue",
                 "ProcSysKernelKeysMax.*",
-                "Proc.GetdentsEnoent",
                 "Proc.PidReuse",
                 "Proc.PidTidIOAccounting",
 

@@ -4,7 +4,7 @@
 
 use crate::security;
 use crate::task::{
-    CurrentTask, EventHandler, Kernel, MountsWriteToken, Pid, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, MountsWriteToken, TaskContainer, WaitCanceler, Waiter,
     register_delayed_call,
 };
 use crate::time::utc;
@@ -1052,7 +1052,7 @@ impl CurrentTask {
 }
 
 struct ProcMountsFileSource {
-    tid: Pid,
+    target: TaskContainer,
 }
 
 impl DynamicFileSource for ProcMountsFileSource {
@@ -1065,7 +1065,7 @@ impl DynamicFileSource for ProcMountsFileSource {
         // entire list in one go. Should we have a BTreeMap<u64, Weak<Mount>> in the Namespace?
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
-        let task = self.tid.get_task()?;
+        let task = self.target.get_task()?;
         let task_fs = task.fs()?;
         let root = task_fs.root();
         let ns = task_fs.namespace();
@@ -1097,9 +1097,11 @@ pub struct ProcMountsFile {
 }
 
 impl ProcMountsFile {
-    pub fn new_node(tid: Pid) -> impl FsNodeOps {
+    pub fn new_node(target: TaskContainer) -> impl FsNodeOps {
         SimpleFileNode::new(move |_| {
-            Ok(Self { dynamic_file: DynamicFile::new(ProcMountsFileSource { tid: tid.clone() }) })
+            Ok(Self {
+                dynamic_file: DynamicFile::new(ProcMountsFileSource { target: target.clone() }),
+            })
         })
     }
 }
@@ -1132,11 +1134,11 @@ impl FileOps for ProcMountsFile {
 
 #[derive(Clone)]
 pub struct ProcMountinfoFile {
-    tid: Pid,
+    target: TaskContainer,
 }
 impl ProcMountinfoFile {
-    pub fn new_node(tid: Pid) -> impl FsNodeOps {
-        DynamicFile::new_node(Self { tid })
+    pub fn new_node(target: TaskContainer) -> impl FsNodeOps {
+        DynamicFile::new_node(Self { target })
     }
 }
 impl DynamicFileSource for ProcMountinfoFile {
@@ -1165,7 +1167,7 @@ impl DynamicFileSource for ProcMountinfoFile {
         // entire list in one go. Should we have a BTreeMap<u64, Weak<Mount>> in the Namespace?
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
-        let task = self.tid.get_task()?;
+        let task = self.target.get_task()?;
         let task_fs = task.fs()?;
         let root = task_fs.root();
         let ns = task_fs.namespace();

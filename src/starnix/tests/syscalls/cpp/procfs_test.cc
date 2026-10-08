@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/fit/defer.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/fsuid.h>
@@ -10,12 +11,15 @@
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <format>
 #include <sstream>
+#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -1395,6 +1399,146 @@ TEST(ProcFilesystemsTest, Format) {
   EXPECT_TRUE(saw_proc);
   EXPECT_TRUE(saw_sysfs);
   EXPECT_TRUE(saw_ext4);
+}
+
+TEST_F(ProcfsTest, ZombieProcessStatusAccessible) {
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous exit_now = test_helper::MakeRendezvous();
+  pid_t child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    ready.poker.poke();
+    exit_now.holder.hold();
+    _exit(0);
+  }
+  auto cleanup_child = fit::defer([child_pid] {
+    kill(child_pid, SIGKILL);
+    waitpid(child_pid, nullptr, 0);
+  });
+  ready.holder.hold();
+
+  std::string child_proc_dir = fxl::StringPrintf("/proc/%d", child_pid);
+  std::string status_path = fxl::StringPrintf("/proc/%d/status", child_pid);
+
+  // Wait for the child to exit and become an unreaped zombie before looking up
+  // /proc/<pid>/status so that uncached zombie lookup in /proc is exercised.
+  exit_now.poker.poke();
+  siginfo_t info{};
+  ASSERT_THAT(waitid(P_PID, child_pid, &info, WEXITED | WNOWAIT), SyscallSucceeds());
+
+  std::string status_contents;
+  ASSERT_TRUE(files::ReadFileToString(status_path, &status_contents)) << strerror(errno);
+  EXPECT_THAT(status_contents, ContainsRegex("Name:\t"));
+  EXPECT_THAT(status_contents, ContainsRegex(fxl::StringPrintf("Pid:\t%d", child_pid)));
+  EXPECT_THAT(status_contents, ContainsRegex("State:\tZ"));
+
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  cleanup_child.cancel();
+
+  struct stat st{};
+  EXPECT_THAT(stat(child_proc_dir.c_str(), &st), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_F(ProcfsTest, LeaderlessThreadGroupAccessible) {
+  int raw_pipe[2];
+  ASSERT_THAT(pipe(raw_pipe), SyscallSucceeds());
+  fbl::unique_fd tid_pipe_read(raw_pipe[0]);
+  fbl::unique_fd tid_pipe_write(raw_pipe[1]);
+  test_helper::Rendezvous exit_worker = test_helper::MakeRendezvous();
+
+  pid_t child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    tid_pipe_read.reset();
+    int write_fd = tid_pipe_write.release();
+    test_helper::Rendezvous worker_started = test_helper::MakeRendezvous();
+    std::thread worker([write_fd, &worker_started, &exit_worker] {
+      pid_t worker_tid = static_cast<pid_t>(syscall(SYS_gettid));
+      SAFE_SYSCALL(write(write_fd, &worker_tid, sizeof(worker_tid)));
+      close(write_fd);
+      worker_started.poker.poke();
+      exit_worker.holder.hold();
+      _exit(0);
+    });
+    worker.detach();
+    worker_started.holder.hold();
+    syscall(SYS_exit, 0);
+  }
+  auto cleanup_child = fit::defer([child_pid] {
+    kill(child_pid, SIGKILL);
+    waitpid(child_pid, nullptr, 0);
+  });
+  tid_pipe_write.reset();
+
+  pid_t worker_tid = 0;
+  ASSERT_EQ(read(tid_pipe_read.get(), &worker_tid, sizeof(worker_tid)),
+            static_cast<ssize_t>(sizeof(worker_tid)));
+  tid_pipe_read.reset();
+
+  // Wait for the thread-group leader to exit. On Linux, the exited group leader remains in
+  // /proc/<pid>/task/<pid> in State: Z until the entire thread group exits; on Starnix, the
+  // exited leader's task entry is removed immediately (ENOENT).
+  std::string leader_status_path =
+      fxl::StringPrintf("/proc/%d/task/%d/status", child_pid, child_pid);
+  while (true) {
+    std::string leader_status;
+    if (!files::ReadFileToString(leader_status_path, &leader_status)) {
+      EXPECT_THAT(open(leader_status_path.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+      break;
+    }
+    if (!test_helper::IsStarnix() && leader_status.find("State:\tZ") != std::string::npos) {
+      break;
+    }
+    usleep(1000);
+  }
+
+  std::string status_path = fxl::StringPrintf("/proc/%d/status", child_pid);
+  std::string status_contents;
+  ASSERT_TRUE(files::ReadFileToString(status_path, &status_contents)) << strerror(errno);
+  EXPECT_THAT(status_contents, ContainsRegex(fxl::StringPrintf("Tgid:\t%d", child_pid)));
+  EXPECT_THAT(status_contents, ContainsRegex(fxl::StringPrintf("Pid:\t%d", child_pid)));
+
+  std::string stat_path = fxl::StringPrintf("/proc/%d/stat", child_pid);
+  std::string stat_contents;
+  ASSERT_TRUE(files::ReadFileToString(stat_path, &stat_contents)) << strerror(errno);
+  EXPECT_FALSE(stat_contents.empty());
+
+  std::string limits_path = fxl::StringPrintf("/proc/%d/limits", child_pid);
+  std::string limits_contents;
+  ASSERT_TRUE(files::ReadFileToString(limits_path, &limits_contents)) << strerror(errno);
+  EXPECT_FALSE(limits_contents.empty());
+
+  if (test_helper::IsStarnix()) {
+    std::string mounts_path = fxl::StringPrintf("/proc/%d/mounts", child_pid);
+    std::string mounts_contents;
+    ASSERT_TRUE(files::ReadFileToString(mounts_path, &mounts_contents)) << strerror(errno);
+    EXPECT_FALSE(mounts_contents.empty());
+
+    std::string mountinfo_path = fxl::StringPrintf("/proc/%d/mountinfo", child_pid);
+    std::string mountinfo_contents;
+    ASSERT_TRUE(files::ReadFileToString(mountinfo_path, &mountinfo_contents)) << strerror(errno);
+    EXPECT_FALSE(mountinfo_contents.empty());
+  }
+
+  std::string task_list_dir = fxl::StringPrintf("/proc/%d/task", child_pid);
+  std::vector<std::string> task_entries;
+  ASSERT_TRUE(files::ReadDirContents(task_list_dir, &task_entries));
+  EXPECT_EQ(std::count(task_entries.begin(), task_entries.end(), std::to_string(worker_tid)), 1);
+  if (test_helper::IsStarnix()) {
+    EXPECT_EQ(std::count(task_entries.begin(), task_entries.end(), std::to_string(child_pid)), 0);
+  }
+
+  std::string worker_status_path =
+      fxl::StringPrintf("/proc/%d/task/%d/status", child_pid, worker_tid);
+  std::string worker_status;
+  ASSERT_TRUE(files::ReadFileToString(worker_status_path, &worker_status)) << strerror(errno);
+  EXPECT_THAT(worker_status, ContainsRegex(fxl::StringPrintf("Pid:\t%d", worker_tid)));
+
+  exit_worker.poker.poke();
+  int status = 0;
+  ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceeds());
+  cleanup_child.cancel();
 }
 
 }  // namespace

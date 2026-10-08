@@ -151,9 +151,6 @@
                 // TODO(https://fxbug.dev/495916611)
                 "ProcfsTest.ProcSysNetInvalidWriteReturnsEinval",
 
-                // TODO(https://fxbug.dev/566141223)
-                "ProcTaskDirTest.PidDirNotAccessibleAfterExitWithOpenChildFd",
-
                 // TODO(https://fxbug.dev/394934526)
                 "PtraceThreadTracerTest.SiblingThreadCannotIssuePtraceCommands",
                 "PtraceThreadTracerTest.TraceeDetachesWhenTracerThreadExits",
