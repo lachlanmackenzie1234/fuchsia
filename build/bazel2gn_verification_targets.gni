@@ -20,6 +20,7 @@ bazel2gn_verification_targets = [
   "//sdk/lib/async:verify_bazel2gn",
   "//sdk/lib/component/incoming/cpp:verify_bazel2gn",
   "//sdk/lib/component/outgoing/cpp:verify_bazel2gn",
+  "//sdk/lib/device-watcher/rust:verify_bazel2gn",
   "//sdk/lib/fdio:verify_bazel2gn",
   "//sdk/lib/fidl/cpp/wire:verify_bazel2gn",
   "//sdk/lib/fidl/cpp:verify_bazel2gn",
