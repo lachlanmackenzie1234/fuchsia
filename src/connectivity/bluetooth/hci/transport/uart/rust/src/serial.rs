@@ -8,6 +8,10 @@ use fidl_next_fuchsia_hardware_serialimpl as serialimpl;
 use fuchsia_async as fasync;
 use log::error;
 
+fn unwrap_status_result<T>(result: Result<T, Result<(), zx::Status>>) -> Result<T, zx::Status> {
+    result.map_err(|status_result| status_result.err().unwrap_or(zx::Status::INTERNAL))
+}
+
 /// Encapsulates the connection to the parent `fuchsia.hardware.serialimpl.Service` device.
 #[derive(Clone)]
 pub struct SerialConnection {
@@ -36,15 +40,12 @@ impl SerialConnection {
 
         let client = client_end.spawn_on(scope);
 
-        let info_response = client.get_info().await?;
-        let info = match info_response.as_ref() {
-            Ok(resp) => resp.info,
-            Err(status_res) => {
-                let status = status_res.err().unwrap_or(zx::Status::INTERNAL);
+        let info = unwrap_status_result(client.get_info().await?)
+            .map_err(|status| {
                 error!("Serial device GetInfo failed with status: {status}");
-                return Err(DriverError::from(status));
-            }
-        };
+                DriverError::from(status)
+            })?
+            .info;
 
         if info.serial_class != serial::Class::BluetoothHci {
             error!("Serial device class ({:?}) is not BLUETOOTH_HCI", info.serial_class);
@@ -53,12 +54,10 @@ impl SerialConnection {
 
         let serial_pid = info.serial_pid;
 
-        let enable_response = client.enable(true).await?;
-        if let Err(status_res) = enable_response.as_ref() {
-            let status = status_res.err().unwrap_or(zx::Status::INTERNAL);
+        unwrap_status_result(client.enable(true).await?).map_err(|status| {
             error!("Serial device Enable failed with status: {status}");
-            return Err(DriverError::from(status));
-        }
+            DriverError::from(status)
+        })?;
 
         Ok(Self { client, serial_pid })
     }
@@ -70,14 +69,32 @@ impl SerialConnection {
 
     /// Cancels all pending operations on the serial device.
     pub async fn cancel_all(&self) {
-        if let Err(e) = self.client.cancel_all().await {
-            error!("Failed to cancel all pending serial operations: {e:?}");
+        if let Err(fidl_error) = self.client.cancel_all().await {
+            error!("Failed to cancel all pending serial operations: {fidl_error:?}");
         }
     }
 
     /// Closes the underlying FIDL client connection.
     pub fn close(&self) {
         self.client.close();
+    }
+
+    /// Reads data from the serial port.
+    pub async fn read(&self) -> Result<Vec<u8>, zx::Status> {
+        let response = self.client.read().await.map_err(|fidl_error| {
+            error!("Serial read failed with FIDL error: {fidl_error:?}");
+            zx::Status::INTERNAL
+        })?;
+        Ok(unwrap_status_result(response)?.data)
+    }
+
+    /// Writes data to the serial port.
+    pub async fn write(&self, data: &[u8]) -> Result<(), zx::Status> {
+        let response = self.client.write(data).await.map_err(|fidl_error| {
+            error!("Serial write failed with FIDL error: {fidl_error:?}");
+            zx::Status::INTERNAL
+        })?;
+        unwrap_status_result(response)
     }
 }
 
@@ -89,6 +106,9 @@ impl std::fmt::Debug for SerialConnection {
     }
 }
 
+// Child vendor drivers (e.g., Broadcom) connect to `fuchsia.hardware.serialimpl.Device` only to
+// query device info (`GetInfo`) and reconfigure baud rate (`Config`). Packet I/O (`Enable`, `Read`,
+// `Write`) is owned by `bt-transport-uart` and intentionally returns `NOT_SUPPORTED`.
 impl serialimpl::DeviceServerHandler<fdf_fidl::DriverChannel> for SerialConnection {
     async fn get_info(
         &mut self,
@@ -108,20 +128,23 @@ impl serialimpl::DeviceServerHandler<fdf_fidl::DriverChannel> for SerialConnecti
         responder: fidl_next::Responder<serialimpl::device::Config, fdf_fidl::DriverChannel>,
     ) {
         let payload = request.payload();
-        let res = self.client.config(payload.baud_rate, payload.flags).await;
-        let Ok(response) = res else {
-            let err = res.unwrap_err();
-            error!("Config request failed with FIDL error: {err:?}");
-            let status = DriverError::from(err).log_to_status();
-            let _ = responder.respond_err(status).await;
-            return;
+        let response = match self.client.config(payload.baud_rate, payload.flags).await {
+            Ok(response) => response,
+            Err(fidl_error) => {
+                error!("Config request failed with FIDL error: {fidl_error:?}");
+                let status = DriverError::from(fidl_error).log_to_status();
+                let _ = responder.respond_err(status).await;
+                return;
+            }
         };
-        if let Err(status_res) = response.as_ref() {
-            let status = status_res.err().unwrap_or(zx::Status::INTERNAL);
-            error!("Config request failed with status: {status}");
-            let _ = responder.respond_err(status).await;
-        } else {
-            let _ = responder.respond(()).await;
+        match unwrap_status_result(response) {
+            Ok(()) => {
+                let _ = responder.respond(()).await;
+            }
+            Err(status) => {
+                error!("Config request failed with status: {status}");
+                let _ = responder.respond_err(status).await;
+            }
         }
     }
 
