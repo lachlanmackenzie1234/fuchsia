@@ -19,6 +19,7 @@ rustc_library("rust") {
     "src/inject/offset.rs",
     "src/inject/passthrough.rs",
     "src/inject/range_override.rs",
+    "src/inject/registry.rs",
     "src/lib.rs",
     "src/operand.rs",
   ]

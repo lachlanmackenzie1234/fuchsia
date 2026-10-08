@@ -66,6 +66,7 @@ mod dispatch;
 mod offset;
 mod passthrough;
 mod range_override;
+mod registry;
 
 pub use after_store::AfterStore;
 pub use dispatch::{
@@ -75,6 +76,7 @@ pub use dispatch::{
 pub use offset::Offset;
 pub use passthrough::Passthrough;
 pub use range_override::{MaybeVmoMemoryHandler, RangeOverride};
+pub use registry::{BaseRegistry, Registry, RegistryHandler, ScopedRegistry, StrictRegistry};
 
 #[cfg(test)]
 use range_override::MockMaybeVmoMemoryHandler;
