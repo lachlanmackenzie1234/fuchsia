@@ -62,6 +62,15 @@ def test_cml_format_unbuilt_tool():
         "Tool 'cmc' has not been built yet.",
     )
 
+def test_cml_format_no_cml_files():
+    res = testing.run(
+        _cml_format,
+        files = _tool_paths("cmc", built = False) | {
+            "README.md": "",
+        },
+    )
+    asserts.eq(res.findings, ())
+
 def test_cml_format_missing_tool():
     asserts.fails(
         lambda: testing.run(
