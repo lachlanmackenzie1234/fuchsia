@@ -288,6 +288,69 @@
                 ],
             },
             {
+                // Gives access to executable package handles which can bypass VX security policy.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.component.resolution.Resolver-full",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Gives access to executable package handles which can bypass VX security policy.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.PackageResolver-full",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Write files to blobfs.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.PackageResolver-ota",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Writes files to blobfs.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.internal.OtaDownloader",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Writes files to blobfs.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.resolution.PackageResolver",
+                capability: "protocol",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Gives access to executable package handles which can bypass VX security policy.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "full_resolver",
+                capability: "resolver",
+                target_monikers: [],
+            },
+            {
                 // We restrict access to Resolver because it gives direct access to package
                 // handles which provide executability which bypasses VX security policy.
                 source_moniker: "/core/pkg-resolver",
