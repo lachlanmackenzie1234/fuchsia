@@ -1082,6 +1082,16 @@ impl InputEventsRelay {
     ) {
         match request {
             fuiinput::DeviceListenerRequest::OnDeviceChanged { event, control_handle: _ } => {
+                let action = match event.action {
+                    Some(fuiinput::Action::Added) => "add",
+                    Some(fuiinput::Action::Removed) => "remove",
+                    _ => "unknown",
+                };
+                fuchsia_trace::duration!(
+                    "input",
+                    "starnix_process_device_changed",
+                    "action" => action
+                );
                 match event.action {
                     Some(fuiinput::Action::Added) => {
                         let (Some(device_id), Some(descriptor)) =
