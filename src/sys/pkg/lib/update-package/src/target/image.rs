@@ -5,8 +5,8 @@
 use thiserror::Error;
 use zx_status::Status;
 
-#[cfg(target_os = "fuchsia")]
-use {fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
 
 /// An error encountered while opening an image.
 #[derive(Debug, Error)]
@@ -33,7 +33,6 @@ pub enum OpenImageError {
     CloneBuffer { path: String, status: Status },
 }
 
-#[cfg(target_os = "fuchsia")]
 /// Opens the given `path` as a resizable VMO buffer and returns the buffer on success.
 pub(crate) async fn open_from_path(
     proxy: &fio::DirectoryProxy,
