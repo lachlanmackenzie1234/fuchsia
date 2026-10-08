@@ -650,9 +650,10 @@ class IPerfServerOverSsh(IPerfServerBase):
             self.stop()
         self._ssh_session.close()
 
-    def get_systemd_journal(self) -> str:
+    def get_systemd_journal(self) -> str | None:
+        """Get systemd journal logs from this current boot, or None if unavailable."""
         if not self._journalctl:
-            return "journalctl not available"
+            return None
 
         return self._journalctl.logs()
 
@@ -667,16 +668,17 @@ class IPerfServerOverSsh(IPerfServerBase):
         )
 
         # OpenWrt does not use systemd/journalctl; skip downloading when journalctl is unavailable
-        # to avoid writing placeholder 'journalctl not available' files.
+        # to avoid writing placeholder empty or unavailable log files.
         systemd_journal = self.get_systemd_journal()
-        if systemd_journal and systemd_journal != "journalctl not available":
-            systemd_journal_path = os.path.join(
-                path, f"iperf_systemd_{timestamp}.log"
-            )
-            with open(systemd_journal_path, "a", encoding="utf-8") as f:
-                f.write(systemd_journal)
-            self.log.info(f"Wrote systemd journal to {systemd_journal_path}")
-        else:
+        if not systemd_journal:
             self.log.debug(
                 "Systemd journal not available on this device; skipping."
             )
+            return
+
+        systemd_journal_path = os.path.join(
+            path, f"iperf_systemd_{timestamp}.log"
+        )
+        with open(systemd_journal_path, "a", encoding="utf-8") as f:
+            f.write(systemd_journal)
+        self.log.info(f"Wrote systemd journal to {systemd_journal_path}")

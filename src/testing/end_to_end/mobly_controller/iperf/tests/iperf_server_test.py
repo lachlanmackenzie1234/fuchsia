@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest import mock
 
@@ -17,6 +18,7 @@ from iperf.iperf_server import (
 )
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig
+from mobly import logger
 
 MOCK_LOGFILE_PATH = "/tmp/mock_iperf_log.log"
 
@@ -289,9 +291,7 @@ class IPerfServerOverSshTest(unittest.TestCase):
             )
             self.assertIsNone(server._nmcli)
             self.assertIsNone(server._journalctl)
-            self.assertEqual(
-                server.get_systemd_journal(), "journalctl not available"
-            )
+            self.assertIsNone(server.get_systemd_journal())
 
     @mock.patch("builtins.open")
     def test_openwrt_one_start_stop_with_killall(
@@ -484,6 +484,79 @@ class IPerfServerOverSshTest(unittest.TestCase):
             self.assertEqual(logs, "systemd journal log output")
             mock_journal.logs.assert_called_once()
             self.assertIs(server._journalctl, mock_journal)
+
+    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch(
+        "iperf.iperf_server.utils.get_current_epoch_time",
+        return_value=1234567890000,
+    )
+    def test_download_logs_writes_file_when_journal_available(
+        self, _mock_time: mock.Mock, mock_open: mock.Mock
+    ) -> None:
+        """Verifies download_logs writes systemd journal to disk when journal is available."""
+        ssh_cfg = self._create_ssh_settings(user="root")
+        mock_ssh = mock.create_autospec(connection.SshConnection)
+
+        with mock.patch(
+            "libs.commands.command.LinuxCommand.available", return_value=True
+        ), mock.patch(
+            "antlion.utils.get_interface_based_on_ip", return_value="eth1"
+        ):
+            server = IPerfServerOverSsh(
+                ssh_settings=ssh_cfg,
+                port=5201,
+                test_interface="eth0",
+                ssh_session=mock_ssh,
+            )
+            mock_journal = mock.Mock()
+            mock_journal.logs.return_value = "systemd journal log output"
+            server._journalctl = mock_journal
+
+            with mock.patch.object(server.log, "info") as mock_log_info:
+                server.download_logs("/tmp/logs")
+                expected_timestamp = logger.normalize_log_line_timestamp(
+                    logger.epoch_to_log_line_timestamp(1234567890000)
+                )
+                expected_path = os.path.join(
+                    "/tmp/logs", f"iperf_systemd_{expected_timestamp}.log"
+                )
+                mock_open.assert_called_once_with(
+                    expected_path, "a", encoding="utf-8"
+                )
+                handle = mock_open()
+                handle.write.assert_called_once_with(
+                    "systemd journal log output"
+                )
+                mock_log_info.assert_called_once_with(
+                    f"Wrote systemd journal to {expected_path}"
+                )
+
+    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    def test_download_logs_skips_when_journal_unavailable(
+        self, mock_open: mock.Mock
+    ) -> None:
+        """Verifies download_logs skips writing to disk when journalctl is unavailable."""
+        ssh_cfg = self._create_ssh_settings(user="root")
+        mock_ssh = mock.create_autospec(connection.SshConnection)
+
+        with mock.patch(
+            "libs.commands.command.LinuxCommand.available", return_value=False
+        ):
+            server = IPerfServerOverSsh(
+                ssh_settings=ssh_cfg,
+                port=5201,
+                test_interface="lan",
+                use_killall=True,
+                ssh_session=mock_ssh,
+            )
+            self.assertIsNone(server.get_systemd_journal())
+
+            with mock.patch.object(server.log, "debug") as mock_log_debug:
+                server.download_logs("/tmp/logs")
+                mock_open.assert_not_called()
+                mock_log_debug.assert_called_once_with(
+                    "Systemd journal not available on this device; skipping."
+                )
 
 
 if __name__ == "__main__":
