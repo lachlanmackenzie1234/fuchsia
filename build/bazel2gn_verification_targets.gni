@@ -56,6 +56,7 @@ bazel2gn_verification_targets = [
   "//src/connectivity/bluetooth/lib/vigil:verify_bazel2gn",
   "//src/connectivity/bluetooth/testing/test-harness-macro:verify_bazel2gn",
   "//src/connectivity/bluetooth/testing/test-harness:verify_bazel2gn",
+  "//src/connectivity/network/lib/oneshot-sync:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",
   "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
   "//src/developer/debug/ipc:verify_bazel2gn",
