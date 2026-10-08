@@ -10,7 +10,6 @@ from typing import Literal, NamedTuple, cast
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.regulatory_channels import (
@@ -142,7 +141,9 @@ class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         Raises:
             ConnectionError if network is not started successfully.
         """
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
         if self.openwrt_ap:
             band = Band.BAND_2G if channel <= MAX_2_4_CHANNEL else Band.BAND_5G
             bw_literal = cast(Literal[20, 40, 80, 160, 320], channel_bandwidth)

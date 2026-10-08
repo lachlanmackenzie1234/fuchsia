@@ -19,7 +19,6 @@ from antlion.controllers.attenuator import (
     get_attenuators_for_device,
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.utils import rand_ascii_str
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from iperf.iperf_server import IPerfResult
 from libs.validation import MapValidator
@@ -640,7 +639,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
             return 0
 
     def _test_rvr(self, t: TestParams) -> None:
-        ssid = rand_ascii_str(20)
+        ssid = AccessPointConfig.random_string(20)
         if self.access_point:
             self.access_point.stop_all_aps()
         results = self.run_rvr(

@@ -6,6 +6,7 @@
 from antlion import utils
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from mobly import utils as mobly_utils
 
 
 def generate_random_password(
@@ -25,7 +26,7 @@ def generate_random_password(
     if hex:
         generator_func = utils.rand_hex_str
     else:
-        generator_func = utils.rand_ascii_str
+        generator_func = mobly_utils.rand_ascii_str
 
     if length:
         return generator_func(length)

@@ -59,7 +59,7 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         iface = await self.phy.create_client_iface()
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         if self.openwrt_ap:
             self.openwrt_ap.configure_wifi(
                 AccessPointConfig(

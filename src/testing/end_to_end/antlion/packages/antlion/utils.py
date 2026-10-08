@@ -35,8 +35,6 @@ FUCHSIA_MDNS_TYPE = "_fuchsia._udp.local."
 # assigning an IPv6 address.
 DAD_TIMEOUT_SEC = 30
 
-ascii_letters_and_digits = string.ascii_letters + string.digits
-
 
 def get_current_epoch_time() -> int:
     """Current epoch time in milliseconds.
@@ -45,20 +43,6 @@ def get_current_epoch_time() -> int:
         An integer representing the current epoch time in milliseconds.
     """
     return int(round(time.time() * 1000))
-
-
-def rand_ascii_str(length: int) -> str:
-    """Generates a random string of specified length, composed of ascii letters
-    and digits.
-
-    Args:
-        length: The number of characters in the string.
-
-    Returns:
-        The random string generated.
-    """
-    letters = [random.choice(ascii_letters_and_digits) for i in range(length)]
-    return "".join(letters)
 
 
 def rand_hex_str(length: int) -> str:

@@ -15,7 +15,6 @@ from typing import Any, Iterator
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
-from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
@@ -205,7 +204,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         ssid = (
             preset_ssid
             if preset_ssid
-            else utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+            else AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         )
         security = DeprecatedSecurity(security_mode=SecurityMode.OPEN)
         ap_channel = (
@@ -561,8 +560,8 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         )
 
     async def test_start_sched_scan_with_multiple_ssids(self) -> None:
-        ssid_a = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        ssid_b = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid_a = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
+        ssid_b = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         logger.info(f"Setting up APs with SSIDs: {ssid_a} and {ssid_b}")
         ap = self.access_point()
         if isinstance(ap, OpenWrtAP):
@@ -668,7 +667,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_start_sched_scan_with_scan_plans(self) -> None:
         """Verify that scan plans execute at the requested multi-tiered intervals."""
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         iface_index = await self._query_iface_index()
 
         match_attr = build_nla(
@@ -781,8 +780,8 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_pno_multiple_ssids_match(self) -> None:
         """Verify that discovering a newly matched SSID triggers a scheduled scan event."""
-        ssid_a = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        ssid_b = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid_a = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
+        ssid_b = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
 
         # Setup SSID A
         logger.info(f"Setting up initial AP with SSID: {ssid_a}")

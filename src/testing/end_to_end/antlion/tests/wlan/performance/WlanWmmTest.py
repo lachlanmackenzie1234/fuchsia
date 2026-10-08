@@ -9,7 +9,7 @@ import operator
 import time
 from typing import Any
 
-from antlion import context, utils
+from antlion import context
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -238,7 +238,7 @@ class WlanWmmTest(base_test.WifiBaseTest):
         # Defaults for required parameters
         ap_parameters["force_wmm"] = True
         if "ssid" not in ap_parameters:
-            ap_parameters["ssid"] = utils.rand_ascii_str(
+            ap_parameters["ssid"] = AccessPointConfig.random_string(
                 hostapd_constants.AP_SSID_LENGTH_2G
             )
 

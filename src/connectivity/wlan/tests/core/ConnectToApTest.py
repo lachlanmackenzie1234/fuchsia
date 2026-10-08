@@ -6,7 +6,6 @@ import logging
 
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
@@ -60,7 +59,7 @@ class ConnectToApTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self, security: Security, password: str | None
     ) -> None:
         iface = await self.phy.create_client_iface()
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         if self.openwrt_ap:
             self.openwrt_ap.configure_wifi(
                 AccessPointConfig(

@@ -12,7 +12,7 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.utils import get_addr, rand_ascii_str
+from antlion.utils import get_addr
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
@@ -104,8 +104,12 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def test_suspend_resume(self) -> None:
         # Start AP
-        ssid = rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
-        password = rand_ascii_str(hostapd_constants.AP_PASSPHRASE_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(
+            hostapd_constants.AP_SSID_LENGTH_2G
+        )
+        password = AccessPointConfig.random_string(
+            hostapd_constants.AP_PASSPHRASE_LENGTH_2G
+        )
         security = SecurityWpa2()
         security_type = security.to_fidl_wlan_policy()
 
