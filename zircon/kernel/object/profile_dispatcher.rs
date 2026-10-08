@@ -65,9 +65,9 @@ fn parse_memory_priority(info: &zx_profile_info_t) -> Result<MemoryPriority, Sta
     // SAFETY: info.flags has ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY set.
     let priority = unsafe { info.zx_profile_info_union.priority_params.priority };
     if priority == ZX_PRIORITY_HIGH {
-        Ok(MemoryPriority::HIGH)
+        Ok(MemoryPriority::High)
     } else if priority == ZX_PRIORITY_DEFAULT {
-        Ok(MemoryPriority::DEFAULT)
+        Ok(MemoryPriority::Default)
     } else {
         Err(Status::INVALID_ARGS)
     }

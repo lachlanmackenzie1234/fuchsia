@@ -661,7 +661,7 @@ mod aspace_rs {
             c"test vmar",
         ));
 
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         let (vmo, _) = unwrap_ok!(make_committed_pager_vmo::<1>(false, false));
@@ -712,7 +712,7 @@ mod aspace_rs {
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
 
         // Remove priority and validate.
-        expect_ok!(vmar.set_memory_priority(MemoryPriority::DEFAULT));
+        expect_ok!(vmar.set_memory_priority(MemoryPriority::Default));
 
         expect_false!(childp.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
         expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -733,7 +733,7 @@ mod aspace_rs {
             c"test vmar",
         ));
 
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2));
@@ -818,7 +818,7 @@ mod aspace_rs {
         ));
 
         // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -850,7 +850,7 @@ mod aspace_rs {
 
         // Change the priority of the sub vmar. It should not effect the original vmar / vmo
         // priority.
-        let status = sub_vmar.set_memory_priority(MemoryPriority::DEFAULT);
+        let status = sub_vmar.set_memory_priority(MemoryPriority::Default);
         expect_ok!(status);
         expect_false!(vmo2.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -890,7 +890,7 @@ mod aspace_rs {
         ));
         let mapping = mapping_result.mapping;
 
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -949,7 +949,7 @@ mod aspace_rs {
         ));
 
         // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -1025,7 +1025,7 @@ mod aspace_rs {
             c"test vmar",
         ));
 
-        let status = vmar.set_memory_priority(MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(MemoryPriority::High);
         expect_ok!(status);
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 2));
@@ -1053,12 +1053,12 @@ mod aspace_rs {
         expect_true!(slicep.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
 
         // Change priority of the VMAR should remove from the VMO.
-        expect_ok!(vmar.set_memory_priority(MemoryPriority::DEFAULT));
+        expect_ok!(vmar.set_memory_priority(MemoryPriority::Default));
         expect_false!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
         expect_false!(aspace.is_high_memory_priority());
 
         // Re-enable priority and verify.
-        expect_ok!(vmar.set_memory_priority(MemoryPriority::HIGH));
+        expect_ok!(vmar.set_memory_priority(MemoryPriority::High));
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
         expect_true!(slicep.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
         expect_true!(aspace.is_high_memory_priority());
@@ -1112,7 +1112,7 @@ mod aspace_rs {
             c"test-mapping",
         ));
 
-        let status = vmar.set_memory_priority(vmar::MemoryPriority::HIGH);
+        let status = vmar.set_memory_priority(vmar::MemoryPriority::High);
         expect_ok!(status);
 
         let force_result = mapping_result.mapping.force_writable();

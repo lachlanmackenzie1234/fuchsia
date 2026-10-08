@@ -55,8 +55,62 @@ pub mod flag {
 
 /// Memory priorities that can be applied to VMARs and mappings to propagate to VMOs and page
 /// tables.
-pub type MemoryPriority = bindings::VmAddressRegionOrMapping_MemoryPriority;
-pub type VmAddressRegionOpChildren = bindings::VmAddressRegionOpChildren;
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryPriority {
+    /// Default overcommit priority where reclamation is allowed.
+    Default = 0,
+    /// High priority prevents all reclamation.
+    High = 1,
+}
+
+zr::static_assert!(
+    core::mem::size_of::<MemoryPriority>()
+        == core::mem::size_of::<bindings::VmAddressRegionOrMapping_MemoryPriority>()
+);
+zr::static_assert!(
+    MemoryPriority::Default as u8
+        == bindings::VmAddressRegionOrMapping_MemoryPriority::DEFAULT as u8
+);
+zr::static_assert!(
+    MemoryPriority::High as u8 == bindings::VmAddressRegionOrMapping_MemoryPriority::HIGH as u8
+);
+
+impl From<MemoryPriority> for bindings::VmAddressRegionOrMapping_MemoryPriority {
+    fn from(priority: MemoryPriority) -> Self {
+        match priority {
+            MemoryPriority::Default => Self::DEFAULT,
+            MemoryPriority::High => Self::HIGH,
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmAddressRegionOpChildren {
+    Yes = 0,
+    No = 1,
+}
+
+zr::static_assert!(
+    core::mem::size_of::<VmAddressRegionOpChildren>()
+        == core::mem::size_of::<bindings::VmAddressRegionOpChildren>()
+);
+zr::static_assert!(
+    VmAddressRegionOpChildren::Yes as u8 == bindings::VmAddressRegionOpChildren::Yes as u8
+);
+zr::static_assert!(
+    VmAddressRegionOpChildren::No as u8 == bindings::VmAddressRegionOpChildren::No as u8
+);
+
+impl From<VmAddressRegionOpChildren> for bindings::VmAddressRegionOpChildren {
+    fn from(op_children: VmAddressRegionOpChildren) -> Self {
+        match op_children {
+            VmAddressRegionOpChildren::Yes => Self::Yes,
+            VmAddressRegionOpChildren::No => Self::No,
+        }
+    }
+}
 pub type RangeOpType = bindings::VmAddressRegion_RangeOpType;
 pub type UnmapOptions = bindings::VmMapping_UnmapOptions;
 
@@ -228,7 +282,7 @@ impl VmAddressRegion {
     pub fn set_memory_priority(&self, priority: MemoryPriority) -> Result<(), Status> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
         Status::ok(unsafe {
-            bindings::cpp_vm_address_region_set_memory_priority(self.as_ffi_ptr(), priority)
+            bindings::cpp_vm_address_region_set_memory_priority(self.as_ffi_ptr(), priority.into())
         })
     }
 
@@ -245,7 +299,12 @@ impl VmAddressRegion {
     ) -> Result<(), Status> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
         Status::ok(unsafe {
-            bindings::cpp_vm_address_region_unmap(self.as_ffi_ptr(), base.0, size, op_children)
+            bindings::cpp_vm_address_region_unmap(
+                self.as_ffi_ptr(),
+                base.0,
+                size,
+                op_children.into(),
+            )
         })
     }
 
@@ -264,7 +323,7 @@ impl VmAddressRegion {
                 base.0,
                 size,
                 new_arch_mmu_flags,
-                op_children,
+                op_children.into(),
             )
         })
     }
@@ -286,7 +345,7 @@ impl VmAddressRegion {
                 op,
                 base.0,
                 len,
-                op_children,
+                op_children.into(),
                 buffer.as_ptr().cast(),
                 buffer_size,
             )
