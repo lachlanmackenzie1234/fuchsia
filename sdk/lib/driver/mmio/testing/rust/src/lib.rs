@@ -9,9 +9,11 @@
 //! See the [`inject`] module for details on the dependency-injection patterns
 //! provided by this crate.
 
+mod atomic;
 mod cached_vmo;
 pub mod inject;
 mod operand;
 
+pub use atomic::AtomicMmio;
 pub use cached_vmo::CachedVmoMemory;
 pub use operand::MmioOperand;

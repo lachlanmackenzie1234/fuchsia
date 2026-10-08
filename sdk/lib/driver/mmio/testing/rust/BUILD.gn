@@ -12,6 +12,7 @@ rustc_library("rust") {
   with_unit_tests = true
 
   sources = [
+    "src/atomic.rs",
     "src/cached_vmo.rs",
     "src/inject.rs",
     "src/inject/after_store.rs",
@@ -20,6 +21,7 @@ rustc_library("rust") {
     "src/inject/passthrough.rs",
     "src/inject/range_override.rs",
     "src/inject/registry.rs",
+    "src/inject/w1c.rs",
     "src/lib.rs",
     "src/operand.rs",
   ]
