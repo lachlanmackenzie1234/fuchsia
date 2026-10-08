@@ -58,16 +58,43 @@ pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
         create_battery_profile_device,
     )?;
 
-    // /sys/bus/iio/devices/iio:device
-    let iio = registry.objects.get_or_create_bus("iio".into());
-    registry.add_bus_device(
-        "iio:device0".into(),
-        /* parent = */ None,
-        iio.clone(),
-        |device, dir| build_iio0_directory(device, &proxy, dir),
+    let soc = registry.objects.soc_device();
+    let platform_bus = registry.objects.platform_bus();
+    let spmi = registry.add_bus_device(
+        "1c40000.qcom,spmi".into(),
+        Some(soc),
+        platform_bus.clone(),
+        build_device_directory,
+    );
+    let spmi_bus = registry.objects.get_or_create_bus("spmi".into());
+    let spmi_0 = registry.add_bus_device(
+        "spmi-0".into(),
+        Some(spmi),
+        spmi_bus.clone(),
+        build_device_directory,
+    );
+    let spmi_0_00 =
+        registry.add_bus_device("0-00".into(), Some(spmi_0), spmi_bus, build_device_directory);
+    let smblite = registry.add_bus_device(
+        "1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite".into(),
+        Some(spmi_0_00.clone()),
+        platform_bus.clone(),
+        build_device_directory,
+    );
+    let qbg = registry.add_bus_device(
+        "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
+        Some(spmi_0_00),
+        platform_bus,
+        build_device_directory,
     );
 
-    registry.add_bus_device("iio:device1".into(), /* parent = */ None, iio, |device, dir| {
+    // /sys/bus/iio/devices/iio:device{0,1}
+    let iio = registry.objects.get_or_create_bus("iio".into());
+    registry.add_bus_device("iio:device0".into(), Some(smblite), iio.clone(), |device, dir| {
+        build_iio0_directory(device, &proxy, dir)
+    });
+
+    registry.add_bus_device("iio:device1".into(), Some(qbg), iio, |device, dir| {
         build_iio1_directory(device, &proxy, dir)
     });
 

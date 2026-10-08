@@ -296,53 +296,6 @@ impl SysFs {
                 dir.subdir("cpu", dir_mode, |dir| build_cpu_class_directory(kernel, dir));
             });
             dir.subdir("leds", dir_mode, |_dir| {});
-            dir.subdir("platform", dir_mode, |dir| {
-                dir.subdir("soc", dir_mode, |dir| {
-                    dir.subdir("1c40000.qcom,spmi", dir_mode, |dir| {
-                        dir.subdir("spmi-0", dir_mode, |dir| {
-                            dir.subdir("0-00", dir_mode, |dir| {
-                                dir.subdir(
-                                    "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00",
-                                    dir_mode,
-                                    |dir| {
-                                        dir.subdir("iio:device3", dir_mode, |dir| {
-                                            dir.entry(
-                                                "in_resistance_resistance_id_input",
-                                                StubEmptyFile::new_node(bug_ref!(
-                                                    "https://fxbug.dev/452096300"
-                                                )),
-                                                mode!(IFREG, 0o444),
-                                            );
-                                        });
-                                    },
-                                );
-                            });
-                        });
-                    });
-                    dir.subdir("5e00000.qcom,mdss_mdp", dir_mode, |dir| {
-                        dir.subdir("drm", dir_mode, |dir| {
-                            dir.subdir("card0", dir_mode, |dir| {
-                                dir.subdir("sde-conn-0-DSI-1", dir_mode, |dir| {
-                                    dir.entry(
-                                        "display_power_state",
-                                        StubEmptyFile::new_node(bug_ref!(
-                                            "https://fxbug.dev/452096300"
-                                        )),
-                                        mode!(IFREG, 0o644),
-                                    );
-                                    dir.entry(
-                                        "panel_power_state",
-                                        StubEmptyFile::new_node(bug_ref!(
-                                            "https://fxbug.dev/452096300"
-                                        )),
-                                        mode!(IFREG, 0o644),
-                                    );
-                                });
-                            });
-                        });
-                    });
-                });
-            });
             dir.subdir("soc0", dir_mode, |dir| {
                 dir.entry(
                     "revision",
@@ -398,4 +351,53 @@ pub fn get_sysfs(kernel: &Kernel) -> FileSystemHandle {
         .get_or_init(|| SysFsHandle(SysFs::new_fs(kernel, FileSystemOptions::default())))
         .0
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::spawn_kernel_and_run;
+    use std::sync::Arc;
+
+    #[::fuchsia::test]
+    async fn sysfs_registers_platform_and_soc_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let objects = &current_task.kernel().device_registry.objects;
+            let root = &objects.root;
+
+            let soc_uevent = root
+                .lookup("devices/platform/soc/uevent".into())
+                .expect("soc uevent node should exist");
+            // Calling soc_device() again should return the cached Device without replacing its
+            // sysfs entries.
+            let _soc = objects.soc_device();
+            let soc_uevent_after = root
+                .lookup("devices/platform/soc/uevent".into())
+                .expect("soc uevent node should still exist");
+            assert!(Arc::ptr_eq(&soc_uevent, &soc_uevent_after));
+
+            assert!(root.lookup("devices/platform/uevent".into()).is_some());
+            assert!(root.lookup("bus/platform/devices/soc".into()).is_some());
+            assert!(root.lookup("bus/platform/devices/1c40000.qcom,spmi".into()).is_some());
+            assert!(root.lookup("bus/spmi/devices/spmi-0".into()).is_some());
+            assert!(root.lookup("bus/spmi/devices/0-00".into()).is_some());
+            assert!(root.lookup("bus/iio/devices/iio:device3".into()).is_some());
+            assert!(
+                root.lookup(
+                    "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00/iio:device3/in_resistance_resistance_id_input"
+                        .into(),
+                )
+                .is_some()
+            );
+            assert!(root.lookup("class/drm/card0".into()).is_some());
+            assert!(root.lookup("class/drm/sde-conn-0-DSI-1".into()).is_some());
+            assert!(
+                root.lookup(
+                    "devices/platform/soc/5e00000.qcom,mdss_mdp/drm/card0/sde-conn-0-DSI-1/display_power_state"
+                        .into(),
+                )
+                .is_some()
+            );
+        })
+        .await;
+    }
 }

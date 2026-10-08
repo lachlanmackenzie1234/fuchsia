@@ -7,7 +7,10 @@ use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, Subsystem};
 use crate::fs::sysfs::{build_device_directory, get_sysfs};
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
+use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FileSystemHandle, FsStr, FsString};
+use starnix_logging::bug_ref;
+use starnix_uapi::file_mode::mode;
 use std::sync::{Arc, OnceLock};
 
 /// Owner of all the KObjects in sysfs.
@@ -26,11 +29,91 @@ pub struct KObjectStore {
 
     /// Root `/sys/devices/platform` device.
     platform_device: OnceLock<Device>,
+
+    /// Root `/sys/devices/platform/soc` bus device.
+    soc_device: OnceLock<Device>,
 }
 
 impl KObjectStore {
     pub fn init(&self, kernel: &Kernel) {
         self.fs.set(get_sysfs(kernel)).unwrap();
+        self.register_initial_devices(kernel);
+    }
+
+    fn register_initial_devices(&self, kernel: &Kernel) {
+        let registry = &kernel.device_registry;
+
+        // Board / SoC-specific stub device registrations.
+        // TODO(https://fxbug.dev/452096300): Replace hardcoded board/SoC stub devices with dynamic
+        // device configuration.
+        let platform_bus = self.platform_bus();
+        let soc = self.soc_device();
+
+        // TODO(https://fxbug.dev/452096300): Stub Qualcomm SPMI PMIC and battery gauge IIO device.
+        let spmi = registry.add_bus_device(
+            "1c40000.qcom,spmi".into(),
+            Some(soc.clone()),
+            platform_bus.clone(),
+            build_device_directory,
+        );
+        let spmi_bus = self.get_or_create_bus("spmi".into());
+        let spmi_0 = registry.add_bus_device(
+            "spmi-0".into(),
+            Some(spmi),
+            spmi_bus.clone(),
+            build_device_directory,
+        );
+        let spmi_0_00 =
+            registry.add_bus_device("0-00".into(), Some(spmi_0), spmi_bus, build_device_directory);
+        let qbg = registry.add_bus_device(
+            "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
+            Some(spmi_0_00),
+            platform_bus.clone(),
+            build_device_directory,
+        );
+        let iio_bus = self.get_or_create_bus("iio".into());
+        registry.add_bus_device("iio:device3".into(), Some(qbg), iio_bus, |device, dir| {
+            build_device_directory(device, dir);
+            dir.entry(
+                "in_resistance_resistance_id_input",
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                mode!(IFREG, 0o444),
+            );
+        });
+
+        // TODO(https://fxbug.dev/452096300): Stub Qualcomm MDSS display controller and DRM
+        // connector.
+        let mdss_mdp = registry.add_bus_device(
+            "5e00000.qcom,mdss_mdp".into(),
+            Some(soc),
+            platform_bus,
+            build_device_directory,
+        );
+        let drm_class = self.get_or_create_class("drm".into());
+        let card0 = registry.add_numberless_device(
+            "card0".into(),
+            Some(mdss_mdp),
+            drm_class.clone(),
+            build_device_directory,
+        );
+        registry.add_numberless_device(
+            "sde-conn-0-DSI-1".into(),
+            Some(card0),
+            drm_class,
+            |device, dir| {
+                build_device_directory(device, dir);
+                dir.entry(
+                    "display_power_state",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o644),
+                );
+                dir.entry(
+                    "panel_power_state",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+                    mode!(IFREG, 0o644),
+                );
+            },
+        );
     }
 
     fn fs(&self) -> &FileSystemHandle {
@@ -65,6 +148,23 @@ impl KObjectStore {
                     "platform".into(),
                     /* parent = */ None,
                     /* subsystem = */ None,
+                    /* metadata = */ None,
+                    build_device_directory,
+                )
+            })
+            .clone()
+    }
+
+    /// Bus device used for SoC peripheral devices (`/sys/devices/platform/soc`).
+    pub fn soc_device(&self) -> Device {
+        // TODO(https://fxbug.dev/452096300): Replace hardcoded SoC bus device with dynamic board
+        // configuration.
+        self.soc_device
+            .get_or_init(|| {
+                self.create_device(
+                    "soc".into(),
+                    Some(self.platform_device()),
+                    Some(self.platform_bus().into()),
                     /* metadata = */ None,
                     build_device_directory,
                 )
@@ -314,6 +414,7 @@ impl Default for KObjectStore {
             fs: OnceLock::new(),
             virtual_device: OnceLock::new(),
             platform_device: OnceLock::new(),
+            soc_device: OnceLock::new(),
         }
     }
 }
