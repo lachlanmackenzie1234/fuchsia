@@ -16,7 +16,8 @@ pub mod tests {
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
         BinderThread, Command, QueuedCommand, RegistrationState, RequeueEventRegistration,
-        TransactionError, TransactionRole, WeakBinderPeer,
+        TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
+        generate_dead_replies_for_transactions,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
@@ -149,6 +150,15 @@ pub mod tests {
                 binder_thread: &self.thread,
                 memory_accessor: current_task.as_memory_accessor().expect("as_memory_accessor"),
             }
+        }
+
+        /// Registers `local` in the process object table with a live strong reference, without
+        /// enqueuing any command. Refcount commands for such an object are not transient, so they
+        /// are not lazily cancelled by `handle_thread_read`. The returned guard must be released.
+        fn register_live_object(&self, local: LocalBinderObject) -> StrongRefGuard {
+            let (object, guard) = BinderObject::new(&self.proc, local, BinderObjectFlags::empty());
+            self.proc.lock().objects.insert(local.weak_ref_addr, object);
+            guard
         }
     }
 
@@ -3897,6 +3907,86 @@ pub mod tests {
     }
 
     #[fuchsia::test]
+    async fn two_way_transaction_outcome_is_read_before_spawn_looper() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let sender = BinderProcessFixture::new_current(current_task, &device);
+            let receiver = BinderProcessFixture::new(current_task, &device);
+
+            // The sending thread is the main thread of a process that may have up to 2 auxiliary
+            // threads, and that has already requested one.
+            sender.thread.lock().registration = RegistrationState::Main;
+            {
+                let mut sender_proc = sender.proc.lock();
+                sender_proc.max_thread_count = 2;
+                sender_proc.thread_requested = true;
+            }
+            send_two_way_transaction(current_task, &device, &sender, &receiver);
+
+            // Once the read waits for the outcome of the transaction, after its
+            // BR_TRANSACTION_COMPLETE, the requested thread registers, so that the process may
+            // request another thread, and the transaction fails with a BR_DEAD_REPLY.
+            let thread = std::thread::spawn({
+                let task = current_task.weak_task();
+                let sender_proc = WeakRef::<BinderProcess>::from(&sender.proc);
+                let sender_thread = WeakRef::<BinderThread>::from(&sender.thread);
+                let receiver_identifier = receiver.proc.identifier;
+
+                move || {
+                    let task = task.upgrade().expect("task");
+                    while !task.read().is_blocked() {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    {
+                        let sender_proc = sender_proc.upgrade().expect("sender_proc");
+                        let mut sender_proc = sender_proc.lock();
+                        sender_proc.thread_requested = false;
+                        sender_proc.thread_pool.inc_auxilliary_threads();
+                    }
+                    let sender_thread = sender_thread.upgrade().expect("sender_thread");
+                    generate_dead_replies_for_transactions(
+                        &mut sender_thread.lock(),
+                        receiver_identifier,
+                        None,
+                    );
+                }
+            });
+
+            // The read returns the BR_TRANSACTION_COMPLETE followed by the BR_DEAD_REPLY (4 + 4
+            // bytes), and does not request a thread in between.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &sender.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+            thread.join().expect("join");
+            assert_eq!(bytes_read, 4 + 4);
+            let commands = current_task
+                .read_objects_to_array::<u32, 2>(UserRef::new(read_buffer_addr))
+                .expect("read commands");
+            assert_eq!(commands[0], uapi::binder_driver_return_protocol_BR_TRANSACTION_COMPLETE);
+            assert_eq!(commands[1], uapi::binder_driver_return_protocol_BR_DEAD_REPLY);
+            assert!(sender.thread.lock().transactions.is_empty());
+
+            // The next read requests the thread (4 bytes).
+            assert!(sender.proc.lock().should_request_thread(&sender.thread));
+            let bytes_read = device
+                .handle_thread_read(
+                    &sender.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+            assert_eq!(bytes_read, 4);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_SPAWN_LOOPER);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
     async fn dead_reply_when_transaction_recipient_proc_dies_not_top_transaction() {
         spawn_kernel_and_run(async |current_task| {
             let device = BinderDevice::default();
@@ -6184,6 +6274,858 @@ pub mod tests {
 
             aux_thread.release(current_task.kernel());
             aux_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_batch_read() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+            let obj_3 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x5000),
+                strong_ref_addr: UserAddress::from(0x6000),
+            };
+
+            // Register live objects so their AcquireRef/IncRef are not lazily cancelled.
+            let guard_1 = proc.register_live_object(obj_1);
+            let guard_2 = proc.register_live_object(obj_2);
+
+            // Enqueue 3 non-terminal commands: AcquireRef (20 bytes), IncRef (20 bytes), ReleaseRef
+            // (20 bytes) followed by 1 terminal command: TransactionComplete (4 bytes).
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+            proc.thread.lock().enqueue_command(Command::IncRef(obj_2).into());
+            proc.thread.lock().enqueue_command(Command::ReleaseRef(obj_3).into());
+            proc.thread.lock().enqueue_command(Command::TransactionComplete.into());
+
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+
+            // All 3 non-terminal refcount commands should be read in a single handle_thread_read
+            // call (20 + 20 + 20 = 60). The terminal TransactionComplete command is preserved for
+            // the next read to maintain protocol sync.
+            assert_eq!(bytes_read, 20 + 20 + 20);
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // The commands are written at consecutive offsets.
+            for (offset, expected) in [
+                (0usize, uapi::binder_driver_return_protocol_BR_ACQUIRE),
+                (20, uapi::binder_driver_return_protocol_BR_INCREFS),
+                (40, uapi::binder_driver_return_protocol_BR_RELEASE),
+            ] {
+                let command: u32 = current_task
+                    .read_object(UserRef::new((read_buffer_addr + offset).unwrap()))
+                    .expect("read command");
+                assert_eq!(command, expected, "command at offset {offset}");
+            }
+
+            // Second read yields TransactionComplete (4 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+            assert_eq!(bytes_read, 4);
+            assert!(proc.thread.lock().command_queue.is_empty());
+
+            guard_1.release(&mut RefCountActions::default_released());
+            guard_2.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn dead_binder_is_terminal() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let cookie: binder_uintptr_t = 0x12345678;
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+
+            let guard = proc.register_live_object(obj_1);
+
+            // Enqueue DeadBinder (12 bytes: 4 byte return protocol + 8 byte cookie) followed by a
+            // non-terminal AcquireRef (20 bytes).
+            proc.thread.lock().enqueue_command(Command::DeadBinder(cookie).into());
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // DeadBinder is terminal (matches Linux goto done): it ends the batch, even though the
+            // next command is not terminal.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+
+            assert_eq!(bytes_read, 12);
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // Second read returns the AcquireRef (20 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+
+            assert_eq!(bytes_read, 20);
+            assert!(proc.thread.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn pending_frozen_not_batched_after_acquire_ref() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+
+            let guard = proc.register_live_object(obj_1);
+
+            // Enqueue AcquireRef (20 bytes) followed by PendingFrozen (4 bytes).
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+            proc.thread.lock().enqueue_command(Command::PendingFrozen.into());
+
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // First read returns only AcquireRef (20 bytes) because PendingFrozen is terminal.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+
+            assert_eq!(bytes_read, 20);
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // Second read returns PendingFrozen (4 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+
+            assert_eq!(bytes_read, 4);
+            assert!(proc.thread.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn thread_queue_does_not_pull_from_process_queue_in_same_batch() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            proc.thread.lock().registration = RegistrationState::Main;
+
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+
+            let guard = proc.register_live_object(obj_1);
+
+            // Thread queue has a non-terminal refcount command.
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+
+            // Process queue has a non-terminal refcount command too, so that only queue isolation
+            // (and not `Command::is_terminal`) keeps it out of the batch.
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+            proc.proc.lock().command_queue.push_back(Command::ReleaseRef(obj_2).into());
+
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // The read should only drain the thread-local command (20 bytes).
+            // It MUST NOT pull the command from the process queue in the same batch (matching
+            // Linux semantics).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_ACQUIRE);
+            assert!(proc.thread.lock().command_queue.is_empty());
+            assert_eq!(proc.proc.lock().command_queue.len(), 1);
+
+            // Subsequent read from looper thread pulls the command from the process queue.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_RELEASE);
+            assert!(proc.proc.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn terminal_reply_not_batched_after_acquire_ref() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let task_b = create_task(current_task.kernel(), "task_b");
+            let proc_a = BinderProcessFixture::new_current(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(&task_b, &device);
+
+            let trace_id = fuchsia_trace::Id::new();
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+
+            let guard = proc_a.register_live_object(obj_1);
+
+            {
+                let mut thread_a = proc_a.thread.lock();
+                thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
+                    target_proc: proc_b.proc.identifier,
+                    target_thread: Some(proc_b.thread.tid.clone()),
+                    is_alive: true,
+                    target_thread_handle: Some(proc_b.thread.thread.clone()),
+                    trace_id,
+                }));
+                // Thread A has an AcquireRef in its command queue.
+                thread_a.enqueue_command(Command::AcquireRef(obj_1).into());
+            }
+
+            // Proc B sends reply to Proc A's transaction.
+            {
+                proc_b.thread.lock().transactions.push(TransactionRole::Receiver {
+                    peer: WeakBinderPeer::new(&proc_a.proc, &proc_a.thread),
+                    trace_id,
+                });
+            }
+            let reply = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_reply(&proc_b.context(&task_b), &mut Vec::new(), reply)
+                .expect("handle_reply");
+
+            // Thread A's command_queue now has [AcquireRef (20 bytes), Reply (68 bytes)].
+            // The first read MUST return only AcquireRef (20 bytes) so userspace can process
+            // BC_ACQUIRE_DONE before consuming the reply, preventing outAvail write suppression.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a handle_thread_read 1");
+
+            assert_eq!(bytes_read, 20);
+            assert_eq!(proc_a.thread.lock().command_queue.len(), 1);
+
+            // Second read returns the Reply (68 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a handle_thread_read 2");
+
+            assert_eq!(bytes_read, 68);
+            assert!(proc_a.thread.lock().transactions.is_empty());
+            assert!(proc_a.thread.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn two_way_transaction_complete_not_batched_after_acquire_ref() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let task_b = create_task(current_task.kernel(), "task_b");
+            let proc_a = BinderProcessFixture::new_current(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(&task_b, &device);
+
+            let trace_id = fuchsia_trace::Id::new();
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+
+            let guard = proc_a.register_live_object(obj_1);
+
+            {
+                // Thread A has an AcquireRef in its command queue, followed by the
+                // TwoWayTransactionComplete of the transaction it sends to proc_b.
+                let mut thread_a = proc_a.thread.lock();
+                thread_a.enqueue_command(Command::AcquireRef(obj_1).into());
+                thread_a.enqueue_command(QueuedCommand::new(
+                    Command::TwoWayTransactionComplete,
+                    trace_id,
+                ));
+                thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
+                    target_proc: proc_b.proc.identifier,
+                    target_thread: Some(proc_b.thread.tid.clone()),
+                    is_alive: true,
+                    target_thread_handle: Some(proc_b.thread.thread.clone()),
+                    trace_id,
+                }));
+            }
+
+            // Proc B sends reply to Proc A's transaction.
+            {
+                proc_b.thread.lock().transactions.push(TransactionRole::Receiver {
+                    peer: WeakBinderPeer::new(&proc_a.proc, &proc_a.thread),
+                    trace_id,
+                });
+            }
+            let reply = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_reply(&proc_b.context(&task_b), &mut Vec::new(), reply)
+                .expect("handle_reply");
+
+            // Thread A's command_queue now has [AcquireRef, TwoWayTransactionComplete, Reply].
+            // The first read returns only the AcquireRef (20 bytes): TwoWayTransactionComplete is
+            // terminal, so it is not batched after it.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a handle_thread_read 1");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_ACQUIRE);
+            assert_eq!(proc_a.thread.lock().command_queue.len(), 2);
+
+            // The second read returns BR_TRANSACTION_COMPLETE followed by BR_REPLY (4 + 68 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a handle_thread_read 2");
+            assert_eq!(bytes_read, 4 + 68);
+            let commands = current_task
+                .read_objects_to_array::<u32, 2>(UserRef::new(read_buffer_addr))
+                .expect("read commands");
+            assert_eq!(commands[0], uapi::binder_driver_return_protocol_BR_TRANSACTION_COMPLETE);
+            assert_eq!(commands[1], uapi::binder_driver_return_protocol_BR_REPLY);
+            assert!(proc_a.thread.lock().transactions.is_empty());
+            assert!(proc_a.thread.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_read_insufficient_buffer_retains_command() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+
+            let guard_1 = proc.register_live_object(obj_1);
+            let guard_2 = proc.register_live_object(obj_2);
+
+            // Enqueue 2 commands: AcquireRef (20 bytes) and IncRef (20 bytes).
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+            proc.thread.lock().enqueue_command(Command::IncRef(obj_2).into());
+
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // 1. A read with buffer smaller than required size of first command (10 < 20)
+            // must fail with ENOMEM and retain the command in the queue.
+            let err = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 10 },
+                )
+                .expect_err("should fail with ENOMEM");
+            assert_eq!(err, errno!(ENOMEM));
+
+            // Verify queue is untouched.
+            assert_eq!(proc.thread.lock().command_queue.len(), 2);
+
+            // 2. A read with 30 bytes buffer should drain the first 20-byte command (AcquireRef)
+            // and stop before the second 20-byte command (IncRef) without dropping it.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 30 },
+                )
+                .expect("handle_thread_read");
+            assert_eq!(bytes_read, 20);
+
+            // IncRef should still be in the queue.
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // 3. Next read drains the remaining IncRef.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 30 },
+                )
+                .expect("handle_thread_read 2");
+            assert_eq!(bytes_read, 20);
+            assert!(proc.thread.lock().command_queue.is_empty());
+
+            guard_1.release(&mut RefCountActions::default_released());
+            guard_2.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    /// Registers `local` in `owner` and sends a strong reference to it to `client`, which queues
+    /// an `AcquireRef` on `owner`'s thread, and then makes `client` drop that reference before
+    /// `owner` reads the `AcquireRef`, so that `handle_thread_read` lazily cancels it.
+    ///
+    /// If `with_pending_decref`, `client` also takes a weak reference, acknowledged by `owner`,
+    /// and drops it, so that cancelling the `AcquireRef` unblocks a deferred `DecRef`.
+    fn queue_transient_acquire_ref(
+        owner: &BinderProcessFixture,
+        client: &BinderProcessFixture,
+        local: LocalBinderObject,
+        with_pending_decref: bool,
+    ) {
+        let guard = owner
+            .proc
+            .lock()
+            .find_or_register_object(&owner.thread, local, BinderObjectFlags::empty())
+            .expect("find_or_register_object");
+        let handle = client
+            .proc
+            .lock()
+            .handles
+            .insert_for_transaction(guard, &mut RefCountActions::default_released());
+        if with_pending_decref {
+            client
+                .proc
+                .handle_refcount_operation(
+                    starnix_uapi::binder_driver_command_protocol_BC_INCREFS,
+                    handle,
+                )
+                .expect("BC_INCREFS");
+            assert_matches!(
+                owner.proc.lock().command_queue.pop_front(),
+                Some(QueuedCommand { command: Command::IncRef(o), .. }) if o == local
+            );
+            owner
+                .proc
+                .handle_refcount_operation_done(
+                    starnix_uapi::binder_driver_command_protocol_BC_INCREFS_DONE,
+                    local,
+                )
+                .expect("BC_INCREFS_DONE");
+        }
+        client
+            .proc
+            .handle_refcount_operation(
+                starnix_uapi::binder_driver_command_protocol_BC_RELEASE,
+                handle,
+            )
+            .expect("BC_RELEASE");
+        if with_pending_decref {
+            client
+                .proc
+                .handle_refcount_operation(
+                    starnix_uapi::binder_driver_command_protocol_BC_DECREFS,
+                    handle,
+                )
+                .expect("BC_DECREFS");
+        }
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_read_transient_acquire_ref_cancelled_mid_batch() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new_current(current_task, &device);
+            let client = BinderProcessFixture::new(current_task, &device);
+            let live_obj = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let transient_obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x5000),
+                strong_ref_addr: UserAddress::from(0x6000),
+            };
+            let transient_obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x7000),
+                strong_ref_addr: UserAddress::from(0x8000),
+            };
+
+            // The thread queue has the AcquireRef of a live object, followed by a transient
+            // AcquireRef whose cancellation unblocks a DecRef, and by a transient AcquireRef whose
+            // cancellation writes nothing.
+            let guard = owner.register_live_object(live_obj);
+            owner.thread.lock().enqueue_command(Command::AcquireRef(live_obj).into());
+            queue_transient_acquire_ref(&owner, &client, transient_obj_1, true);
+            queue_transient_acquire_ref(&owner, &client, transient_obj_2, false);
+
+            // The process queue has a non-terminal refcount command, so that only queue isolation
+            // (and not `Command::is_terminal`) keeps it out of the batch.
+            let proc_obj = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+            owner.proc.lock().command_queue.push_back(Command::ReleaseRef(proc_obj).into());
+
+            // The read returns the BR_ACQUIRE of the live object, followed by the BR_DECREFS that
+            // replaces the first transient AcquireRef (20 + 20 bytes). The second transient
+            // AcquireRef is cancelled without writing anything, but thread-local work has already
+            // been read, so the process queue is not read in the same batch.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &owner.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 1");
+            assert_eq!(bytes_read, 20 + 20);
+            for (offset, expected) in [
+                (0usize, uapi::binder_driver_return_protocol_BR_ACQUIRE),
+                (20, uapi::binder_driver_return_protocol_BR_DECREFS),
+            ] {
+                let command: u32 = current_task
+                    .read_object(UserRef::new((read_buffer_addr + offset).unwrap()))
+                    .expect("read command");
+                assert_eq!(command, expected, "command at offset {offset}");
+            }
+            assert!(owner.thread.lock().command_queue.is_empty());
+            assert_eq!(owner.proc.lock().command_queue.len(), 1);
+            assert!(owner.proc.lock().objects.get(&transient_obj_1.weak_ref_addr).is_none());
+            assert!(owner.proc.lock().objects.get(&transient_obj_2.weak_ref_addr).is_none());
+
+            // The next read returns the BR_RELEASE from the process queue (20 bytes).
+            let bytes_read = device
+                .handle_thread_read(
+                    &owner.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("handle_thread_read 2");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_RELEASE);
+            assert!(owner.proc.lock().command_queue.is_empty());
+
+            guard.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_read_transient_acquire_ref_cancelled_with_small_buffer() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new_current(current_task, &device);
+            let client = BinderProcessFixture::new(current_task, &device);
+            let transient_obj = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x7000),
+                strong_ref_addr: UserAddress::from(0x8000),
+            };
+
+            // The thread queue has a transient AcquireRef (20 bytes if it were written), followed
+            // by a TransactionComplete (4 bytes).
+            queue_transient_acquire_ref(&owner, &client, transient_obj, false);
+            owner.thread.lock().enqueue_command(Command::TransactionComplete.into());
+
+            // A 4-byte read cancels the AcquireRef, which writes nothing, and returns the
+            // BR_TRANSACTION_COMPLETE.
+            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let bytes_read = device
+                .handle_thread_read(
+                    &owner.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 4 },
+                )
+                .expect("handle_thread_read");
+            assert_eq!(bytes_read, 4);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_TRANSACTION_COMPLETE);
+            assert!(owner.thread.lock().command_queue.is_empty());
+            assert!(owner.proc.lock().objects.get(&transient_obj.weak_ref_addr).is_none());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_read_returns_written_commands_on_write_error() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+
+            let guard_1 = proc.register_live_object(obj_1);
+            let guard_2 = proc.register_live_object(obj_2);
+
+            // Enqueue 2 commands: AcquireRef (20 bytes) and IncRef (20 bytes).
+            proc.thread.lock().enqueue_command(Command::AcquireRef(obj_1).into());
+            proc.thread.lock().enqueue_command(Command::IncRef(obj_2).into());
+
+            // The read buffer is large enough for both commands, but only its first 20 bytes are
+            // mapped.
+            let mapping_addr = map_memory(current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+            let second_page = (mapping_addr + *PAGE_SIZE).unwrap();
+            current_task.mm().unwrap().unmap(second_page, *PAGE_SIZE as usize).unwrap();
+            let read_buffer_addr = (mapping_addr + (*PAGE_SIZE - 20)).unwrap();
+
+            // Writing the IncRef fails, so the read returns the AcquireRef that was already
+            // written, rather than the error. The IncRef is put back in the queue.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 40 },
+                )
+                .expect("handle_thread_read 1");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_ACQUIRE);
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // If writing the first command of a read fails, the read fails, and the command is put
+            // back in the queue too.
+            let err = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: second_page, length: 20 },
+                )
+                .expect_err("handle_thread_read 2 should fail");
+            assert_eq!(err, errno!(EFAULT));
+            assert_eq!(proc.thread.lock().command_queue.len(), 1);
+
+            // The IncRef is returned by the next read into a writable buffer.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: mapping_addr, length: 20 },
+                )
+                .expect("handle_thread_read 3");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(mapping_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_INCREFS);
+            assert!(proc.thread.lock().command_queue.is_empty());
+
+            guard_1.release(&mut RefCountActions::default_released());
+            guard_2.release(&mut RefCountActions::default_released());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn multi_command_read_puts_back_process_command_on_write_error() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc = BinderProcessFixture::new_current(current_task, &device);
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+
+            // The process queue has 2 commands: ReleaseRef (20 bytes) and DecRef (20 bytes).
+            proc.proc.lock().command_queue.push_back(Command::ReleaseRef(obj_1).into());
+            proc.proc.lock().command_queue.push_back(Command::DecRef(obj_2).into());
+
+            // The read buffer is large enough for both commands, but only its first 20 bytes are
+            // mapped.
+            let mapping_addr = map_memory(current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+            let second_page = (mapping_addr + *PAGE_SIZE).unwrap();
+            current_task.mm().unwrap().unmap(second_page, *PAGE_SIZE as usize).unwrap();
+            let read_buffer_addr = (mapping_addr + (*PAGE_SIZE - 20)).unwrap();
+
+            // Writing the DecRef fails, so the read returns the ReleaseRef that was already
+            // written, and the DecRef is put back in the process queue.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 40 },
+                )
+                .expect("handle_thread_read 1");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_RELEASE);
+            assert_matches!(
+                proc.proc.lock().command_queue.front(),
+                Some(QueuedCommand { command: Command::DecRef(o), .. }) if *o == obj_2
+            );
+
+            // The DecRef is returned by the next read into a writable buffer.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc.context(current_task),
+                    &UserBuffer { address: mapping_addr, length: 20 },
+                )
+                .expect("handle_thread_read 2");
+            assert_eq!(bytes_read, 20);
+            let command: u32 =
+                current_task.read_object(UserRef::new(mapping_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_DECREFS);
+            assert!(proc.proc.lock().command_queue.is_empty());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn two_way_reply_is_put_back_on_write_error() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let task_b = create_task(current_task.kernel(), "task_b");
+            let proc_a = BinderProcessFixture::new_current(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(&task_b, &device);
+
+            let trace_id = fuchsia_trace::Id::new();
+            {
+                // Thread A has the TwoWayTransactionComplete of the transaction it sends to
+                // proc_b in its command queue.
+                let mut thread_a = proc_a.thread.lock();
+                thread_a.enqueue_command(QueuedCommand::new(
+                    Command::TwoWayTransactionComplete,
+                    trace_id,
+                ));
+                thread_a.transactions.push(TransactionRole::Sender(TransactionSender {
+                    target_proc: proc_b.proc.identifier,
+                    target_thread: Some(proc_b.thread.tid.clone()),
+                    is_alive: true,
+                    target_thread_handle: Some(proc_b.thread.thread.clone()),
+                    trace_id,
+                }));
+            }
+
+            // Proc B sends reply to Proc A's transaction.
+            proc_b.thread.lock().transactions.push(TransactionRole::Receiver {
+                peer: WeakBinderPeer::new(&proc_a.proc, &proc_a.thread),
+                trace_id,
+            });
+            let reply = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+            device
+                .handle_reply(&proc_b.context(&task_b), &mut Vec::new(), reply)
+                .expect("handle_reply");
+
+            // Thread A's command_queue now has [TwoWayTransactionComplete, Reply]. The read buffer
+            // is large enough for both commands, but only its first 4 bytes are mapped.
+            let mapping_addr = map_memory(current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+            let second_page = (mapping_addr + *PAGE_SIZE).unwrap();
+            current_task.mm().unwrap().unmap(second_page, *PAGE_SIZE as usize).unwrap();
+            let read_buffer_addr = (mapping_addr + (*PAGE_SIZE - 4)).unwrap();
+
+            // Writing the reply fails, so the read returns the BR_TRANSACTION_COMPLETE that was
+            // already written. The reply is put back in the queue, and the transaction is still
+            // pending.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: 4 + Command::MAX_SIZE },
+                )
+                .expect("proc_a handle_thread_read 1");
+            assert_eq!(bytes_read, 4);
+            let command: u32 =
+                current_task.read_object(UserRef::new(read_buffer_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_TRANSACTION_COMPLETE);
+            assert_matches!(
+                proc_a.thread.lock().command_queue.front(),
+                Some(QueuedCommand { command: Command::Reply(..), .. })
+            );
+            assert_matches!(
+                proc_a.thread.lock().transactions.last(),
+                Some(TransactionRole::Sender(_))
+            );
+
+            // The next read into a writable buffer returns the BR_REPLY (68 bytes), which
+            // completes the transaction.
+            let bytes_read = device
+                .handle_thread_read(
+                    &proc_a.context(current_task),
+                    &UserBuffer { address: mapping_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("proc_a handle_thread_read 2");
+            assert_eq!(bytes_read, 68);
+            let command: u32 =
+                current_task.read_object(UserRef::new(mapping_addr)).expect("read command");
+            assert_eq!(command, uapi::binder_driver_return_protocol_BR_REPLY);
+            assert!(proc_a.thread.lock().transactions.is_empty());
+            assert!(proc_a.thread.lock().command_queue.is_empty());
         })
         .await;
     }

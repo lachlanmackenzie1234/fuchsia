@@ -76,6 +76,15 @@ impl CommandQueueWithWaitQueue {
         self.commands.is_empty()
     }
 
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn front(&self) -> Option<&QueuedCommand> {
+        self.commands.front()
+    }
+
     pub fn pop_front(&mut self) -> Option<QueuedCommand> {
         let queued = self.commands.pop_front()?;
         crate::trace::on_command_dequeued(&queued.command, queued.trace_id);
@@ -86,6 +95,15 @@ impl CommandQueueWithWaitQueue {
         crate::trace::on_command_enqueued(&command.command, command.trace_id);
         self.commands.push_back(command);
         self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
+    }
+
+    /// Puts a dequeued command back at the front of the queue, so that it is dequeued next.
+    ///
+    /// Unlike `push_back`, this does not notify waiters: only the thread owning the queue dequeues
+    /// from it, and it only puts back commands while reading, so it is not waiting for them.
+    pub fn push_front(&mut self, command: QueuedCommand) {
+        crate::trace::on_command_enqueued(&command.command, command.trace_id);
+        self.commands.push_front(command);
     }
 
     pub fn retain<F>(&mut self, mut f: F)
@@ -641,6 +659,43 @@ impl Command {
             Self::ClearFreezeNotificationDone(..) => {
                 binder_driver_return_protocol_BR_CLEAR_FREEZE_NOTIFICATION_DONE
             }
+        }
+    }
+
+    /// Returns the minimum buffer size in bytes required to write this command into memory.
+    pub fn required_buffer_size(&self) -> usize {
+        // The size of the parameters of a command is encoded in its return code, which
+        // `write_command` asserts.
+        std::mem::size_of::<binder_driver_return_protocol>() + ioc_size(self.driver_return_code())
+    }
+
+    /// Returns true if this command terminates a read batch in `handle_thread_read`: a terminal
+    /// command is only read as the first command of a batch, and ends it.
+    ///
+    /// After a `TwoWayTransactionComplete`, `handle_thread_read` may still wait for the outcome of
+    /// the transaction and return it in the same read, as the first command of a new batch.
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Self::Transaction { .. }
+            | Self::Reply(..)
+            | Self::TransactionComplete
+            | Self::TwoWayTransactionComplete
+            | Self::OnewayTransaction(..)
+            | Self::OnewayTransactionComplete
+            | Self::PendingFrozen
+            | Self::DeadReply
+            | Self::FailedReply
+            | Self::FrozenReply
+            | Self::DeadBinder(..)
+            | Self::FrozenBinder(..)
+            | Self::SpawnLooper
+            | Self::Error(..) => true,
+            Self::AcquireRef(..)
+            | Self::ReleaseRef(..)
+            | Self::IncRef(..)
+            | Self::DecRef(..)
+            | Self::ClearDeathNotificationDone(..)
+            | Self::ClearFreezeNotificationDone(..) => false,
         }
     }
 

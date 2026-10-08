@@ -31,7 +31,7 @@ use starnix_core::mm::{
 
 use crate::trace::{
     CATEGORY_STARNIX_BINDER, NAME_BINDER_IOCTL, NAME_HANDLE_REPLY, NAME_HANDLE_THREAD_READ,
-    NAME_HANDLE_THREAD_WRITE, NAME_HANDLE_TRANSACTION, on_command_dequeued,
+    NAME_HANDLE_THREAD_WRITE, NAME_HANDLE_TRANSACTION, on_command_dequeued, on_command_enqueued,
 };
 use starnix_core::security;
 #[cfg(test)]
@@ -353,6 +353,20 @@ impl RemoteBinderConnection {
     pub fn close(&self, kernel: &Kernel) {
         self.binder_connection.close(kernel);
     }
+}
+
+enum DequeueResult {
+    /// A command was dequeued and is ready to be written into the read buffer.
+    Command {
+        queued: QueuedCommand,
+        /// Whether the command was dequeued from the process command queue, rather than from the
+        /// thread command queue or the transaction stack.
+        from_process_queue: bool,
+    },
+    /// The next command requires more bytes than available in the read buffer.
+    InsufficientBuffer,
+    /// No commands are currently available in the active queue.
+    Empty,
 }
 
 /// Holds the context for a binder operation, including information about the sending process and
@@ -1313,18 +1327,77 @@ impl BinderDriver {
         Ok(())
     }
 
-    /// Select which command queue to read from, preferring the thread-local one.
-    /// If a transaction is pending, deadlocks can happen if reading from the process queue.
+    /// Dequeues the next active command if one is available and fits within `available_buffer_len`.
+    /// Prefers the thread-local command queue over the process command queue.
+    ///
+    /// If `wait_for_proc_work` is false (e.g. the thread has pending transactions or thread-local
+    /// work), commands will only be dequeued from `thread_state.command_queue` and never from
+    /// `proc_state.command_queue`, matching Linux Binder semantics.
+    ///
+    /// If `!is_first_command`, terminal commands are not dequeued so they are never batched after
+    /// non-terminal commands, preventing `libbinder` protocol desynchronization.
+    ///
+    /// Refcount increments (`AcquireRef`/`IncRef`) are dequeued even if they do not fit, since they
+    /// may be lazily cancelled without writing anything (see `try_cancel_transient_refcount`). The
+    /// caller must put back the command to write if it does not fit.
     fn get_active_command(
         thread_state: &mut BinderThreadState,
         proc_state: &mut crate::process::BinderProcessState,
         worker_thread: &zx::Thread,
-    ) -> Option<QueuedCommand> {
-        if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
-            thread_state.command_queue.pop_front()
-        } else {
-            let item = proc_state.command_queue.pop_front();
-            if let Some(queued) = &item {
+        available_buffer_len: usize,
+        wait_for_proc_work: bool,
+        is_first_command: bool,
+    ) -> DequeueResult {
+        // Whether `command` fits in the buffer, or may be cancelled without writing anything.
+        let may_fit = |command: &Command| {
+            matches!(command, Command::AcquireRef(_) | Command::IncRef(_))
+                || available_buffer_len >= command.required_buffer_size()
+        };
+        if let Some(queued) = thread_state.command_queue.front() {
+            if !is_first_command && queued.command.is_terminal() {
+                return DequeueResult::Empty;
+            }
+            if !may_fit(&queued.command) {
+                return DequeueResult::InsufficientBuffer;
+            }
+            let queued = thread_state
+                .command_queue
+                .pop_front()
+                .expect("command queue was checked to be non-empty");
+            DequeueResult::Command { queued, from_process_queue: false }
+        } else if let Some(TransactionRole::Sender(TransactionSender {
+            is_alive: false,
+            trace_id,
+            ..
+        })) = thread_state.transactions.last()
+        {
+            // If the command queue is empty but a pending transaction is marked dead,
+            // pop the transaction and dispatch a synthetic DeadReply.
+            if !is_first_command {
+                return DequeueResult::Empty;
+            }
+            let trace_id = *trace_id;
+            if available_buffer_len < Command::DeadReply.required_buffer_size() {
+                return DequeueResult::InsufficientBuffer;
+            }
+            thread_state.transactions.pop();
+            on_command_dequeued(&Command::DeadReply, trace_id);
+            DequeueResult::Command {
+                queued: QueuedCommand::new(Command::DeadReply, trace_id),
+                from_process_queue: false,
+            }
+        } else if wait_for_proc_work {
+            if let Some(queued) = proc_state.command_queue.front() {
+                if !is_first_command && queued.command.is_terminal() {
+                    return DequeueResult::Empty;
+                }
+                if !may_fit(&queued.command) {
+                    return DequeueResult::InsufficientBuffer;
+                }
+                let queued = proc_state
+                    .command_queue
+                    .pop_front()
+                    .expect("process command queue was checked to be non-empty");
                 on_command_dequeued(&queued.command, queued.trace_id);
                 if let Command::Transaction { sender, .. } = &queued.command {
                     if let Some((_proc, sender_thread)) = sender.upgrade() {
@@ -1333,8 +1406,12 @@ impl BinderDriver {
                         }
                     }
                 }
+                DequeueResult::Command { queued, from_process_queue: true }
+            } else {
+                DequeueResult::Empty
             }
-            item
+        } else {
+            DequeueResult::Empty
         }
     }
 
@@ -1378,13 +1455,43 @@ impl BinderDriver {
         }
     }
 
-    /// Dequeues a command from the thread's commands' queue, or blocks until commands are available.
+    /// Puts back `command`, which `handle_thread_read` dequeued but did not write to the read
+    /// buffer, at the front of the queue it was dequeued from, so that it is the next command read
+    /// from that queue rather than being lost.
+    ///
+    /// The command is queued with a new trace id, as the trace flow of its original id was already
+    /// ended (or stepped, for a transaction) when it was dequeued, and `command` may be a command
+    /// unblocked by `try_cancel_transient_refcount` that was never queued under that id.
+    fn requeue_command(
+        thread_state: &mut BinderThreadState,
+        proc_state: &mut crate::process::BinderProcessState,
+        command: Command,
+        from_process_queue: bool,
+    ) {
+        let queued = QueuedCommand::from(command);
+        if from_process_queue {
+            on_command_enqueued(&queued.command, queued.trace_id);
+            proc_state.command_queue.push_front(queued);
+        } else {
+            thread_state.command_queue.push_front(queued);
+        }
+    }
+
+    /// Dequeues commands from the thread's commands' queue, or blocks until commands are available.
+    ///
+    /// Readily available commands are written in batches: a batch is either a single terminal
+    /// command, or a sequence of non-terminal commands that ends before the next terminal command
+    /// or before the first command that does not fit in `read_buffer` (see `Command::is_terminal`).
     ///
     /// For a two-way transaction, `TwoWayTransactionComplete` is not returned on its own: the
-    /// thread keeps waiting for the next command (usually the reply) and both are returned
-    /// together, so that a single write/read of a two-way transaction observes both the
+    /// thread keeps waiting for the next command (usually the reply) and returns it in a new batch
+    /// of the same read, so that a single write/read of a two-way transaction observes both the
     /// BR_TRANSACTION_COMPLETE and the outcome of the transaction. The BR_TRANSACTION_COMPLETE of
-    /// a reply or of a oneway transaction is returned without waiting.
+    /// a reply or of a oneway transaction is returned without waiting. Note that the `AcquireRef`
+    /// of an object sent for the first time is queued before the `TwoWayTransactionComplete` of
+    /// the transaction that sends it, so if the `AcquireRef` is returned, the terminal
+    /// `TwoWayTransactionComplete` is only returned by the next read (see
+    /// https://fxbug.dev/441451502).
     pub fn handle_thread_read(
         &self,
         context: &OperationContext<'_>,
@@ -1396,14 +1503,28 @@ impl BinderDriver {
         let mut remaining_buffer = *read_buffer;
         let mut bytes_read = 0;
         loop {
-            {
+            // Check if the process needs to spawn a new worker thread. This MUST be checked
+            // inside the wait loop on every wake-up iteration: when threads are blocked waiting
+            // for work and a sudden burst of transactions arrives, all active threads become
+            // busy (depleting `available_threads`). Waking threads must evaluate this to dispatch
+            // `BR_SPAWN_LOOPER` and scale the thread pool up to `max_thread_count`.
+            //
+            // If this were checked only once before the loop, sleeping threads that wake up under
+            // heavy load would never request new threads, starving the thread pool and deadlocking
+            // concurrent callers (e.g. `BinderLibTest.ThreadPoolAvailableThreads`).
+            //
+            // It is only checked while nothing has been written yet, which is always the case for
+            // a thread waiting for work. Once commands have been written, the read is waiting for
+            // the outcome of a two-way transaction after its BR_TRANSACTION_COMPLETE, and must
+            // return that outcome rather than a BR_SPAWN_LOOPER. The next read checks again.
+            if bytes_read == 0 {
                 let mut binder_proc_state = context.binder_proc.lock();
-
                 if binder_proc_state.should_request_thread(context.binder_thread) {
                     let bytes_written = Command::SpawnLooper
                         .write_to_memory(context.memory_accessor, &remaining_buffer)?;
+                    debug_assert_eq!(bytes_written, Command::SpawnLooper.required_buffer_size());
                     binder_proc_state.did_request_thread();
-                    return Ok(bytes_read + bytes_written);
+                    return Ok(bytes_written);
                 }
             }
 
@@ -1414,96 +1535,142 @@ impl BinderDriver {
                 return Ok(bytes_read);
             }
 
-            let command_with_trace = Self::get_active_command(
-                &mut thread_state,
-                &mut proc_state,
-                &context.binder_thread.thread,
-            )
-            .or_else(|| {
-                // If there is no pending command, but the current transaction is marked as dead,
-                // pop the transaction and dispatch a `DeadReply`.
-                match thread_state.transactions.last() {
-                    Some(TransactionRole::Sender(TransactionSender {
-                        is_alive: false,
-                        trace_id,
-                        ..
-                    })) => {
-                        let trace_id = *trace_id;
-                        if let Some(TransactionRole::Sender(_)) = thread_state.transactions.pop() {
-                            on_command_dequeued(&Command::DeadReply, trace_id);
-                            Some(QueuedCommand::new(Command::DeadReply, trace_id))
-                        } else {
-                            None
+            // Mirror Linux logic: a thread can only process work from the process queue if it has
+            // no thread-local work and is not waiting for a reply in an active transaction.
+            let mut wait_for_proc_work =
+                thread_state.transactions.is_empty() && thread_state.command_queue.is_empty();
+
+            // Drain any readily available commands from the queues into the read buffer, as a batch
+            // starting at `batch_start`.
+            let batch_start = bytes_read;
+            // Whether the read must return after this batch, even if the batch is empty.
+            let mut end_read = false;
+            // Whether the read must wait for the next command after this batch, which then ends
+            // with the BR_TRANSACTION_COMPLETE of a two-way transaction.
+            let mut wait_for_next_command = false;
+            while remaining_buffer.length > 0 {
+                let is_first_command = bytes_read == batch_start;
+                let (QueuedCommand { command, trace_id }, from_process_queue) =
+                    match Self::get_active_command(
+                        &mut thread_state,
+                        &mut proc_state,
+                        &context.binder_thread.thread,
+                        remaining_buffer.length,
+                        wait_for_proc_work,
+                        is_first_command,
+                    ) {
+                        DequeueResult::Command { queued, from_process_queue } => {
+                            (queued, from_process_queue)
                         }
-                    }
-                    _ => None,
-                }
-            });
+                        DequeueResult::InsufficientBuffer => {
+                            if bytes_read == 0 {
+                                return error!(ENOMEM);
+                            }
+                            end_read = true;
+                            break;
+                        }
+                        DequeueResult::Empty => break,
+                    };
 
-            // If we have sent a request and are about to wait for a response, the thread we've
-            // sent to should inherit our priority while we wait.
-            let target_thread = thread_state
-                .transactions
-                .iter()
-                .rev()
-                .find_map(|t| match t {
-                    // Only look for the most recently sent transaction, even if it doesn't have a
-                    // target_thread set. Earlier transactions (if any) won't unblock this thread
-                    // any sooner by inheriting increased priority.
-                    TransactionRole::Sender(sender) => Some(sender),
-                    _ => None,
-                })
-                .and_then(|s| s.target_thread_handle.clone());
-
-            if let Some(QueuedCommand { command, trace_id }) = command_with_trace {
-                if matches!(&command, Command::AcquireRef(_) | Command::IncRef(_)) {
-                    // Drop thread_state before locking the BinderObject to avoid lock order inversion.
+                // Lazily cancel transient refcount increments (see
+                // `try_cancel_transient_refcount`). A cancelled command is either dropped or
+                // replaced by the deferred command it unblocks. Replacements
+                // (`ReleaseRef`/`DecRef`/`IncRef`) are non-terminal.
+                let command = if matches!(&command, Command::AcquireRef(_) | Command::IncRef(_)) {
+                    // Lock order is BinderProcessState -> BinderObject -> BinderThreadState, so the
+                    // thread lock must be released before the object lock is taken, and re-acquired
+                    // afterwards (still ordered after the held process lock).
                     drop(thread_state);
-                    let command =
-                        match Self::try_cancel_transient_refcount(&mut proc_state, &command) {
-                            RefcountDisposition::Cancel(None) => {
-                                drop(proc_state);
-                                continue;
+                    let disposition =
+                        Self::try_cancel_transient_refcount(&mut proc_state, &command);
+                    thread_state = context.binder_thread.lock();
+                    let command = match disposition {
+                        RefcountDisposition::Retain => command,
+                        RefcountDisposition::Cancel(Some(unblocked)) => unblocked,
+                        RefcountDisposition::Cancel(None) => {
+                            // The cancelled command never reaches userspace, so it must not affect
+                            // queue isolation. If this batch has not delivered anything yet,
+                            // re-evaluate as if the command had never been queued; otherwise a
+                            // thread whose only thread-local work was cancelled would block while
+                            // the process queue still has pending work.
+                            if is_first_command {
+                                wait_for_proc_work = thread_state.transactions.is_empty()
+                                    && thread_state.command_queue.is_empty();
                             }
-                            RefcountDisposition::Cancel(Some(unblocked_command)) => {
-                                unblocked_command
-                            }
-                            RefcountDisposition::Retain => command,
-                        };
-                    drop(proc_state);
-                    // The refcount command is written after the commands already written by this
-                    // read, if any, and ends the read. Note that the `AcquireRef` of an object sent
-                    // for the first time is queued before the `TwoWayTransactionComplete` of the
-                    // transaction that sends it, so the latter is only returned by the next read
-                    // (see https://fxbug.dev/441451502).
-                    let bytes_written =
-                        command.write_to_memory(context.memory_accessor, &remaining_buffer)?;
-                    return Ok(bytes_read + bytes_written);
-                }
+                            continue;
+                        }
+                    };
+                    // `get_active_command` does not check whether refcount increments fit, so that
+                    // cancelled ones never fail the read. If the command to write does not fit, put
+                    // it back where it was dequeued from, for the next read.
+                    if remaining_buffer.length < command.required_buffer_size() {
+                        Self::requeue_command(
+                            &mut thread_state,
+                            &mut proc_state,
+                            command,
+                            from_process_queue,
+                        );
+                        if bytes_read == 0 {
+                            return error!(ENOMEM);
+                        }
+                        end_read = true;
+                        break;
+                    }
+                    command
+                } else {
+                    command
+                };
 
-                // Attempt to write the command to the thread's buffer.
                 let bytes_written =
-                    command.write_to_memory(context.memory_accessor, &remaining_buffer)?;
+                    match command.write_to_memory(context.memory_accessor, &remaining_buffer) {
+                        Ok(bytes_written) => bytes_written,
+                        Err(err) => {
+                            // The command fits in the buffer, so the buffer is not writable (e.g.
+                            // EFAULT). Put the command back rather than dropping it, as the driver
+                            // expects it to be delivered: e.g. a refcount increment waiting for its
+                            // acknowledgement, a decrement of an object that is already forgotten,
+                            // or a reply whose transaction is still on the transaction stack.
+                            Self::requeue_command(
+                                &mut thread_state,
+                                &mut proc_state,
+                                command,
+                                from_process_queue,
+                            );
+                            // If some commands have already been written, return them rather than
+                            // the error: they have already been dequeued, and on error
+                            // `read_consumed` is not updated, so userspace would never see them.
+                            if bytes_read == 0 {
+                                return Err(err);
+                            }
+                            end_read = true;
+                            break;
+                        }
+                    };
+                debug_assert_eq!(bytes_written, command.required_buffer_size());
+                remaining_buffer.advance(bytes_written)?;
+                bytes_read += bytes_written;
+
                 // After the BR_TRANSACTION_COMPLETE of a two-way transaction, also wait for and
                 // return the next command, as long as one is expected (a reply is still pending or
                 // a command is already queued) and the buffer has room for any command. This does
                 // not apply to the BR_TRANSACTION_COMPLETE of a reply: when replying to a nested
                 // transaction, the thread's own transaction is still pending, and its reply must
                 // not be waited for here.
-                let wait_for_next_command = matches!(command, Command::TwoWayTransactionComplete)
-                    && remaining_buffer.length - bytes_written >= Command::MAX_SIZE
+                wait_for_next_command = matches!(command, Command::TwoWayTransactionComplete)
+                    && remaining_buffer.length >= Command::MAX_SIZE
                     && (!thread_state.command_queue.is_empty()
                         || matches!(
                             thread_state.transactions.last(),
                             Some(TransactionRole::Sender(_))
                         ));
-                let has_pending_proc_commands = match command {
+
+                let is_terminal = command.is_terminal();
+                match command {
                     Command::Transaction { sender, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
                         // push the transaction onto the transaction stack.
                         let tx = TransactionRole::Receiver { peer: sender, trace_id };
                         thread_state.transactions.push(tx);
-                        false
                     }
                     Command::Reply(..) => {
                         // The sender got a reply, pop the sender entry from the transaction stack.
@@ -1519,41 +1686,31 @@ impl BinderDriver {
                             command,
                             thread_state.command_queue,
                         );
-                        !proc_state.command_queue.is_empty()
                     }
                     Command::FrozenBinder(info) => {
                         proc_state.in_flight_freeze_notifications.insert(info.cookie);
-                        false
                     }
-                    Command::TransactionComplete
-                    | Command::TwoWayTransactionComplete
-                    | Command::OnewayTransaction(..)
-                    | Command::OnewayTransactionComplete
-                    | Command::ReleaseRef(..)
-                    | Command::DecRef(..)
-                    | Command::Error(..)
-                    | Command::FailedReply
-                    | Command::DeadReply
-                    | Command::DeadBinder(..)
-                    | Command::FrozenReply
-                    | Command::PendingFrozen
-                    | Command::ClearDeathNotificationDone(..)
-                    | Command::SpawnLooper
-                    | Command::ClearFreezeNotificationDone(..) => false,
-                    Command::AcquireRef(..) | Command::IncRef(..) => unreachable!(
-                        "AcquireRef and IncRef are handled earlier to check for lazy cancellation"
-                    ),
-                };
+                    _ => {}
+                }
 
+                if is_terminal {
+                    break;
+                }
+            }
+
+            // If any data was written, return so userspace can process the commands, unless the
+            // read waits for the command following a two-way BR_TRANSACTION_COMPLETE.
+            if bytes_read > batch_start || end_read {
+                let wake_process = thread_state.transactions.is_empty()
+                    && thread_state.command_queue.is_empty()
+                    && !proc_state.command_queue.is_empty();
                 drop(thread_state);
                 drop(proc_state);
 
-                if has_pending_proc_commands {
+                if wake_process {
                     context.binder_proc.wake_process_and_available_thread();
                 }
 
-                bytes_read += bytes_written;
-                remaining_buffer.advance(bytes_written)?;
                 if !wait_for_next_command {
                     return Ok(bytes_read);
                 }
@@ -1563,6 +1720,19 @@ impl BinderDriver {
             // No commands readily available to read. Wait for work. The thread will wait on both
             // the thread queue and the process queue, and loop back to check whether some work is
             // available.
+            let target_thread = thread_state
+                .transactions
+                .iter()
+                .rev()
+                .find_map(|t| match t {
+                    // Only look for the most recently sent transaction, even if it doesn't have a
+                    // target_thread set. Earlier transactions (if any) won't unblock this thread
+                    // any sooner by inheriting increased priority.
+                    TransactionRole::Sender(sender) => Some(sender),
+                    _ => None,
+                })
+                .and_then(|s| s.target_thread_handle.clone());
+
             let event = InterruptibleEvent::new();
             let _requeue_registration = if target_thread.is_none() {
                 Some(RequeueEventRegistration::new(context.binder_thread, event.clone()))
