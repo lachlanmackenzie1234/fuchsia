@@ -11,4 +11,4 @@ pub mod tokenizer;
 pub use error::{IncompleteReason, ParseError};
 pub use parser::{parse_script, parse_subshell_command, resolve_word_parts};
 pub use token::{RawWordPart, Token};
-pub use tokenizer::tokenize;
+pub use tokenizer::{QuoteMode, tokenize, tokenize_modifier_word};

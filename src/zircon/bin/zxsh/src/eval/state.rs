@@ -638,6 +638,30 @@ impl ShellState {
         self.cwd = new_cwd;
     }
 
+    /// Returns the separator byte used when joining positional parameters (`"$*"`, etc.):
+    /// the first byte of `IFS` if set and non-empty, `None` if `IFS` is set to empty (`IFS=""`),
+    /// or `Some(b' ')` if `IFS` is unset.
+    pub fn ifs_join_sep(&self) -> Option<u8> {
+        match self.lookup_var(BStr::new(b"IFS")) {
+            None => Some(b' '),
+            Some(val) => val.first().copied(),
+        }
+    }
+
+    fn join_args(&self, sep: Option<u8>) -> BString {
+        let current_args = self.active_args();
+        let mut joined = Vec::new();
+        for (i, arg) in current_args.iter().enumerate() {
+            if i > 0 {
+                if let Some(s) = sep {
+                    joined.push(s);
+                }
+            }
+            joined.extend_from_slice(arg.as_bytes());
+        }
+        BString::from(joined)
+    }
+
     /// Looks up a variable or special parameter value by name (e.g. `$?`, `$#`, `$1`, `$-`,
     /// `$VAR`).
     pub fn get_var(&self, name: impl VarName) -> Option<BString> {
@@ -664,17 +688,8 @@ impl ShellState {
                 return Some(BString::from(current_args.len().to_string()));
             }
             b"?" => return self.vars.get(BStr::new(b"?")).cloned(),
-            b"@" | b"*" => {
-                let current_args = self.active_args();
-                let mut joined = Vec::new();
-                for (i, arg) in current_args.iter().enumerate() {
-                    if i > 0 {
-                        joined.push(b' ');
-                    }
-                    joined.extend_from_slice(arg.as_bytes());
-                }
-                return Some(BString::from(joined));
-            }
+            b"@" => return Some(self.join_args(Some(b' '))),
+            b"*" => return Some(self.join_args(self.ifs_join_sep())),
             b"$" => {
                 let koid = fuchsia_runtime::process_self().koid().unwrap().raw_koid();
                 return Some(BString::from(koid.to_string()));

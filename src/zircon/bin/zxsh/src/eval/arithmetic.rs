@@ -6,6 +6,7 @@ use super::execution_context::ExecutionContext;
 use super::expand::parse_and_expand_modifier;
 use super::state::ShellState;
 use crate::collections::FlatSet;
+use crate::parser::QuoteMode;
 use bstr::{BStr, BString, ByteSlice};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -712,7 +713,7 @@ fn evaluate_arithmetic_recursive(
     ctx: &ExecutionContext,
     visited: &mut FlatSet<BString>,
 ) -> Result<i64, String> {
-    let expanded = parse_and_expand_modifier(expr, state, ctx)?;
+    let expanded = parse_and_expand_modifier(expr, QuoteMode::DoubleQuoted, state, ctx)?;
     let trimmed = expanded.trim_ascii();
     let tokens = tokenize_arith(trimmed.as_bstr())?;
     let mut pos = 0;

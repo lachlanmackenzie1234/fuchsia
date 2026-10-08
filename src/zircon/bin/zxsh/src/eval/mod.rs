@@ -56,7 +56,7 @@ pub mod testing {
         expand_assignment_value, expand_var_with_modifiers, get_literal_command_name,
         needs_subshell_process,
     };
-    pub use super::glob::{WordChar, expand_glob, match_glob, match_segment_glob};
+    pub use super::glob::{WordChar, expand_glob, match_segment_glob};
     pub use super::redirect::{HEREDOC_INLINE_THRESHOLD, apply_redirects};
     pub use super::simple::{
         ResolvedAlias, apply_assignments, is_assignment_flat, parse_simple_command_args,

@@ -72,18 +72,6 @@ pub fn word_chars_to_bstring(word: &[WordChar]) -> BString {
     BString::from(bytes)
 }
 
-/// Checks whether a byte string pattern (treated as unquoted characters) matches the target text.
-///
-/// Supports POSIX shell wildcards: `*` (any sequence), `?` (any single byte), and bracket
-/// expressions `[...]`.
-pub fn match_glob(pattern: &BStr, text: &BStr) -> bool {
-    let mut chars = Vec::with_capacity(pattern.len());
-    for &b in pattern.as_bytes() {
-        chars.push(WordChar::Unquoted(b));
-    }
-    match_segment_glob(&chars, text)
-}
-
 fn match_char_class(target_byte: u8, class_name: &str) -> bool {
     match class_name {
         "alnum" => target_byte.is_ascii_alphanumeric(),

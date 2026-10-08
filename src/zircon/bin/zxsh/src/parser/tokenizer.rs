@@ -446,252 +446,7 @@ impl<'a> Tokenizer<'a> {
                     self.tokens.push(Token::RParen);
                 }
                 _ => {
-                    let mut parts = Vec::new();
-                    let mut current_bytes = Vec::new();
-                    let mut state = TokenizeState::Unquoted;
-
-                    #[derive(Clone, Copy, PartialEq, Eq)]
-                    enum TokenizeState {
-                        Unquoted,
-                        SingleQuoted,
-                        DoubleQuoted,
-                    }
-
-                    while let Some(ch) = self.peek() {
-                        match state {
-                            TokenizeState::Unquoted => match ch {
-                                _ if (CHAR_CLASSES[ch as usize]
-                                    & (WHITESPACE | NEWLINE | META_CHAR))
-                                    != 0 =>
-                                {
-                                    break;
-                                }
-                                b'\'' => {
-                                    self.next();
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::Literal(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    state = TokenizeState::SingleQuoted;
-                                }
-                                b'"' => {
-                                    self.next();
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::Literal(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    state = TokenizeState::DoubleQuoted;
-                                }
-                                b'\\' => {
-                                    self.next();
-                                    if let Some(next_ch) = self.peek() {
-                                        if next_ch == b'\n' {
-                                            self.next();
-                                            if self.peek().is_none() {
-                                                return Err(ParseError::Incomplete(
-                                                    IncompleteReason::LineContinuation,
-                                                ));
-                                            }
-                                        } else {
-                                            let next_ch = self.next().unwrap();
-                                            current_bytes.push(next_ch);
-                                        }
-                                    } else {
-                                        current_bytes.push(b'\\');
-                                    }
-                                }
-                                b'`' => {
-                                    self.next();
-                                    let inner = self.scan_backtick_command_substitution()?;
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::Literal(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    parts.push(RawWordPart::CommandSubstitution(inner));
-                                }
-                                b'$' if !self.parsing_heredoc_delimiter => {
-                                    self.next();
-                                    if self.consume(b'(') {
-                                        if self.consume(b'(') {
-                                            let expr = self.scan_arithmetic_expansion()?;
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::Literal(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::Arithmetic(expr));
-                                        } else {
-                                            let inner = self.scan_command_substitution()?;
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::Literal(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::CommandSubstitution(inner));
-                                        }
-                                    } else if self.peek() == Some(b'{') {
-                                        if let Some(var_name) = self.parse_var_name() {
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::Literal(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::Var(var_name));
-                                        } else {
-                                            return Err(ParseError::Incomplete(
-                                                IncompleteReason::Brace,
-                                            ));
-                                        }
-                                    } else if let Some(var_name) = self.parse_var_name() {
-                                        if !current_bytes.is_empty() {
-                                            parts.push(RawWordPart::Literal(
-                                                current_bytes.clone().into(),
-                                            ));
-                                            current_bytes.clear();
-                                        }
-                                        parts.push(RawWordPart::Var(var_name));
-                                    } else {
-                                        current_bytes.push(b'$');
-                                    }
-                                }
-                                _ => {
-                                    self.next();
-                                    current_bytes.push(ch);
-                                }
-                            },
-                            TokenizeState::SingleQuoted => {
-                                self.next();
-                                if ch == b'\'' {
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::QuotedLiteral(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    state = TokenizeState::Unquoted;
-                                } else {
-                                    current_bytes.push(ch);
-                                }
-                            }
-                            TokenizeState::DoubleQuoted => match ch {
-                                b'"' => {
-                                    self.next();
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::QuotedLiteral(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    state = TokenizeState::Unquoted;
-                                }
-                                b'\\' => {
-                                    self.next();
-                                    if let Some(next_ch) = self.peek() {
-                                        if next_ch == b'\n' {
-                                            self.next();
-                                            if self.peek().is_none() {
-                                                return Err(ParseError::Incomplete(
-                                                    IncompleteReason::LineContinuation,
-                                                ));
-                                            }
-                                        } else if next_ch == b'"'
-                                            || next_ch == b'\\'
-                                            || next_ch == b'$'
-                                        {
-                                            current_bytes.push(next_ch);
-                                            self.next();
-                                        } else {
-                                            current_bytes.push(b'\\');
-                                        }
-                                    } else {
-                                        current_bytes.push(b'\\');
-                                    }
-                                }
-                                b'`' => {
-                                    self.next();
-                                    let inner = self.scan_backtick_command_substitution()?;
-                                    if !current_bytes.is_empty() {
-                                        parts.push(RawWordPart::QuotedLiteral(
-                                            current_bytes.clone().into(),
-                                        ));
-                                        current_bytes.clear();
-                                    }
-                                    parts.push(RawWordPart::QuotedCommandSubstitution(inner));
-                                }
-                                b'$' if !self.parsing_heredoc_delimiter => {
-                                    self.next();
-                                    if self.consume(b'(') {
-                                        if self.consume(b'(') {
-                                            let expr = self.scan_arithmetic_expansion()?;
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::QuotedLiteral(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::QuotedArithmetic(expr));
-                                        } else {
-                                            let inner = self.scan_command_substitution()?;
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::QuotedLiteral(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::QuotedCommandSubstitution(
-                                                inner,
-                                            ));
-                                        }
-                                    } else if self.peek() == Some(b'{') {
-                                        if let Some(var_name) = self.parse_var_name() {
-                                            if !current_bytes.is_empty() {
-                                                parts.push(RawWordPart::QuotedLiteral(
-                                                    current_bytes.clone().into(),
-                                                ));
-                                                current_bytes.clear();
-                                            }
-                                            parts.push(RawWordPart::QuotedVar(var_name));
-                                        } else {
-                                            return Err(ParseError::Incomplete(
-                                                IncompleteReason::Brace,
-                                            ));
-                                        }
-                                    } else if let Some(var_name) = self.parse_var_name() {
-                                        if !current_bytes.is_empty() {
-                                            parts.push(RawWordPart::QuotedLiteral(
-                                                current_bytes.clone().into(),
-                                            ));
-                                            current_bytes.clear();
-                                        }
-                                        parts.push(RawWordPart::QuotedVar(var_name));
-                                    } else {
-                                        current_bytes.push(b'$');
-                                    }
-                                }
-                                _ => {
-                                    self.next();
-                                    current_bytes.push(ch);
-                                }
-                            },
-                        }
-                    }
-
-                    if state != TokenizeState::Unquoted {
-                        return Err(ParseError::Incomplete(IncompleteReason::Quote));
-                    }
-
-                    if !current_bytes.is_empty() {
-                        parts.push(RawWordPart::Literal(current_bytes.into()));
-                    }
+                    let parts = self.read_word_parts(WordMode::NormalWord, QuoteMode::Unquoted)?;
 
                     if self.parsing_heredoc_delimiter {
                         self.pending_indices.push(self.tokens.len());
@@ -712,8 +467,274 @@ impl<'a> Tokenizer<'a> {
         self.process_heredocs()?;
         Ok(self.tokens)
     }
+
+    fn read_word_parts(
+        &mut self,
+        word_mode: WordMode,
+        quote_mode: QuoteMode,
+    ) -> Result<Vec<RawWordPart>, ParseError> {
+        let mut parts = Vec::new();
+        let mut current_bytes = Vec::new();
+        let mut state = TokenizeState::Unquoted;
+        let mut double_quote_emitted_part = false;
+
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum TokenizeState {
+            Unquoted,
+            SingleQuoted,
+            DoubleQuoted,
+        }
+
+        while let Some(ch) = self.peek() {
+            match state {
+                TokenizeState::Unquoted => match ch {
+                    _ if word_mode == WordMode::NormalWord
+                        && (CHAR_CLASSES[ch as usize] & (WHITESPACE | NEWLINE | META_CHAR))
+                            != 0 =>
+                    {
+                        break;
+                    }
+                    b'\'' if quote_mode == QuoteMode::Unquoted => {
+                        self.next();
+                        if !current_bytes.is_empty() {
+                            parts.push(RawWordPart::Literal(
+                                std::mem::take(&mut current_bytes).into(),
+                            ));
+                        }
+                        state = TokenizeState::SingleQuoted;
+                    }
+                    b'"' => {
+                        self.next();
+                        if !current_bytes.is_empty() {
+                            parts.push(RawWordPart::Literal(
+                                std::mem::take(&mut current_bytes).into(),
+                            ));
+                        }
+                        double_quote_emitted_part = false;
+                        state = TokenizeState::DoubleQuoted;
+                    }
+                    b'\\' => {
+                        self.next();
+                        if let Some(next_ch) = self.peek() {
+                            if next_ch == b'\n' {
+                                self.next();
+                                if self.peek().is_none() {
+                                    return Err(ParseError::Incomplete(
+                                        IncompleteReason::LineContinuation,
+                                    ));
+                                }
+                            } else {
+                                let next_ch = self.next().unwrap();
+                                if word_mode == WordMode::ModifierWord {
+                                    if !current_bytes.is_empty() {
+                                        parts.push(RawWordPart::Literal(
+                                            std::mem::take(&mut current_bytes).into(),
+                                        ));
+                                    }
+                                    parts.push(RawWordPart::QuotedLiteral(vec![next_ch].into()));
+                                } else {
+                                    current_bytes.push(next_ch);
+                                }
+                            }
+                        } else {
+                            current_bytes.push(b'\\');
+                        }
+                    }
+                    b'`' => {
+                        self.next();
+                        let inner = self.scan_backtick_command_substitution()?;
+                        if !current_bytes.is_empty() {
+                            parts.push(RawWordPart::Literal(
+                                std::mem::take(&mut current_bytes).into(),
+                            ));
+                        }
+                        parts.push(RawWordPart::CommandSubstitution(inner));
+                    }
+                    b'$' if !self.parsing_heredoc_delimiter => {
+                        self.next();
+                        if self.consume(b'(') {
+                            if self.consume(b'(') {
+                                let expr = self.scan_arithmetic_expansion()?;
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::Literal(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::Arithmetic(expr));
+                            } else {
+                                let inner = self.scan_command_substitution()?;
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::Literal(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::CommandSubstitution(inner));
+                            }
+                        } else if self.peek() == Some(b'{') {
+                            if let Some(var_name) = self.parse_var_name() {
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::Literal(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::Var(var_name));
+                            } else {
+                                return Err(ParseError::Incomplete(IncompleteReason::Brace));
+                            }
+                        } else if let Some(var_name) = self.parse_var_name() {
+                            if !current_bytes.is_empty() {
+                                parts.push(RawWordPart::Literal(
+                                    std::mem::take(&mut current_bytes).into(),
+                                ));
+                            }
+                            parts.push(RawWordPart::Var(var_name));
+                        } else {
+                            current_bytes.push(b'$');
+                        }
+                    }
+                    _ => {
+                        self.next();
+                        current_bytes.push(ch);
+                    }
+                },
+                TokenizeState::SingleQuoted => {
+                    self.next();
+                    if ch == b'\'' {
+                        parts.push(RawWordPart::QuotedLiteral(
+                            std::mem::take(&mut current_bytes).into(),
+                        ));
+                        state = TokenizeState::Unquoted;
+                    } else {
+                        current_bytes.push(ch);
+                    }
+                }
+                TokenizeState::DoubleQuoted => match ch {
+                    b'"' => {
+                        self.next();
+                        if !current_bytes.is_empty() || !double_quote_emitted_part {
+                            parts.push(RawWordPart::QuotedLiteral(
+                                std::mem::take(&mut current_bytes).into(),
+                            ));
+                        }
+                        state = TokenizeState::Unquoted;
+                    }
+                    b'\\' => {
+                        self.next();
+                        if let Some(next_ch) = self.peek() {
+                            if next_ch == b'\n' {
+                                self.next();
+                                if self.peek().is_none() {
+                                    return Err(ParseError::Incomplete(
+                                        IncompleteReason::LineContinuation,
+                                    ));
+                                }
+                            } else if next_ch == b'"' || next_ch == b'\\' || next_ch == b'$' {
+                                current_bytes.push(next_ch);
+                                self.next();
+                            } else {
+                                current_bytes.push(b'\\');
+                            }
+                        } else {
+                            current_bytes.push(b'\\');
+                        }
+                    }
+                    b'`' => {
+                        self.next();
+                        let inner = self.scan_backtick_command_substitution()?;
+                        if !current_bytes.is_empty() {
+                            parts.push(RawWordPart::QuotedLiteral(
+                                std::mem::take(&mut current_bytes).into(),
+                            ));
+                        }
+                        parts.push(RawWordPart::QuotedCommandSubstitution(inner));
+                        double_quote_emitted_part = true;
+                    }
+                    b'$' if !self.parsing_heredoc_delimiter => {
+                        self.next();
+                        if self.consume(b'(') {
+                            if self.consume(b'(') {
+                                let expr = self.scan_arithmetic_expansion()?;
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::QuotedLiteral(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::QuotedArithmetic(expr));
+                                double_quote_emitted_part = true;
+                            } else {
+                                let inner = self.scan_command_substitution()?;
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::QuotedLiteral(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::QuotedCommandSubstitution(inner));
+                                double_quote_emitted_part = true;
+                            }
+                        } else if self.peek() == Some(b'{') {
+                            if let Some(var_name) = self.parse_var_name() {
+                                if !current_bytes.is_empty() {
+                                    parts.push(RawWordPart::QuotedLiteral(
+                                        std::mem::take(&mut current_bytes).into(),
+                                    ));
+                                }
+                                parts.push(RawWordPart::QuotedVar(var_name));
+                                double_quote_emitted_part = true;
+                            } else {
+                                return Err(ParseError::Incomplete(IncompleteReason::Brace));
+                            }
+                        } else if let Some(var_name) = self.parse_var_name() {
+                            if !current_bytes.is_empty() {
+                                parts.push(RawWordPart::QuotedLiteral(
+                                    std::mem::take(&mut current_bytes).into(),
+                                ));
+                            }
+                            parts.push(RawWordPart::QuotedVar(var_name));
+                            double_quote_emitted_part = true;
+                        } else {
+                            current_bytes.push(b'$');
+                        }
+                    }
+                    _ => {
+                        self.next();
+                        current_bytes.push(ch);
+                    }
+                },
+            }
+        }
+
+        if state != TokenizeState::Unquoted {
+            return Err(ParseError::Incomplete(IncompleteReason::Quote));
+        }
+
+        if !current_bytes.is_empty() {
+            parts.push(RawWordPart::Literal(current_bytes.into()));
+        }
+
+        Ok(parts)
+    }
+}
+
+/// Indicates whether a word or expansion is being parsed/expanded inside double quotes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuoteMode {
+    Unquoted,
+    DoubleQuoted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WordMode {
+    NormalWord,
+    ModifierWord,
 }
 
 pub fn tokenize(input: &[u8]) -> Result<Vec<Token>, ParseError> {
     Tokenizer::new(input).tokenize()
+}
+
+pub fn tokenize_modifier_word(
+    input: &[u8],
+    quote_mode: QuoteMode,
+) -> Result<Vec<RawWordPart>, ParseError> {
+    Tokenizer::new(input).read_word_parts(WordMode::ModifierWord, quote_mode)
 }

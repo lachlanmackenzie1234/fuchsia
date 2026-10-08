@@ -182,12 +182,10 @@ pub fn eval_case(
                 builder,
             )?;
             state.take_cmd_sub_status();
-            if !word_chars_list.is_empty() {
-                let pat_word = &word_chars_list[0];
-                if match_segment_glob(pat_word, expanded_word.as_ref()) {
-                    matched = true;
-                    break;
-                }
+            let pat_word = word_chars_list.first().map(|w| w.as_slice()).unwrap_or(&[]);
+            if match_segment_glob(pat_word, expanded_word.as_ref()) {
+                matched = true;
+                break;
             }
         }
         if matched {

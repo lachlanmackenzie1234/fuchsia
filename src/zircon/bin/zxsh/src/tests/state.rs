@@ -293,3 +293,32 @@ fn test_default_shell_variables_align_with_dash() {
     assert_eq!(state.get_var(BStr::new("PS2")), Some(BString::from("> ")));
     assert_eq!(state.get_var(BStr::new("PS4")), Some(BString::from("+ ")));
 }
+
+#[test]
+fn test_ifs_join_sep_and_star_at_get_var() {
+    let mut state = ShellState::new();
+    state.set_args(vec![BString::from("a"), BString::from("b"), BString::from("c")]);
+
+    // Default IFS (" \t\n") -> first byte is ' '
+    assert_eq!(state.ifs_join_sep(), Some(b' '));
+    assert_eq!(state.get_var(BStr::new("*")), Some(BString::from("a b c")));
+    assert_eq!(state.get_var(BStr::new("@")), Some(BString::from("a b c")));
+
+    // Custom IFS (":;") -> first byte is ':' for *, while @ always joins with ' '
+    state.set_var(BStr::new("IFS"), BStr::new(":;"));
+    assert_eq!(state.ifs_join_sep(), Some(b':'));
+    assert_eq!(state.get_var(BStr::new("*")), Some(BString::from("a:b:c")));
+    assert_eq!(state.get_var(BStr::new("@")), Some(BString::from("a b c")));
+
+    // Empty IFS ("") -> None for * (concatenated with no separator), while @ joins with ' '
+    state.set_var(BStr::new("IFS"), BStr::new(""));
+    assert_eq!(state.ifs_join_sep(), None);
+    assert_eq!(state.get_var(BStr::new("*")), Some(BString::from("abc")));
+    assert_eq!(state.get_var(BStr::new("@")), Some(BString::from("a b c")));
+
+    // Unset IFS -> falls back to ' '
+    state.unset_var(BStr::new("IFS"));
+    assert_eq!(state.ifs_join_sep(), Some(b' '));
+    assert_eq!(state.get_var(BStr::new("*")), Some(BString::from("a b c")));
+    assert_eq!(state.get_var(BStr::new("@")), Some(BString::from("a b c")));
+}

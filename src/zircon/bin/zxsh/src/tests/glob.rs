@@ -2,9 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::testing::{WordChar, expand_glob, match_glob, match_segment_glob};
-use bstr::{BStr, BString};
+use crate::eval::testing::{WordChar, expand_glob, match_segment_glob};
+use bstr::{BStr, BString, ByteSlice};
 use std::fs;
+
+fn match_glob(pattern: &BStr, text: &BStr) -> bool {
+    let chars: Vec<WordChar> = pattern.as_bytes().iter().map(|&b| WordChar::Unquoted(b)).collect();
+    match_segment_glob(&chars, text)
+}
 
 #[test]
 fn test_match_glob() {

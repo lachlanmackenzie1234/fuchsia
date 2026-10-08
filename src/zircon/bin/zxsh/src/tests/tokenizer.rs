@@ -75,8 +75,17 @@ fn test_tokenizer_words_quotes_escapes() {
         Ok(vec![word(&[ql("hello "), qv("world"), ql(" "), qc("cmd")])])
     );
 
-    // Empty double quotes
-    assert_eq!(tokenize(b"\"\""), Ok(vec![word(&[])]));
+    // Empty quotes and composite empty-quote words
+    assert_eq!(tokenize(b"\"\" ''"), Ok(vec![qw(""), qw("")]));
+    assert_eq!(
+        tokenize(b"\"\"$unset ''$unset $unset\"\" $unset''"),
+        Ok(vec![
+            word(&[ql(""), v("unset")]),
+            word(&[ql(""), v("unset")]),
+            word(&[v("unset"), ql("")]),
+            word(&[v("unset"), ql("")]),
+        ])
+    );
 }
 
 #[test]
@@ -253,7 +262,7 @@ fn test_tokenizer_double_quote_patterns() {
     assert_eq!(
         tokenize(b"\"\\\n\" \"\\a\" \"\\\"\" \"prefix`echo`\" \"prefix$((1+1))\" \"prefix${var}\" \"$%\""),
         Ok(vec![
-            word(&[]),
+            qw(""),
             qw("\\a"),
             qw("\""),
             word(&[ql("prefix"), qc("echo")]),
