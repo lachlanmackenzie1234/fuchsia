@@ -122,11 +122,6 @@ struct Driver {
   template <typename IoProvider, typename IrqProvider>
   void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {}
 
-  template <typename IoProvider>
-  bool TxDrained(IoProvider& io) {
-    return true;
-  }
-
   // This tells the IoProvider what device resources to provide.
   constexpr config_type config() const { return {}; }
   constexpr size_t io_slots() const { return 0; }
