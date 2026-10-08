@@ -288,10 +288,10 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             )
 
         # Calculate normalized metrics if Processing Rate events are present
-        cpu_timelines = self._get_cpu_rates(model)
+        cpu_timelines = _get_cpu_rates(model)
         if cpu_timelines:
             total_cpu_count = max(1, len(model.scheduling_records))
-            norm_percentages = self._calculate_normalized_percentages(
+            norm_percentages = _calculate_normalized_percentages(
                 cpu_starts=cpu_starts,
                 cpu_durations=cpu_durations,
                 cpu_percentages=cpu_percentages,
@@ -367,7 +367,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                 tid_to_thread_name[t.tid] = t.name
 
         # Parse Processing rate events for DVFS CPU normalization.
-        cpu_timelines = self._get_cpu_rates(model)
+        cpu_timelines = _get_cpu_rates(model)
 
         # Calculate durations for each CPU for each tid.
         durations = DurationsBreakdown.calculate(
@@ -438,102 +438,101 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             durations.max_timestamp - durations.min_timestamp,
         )
 
-    def _get_cpu_rates(
-        self, model: trace_model.Model
-    ) -> dict[int, CpuProcessingRateTimeline]:
-        """Extracts DVFS processing rate events from the trace model for all CPUs.
 
-        Args:
-            model: The input trace model containing 'kernel:power' events.
+def _get_cpu_rates(
+    model: trace_model.Model,
+) -> Mapping[int, CpuProcessingRateTimeline]:
+    """Extracts DVFS processing rate events from the trace model for all CPUs.
 
-        Returns:
-            A dictionary keyed by cpu_index, containing CpuProcessingRateTimeline objects.
-        """
-        power_events = list(
-            e
-            for e in trace_utils.filter_events(
-                model.all_events(),
-                type=trace_model.CounterEvent,
+    Args:
+        model: The input trace model containing 'kernel:power' events.
+
+    Returns:
+        A dictionary keyed by cpu_index, containing CpuProcessingRateTimeline objects.
+    """
+    power_events = list(
+        e
+        for e in trace_utils.filter_events(
+            model.all_events(),
+            type=trace_model.CounterEvent,
+        )
+        if e.name and e.name.startswith(_RATE_EVENT_NAME)
+    )
+
+    rates_by_cpu: dict[int, list[ProcessingRateSample]] = {}
+    for event in power_events:
+        # For "Rate" events, the CPU index is encoded in `event.id`.
+        # When the CPU index is 0, the `event.id` field is omitted from the trace.
+        cpu_idx = event.id if event.id is not None else 0
+        rate = event.args.get("CPU", _DEFAULT_PROCESSING_RATE)
+
+        rates_by_cpu.setdefault(cpu_idx, []).append(
+            ProcessingRateSample(
+                timestamp_ms=DurationsBreakdown._timestamp_ms(event.start),
+                rate=rate,
             )
-            if e.name and e.name.startswith(_RATE_EVENT_NAME)
         )
 
-        rates_by_cpu: dict[int, list[ProcessingRateSample]] = {}
-        for event in power_events:
-            # For "Rate" events, the CPU index is encoded in `event.id`.
-            # When the CPU index is 0, the `event.id` field is omitted from the trace.
-            cpu_idx = event.id if event.id is not None else 0
-            rate = event.args.get("CPU", _DEFAULT_PROCESSING_RATE)
+    return {
+        cpu_idx: CpuProcessingRateTimeline(rates)
+        for cpu_idx, rates in rates_by_cpu.items()
+    }
 
-            rates_by_cpu.setdefault(cpu_idx, []).append(
-                ProcessingRateSample(
-                    timestamp_ms=DurationsBreakdown._timestamp_ms(event.start),
-                    rate=rate,
+
+def _calculate_normalized_percentages(
+    *,
+    cpu_starts: Sequence[float],
+    cpu_durations: Sequence[float],
+    cpu_percentages: Sequence[float],
+    cpu_timelines: Mapping[int, CpuProcessingRateTimeline],
+    total_cpu_count: int,
+) -> list[float]:
+    """Computes the normalized CPU percentages for periodic aggregate windows.
+
+    For each reporting window (e.g., 1-second buckets), this calculates the exact
+    normalized CPU utilization by comparing the DVFS-weighted CPU time against
+    the total wall-clock time of the window.
+
+    Args:
+        cpu_starts: Start timestamps (in ns) of the reporting windows.
+        cpu_durations: Durations (in ns) of the reporting windows.
+        cpu_percentages: The raw (unnormalized) CPU percentages for the windows.
+        cpu_timelines: The processing rate timelines for each CPU.
+        total_cpu_count: The total number of CPUs in the system.
+
+    Returns:
+        A list of normalized CPU percentages corresponding to each window.
+    """
+    norm_percentages = []
+    cpu_count = max(1, total_cpu_count)
+    missing_cpus = max(0, cpu_count - len(cpu_timelines))
+
+    for start_ns, dur_ns, pct in zip(
+        cpu_starts, cpu_durations, cpu_percentages
+    ):
+        start_ms = start_ns / _NS_PER_MS
+        end_ms = (start_ns + dur_ns) / _NS_PER_MS
+        total_dur = dur_ns / _NS_PER_MS
+
+        total_norm_dur = 0.0
+
+        if total_dur > 0 and cpu_timelines:
+            for timeline in cpu_timelines.values():
+                virtual_slices = timeline.get_virtual_slices(start_ms, end_ms)
+                total_norm_dur += sum(
+                    s.duration * (s.rate / _DEFAULT_PROCESSING_RATE)
+                    for s in virtual_slices
                 )
-            )
+            # Add full capacity duration for CPUs without rate events
+            total_norm_dur += missing_cpus * total_dur
 
-        return {
-            cpu_idx: CpuProcessingRateTimeline(rates)
-            for cpu_idx, rates in rates_by_cpu.items()
-        }
+            avg_norm_dur = total_norm_dur / cpu_count
+            avg_rate_ratio = avg_norm_dur / total_dur
+        else:
+            avg_rate_ratio = 1.0
 
-    def _calculate_normalized_percentages(
-        self,
-        *,
-        cpu_starts: list[float],
-        cpu_durations: list[float],
-        cpu_percentages: list[float],
-        cpu_timelines: dict[int, CpuProcessingRateTimeline],
-        total_cpu_count: int,
-    ) -> list[float]:
-        """Computes the normalized CPU percentages for periodic aggregate windows.
-
-        For each reporting window (e.g., 1-second buckets), this calculates the exact
-        normalized CPU utilization by comparing the DVFS-weighted CPU time against
-        the total wall-clock time of the window.
-
-        Args:
-            cpu_starts: Start timestamps (in ns) of the reporting windows.
-            cpu_durations: Durations (in ns) of the reporting windows.
-            cpu_percentages: The raw (unnormalized) CPU percentages for the windows.
-            cpu_timelines: The processing rate timelines for each CPU.
-            total_cpu_count: The total number of CPUs in the system.
-
-        Returns:
-            A list of normalized CPU percentages corresponding to each window.
-        """
-        norm_percentages = []
-        cpu_count = max(1, total_cpu_count)
-        missing_cpus = max(0, cpu_count - len(cpu_timelines))
-
-        for start_ns, dur_ns, pct in zip(
-            cpu_starts, cpu_durations, cpu_percentages
-        ):
-            start_ms = start_ns / _NS_PER_MS
-            end_ms = (start_ns + dur_ns) / _NS_PER_MS
-            total_dur = dur_ns / _NS_PER_MS
-
-            total_norm_dur = 0.0
-
-            if total_dur > 0 and cpu_timelines:
-                for timeline in cpu_timelines.values():
-                    virtual_slices = timeline.get_virtual_slices(
-                        start_ms, end_ms
-                    )
-                    total_norm_dur += sum(
-                        s.duration * (s.rate / _DEFAULT_PROCESSING_RATE)
-                        for s in virtual_slices
-                    )
-                # Add full capacity duration for CPUs without rate events
-                total_norm_dur += missing_cpus * total_dur
-
-                avg_norm_dur = total_norm_dur / cpu_count
-                avg_rate_ratio = avg_norm_dur / total_dur
-            else:
-                avg_rate_ratio = 1.0
-
-            norm_percentages.append(pct * avg_rate_ratio)
-        return norm_percentages
+        norm_percentages.append(pct * avg_rate_ratio)
+    return norm_percentages
 
 
 class DurationsBreakdown:
@@ -644,7 +643,7 @@ class DurationsBreakdown:
             int, Sequence[trace_model.SchedulingRecord]
         ],
         tid_to_thread_name: dict[int, str],
-        cpu_timelines: dict[int, CpuProcessingRateTimeline],
+        cpu_timelines: Mapping[int, CpuProcessingRateTimeline],
     ) -> Self:
         durations = cls()
         for cpu, records in per_cpu_scheduling_records.items():
