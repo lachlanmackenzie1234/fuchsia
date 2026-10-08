@@ -2528,6 +2528,7 @@ group("root_targets") {
     # The Fuchsia Bazel SDK generated from the Fuchsia IDK, and the associated
     # tests.
     "//sdk:final_fuchsia_sdk_tests",
+    "//sdk:final_fuchsia_sdk_tests.bazel",
 
     # The IDK generated for the in-tree @fuchsia_sdk Bazel workspace, and
     # associated tests.
