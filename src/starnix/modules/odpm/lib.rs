@@ -4,8 +4,9 @@
 
 //! Implementation of the On-Device Power Monitor (ODPM) module for Starnix.
 //!
-//! This module registers an Industrial I/O (IIO) device under `/sys/bus/iio/devices/iio:device0`
-//! exposing power rail energy measurements from the Fuchsia ODPM FIDL service (`fuchsia.hardware.google.odpm`).
+//! This module registers an Industrial I/O (IIO) device at `/sys/devices/platform/cpm/cpm:ODPM/iio:device0`
+//! with a symlink under `/sys/bus/iio/devices/iio:device0`, exposing power rail energy measurements
+//! from the Fuchsia ODPM FIDL service (`fuchsia.hardware.google.odpm`).
 
 #![recursion_limit = "256"]
 
@@ -15,8 +16,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::Service;
 use futures::future::Either;
 use futures::{FutureExt, TryStreamExt};
-use starnix_core::device::kobject::Device;
-use starnix_core::fs::sysfs::build_device_directory;
+use starnix_core::fs::sysfs::get_sysfs;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
@@ -435,18 +435,49 @@ pub fn odpm_device_init(kernel: &Kernel) {
     );
 }
 
-/// Registers the ODPM device within the Starnix device registry under `iio:device0`.
-pub fn register_odpm_device(kernel: &Kernel, odpm_device: Arc<OdpmDevice>) -> Device {
-    let registry = &kernel.device_registry;
+/// Registers the ODPM device within sysfs at `/sys/devices/platform/cpm/cpm:ODPM/iio:device0`
+/// and creates the symlink at `/sys/bus/iio/devices/iio:device0`.
+pub fn register_odpm_device(kernel: &Kernel, odpm_device: Arc<OdpmDevice>) {
+    let fs = get_sysfs(kernel);
+    let root = SimpleDirectoryMutator::new(fs, kernel.device_registry.objects.root.clone());
 
-    let iio = registry
-        .objects
-        .get_or_create_class("iio".into(), registry.objects.get_or_create_bus("iio".into()));
+    // 1. Create the canonical platform device hierarchy:
+    //    /sys/devices/platform/cpm/cpm:ODPM/iio:device0
+    root.subdir("devices", 0o755, |devices_dir| {
+        devices_dir.subdir("platform", 0o755, |platform_dir| {
+            platform_dir.subdir("cpm", 0o755, |cpm_dir| {
+                cpm_dir.subdir("cpm:ODPM", 0o755, |odpm_dir| {
+                    odpm_dir.subdir("iio:device0", 0o755, |iio_device_dir| {
+                        build_odpm_directory(iio_device_dir, odpm_device);
+                        iio_device_dir.entry(
+                            "uevent",
+                            BytesFile::new_node(
+                                b"DEVPATH=/devices/platform/cpm/cpm:ODPM/iio:device0\nSUBSYSTEM=iio\n".to_vec(),
+                            ),
+                            mode!(IFREG, 0o644),
+                        );
+                        iio_device_dir.symlink(
+                            "subsystem".into(),
+                            "../../../../../bus/iio".into(),
+                        );
+                    });
+                });
+            });
+        });
+    });
 
-    registry.add_numberless_device("iio:device0".into(), iio, move |device, dir| {
-        build_device_directory(device, dir);
-        build_odpm_directory(dir, odpm_device);
-    })
+    // 2. Create the IIO bus symlink:
+    //    /sys/bus/iio/devices/iio:device0 -> ../../../devices/platform/cpm/cpm:ODPM/iio:device0
+    root.subdir("bus", 0o755, |bus_dir| {
+        bus_dir.subdir("iio", 0o755, |iio_dir| {
+            iio_dir.subdir("devices", 0o755, |devices_dir| {
+                devices_dir.symlink(
+                    "iio:device0".into(),
+                    "../../../devices/platform/cpm/cpm:ODPM/iio:device0".into(),
+                );
+            });
+        });
+    });
 }
 
 #[cfg(test)]
@@ -668,15 +699,25 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let odpm_device = Arc::new(OdpmDevice::new_with_rails(vec![]));
 
-            let device = register_odpm_device(current_task.kernel(), odpm_device);
-            assert_eq!(device.name.as_slice(), b"iio:device0");
-            assert_eq!(device.bus.name.as_slice(), b"iio");
+            register_odpm_device(current_task.kernel(), odpm_device);
 
             let root = &current_task.kernel().device_registry.objects.root;
             assert!(root.lookup("bus/iio/devices/iio:device0".into()).is_some());
-            assert!(root.lookup("devices/iio/iio/iio:device0/name".into()).is_some());
-            assert!(root.lookup("devices/iio/iio/iio:device0/enabled_rails".into()).is_some());
-            assert!(root.lookup("devices/iio/iio/iio:device0/energy_value".into()).is_some());
+            assert!(root.lookup("devices/platform/cpm/cpm:ODPM/iio:device0/name".into()).is_some());
+            assert!(
+                root.lookup("devices/platform/cpm/cpm:ODPM/iio:device0/enabled_rails".into())
+                    .is_some()
+            );
+            assert!(
+                root.lookup("devices/platform/cpm/cpm:ODPM/iio:device0/energy_value".into())
+                    .is_some()
+            );
+            assert!(
+                root.lookup("devices/platform/cpm/cpm:ODPM/iio:device0/uevent".into()).is_some()
+            );
+            assert!(
+                root.lookup("devices/platform/cpm/cpm:ODPM/iio:device0/subsystem".into()).is_some()
+            );
         })
         .await;
     }
