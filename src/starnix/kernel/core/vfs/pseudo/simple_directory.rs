@@ -32,7 +32,17 @@ impl SimpleDirectoryMutator {
     }
 
     pub fn node(&self, name: FsString, node: FsNodeHandle) {
-        self.directory.entries.lock().insert(name, node);
+        let mut state = self.directory.state.lock();
+        let child_dir_and_handler = state.not_found_handler.and_then(|handler| {
+            node.downcast_ops::<Arc<SimpleDirectory>>().cloned().map(|dir| (dir, handler))
+        });
+        state.entries.insert(name, node);
+        // Propagate the parent's handler after releasing `self.directory.state.lock()`, so that
+        // at most one `SimpleDirectoryEntriesLock` is held at a time.
+        std::mem::drop(state);
+        if let Some((child_dir, handler)) = child_dir_and_handler {
+            child_dir.set_not_found_handler(handler);
+        }
     }
 
     pub fn entry(&self, name: &str, ops: impl Into<Box<dyn FsNodeOps>>, mode: FileMode) {
@@ -79,48 +89,70 @@ impl SimpleDirectoryMutator {
     }
 }
 
+/// Handler invoked by [`FsNodeOps::lookup`] when the requested child of a [`SimpleDirectory`] is
+/// not present.
+///
+/// The handler receives the [`DirEntry`] of the directory that was searched, and the `name` of
+/// the requested child, and returns the [`Errno`] to report to the caller.
+///
+/// Child [`SimpleDirectory`] nodes created via [`SimpleDirectory::subdir`] or attached via
+/// [`SimpleDirectoryMutator`] inherit their parent directory's handler.
+#[allow(dead_code)]
+pub(crate) type NotFoundHandler = fn(&DirEntry, &FsStr) -> Errno;
+
+struct SimpleDirectoryState {
+    entries: BTreeMap<FsString, FsNodeHandle>,
+    not_found_handler: Option<NotFoundHandler>,
+}
+
+/// Returns `ENOENT`, with context identifying the directory (via its [`DirEntry`] `Debug` form)
+/// and the `name` that was looked up in it.
+fn default_not_found_handler(entry: &DirEntry, name: &FsStr) -> Errno {
+    errno!(ENOENT, format!("Looking for {name} in {entry:?}"))
+}
+
 /// Common implementation of a simple read-only directory `FsNodeOps`.
 ///
 /// `SimpleDirectoryMutator` is used to populate the directory with child `FsNode`s allocated
 /// in the desired (usually kernel-internal, e.g. "sysfs", "proc", etc) filesystem.
 pub struct SimpleDirectory {
-    entries: LockDepMutex<BTreeMap<FsString, FsNodeHandle>, SimpleDirectoryEntriesLock>,
-    not_found_handler:
-        Box<dyn Fn(&FsStr, &BTreeMap<FsString, FsNodeHandle>) -> Errno + Send + Sync + 'static>,
+    state: LockDepMutex<SimpleDirectoryState, SimpleDirectoryEntriesLock>,
 }
 
 impl SimpleDirectory {
     /// Returns a new instance with a default handler that returns `ENOENT` and logs context
     /// when a child is not found.
     pub fn new() -> Arc<Self> {
-        Self::new_with_handler(|name, locked_entries| {
-            errno!(
-                ENOENT,
-                format!(
-                    "looking for {name} in {:?}",
-                    locked_entries.keys().map(|e| e.to_string()).collect::<Vec<_>>()
-                )
-            )
+        Arc::new(SimpleDirectory {
+            state: LockDepMutex::new(SimpleDirectoryState {
+                entries: Default::default(),
+                not_found_handler: None,
+            }),
         })
     }
 
-    /// Returns a new instance configured to call the supplied `not_found_handler` whenever
-    /// `FsNodeOps::lookup()` is called for an unknown child path.
-    ///
-    /// The handler is invoked with the `name` of the requested child and a reference to
-    /// the current directory `entries`.
-    pub fn new_with_handler(
-        not_found_handler: impl Fn(&FsStr, &BTreeMap<FsString, FsNodeHandle>) -> Errno
-        + Send
-        + Sync
-        + 'static,
-    ) -> Arc<Self> {
-        let not_found_handler = Box::new(not_found_handler);
-        Arc::new(SimpleDirectory { entries: Default::default(), not_found_handler })
+    /// Installs `not_found_handler` on this directory and recursively across all existing
+    /// and future [`SimpleDirectory`] descendants.
+    #[allow(dead_code)]
+    pub(crate) fn set_not_found_handler(&self, not_found_handler: NotFoundHandler) {
+        // Collect the child directories and release this directory's lock before recursing, so
+        // that at most one `SimpleDirectoryEntriesLock` is held at a time.
+        let child_dirs: Vec<Arc<SimpleDirectory>> = {
+            let mut state = self.state.lock();
+            state.not_found_handler = Some(not_found_handler);
+            state
+                .entries
+                .values()
+                .filter_map(|node| node.downcast_ops::<Arc<SimpleDirectory>>().cloned())
+                .collect()
+        };
+        for child_dir in child_dirs {
+            child_dir.set_not_found_handler(not_found_handler);
+        }
     }
 
     pub fn remove(&self, name: &FsStr) {
-        self.entries.lock().remove(name);
+        self.state.lock().entries.remove(name);
     }
 
     fn walk<'a>(self: &Arc<Self>, path: &'a FsStr) -> Option<(Arc<Self>, &'a FsStr)> {
@@ -160,28 +192,33 @@ impl SimpleDirectory {
     }
 
     fn get_or_create_subdir_locked(
-        entries: &mut BTreeMap<FsString, FsNodeHandle>,
+        state: &mut SimpleDirectoryState,
         fs: &FileSystemHandle,
         name: &FsStr,
         mode: u32,
     ) -> Arc<SimpleDirectory> {
-        if let Some(node) = entries.get(name) {
+        if let Some(node) = state.entries.get(name) {
             assert!(node.info().mode == mode!(IFDIR, mode));
             let dir =
                 node.downcast_ops::<Arc<SimpleDirectory>>().expect("subdir is a SimpleDirectory");
             dir.clone()
         } else {
-            let dir = SimpleDirectory::new();
+            let dir = Arc::new(SimpleDirectory {
+                state: LockDepMutex::new(SimpleDirectoryState {
+                    entries: Default::default(),
+                    not_found_handler: state.not_found_handler,
+                }),
+            });
             let info = FsNodeInfo::new(mode!(IFDIR, mode), FsCred::root());
             let node = fs.create_node_and_allocate_node_id(dir.clone(), info);
-            entries.insert(name.into(), node);
+            state.entries.insert(name.into(), node);
             dir
         }
     }
 
     pub fn subdir(&self, fs: &FileSystemHandle, name: &FsStr, mode: u32) -> Arc<SimpleDirectory> {
-        let mut entries = self.entries.lock();
-        Self::get_or_create_subdir_locked(&mut entries, fs, name, mode)
+        let mut state = self.state.lock();
+        Self::get_or_create_subdir_locked(&mut state, fs, name, mode)
     }
 
     /// Creates or looks up `subdir_name`, and creates or looks up `child_name` within it while
@@ -195,8 +232,8 @@ impl SimpleDirectory {
         child_name: &FsStr,
         child_mode: u32,
     ) -> Arc<SimpleDirectory> {
-        let mut entries = self.entries.lock();
-        let subdir = Self::get_or_create_subdir_locked(&mut entries, fs, subdir_name, subdir_mode);
+        let mut state = self.state.lock();
+        let subdir = Self::get_or_create_subdir_locked(&mut state, fs, subdir_name, subdir_mode);
         // Safe because locking parent then child strictly follows the directory tree hierarchy.
         let _token = allow_subclass();
         subdir.subdir(fs, child_name, child_mode)
@@ -205,8 +242,9 @@ impl SimpleDirectory {
     /// Removes `child_name` from `subdir_name`, and removes `subdir_name` itself if it becomes
     /// empty, atomically with respect to [`Self::nested_subdir`].
     pub fn remove_from_subdir_if_empty(&self, subdir_name: &FsStr, child_name: &FsStr) {
-        let mut entries = self.entries.lock();
-        let Some(subdir) = entries
+        let mut state = self.state.lock();
+        let Some(subdir) = state
+            .entries
             .get(subdir_name)
             .and_then(|node| node.downcast_ops::<Arc<SimpleDirectory>>())
             .map(Arc::clone)
@@ -216,23 +254,24 @@ impl SimpleDirectory {
         let is_empty = {
             // Safe because locking parent then child strictly follows the directory tree hierarchy.
             let _token = allow_subclass();
-            let mut subdir_entries = subdir.entries.lock();
-            subdir_entries.remove(child_name);
-            subdir_entries.is_empty()
+            let mut subdir_state = subdir.state.lock();
+            subdir_state.entries.remove(child_name);
+            subdir_state.entries.is_empty()
         };
         if is_empty {
-            entries.remove(subdir_name);
+            state.entries.remove(subdir_name);
         }
     }
 
     fn get(&self, name: &FsStr) -> Option<FsNodeHandle> {
-        let entries = self.entries.lock();
-        entries.get(name).cloned()
+        let state = self.state.lock();
+        state.entries.get(name).cloned()
     }
 
     pub fn get_dir(&self, name: &FsStr) -> Option<Arc<SimpleDirectory>> {
-        let entries = self.entries.lock();
-        entries
+        let state = self.state.lock();
+        state
+            .entries
             .get(name)
             .and_then(|node| node.downcast_ops::<Arc<SimpleDirectory>>())
             .map(Arc::clone)
@@ -263,12 +302,20 @@ impl FsNodeOps for Arc<SimpleDirectory> {
 
     fn lookup(
         &self,
-        _entry: &DirEntry,
+        entry: &DirEntry,
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
-        let entries = self.entries.lock();
-        entries.get(name).cloned().ok_or_else(|| (self.not_found_handler)(name, &entries))
+        let not_found_handler = {
+            let state = self.state.lock();
+            if let Some(node) = state.entries.get(name) {
+                return Ok(node.clone());
+            }
+            state.not_found_handler.unwrap_or(default_not_found_handler)
+        };
+        // Invoke the handler after releasing the directory lock, so that handlers which format
+        // paths or log diagnostics do not extend the critical section.
+        Err(not_found_handler(entry, name))
     }
 }
 
@@ -289,8 +336,8 @@ impl FileOps for SimpleDirectory {
 
         // Skip through the entries until the current offset is reached.
         // Subtract 2 from the offset to account for `.` and `..`.
-        let entries = self.entries.lock();
-        for (name, node) in entries.iter().skip(sink.offset() as usize - 2) {
+        let state = self.state.lock();
+        for (name, node) in state.entries.iter().skip(sink.offset() as usize - 2) {
             sink.add(
                 node.ino,
                 sink.offset() + 1,
@@ -306,7 +353,7 @@ impl FileOps for SimpleDirectory {
 mod tests {
     use super::*;
     use crate::testing::spawn_kernel_and_run;
-    use crate::vfs::FsNodeOps;
+    use crate::vfs::{DirEntryHandle, FsNodeOps, MountInfo};
     use starnix_uapi::errno;
 
     #[fuchsia::test]
@@ -322,19 +369,49 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_custom_not_found_handler() {
+    async fn test_set_not_found_handler() {
+        #[track_caller]
+        fn check_lookup(
+            current_task: &CurrentTask,
+            root: &DirEntryHandle,
+            path: &str,
+            expected_error: Errno,
+        ) {
+            let mount = MountInfo::detached();
+            let mut dir = root.clone();
+            for component in path.split('/').filter(|s| !s.is_empty()) {
+                dir = dir.component_lookup(current_task, &mount, component.into()).unwrap();
+            }
+            let res = dir.component_lookup(current_task, &mount, "expected_error".into());
+            assert_eq!(res.unwrap_err(), expected_error);
+        }
+
         spawn_kernel_and_run(async |current_task| {
-            let dir = SimpleDirectory::new_with_handler(|name, _entries| {
-                if name == "special" { errno!(EACCES) } else { errno!(ENOENT) }
+            let fs = current_task.fs().root().entry.node.fs();
+            let root_dir = SimpleDirectory::new();
+            root_dir.subdir(&fs, "existing".into(), 0o755).subdir(&fs, "nested".into(), 0o755);
+
+            root_dir.set_not_found_handler(|entry, name| {
+                if name == "expected_error" && entry.parent().is_some() {
+                    errno!(EACCES)
+                } else {
+                    errno!(ENOENT)
+                }
             });
-            let node = dir.clone().into_node(&current_task.fs().root().entry.node.fs(), 0o777);
-            let entry = DirEntry::new_unrooted(node);
 
-            let result_special = FsNodeOps::lookup(&dir, &entry, &current_task, "special".into());
-            assert_eq!(result_special.unwrap_err(), errno!(EACCES));
+            root_dir.subdir(&fs, "future".into(), 0o755);
 
-            let result_other = FsNodeOps::lookup(&dir, &entry, &current_task, "other".into());
-            assert_eq!(result_other.unwrap_err(), errno!(ENOENT));
+            let attached = SimpleDirectory::new();
+            attached.subdir(&fs, "nested".into(), 0o755);
+            root_dir.edit(&fs, |dir| {
+                dir.entry("attached", attached, mode!(IFDIR, 0o755));
+            });
+
+            let root = DirEntry::new_unrooted(root_dir.into_node(&fs, 0o755));
+            check_lookup(&current_task, &root, "", errno!(ENOENT));
+            for path in ["existing", "existing/nested", "future", "attached", "attached/nested"] {
+                check_lookup(&current_task, &root, path, errno!(EACCES));
+            }
         })
         .await;
     }

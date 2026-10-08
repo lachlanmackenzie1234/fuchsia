@@ -6,8 +6,8 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
     CheckAccessReason, DirectoryMode, FileHandle, FileObject, FsLockDepType, FsNodeHandle,
-    FsNodeLinkBehavior, FsStr, FsString, LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind,
-    inotify_hook, path,
+    FsNodeLinkBehavior, FsStr, FsString, LookupVec, MountInfo, Mounts, NamespaceNode, PathBuilder,
+    UnlinkKind, inotify_hook, path,
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
@@ -1334,19 +1334,25 @@ impl<'a> DirEntryLockedChildren<'a> {
 impl fmt::Debug for DirEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let scope = RcuReadScope::new();
-        let mut parents = vec![];
-        let mut maybe_parent = self.parent();
-        while let Some(parent) = maybe_parent {
-            parents.push(parent.local_name.read(&scope));
-            maybe_parent = parent.parent();
+        let mut path = PathBuilder::new();
+        let mut parent_holder;
+        let mut current = self;
+        loop {
+            // Root and unnamed unrooted entries have an empty `local_name`.
+            let name = current.local_name(&scope);
+            if !name.is_empty() {
+                path.prepend_element(name);
+            }
+            let Some(parent) = current.parent() else {
+                break;
+            };
+            parent_holder = parent;
+            current = &parent_holder;
         }
-        let mut builder = f.debug_struct("DirEntry");
-        builder.field("id", &(self as *const DirEntry));
-        builder.field("local_name", &self.local_name.read(&scope).to_owned());
-        if !parents.is_empty() {
-            builder.field("parents", &parents);
-        }
-        builder.finish()
+        f.debug_struct("DirEntry")
+            .field("fs", &self.node.fs().name())
+            .field("path", &path.build_absolute())
+            .finish()
     }
 }
 
@@ -1589,6 +1595,30 @@ impl Drop for DirEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::spawn_kernel_and_run;
+    use crate::vfs::pseudo::simple_directory::SimpleDirectory;
+
+    #[fuchsia::test]
+    async fn test_dir_entry_debug() {
+        spawn_kernel_and_run(async |current_task| {
+            let fs = current_task.fs().root().entry.node.fs();
+            let check = |parent: Option<&DirEntryHandle>, name: &str, expected_path: &str| {
+                let node = SimpleDirectory::new().into_node(&fs, 0o755);
+                let entry = DirEntry::new(node, parent.cloned(), name.into());
+                assert_eq!(
+                    format!("{entry:?}"),
+                    format!("DirEntry {{ fs: {:?}, path: {expected_path:?} }}", fs.name())
+                );
+                entry
+            };
+
+            let root = check(None, "", "/");
+            let bus = check(Some(&root), "bus", "/bus");
+            check(Some(&bus), "pci", "/bus/pci");
+            check(None, "[eventfd]", "/[eventfd]");
+        })
+        .await;
+    }
 
     #[test]
     fn test_canonicalize_name() {
