@@ -15,6 +15,7 @@ targets:
       - basic_rates
       - ieee80211h
       - ieee80211d
+      - country3
       - spectrum_mgmt_required
       - local_pwr_constraint
       - noscan

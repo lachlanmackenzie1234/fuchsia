@@ -13,6 +13,7 @@ import random
 import re
 import string
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Dict, List
@@ -511,21 +512,27 @@ class OpenWrtAP:
             section_names = [section_name]
 
         for section_name in section_names:
-            for option, value in bss.custom_uci_options.items():
-                if isinstance(value, list):
-                    for item in value:
-                        self.ssh.run(
-                            f"uci add_list wireless.{section_name}.{option}='{item}'"
-                        )
-                elif isinstance(value, bool):
-                    v = str(int(value))
+            self._apply_custom_uci_options(section_name, bss.custom_uci_options)
+
+    @staticmethod
+    def _format_uci_value(value: object) -> str:
+        """Formats a Python value into an OpenWrt UCI string."""
+        return str(int(value)) if isinstance(value, bool) else str(value)
+
+    def _apply_custom_uci_options(
+        self, section: str, options: Mapping[str, object]
+    ) -> None:
+        """Applies custom UCI options to a wireless section."""
+        for option, value in options.items():
+            if isinstance(value, list):
+                for item in value:
+                    v = self._format_uci_value(item)
                     self.ssh.run(
-                        f"uci set wireless.{section_name}.{option}='{v}'"
+                        f"uci add_list wireless.{section}.{option}='{v}'"
                     )
-                else:
-                    self.ssh.run(
-                        f"uci set wireless.{section_name}.{option}='{value}'"
-                    )
+            else:
+                v = self._format_uci_value(value)
+                self.ssh.run(f"uci set wireless.{section}.{option}='{v}'")
 
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
@@ -565,17 +572,9 @@ class OpenWrtAP:
                 country = "US"
             self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
 
-            for option, value in radio_config.custom_uci_options.items():
-                if isinstance(value, list):
-                    for item in value:
-                        self.ssh.run(
-                            f"uci add_list wireless.{radio}.{option}='{item}'"
-                        )
-                elif isinstance(value, bool):
-                    v = str(int(value))
-                    self.ssh.run(f"uci set wireless.{radio}.{option}='{v}'")
-                else:
-                    self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
+            self._apply_custom_uci_options(
+                radio, radio_config.custom_uci_options
+            )
 
             # Apply hostapd options
             if hasattr(radio_config, "custom_hostapd_options"):
@@ -583,8 +582,9 @@ class OpenWrtAP:
                     option,
                     value,
                 ) in radio_config.custom_hostapd_options.items():
+                    v = self._format_uci_value(value)
                     self.ssh.run(
-                        f"uci add_list wireless.{radio}.hostapd_options='{option}={value}'"
+                        f"uci add_list wireless.{radio}.hostapd_options='{option}={v}'"
                     )
 
             if radio_config.bss_settings:

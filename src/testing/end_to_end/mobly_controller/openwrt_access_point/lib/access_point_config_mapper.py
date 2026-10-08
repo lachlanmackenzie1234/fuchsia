@@ -138,6 +138,14 @@ class AccessPointConfigMapper:
         return mapping.get(cap, cap)
 
     @staticmethod
+    def _format_hostapd_value(v: object) -> object:
+        if isinstance(v, list):
+            return " ".join(str(x) for x in v)
+        if isinstance(v, bool):
+            return int(v)
+        return v
+
+    @staticmethod
     def to_legacy_params(radio_config: RadioConfig) -> dict[str, object]:
         """Maps RadioConfig to legacy hostapd options for legacy AP support."""
         mapping = {
@@ -157,22 +165,24 @@ class AccessPointConfigMapper:
                 hostapd_options[hostapd_key] = " ".join(
                     str(int(x) // 100) for x in v
                 )
-            elif isinstance(v, list):
-                hostapd_options[hostapd_key] = " ".join(str(x) for x in v)
             else:
-                hostapd_options[hostapd_key] = v
+                hostapd_options[
+                    hostapd_key
+                ] = AccessPointConfigMapper._format_hostapd_value(v)
 
         # 3. Map custom_uci_options on first BSS (assuming single BSS for compliance tests)
         if radio_config.bss_settings:
             bss = radio_config.bss_settings[0]
             for k, v in bss.custom_uci_options.items():
                 hostapd_key = mapping.get(k, k)
-                if isinstance(v, list):
-                    hostapd_options[hostapd_key] = " ".join(str(x) for x in v)
-                else:
-                    hostapd_options[hostapd_key] = v
+                hostapd_options[
+                    hostapd_key
+                ] = AccessPointConfigMapper._format_hostapd_value(v)
 
         # 4. Merge with custom_hostapd_options
-        hostapd_options.update(radio_config.custom_hostapd_options)
+        for k, v in radio_config.custom_hostapd_options.items():
+            hostapd_options[k] = AccessPointConfigMapper._format_hostapd_value(
+                v
+            )
 
         return hostapd_options

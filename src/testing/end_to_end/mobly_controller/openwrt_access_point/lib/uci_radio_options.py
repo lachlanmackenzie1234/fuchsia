@@ -41,6 +41,9 @@ class UciRadioOptions(TypedDict, total=False):
     ieee80211d: bool
     """Enables IEEE 802.11d country IE (information element) advertisement in beacon and probe response frames. This IE contains the country code and channel/power map. Requires country"""
 
+    country3: str
+    """The third octet of the Country String (dot11CountryString)"""
+
     spectrum_mgmt_required: bool
     """Set Spectrum Management subfield in the Capability Information field"""
 
