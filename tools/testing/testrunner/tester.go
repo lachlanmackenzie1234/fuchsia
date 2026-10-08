@@ -79,10 +79,8 @@ const (
 	// The default timeout for package resolution.
 	defaultPackageResolutionTimeout = 2 * time.Minute
 
-	// The default timeout for power-cycling the target. This should be less
-	// than testTimeoutGracePeriod so that power-cycling can complete before
-	// the outer test timeout is reached.
-	defaultPowerCycleTimeout = 20 * time.Second
+	// The default timeout for power-cycling the target in ProcessResult.
+	defaultPowerCycleTimeout = 2 * time.Minute
 )
 
 // Tester describes the interface for all different types of testers.
@@ -130,13 +128,18 @@ func BaseTestResultFromTest(test testsharder.Test) *runtests.TestDetails {
 	}
 }
 
+type subprocessTestRun struct {
+	profileRelDir   string
+	needsPowerCycle bool
+}
+
 // SubprocessTester executes tests in local subprocesses.
 type SubprocessTester struct {
 	env               []string
 	dir               string
 	localOutputDir    string
 	sProps            *sandboxingProps
-	testRuns          map[string]string
+	testRuns          map[string]subprocessTestRun
 	target            targets.FuchsiaTarget
 	powerCycleTimeout time.Duration
 }
@@ -165,7 +168,7 @@ func NewSubprocessTester(opts SubprocessTesterOptions) (Tester, error) {
 		dir:               opts.Dir,
 		env:               opts.Env,
 		localOutputDir:    opts.OutputDir,
-		testRuns:          make(map[string]string),
+		testRuns:          make(map[string]subprocessTestRun),
 		target:            opts.Target,
 		powerCycleTimeout: defaultPowerCycleTimeout,
 	}
@@ -197,16 +200,12 @@ func (t *SubprocessTester) SetupTest(_ context.Context, _ testsharder.Test) erro
 	return nil
 }
 
-func (t *SubprocessTester) setTestRun(test testsharder.Test, profileRelDir string) {
-	t.testRuns[test.Path] = profileRelDir
+func (t *SubprocessTester) setTestRun(test testsharder.Test, run subprocessTestRun) {
+	t.testRuns[test.Path] = run
 }
 
-func (t *SubprocessTester) getTestRun(test testsharder.Test) string {
-	profileRelDir, ok := t.testRuns[test.Path]
-	if !ok {
-		return ""
-	}
-	return profileRelDir
+func (t *SubprocessTester) getTestRun(test testsharder.Test) subprocessTestRun {
+	return t.testRuns[test.Path]
 }
 
 func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdout io.Writer, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
@@ -504,31 +503,20 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		}
 	}
 	err := r.Run(testCmdCtx, testCmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Setpgid: true})
-	t.setTestRun(test, profileRelDir)
 	var exitErr *exec.ExitError
+	// Exit code 40 signals that the device is in a bad state and needs to be
+	// power-cycled (see https://fxbug.dev/425675837). We record this here and
+	// execute the power cycle in ProcessResult so it runs outside the per-test
+	// timeout and grace period budget.
+	needsPowerCycle := againstDevice() && errors.As(err, &exitErr) && exitErr.ExitCode() == 40
+	t.setTestRun(test, subprocessTestRun{
+		profileRelDir:   profileRelDir,
+		needsPowerCycle: needsPowerCycle,
+	})
 	if err == nil {
 		testResult.Status = runtests.TestSuccess
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		testResult.Status = runtests.TestAborted
-	} else if againstDevice() && errors.As(err, &exitErr) {
-		// Exit code 40 signals that the device is in a bad state and
-		// needs to be power-cycled. See https://fxbug.dev/425675837.
-		// A device in this state may still pass the generic health
-		// check that's run in between tests so we explicitly check for
-		// it here so that we can recover the device before the next test.
-		if exitErr.ExitCode() == 40 {
-			powerCycleTimeout := defaultPowerCycleTimeout
-			if t.powerCycleTimeout > 0 {
-				powerCycleTimeout = t.powerCycleTimeout
-			}
-			powerCycleCtx, cancel := context.WithTimeout(ctx, powerCycleTimeout)
-			err := setPowerState(powerCycleCtx, r, "cycle")
-			cancel()
-			if err != nil {
-				return testResult, fmt.Errorf("failed to power cycle target: %w", err)
-			}
-		}
-		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	} else {
 		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	}
@@ -553,7 +541,25 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 }
 
 func (t *SubprocessTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *runtests.TestDetails, err error) (*runtests.TestDetails, error) {
-	profileRelDir := t.getTestRun(test)
+	testRun := t.getTestRun(test)
+	if testRun.needsPowerCycle {
+		// Exit code 40 signals that the device is in a bad state and
+		// needs to be power-cycled. See https://fxbug.dev/425675837.
+		// A device in this state may still pass the generic health
+		// check that's run in between tests so we explicitly check for
+		// it here so that we can recover the device before the next test.
+		powerCycleTimeout := defaultPowerCycleTimeout
+		if t.powerCycleTimeout > 0 {
+			powerCycleTimeout = t.powerCycleTimeout
+		}
+		powerCycleCtx, cancel := context.WithTimeout(ctx, powerCycleTimeout)
+		defer cancel()
+		r := newRunner(t.dir, t.env)
+		if powerCycleErr := setPowerState(powerCycleCtx, r, "cycle"); powerCycleErr != nil {
+			return testResult, fmt.Errorf("failed to power cycle target: %w", powerCycleErr)
+		}
+	}
+	profileRelDir := testRun.profileRelDir
 	if profileRelDir == "" {
 		return testResult, err
 	}

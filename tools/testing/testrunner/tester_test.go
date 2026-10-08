@@ -310,7 +310,7 @@ func TestSubprocessTester(t *testing.T) {
 			}
 			tester := SubprocessTester{
 				localOutputDir: tmpDir,
-				testRuns:       make(map[string]string),
+				testRuns:       make(map[string]subprocessTestRun),
 			}
 			if c.useSandboxing {
 				tester.sProps = &sandboxingProps{
@@ -377,7 +377,7 @@ func TestSubprocessTester(t *testing.T) {
 		})
 	}
 
-	t.Run("power cycles target on exit code 40 with expired test context", func(t *testing.T) {
+	t.Run("power cycles target on exit code 40 in ProcessResult", func(t *testing.T) {
 		exit40Err := exec.Command("sh", "-c", "exit 40").Run()
 		t.Setenv(constants.DMCPathEnvKey, "/path/to/dmc")
 		t.Setenv(botanistconstants.NodenameEnvKey, "device-nodename")
@@ -389,8 +389,7 @@ func TestSubprocessTester(t *testing.T) {
 			wantErr           bool
 		}{
 			{
-				name:              "succeeds within power cycle timeout",
-				powerCycleTimeout: time.Second,
+				name: "succeeds with default power cycle timeout",
 			},
 			{
 				name:              "fails when power cycle times out",
@@ -400,14 +399,8 @@ func TestSubprocessTester(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				var runner *fakeCmdRunner
-				runner = &fakeCmdRunner{
+				runner := &fakeCmdRunner{
 					runErrs: []error{exit40Err},
-					onRun: func(ctx context.Context) {
-						if runner.runCalls == 1 || tc.hangPowerCycle {
-							<-ctx.Done()
-						}
-					},
 				}
 				oldNewRunner := newRunner
 				t.Cleanup(func() {
@@ -419,26 +412,40 @@ func TestSubprocessTester(t *testing.T) {
 
 				tester := SubprocessTester{
 					localOutputDir:    tmpDir,
-					testRuns:          make(map[string]string),
+					testRuns:          make(map[string]subprocessTestRun),
 					powerCycleTimeout: tc.powerCycleTimeout,
 				}
 				outDir := filepath.Join(tmpDir, failingTest)
 				test := testsharder.Test{
-					Test:    build.Test{Path: failingTest},
-					Timeout: time.Nanosecond,
+					Test: build.Test{Path: failingTest},
 				}
 				testResult, err := tester.Test(context.Background(), test, io.Discard, io.Discard, outDir)
+				if err != nil {
+					t.Fatalf("tester.Test got unexpected error: %s", err)
+				}
+				if runner.runCalls != 1 {
+					t.Fatalf("tester.Test ran %d commands, want 1 (power cycle must run in ProcessResult)", runner.runCalls)
+				}
+				if tc.hangPowerCycle {
+					runner.onRun = func(ctx context.Context) {
+						<-ctx.Done()
+					}
+				}
+				testResult, err = tester.ProcessResult(context.Background(), test, outDir, testResult, err)
 				if tc.wantErr {
 					if !errors.Is(err, context.DeadlineExceeded) {
-						t.Fatalf("tester.Test got error %v, want %v", err, context.DeadlineExceeded)
+						t.Fatalf("tester.ProcessResult got error %v, want %v", err, context.DeadlineExceeded)
 					}
 					return
 				}
 				if err != nil {
-					t.Fatalf("tester.Test got unexpected error: %s", err)
+					t.Fatalf("tester.ProcessResult got unexpected error: %s", err)
 				}
 				if testResult.Status != runtests.TestFailure {
-					t.Errorf("tester.Test got status %s, want %s", testResult.Status, runtests.TestFailure)
+					t.Errorf("tester.ProcessResult got status %s, want %s", testResult.Status, runtests.TestFailure)
+				}
+				if runner.runCalls != 2 {
+					t.Fatalf("after ProcessResult got %d commands run, want 2", runner.runCalls)
 				}
 				wantCmd := []string{"/path/to/dmc", "set-power-state", "--nodename", "device-nodename", "--state", "cycle"}
 				if diff := cmp.Diff(wantCmd, runner.lastCmd); diff != "" {
