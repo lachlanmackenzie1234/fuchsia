@@ -1,7 +1,7 @@
 ---
 name: e2e-bazel-migration
 description: >-
-  Performs an end-to-end migration of GN packages to Bazel, covering pre-migration checks, workspace branching, migration package selection, package migration/verification, CL creation, review and status reporting. Use this skill when the user wants to run the full automated GN-to-Bazel package migration workflow or migrate a batch of packages from start to finish.
+  Performs an end-to-end migration of GN packages to Bazel, covering pre-migration checks, workspace branching, migration package selection, Buganizer ticket creation, package migration/verification, CL creation, review and status reporting. Use this skill when the user wants to run the full automated GN-to-Bazel package migration workflow or migrate a batch of packages from start to finish.
 ---
 
 
@@ -15,6 +15,8 @@ description: >-
 
 * **commit message guidelines** : The guidelines in this [migration_commit_message_guidelines.md](../../../references/migration/commit_message/guidelines.md) file.
 
+* **buganizer ticket number** : The number in the "Buganizer Ticket" column of the row for the **migration package** in the **control table**. If it's a URL, strip the "http://b/". (e.g., "http://b/1234567", the buganizer ticket number is "1234567")
+
 
 ## End-to-End Bazel Migration
 
@@ -23,11 +25,9 @@ If any step fails, refer to [Error Handling](#error-handling) to handle the erro
 
 ### Pre-Migration Checks
 
-1. Refer to `references/authentication_check.md` to check `gcert` status.
-   * If this step fails, it's a **STOP** condition.
+Refer to `references/pre_migration_checks.md` to verify if the required criteria for the Bazel migration are fulfilled.
+  * If this step fails, it's a **STOP** condition.
 
-2. Refer to `references/planter_installation_check.md` to check if Planter has been installed.
-   * If this step fails, it's a **STOP** condition.
 
 ### Workspace Branching
 
@@ -46,6 +46,7 @@ Refer to `references/migration_package_selection.md` to select the **migration p
 Refer to `references/bazel_migration_planter.md` to migrate the targets within the **migration package**.
   * If this step fails because it failed to get the generated CL number, it's a **STOP** condition.
   * If this step fails because of other reasons, it's a **PLANTER ERROR** condition.
+
 
 ## CL Review
 
