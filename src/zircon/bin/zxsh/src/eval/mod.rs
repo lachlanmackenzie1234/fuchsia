@@ -28,7 +28,7 @@ use crate::subshell::SubshellScriptArgs;
 
 use control_flow::{
     eval_background, eval_case, eval_for, eval_if, eval_logical_and, eval_logical_or, eval_loop,
-    eval_sequence,
+    eval_not, eval_sequence,
 };
 pub use simple::eval_simple;
 pub use spawn::{eval_pipeline, spawn_subshell_vmo, wait_for_process_to_exit};
@@ -166,6 +166,7 @@ fn eval_command_inner(
         CommandTag::LOGICAL_OR => eval_logical_or(builder, cmd_ptr, state, ctx),
         CommandTag::BACKGROUND => eval_background(builder, cmd_ptr, state, ctx),
         CommandTag::SEQUENCE => eval_sequence(builder, cmd_ptr, state, ctx),
+        CommandTag::NOT => eval_not(builder, cmd_ptr, state, ctx),
         CommandTag::SUBSHELL => {
             let sub_cmd = {
                 let cmd = builder.get_ref(cmd_ptr);

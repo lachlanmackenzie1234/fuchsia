@@ -300,6 +300,8 @@ fn test_needs_subshell_process() {
     assert!(!check_cmd("grep pattern", &state));
     assert!(!check_cmd("FOO=bar grep $PATTERN", &state));
     assert!(!check_cmd("grep pattern >/dev/null", &state));
+    assert!(!check_cmd("grep pattern <>/dev/null", &state));
+    assert!(!check_cmd("grep pattern >&$fd", &state));
 
     // Side-effecting expansions in arguments, prefix assignments, or redirections require subshell
     assert!(check_cmd("grep $((x = 1))", &state));
@@ -307,6 +309,8 @@ fn test_needs_subshell_process() {
     assert!(check_cmd("grep $(echo pattern)", &state));
     assert!(check_cmd("FOO=$((x = 1)) grep pattern", &state));
     assert!(check_cmd("grep pattern >$((x = 1))", &state));
+    assert!(check_cmd("grep pattern <>$((x = 1))", &state));
+    assert!(check_cmd("grep pattern >&$((x = 1))", &state));
 
     // Functions and aliases require subshell
     state.add_function(BString::from("my_fn"), vec![0]);
@@ -1048,4 +1052,68 @@ fn test_parameter_modifier_parsing_and_quoting() {
     assert!(expand_var_with_modifiers(BStr::new(b"?:=foo"), &mut state, &ctx).is_err());
     state.make_readonly(BStr::new("RO_MOD"));
     assert!(expand_var_with_modifiers(BStr::new(b"RO_MOD:=foo"), &mut state, &ctx).is_err());
+}
+
+#[test]
+fn test_nested_and_quoted_delimiter_expansions() {
+    let mut state = ShellState::new();
+    let ctx = ExecutionContext::initial().unwrap();
+
+    let expand_word_str = |word_src: &str, state: &mut ShellState| -> Vec<BString> {
+        let mut builder = ASTBuilder::new();
+        let tokens = tokenize(word_src.as_bytes()).unwrap();
+        assert_eq!(tokens.len(), 1, "expected 1 token for {word_src:?}, got {tokens:?}");
+        let crate::parser::Token::Word(raw_parts) = &tokens[0] else {
+            panic!("expected word token");
+        };
+        let resolved = crate::parser::resolve_word_parts(&mut builder, raw_parts).unwrap();
+        check_expand(&mut builder, &resolved, state, &ctx)
+    };
+
+    // 1. ${...} with quoted, escaped, and nested '}'
+    state.unset_var(BStr::new("x"));
+    state.unset_var(BStr::new("y"));
+    assert_eq!(expand_word_str("${x:-\"}\"}", &mut state), vec![BString::from("}")]);
+    assert_eq!(expand_word_str("${x:-\"\\\"}\"}", &mut state), vec![BString::from("\"}")]);
+    assert_eq!(expand_word_str("${x:-\"`printf '}'`\"}", &mut state), vec![BString::from("}")]);
+    assert_eq!(expand_word_str("${x:-'}'}", &mut state), vec![BString::from("}")]);
+    assert_eq!(expand_word_str("${x:-\\}}", &mut state), vec![BString::from("}")]);
+    assert_eq!(expand_word_str("\"${x:-\"}\"}\"", &mut state), vec![BString::from("}")]);
+    assert_eq!(expand_word_str("${x:-${y:-inner}}", &mut state), vec![BString::from("inner")]);
+    assert_eq!(expand_word_str("${x:-$(printf \"}\")}", &mut state), vec![BString::from("}")]);
+
+    // 2. $(...) with quoted/escaped ')', comments, and `case ... esac`
+    assert_eq!(expand_word_str("$(printf \")\")", &mut state), vec![BString::from(")")]);
+    assert_eq!(expand_word_str("$(printf \"\\\")\")", &mut state), vec![BString::from("\")")]);
+    assert_eq!(expand_word_str("$(printf \"`printf ')'`\")", &mut state), vec![BString::from(")")]);
+    assert_eq!(expand_word_str("$(printf ')')", &mut state), vec![BString::from(")")]);
+    assert_eq!(expand_word_str("$(printf \\))", &mut state), vec![BString::from(")")]);
+    assert_eq!(expand_word_str("\"$(printf \")\")\"", &mut state), vec![BString::from(")")]);
+    assert_eq!(
+        expand_word_str("$(printf ok # comment )\n)", &mut state),
+        vec![BString::from("ok")]
+    );
+    assert_eq!(
+        expand_word_str("$(case x in x) printf matched ;; esac)", &mut state),
+        vec![BString::from("matched")]
+    );
+    assert_eq!(
+        expand_word_str("$(case x in (x) printf matched ;; esac)", &mut state),
+        vec![BString::from("matched")]
+    );
+
+    // 3. Double-quoted backticks with escaped `\"`
+    assert_eq!(
+        expand_word_str("\"hello `printf \\\"world\\\"`\"", &mut state),
+        vec![BString::from("hello world")]
+    );
+
+    // 4. Heredoc / expand_string with ${x:-"}"}, $(case ...), and \\\n line continuation
+    let heredoc_expanded = expand_string(
+        BStr::new("brace=${x:-\"}\"} case=$(case x in x) printf ok;; esac) cont=hel\\\nlo"),
+        &mut state,
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(heredoc_expanded, "brace=} case=ok cont=hello");
 }

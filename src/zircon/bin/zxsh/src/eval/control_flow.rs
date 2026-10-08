@@ -287,3 +287,21 @@ pub fn eval_sequence(
     }
     Ok(EvalOutcome::Code(last_code))
 }
+
+pub fn eval_not(
+    builder: &mut ASTBuilder,
+    cmd_ptr: relative::Ptr<Command>,
+    state: &mut ShellState,
+    ctx: &mut ExecutionContext,
+) -> Result<EvalOutcome, String> {
+    let outcome = {
+        let mut guard = IgnoreErrGuard::new(state);
+        let left_ptr = builder.get_ref(cmd_ptr).left;
+        eval_command(builder, left_ptr, &mut *guard, ctx)?
+    };
+    match outcome {
+        EvalOutcome::Code(0) => Ok(EvalOutcome::Code(1)),
+        EvalOutcome::Code(_) => Ok(EvalOutcome::Code(0)),
+        other => Ok(other),
+    }
+}

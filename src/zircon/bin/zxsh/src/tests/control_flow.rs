@@ -300,3 +300,62 @@ fn test_control_flow_background_nonexistent_command_wait() {
     assert_eq!(wait_res, EvalOutcome::Code(127));
     assert_eq!(state.get_var("?").unwrap(), "127");
 }
+
+#[test]
+fn test_control_flow_pipeline_negation() {
+    let mut state = ShellState::new();
+    let mut ctx = ExecutionContext::initial().unwrap();
+
+    // Basic negation of exit codes.
+    assert_eq!(eval_str("! true", &mut state, &mut ctx), EvalOutcome::Code(1));
+    assert_eq!(state.get_var("?").unwrap(), "1");
+
+    assert_eq!(eval_str("! false", &mut state, &mut ctx), EvalOutcome::Code(0));
+    assert_eq!(state.get_var("?").unwrap(), "0");
+
+    // Double negation.
+    assert_eq!(eval_str("! ! true", &mut state, &mut ctx), EvalOutcome::Code(0));
+    assert_eq!(eval_str("! ! false", &mut state, &mut ctx), EvalOutcome::Code(1));
+
+    // Pipeline negation negates the exit status of the pipeline as a whole.
+    assert_eq!(eval_str("! true | false", &mut state, &mut ctx), EvalOutcome::Code(0));
+    assert_eq!(eval_str("! false | true", &mut state, &mut ctx), EvalOutcome::Code(1));
+
+    // Conditionals (`if`, `while`, `until`) and logical lists (`&&`, `||`).
+    assert_eq!(
+        eval_str("if ! false; then COND=yes; else COND=no; fi", &mut state, &mut ctx),
+        EvalOutcome::Code(0)
+    );
+    assert_eq!(state.get_var("COND").unwrap(), "yes");
+
+    assert_eq!(
+        eval_str("if ! true; then COND=yes; else COND=no; fi", &mut state, &mut ctx),
+        EvalOutcome::Code(0)
+    );
+    assert_eq!(state.get_var("COND").unwrap(), "no");
+
+    assert_eq!(eval_str("! false && AND_OK=1", &mut state, &mut ctx), EvalOutcome::Code(0));
+    assert_eq!(state.get_var("AND_OK").unwrap(), "1");
+
+    assert_eq!(eval_str("! true || OR_OK=1", &mut state, &mut ctx), EvalOutcome::Code(0));
+    assert_eq!(state.get_var("OR_OK").unwrap(), "1");
+
+    // Under `set -e`, `! false` or `! true` should NOT trigger errexit.
+    state.opt_errexit = true;
+    assert_eq!(
+        eval_str("! false; ! true; AFTER_NOT=reached", &mut state, &mut ctx),
+        EvalOutcome::Code(0)
+    );
+    assert_eq!(state.get_var("AFTER_NOT").unwrap(), "reached");
+    assert_eq!(state.ignore_err_depth, 0);
+    state.opt_errexit = false;
+
+    // Non-code control flow outcomes (e.g., `return` inside a function) propagate through `!`.
+    assert_eq!(eval_str("f() { ! return 42; }; f", &mut state, &mut ctx), EvalOutcome::Code(42));
+
+    // Alias starting with `!` expands as a negated command and appends trailing arguments.
+    assert_eq!(
+        eval_str("alias not_test='! test'; not_test -n ''", &mut state, &mut ctx),
+        EvalOutcome::Code(0)
+    );
+}

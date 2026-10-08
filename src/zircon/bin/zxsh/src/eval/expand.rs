@@ -12,8 +12,9 @@ use crate::collections::FlatSet;
 use crate::errors::{io_err_str, zx_status_str};
 use crate::parser::ast::*;
 use crate::parser::{
-    QuoteMode, Token, parse_script, parse_subshell_command, resolve_word_parts, tokenize,
-    tokenize_modifier_word,
+    QuoteMode, Token, parse_script, parse_subshell_command, resolve_word_parts,
+    scan_arithmetic_expansion, scan_backtick_command_substitution, scan_braced_param,
+    scan_command_substitution, scan_unbraced_var_name, tokenize, tokenize_modifier_word,
 };
 use crate::process::{clone_fd_to_action, make_pipe, read_fd_to_end};
 use crate::relative;
@@ -978,7 +979,10 @@ pub fn needs_subshell_process<'a>(
             CommandTag::REDIRECT => {
                 for redirect in command.redirects.as_slice(buffer) {
                     match redirect.tag {
-                        RedirectTag::TO_FILE | RedirectTag::FROM_FILE => {
+                        RedirectTag::TO_FILE
+                        | RedirectTag::FROM_FILE
+                        | RedirectTag::READ_WRITE
+                        | RedirectTag::DUP_FD => {
                             if word_has_side_effects(
                                 redirect.filename.as_slice(buffer),
                                 state,
@@ -1005,55 +1009,6 @@ pub fn needs_subshell_process<'a>(
     }
 }
 
-fn extract_parenthesized_bytes<'a>(
-    bytes: &'a [u8],
-    index: &mut usize,
-    is_double: bool,
-) -> &'a BStr {
-    let start_index = *index;
-    let mut depth = if is_double { 2 } else { 1 };
-    let mut end_index = start_index;
-
-    while *index < bytes.len() {
-        let current_byte = bytes[*index];
-        match current_byte {
-            b'\\' => {
-                *index += 1;
-                if *index < bytes.len() {
-                    *index += 1;
-                }
-            }
-            b'(' => {
-                depth += 1;
-                *index += 1;
-            }
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    end_index = *index;
-                    *index += 1;
-                    break;
-                }
-                if is_double && depth == 1 {
-                    if *index + 1 < bytes.len() && bytes[*index + 1] == b')' {
-                        end_index = *index;
-                        *index += 2;
-                        break;
-                    }
-                }
-                *index += 1;
-            }
-            _ => {
-                *index += 1;
-            }
-        }
-    }
-    if end_index < start_index {
-        end_index = *index;
-    }
-    BStr::new(&bytes[start_index..end_index])
-}
-
 fn eval_command_substitution_bytes(
     inner_bytes: &[u8],
     state: &mut ShellState,
@@ -1075,64 +1030,35 @@ fn expand_dollar(
 ) -> Result<(), String> {
     if *index + 1 < bytes.len() && bytes[*index + 1] == b'(' {
         *index += 2; // consume '$' and '('
-        let is_double = if *index < bytes.len() && bytes[*index] == b'(' {
+        if *index < bytes.len() && bytes[*index] == b'(' {
             *index += 1; // consume second '('
-            true
-        } else {
-            false
-        };
-
-        let inner_bytes = extract_parenthesized_bytes(bytes, index, is_double);
-
-        if is_double {
-            let expanded_inner = expand_string(inner_bytes, state, context)?;
+            let inner_bytes = match scan_arithmetic_expansion(bytes, index) {
+                Ok(s) | Err(s) => s,
+            };
+            let expanded_inner = expand_string(inner_bytes.as_bstr(), state, context)?;
             let value = evaluate_arithmetic(expanded_inner.as_bstr(), state, context)?;
             result_bytes.extend_from_slice(value.to_string().as_bytes());
         } else {
+            let inner_bytes = match scan_command_substitution(bytes, index) {
+                Ok(s) | Err(s) => s,
+            };
             let value = eval_command_substitution_bytes(inner_bytes.as_bytes(), state, context)?;
             result_bytes.extend_from_slice(value.as_bytes());
         }
     } else if *index + 1 < bytes.len() && bytes[*index + 1] == b'{' {
         *index += 2; // consume '$' and '{'
-        let mut variable_name_bytes = Vec::new();
-        while *index < bytes.len() {
-            let current_byte = bytes[*index];
-            if current_byte == b'}' {
-                *index += 1;
-                break;
-            }
-            variable_name_bytes.push(current_byte);
-            *index += 1;
-        }
-        let value = expand_var_with_modifiers(BStr::new(&variable_name_bytes), state, context)?;
+        let var_expr = match scan_braced_param(bytes, index, QuoteMode::Unquoted) {
+            Ok(s) | Err(s) => s,
+        };
+        let value = expand_var_with_modifiers(var_expr.as_bstr(), state, context)?;
         result_bytes.extend_from_slice(value.as_bytes());
     } else {
         *index += 1; // consume '$'
-        let mut variable_name_bytes = Vec::new();
-        if *index < bytes.len() {
-            let current_byte = bytes[*index];
-            if matches!(current_byte, b'?' | b'#' | b'@' | b'*' | b'$' | b'!' | b'-')
-                || current_byte.is_ascii_digit()
-            {
-                variable_name_bytes.push(current_byte);
-                *index += 1;
-            } else {
-                while *index < bytes.len() {
-                    let c = bytes[*index];
-                    if c.is_ascii_alphanumeric() || c == b'_' {
-                        variable_name_bytes.push(c);
-                        *index += 1;
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        if variable_name_bytes.is_empty() {
-            result_bytes.push(b'$');
-        } else {
-            let value = expand_var_with_modifiers(BStr::new(&variable_name_bytes), state, context)?;
+        if let Some(var_name) = scan_unbraced_var_name(bytes, index) {
+            let value = expand_var_with_modifiers(var_name.as_bstr(), state, context)?;
             result_bytes.extend_from_slice(value.as_bytes());
+        } else {
+            result_bytes.push(b'$');
         }
     }
     Ok(())
@@ -1154,7 +1080,9 @@ pub fn expand_string(
             b'\\' => {
                 if index + 1 < bytes.len() {
                     let next_byte = bytes[index + 1];
-                    if next_byte == b'$' || next_byte == b'\\' || next_byte == b'`' {
+                    if next_byte == b'\n' {
+                        index += 2;
+                    } else if next_byte == b'$' || next_byte == b'\\' || next_byte == b'`' {
                         result_bytes.push(next_byte);
                         index += 2;
                     } else {
@@ -1171,35 +1099,19 @@ pub fn expand_string(
             }
             b'`' => {
                 index += 1;
-                let mut inner_bytes = Vec::new();
-                let mut closed = false;
-                while index < bytes.len() {
-                    let ch = bytes[index];
-                    if ch == b'`' {
-                        index += 1;
-                        closed = true;
-                        break;
+                match scan_backtick_command_substitution(bytes, &mut index, QuoteMode::Unquoted) {
+                    Ok(inner_bytes) => {
+                        let value = eval_command_substitution_bytes(
+                            inner_bytes.as_bytes(),
+                            state,
+                            context,
+                        )?;
+                        result_bytes.extend_from_slice(value.as_bytes());
                     }
-                    if ch == b'\\' && index + 1 < bytes.len() {
-                        let next_ch = bytes[index + 1];
-                        if next_ch == b'`' || next_ch == b'\\' || next_ch == b'$' {
-                            inner_bytes.push(next_ch);
-                            index += 2;
-                            continue;
-                        } else if next_ch == b'\n' {
-                            index += 2;
-                            continue;
-                        }
+                    Err(inner_bytes) => {
+                        result_bytes.push(b'`');
+                        result_bytes.extend_from_slice(inner_bytes.as_bytes());
                     }
-                    inner_bytes.push(ch);
-                    index += 1;
-                }
-                if closed {
-                    let value = eval_command_substitution_bytes(&inner_bytes, state, context)?;
-                    result_bytes.extend_from_slice(value.as_bytes());
-                } else {
-                    result_bytes.push(b'`');
-                    result_bytes.extend_from_slice(&inner_bytes);
                 }
             }
             _ => {
@@ -1329,6 +1241,14 @@ pub fn append_args_to_command(
             append_args_to_command(builder, body_ptr, extra_args);
             cmd_ptr
         }
+        CommandTag::NOT => {
+            let left_ptr = {
+                let cmd = builder.get_ref(cmd_ptr);
+                cmd.left
+            };
+            append_args_to_command(builder, left_ptr, extra_args);
+            cmd_ptr
+        }
         _ => cmd_ptr,
     }
 }
@@ -1361,7 +1281,9 @@ pub fn expand_alias(
         if let Some(val) = state.aliases.get(&name).cloned() {
             if !ctx.active_aliases.contains(&name) && !active.contains(&name) {
                 let val_tokens = tokenize(val.as_bytes()).map_err(|e| e.to_string())?;
-                let is_simple = val_tokens.iter().all(|t| matches!(t, Token::Word(_)));
+                let is_simple = val_tokens.iter().all(|t| matches!(t, Token::Word(_)))
+                    && val_tokens.first().and_then(|t| t.as_unquoted_bstr())
+                        != Some(BStr::new(b"!"));
                 if is_simple {
                     let mut new_words = Vec::new();
                     for t in &val_tokens {
