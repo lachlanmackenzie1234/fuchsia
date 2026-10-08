@@ -78,6 +78,27 @@
             ]
         },
         {
+            "name": "BpfCapabilityAuditTestSuite/BpfCapabilityAuditTest.MapCreate/both",
+            "audit_expectations": []
+        },
+        {
+            "name": "BpfCapabilityAuditTestSuite/BpfCapabilityAuditTest.MapCreate/bpf_only",
+            "audit_expectations": []
+        },
+        {
+            "name": "BpfCapabilityAuditTestSuite/BpfCapabilityAuditTest.MapCreate/neither",
+            "audit_expectations": [
+                "avc:  denied  { bpf } for capability=39  scontext=test_u:test_r:bpf_cap_neither_t:s0 tcontext=test_u:test_r:bpf_cap_neither_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:bpf_cap_neither_t:s0 tcontext=test_u:test_r:bpf_cap_neither_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "BpfCapabilityAuditTestSuite/BpfCapabilityAuditTest.MapCreate/sys_admin_only",
+            "audit_expectations": [
+                "avc:  denied  { bpf } for capability=39  scontext=test_u:test_r:bpf_cap_sys_admin_only_t:s0 tcontext=test_u:test_r:bpf_cap_sys_admin_only_t:s0 tclass=capability2 permissive=0"
+            ]
+        },
+        {
             "name": "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
             "audit_expectations": [
                 "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:bpf_map_create_t:s0 tcontext=test_u:test_r:bpf_map_create_t:s0 tclass=capability2 permissive=0",
