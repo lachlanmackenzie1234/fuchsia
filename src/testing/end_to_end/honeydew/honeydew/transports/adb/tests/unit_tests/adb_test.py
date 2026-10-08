@@ -7,10 +7,13 @@ import asyncio
 import concurrent.futures
 import io
 import os
+import signal
+import subprocess
 import sys
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 from importlib import resources
 from pathlib import Path
@@ -18,7 +21,7 @@ from typing import Any
 from unittest import mock
 
 from honeydew import errors
-from honeydew.transports.adb import adb
+from honeydew.transports.adb import adb, adb_server
 from honeydew.transports.adb import errors as adb_errors
 from honeydew.utils import host_shell
 from mobly import signals
@@ -1542,6 +1545,75 @@ class ResolveVendorKeysPathTests(unittest.TestCase):
             finally:
                 if temp_dir:
                     temp_dir.cleanup()
+
+
+class AdbServerTests(unittest.TestCase):
+    """Unit tests for AdbServer."""
+
+    def test_check_for_conflicting_adb_servers_kills_conflicting_pids(
+        self,
+    ) -> None:
+        """Test _check_for_conflicting_adb_servers kills conflicting server PIDs."""
+        server = adb_server.AdbServer(
+            adb_binary_path="/custom/adb",
+            serial_id="target_serial",
+        )
+        server._process = mock.Mock(pid=1000)
+        pgrep_output = "\n".join(
+            [
+                f"{os.getpid()} adb -P 5037 fork-server server",
+                "1000 adb -P 5037 fork-server server",
+                "1001 adb -P 5037 fork-server server",
+                "1002 adb -P 60855 --one-device target_serial server nodaemon",
+                "1003 adb -P 60856 --one-device other_serial server nodaemon",
+                "1004 adb -s target_serial wait-for-device",
+            ]
+        )
+        with (
+            mock.patch.object(
+                subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    args=["pgrep", "-a", "adb"],
+                    returncode=0,
+                    stdout=pgrep_output,
+                    stderr="",
+                ),
+            ),
+            mock.patch.object(
+                os,
+                "kill",
+                side_effect=[
+                    None,  # SIGKILL 1001
+                    None,  # SIGKILL 1002
+                    None,  # Poll 1: 1001 still alive
+                    ProcessLookupError(),  # Poll 1: 1002 exited
+                    ProcessLookupError(),  # Poll 2: 1001 exited
+                ],
+            ) as mock_kill,
+            mock.patch.object(time, "sleep") as mock_sleep,
+        ):
+            server._check_for_conflicting_adb_servers()
+            self.assertEqual(
+                mock_kill.call_args_list,
+                [
+                    mock.call(1001, signal.SIGKILL),
+                    mock.call(1002, signal.SIGKILL),
+                    mock.call(1001, 0),
+                    mock.call(1002, 0),
+                    mock.call(1001, 0),
+                ],
+            )
+            mock_sleep.assert_called_once_with(0.05)
+
+    def test_set_pdeathsig_on_linux(self) -> None:
+        """Test _set_pdeathsig sets PR_SET_PDEATHSIG to SIGKILL on Linux."""
+        mock_libc = mock.Mock()
+        with mock.patch.object(adb_server, "_LIBC", mock_libc):
+            adb_server._set_pdeathsig()
+            mock_libc.prctl.assert_called_once_with(
+                adb_server._PR_SET_PDEATHSIG, signal.SIGKILL
+            )
 
 
 if __name__ == "__main__":
