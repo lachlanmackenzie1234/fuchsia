@@ -279,6 +279,12 @@ impl<T: RegisterStorage> RegisterState<T> {
         self.sync_stack_ptr();
     }
 
+    /// Copies the restricted state and the orig_a0 bookkeeping register.
+    pub fn copy_from<O: RegisterStorage>(&mut self, other: &RegisterState<O>) {
+        self.load(*other.real_registers);
+        self.orig_a0 = other.orig_a0;
+    }
+
     pub fn sync_stack_ptr(&mut self) {
         self.orig_a0 = self.a0;
     }

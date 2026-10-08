@@ -1883,28 +1883,24 @@ impl CurrentTask {
     /// Returns true if the task was stopped and blocked (and has now woken up),
     /// or false if it was not stopped and returned immediately.
     pub fn block_if_stopped(&mut self) -> bool {
-        if self.finalize_stop_state() {
-            self.block_while_stopped();
-            true
-        } else {
-            false
+        if !self.finalize_stop_state() {
+            return false;
         }
-    }
+        self.block_while_stopped();
 
-    /// If the task is stopping, set it as stopped. return whether the caller
-    /// should stop.  The task might also be waking up.
-    fn finalize_stop_state(&mut self) -> bool {
-        let stopped = self.load_stopped();
-
-        if !stopped.is_stopping_or_stopped() {
-            // If we are waking up, potentially write back state a tracer may have modified.
-            let captured_state = self.write().take_captured_state();
-            if let Some(captured) = captured_state {
-                if captured.dirty {
-                    self.thread_state.replace_registers(&captured.thread_state);
-                }
+        // When coming back from a stop, write modified register state to the ThreadState.
+        let captured_state = self.write().take_captured_state();
+        if let Some(captured) = captured_state {
+            if captured.dirty {
+                self.thread_state.replace_registers(&captured.thread_state);
             }
         }
+        true
+    }
+
+    /// If the task is stopping, set it as stopped. Return whether the caller should stop.
+    fn finalize_stop_state(&self) -> bool {
+        let stopped = self.load_stopped();
 
         // Stopping because the thread group is stopping.
         // Try to flip to GroupStopped - will fail if we shouldn't.

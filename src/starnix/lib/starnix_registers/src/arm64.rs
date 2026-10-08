@@ -281,6 +281,12 @@ impl<T: RegisterStorage> RegisterState<T> {
         self.sync_stack_ptr();
     }
 
+    /// Copies the restricted state and the orig_x0 bookkeeping register.
+    pub fn copy_from<O: RegisterStorage>(&mut self, other: &RegisterState<O>) {
+        self.load(*other.real_registers);
+        self.orig_x0 = other.orig_x0;
+    }
+
     pub fn sync_stack_ptr(&mut self) {
         // We should synchronize the stack pointer with the aarch32 registers.
         if self.cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32 != 0 {
