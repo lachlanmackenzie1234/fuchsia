@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::object::{
-    Dispatcher, HandleValue, InitialMutability, PagerDispatcher, PortDispatcher, ProcessDispatcher,
+    HandleValue, InitialMutability, PagerDispatcher, PortDispatcher, ProcessDispatcher,
     VmObjectDispatcher,
 };
 use crate::user_copy::UserOutPtr;
@@ -73,10 +73,17 @@ pub fn sys_pager_create_vmo(
 
     up.enforce_basic_policy(ZX_POL_NEW_VMO)?;
 
-    let pager_dispatcher =
-        Dispatcher::get_with_rights::<PagerDispatcher>(pager, ZX_RIGHT_ATTACH_VMO)?;
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
+        pager,
+        ZX_RIGHT_ATTACH_VMO,
+    )?;
 
-    let port_dispatcher = Dispatcher::get_with_rights::<PortDispatcher>(port, ZX_RIGHT_WRITE)?;
+    let port_dispatcher = up.handle_table().get_dispatcher_with_rights::<PortDispatcher>(
+        &up,
+        port,
+        ZX_RIGHT_WRITE,
+    )?;
 
     let (source_flags, vmo_flags) = split_syscall_flags(options);
 
@@ -101,13 +108,19 @@ pub fn sys_pager_create_vmo(
 // zx_status_t zx_pager_detach_vmo
 #[syscall]
 pub fn sys_pager_detach_vmo(pager: HandleValue, vmo: HandleValue) -> Result<(), Status> {
+    let up = ProcessDispatcher::get_current();
     // TODO: Consider rights on the pager dispatcher.
-    let pager_dispatcher = Dispatcher::get_with_rights::<PagerDispatcher>(
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
         pager,
         ZX_RIGHT_ATTACH_VMO | ZX_RIGHT_MANAGE_VMO,
     )?;
 
-    let vmo_dispatcher = Dispatcher::get_with_rights::<VmObjectDispatcher>(vmo, ZX_RIGHT_WRITE)?;
+    let vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
+        vmo,
+        ZX_RIGHT_WRITE,
+    )?;
 
     if vmo_dispatcher.pager_koid() != pager_dispatcher.get_koid() {
         return Err(Status::INVALID_ARGS);
@@ -134,17 +147,25 @@ pub fn sys_pager_supply_pages(
         return Err(Status::INVALID_ARGS);
     }
 
-    let pager_dispatcher =
-        Dispatcher::get_with_rights::<PagerDispatcher>(pager, ZX_RIGHT_MANAGE_VMO)?;
+    let up = ProcessDispatcher::get_current();
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
+        pager,
+        ZX_RIGHT_MANAGE_VMO,
+    )?;
 
-    let pager_vmo_dispatcher =
-        Dispatcher::get_with_rights::<VmObjectDispatcher>(pager_vmo, ZX_RIGHT_WRITE)?;
+    let pager_vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
+        pager_vmo,
+        ZX_RIGHT_WRITE,
+    )?;
 
     if pager_vmo_dispatcher.pager_koid() != pager_dispatcher.get_koid() {
         return Err(Status::INVALID_ARGS);
     }
 
-    let aux_vmo_dispatcher = Dispatcher::get_with_rights::<VmObjectDispatcher>(
+    let aux_vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
         aux_vmo_handle,
         ZX_RIGHT_READ | ZX_RIGHT_WRITE,
     )?;
@@ -174,11 +195,18 @@ pub fn sys_pager_op_range(
         return Err(Status::INVALID_ARGS);
     }
 
-    let pager_dispatcher =
-        Dispatcher::get_with_rights::<PagerDispatcher>(pager, ZX_RIGHT_MANAGE_VMO)?;
+    let up = ProcessDispatcher::get_current();
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
+        pager,
+        ZX_RIGHT_MANAGE_VMO,
+    )?;
 
-    let pager_vmo_dispatcher =
-        Dispatcher::get_with_rights::<VmObjectDispatcher>(pager_vmo, ZX_RIGHT_WRITE)?;
+    let pager_vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
+        pager_vmo,
+        ZX_RIGHT_WRITE,
+    )?;
 
     if pager_vmo_dispatcher.pager_koid() != pager_dispatcher.get_koid() {
         return Err(Status::INVALID_ARGS);
@@ -200,11 +228,18 @@ pub fn sys_pager_query_dirty_ranges(
     actual: UserOutPtr<usize>,
     avail: UserOutPtr<usize>,
 ) -> Result<(), Status> {
-    let pager_dispatcher =
-        Dispatcher::get_with_rights::<PagerDispatcher>(pager, ZX_RIGHT_MANAGE_VMO)?;
+    let up = ProcessDispatcher::get_current();
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
+        pager,
+        ZX_RIGHT_MANAGE_VMO,
+    )?;
 
-    let pager_vmo_dispatcher =
-        Dispatcher::get_with_rights::<VmObjectDispatcher>(pager_vmo, ZX_RIGHT_READ)?;
+    let pager_vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
+        pager_vmo,
+        ZX_RIGHT_READ,
+    )?;
 
     if pager_vmo_dispatcher.pager_koid() != pager_dispatcher.get_koid() {
         return Err(Status::INVALID_ARGS);
@@ -230,11 +265,18 @@ pub fn sys_pager_query_vmo_stats(
     buffer: UserOutPtr<u8>,
     buffer_size: usize,
 ) -> Result<(), Status> {
-    let pager_dispatcher =
-        Dispatcher::get_with_rights::<PagerDispatcher>(pager, ZX_RIGHT_MANAGE_VMO)?;
+    let up = ProcessDispatcher::get_current();
+    let pager_dispatcher = up.handle_table().get_dispatcher_with_rights::<PagerDispatcher>(
+        &up,
+        pager,
+        ZX_RIGHT_MANAGE_VMO,
+    )?;
 
-    let pager_vmo_dispatcher =
-        Dispatcher::get_with_rights::<VmObjectDispatcher>(pager_vmo, ZX_RIGHT_READ)?;
+    let pager_vmo_dispatcher = up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
+        &up,
+        pager_vmo,
+        ZX_RIGHT_READ,
+    )?;
 
     if pager_vmo_dispatcher.pager_koid() != pager_dispatcher.get_koid() {
         return Err(Status::INVALID_ARGS);

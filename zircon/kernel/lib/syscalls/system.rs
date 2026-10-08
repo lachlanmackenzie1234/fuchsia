@@ -7,8 +7,7 @@
 use core::mem::MaybeUninit;
 
 use crate::object::{
-    Dispatcher, EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher,
-    validate_system_resource,
+    EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, validate_system_resource,
 };
 use crate::platform_rs::HaltToken;
 use crate::user_copy::{UserInPtr, UserOutPtr};
@@ -144,7 +143,9 @@ pub fn sys_system_get_event(
         // We check for the root job below. We should not need to enforce rights beyond that.
         ZX_RIGHT_NONE
     };
-    let job = Dispatcher::get_with_rights::<JobDispatcher>(root_job, rights)?;
+    let job = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights::<JobDispatcher>(up, root_job, rights)
+    })?;
 
     // Validate that the job is in fact the first usermode job (aka root job).
     if !job.is_root() {

@@ -109,8 +109,13 @@ pub fn sys_object_get_property(
         return Err(Status::INVALID_ARGS);
     }
 
-    let dispatcher =
-        Dispatcher::get_with_rights::<Dispatcher>(handle_value, ZX_RIGHT_GET_PROPERTY)?;
+    let dispatcher = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights::<Dispatcher>(
+            up,
+            handle_value,
+            ZX_RIGHT_GET_PROPERTY,
+        )
+    })?;
 
     macro_rules! get_scalar_property {
         ($type:ty, $getter:ident) => {{
@@ -189,10 +194,13 @@ pub fn sys_object_set_property(
         return Err(Status::INVALID_ARGS);
     }
 
-    let (dispatcher, rights) = Dispatcher::get_dispatcher_and_rights(handle_value)?;
-    if (rights & ZX_RIGHT_SET_PROPERTY) == 0 {
-        return Err(Status::ACCESS_DENIED);
-    }
+    let (dispatcher, rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights_and_actual::<Dispatcher>(
+            up,
+            handle_value,
+            ZX_RIGHT_SET_PROPERTY,
+        )
+    })?;
 
     macro_rules! set_scalar_property {
         ($type:ty, $setter:ident) => {{

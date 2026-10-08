@@ -6,7 +6,7 @@
 
 use crate::kernel::types::VAddr;
 use crate::object::{
-    ClockDispatcher, Dispatcher, HandleValue, IoBufferDispatcher, VmAddressRegionDispatcher,
+    ClockDispatcher, HandleValue, IoBufferDispatcher, ProcessDispatcher, VmAddressRegionDispatcher,
     VmObjectDispatcher,
 };
 use crate::user_copy::{UserInOutPtr, UserOutPtr};
@@ -45,8 +45,13 @@ pub fn sys_vmar_allocate(
     }
 
     // lookup the dispatcher from handle
-    let vmar =
-        Dispatcher::get_with_rights::<VmAddressRegionDispatcher>(parent_vmar_handle, vmar_rights)?;
+    let vmar = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights::<VmAddressRegionDispatcher>(
+            up,
+            parent_vmar_handle,
+            vmar_rights,
+        )
+    })?;
 
     // Create the new VMAR
     let (handle, new_rights) = vmar.allocate(offset, size, options)?;
@@ -69,8 +74,13 @@ pub fn sys_vmar_allocate(
 #[syscall]
 pub fn sys_vmar_destroy(handle: HandleValue) -> Result<(), Status> {
     // lookup the dispatcher from handle
-    let vmar =
-        Dispatcher::get_with_rights::<VmAddressRegionDispatcher>(handle, ZX_RIGHT_OP_CHILDREN)?;
+    let vmar = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights::<VmAddressRegionDispatcher>(
+            up,
+            handle,
+            ZX_RIGHT_OP_CHILDREN,
+        )
+    })?;
 
     vmar.destroy()
 }
@@ -203,11 +213,19 @@ pub fn sys_vmar_map(
     len: usize,
     mapped_addr: UserOutPtr<zx_vaddr_t>,
 ) -> Result<(), Status> {
-    // lookup the VMAR dispatcher from handle
-    let (vmar, vmar_rights) = Dispatcher::get_and_rights::<VmAddressRegionDispatcher>(handle)?;
+    let ((vmar, vmar_rights), (vmo, vmo_rights)) =
+        ProcessDispatcher::with_current(|up| -> Result<_, Status> {
+            // lookup the VMAR dispatcher from handle
+            let vmar = up
+                .handle_table()
+                .get_dispatcher_and_rights::<VmAddressRegionDispatcher>(up, handle)?;
 
-    // lookup the VMO dispatcher from handle
-    let (vmo, vmo_rights) = Dispatcher::get_and_rights::<VmObjectDispatcher>(vmo_handle)?;
+            // lookup the VMO dispatcher from handle
+            let vmo = up
+                .handle_table()
+                .get_dispatcher_and_rights::<VmObjectDispatcher>(up, vmo_handle)?;
+            Ok((vmar, vmo))
+        })?;
 
     // Allocate SSM if creating a fault-beyond-stream-size mapping.
     if (options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) != 0 {
@@ -230,7 +248,9 @@ pub fn sys_vmar_map(
 #[syscall]
 pub fn sys_vmar_unmap(handle: HandleValue, addr: zx_vaddr_t, len: usize) -> Result<(), Status> {
     // lookup the dispatcher from handle
-    let (vmar, vmar_rights) = Dispatcher::get_and_rights::<VmAddressRegionDispatcher>(handle)?;
+    let (vmar, vmar_rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_and_rights::<VmAddressRegionDispatcher>(up, handle)
+    })?;
 
     vmar.unmap(VAddr(addr), len, VmAddressRegionDispatcher::op_children_from_rights(vmar_rights))
 }
@@ -260,8 +280,13 @@ pub fn sys_vmar_protect(
     }
 
     // lookup the dispatcher from handle
-    let (vmar, vmar_rights) =
-        Dispatcher::get_with_rights_and_actual::<VmAddressRegionDispatcher>(handle, vmar_rights)?;
+    let (vmar, vmar_rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights_and_actual::<VmAddressRegionDispatcher>(
+            up,
+            handle,
+            vmar_rights,
+        )
+    })?;
 
     if !VmAddressRegionDispatcher::is_valid_mapping_protection(options) {
         return Err(Status::INVALID_ARGS);
@@ -284,7 +309,9 @@ pub fn sys_vmar_op_range(
     buffer: UserInOutPtr<u8>,
     buffer_size: usize,
 ) -> Result<(), Status> {
-    let (vmar, vmar_rights) = Dispatcher::get_and_rights::<VmAddressRegionDispatcher>(handle)?;
+    let (vmar, vmar_rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_and_rights::<VmAddressRegionDispatcher>(up, handle)
+    })?;
 
     vmar.range_op(op, VAddr(addr), len, vmar_rights, buffer, buffer_size)
 }
@@ -300,8 +327,14 @@ pub fn sys_vmar_map_iob(
     region_length: usize,
     mapped_addr: UserOutPtr<zx_vaddr_t>,
 ) -> Result<(), Status> {
-    let (vmar, vmar_rights) = Dispatcher::get_and_rights::<VmAddressRegionDispatcher>(handle)?;
-    let (iob, iob_rights) = Dispatcher::get_and_rights::<IoBufferDispatcher>(ep)?;
+    let ((vmar, vmar_rights), (iob, iob_rights)) =
+        ProcessDispatcher::with_current(|up| -> Result<_, Status> {
+            let vmar = up
+                .handle_table()
+                .get_dispatcher_and_rights::<VmAddressRegionDispatcher>(up, handle)?;
+            let iob = up.handle_table().get_dispatcher_and_rights::<IoBufferDispatcher>(up, ep)?;
+            Ok((vmar, iob))
+        })?;
 
     if region_index as usize >= iob.region_count() {
         return Err(Status::OUT_OF_RANGE);
@@ -351,7 +384,9 @@ pub fn sys_vmar_map_clock(
     }
 
     // lookup the Clock dispatcher from handle
-    let (clock, clock_rights) = Dispatcher::get_and_rights::<ClockDispatcher>(clock_handle)?;
+    let (clock, clock_rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_and_rights::<ClockDispatcher>(up, clock_handle)
+    })?;
 
     // If this is not a mappable clock, then there is no point in proceeding.
     if !clock.is_mappable() {
@@ -365,7 +400,9 @@ pub fn sys_vmar_map_clock(
     let clock_vmo: RefPtr<VmObject> = clock.vmo().cloned().unwrap();
 
     // lookup the VMAR dispatcher from handle
-    let (vmar, vmar_rights) = Dispatcher::get_and_rights::<VmAddressRegionDispatcher>(handle)?;
+    let (vmar, vmar_rights) = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_and_rights::<VmAddressRegionDispatcher>(up, handle)
+    })?;
 
     // In order to map a clock, users must have both the READ and MAP permissions.
     // Mask out all of the other permissions to act as the "effective" permissions
