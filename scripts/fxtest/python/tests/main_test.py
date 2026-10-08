@@ -4431,3 +4431,56 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(success)
         self.assertEqual(len(workers_alive_during_test_1), 1)
         self.assertEqual(workers_alive_during_test_1[0], 4)
+
+    @mock.patch.object(main.execution, "run_command")
+    async def test_publish_packages_reads_plain_text_manifest_after_json_decode_error(
+        self, mock_run_cmd: mock.MagicMock
+    ) -> None:
+        """Test that plain text package manifests are fully read and published
+        even after json.load raises JSONDecodeError."""
+        flags = args.parse_args([])
+        recorder = event.EventRecorder()
+        app = main.AsyncMain(
+            flags,
+            [],
+            recorder,
+            asyncio.Event(),
+            asyncio.Event(),
+        )
+
+        with tempfile.TemporaryDirectory() as out_dir:
+            exec_env = mock.MagicMock()
+            exec_env.out_dir = out_dir
+            exec_env.fx_cmd_line.side_effect = lambda *cmd: list(cmd)
+            app._exec_env = exec_env
+
+            meta_path = os.path.join(
+                out_dir, "package_manifests_from_metadata.list"
+            )
+            with open(meta_path, "w") as f:
+                f.write(
+                    "pkg1/package_manifest.json\npkg2/package_manifest.json\n"
+                )
+
+            mock_run_cmd.return_value = mock.MagicMock(return_code=0)
+
+            written_manifests: list[str] = []
+            original_dump = json.dump
+
+            def spy_dump(
+                obj: typing.Any,
+                fp: typing.Any,
+                *args: typing.Any,
+                **kwargs: typing.Any,
+            ) -> typing.Any:
+                if isinstance(obj, dict) and "content" in obj:
+                    written_manifests.extend(
+                        obj["content"].get("manifests", [])
+                    )
+                return original_dump(obj, fp, *args, **kwargs)
+
+            with mock.patch("json.dump", side_effect=spy_dump):
+                await app._publish_packages(event.Id(1))
+
+            self.assertIn("pkg1/package_manifest.json", written_manifests)
+            self.assertIn("pkg2/package_manifest.json", written_manifests)

@@ -1641,6 +1641,7 @@ class AsyncMain:
                     if "version" in data:
                         version = data["version"]
                 except json.JSONDecodeError:
+                    f.seek(0)
                     meta_manifests = [
                         stripped_line
                         for l in f.readlines()
