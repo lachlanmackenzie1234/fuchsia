@@ -1,8 +1,8 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import abc
 import asyncio
-import inspect
 import typing
 import unittest
 from typing import Any
@@ -34,9 +34,6 @@ def implement_missing_abstract_methods(cls: type[T]) -> type[T]:
     Note: This only provides *runtime* implementations. Mypy will still require
     `# type: ignore[abstract]` at locations where a class is instantiated.
     """
-    if not inspect.isclass(cls):
-        raise TypeError("This decorator can only be used on classes.")
-
     # Collect all unique abstract method names from the MRO (Method Resolution Order)
     abstract_method_names: set[str] = set()
     for base in cls.__mro__:
@@ -76,10 +73,7 @@ def implement_missing_abstract_methods(cls: type[T]) -> type[T]:
 
         setattr(cls, name, make_default_impl(name))
 
-    # No more abstract methods remain, so overwrite __abstactmethods__.
-    cls.__abstractmethods__ = frozenset()
-
-    return cls
+    return abc.update_abstractmethods(cls)
 
 
 # [START echo_server_impl]
