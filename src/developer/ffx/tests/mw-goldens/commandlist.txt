@@ -41,3 +41,5 @@ ffx target show
 ffx target status
 ffx target wait
 ffx test run
+ffx wlan client batch-config dump
+ffx wlan client batch-config restore

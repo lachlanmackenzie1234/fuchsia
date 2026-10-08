@@ -41,3 +41,5 @@ target_show.json
 target_status.json
 target_wait.json
 test_run.json
+wlan_client_batch-config_dump.json
+wlan_client_batch-config_restore.json
