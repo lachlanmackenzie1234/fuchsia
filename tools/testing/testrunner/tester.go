@@ -934,7 +934,7 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 // failureReason returns a FailureReason for a test suite or test case if
 // status is a failure, or nil otherwise. It uses the first non-empty string in
 // stderr if available, and otherwise falls back to a synthetic timeout message
-// (when status is TestAborted) or "unknown failure reason".
+// when status is TestAborted.
 func failureReason(status runtests.TestStatus, timeout time.Duration, stderr ...string) *runtests.FailureReason {
 	if !runtests.IsFailure(status) {
 		return nil
@@ -946,17 +946,16 @@ func failureReason(status runtests.TestStatus, timeout time.Duration, stderr ...
 			}
 		}
 	}
-	msg := "unknown failure reason"
 	if status == runtests.TestAborted {
+		msg := "test timed out"
 		if timeout > 0 {
 			msg = fmt.Sprintf("test timed out after %s", timeout)
-		} else {
-			msg = "test timed out"
+		}
+		return &runtests.FailureReason{
+			Errors: []*runtests.FailureReasonError{{Message: msg}},
 		}
 	}
-	return &runtests.FailureReason{
-		Errors: []*runtests.FailureReasonError{{Message: msg}},
-	}
+	return nil
 }
 
 func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, totalDuration time.Duration, removeProfiles bool) (*runtests.TestDetails, error) {

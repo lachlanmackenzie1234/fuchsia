@@ -497,10 +497,9 @@ func TestFFXTester(t *testing.T) {
 			experiments:    []string{"use_ffx_test", "use_ffx_test_parallel"},
 		},
 		{
-			name:                  "ffx test fails",
-			expectedStatus:        runtests.TestFailure,
-			expectedFailureReason: runtests.FailureReasonFromMessage("unknown failure reason"),
-			experiments:           []string{"use_ffx_test"},
+			name:           "ffx test fails",
+			expectedStatus: runtests.TestFailure,
+			experiments:    []string{"use_ffx_test"},
 		},
 		{
 			name:                  "ffx test times out",
@@ -515,12 +514,11 @@ func TestFFXTester(t *testing.T) {
 			experiments:    []string{"use_ffx_test"},
 		},
 		{
-			name:                  "ffx test returns ssh connection failure",
-			expectedStatus:        runtests.TestFailure,
-			expectedFailureReason: runtests.FailureReasonFromMessage("unknown failure reason"),
-			connErr:               true,
-			experiments:           []string{"use_ffx_test"},
-			output:                sshutilconstants.ProcessTerminatedMsg + "\n" + ffxutilconstants.ClientChannelClosedMsg,
+			name:           "ffx test returns ssh connection failure",
+			expectedStatus: runtests.TestFailure,
+			connErr:        true,
+			experiments:    []string{"use_ffx_test"},
+			output:         sshutilconstants.ProcessTerminatedMsg + "\n" + ffxutilconstants.ClientChannelClosedMsg,
 		},
 	}
 	for _, c := range cases {
