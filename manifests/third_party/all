@@ -180,7 +180,7 @@
              path="third_party/glfw"
              remote="https://fuchsia.googlesource.com/third_party/glfw"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="fece3c9af6dfd89f85f74f32ce4e1dd08c3d8b9d"/>
+             revision="6159689235e6ac8a61d575cb05e93ac558622653"/>
     <project name="third_party/github.com/ARM-software/HWCPipe"
              path="third_party/github.com/ARM-software/HWCPipe"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ARM-software/HWCPipe"
