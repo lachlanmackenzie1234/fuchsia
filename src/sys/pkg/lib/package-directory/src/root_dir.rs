@@ -94,6 +94,27 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         }
     }
 
+    /// Returns a read-only VMO and size in bytes, if present, of the file at object relative path
+    /// expression `path`.
+    /// https://fuchsia.dev/fuchsia-src/concepts/process/namespaces?hl=en#object_relative_path_expressions
+    pub async fn get_file_vmo(&self, path: &str) -> Result<(zx::Vmo, u64), ReadFileError> {
+        if let Some(hash) = self.non_meta_files.get(path) {
+            let vmo = self
+                .non_meta_storage
+                .get_blob_vmo(hash)
+                .await
+                .map_err(ReadFileError::GetBlobVmo)?;
+            let size = vmo.get_content_size().map_err(ReadFileError::GetContentSize)?;
+            Ok((vmo, size))
+        } else if let Some(location) = self.meta_files.get(path) {
+            let vmo =
+                self.create_meta_file_vmo(location).map_err(ReadFileError::CreateMetaFileVmo)?;
+            Ok((vmo, location.length))
+        } else {
+            Err(ReadFileError::NoFileAtPath { path: path.to_string() })
+        }
+    }
+
     /// Returns `true` iff there is a file at `path`, an object relative path expression.
     /// https://fuchsia.dev/fuchsia-src/concepts/process/namespaces?hl=en#object_relative_path_expressions
     pub fn has_file(&self, path: &str) -> bool {
@@ -138,8 +159,7 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         Ok(VmoFile::new_with_inode(vmo, /*inode*/ 1))
     }
 
-    /// Creates and returns a meta file if one exists at `path`.
-    pub(crate) fn get_meta_file(&self, path: &str) -> Result<Option<Arc<VmoFile>>, zx::Status> {
+    fn create_meta_file_vmo(&self, location: &MetaFileLocation) -> Result<zx::Vmo, zx::Status> {
         // The FAR spec requires 4 KiB alignment of content chunks [1], so offset will
         // always be page-aligned, because pages are required [2] to be a power of 2 and at
         // least 4 KiB.
@@ -149,21 +169,23 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         // zx_system_get_page_size() > 4K.
         assert_eq!(zx::system_get_page_size(), 4096);
 
+        self.meta_far_vmo.create_child(
+            zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE | zx::VmoChildOptions::NO_WRITE,
+            location.offset,
+            location.length,
+        )
+    }
+
+    /// Creates and returns a meta file if one exists at `path`.
+    pub(crate) fn get_meta_file(&self, path: &str) -> Result<Option<Arc<VmoFile>>, zx::Status> {
         let location = match self.meta_files.get(path) {
             Some(location) => location,
             None => return Ok(None),
         };
-        let vmo = self
-            .meta_far_vmo
-            .create_child(
-                zx::VmoChildOptions::SNAPSHOT_AT_LEAST_ON_WRITE | zx::VmoChildOptions::NO_WRITE,
-                location.offset,
-                location.length,
-            )
-            .map_err(|e| {
-                error!("Error creating child vmo for meta file {:?}", e);
-                zx::Status::INTERNAL
-            })?;
+        let vmo = self.create_meta_file_vmo(location).map_err(|e| {
+            error!("Error creating child vmo for meta file {:?}", e);
+            zx::Status::INTERNAL
+        })?;
 
         Ok(Some(VmoFile::new_with_inode(vmo, /*inode*/ 1)))
     }
@@ -199,8 +221,17 @@ pub enum ReadFileError {
     #[error("reading blob")]
     ReadBlob(#[source] NonMetaStorageError),
 
+    #[error("getting blob vmo")]
+    GetBlobVmo(#[source] NonMetaStorageError),
+
+    #[error("getting blob vmo content size")]
+    GetContentSize(#[source] zx::Status),
+
     #[error("reading meta file")]
     ReadMetaFile(#[source] zx::Status),
+
+    #[error("creating meta file child vmo")]
+    CreateMetaFileVmo(#[source] zx::Status),
 
     #[error("no file exists at path: {path:?}")]
     NoFileAtPath { path: String },
@@ -579,6 +610,24 @@ mod tests {
         assert_eq!(root_dir.read_file("meta/file").await.unwrap().as_slice(), b"meta-contents0");
         assert_matches!(
             root_dir.read_file("missing").await.unwrap_err(),
+            ReadFileError::NoFileAtPath{path} if path == "missing"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn get_file_vmo() {
+        let (_env, root_dir) = TestEnv::with_subpackages(None).await;
+
+        let (vmo, size) = root_dir.get_file_vmo("resource").await.unwrap();
+        assert_eq!(size, 13);
+        assert_eq!(vmo.read_to_vec::<u8>(0, size).unwrap().as_slice(), b"blob-contents");
+
+        let (vmo, size) = root_dir.get_file_vmo("meta/file").await.unwrap();
+        assert_eq!(size, 14);
+        assert_eq!(vmo.read_to_vec::<u8>(0, size).unwrap().as_slice(), b"meta-contents0");
+
+        assert_matches!(
+            root_dir.get_file_vmo("missing").await.unwrap_err(),
             ReadFileError::NoFileAtPath{path} if path == "missing"
         );
     }

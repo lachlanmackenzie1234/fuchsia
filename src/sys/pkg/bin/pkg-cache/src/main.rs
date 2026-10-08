@@ -623,7 +623,11 @@ async fn serve_base_package_if_present(
     resolver: &base_package_resolver::Resolver,
 ) -> anyhow::Result<fio::DirectoryProxy> {
     let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-    match resolver.resolve_and_serve(&url, server).await.map(|_: fpkg::ResolutionContext| ()) {
+    match resolver
+        .resolve_and_serve(&url, server)
+        .await
+        .map(|(_context, _root_dir): (fpkg::ResolutionContext, Arc<RootDir>)| ())
+    {
         Ok(()) => (),
         Err(base_package_resolver::Error::PackageNotInIndex) => {
             log::warn!(url:%; "package not in base, so exposed directory will close connections")
