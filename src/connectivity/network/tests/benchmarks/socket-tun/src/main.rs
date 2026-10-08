@@ -18,28 +18,26 @@ use futures::{AsyncReadExt as _, FutureExt as _};
 
 use libc as _;
 use net_declare::fidl_subnet;
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use netemul::{PacketCapture, TestEndpoint, TestNetwork};
 use netstack_testing_common::realms::{KnownServiceProvider, NetstackVersion};
 use netstack_testing_common::{devices, interfaces};
 
-trait IpExt {
+trait IpExt: Ip {
     const CLIENT_SUBNET: fnet::Subnet;
     const SERVER_SUBNET: fnet::Subnet;
-    const NAME: &'static str;
     const DOMAIN: fposix_socket::Domain;
 }
 
-impl IpExt for net_types::ip::Ipv4 {
+impl IpExt for Ipv4 {
     const CLIENT_SUBNET: fnet::Subnet = fidl_subnet!("192.0.2.1/24");
     const SERVER_SUBNET: fnet::Subnet = fidl_subnet!("192.0.2.254/24");
-    const NAME: &'static str = "IPv4";
     const DOMAIN: fposix_socket::Domain = fposix_socket::Domain::Ipv4;
 }
 
-impl IpExt for net_types::ip::Ipv6 {
+impl IpExt for Ipv6 {
     const CLIENT_SUBNET: fnet::Subnet = fidl_subnet!("2001:0db8:abcd:efff::1/64");
     const SERVER_SUBNET: fnet::Subnet = fidl_subnet!("2001:0db8:abcd:efff:ffff:ffff:ffff:ffff/64");
-    const NAME: &'static str = "IPv6";
     const DOMAIN: fposix_socket::Domain = fposix_socket::Domain::Ipv6;
 }
 
@@ -178,16 +176,8 @@ async fn setup<'a>(
         InterfaceFidlProxies { _device_control: device_control, _control: control }
     }
     let (_client_if, _server_if) = futures::future::join(
-        install_interface(
-            &client_realm,
-            left_port,
-            [net_types::ip::Ipv4::CLIENT_SUBNET, net_types::ip::Ipv6::CLIENT_SUBNET],
-        ),
-        install_interface(
-            &server_realm,
-            right_port,
-            [net_types::ip::Ipv4::SERVER_SUBNET, net_types::ip::Ipv6::SERVER_SUBNET],
-        ),
+        install_interface(&client_realm, left_port, [Ipv4::CLIENT_SUBNET, Ipv6::CLIENT_SUBNET]),
+        install_interface(&server_realm, right_port, [Ipv4::SERVER_SUBNET, Ipv6::SERVER_SUBNET]),
     )
     .await;
 
@@ -501,7 +491,7 @@ async fn main() {
         let mut metrics = Vec::new();
         for transfer in [1 << 10, 10 << 10, 100 << 10, 500 << 10, 1000 << 10] {
             metrics.push(
-                bench_tcp::<net_types::ip::Ipv4>(
+                bench_tcp::<Ipv4>(
                     test_suite,
                     iter_count,
                     &client_realm,
@@ -512,7 +502,7 @@ async fn main() {
                 .await,
             );
             metrics.push(
-                bench_tcp::<net_types::ip::Ipv6>(
+                bench_tcp::<Ipv6>(
                     test_suite,
                     iter_count,
                     &client_realm,
