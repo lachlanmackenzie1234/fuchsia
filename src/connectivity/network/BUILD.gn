@@ -107,11 +107,6 @@ group("tests") {
     "mdns:tests",
     "net-cli:tests",
     "netlink:tests",
-
-    # Ensure this target doesn't rot. This dependency can be removed if the
-    # target becomes load bearing elsewhere.
-    "netstack:component-with-tracing-dropin",
-    "netstack:tests",
     "netstack3:tests",
     "testing:tests",
     "tests",
