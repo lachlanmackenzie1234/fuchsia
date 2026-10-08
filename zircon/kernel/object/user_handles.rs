@@ -6,7 +6,7 @@
 
 use super::channel_dispatcher::ChannelDispatcher;
 use super::handle::{HandleOwner, HandleRef, HandleValue};
-use super::handle_table::HandleTableWriteGuard;
+use super::handle_table::HandleTableLockClass;
 use super::message_packet::MessagePacket;
 use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
@@ -15,6 +15,7 @@ use core::mem::{MaybeUninit, align_of, size_of};
 use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::{cmp, slice};
+use ksync::LockToken;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::{
@@ -86,12 +87,13 @@ fn finish_get_handles(proc: &ProcessDispatcher, msg: &mut MessagePacket) {
     let handles_ptr = msg.handles();
     {
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = proc.handle_table().write_lock());
+        let handle_table = proc.handle_table();
+        ksync::lock!(let mut guard = handle_table.write_lock());
         for i in 0..num_handles {
             // SAFETY: `i < num_handles`, and ownership of each `Handle*` is transferred from `msg`
             // to `proc`'s handle table (`msg.set_owns_handles(false)` is called below).
             let handle_owner = unsafe { HandleOwner::from_raw(*handles_ptr.add(i)).unwrap() };
-            guard.add_handle(handle_owner);
+            handle_table.add_handle_locked(guard.as_mut().token_mut(), handle_owner);
         }
     }
 
@@ -218,13 +220,15 @@ fn duplicate_handle_for_transfer(
 /// be reflected back to the user.
 // This helper is used by zx_channel_write.
 fn get_handle_for_message_locked(
-    guard: &HandleTableWriteGuard<'_>,
+    token: &mut LockToken<'_, HandleTableLockClass>,
     proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_val: zx_handle_t,
 ) -> Result<HandleOwner, Status> {
-    let source =
-        guard.remove_handle(proc, HandleValue::new(handle_val)).ok_or(Status::BAD_HANDLE)?;
+    let source = proc
+        .handle_table()
+        .remove_handle_locked(token, proc, HandleValue::new(handle_val))
+        .ok_or(Status::BAD_HANDLE)?;
     move_handle_for_transfer(source, channel, ZX_OBJ_TYPE_NONE, ZX_RIGHT_SAME_RIGHTS)
 }
 
@@ -232,7 +236,7 @@ fn get_handle_for_message_locked(
 /// be reflected back to the user.
 // This helper is used by zx_channel_write_etc.
 fn get_handle_disposition_for_message_locked(
-    guard: &HandleTableWriteGuard<'_>,
+    token: &mut LockToken<'_, HandleTableLockClass>,
     proc: &ProcessDispatcher,
     channel: &ChannelDispatcher,
     handle_disposition: &mut RawHandleDisposition,
@@ -250,30 +254,41 @@ fn get_handle_disposition_for_message_locked(
     // So when duplicating a handle, we leave the source handle in the handle table. For all
     // other operations (including invalid operations) we immediately remove the source handle
     // from the handle table and then attempt to move it.
-    guard
-        .get_handle(proc, HandleValue::new(handle_disposition.handle))
-        .ok_or(Status::BAD_HANDLE)
-        .and_then(|source| match handle_disposition.operation {
-            ZX_HANDLE_OP_DUPLICATE => duplicate_handle_for_transfer(
+    let handle_table = proc.handle_table();
+    let handle_val = HandleValue::new(handle_disposition.handle);
+    let res = (|| match handle_disposition.operation {
+        ZX_HANDLE_OP_DUPLICATE => {
+            let source = handle_table
+                .get_handle_locked(token, proc, handle_val)
+                .ok_or(Status::BAD_HANDLE)?;
+            duplicate_handle_for_transfer(
                 source,
                 channel,
                 handle_disposition.type_,
                 handle_disposition.rights,
-            ),
-            ZX_HANDLE_OP_MOVE => move_handle_for_transfer(
-                guard.remove_handle_ref(source),
+            )
+        }
+        ZX_HANDLE_OP_MOVE => {
+            let source = handle_table
+                .remove_handle_locked(token, proc, handle_val)
+                .ok_or(Status::BAD_HANDLE)?;
+            move_handle_for_transfer(
+                source,
                 channel,
                 handle_disposition.type_,
                 handle_disposition.rights,
-            ),
-            _ => {
-                drop(guard.remove_handle_ref(source));
-                Err(Status::INVALID_ARGS)
-            }
-        })
-        .inspect_err(|err| {
-            handle_disposition.result = err.into_raw();
-        })
+            )
+        }
+        _ => {
+            let _ = handle_table
+                .remove_handle_locked(token, proc, handle_val)
+                .ok_or(Status::BAD_HANDLE)?;
+            Err(Status::INVALID_ARGS)
+        }
+    })();
+    res.inspect_err(|err| {
+        handle_disposition.result = err.into_raw();
+    })
 }
 
 fn put_handles_from_user<'a, T: FromBytes>(
@@ -281,7 +296,10 @@ fn put_handles_from_user<'a, T: FromBytes>(
     buf: &'a mut [MaybeUninit<T>; ZX_CHANNEL_MAX_MSG_HANDLES as usize],
     proc: &ProcessDispatcher,
     msg: &mut MessagePacket,
-    mut get_handle: impl FnMut(&HandleTableWriteGuard<'_>, &mut T) -> Result<HandleOwner, Status>,
+    mut get_handle: impl FnMut(
+        &mut LockToken<'_, HandleTableLockClass>,
+        &mut T,
+    ) -> Result<HandleOwner, Status>,
 ) -> Result<(&'a mut [T], Result<(), Status>), Status> {
     let num_handles = msg.num_handles();
     debug_assert!(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES as usize); // This must be checked before calling.
@@ -303,9 +321,9 @@ fn put_handles_from_user<'a, T: FromBytes>(
     let mut result = Ok(());
     {
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = proc.handle_table().write_lock());
+        ksync::lock!(let mut guard = proc.handle_table().write_lock());
         for (ix, item) in items.iter_mut().enumerate() {
-            let handle = get_handle(&guard, item);
+            let handle = get_handle(guard.as_mut().token_mut(), item);
             if let Err(err) = handle
                 && result.is_ok()
             {

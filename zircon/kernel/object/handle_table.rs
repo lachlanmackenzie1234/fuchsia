@@ -19,15 +19,15 @@ use core::fmt::{self, Debug, Formatter};
 use core::mem::size_of;
 use core::ptr::{self, NonNull};
 use fbl::{HasRefCount, Recyclable, RefPtr};
-use ksync::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard, LockClass};
-use pin_init::{PinInit, pin_data, pin_init};
+use ksync::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard, LockClass, LockToken};
+use pin_init::PinInit;
 use zr::OpaqueFacade;
 use zx_status::Status;
 use zx_types::{ZX_HANDLE_INVALID, ZX_OBJ_TYPE_NONE, zx_handle_t, zx_koid_t, zx_rights_t};
 
 /// Lock class tag for the handle table's reader-writer lock.
-#[derive(Debug, Default)]
-struct HandleTableLockClass;
+#[derive(Debug, Default, Copy, Clone)]
+pub struct HandleTableLockClass;
 
 impl LockClass for HandleTableLockClass {
     const ID: *mut c_void = ptr::null_mut();
@@ -73,14 +73,18 @@ impl HandleTable {
 
     /// Acquires a reader lock on this handle table.
     #[inline]
-    pub fn read_lock(&self) -> impl PinInit<HandleTableReadGuard<'_>, Infallible> {
-        HandleTableReadGuard::new(self)
+    pub fn read_lock(
+        &self,
+    ) -> impl PinInit<BrwLockPiReadGuard<'_, HandleTableLockClass>, Infallible> {
+        self.lock().read_lock()
     }
 
     /// Acquires a writer lock on this handle table.
     #[inline]
-    pub fn write_lock(&self) -> impl PinInit<HandleTableWriteGuard<'_>, Infallible> {
-        HandleTableWriteGuard::new(self)
+    pub fn write_lock(
+        &self,
+    ) -> impl PinInit<BrwLockPiWriteGuard<'_, HandleTableLockClass>, Infallible> {
+        self.lock().write_lock()
     }
 
     /// Returns the KOID of this handle table.
@@ -98,6 +102,57 @@ impl HandleTable {
         HandleValue::new(raw)
     }
 
+    /// Retrieves a handle reference while holding the handle table lock.
+    #[inline]
+    pub fn get_handle_locked<'a>(
+        &'a self,
+        _token: &'a LockToken<'_, HandleTableLockClass>,
+        caller: &ProcessDispatcher,
+        handle_value: HandleValue,
+    ) -> Option<HandleRef<'a>> {
+        // SAFETY: `self` and `caller` are valid and the handle table lock is held for `'a`.
+        let ptr = unsafe {
+            cpp_handle_table_get_handle_locked(
+                self.as_ffi_mut(),
+                caller.as_ffi_mut(),
+                handle_value.raw_value(),
+            )
+        };
+        // SAFETY: `ptr` is a valid handle pointer in `self` while the lock is held.
+        NonNull::new(ptr).map(|ptr| unsafe { HandleRef::from_raw(ptr) })
+    }
+
+    /// Adds an owned handle to the handle table while holding the write lock.
+    #[inline]
+    pub fn add_handle_locked(
+        &self,
+        _token: &mut LockToken<'_, HandleTableLockClass>,
+        handle: HandleOwner,
+    ) {
+        // SAFETY: `self` is valid, the handle table write lock is held, and `handle` ownership is
+        // transferred to C++.
+        unsafe {
+            cpp_handle_table_add_handle_locked(self.as_ffi_mut(), handle.release());
+        }
+    }
+
+    /// Removes a handle by value from the handle table while holding the write lock.
+    #[inline]
+    pub fn remove_handle_locked(
+        &self,
+        token: &mut LockToken<'_, HandleTableLockClass>,
+        caller: &ProcessDispatcher,
+        handle_value: HandleValue,
+    ) -> Option<HandleOwner> {
+        let ptr = self.get_handle_locked(token, caller, handle_value)?.as_ptr();
+        // SAFETY: `self` is valid, the handle table write lock is held, and `ptr` was looked up in
+        // `self` under the same lock.
+        let raw =
+            unsafe { cpp_handle_table_remove_handle_locked(self.as_ffi_mut(), ptr as *mut _) };
+        // SAFETY: `raw` is a non-null owned handle pointer released from the handle table.
+        Some(unsafe { HandleOwner::from_raw(raw).unwrap() })
+    }
+
     /// Removes a handle from this handle table and returns the owned handle if found.
     pub fn remove_handle(
         &self,
@@ -105,8 +160,8 @@ impl HandleTable {
         handle: HandleValue,
     ) -> Option<HandleOwner> {
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = self.write_lock());
-        guard.remove_handle(caller, handle)
+        ksync::lock!(let mut guard = self.write_lock());
+        self.remove_handle_locked(guard.as_mut().token_mut(), caller, handle)
     }
 
     /// Removes a slice of raw handle values from this handle table.
@@ -121,10 +176,16 @@ impl HandleTable {
     ) -> Result<(), Status> {
         let mut status = Ok(());
         let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-        ksync::lock!(let guard = self.write_lock());
+        ksync::lock!(let mut guard = self.write_lock());
         for &handle in handles {
             if handle != ZX_HANDLE_INVALID
-                && guard.remove_handle(caller, HandleValue::new(handle)).is_none()
+                && self
+                    .remove_handle_locked(
+                        guard.as_mut().token_mut(),
+                        caller,
+                        HandleValue::new(handle),
+                    )
+                    .is_none()
             {
                 status = Err(Status::BAD_HANDLE);
             }
@@ -140,7 +201,9 @@ impl HandleTable {
         handle_value: HandleValue,
     ) -> Result<(RefPtr<Dispatcher>, zx_rights_t), Status> {
         ksync::lock!(let guard = self.read_lock());
-        let handle = guard.get_handle(caller, handle_value).ok_or(Status::BAD_HANDLE)?;
+        let handle = self
+            .get_handle_locked(guard.token(), caller, handle_value)
+            .ok_or(Status::BAD_HANDLE)?;
         Ok((handle.dispatcher(), handle.rights()))
     }
 
@@ -166,121 +229,5 @@ impl HandleTable {
         }
         // SAFETY: We verified the type of the dispatcher matches `T::TYPE`, so it is safe to cast.
         Ok(unsafe { dispatcher.cast::<T>() })
-    }
-}
-
-/// RAII reader lock guard for a handle table.
-///
-/// Encapsulates the reader lock on the handle table, ensuring that handle lookups and rights
-/// checks can only occur while the lock is held.
-#[pin_data]
-pub struct HandleTableReadGuard<'a> {
-    handle_table: &'a HandleTable,
-    #[pin]
-    guard: BrwLockPiReadGuard<'a, HandleTableLockClass>,
-}
-
-impl<'a> HandleTableReadGuard<'a> {
-    /// Creates a stack-pinned handle table reader lock guard for `handle_table`.
-    pub fn new(handle_table: &'a HandleTable) -> impl PinInit<Self, Infallible> {
-        pin_init!(Self {
-            handle_table,
-            guard <- handle_table.lock().read_lock(),
-        })
-    }
-
-    /// Retrieves a handle reference while holding the handle table lock.
-    pub fn get_handle(
-        &self,
-        caller: &ProcessDispatcher,
-        handle_value: HandleValue,
-    ) -> Option<HandleRef<'_>> {
-        // SAFETY: `self.handle_table` and `caller` are valid and the handle table lock is held for
-        // the duration of `self`.
-        let ptr = unsafe {
-            cpp_handle_table_get_handle_locked(
-                self.handle_table.as_ffi_mut(),
-                caller.as_ffi_mut(),
-                handle_value.raw_value(),
-            )
-        };
-        // SAFETY: `ptr` is a valid handle pointer in `self.handle_table` while the lock is held.
-        NonNull::new(ptr).map(|ptr| unsafe { HandleRef::from_raw(ptr) })
-    }
-}
-
-/// RAII writer lock guard for a handle table.
-///
-/// Encapsulates the writer lock on the handle table, allowing handle lookups, additions, and
-/// removals while the lock is held.
-#[pin_data]
-pub struct HandleTableWriteGuard<'a> {
-    handle_table: &'a HandleTable,
-    #[pin]
-    guard: BrwLockPiWriteGuard<'a, HandleTableLockClass>,
-}
-
-impl<'a> HandleTableWriteGuard<'a> {
-    /// Creates a stack-pinned handle table writer lock guard for `handle_table`.
-    pub fn new(handle_table: &'a HandleTable) -> impl PinInit<Self, Infallible> {
-        pin_init!(Self {
-            handle_table,
-            guard <- handle_table.lock().write_lock(),
-        })
-    }
-
-    /// Retrieves a handle reference while holding the handle table write lock.
-    #[inline]
-    pub fn get_handle(
-        &self,
-        caller: &ProcessDispatcher,
-        handle_value: HandleValue,
-    ) -> Option<HandleRef<'_>> {
-        // SAFETY: `self.handle_table` and `caller` are valid and the handle table write lock is
-        // held for the duration of `self`.
-        let ptr = unsafe {
-            cpp_handle_table_get_handle_locked(
-                self.handle_table.as_ffi_mut(),
-                caller.as_ffi_mut(),
-                handle_value.raw_value(),
-            )
-        };
-        // SAFETY: `ptr` is a valid handle pointer in `self.handle_table` while the lock is held.
-        NonNull::new(ptr).map(|ptr| unsafe { HandleRef::from_raw(ptr) })
-    }
-
-    /// Adds an owned handle to the handle table while holding the write lock.
-    #[inline]
-    pub fn add_handle(&self, handle: HandleOwner) {
-        // SAFETY: `self.handle_table` is valid, the handle table write lock is held, and `handle`
-        // ownership is transferred to C++.
-        unsafe {
-            cpp_handle_table_add_handle_locked(self.handle_table.as_ffi_mut(), handle.release());
-        }
-    }
-
-    /// Removes a handle by value from the handle table while holding the write lock.
-    #[inline]
-    pub fn remove_handle(
-        &self,
-        caller: &ProcessDispatcher,
-        handle_value: HandleValue,
-    ) -> Option<HandleOwner> {
-        self.get_handle(caller, handle_value).map(|handle| self.remove_handle_ref(handle))
-    }
-
-    /// Removes a handle known to be in this handle table while holding the write lock.
-    #[inline]
-    pub fn remove_handle_ref(&self, handle: HandleRef<'_>) -> HandleOwner {
-        // SAFETY: `self.handle_table` is valid, the handle table write lock is held, and `handle`
-        // was looked up in `self.handle_table` under the same lock.
-        let raw = unsafe {
-            cpp_handle_table_remove_handle_locked(
-                self.handle_table.as_ffi_mut(),
-                handle.as_ptr() as *mut _,
-            )
-        };
-        // SAFETY: `raw` is a non-null owned handle pointer released from the handle table.
-        unsafe { HandleOwner::from_raw(raw).unwrap() }
     }
 }
