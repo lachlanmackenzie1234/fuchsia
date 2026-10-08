@@ -457,7 +457,7 @@ class IPerfServerOverSsh(IPerfServerBase):
         )
         self._ssh_settings = ssh_settings
         # Allow injecting a mock SSH session or reusing an existing connection for unit testing.
-        self._ssh_session: connection.SshConnection | None = (
+        self._ssh_session: connection.SshConnection = (
             ssh_session
             if ssh_session is not None
             else connection.SshConnection(ssh_settings)
@@ -534,7 +534,6 @@ class IPerfServerOverSsh(IPerfServerBase):
 
     def _cleanup_iperf_port(self) -> None:
         """Checks and kills zombie iperf servers occupying intended port."""
-        assert self._ssh_session is not None
         if not self._ss:
             if self._use_killall:
                 self._ssh_session.run("killall iperf3", ignore_status=True)
@@ -641,19 +640,6 @@ class IPerfServerOverSsh(IPerfServerBase):
         return log_file
 
     def _get_ssh(self) -> connection.SshConnection:
-        if self._ssh_session is None:
-            self._ssh_session = connection.SshConnection(self._ssh_settings)
-            # Re-instantiate command wrappers with the new SSH session when reconnecting.
-            self._journalctl = optional(
-                LinuxJournalctlCommand(self._ssh_session)
-            )
-            self._ss = optional(LinuxCommand(self._ssh_session, "ss"))
-
-            # Disable NetworkManager on the test interface
-            self._nmcli = optional(nmcli.LinuxNmcliCommand(self._ssh_session))
-            if self._nmcli:
-                self._nmcli.setup_device(self.test_interface)
-
         return self._ssh_session
 
     def close_ssh(self) -> None:
@@ -662,24 +648,13 @@ class IPerfServerOverSsh(IPerfServerBase):
         """
         if self.started:
             self.stop()
-        if self._ssh_session:
-            self._ssh_session.close()
-            self._ssh_session = None
+        self._ssh_session.close()
 
     def get_systemd_journal(self) -> str:
         if not self._journalctl:
             return "journalctl not available"
 
-        had_ssh = False if self._ssh_session is None else True
-
-        self._journalctl.set_runner(self._get_ssh())
-        logs = self._journalctl.logs()
-
-        if not had_ssh:
-            # Return to closed state
-            self.close_ssh()
-
-        return logs
+        return self._journalctl.logs()
 
     def download_logs(self, path: str) -> None:
         """Download all available logs to path.
