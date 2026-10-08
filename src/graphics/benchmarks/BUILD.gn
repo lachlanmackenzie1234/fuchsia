@@ -18,6 +18,13 @@ python_perf_test("flatland_benchmark") {
 
 python_perf_test("input_latency_benchmark") {
   main_source = "input_latency_benchmark.py"
+  honeydew_config = {
+    affordances = {
+      tracing = {
+        implementation = "ffx"
+      }
+    }
+  }
   data_package_name = "test_data"
   expected_metric_names_filepaths = [ "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.input_latency.simplest_app.txt" ]
   libraries = [
