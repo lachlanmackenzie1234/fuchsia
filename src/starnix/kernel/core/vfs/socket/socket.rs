@@ -27,8 +27,8 @@ use starnix_uapi::{
     SO_DOMAIN, SO_PROTOCOL, SO_RCVTIMEO, SO_SNDTIMEO, SO_TYPE, SOL_SOCKET, errno, error, uapi,
 };
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, OnceLock};
 use zerocopy::FromBytes;
 
 pub const DEFAULT_LISTEN_BACKLOG: usize = 1024;
@@ -235,6 +235,10 @@ pub struct Socket {
 
     state: LockDepMutex<SocketState, SocketStateLock>,
 
+    /// Reference to the [`crate::vfs::FsNode`] to which this `Socket` is attached.
+    /// Uninitialized until the `Socket` is wrapped into a [`crate::vfs::FileObject`].
+    fs_node: OnceLock<FsNodeHandle>,
+
     /// Security module state associated with this socket. Note that the socket's security label is
     /// applied to the associated `fs_node`.
     pub security: security::SocketState,
@@ -247,11 +251,6 @@ struct SocketState {
 
     /// The value for SO_SNDTIMEO.
     send_timeout: Option<zx::MonotonicDuration>,
-
-    /// Reference to the [`crate::vfs::FsNode`] to which this `Socket` is attached.
-    /// `None` until the `Socket` is wrapped into a [`crate::vfs::FileObject`] (e.g. while it is
-    /// still held in a listen queue).
-    fs_node: Option<FsNodeHandle>,
 
     /// Socket state passed to eBPF programs in `bpf_sock.state` field.
     /// TODO(https://fxbug.dev/549754529): State tracking logic is incomplete
@@ -466,14 +465,13 @@ impl Socket {
             socket_type,
             protocol,
             state: Default::default(),
+            fs_node: OnceLock::new(),
             security: security::SocketState::default(),
         })
     }
 
     pub(super) fn set_fs_node(&self, node: &FsNodeHandle) {
-        let mut locked_state = self.state.lock();
-        assert!(locked_state.fs_node.is_none());
-        locked_state.fs_node = Some(node.clone());
+        assert!(self.fs_node.set(node.clone()).is_ok());
     }
 
     /// Returns the Socket that this FileHandle refers to. If this file is not a socket file,
@@ -619,14 +617,13 @@ impl Socket {
         self.ops.read(self, current_task, data, flags)
     }
 
-    pub fn read_and_append(
+    pub(super) fn read_and_append_unchecked(
         &self,
         current_task: &CurrentTask,
         read_info: &mut MessageReadInfo,
         data: &mut dyn OutputBuffer,
         flags: SocketMessageFlags,
     ) -> Result<bool, Errno> {
-        security::check_socket_recvmsg_access(current_task, self)?;
         self.ops.read_and_append(self, current_task, read_info, data, flags)
     }
 
@@ -638,6 +635,16 @@ impl Socket {
         ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
         security::check_socket_sendmsg_access(current_task, self)?;
+        self.write_unchecked(current_task, data, dest_address, ancillary_data)
+    }
+
+    pub(super) fn write_unchecked(
+        &self,
+        current_task: &CurrentTask,
+        data: &mut dyn InputBuffer,
+        dest_address: &mut Option<SocketAddress>,
+        ancillary_data: &mut Vec<AncillaryData>,
+    ) -> Result<usize, Errno> {
         self.ops.write(self, current_task, data, dest_address, ancillary_data)
     }
 
@@ -680,8 +687,8 @@ impl Socket {
     /// Returns the [`crate::vfs::FsNode`] unique to this `Socket`.
     // TODO: https://fxbug.dev/414583985 - Create `FsNode` at `Socket` creation and make this
     // infallible.
-    pub fn fs_node(&self) -> Option<FsNodeHandle> {
-        self.state.lock().fs_node.clone()
+    pub fn fs_node(&self) -> Option<&FsNodeHandle> {
+        self.fs_node.get()
     }
 
     pub fn bpf_state(&self) -> SocketBpfState {

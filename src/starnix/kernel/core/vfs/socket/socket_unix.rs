@@ -630,9 +630,14 @@ impl SocketOps for UnixSocket {
             (None, None, _) => return error!(ENOTCONN),
         };
 
-        if socket.socket_type == SocketType::Datagram {
+        let dgram_security_context = if socket.socket_type == SocketType::Datagram {
             security::unix_may_send(current_task, socket, &peer)?;
-        }
+            // TODO: https://fxbug.dev/364568855 - Store the opaque LSM property value, and expand
+            // it to a string upon readmsg.
+            Some(security::socket_getpeersec_dgram(current_task, socket))
+        } else {
+            None
+        };
 
         let peer_unaccepted = peer.fs_node().is_none();
         let unix_socket = downcast_socket_to_unix(&peer);
@@ -641,7 +646,15 @@ impl SocketOps for UnixSocket {
             let default_creds =
                 (local_passcred.is_enabled() || peer.passcred.is_enabled() || peer_unaccepted)
                     .then(|| current_task.current_ucred());
-            peer.write(current_task, data, local_address, default_creds, ancillary_data, socket)
+            peer.write(
+                current_task,
+                data,
+                local_address,
+                default_creds,
+                dgram_security_context,
+                ancillary_data,
+                socket,
+            )
         };
 
         if let Err(ref err) = write_result {
@@ -1142,6 +1155,7 @@ impl UnixSocketInner {
         data: &mut dyn InputBuffer,
         address: Option<SocketAddress>,
         default_credentials: Option<ucred>,
+        dgram_security_context: Option<Vec<u8>>,
         ancillary_data: &mut Vec<AncillaryData>,
         socket: &Socket,
     ) -> Result<usize, Errno> {
@@ -1156,10 +1170,7 @@ impl UnixSocketInner {
             return error!(EPIPE);
         }
         let filter = |mut message: Message| {
-            if socket.socket_type == SocketType::Datagram {
-                // TODO: https://fxbug.dev/364568855 - Store the opaque LSM property value, and expand
-                // it to a string upon readmsg.
-                let context = security::socket_getpeersec_dgram(current_task, socket);
+            if let Some(context) = dgram_security_context {
                 message
                     .ancillary_data
                     .push(AncillaryData::Unix(UnixControlData::Security(context.into())));
