@@ -463,6 +463,7 @@ async fn main_inner() -> Result<(), Error> {
             .build(),
         blobfs.clone(),
         fidl_connector::ServiceReconnector::<fpkg_http::ClientMarker>::new(),
+        inspector.root().create_child("blob_fetcher"),
     );
     let blob_fetcher_fut = Task::spawn(blob_fetcher_fut);
     {
@@ -681,4 +682,19 @@ fn get_blob_reader_handler(
             }
         })
     }
+}
+
+// Replicates `format!("{:#}", anyhow!(err))` but without consuming `err` or converting it into an
+// `anyhow::Error`, so that the original, un-type-erased error can be propagated.
+// Normally errors should either be propagated XOR logged, but there are some instances in which we
+// are duplicating errors into an inspect history so that they will be available when debugging an
+// OTA even after they have fallen out of the syslog history.
+fn stringify_error(mut err: &dyn std::error::Error) -> String {
+    let mut result = err.to_string();
+    while let Some(source) = err.source() {
+        use std::fmt::Write as _;
+        let _ = write!(result, ": {source}");
+        err = source;
+    }
+    result
 }

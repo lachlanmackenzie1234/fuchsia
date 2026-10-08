@@ -308,7 +308,7 @@ pub(crate) enum Error {
     #[error("invalid blob dir URI")]
     InvalidBlobDirUri(#[source] http::uri::InvalidUri),
 
-    #[error("forwarding to the package fetcher")]
+    #[error("forwarding to package fetcher")]
     PackageFetcher(#[source] Arc<crate::package_fetcher::Error>),
 
     #[error("authenticating context")]

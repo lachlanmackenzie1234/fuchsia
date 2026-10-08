@@ -240,7 +240,7 @@ impl Resolver {
         inspect.record_string(
             "result",
             res.as_ref().err().map_or(Cow::Borrowed("success"), |e| {
-                format!("error: {}", stringify_error(e)).into()
+                format!("error: {}", crate::stringify_error(e)).into()
             }),
         );
         inspect.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
@@ -694,21 +694,4 @@ fn internal_to_toolbox_error(err: fpkg::ResolveError) -> fpkg_resolution::Resolv
         InvalidUrl => Err::InvalidUrl,
         InvalidContext => Err::InvalidContext,
     }
-}
-
-// Replicates `format!("{:#}", anyhow!(err))` but without consuming `err` or converting it into an
-// `anyhow::Error`, so that the original, un-type-erased error can be propagated.
-// Normally errors should either be propagated XOR logged, but in this case we are duplicating the
-// log into inspect and doing so at the package resolver level instead of component resolver level
-// so that the history contains resolves performed on behalf of:
-//   1. the full component resolver that is in this component and uses the trait
-//   2. external clients that use the FIDL interface
-fn stringify_error(mut err: &dyn std::error::Error) -> String {
-    let mut result = err.to_string();
-    while let Some(source) = err.source() {
-        use std::fmt::Write as _;
-        let _ = write!(result, ": {source}");
-        err = source;
-    }
-    result
 }
