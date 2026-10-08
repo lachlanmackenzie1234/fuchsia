@@ -107,16 +107,17 @@ impl CoolingDeviceRegistrar {
         id
     }
 
-    /// Register a device in the virtual thermal class.
+    /// Register a device in the thermal class.
     fn register<T: CoolingOps>(&mut self, kernel: &Kernel, device_type: String, ops: T) -> Device {
         let device_registry = &kernel.device_registry;
-        let device_class = device_registry.objects.virtual_thermal_class();
+        let device_class = device_registry.objects.thermal_class();
 
         let cooling_device =
             Arc::new(CoolingDevice::<T> { device_id: self.get_next_id(), device_type, ops });
 
         device_registry.add_numberless_device(
             cooling_device.get_device_name().as_str().into(),
+            /* parent = */ None,
             device_class,
             |device, dir| cooling_device.build_device_dir(device, dir),
         )

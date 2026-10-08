@@ -36,10 +36,9 @@ pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
 
     let registry = &kernel.device_registry;
 
-    let qdb_class =
-        registry.objects.class_with_dir("qbg".into(), registry.objects.virtual_bus(), |dir| {
-            dir.entry("qbg_context", ReadWriteBytesFile::new_node(), mode!(IFREG, 0o666));
-        });
+    let qdb_class = registry.objects.class_with_dir("qbg".into(), |dir| {
+        dir.entry("qbg_context", ReadWriteBytesFile::new_node(), mode!(IFREG, 0o666));
+    });
 
     // /dev/qbg
     registry.register_device(
@@ -55,39 +54,46 @@ pub fn hvdcp_opti_init(kernel: &Kernel) -> Result<(), Errno> {
         kernel,
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
-        registry.objects.get_or_create_class("qbg_battery".into(), registry.objects.virtual_bus()),
+        registry.objects.get_or_create_class("qbg_battery".into()),
         create_battery_profile_device,
     )?;
 
     // /sys/bus/iio/devices/iio:device
-    // IIO devices should not show up under /sys/class. This makes it show up under /sys/class,
-    // but it's OK.
-    let iio = registry
-        .objects
-        .get_or_create_class("iio".into(), registry.objects.get_or_create_bus("iio".into()));
-    registry.add_numberless_device("iio:device0".into(), iio.clone(), |device, dir| {
-        build_iio0_directory(device, &proxy, dir)
-    });
+    let iio = registry.objects.get_or_create_bus("iio".into());
+    registry.add_bus_device(
+        "iio:device0".into(),
+        /* parent = */ None,
+        iio.clone(),
+        |device, dir| build_iio0_directory(device, &proxy, dir),
+    );
 
-    registry.add_numberless_device("iio:device1".into(), iio, |device, dir| {
+    registry.add_bus_device("iio:device1".into(), /* parent = */ None, iio, |device, dir| {
         build_iio1_directory(device, &proxy, dir)
     });
 
-    // power_supply devices don't show up under any bus. This makes it show up under virtual_bus,
-    // but it's OK.
-    let power_supply =
-        registry.objects.get_or_create_class("power_supply".into(), registry.objects.virtual_bus());
+    let power_supply = registry.objects.get_or_create_class("power_supply".into());
     // /sys/class/power_supply/usb
-    registry.add_numberless_device("usb".into(), power_supply.clone(), |device, dir| {
-        build_usb_power_supply_directory(device, &proxy, dir)
-    });
+    registry.add_numberless_device(
+        "usb".into(),
+        /* parent = */ None,
+        power_supply.clone(),
+        |device, dir| build_usb_power_supply_directory(device, &proxy, dir),
+    );
 
     // /sys/class/power_supply/battery
-    registry.add_numberless_device("battery".into(), power_supply.clone(), |device, dir| {
-        build_battery_power_supply_directory(device, &proxy, dir)
-    });
+    registry.add_numberless_device(
+        "battery".into(),
+        /* parent = */ None,
+        power_supply.clone(),
+        |device, dir| build_battery_power_supply_directory(device, &proxy, dir),
+    );
 
     // /sys/class/power_supply/bms
-    registry.add_numberless_device("bms".into(), power_supply, build_device_directory);
+    registry.add_numberless_device(
+        "bms".into(),
+        /* parent = */ None,
+        power_supply,
+        build_device_directory,
+    );
     Ok(())
 }

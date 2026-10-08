@@ -9,7 +9,7 @@ use crate::vfs::{
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
-use starnix_sync::{LockDepMutex, SimpleDirectoryEntriesLock};
+use starnix_sync::{LockDepMutex, SimpleDirectoryEntriesLock, allow_subclass};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
@@ -159,8 +159,12 @@ impl SimpleDirectory {
         callback(&mutator);
     }
 
-    pub fn subdir(&self, fs: &FileSystemHandle, name: &FsStr, mode: u32) -> Arc<SimpleDirectory> {
-        let mut entries = self.entries.lock();
+    fn get_or_create_subdir_locked(
+        entries: &mut BTreeMap<FsString, FsNodeHandle>,
+        fs: &FileSystemHandle,
+        name: &FsStr,
+        mode: u32,
+    ) -> Arc<SimpleDirectory> {
         if let Some(node) = entries.get(name) {
             assert!(node.info().mode == mode!(IFDIR, mode));
             let dir =
@@ -175,12 +179,58 @@ impl SimpleDirectory {
         }
     }
 
+    pub fn subdir(&self, fs: &FileSystemHandle, name: &FsStr, mode: u32) -> Arc<SimpleDirectory> {
+        let mut entries = self.entries.lock();
+        Self::get_or_create_subdir_locked(&mut entries, fs, name, mode)
+    }
+
+    /// Creates or looks up `subdir_name`, and creates or looks up `child_name` within it while
+    /// holding this directory's lock so the intermediate subdirectory cannot be removed
+    /// concurrently by [`Self::remove_from_subdir_if_empty`].
+    pub fn nested_subdir(
+        &self,
+        fs: &FileSystemHandle,
+        subdir_name: &FsStr,
+        subdir_mode: u32,
+        child_name: &FsStr,
+        child_mode: u32,
+    ) -> Arc<SimpleDirectory> {
+        let mut entries = self.entries.lock();
+        let subdir = Self::get_or_create_subdir_locked(&mut entries, fs, subdir_name, subdir_mode);
+        // Safe because locking parent then child strictly follows the directory tree hierarchy.
+        let _token = allow_subclass();
+        subdir.subdir(fs, child_name, child_mode)
+    }
+
+    /// Removes `child_name` from `subdir_name`, and removes `subdir_name` itself if it becomes
+    /// empty, atomically with respect to [`Self::nested_subdir`].
+    pub fn remove_from_subdir_if_empty(&self, subdir_name: &FsStr, child_name: &FsStr) {
+        let mut entries = self.entries.lock();
+        let Some(subdir) = entries
+            .get(subdir_name)
+            .and_then(|node| node.downcast_ops::<Arc<SimpleDirectory>>())
+            .map(Arc::clone)
+        else {
+            return;
+        };
+        let is_empty = {
+            // Safe because locking parent then child strictly follows the directory tree hierarchy.
+            let _token = allow_subclass();
+            let mut subdir_entries = subdir.entries.lock();
+            subdir_entries.remove(child_name);
+            subdir_entries.is_empty()
+        };
+        if is_empty {
+            entries.remove(subdir_name);
+        }
+    }
+
     fn get(&self, name: &FsStr) -> Option<FsNodeHandle> {
         let entries = self.entries.lock();
         entries.get(name).cloned()
     }
 
-    fn get_dir(&self, name: &FsStr) -> Option<Arc<SimpleDirectory>> {
+    pub fn get_dir(&self, name: &FsStr) -> Option<Arc<SimpleDirectory>> {
         let entries = self.entries.lock();
         entries
             .get(name)

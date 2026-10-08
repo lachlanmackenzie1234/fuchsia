@@ -90,8 +90,7 @@ impl BytesFileOps for UsbStateSysfsFile {
 pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
     let registry = &kernel.device_registry;
 
-    let android_usb_class =
-        registry.objects.get_or_create_class("android_usb".into(), registry.objects.virtual_bus());
+    let android_usb_class = registry.objects.get_or_create_class("android_usb".into());
 
     let shared_state = Arc::new(AtomicU8::new(UsbGadgetState::Disconnected as u8));
     let state_clone = shared_state.clone();
@@ -132,7 +131,7 @@ fn dispatch_usb_state_change(
     let spawner = kernel.kthreads.spawner();
     let device_clone = device.clone();
     let closure = move |current_task: &CurrentTask| {
-        if let Some(metadata) = &device_clone.metadata {
+        if let Some(metadata) = device_clone.metadata() {
             metadata.properties.insert("USB_STATE".into(), usb_state);
         }
 
@@ -272,8 +271,8 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let device = usb_device_init(current_task.kernel()).expect("usb_device_init failed");
 
-            assert_eq!(device.name.as_slice(), b"android0");
-            let metadata = device.metadata.as_ref().expect("metadata not found");
+            assert_eq!(device.name(), "android0");
+            let metadata = device.metadata().expect("metadata not found");
             assert_eq!(metadata.devname.as_slice(), b"android0");
         })
         .await;
@@ -295,7 +294,7 @@ mod tests {
             .await
             .unwrap();
 
-            let metadata = device.metadata.as_ref().expect("metadata not found");
+            let metadata = device.metadata().expect("metadata not found");
             let scope = RcuReadScope::new();
             let value = metadata
                 .properties

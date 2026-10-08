@@ -85,17 +85,26 @@ async fn add_residency_device(
                 continue;
             }
         };
-        kernel.device_registry.add_platform_device(RESIDENCY_DEVICE_NAME.into(), |device, dir| {
-            build_device_directory(device, dir);
-            for name in names {
-                let path = name.clone();
-                dir.entry(
-                    &path,
-                    BytesFile::new_node(PowerResidencyFile { name, provider: provider.clone() }),
-                    mode!(IFREG, 0o444),
-                );
-            }
-        });
+        let registry = &kernel.device_registry;
+        registry.add_bus_device(
+            RESIDENCY_DEVICE_NAME.into(),
+            Some(registry.objects.platform_device()),
+            registry.objects.platform_bus(),
+            |device, dir| {
+                build_device_directory(device, dir);
+                for name in names {
+                    let path = name.clone();
+                    dir.entry(
+                        &path,
+                        BytesFile::new_node(PowerResidencyFile {
+                            name,
+                            provider: provider.clone(),
+                        }),
+                        mode!(IFREG, 0o444),
+                    );
+                }
+            },
+        );
         device_added = true;
     }
     Ok(())

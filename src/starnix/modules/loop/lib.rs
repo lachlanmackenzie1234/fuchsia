@@ -167,7 +167,7 @@ impl LoopDevice {
     fn new<'a>(kernel: &Kernel, minor: u32) -> Result<Arc<Self>, Errno> {
         let registry = &kernel.device_registry;
         let loop_device_name = FsString::from(format!("loop{minor}"));
-        let virtual_block_class = registry.objects.virtual_block_class();
+        let block_class = registry.objects.block_class();
         let device = Arc::new(Self { number: minor, state: Default::default() });
         let device_weak = Arc::<LoopDevice>::downgrade(&device);
         let k_device = registry.add_device(
@@ -181,7 +181,8 @@ impl LoopDevice {
             // It is not generally true that all loop devices are disks, but it is true for
             // the ones we currently support. Future work should allow us to set this dynamically.
             .with_devtype("disk"),
-            virtual_block_class,
+            /* parent = */ None,
+            block_class,
             |device, dir| {
                 let device_weak_clone = device_weak.clone();
                 build_block_device_directory(device, device_weak, dir);

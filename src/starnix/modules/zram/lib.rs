@@ -61,7 +61,8 @@ pub fn zram_device_init(kernel: &Kernel) -> Result<(), Errno> {
         kernel,
         "zram0".into(),
         DeviceMetadata::new("zram0".into(), DeviceId::new(ZRAM_MAJOR, 0), DeviceMode::Block),
-        registry.objects.virtual_block_class(),
+        /* parent = */ None,
+        registry.objects.block_class(),
         |device, dir| build_zram_device_directory(device, zram_device_clone, dir),
         zram_device,
     )?;

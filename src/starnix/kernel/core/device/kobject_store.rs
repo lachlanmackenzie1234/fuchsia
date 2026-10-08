@@ -3,23 +3,29 @@
 // found in the LICENSE file.
 
 use crate::device::DeviceMode;
-use crate::device::kobject::{Bus, Class, Device, DeviceMetadata};
-use crate::fs::sysfs::get_sysfs;
+use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, Subsystem};
+use crate::fs::sysfs::{build_device_directory, get_sysfs};
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use crate::vfs::{FileSystemHandle, FsStr, FsString};
 use std::sync::{Arc, OnceLock};
 
-/// The owner of all the KObjects in sysfs.
+/// Owner of all the KObjects in sysfs.
 ///
-/// This structure holds strong references to the KObjects that are visible in sysfs. These
+/// Holds strong references to the KObjects that are visible in sysfs. These
 /// objects are organized into hierarchies that make it easier to implement sysfs.
 pub struct KObjectStore {
-    /// The root of the sysfs hierarchy.
+    /// Root of the sysfs hierarchy.
     pub root: Arc<SimpleDirectory>,
 
-    /// The sysfs filesystem in which the KObjects are stored.
+    /// Sysfs filesystem in which the KObjects are stored.
     fs: OnceLock<FileSystemHandle>,
+
+    /// Root `/sys/devices/virtual` device.
+    virtual_device: OnceLock<Device>,
+
+    /// Root `/sys/devices/platform` device.
+    platform_device: OnceLock<Device>,
 }
 
 impl KObjectStore {
@@ -31,59 +37,87 @@ impl KObjectStore {
         self.fs.get().expect("sysfs should be initialized")
     }
 
-    /// The virtual bus kobject where all virtual and pseudo devices are stored.
-    pub fn virtual_bus(&self) -> Bus {
-        let name: FsString = b"virtual".into();
-        let dir = self.ensure_dir(&[b"devices".into(), name.as_ref()]);
-        Bus::new(name, dir, None)
+    /// Device bus used for platform devices (`/sys/bus/platform`).
+    pub fn platform_bus(&self) -> Bus {
+        self.get_or_create_bus("platform".into())
     }
 
-    /// The device class used for virtual block devices.
-    pub fn virtual_block_class(&self) -> Class {
-        self.get_or_create_class("block".into(), self.virtual_bus())
+    /// Root device used for virtual devices (`/sys/devices/virtual`).
+    pub fn virtual_device(&self) -> Device {
+        self.virtual_device
+            .get_or_init(|| {
+                self.create_device(
+                    "virtual".into(),
+                    /* parent = */ None,
+                    /* subsystem = */ None,
+                    /* metadata = */ None,
+                    |_, _| {},
+                )
+            })
+            .clone()
     }
 
-    /// The device class used for virtual thermal devices.
-    pub fn virtual_thermal_class(&self) -> Class {
-        self.get_or_create_class("thermal".into(), self.virtual_bus())
+    /// Root device used for platform devices (`/sys/devices/platform`).
+    pub fn platform_device(&self) -> Device {
+        self.platform_device
+            .get_or_init(|| {
+                self.create_device(
+                    "platform".into(),
+                    /* parent = */ None,
+                    /* subsystem = */ None,
+                    /* metadata = */ None,
+                    build_device_directory,
+                )
+            })
+            .clone()
     }
 
-    /// The device class used for virtual graphics devices.
+    /// Device class used for block devices.
+    pub fn block_class(&self) -> Class {
+        self.get_or_create_class("block".into())
+    }
+
+    /// Device class used for thermal devices.
+    pub fn thermal_class(&self) -> Class {
+        self.get_or_create_class("thermal".into())
+    }
+
+    /// Device class used for graphics devices.
     pub fn graphics_class(&self) -> Class {
-        self.get_or_create_class("graphics".into(), self.virtual_bus())
+        self.get_or_create_class("graphics".into())
     }
 
-    /// The device class used for virtual input devices.
+    /// Device class used for input devices.
     pub fn input_class(&self) -> Class {
-        self.get_or_create_class("input".into(), self.virtual_bus())
+        self.get_or_create_class("input".into())
     }
 
-    /// The device class used for virtual mem devices.
+    /// Device class used for mem devices.
     pub fn mem_class(&self) -> Class {
-        self.get_or_create_class("mem".into(), self.virtual_bus())
+        self.get_or_create_class("mem".into())
     }
 
-    /// The device class used for virtual net devices.
+    /// Device class used for net devices.
     pub fn net_class(&self) -> Class {
-        self.get_or_create_class("net".into(), self.virtual_bus())
+        self.get_or_create_class("net".into())
     }
 
-    /// The device class used for virtual misc devices.
+    /// Device class used for misc devices.
     pub fn misc_class(&self) -> Class {
-        self.get_or_create_class("misc".into(), self.virtual_bus())
+        self.get_or_create_class("misc".into())
     }
 
-    /// The device class used for virtual tty devices.
+    /// Device class used for tty devices.
     pub fn tty_class(&self) -> Class {
-        self.get_or_create_class("tty".into(), self.virtual_bus())
+        self.get_or_create_class("tty".into())
     }
 
-    /// The device class used for virtual dma_heap devices.
+    /// Device class used for dma_heap devices.
     pub fn dma_heap_class(&self) -> Class {
-        self.get_or_create_class("dma_heap".into(), self.virtual_bus())
+        self.get_or_create_class("dma_heap".into())
     }
 
-    /// An incorrect device class.
+    /// Incorrect device class.
     ///
     /// This class exposes the name "starnix" to userspace, which is incorrect. Instead, devices
     /// should use a class that represents their usage rather than their implementation.
@@ -91,14 +125,14 @@ impl KObjectStore {
     /// This class exists because a number of devices incorrectly use this class. We should fix
     /// those devices to report their proper class.
     pub fn starnix_class(&self) -> Class {
-        self.get_or_create_class("starnix".into(), self.virtual_bus())
+        self.get_or_create_class("starnix".into())
     }
 
     /// Real-time clock class.
     ///
     /// Becomes `/sys/class/rtc/...`.
     pub fn rtc_class(&self) -> Class {
-        self.get_or_create_class("rtc".into(), self.virtual_bus())
+        self.get_or_create_class("rtc".into())
     }
 
     fn ensure_dir(&self, path: &[&FsStr]) -> Arc<SimpleDirectory> {
@@ -110,10 +144,12 @@ impl KObjectStore {
         dir
     }
 
-    fn edit_dir(&self, path: &[&FsStr], callback: impl FnOnce(&SimpleDirectoryMutator)) {
-        let dir = self.ensure_dir(path);
-        let mutator = SimpleDirectoryMutator::new(self.fs().clone(), dir);
-        callback(&mutator);
+    fn lookup_dir(&self, path: &[&FsStr]) -> Option<Arc<SimpleDirectory>> {
+        let mut dir = self.root.clone();
+        for component in path {
+            dir = dir.get_dir(component)?;
+        }
+        Some(dir)
     }
 
     /// Get a bus by name.
@@ -121,123 +157,106 @@ impl KObjectStore {
     /// If the bus does not exist, this function will create it.
     pub fn get_or_create_bus(&self, name: &FsStr) -> Bus {
         let name = name.to_owned();
-        let dir = self.ensure_dir(&[b"devices".into(), name.as_ref()]);
-        let collection = self.ensure_dir(&[b"bus".into(), name.as_ref(), b"devices".into()]);
-        Bus::new(name, dir, Some(collection))
+        let devices = self.ensure_dir(&[b"bus".into(), name.as_ref(), b"devices".into()]);
+        Bus::new(name, devices)
     }
 
     /// Get a class by name.
     ///
-    /// If the bus does not exist, this function will create it.
-    pub fn get_or_create_class(&self, name: &FsStr, bus: Bus) -> Class {
+    /// If the class does not exist, this function will create it.
+    pub fn get_or_create_class(&self, name: &FsStr) -> Class {
         let name = name.to_owned();
-        let dir = bus.dir.subdir(self.fs(), name.as_ref(), 0o755);
-        let collection = self.ensure_dir(&[b"class".into(), name.as_ref()]);
-        Class::new(name, dir, bus, collection)
+        let devices = self.ensure_dir(&[b"class".into(), name.as_ref()]);
+        Class::new(name, devices)
     }
 
     pub fn class_with_dir(
         &self,
         name: &FsStr,
-        bus: Bus,
-        build_collection: impl FnOnce(&SimpleDirectoryMutator),
+        build_directory: impl FnOnce(&SimpleDirectoryMutator),
     ) -> Class {
-        let class = self.get_or_create_class(name, bus);
-        let mutator = SimpleDirectoryMutator::new(self.fs().clone(), class.collection.clone());
-        build_collection(&mutator);
+        let class = self.get_or_create_class(name);
+        class.devices().edit(self.fs(), build_directory);
         class
-    }
-
-    fn block(&self, callback: impl FnOnce(&SimpleDirectoryMutator)) {
-        self.edit_dir(&[b"block".into()], callback);
-    }
-
-    fn dev_block(&self, callback: impl FnOnce(&SimpleDirectoryMutator)) {
-        self.edit_dir(&[b"dev".into(), b"block".into()], callback);
-    }
-
-    fn dev_char(&self, callback: impl FnOnce(&SimpleDirectoryMutator)) {
-        self.edit_dir(&[b"dev".into(), b"char".into()], callback);
     }
 
     /// Create a device and add that device to the store.
     ///
     /// Rather than use this function directly, you should register your device with the
-    /// `DeviceRegistry`. The `DeviceRegistry` will create the KObject for the device as
+    /// [`DeviceRegistry`](crate::device::DeviceRegistry). The
+    /// [`DeviceRegistry`](crate::device::DeviceRegistry) will create the KObject for the device as
     /// part of the registration process.
     ///
     /// If you create the device yourself, userspace will not be able to instantiate the
-    /// device because the `DeviceId` will not be registered with the `DeviceRegistry`.
+    /// device because the [`DeviceId`](starnix_uapi::device_id::DeviceId) will not be registered
+    /// with the [`DeviceRegistry`](crate::device::DeviceRegistry).
     pub(super) fn create_device(
         &self,
         name: &FsStr,
+        parent: Option<Device>,
+        subsystem: Option<Subsystem>,
         metadata: Option<DeviceMetadata>,
-        class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Device {
-        self.add(Device::new(name.to_owned(), class, metadata), build_directory)
-    }
-
-    /// Creates a platform device under `/sys/devices/platform` with the `"platform"` bus subsystem.
-    pub(super) fn create_platform_device(
-        &self,
-        name: &FsStr,
-        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-    ) -> Device {
-        let bus = self.get_or_create_bus("platform".into());
-        self.add(Device::new_bus_device(name.to_owned(), bus), build_directory)
-    }
-
-    fn add(
-        &self,
-        device: Device,
-        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-    ) -> Device {
-        let name = device.name.as_ref();
-        let parent_dir = match &device.class {
-            Some(class) => &class.dir,
-            None => &device.bus.dir,
+        let parent = match (parent, &subsystem) {
+            (None, Some(Subsystem::Class(_))) => Some(self.virtual_device()),
+            (parent, _) => parent,
         };
-        parent_dir.edit(self.fs(), |dir| {
-            dir.subdir2(name, 0o755, |dir| {
-                build_directory(&device, dir);
-            });
+        let dir = if let Some(glue_dir) =
+            Device::glue_dir_name_for(parent.as_ref(), subsystem.as_ref())
+        {
+            let parent_dir = parent
+                .as_ref()
+                .and_then(Device::dir)
+                .expect("parent device directory exists in sysfs");
+            parent_dir.nested_subdir(self.fs(), glue_dir, 0o755, name, 0o755)
+        } else if let Some(parent) = parent.as_ref() {
+            let parent_dir = parent.dir().expect("parent device directory exists in sysfs");
+            parent_dir.subdir(self.fs(), name, 0o755)
+        } else {
+            self.ensure_dir(&[b"devices".into()]).subdir(self.fs(), name, 0o755)
+        };
+        let device = Device::new(name.to_owned(), parent, subsystem, metadata, dir.clone());
+        dir.edit(self.fs(), |mutator| {
+            build_directory(&device, mutator);
         });
+        self.add(&device);
+        device
+    }
 
-        let up_device = device.path_from_depth(1);
-        let up_up_device = device.path_from_depth(2);
+    fn add(&self, device: &Device) {
+        let name = device.name();
 
         // Insert the newly created device into various views.
-        if let Some(class) = &device.class {
-            class.collection.edit(self.fs(), |dir| {
-                dir.symlink(name, up_up_device.as_ref());
-            });
-        }
-
-        if let Some(metadata) = &device.metadata {
-            let device_number = FsString::from(metadata.devt.to_string());
-            match metadata.mode {
-                DeviceMode::Block => {
-                    self.block(|dir| dir.symlink(name, up_device.as_ref()));
-                    self.dev_block(|dir| {
-                        dir.symlink(device_number.as_ref(), up_up_device.as_ref());
-                    });
-                }
-                DeviceMode::Char => {
-                    self.dev_char(|dir| {
-                        dir.symlink(device_number.as_ref(), up_up_device.as_ref());
-                    });
-                }
+        match device.subsystem() {
+            Some(Subsystem::Bus(bus)) => {
+                bus.devices().edit(self.fs(), |dir| {
+                    dir.symlink(name, device.path_from_depth(3).as_ref());
+                });
             }
+            Some(Subsystem::Class(class)) => {
+                class.devices().edit(self.fs(), |dir| {
+                    dir.symlink(name, device.path_from_depth(2).as_ref());
+                });
+            }
+            None => {}
         }
 
-        if let Some(bus_collection) = &device.bus.collection {
-            bus_collection.edit(self.fs(), |dir| {
-                dir.symlink(name, device.path_from_depth(3).as_ref());
+        if let Some(metadata) = device.metadata() {
+            let device_number = FsString::from(metadata.devt.to_string());
+            let dev_subdir: &FsStr = match metadata.mode {
+                DeviceMode::Block => {
+                    self.ensure_dir(&[b"block".into()]).edit(self.fs(), |dir| {
+                        dir.symlink(name, device.path_from_depth(1).as_ref());
+                    });
+                    b"block".into()
+                }
+                DeviceMode::Char => b"char".into(),
+            };
+            self.ensure_dir(&[b"dev".into(), dev_subdir]).edit(self.fs(), |dir| {
+                dir.symlink(device_number.as_ref(), device.path_from_depth(2).as_ref());
             });
         }
-
-        device
     }
 
     /// Destroy a device.
@@ -247,34 +266,54 @@ impl KObjectStore {
     /// Most clients hold weak references to KObjects, which means those references will become
     /// invalid shortly after this function is called.
     pub(super) fn remove(&self, device: &Device) {
-        let name = device.name.as_ref();
+        let name = device.name();
         // Remove the device from its views in the reverse order in which it was added.
-        if let Some(bus_collection) = &device.bus.collection {
-            bus_collection.remove(name);
-        }
-        if let Some(metadata) = &device.metadata {
+        if let Some(metadata) = device.metadata() {
             let device_number: FsString = metadata.devt.to_string().into();
-            match metadata.mode {
+            let dev_subdir: &FsStr = match metadata.mode {
                 DeviceMode::Block => {
-                    self.dev_block(|dir| dir.remove(device_number.as_ref()));
-                    self.block(|dir| dir.remove(name));
+                    if let Some(block_dir) = self.lookup_dir(&[b"block".into()]) {
+                        block_dir.remove(name);
+                    }
+                    b"block".into()
                 }
-                DeviceMode::Char => {
-                    self.dev_char(|dir| dir.remove(device_number.as_ref()));
-                }
+                DeviceMode::Char => b"char".into(),
+            };
+            if let Some(dev_dir) = self.lookup_dir(&[b"dev".into(), dev_subdir]) {
+                dev_dir.remove(device_number.as_ref());
             }
         }
-        if let Some(class) = &device.class {
-            class.collection.remove(name);
-            class.dir.remove(name);
-        } else {
-            device.bus.dir.remove(name);
+        match device.subsystem() {
+            Some(Subsystem::Bus(bus)) => {
+                bus.devices().remove(name);
+            }
+            Some(Subsystem::Class(class)) => {
+                class.devices().remove(name);
+            }
+            None => {}
+        }
+        // Finally, remove the device from the object store.
+        if let Some(glue_dir) = device.glue_dir_name() {
+            if let Some(parent_dir) = device.parent().and_then(Device::dir) {
+                parent_dir.remove_from_subdir_if_empty(glue_dir, name);
+            }
+        } else if let Some(parent) = device.parent() {
+            if let Some(parent_dir) = parent.dir() {
+                parent_dir.remove(name);
+            }
+        } else if let Some(devices_dir) = self.lookup_dir(&[b"devices".into()]) {
+            devices_dir.remove(name);
         }
     }
 }
 
 impl Default for KObjectStore {
     fn default() -> Self {
-        Self { root: SimpleDirectory::new(), fs: OnceLock::new() }
+        Self {
+            root: SimpleDirectory::new(),
+            fs: OnceLock::new(),
+            virtual_device: OnceLock::new(),
+            platform_device: OnceLock::new(),
+        }
     }
 }
