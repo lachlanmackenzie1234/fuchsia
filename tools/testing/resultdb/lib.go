@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -211,6 +212,17 @@ func ProcessSummaries(summaries []string, tags []*resultpb.StringPair, outputRoo
 	}
 
 	return requests, exonerationRequests, allTestsSkipped, nil
+}
+
+// artifactName returns a unique name to correspond to the file which
+// will be uploaded as a resultDB artifact.
+func artifactName(file string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9-_.\/]`)
+	invalidChars := re.FindAllString(file, -1)
+	for _, ch := range invalidChars {
+		file = strings.ReplaceAll(file, ch, "_")
+	}
+	return file
 }
 
 // set the TestMetadata on TestResult
@@ -450,15 +462,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 		for _, of := range testCase.OutputFiles {
 			outputFile := filepath.Join(outputRoot, testDetail.OutputDir, of)
 			if isReadable(outputFile) {
-				baseName := filepath.Base(of)
-				key := baseName
-				for i := 1; ; i++ {
-					if _, exists := r.Artifacts[key]; !exists {
-						break
-					}
-					key = fmt.Sprintf("%s_%d", baseName, i)
-				}
-				r.Artifacts[key] = &sinkpb.Artifact{
+				r.Artifacts[artifactName(of)] = &sinkpb.Artifact{
 					Body: &sinkpb.Artifact_FilePath{FilePath: outputFile},
 				}
 			} else {
@@ -573,15 +577,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	for _, of := range testDetail.OutputFiles {
 		outputFile := filepath.Join(outputRoot, testDetail.OutputDir, of)
 		if isReadable(outputFile) {
-			baseName := filepath.Base(of)
-			key := baseName
-			for i := 1; ; i++ {
-				if _, exists := r.Artifacts[key]; !exists {
-					break
-				}
-				key = fmt.Sprintf("%s_%d", baseName, i)
-			}
-			r.Artifacts[key] = &sinkpb.Artifact{
+			r.Artifacts[artifactName(of)] = &sinkpb.Artifact{
 				Body: &sinkpb.Artifact_FilePath{FilePath: outputFile},
 			}
 		} else {
