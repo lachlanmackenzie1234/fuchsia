@@ -865,6 +865,11 @@
         "instance_id": "7L78kaQUWuELmUMDdlu22HLYt_JPBFCjoRCbfx1XvkkC"
     },
     {
+        "package": "infra/python/wheels/pathspec-py3",
+        "version": "version:1.0.4",
+        "instance_id": "GSmbFh4OwINV0rd8jIk6V-Y0y9dX04LK_VpSTAuIU7IC"
+    },
+    {
         "package": "infra/python/wheels/protobuf-py3",
         "version": "version:6.33.0",
         "instance_id": "cutiHuc7faTiBiWvoTtbsp9AHAaErwYjxnmf4Gm90OAC"

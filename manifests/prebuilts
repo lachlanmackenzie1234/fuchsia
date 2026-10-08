@@ -685,6 +685,15 @@
              path="prebuilt/third_party/protobuf-py3-wheel"
              platforms="linux-amd64,linux-arm64"/>
 
+    <!-- The package below provides pathspec-py3 as a single wheel (.whl) file
+         which must be extracted by a Jiri hook defined in 'platform'.
+         See tools/build/scripts/extract_pathspec_wheel.sh
+    -->
+    <package name="infra/python/wheels/pathspec-py3"
+             version="version:1.0.4"
+             path="prebuilt/third_party/pathspec-py3-wheel"
+             platforms="linux-amd64,linux-arm64"/>
+
     <!-- pydantic_core is vendored as a precompiled wheel (.whl) file which must
          be extracted with a jiri hook similar to the above. The wheel contains
          a Rust shared library that exposes interfaces for the python wrapper to
