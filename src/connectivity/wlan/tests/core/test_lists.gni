@@ -62,4 +62,5 @@ core_tests_for_fyi_iperf =
 core_tests_for_fyi_long = [
   "//src/connectivity/wlan/tests/core:phy_compliance_ac_test",
   "//src/connectivity/wlan/tests/core:phy_compliance_n_test",
+  "//src/connectivity/wlan/tests/core:phy_compliance_abg_test",
 ]
