@@ -27,6 +27,7 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust_next",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
@@ -35,13 +36,13 @@ rustc_binary("bin") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:csv",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:prettytable-rs",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.input:fuchsia.input_rust_next",
-    "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/vfs/rust:vfs",

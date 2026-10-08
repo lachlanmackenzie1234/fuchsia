@@ -38,6 +38,6 @@ async fn main() -> Result<()> {
     match args.subcommand {
         Subcommands::List(list_args) => commands::list::run(list_args).await,
         Subcommands::GetDescriptor(descriptor_args) => descriptor_args.run().await,
-        Subcommands::Read(read_args) => commands::read::run(read_args).await,
+        Subcommands::Read(read_args) => read_args.run().await,
     }
 }

@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_next;
 use fidl_next_fuchsia_input_report as fidl_input_report;
+use fuchsia_async::{MonotonicDuration, MonotonicInstant, Timer};
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+const WAIT_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(5);
+const WAIT_POLL_INTERVAL: MonotonicDuration = MonotonicDuration::from_millis(5);
+
 /// A fake implementation of [`fidl_input_report::InputDevice`] that supports
 /// serving multiple concurrent InputReportsReaderV2 clients.
 #[derive(Clone)]
@@ -147,6 +151,29 @@ impl FakeInputDevice {
             let reports_to_send: Vec<fidl_input_report::InputReport> =
                 reports.iter().map(clone_report).collect();
             server.on_input_reports(reports_to_send, stamp).await.expect("on_input_reports failed");
+        }
+    }
+
+    /// Returns the number of currently connected reader clients.
+    pub fn num_readers(&self) -> usize {
+        self.state.lock().readers.len()
+    }
+
+    /// Waits until at least `count` reader clients have connected.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fewer than `count` reader clients connect within [`WAIT_TIMEOUT`].
+    pub async fn wait_for_readers(&self, count: usize) {
+        let deadline = MonotonicInstant::after(WAIT_TIMEOUT);
+        while self.state.lock().readers.len() < count {
+            if MonotonicInstant::now() >= deadline {
+                panic!(
+                    "Timed out waiting for {count} readers; currently have {}",
+                    self.state.lock().readers.len()
+                );
+            }
+            Timer::new(MonotonicInstant::after(WAIT_POLL_INTERVAL)).await;
         }
     }
 }
@@ -296,7 +323,6 @@ impl fidl_input_report::InputReportsReaderV2ServerHandler for FakeReaderHandler 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async::{MonotonicDuration, MonotonicInstant};
     use googletest::prelude::*;
 
     #[derive(Clone, Copy, Debug, Default)]
