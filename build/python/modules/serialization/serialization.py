@@ -270,6 +270,7 @@ def _parse_value_into(
             result: dict[str, Any] = {}
             for key, dict_value in value.items():
                 key = _parse_value_into(key, dict_key_type)
+                assert isinstance(key, str)
                 result[key] = _parse_value_into(dict_value, dict_value_type)
             return result
         else:
