@@ -44,6 +44,31 @@ fn stamp_file(stamp: &Option<String>) -> Result<Option<File>> {
         .map(Some)
 }
 
+fn is_help_all(command: &FfxCommandLine) -> bool {
+    matches!(
+        command.global.subcommand.iter().map(String::as_str).collect::<Vec<_>>().as_slice(),
+        ["--all"] | ["help" | "--help", "--all"] | ["--all", "help" | "--help"]
+    )
+}
+
+fn help_all_cmd(c: ffx::FfxCommandLine, exe_kind: ExecutableKind) -> Result<InitializedCmd> {
+    let context = c.global.load_context(exe_kind)?;
+    if find_machine_and_help(&c).is_some() {
+        return Ok(InitializedCmd { cmd: c, context, help_state: HelpState::ReturnArgsInfo });
+    }
+    let cmd_vec: Vec<&str> = c.cmd_iter().collect();
+    let output = <ffx::Ffx as argh::FromArgs>::from_args(&cmd_vec, &["help"])
+        .err()
+        .map(|e| e.output)
+        .unwrap_or_default();
+    let command = c.command.clone();
+    Ok(InitializedCmd {
+        cmd: c,
+        context,
+        help_state: HelpState::ReturnHelp { command, output, code: 0 },
+    })
+}
+
 fn write_exit_code<W: Write>(res: &Result<ExitStatus>, out: &mut W) {
     let exit_code = match res {
         Ok(status) => status.code().unwrap_or(1),
@@ -156,6 +181,7 @@ pub struct InitializedCmd {
 /// and initializes config.
 pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
     match ffx::FfxCommandLine::from_env() {
+        Ok(c) if is_help_all(&c) => help_all_cmd(c, exe_kind),
         Ok(c) => {
             let context = c.global.load_context(exe_kind)?;
             Ok(InitializedCmd { cmd: c, context, help_state: HelpState::None })
@@ -179,7 +205,15 @@ pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
             }
         }
 
-        Err(e) => Err(e),
+        Err(e) => {
+            let argv = Vec::from_iter(std::env::args());
+            if let Ok(c) = ffx::FfxCommandLine::from_args_for_help(&argv) {
+                if is_help_all(&c) {
+                    return help_all_cmd(c, exe_kind);
+                }
+            }
+            Err(e)
+        }
     }
 }
 
@@ -224,10 +258,12 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
         }
         HelpState::ReturnHelp { command, mut output, code } => {
             let mut commands: String = Default::default();
-            tools
-                .print_command_list(&mut commands)
-                .await
-                .bug_context("Error getting command list")?;
+            if is_help_all(&cmd) && find_machine_and_help(&cmd).is_none() {
+                tools.print_all_commands(&mut commands).await
+            } else {
+                tools.print_command_list(&mut commands).await
+            }
+            .bug_context("Error getting command list")?;
             output = format!("{output}\n{commands}");
             append_strict_help(&mut output, app.strict, code);
             return Err(Error::Help { command, output, code });
@@ -338,8 +374,8 @@ pub async fn exit(
     const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
     let exit_code = res.exit_code();
     match res {
-        Err(err @ Error::Help { .. }) => {
-            if should_format {
+        Err(err @ Error::Help { code, .. }) => {
+            if should_format && code != 0 {
                 let mut out = std::io::stdout();
                 let err = SerializableError::from(&err);
                 let message = serde_json::to_string(&err).unwrap();
@@ -586,5 +622,26 @@ mod test {
         let mut output3 = String::from("Some help");
         append_strict_help(&mut output3, true, 1);
         assert!(!output3.contains("Strict Mode Notes:"));
+    }
+
+    #[fuchsia::test]
+    fn test_is_help_all() {
+        for (args, expected) in [
+            (&["--all"][..], true),
+            (&["help", "--all"], true),
+            (&["--help", "--all"], true),
+            (&["--all", "help"], true),
+            (&["--all", "--help"], true),
+            (&["target", "list"], false),
+        ] {
+            let command = FfxCommandLine {
+                global: ffx::Ffx {
+                    subcommand: args.iter().map(|s| (*s).into()).collect(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            assert_eq!(is_help_all(&command), expected, "args: {args:?}");
+        }
     }
 }

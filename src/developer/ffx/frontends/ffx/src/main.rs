@@ -60,7 +60,7 @@ impl ToolSuite for FfxSuite {
         let argv = Vec::from_iter(std::env::args());
         let cmdline0 =
             FfxCommandLine::from_args_for_help(&argv).bug_context("cmd line for help")?;
-        if cmdline0.subcmd_iter().count() > 1 {
+        if cmdline0.subcmd_iter().any(|c| !c.starts_with('-') && c != "help") {
             let args = Vec::from_iter(cmdline0.global.subcommand.iter().map(String::as_str));
             let all_info = SubCommand::get_args_info();
             let mut info: Option<ffx_command::CliArgsInfo> = None;
