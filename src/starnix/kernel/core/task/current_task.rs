@@ -1753,7 +1753,6 @@ impl CurrentTask {
             // and removing it from the pids table itself requires the pids lock, so an early exit
             // would cause a self deadlock.
             pids.add_task(Arc::clone(&child.task));
-            std::mem::drop(pids);
 
             // Child lock must be taken before this lock. Drop the lock on the task, take a writable
             // lock on the child and take the current state back.
@@ -1774,8 +1773,15 @@ impl CurrentTask {
 
             if clone_thread {
                 self.thread_group().add(Arc::clone(&child.task))?;
+                std::mem::drop(pids);
             } else {
                 child.thread_group().add(Arc::clone(&child.task))?;
+                {
+                    let tg_state = child.thread_group().read();
+                    pids.attach_pgid(&tg_state.process_group.leader, child.thread_group());
+                    pids.attach_sid(&tg_state.process_group.session.leader, child.thread_group());
+                }
+                std::mem::drop(pids);
 
                 // These manipulations of the signal handling state appear to be related to
                 // CLONE_SIGHAND and CLONE_VM rather than CLONE_THREAD. However, we do not support

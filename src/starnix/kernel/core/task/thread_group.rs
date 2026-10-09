@@ -21,6 +21,9 @@ use crate::task::{
     TypedWaitQueue, WaitResult, ZombieProcess, ZombieState,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
+use fuchsia_rcu::RcuDroppable;
+use fuchsia_rcu::subtle::RcuPtr;
+use fuchsia_rcu_collections::rcu_intrusive_list::{Link, RcuListAdapter, rcu_list_adapter};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
@@ -244,6 +247,12 @@ pub struct ThreadGroup {
     /// The lead task is typically the initial thread created in the thread group.
     pub leader: Pid,
 
+    /// Current node in `PidEntry::pgid_thread_groups`. Protected by `PidTableLock`.
+    pub(super) pgrp_node: RcuPtr<ThreadGroupLinkNode>,
+
+    /// Current node in `PidEntry::sid_thread_groups`. Protected by `PidTableLock`.
+    pub(super) session_node: RcuPtr<ThreadGroupLinkNode>,
+
     /// The signal actions that are registered for this process.
     pub signal_actions: Arc<SignalActions>,
 
@@ -301,6 +310,10 @@ impl fmt::Debug for ThreadGroup {
 }
 
 impl ThreadGroup {
+    pub fn to_owned(&self) -> Arc<Self> {
+        self.weak_self.upgrade().expect("ThreadGroup is alive")
+    }
+
     pub fn sync_syscall_log_level(&self) {
         let command = self.read().leader_command();
         let filters = self.kernel.syscall_log_filters.lock();
@@ -335,6 +348,31 @@ impl PartialEq for ThreadGroup {
     }
 }
 
+/// Non-reusable list node linking a [`ThreadGroup`] into a process group or session list.
+///
+/// Allocated per list attachment (`attach_pgid` / `attach_sid`) and retired via `rcu_drop`
+/// upon detachment so moving a process between process groups or sessions never clobbers
+/// `link.next` for concurrent lock-free RCU readers.
+#[derive(Debug, RcuDroppable)]
+pub(super) struct ThreadGroupLinkNode {
+    pub(super) thread_group: Weak<ThreadGroup>,
+    pub(super) link: Link,
+}
+
+impl ThreadGroupLinkNode {
+    pub(super) fn new(thread_group: Weak<ThreadGroup>) -> Self {
+        Self { thread_group, link: Link::default() }
+    }
+}
+
+/// RCU intrusive list adapter for [`ThreadGroupLinkNode`].
+#[derive(Debug, RcuDroppable)]
+pub(super) struct ThreadGroupLinkAdapter;
+
+impl RcuListAdapter<ThreadGroupLinkNode> for ThreadGroupLinkAdapter {
+    rcu_list_adapter!(ThreadGroupLinkNode, link);
+}
+
 impl Drop for ThreadGroup {
     fn drop(&mut self) {
         let state = self.mutable_state.get_mut();
@@ -343,16 +381,21 @@ impl Drop for ThreadGroup {
         assert!(state.zombie_children.is_empty());
         assert!(state.zombie_ptracees.is_empty());
         #[cfg(any(test, debug_assertions))]
-        assert!(
-            state
-                .parent
-                .as_ref()
-                .and_then(|p| p
-                    .thread_group
-                    .upgrade()
-                    .map(|p| !p.read().children.contains(&self.leader)))
-                .unwrap_or(true)
-        );
+        {
+            let scope = fuchsia_rcu::RcuReadScope::new();
+            assert!(self.pgrp_node.read(&scope).is_null());
+            assert!(self.session_node.read(&scope).is_null());
+            assert!(
+                state
+                    .parent
+                    .as_ref()
+                    .and_then(|p| p
+                        .thread_group
+                        .upgrade()
+                        .map(|p| !p.read().children.contains(&self.leader)))
+                    .unwrap_or(true)
+            );
+        }
     }
 }
 
@@ -545,6 +588,8 @@ impl ThreadGroup {
                 process,
                 root_vmar,
                 leader,
+                pgrp_node: RcuPtr::null(),
+                session_node: RcuPtr::null(),
                 signal_actions,
                 timers: Default::default(),
                 drop_notifier: Default::default(),
@@ -714,6 +759,7 @@ impl ThreadGroup {
             pids.remove_task(&task.tid);
 
             let session = state.leave_process_group(&mut pids);
+            pids.detach_sid(&state.process_group.session.leader, self);
 
             // I have no idea if dropping the lock here is correct, and I don't want to think about
             // it. If problems do turn up with another thread observing an intermediate state of
@@ -2044,6 +2090,12 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             return SessionDisassociation::new(None);
         }
         let session = self.leave_process_group(pids);
+        let self_arc = ThreadGroup::to_owned(self.base);
+        pids.attach_pgid(&process_group.leader, &self_arc);
+        if self.process_group.session != process_group.session {
+            pids.detach_sid(&self.process_group.session.leader, self.base);
+            pids.attach_sid(&process_group.session.leader, &self_arc);
+        }
         self.process_group = process_group;
         self.process_group.insert(self.base);
         session
@@ -2057,6 +2109,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// This must be done after the ThreadGroup state lock is released to avoid lock order
     /// violations.
     fn leave_process_group(&mut self, pids: &mut PidTableGuard<'_>) -> SessionDisassociation {
+        pids.detach_pgid(&self.process_group.leader, self.base);
         let (is_empty, disassociation) = self.process_group.remove(self.base);
         if is_empty {
             self.process_group.session.write().remove(&self.process_group.leader);
@@ -2435,6 +2488,7 @@ mod test {
     use super::*;
     use crate::ptrace::ptrace_traceme;
     use crate::testing::*;
+    use fuchsia_rcu::RcuReadScope;
     use starnix_syscalls::SUCCESS;
     use starnix_uapi::user_address::UserRef;
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
@@ -2712,6 +2766,90 @@ mod test {
             // It should still be valid to call `get_ppid()` on `tg2`, though is parent ThreadGroup
             // no longer exists.
             let _ = tg2.read().get_ppid();
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_thread_group_rcu_links_and_adapters() {
+        spawn_kernel_and_run(async |current_task| {
+            let scope = RcuReadScope::new();
+            let init_pid = current_task.pid.clone();
+
+            assert!(init_pid.is_process_group(&scope));
+            assert!(init_pid.is_session(&scope));
+            assert_eq!(init_pid.pgid_thread_groups(&scope).count(), 1);
+            assert_eq!(init_pid.sid_thread_groups(&scope).count(), 1);
+
+            let child = current_task.clone_task_for_test(0, None);
+            assert_eq!(init_pid.pgid_thread_groups(&scope).count(), 2);
+            assert_eq!(init_pid.sid_thread_groups(&scope).count(), 2);
+
+            // Moving `child` into its own process group within the same session updates PGID
+            // membership without detaching SID membership.
+            child
+                .thread_group()
+                .setpgid(&current_task, &child, &child.pid)
+                .expect("setpgid failed");
+            assert_eq!(init_pid.pgid_thread_groups(&scope).count(), 1);
+            assert_eq!(init_pid.sid_thread_groups(&scope).count(), 2);
+            assert!(child.pid.is_process_group(&scope));
+            assert!(!child.pid.is_session(&scope));
+            assert_eq!(child.pid.pgid_thread_groups(&scope).count(), 1);
+
+            // Move `child` back to `init_pid`'s process group so `setsid()` succeeds.
+            child
+                .thread_group()
+                .setpgid(&current_task, &child, &init_pid)
+                .expect("setpgid back to init failed");
+            assert_eq!(init_pid.pgid_thread_groups(&scope).count(), 2);
+            assert_eq!(init_pid.sid_thread_groups(&scope).count(), 2);
+
+            child.thread_group().setsid().expect("setsid failed");
+            assert_eq!(init_pid.pgid_thread_groups(&scope).count(), 1);
+            assert_eq!(init_pid.sid_thread_groups(&scope).count(), 1);
+            assert!(child.pid.is_process_group(&scope));
+            assert!(child.pid.is_session(&scope));
+            assert_eq!(child.pid.pgid_thread_groups(&scope).count(), 1);
+            assert_eq!(child.pid.sid_thread_groups(&scope).count(), 1);
+
+            // Clone a grandchild in `child`'s session, then exit and reap `child` (the session
+            // leader). Calling `setpgid` on `grandchild` within that session must retain `child`'s
+            // session `PidEntry` in `PidTable`.
+            let grandchild = child.clone_task_for_test(0, None);
+            let child_pid = child.pid.clone();
+            child.thread_group().kill(ExitStatus::Exit(0), None);
+            std::mem::drop(child);
+            {
+                let mut pids = current_task.kernel().pids.lock();
+                for zombie in current_task.thread_group().write().zombie_children.drain(..) {
+                    zombie.release(&mut pids);
+                }
+            }
+            assert!(child_pid.get_process().is_none());
+            assert!(current_task.kernel().pids.get(child_pid.id).is_ok());
+
+            grandchild
+                .thread_group()
+                .setpgid(&grandchild, &grandchild, &grandchild.pid)
+                .expect("grandchild setpgid failed");
+            assert!(!child_pid.is_process_group(&scope));
+            assert!(child_pid.is_session(&scope));
+            assert!(current_task.kernel().pids.get(child_pid.id).is_ok());
+            assert!(grandchild.pid.is_process_group(&scope));
+
+            grandchild.thread_group().kill(ExitStatus::Exit(0), None);
+            std::mem::drop(grandchild);
+            {
+                let mut pids = current_task.kernel().pids.lock();
+                for zombie in current_task.thread_group().write().zombie_children.drain(..) {
+                    zombie.release(&mut pids);
+                }
+            }
+
+            assert!(!child_pid.is_process_group(&scope));
+            assert!(!child_pid.is_session(&scope));
+            assert!(current_task.kernel().pids.get(child_pid.id).is_err());
         })
         .await;
     }

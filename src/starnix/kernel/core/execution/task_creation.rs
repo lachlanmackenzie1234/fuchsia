@@ -343,6 +343,8 @@ where
         }
 
         pids.add_task(Arc::clone(&builder.task));
+        pids.attach_pgid(&process_group.leader, builder.thread_group());
+        pids.attach_sid(&process_group.session.leader, builder.thread_group());
         Ok(())
     });
     Ok(builder)

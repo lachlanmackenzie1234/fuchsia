@@ -4,8 +4,10 @@
 
 use crate::task::idr::{Idr, IdrGuard};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
-use crate::task::{ProcessGroup, Task, ThreadGroup};
-use fuchsia_rcu::{RcuDroppable, RcuOptionBox, RcuReadScope, RcuWeak};
+use crate::task::{ProcessGroup, Task, ThreadGroup, ThreadGroupLinkAdapter, ThreadGroupLinkNode};
+use fuchsia_rcu::subtle::{RcuPtr, RcuPtrRef};
+use fuchsia_rcu::{RcuDroppable, RcuOptionBox, RcuReadScope, RcuWeak, rcu_drop};
+use fuchsia_rcu_collections::rcu_intrusive_list::RcuIntrusiveList;
 use starnix_sync::PidTableLock;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, pid_t};
@@ -34,6 +36,8 @@ pub struct PidEntry {
     task: RcuWeak<Task>,
     process: RcuOptionBox<ProcessEntry>,
     process_group: RcuWeak<ProcessGroup>,
+    pgid_thread_groups: RcuIntrusiveList<ThreadGroupLinkNode, ThreadGroupLinkAdapter>,
+    sid_thread_groups: RcuIntrusiveList<ThreadGroupLinkNode, ThreadGroupLinkAdapter>,
 }
 
 impl PidEntry {
@@ -89,6 +93,110 @@ impl PidEntry {
         self.process_group.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
+    /// Returns whether any member thread groups belong to this process group (PGID).
+    pub fn is_process_group(&self, scope: &RcuReadScope) -> bool {
+        !self.pgid_thread_groups.is_empty(scope)
+    }
+
+    /// Returns whether any member thread groups belong to this session (SID).
+    pub fn is_session(&self, scope: &RcuReadScope) -> bool {
+        !self.sid_thread_groups.is_empty(scope)
+    }
+
+    /// Returns an iterator over the member thread groups in this process group (PGID).
+    pub fn pgid_thread_groups<'a>(
+        &'a self,
+        scope: &'a RcuReadScope,
+    ) -> impl Iterator<Item = Arc<ThreadGroup>> + 'a {
+        self.pgid_thread_groups.iter(scope).filter_map(|n| n.thread_group.upgrade())
+    }
+
+    /// Returns an iterator over the member thread groups in this session (SID).
+    pub fn sid_thread_groups<'a>(
+        &'a self,
+        scope: &'a RcuReadScope,
+    ) -> impl Iterator<Item = Arc<ThreadGroup>> + 'a {
+        self.sid_thread_groups.iter(scope).filter_map(|n| n.thread_group.upgrade())
+    }
+
+    /// Attaches `thread_group` to `list` using `node_slot` to store the allocated link node.
+    ///
+    /// Allocates a fresh [`ThreadGroupLinkNode`] for this list attachment so moving a process
+    /// across process groups or sessions never mutates a node still visible to in-flight RCU
+    /// readers.
+    fn attach_thread_group_node(
+        _guard: &PidTableGuard<'_>,
+        list: &RcuIntrusiveList<ThreadGroupLinkNode, ThreadGroupLinkAdapter>,
+        node_slot: &RcuPtr<ThreadGroupLinkNode>,
+        thread_group: &Arc<ThreadGroup>,
+    ) {
+        let scope = RcuReadScope::new();
+        debug_assert!(node_slot.read(&scope).is_null());
+        let node_ptr =
+            Box::into_raw(Box::new(ThreadGroupLinkNode::new(Arc::downgrade(thread_group))));
+        node_slot.assign(node_ptr);
+        // SAFETY: Single-writer exclusion is guaranteed by `_guard`, and `node_ptr` is newly
+        // allocated for this list attachment and retired via `rcu_drop` upon detach.
+        unsafe {
+            list.push_back(&scope, RcuPtrRef::new(&scope, node_ptr));
+        }
+    }
+
+    /// Detaches the node stored in `node_slot` from `list`, returning whether `list` is now empty.
+    ///
+    /// Unlinks the node (leaving `link.next` intact for concurrent RCU readers) and schedules
+    /// deferred reclamation via [`rcu_drop`].
+    fn detach_thread_group_node(
+        _guard: &PidTableGuard<'_>,
+        list: &RcuIntrusiveList<ThreadGroupLinkNode, ThreadGroupLinkAdapter>,
+        node_slot: &RcuPtr<ThreadGroupLinkNode>,
+    ) -> bool {
+        let scope = RcuReadScope::new();
+        let node_ptr = node_slot.read(&scope);
+        if !node_ptr.is_null() {
+            node_slot.assign(std::ptr::null_mut());
+            // SAFETY: Single-writer exclusion is guaranteed by `_guard`. `remove` leaves
+            // `node.link.next` intact for concurrent RCU readers, and `node_ptr` is never reused.
+            unsafe {
+                list.remove(&scope, node_ptr);
+            }
+            // SAFETY: `node_ptr` was allocated via `Box::into_raw` in `attach_thread_group_node`
+            // and is detached at most once under `PidTableLock`.
+            rcu_drop(unsafe { Box::from_raw(node_ptr.as_mut_ptr()) });
+        }
+        list.is_empty(&scope)
+    }
+
+    /// Attaches a member thread group to this process group (PGID).
+    fn attach_pgid(&self, guard: &PidTableGuard<'_>, thread_group: &Arc<ThreadGroup>) {
+        Self::attach_thread_group_node(
+            guard,
+            &self.pgid_thread_groups,
+            &thread_group.pgrp_node,
+            thread_group,
+        );
+    }
+
+    /// Detaches a member thread group from this process group (PGID).
+    fn detach_pgid(&self, guard: &PidTableGuard<'_>, thread_group: &ThreadGroup) -> bool {
+        Self::detach_thread_group_node(guard, &self.pgid_thread_groups, &thread_group.pgrp_node)
+    }
+
+    /// Attaches a member thread group to this session (SID).
+    fn attach_sid(&self, guard: &PidTableGuard<'_>, thread_group: &Arc<ThreadGroup>) {
+        Self::attach_thread_group_node(
+            guard,
+            &self.sid_thread_groups,
+            &thread_group.session_node,
+            thread_group,
+        );
+    }
+
+    /// Detaches a member thread group from this session (SID).
+    fn detach_sid(&self, guard: &PidTableGuard<'_>, thread_group: &ThreadGroup) -> bool {
+        Self::detach_thread_group_node(guard, &self.sid_thread_groups, &thread_group.session_node)
+    }
+
     #[cfg(test)]
     pub fn new_for_test(id: pid_t) -> Pid {
         Arc::new(Self::new(id))
@@ -100,6 +208,8 @@ impl PidEntry {
             task: Default::default(),
             process: Default::default(),
             process_group: Default::default(),
+            pgid_thread_groups: Default::default(),
+            sid_thread_groups: Default::default(),
         }
     }
 
@@ -107,6 +217,8 @@ impl PidEntry {
         self.task.strong_count(scope) == 0
             && self.process.is_none(scope)
             && self.process_group.strong_count(scope) == 0
+            && self.pgid_thread_groups.is_empty(scope)
+            && self.sid_thread_groups.is_empty(scope)
     }
 }
 
@@ -347,6 +459,32 @@ impl<'a> PidTableGuard<'a> {
             assert!(entry.process_group.strong_count(&scope) > 0);
             entry.process_group.update(Weak::new());
         });
+    }
+
+    pub fn attach_pgid(&self, pid: &PidEntry, thread_group: &Arc<ThreadGroup>) {
+        pid.attach_pgid(self, thread_group);
+    }
+
+    pub fn detach_pgid(&mut self, pid: &Pid, thread_group: &ThreadGroup) -> bool {
+        let scope = RcuReadScope::new();
+        let is_empty = pid.detach_pgid(self, thread_group);
+        if pid.is_empty(&scope) && self.idr.lookup(pid.id as u32, &scope).as_ref() == Some(pid) {
+            self.idr.remove(pid.id as u32);
+        }
+        is_empty
+    }
+
+    pub fn attach_sid(&self, pid: &PidEntry, thread_group: &Arc<ThreadGroup>) {
+        pid.attach_sid(self, thread_group);
+    }
+
+    pub fn detach_sid(&mut self, pid: &Pid, thread_group: &ThreadGroup) -> bool {
+        let scope = RcuReadScope::new();
+        let is_empty = pid.detach_sid(self, thread_group);
+        if pid.is_empty(&scope) && self.idr.lookup(pid.id as u32, &scope).as_ref() == Some(pid) {
+            self.idr.remove(pid.id as u32);
+        }
+        is_empty
     }
 }
 
