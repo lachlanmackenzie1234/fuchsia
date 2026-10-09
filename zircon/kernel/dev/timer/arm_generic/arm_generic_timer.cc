@@ -13,7 +13,6 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
-#include <lib/fixed_point.h>
 #include <lib/zbi-format/driver-config.h>
 #include <platform.h>
 #include <pow2.h>

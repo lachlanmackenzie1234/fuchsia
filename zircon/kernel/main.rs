@@ -182,6 +182,9 @@ pub mod test_mod;
 pub mod unused_rust;
 
 // Force linking of extern crates that provide C entry points:
+// Only platform/pc depends on fixed_point today.
+#[cfg(target_arch = "x86_64")]
+use fixed_point as _;
 use flow_id as _;
 use init as _;
 use relaxed_atomic as _;
