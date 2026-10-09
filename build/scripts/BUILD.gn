@@ -14,6 +14,7 @@ if (is_host) {
     library_deps = [
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
+      "//build/rbe:build_summary",
       "//build/rbe:rbe_settings",
     ]
     data_deps = [ "//build/auth:select_auth_method" ]

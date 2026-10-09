@@ -67,6 +67,93 @@ class SpecificationsParserTest(unittest.TestCase):
         )
 
 
+class LoadJsonDictTest(unittest.TestCase):
+    """Tests load_json_dict helper."""
+
+    def test_valid_dict(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = pathlib.Path(temp_dir) / "test.json"
+            file_path.write_text('{"key": "value", "count": 42}')
+            data = fint_build.load_json_dict(file_path)
+            self.assertEqual(data, {"key": "value", "count": 42})
+
+    def test_error_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = pathlib.Path(temp_dir)
+            cases = [
+                ("list.json", "[1, 2, 3]", "Warning: Expected JSON object"),
+                (
+                    "str.json",
+                    '"just a string"',
+                    "Warning: Expected JSON object",
+                ),
+                (
+                    "corrupt.json",
+                    "{broken json",
+                    "Warning: Failed to read JSON",
+                ),
+                ("missing.json", None, "Warning: Failed to read JSON"),
+            ]
+            for filename, content, expected_warn in cases:
+                with self.subTest(filename=filename):
+                    file_path = temp_path / filename
+                    if content is not None:
+                        file_path.write_text(content)
+                    f = io.StringIO()
+                    with contextlib.redirect_stderr(f):
+                        data = fint_build.load_json_dict(file_path)
+                    self.assertIsNone(data)
+                    self.assertIn(expected_warn, f.getvalue())
+
+
+class ParseNinjaActionMetricsTest(unittest.TestCase):
+    """Tests parse_ninja_action_metrics helper."""
+
+    def test_parse_ninja_action_metrics(self) -> None:
+        cases: list[
+            tuple[str, fint_build.JSONValue, int, int, dict[str, int]]
+        ] = [
+            (
+                "valid_dict",
+                {
+                    "initial_actions": 100,
+                    "final_actions": 50,
+                    "action_counts": {"ACTION": 10, "CXX": 40},
+                },
+                100,
+                50,
+                {"ACTION": 10, "CXX": 40},
+            ),
+            ("empty_dict", {}, 0, 0, {}),
+            (
+                "malformed_numeric",
+                {
+                    "initial_actions": "not_an_int",
+                    "final_actions": None,
+                    "action_counts": {"ACTION": "bad", "CXX": 20},
+                },
+                0,
+                0,
+                {"CXX": 20},
+            ),
+            (
+                "non_dict_action_counts",
+                {"action_counts": [1, 2, 3]},
+                0,
+                0,
+                {},
+            ),
+            ("non_dict_data", [1, 2, 3], 0, 0, {}),
+        ]
+        for name, data, exp_init, exp_final, exp_counts in cases:
+            with self.subTest(name=name):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    metrics = fint_build.parse_ninja_action_metrics(data)
+                self.assertEqual(metrics.initial_actions, exp_init)
+                self.assertEqual(metrics.final_actions, exp_final)
+                self.assertEqual(dict(metrics.actions_by_type), exp_counts)
+
+
 class BuildArtifactsTest(unittest.TestCase):
     """Tests the produce_build_artifacts method on BuildContext."""
 
@@ -509,6 +596,75 @@ class BuildArtifactsTest(unittest.TestCase):
             f.getvalue(),
         )
 
+    def test_produce_build_artifacts_action_metrics(self) -> None:
+        """Verifies that produce_build_artifacts populates ninjaActionMetrics from custom path or default build_dir."""
+        cases = [
+            ("custom_path", True),
+            ("default_path", False),
+        ]
+        for name, use_custom_path in cases:
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_path = pathlib.Path(temp_dir)
+                    build_dir = temp_path / "build"
+                    artifact_dir = temp_path / "artifact"
+                    build_dir.mkdir()
+                    artifact_dir.mkdir()
+
+                    if use_custom_path:
+                        metrics_dir = temp_path / "ninja_logs"
+                        metrics_dir.mkdir()
+                        metrics_file = (
+                            metrics_dir / fint_build.NINJA_ACTION_METRICS_JSON
+                        )
+                        explicit_arg = metrics_file
+                    else:
+                        metrics_file = (
+                            build_dir / fint_build.NINJA_ACTION_METRICS_JSON
+                        )
+                        explicit_arg = None
+
+                    metrics_file.write_text(
+                        json.dumps(
+                            {
+                                "initial_actions": 120,
+                                "final_actions": 60,
+                                "action_counts": {
+                                    "ACTION": 10,
+                                    "CXX": 45,
+                                    "LINK": 5,
+                                },
+                            }
+                        )
+                    )
+
+                    ctx = fint_build.BuildContext(
+                        static_spec=static_pb2.Static(),
+                        context_spec=context_pb2.Context(
+                            build_dir=str(build_dir),
+                            artifact_dir=str(artifact_dir),
+                        ),
+                        host=fint_build.HostProperties(os="linux", cpu="x64"),
+                        verbose=False,
+                    )
+                    ctx.produce_build_artifacts(
+                        42, ninja_action_metrics_path=explicit_arg
+                    )
+
+                    manifest_path = (
+                        artifact_dir / fint_build.BUILD_ARTIFACTS_JSON
+                    )
+                    self.assertTrue(manifest_path.exists())
+
+                    manifest_content = json.loads(manifest_path.read_text())
+                    metrics = manifest_content.get("ninjaActionMetrics", {})
+                    self.assertEqual(metrics.get("initialActions"), 120)
+                    self.assertEqual(metrics.get("finalActions"), 60)
+                    self.assertEqual(
+                        metrics.get("actionsByType"),
+                        {"ACTION": 10, "CXX": 45, "LINK": 5},
+                    )
+
 
 class ExportDebugSymbolsTest(unittest.TestCase):
     """Tests the _export_debug_symbols method on BuildContext."""
@@ -831,6 +987,8 @@ class MainArgParserTest(unittest.TestCase):
                 "/path/to/static",
                 "--context",
                 "/path/to/context",
+                "--ninja-action-metrics-output",
+                "/path/to/metrics.json",
                 "--",
                 "ninja",
                 "target",
@@ -838,6 +996,10 @@ class MainArgParserTest(unittest.TestCase):
         )
         self.assertEqual(args.static, pathlib.Path("/path/to/static"))
         self.assertEqual(args.context, pathlib.Path("/path/to/context"))
+        self.assertEqual(
+            args.ninja_action_metrics_output,
+            pathlib.Path("/path/to/metrics.json"),
+        )
         self.assertEqual(args.wrapped_cmd, ["ninja", "target"])
 
 
@@ -1315,6 +1477,96 @@ class MainExecutionTest(unittest.TestCase):
             finally:
                 os.unlink(static_path)
                 os.unlink(context_path)
+
+    def _run_main_with_action_metrics(
+        self,
+        mock_managed: MagicMock,
+        mock_run: MagicMock,
+        extra_argv: list[str],
+        metrics_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Helper to run main() with mocked action metrics and return parsed build_artifacts.json."""
+        with tempfile.TemporaryDirectory() as artifact_dir, tempfile.TemporaryDirectory() as build_dir:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".textproto", delete=False
+            ) as static_file:
+                static_file.write("incremental: true")
+                static_path = static_file.name
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".textproto", delete=False
+            ) as context_file:
+                context_file.write(
+                    f'checkout_dir: "fake_checkout"\nartifact_dir: "{artifact_dir}"\nbuild_dir: "{build_dir}"'
+                )
+                context_path = context_file.name
+
+            metrics_json_path = os.path.join(
+                build_dir, fint_build.NINJA_ACTION_METRICS_JSON
+            )
+            with open(metrics_json_path, "w") as f:
+                json.dump(metrics_data, f)
+
+            resolved_argv = [
+                arg.replace("{metrics_path}", metrics_json_path)
+                for arg in extra_argv
+            ]
+
+            try:
+                mock_managed.return_value.run.return_value = 0
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "ninja: no work to do."
+
+                real_argv = [
+                    "--static",
+                    static_path,
+                    "--context",
+                    context_path,
+                ] + resolved_argv
+
+                exit_code = fint_build.main(real_argv)
+                self.assertEqual(exit_code, 0)
+
+                manifest_path = os.path.join(
+                    artifact_dir, fint_build.BUILD_ARTIFACTS_JSON
+                )
+                self.assertTrue(os.path.exists(manifest_path))
+
+                with open(manifest_path, "r") as f:
+                    return json.loads(f.read())
+            finally:
+                os.unlink(static_path)
+                os.unlink(context_path)
+
+    @mock.patch.object(subprocess, "run")
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
+    def test_main_writes_build_artifacts_json_with_ninja_action_metrics_output(
+        self, mock_managed: MagicMock, mock_run: MagicMock
+    ) -> None:
+        """Verifies that main writes build_artifacts.json with ninjaActionMetrics when --ninja-action-metrics-output is passed."""
+        manifest = self._run_main_with_action_metrics(
+            mock_managed,
+            mock_run,
+            [
+                "--ninja-action-metrics-output",
+                "{metrics_path}",
+                "--",
+                "ninja",
+                "target",
+            ],
+            {
+                "initial_actions": 50,
+                "final_actions": 25,
+                "action_counts": {"ACTION": 5, "CXX": 20},
+            },
+        )
+        metrics = manifest.get("ninjaActionMetrics", {})
+        self.assertEqual(metrics.get("initialActions"), 50)
+        self.assertEqual(metrics.get("finalActions"), 25)
+        self.assertEqual(
+            metrics.get("actionsByType"),
+            {"ACTION": 5, "CXX": 20},
+        )
 
     @mock.patch.object(subprocess, "run")
     @mock.patch.object(signal_utils, "SignalManagedProcess")

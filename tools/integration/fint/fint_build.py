@@ -74,6 +74,7 @@ JSONArray = list[JSONValue]
 # Module-scope constants for file names
 BUILD_ARTIFACTS_JSON = "build_artifacts.json"
 NINJA_ERRORS_JSON = "ninja_errors.json"
+NINJA_ACTION_METRICS_JSON = "ninja_action_metrics.json"
 TOOL_PATHS_JSON = "tool_paths.json"
 GENERATED_SOURCES_JSON = "generated_sources.json"
 PREBUILT_BINARY_SETS_JSON = "prebuilt_binaries.json"
@@ -220,6 +221,81 @@ def load_json_list(path: pathlib.Path) -> JSONArray:
             f"Expected JSON list in file {path}, but got: {type(data).__name__}"
         )
     return data
+
+
+def load_json_dict(path: pathlib.Path) -> JSONObject | None:
+    """Reads and decodes a JSON object file.
+
+    Returns None and emits a warning if the file is unreadable, malformed, or
+    does not contain a JSON object (dictionary).
+    """
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        msg(f"Warning: Failed to read JSON from {path}: {e}", file=sys.stderr)
+        return None
+
+    if not isinstance(data, dict):
+        msg(
+            f"Warning: Expected JSON object in {path}, got: {type(data).__name__}",
+            file=sys.stderr,
+        )
+        return None
+
+    return data
+
+
+def _to_int(val: JSONValue, context: str) -> int | None:
+    """Converts a JSON value to an integer, warning on TypeError or ValueError."""
+    if val is None:
+        return None
+    if isinstance(val, (int, str, float)):
+        try:
+            return int(val)
+        except (TypeError, ValueError) as e:
+            msg(
+                f"Warning: Invalid integer value for {context} ({val!r}): {e}",
+                file=sys.stderr,
+            )
+            return None
+    msg(
+        f"Warning: Expected integer for {context}, got {type(val).__name__}",
+        file=sys.stderr,
+    )
+    return None
+
+
+def parse_ninja_action_metrics(
+    data: JSONValue,
+) -> build_artifacts_pb2.NinjaActionMetrics:
+    """Parses a decoded JSON value into a NinjaActionMetrics protobuf."""
+    metrics = build_artifacts_pb2.NinjaActionMetrics()
+    if not isinstance(data, dict):
+        return metrics
+
+    if "initial_actions" in data:
+        initial = _to_int(data["initial_actions"], "initial_actions")
+        if initial is not None:
+            metrics.initial_actions = initial
+
+    if "final_actions" in data:
+        final = _to_int(data["final_actions"], "final_actions")
+        if final is not None:
+            metrics.final_actions = final
+
+    action_counts = data.get("action_counts")
+    if isinstance(action_counts, dict):
+        for mnemonic, count in action_counts.items():
+            val = _to_int(count, f"action_counts[{mnemonic}]")
+            if val is not None:
+                metrics.actions_by_type[str(mnemonic)] = val
+    elif action_counts is not None:
+        msg(
+            f"Warning: Expected dict for action_counts, got {type(action_counts).__name__}",
+            file=sys.stderr,
+        )
+
+    return metrics
 
 
 @dataclass(frozen=True)
@@ -618,6 +694,11 @@ class BuildContext:
     def prebuilt_binary_sets_json_path(self) -> pathlib.Path:
         """Returns the absolute path to the prebuilt binary sets JSON file."""
         return self.build_dir / PREBUILT_BINARY_SETS_JSON
+
+    @property
+    def default_ninja_action_metrics_path(self) -> pathlib.Path:
+        """Returns the default absolute path to the Ninja action metrics JSON file."""
+        return self.build_dir / NINJA_ACTION_METRICS_JSON
 
     @property
     def artifact_dir(self) -> pathlib.Path | None:
@@ -1087,6 +1168,7 @@ class BuildContext:
         self,
         duration_seconds: int,
         failure_summary: str | None = None,
+        ninja_action_metrics_path: pathlib.Path | None = None,
     ) -> None:
         """Serializes and writes the build_artifacts.json manifest to the artifact directory."""
         if not self.artifact_dir:
@@ -1096,6 +1178,22 @@ class BuildContext:
         artifacts.ninja_duration_seconds = duration_seconds
         if failure_summary:
             artifacts.failure_summary = failure_summary
+
+        # Collect Ninja action metrics if present
+        action_metrics_file = (
+            ninja_action_metrics_path
+            if ninja_action_metrics_path is not None
+            else (
+                self.default_ninja_action_metrics_path
+                if self.context_spec.build_dir
+                else None
+            )
+        )
+        if action_metrics_file and action_metrics_file.is_file():
+            metrics_data = load_json_dict(action_metrics_file)
+            if metrics_data is not None:
+                parsed_metrics = parse_ninja_action_metrics(metrics_data)
+                artifacts.ninja_action_metrics.CopyFrom(parsed_metrics)
 
         # Generate and register the interactive Perfetto Ninja traces!
         ninjatrace_path, buildstats_path = self._generate_ninja_traces()
@@ -1237,6 +1335,13 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Path where Ninja should write its error logs (ninja_errors.json).",
     )
     parser.add_argument(
+        "--ninja-action-metrics-output",
+        dest="ninja_action_metrics_output",
+        type=pathlib.Path,
+        default=None,
+        help="Path where Ninja should write its action metrics (ninja_action_metrics.json).",
+    )
+    parser.add_argument(
         "wrapped_cmd",
         nargs="*",
         default=None,
@@ -1353,9 +1458,11 @@ def main(argv: list[str]) -> int:
                         f"Fuchsia build failed: delegated command "
                         f"'{shlex.join(run.command)}' exited with status {run.exit_code}"
                     )
+
             ctx.produce_build_artifacts(
                 duration_seconds,
                 failure_summary=failure_summary,
+                ninja_action_metrics_path=args.ninja_action_metrics_output,
             )
 
     return run.exit_code

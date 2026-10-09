@@ -26,7 +26,7 @@ from unittest import mock
 import main_build
 import signal_utils
 from build.auth import gcloud
-from build.rbe import rbe_settings
+from build.rbe import build_summary, rbe_settings
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
 
@@ -1654,12 +1654,35 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                     "ninja", ["ninja", "target"]
                 )
                 self.assertIn("--post-build-uploads", exec_info.full_command)
-                metrics_path = (
-                    invocation.log_dir
-                    / "ninja_logs"
-                    / "ninja_action_metrics.json"
-                )
+                metrics_path = invocation.ninja_action_metrics_path
                 self.assertIn(str(metrics_path), exec_info.full_command)
+
+    def test_new_build_command_execution_ninja_fint_passes_action_metrics(
+        self,
+    ) -> None:
+        context = self.create_context(rbe=False, resultstore="none")
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
+        with self.mock_invocation_context("uuid-123", "ts-456"):
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.multiple(
+                main_build.FuchsiaBuildContext,
+                rbe_enabled=mock.PropertyMock(return_value=False),
+                needs_auth=mock.PropertyMock(return_value=False),
+            ):
+                with mock.patch.object(main_build, "mkdir"):
+                    exec_info = invocation.new_build_command_execution(
+                        "ninja", ["ninja", "target"]
+                    )
+                    metrics_path = invocation.ninja_action_metrics_path
+                    self.assertIn(
+                        "--ninja-action-metrics-output", exec_info.full_command
+                    )
+                    idx = exec_info.full_command.index(
+                        "--ninja-action-metrics-output"
+                    )
+                    self.assertEqual(
+                        exec_info.full_command[idx + 1], str(metrics_path)
+                    )
 
 
 class PrepareFunctionsTest(MainBuildTestBase):
@@ -2022,6 +2045,51 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             expected_cmd,
         )
 
+    def test_fint_build_cmd_with_logging_and_metrics(self) -> None:
+        """Verifies that fint_build_cmd forwards error logging and action metrics outputs."""
+        config = main_build.FuchsiaBuildConfig(
+            rbe=False,
+            resultstore="none",
+            profile=False,
+            tui=False,
+            verbose=False,
+            dry_run=False,
+            auth_mode="auto",
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/out"),
+            build_dir=pathlib.Path("/tmp/out/default"),
+            env={"USER": "fake-user"},
+            config=config,
+        )
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
+        expected_cmd = [
+            str(main_build.PYTHON_BIN),
+            "-S",
+            "-u",
+            str(context.fint_build_py),
+            "--static",
+            "/tmp/static.proto",
+            "--ninja-error-logging-output",
+            "/tmp/errors.json",
+            "--ninja-action-metrics-output",
+            "/tmp/metrics.json",
+            "--",
+        ]
+        self.assertEqual(
+            [
+                str(arg)
+                for arg in context.fint_build_cmd(
+                    ninja_error_logging_output=pathlib.Path("/tmp/errors.json"),
+                    ninja_action_metrics_output=pathlib.Path(
+                        "/tmp/metrics.json"
+                    ),
+                )
+            ],
+            expected_cmd,
+        )
+
     def test_msg_logging(self) -> None:
         f_stdout = io.StringIO()
         with contextlib.redirect_stdout(f_stdout):
@@ -2073,7 +2141,8 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 reproxy_log_dir / "reproxy_log.pb", "reproxy_log_pb"
             )
             main_build.write_text(
-                reproxy_log_dir / "rbe_metrics.txt", "metrics"
+                reproxy_log_dir / build_summary.RBE_METRICS_TXT,
+                'stats: < name: "CompletionStatus" counts_by_value: < name: "STATUS_CACHE_HIT" count: 1 > >\n',
             )
             main_build.write_text(reproxy_log_dir / "reproxy_run.rrpl", "rrpl")
 
@@ -2165,6 +2234,8 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 data["rbe"]["reproxy_log_pb"],
                 str((reproxy_log_dir / "reproxy_log.pb").resolve()),
             )
+            self.assertIn("metrics_summary", data["rbe"])
+            self.assertIn("execution_statuses", data["rbe"]["metrics_summary"])
             # Verify resultstore diagnostic logs
             self.assertEqual(
                 data["resultstore"]["diagnostic_logs"]["rsproxy.INFO"],
@@ -2185,6 +2256,43 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 data["build_profile"]["hardware_profile"],
                 str((build_profile_dir / "hardware_profile.json").resolve()),
             )
+
+    def test_collect_rbe_metadata_with_metrics_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = pathlib.Path(tmpdir)
+            log_dir = tmp_path / "logs"
+            reproxy_log_dir = log_dir / "reproxy_logs"
+            main_build.mkdir(reproxy_log_dir)
+
+            mock_metrics = {
+                "execution_statuses": {"REMOTE_SUCCESS": 42},
+                "data_sizes_bytes": {"total_input_bytes": 1024},
+            }
+
+            with mock.patch.object(
+                build_summary,
+                "summarize_rbe_metrics_from_logdir",
+                return_value=mock_metrics,
+            ) as mock_summary:
+                meta = main_build._collect_rbe_metadata(log_dir)
+                self.assertIn("metrics_summary", meta)
+                self.assertEqual(meta["metrics_summary"], mock_metrics)
+                mock_summary.assert_called_once_with(reproxy_log_dir.resolve())
+
+    def test_collect_rbe_metadata_summary_none_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = pathlib.Path(tmpdir)
+            log_dir = tmp_path / "logs"
+            reproxy_log_dir = log_dir / "reproxy_logs"
+            main_build.mkdir(reproxy_log_dir)
+
+            with mock.patch.object(
+                build_summary,
+                "summarize_rbe_metrics_from_logdir",
+                return_value=None,
+            ):
+                meta = main_build._collect_rbe_metadata(log_dir)
+                self.assertNotIn("metrics_summary", meta)
 
     @mock.patch.object(subprocess, "check_output")
     def test_fint_artifact_dir_success(

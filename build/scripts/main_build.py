@@ -43,7 +43,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
-from build.rbe import rbe_settings
+from build.rbe import build_summary, rbe_settings
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -129,6 +129,9 @@ DEFAULT_CAS_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
 # LINT.IfChange(ninja_build_trace_filename)
 NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
 # LINT.ThenChange(/tools/integration/fint/fint_build.py:ninja_build_trace_filename)
+NINJA_LOGS_DIR = "ninja_logs"
+NINJA_ACTION_METRICS_JSON = "ninja_action_metrics.json"
+NINJA_ERRORS_JSON = "ninja_errors.json"
 FINT_BUILD_PY_RELATIVE_PATH = pathlib.Path(
     "tools/integration/fint/fint_build.py"
 )
@@ -237,7 +240,8 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
 
     Returns:
         A dictionary containing paths to the reproxy log directory, diagnostic
-        log files, CAS upload candidates (.rrpl/.rpl), and serialized proto logs.
+        log files, CAS upload candidates (.rrpl/.rpl), serialized proto logs,
+        and summarized metrics.
     """
     rbe_metadata: JSONObject = {}
     # LINT.IfChange(reproxy_logs_dir)
@@ -274,6 +278,17 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
         candidate = reproxy_log_dir_abs / pb_filename
         if candidate.exists():
             rbe_metadata[pb_name] = str(candidate)
+
+    try:
+        metrics_summary = build_summary.summarize_rbe_metrics_from_logdir(
+            reproxy_log_dir_abs
+        )
+    except Exception as e:
+        msg(f"Warning: Failed to summarize RBE metrics: {e}", file=sys.stderr)
+        metrics_summary = None
+
+    if metrics_summary is not None:
+        rbe_metadata["metrics_summary"] = metrics_summary
 
     return rbe_metadata
 
@@ -924,6 +939,7 @@ class FuchsiaBuildContext(object):
         print_artifact_dir: bool = False,
         print_job_count: bool = False,
         ninja_error_logging_output: pathlib.Path | None = None,
+        ninja_action_metrics_output: pathlib.Path | None = None,
     ) -> Iterable[str]:
         """Constructs and yields command-line arguments for executing fint_build.py.
 
@@ -935,6 +951,7 @@ class FuchsiaBuildContext(object):
             print_job_count: If True, appends the query flag to print the
               job_count value and exits instead of running the build.
             ninja_error_logging_output: Path where Ninja should write its error logs (ninja_errors.json).
+            ninja_action_metrics_output: Path where Ninja should write its action metrics (ninja_action_metrics.json).
         """
         yield str(PYTHON_BIN)
         yield "-S"
@@ -957,10 +974,15 @@ class FuchsiaBuildContext(object):
             if ninja_error_logging_output:
                 yield "--ninja-error-logging-output"
                 yield str(ninja_error_logging_output)
+            if ninja_action_metrics_output:
+                yield "--ninja-action-metrics-output"
+                yield str(ninja_action_metrics_output)
             yield "--"
 
     def fint_build_cmd(
-        self, ninja_error_logging_output: pathlib.Path | None = None
+        self,
+        ninja_error_logging_output: pathlib.Path | None = None,
+        ninja_action_metrics_output: pathlib.Path | None = None,
     ) -> Iterable[str]:
         """Constructs and yields command-line arguments for standard Fint build execution."""
         if not self.config.fint_params_path:
@@ -969,6 +991,7 @@ class FuchsiaBuildContext(object):
             static_path=self.config.fint_params_path,
             context_path=self.config.fint_context_path,
             ninja_error_logging_output=ninja_error_logging_output,
+            ninja_action_metrics_output=ninja_action_metrics_output,
         )
 
     @functools.cached_property
@@ -1304,7 +1327,12 @@ class BuildInvocation(object):
     @property
     def ninja_errors_path(self) -> pathlib.Path:
         """The path where Ninja-specific structured action failures are recorded."""
-        return self.log_dir / "ninja_errors.json"
+        return self.log_dir / NINJA_ERRORS_JSON
+
+    @property
+    def ninja_action_metrics_path(self) -> pathlib.Path:
+        """The path where Ninja action metrics are recorded."""
+        return self.log_dir / NINJA_LOGS_DIR / NINJA_ACTION_METRICS_JSON
 
     def top_build_command_prefix(self) -> Iterable[str]:
         """Construct the prefix command for the top-level wrapper."""
@@ -1492,7 +1520,12 @@ class BuildInvocation(object):
 
         fint_cmd = list(
             context.fint_build_cmd(
-                ninja_error_logging_output=self.ninja_errors_path
+                ninja_error_logging_output=self.ninja_errors_path,
+                ninja_action_metrics_output=(
+                    self.ninja_action_metrics_path
+                    if command_type == "ninja"
+                    else None
+                ),
             )
         )
         if fint_cmd:
@@ -1518,7 +1551,7 @@ class BuildInvocation(object):
         # Record the set of inputs that triggered build actions.
         dirty_sources = ninja_log_dir / "ninja_dirty_sources.log"
         # Record action count metrics.
-        action_metrics = ninja_log_dir / "ninja_action_metrics.json"
+        action_metrics = self.ninja_action_metrics_path
         # Record structured action failures
         error_logging_output = self.ninja_errors_path
         # Record Ninja's raw chrome build trace file
