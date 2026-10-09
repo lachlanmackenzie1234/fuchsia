@@ -1656,8 +1656,9 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver:pkg-resolver-eng",
-        # Dash launcher should be available in every engineering-mode product.
+        # Dash launcher and driver_debug should be available in every engineering-mode product.
         "//bundles/assembly/bazel_inputs/src/sys/tools/debug-dash-launcher",
+        "//bundles/assembly/bazel_inputs/src/devices/bin/driver_debug",
         # The fs_realm component should be available in every engineering-mode product.
         "//bundles/assembly/bazel_inputs/src/storage/fs_realm",
         "//bundles/assembly/bazel_inputs/src/storage/bin:fs_realm_tools",

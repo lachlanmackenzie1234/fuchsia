@@ -672,6 +672,7 @@ group("core_realm_eng") {
   testonly = true
   deps = [
     "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlancfg/tool:donut",
+    "//bundles/assembly/bazel_inputs/src/devices/bin/driver_debug",
     "//bundles/assembly/bazel_inputs/src/storage/bin:fs_realm_tools",
     "//bundles/assembly/bazel_inputs/src/storage/fs_realm",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver:pkg-resolver-eng",
