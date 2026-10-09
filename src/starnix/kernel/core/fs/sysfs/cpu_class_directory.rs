@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fs::sysfs::build_device_directory;
 use crate::task::{CurrentTask, Kernel};
-use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{
     BytesFile, BytesFileOps, SimpleFileNode, parse_unsigned_file,
 };
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
+use crate::vfs::{FsNodeOps, FsString};
 use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
 use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -44,7 +45,8 @@ pub fn get_cpu_freq_domains(kernel: &Kernel) -> Arc<[Arc<CpuFreqDomain>]> {
         .clone()
 }
 
-pub fn build_cpu_class_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
+/// Registers `/sys/devices/system/cpu` and the per-core `cpuN` bus devices beneath it.
+pub fn register_cpu_devices(kernel: &Kernel) {
     // Each domain is wrapped once and shared across `cpuN/cpufreq`, `cpufreq/policyN`, and
     // thermal `cooling_device*` nodes so all voters aggregate on the same domain state.
     let cpu_domains = get_cpu_freq_domains(kernel);
@@ -56,13 +58,36 @@ pub fn build_cpu_class_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) 
     core_to_domain_map.sort_by_key(|(id, _)| *id);
     core_to_domain_map.dedup_by_key(|(id, _)| *id);
 
-    for (core_id, domain) in &core_to_domain_map {
-        let name = format!("cpu{}", core_id);
-        dir.subdir(&name, 0o755, |dir| build_cpu_directory(dir, *core_id, domain));
-    }
-
     let core_count = core_to_domain_map.len();
+    let registry = &kernel.device_registry;
+    let system_device = registry.objects.system_device();
+    let cpu_root =
+        registry.add_subsystemless_device("cpu".into(), Some(system_device), |device, dir| {
+            build_device_directory(device, dir);
+            build_cpu_subsystem_directory(dir, &cpu_domains, core_count);
+        });
 
+    let cpu_bus = registry.objects.get_or_create_bus("cpu".into());
+    for (core_id, domain) in &core_to_domain_map {
+        let name: FsString = format!("cpu{}", core_id).into();
+        registry.add_bus_device(
+            name.as_ref(),
+            Some(cpu_root.clone()),
+            cpu_bus.clone(),
+            |device, dir| {
+                build_device_directory(device, dir);
+                build_cpu_directory(dir, *core_id, domain);
+            },
+        );
+    }
+}
+
+/// Populates the subsystem-wide attributes in `/sys/devices/system/cpu`.
+fn build_cpu_subsystem_directory(
+    dir: &SimpleDirectoryMutator,
+    cpu_domains: &[Arc<CpuFreqDomain>],
+    core_count: usize,
+) {
     dir.entry(
         "online",
         BytesFile::new_node(format!("0-{}\n", core_count.saturating_sub(1)).into_bytes()),

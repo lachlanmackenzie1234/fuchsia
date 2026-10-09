@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::sysfs::{build_cpu_class_directory, build_kernel_directory, build_power_directory};
+use crate::fs::sysfs::{build_kernel_directory, build_power_directory};
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::BytesFile;
@@ -185,11 +185,7 @@ impl SysFs {
             });
         });
 
-        // TODO(https://fxbug.dev/425942145): Correctly implement system filesystem in sysfs
         dir.subdir("devices", dir_mode, |dir| {
-            dir.subdir("system", dir_mode, |dir| {
-                dir.subdir("cpu", dir_mode, |dir| build_cpu_class_directory(kernel, dir));
-            });
             dir.subdir("leds", dir_mode, |_dir| {});
             dir.subdir("virtual", dir_mode, |dir| {
                 dir.subdir("leds", dir_mode, |_dir| {});
@@ -354,6 +350,22 @@ mod tests {
             // Device-less classes.
             assert!(root.lookup("class/powercap".into()).is_some());
             assert!(root.lookup("class/udc".into()).is_some());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn sysfs_registers_cpu_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let root = &current_task.kernel().device_registry.objects.root;
+
+            assert!(root.lookup("devices/system/cpu/uevent".into()).is_some());
+            assert!(root.lookup("devices/system/cpu/online".into()).is_some());
+            assert!(root.lookup("devices/system/cpu/possible".into()).is_some());
+            assert!(root.lookup("devices/system/cpu/cpufreq".into()).is_some());
+            assert!(root.lookup("devices/system/cpu/cpu0/uevent".into()).is_some());
+            assert!(root.lookup("devices/system/cpu/cpu0/topology".into()).is_some());
+            assert!(root.lookup("bus/cpu/devices/cpu0".into()).is_some());
         })
         .await;
     }

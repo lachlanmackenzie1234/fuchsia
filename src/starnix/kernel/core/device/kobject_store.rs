@@ -4,7 +4,7 @@
 
 use crate::device::DeviceMode;
 use crate::device::kobject::{Bus, Class, Device, DeviceMetadata, Subsystem};
-use crate::fs::sysfs::{build_device_directory, get_sysfs};
+use crate::fs::sysfs::{build_device_directory, get_sysfs, register_cpu_devices};
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
@@ -30,6 +30,9 @@ pub struct KObjectStore {
     /// Root `/sys/devices/platform` device.
     platform_device: OnceLock<Device>,
 
+    /// Root `/sys/devices/system` device.
+    system_device: OnceLock<Device>,
+
     /// Root `/sys/devices/platform/soc` bus device.
     soc_device: OnceLock<Device>,
 }
@@ -44,6 +47,7 @@ impl KObjectStore {
         let registry = &kernel.device_registry;
 
         // Generic Linux device and class registrations.
+        register_cpu_devices(kernel);
 
         // TODO(https://fxbug.dev/452096300): Register backing_dev_info devices from actual
         // superblocks instead of a hardcoded 0:80 stub.
@@ -217,6 +221,23 @@ impl KObjectStore {
                     /* subsystem = */ None,
                     /* metadata = */ None,
                     build_device_directory,
+                )
+            })
+            .clone()
+    }
+
+    /// Root device used for system devices (`/sys/devices/system`).
+    ///
+    /// Subsystems such as `cpu` place their root device beneath this device.
+    pub fn system_device(&self) -> Device {
+        self.system_device
+            .get_or_init(|| {
+                self.create_device(
+                    "system".into(),
+                    /* parent = */ None,
+                    /* subsystem = */ None,
+                    /* metadata = */ None,
+                    |_, _| {},
                 )
             })
             .clone()
@@ -481,6 +502,7 @@ impl Default for KObjectStore {
             fs: OnceLock::new(),
             virtual_device: OnceLock::new(),
             platform_device: OnceLock::new(),
+            system_device: OnceLock::new(),
             soc_device: OnceLock::new(),
         }
     }
