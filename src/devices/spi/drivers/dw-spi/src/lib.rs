@@ -106,10 +106,7 @@ impl Driver for DwSpiDriver {
         let interrupt = pdev
             .get_interrupt_by_id(0, 0)
             .await?
-            .map_err(|s| {
-                anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                    .context("Failed to get interrupt")
-            })?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to get interrupt"))?
             .irq;
 
         let max_bus_clock_hz = DwSpiDriver::get_max_bus_clock(&pdev).await;

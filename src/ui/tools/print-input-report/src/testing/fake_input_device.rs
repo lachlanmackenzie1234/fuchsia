@@ -709,21 +709,21 @@ mod tests {
             .send_output_report(fidl_input_report::OutputReport::default())
             .await
             .expect("fidl call failed");
-        expect_eq!(res, Err(Err(zx::Status::NOT_SUPPORTED)));
+        expect_eq!(res, Err(zx::Status::NOT_SUPPORTED));
 
         let res = device_client.get_feature_report().await.expect("fidl call failed");
-        expect_eq!(res, Err(Err(zx::Status::NOT_SUPPORTED)));
+        expect_eq!(res, Err(zx::Status::NOT_SUPPORTED));
 
         let res = device_client
             .set_feature_report(fidl_input_report::FeatureReport::default())
             .await
             .expect("fidl call failed");
-        expect_eq!(res, Err(Err(zx::Status::NOT_SUPPORTED)));
+        expect_eq!(res, Err(zx::Status::NOT_SUPPORTED));
 
         let res = device_client
             .get_input_report(fidl_input_report::DeviceType::Mouse)
             .await
             .expect("fidl call failed");
-        expect_eq!(res, Err(Err(zx::Status::NOT_SUPPORTED)));
+        expect_eq!(res, Err(zx::Status::NOT_SUPPORTED));
     }
 }

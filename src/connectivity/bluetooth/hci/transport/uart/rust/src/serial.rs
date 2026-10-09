@@ -8,10 +8,6 @@ use fidl_next_fuchsia_hardware_serialimpl as serialimpl;
 use fuchsia_async as fasync;
 use log::error;
 
-fn unwrap_status_result<T>(result: Result<T, Result<(), zx::Status>>) -> Result<T, zx::Status> {
-    result.map_err(|status_result| status_result.err().unwrap_or(zx::Status::INTERNAL))
-}
-
 /// Encapsulates the connection to the parent `fuchsia.hardware.serialimpl.Service` device.
 #[derive(Clone)]
 pub struct SerialConnection {
@@ -40,7 +36,9 @@ impl SerialConnection {
 
         let client = client_end.spawn_on(scope);
 
-        let info = unwrap_status_result(client.get_info().await?)
+        let info = client
+            .get_info()
+            .await?
             .map_err(|status| {
                 error!("Serial device GetInfo failed with status: {status}");
                 DriverError::from(status)
@@ -54,7 +52,7 @@ impl SerialConnection {
 
         let serial_pid = info.serial_pid;
 
-        unwrap_status_result(client.enable(true).await?).map_err(|status| {
+        client.enable(true).await?.map_err(|status| {
             error!("Serial device Enable failed with status: {status}");
             DriverError::from(status)
         })?;
@@ -85,16 +83,17 @@ impl SerialConnection {
             error!("Serial read failed with FIDL error: {fidl_error:?}");
             zx::Status::INTERNAL
         })?;
-        Ok(unwrap_status_result(response)?.data)
+        Ok(response?.data)
     }
 
     /// Writes data to the serial port.
     pub async fn write(&self, data: &[u8]) -> Result<(), zx::Status> {
-        let response = self.client.write(data).await.map_err(|fidl_error| {
+        self.client.write(data).await.map_err(|fidl_error| {
             error!("Serial write failed with FIDL error: {fidl_error:?}");
             zx::Status::INTERNAL
-        })?;
-        unwrap_status_result(response)
+        })??;
+
+        Ok(())
     }
 }
 
@@ -137,14 +136,11 @@ impl serialimpl::DeviceServerHandler<fdf_fidl::DriverChannel> for SerialConnecti
                 return;
             }
         };
-        match unwrap_status_result(response) {
-            Ok(()) => {
-                let _ = responder.respond(()).await;
-            }
-            Err(status) => {
-                error!("Config request failed with status: {status}");
-                let _ = responder.respond_err(status).await;
-            }
+        if let Err(status) = response {
+            error!("Config request failed with status: {status}");
+            let _ = responder.respond_err(status).await;
+        } else {
+            let _ = responder.respond(()).await;
         }
     }
 

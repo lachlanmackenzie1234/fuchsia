@@ -120,9 +120,8 @@ impl DwSpiDeviceInner {
             match pin_state.select_state(state).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(s)) => {
-                    let status = s.err().unwrap_or(Status::INTERNAL);
-                    error!("Failed to select pin state {state}: {status}");
-                    return Err(status.into());
+                    error!("Failed to select pin state {state}: {s}");
+                    return Err(s.into());
                 }
                 // Pin states are optional, so ignore transport errors.
                 Err(e) => {
@@ -134,15 +133,17 @@ impl DwSpiDeviceInner {
     }
 
     async fn init(&mut self, timing: DwSpiTiming) -> Result<(), DriverError> {
-        self.resources.powerdomain.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable power domain")
-        })?;
+        self.resources
+            .powerdomain
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable power domain"))?;
 
-        self.resources.clock_bus.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable bus clock")
-        })?;
+        self.resources
+            .clock_bus
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable bus clock"))?;
 
         let parent_clock_hz = self
             .resources
@@ -150,7 +151,7 @@ impl DwSpiDeviceInner {
             .get_rate()
             .await
             .map_err(|_| Status::INTERNAL)
-            .and_then(|res| res.map_err(|_| Status::INTERNAL))
+            .flatten()
             .inspect_err(|e| {
                 error!("Failed to get bus clock rate: {e:?}");
             })
@@ -165,15 +166,17 @@ impl DwSpiDeviceInner {
             warn!("Max bus clock rate reported to be zero, skipping baud rate initialization");
         }
 
-        self.resources.clock_regs.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable registers clock")
-        })?;
+        self.resources
+            .clock_regs
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable registers clock"))?;
 
-        self.resources.reset.toggle().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to toggle reset")
-        })?;
+        self.resources
+            .reset
+            .toggle()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to toggle reset"))?;
 
         self.init_registers();
 
@@ -195,44 +198,51 @@ impl DwSpiDeviceInner {
         self.mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
         self.mmio.baudr_mut().write(registers::Baudr::from_raw(0));
 
-        self.resources.clock_regs.disable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to disable registers clock")
-        })?;
+        self.resources
+            .clock_regs
+            .disable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to disable registers clock"))?;
 
-        self.resources.clock_bus.disable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to disable bus clock")
-        })?;
+        self.resources
+            .clock_bus
+            .disable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to disable bus clock"))?;
 
-        self.resources.powerdomain.disable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to disable power domain")
-        })?;
+        self.resources
+            .powerdomain
+            .disable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to disable power domain"))?;
 
         Ok(())
     }
 
     async fn resume(&mut self) -> Result<(), DriverError> {
-        self.resources.powerdomain.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable power domain")
-        })?;
+        self.resources
+            .powerdomain
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable power domain"))?;
 
-        self.resources.clock_bus.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable bus clock")
-        })?;
+        self.resources
+            .clock_bus
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable bus clock"))?;
 
-        self.resources.clock_regs.enable().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to enable registers clock")
-        })?;
+        self.resources
+            .clock_regs
+            .enable()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to enable registers clock"))?;
 
-        self.resources.reset.toggle().await?.map_err(|s| {
-            anyhow::Error::new(s.err().unwrap_or(Status::INTERNAL))
-                .context("Failed to toggle reset")
-        })?;
+        self.resources
+            .reset
+            .toggle()
+            .await?
+            .map_err(|s| anyhow::Error::new(s).context("Failed to toggle reset"))?;
 
         self.init_registers();
 

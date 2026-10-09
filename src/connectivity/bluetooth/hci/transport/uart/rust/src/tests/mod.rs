@@ -164,17 +164,17 @@ async fn test_outgoing_serialimpl_service() {
     // Verify config error propagation from parent.
     state.lock().config_result = Err(zx::Status::INVALID_ARGS);
     let config_err_resp = client.config(FALLBACK_BAUD_RATE, 0).await.expect("config FIDL call");
-    assert_eq!(config_err_resp.as_ref().err(), Some(&Err(zx::Status::INVALID_ARGS)));
+    assert_eq!(config_err_resp.err(), Some(zx::Status::INVALID_ARGS));
 
     // 3. Verify enable, read, and write return NOT_SUPPORTED.
     let enable_resp = client.enable(false).await.expect("enable FIDL call");
-    assert_eq!(enable_resp.as_ref().err(), Some(&Err(zx::Status::NOT_SUPPORTED)));
+    assert_eq!(enable_resp.as_ref().err(), Some(&zx::Status::NOT_SUPPORTED));
 
     let read_resp = client.read().await.expect("read FIDL call");
-    assert_eq!(read_resp.as_ref().err(), Some(&Err(zx::Status::NOT_SUPPORTED)));
+    assert_eq!(read_resp.as_ref().err(), Some(&zx::Status::NOT_SUPPORTED));
 
     let write_resp = client.write([0x01, 0x02]).await.expect("write FIDL call");
-    assert_eq!(write_resp.as_ref().err(), Some(&Err(zx::Status::NOT_SUPPORTED)));
+    assert_eq!(write_resp.as_ref().err(), Some(&zx::Status::NOT_SUPPORTED));
 
     // 4. Verify cancel_all returns Ok(()).
     client.cancel_all().await.expect("cancel_all FIDL call");
