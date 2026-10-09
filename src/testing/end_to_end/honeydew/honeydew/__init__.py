@@ -38,9 +38,6 @@ _DEFAULT_PRODUCT_TO_DEVICE_CLASS_DICT: dict[
 _REGISTERED_PRODUCT_TO_DEVICE_CLASS_DICT: dict[
     str, type[fuchsia_device.FuchsiaDevice]
 ] = {}
-# TODO: Remove this once //vendor/google is updated to use
-# register_device_classes().
-_CUSTOM_FUCHSIA_DEVICE_CLASS: type[fuchsia_device.FuchsiaDevice] | None = None
 
 
 class _NoOpDeviceIpChange(affordances_capable.FuchsiaDeviceIpChange):
@@ -135,26 +132,6 @@ def create_device(
         ) from err
 
 
-# TODO: Remove this once //vendor/google is updated to use
-# register_device_classes().
-def register_custom_fuchsia_device(
-    fuchsia_device_class: type[fuchsia_device.FuchsiaDevice],
-) -> None:
-    """Registers a custom fuchsia device class implementation.
-
-    Deprecated: Use `register_device_classes()` instead.
-
-    Args:
-        fuchsia_device_class: custom fuchsia device class implementation.
-    """
-    _LOGGER.info(
-        "Registering custom FuchsiaDevice class '%s' with Honeydew",
-        fuchsia_device_class,
-    )
-    global _CUSTOM_FUCHSIA_DEVICE_CLASS
-    _CUSTOM_FUCHSIA_DEVICE_CLASS = fuchsia_device_class
-
-
 def register_device_classes(
     product_to_device_class_dict: dict[str, type[fuchsia_device.FuchsiaDevice]],
 ) -> None:
@@ -193,11 +170,6 @@ def _get_device_class(
     Returns:
         Device class type.
     """
-    # TODO: Remove this once //vendor/google is updated to use
-    # register_device_classes().
-    if _CUSTOM_FUCHSIA_DEVICE_CLASS is not None:
-        return _CUSTOM_FUCHSIA_DEVICE_CLASS
-
     query: str = (
         str(device_info.ip_port) if device_info.ip_port else device_info.name
     )

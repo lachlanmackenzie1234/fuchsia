@@ -83,7 +83,6 @@ class InitTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         honeydew._REGISTERED_PRODUCT_TO_DEVICE_CLASS_DICT.clear()
-        honeydew._CUSTOM_FUCHSIA_DEVICE_CLASS = None
 
     def tearDown(self) -> None:
         honeydew._REGISTERED_PRODUCT_TO_DEVICE_CLASS_DICT.clear()
@@ -254,24 +253,6 @@ class InitTests(unittest.TestCase):
             registered_classes,
             "All concrete device classes in honeydew.device_classes must be "
             "registered in honeydew._DEFAULT_PRODUCT_TO_DEVICE_CLASS_DICT.",
-        )
-
-    # TODO: Remove this once //vendor/google is updated to use
-    # register_device_classes().
-    def test_register_custom_fuchsia_device(self) -> None:
-        """Test case for honeydew.register_custom_fuchsia_device()."""
-        honeydew.register_custom_fuchsia_device(_CustomAndroidDevice)
-        self.assertEqual(
-            honeydew._get_device_class(
-                device_info=custom_types.DeviceInfo(
-                    name=_INPUT_ARGS["target_name"],
-                    serial_number=None,
-                    ip_port=_INPUT_ARGS["target_ip_port"],
-                    serial_socket=None,
-                ),
-                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
-            ),
-            _CustomAndroidDevice,
         )
 
     def test_register_device_classes(self) -> None:
