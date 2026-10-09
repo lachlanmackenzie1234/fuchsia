@@ -8,7 +8,11 @@ load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinariesInfo", "FuchsiaUnstrippedBinaryInfo")
 load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
 load("//build/bazel/aspects:utils.bzl", "get_target_deps_from_attributes")
-load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
+load(
+    "//build/bazel/rules:current_platform_info.bzl",
+    "CURRENT_PLATFORM_INFO_ATTRS",
+    "get_current_platform_info",
+)
 
 DebugSymbolManifestEntryInfo = provider(
     doc = "A provider matching a single //:debug_symbols entry.",
@@ -39,7 +43,7 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
     dest_paths = []
 
     kind = aspect_ctx.rule.kind
-    current_platform = aspect_ctx.attr._current_platform[CurrentPlatformInfo]
+    current_platform = get_current_platform_info(aspect_ctx)
 
     # On Fuchsia, calling the SDK fuchsia_cc_binary() macro or fx_packaged_binary()
     # will instantiate a wrapper target (_fuchsia_cc() or _fx_packaged_binary())
@@ -136,12 +140,7 @@ collect_debug_symbols_manifest_aspect = aspect(
     implementation = _collect_debug_symbols_manifest_aspect_impl,
     attr_aspects = ["*"],
     provides = [DebugSymbolManifestInfo],
-    attrs = {
-        "_current_platform": attr.label(
-            providers = [CurrentPlatformInfo],
-            default = "@//build/bazel:current_platform",
-        ),
-    },
+    attrs = CURRENT_PLATFORM_INFO_ATTRS,
 )
 
 # Second, a non-propagating aspect that requires the first one and will use

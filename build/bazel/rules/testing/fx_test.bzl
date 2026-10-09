@@ -17,7 +17,11 @@ load(
     "@fuchsia_rules_common//packages:providers.bzl",
     "FuchsiaPackageInfo",
 )
-load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
+load(
+    "//build/bazel/rules:current_platform_info.bzl",
+    "CURRENT_PLATFORM_INFO_ATTRS",
+    "get_current_platform_info",
+)
 load(
     "//build/bazel/rules/components:fx_component.bzl",
     "resolve_test_type_realm",
@@ -111,7 +115,7 @@ def _fx_test_impl(ctx):
         fail("`fx_test()` targets are always testonly.")
 
     package_info = ctx.attr.package[FuchsiaPackageInfo]
-    current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
+    current_platform = get_current_platform_info(ctx)
 
     test_components = [
         component
@@ -266,14 +270,10 @@ fx_test = rule(
                   "https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#non-hermetic_tests " +
                   "for valid types.",
         ),
-        "_current_platform": attr.label(
-            default = "@//build/bazel:current_platform",
-            providers = [CurrentPlatformInfo],
-        ),
         "_rebase_package_manifest": attr.label(
             default = "@fuchsia_rules_common//packages:rebase_package_manifest",
             executable = True,
             cfg = "exec",
         ),
-    },
+    } | CURRENT_PLATFORM_INFO_ATTRS,
 )
