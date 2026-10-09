@@ -143,6 +143,8 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_packaged_binary":    noGNEquivalent,
 	"fx_test":               noGNEquivalent,
 	"fx_test_component":     noGNEquivalent,
+	"fx_unittest_component": noGNEquivalent,
+	"fx_unittest_package":   noGNEquivalent,
 }
 
 // attrsToOmitByRules stores a mapping from known Bazel rules to attributes to

@@ -24,6 +24,7 @@ load(
     "fx_test_environment",
     "fx_test_environment_variant",
 )
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 load("//build/testing/environments:device_types.bzl", "device_types")
 load(":fx_test_validation_tests.bzl", "fx_test_validation_tests")
 
@@ -342,11 +343,58 @@ filegroup(
     testonly = True,
     srcs = [
         ":example_multi_component_test",
+        ":example_multi_unittest_package",
         ":example_test",
         ":example_test_with_test_type",
+        ":example_unittest_package",
         ":verify_example_multi_component_test_realms",
+        ":verify_example_multi_unittest_package_realms",
         ":verify_example_test_default_realm",
         ":verify_example_test_with_test_type",
+        ":verify_example_unittest_package_realms",
     ],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
+)
+
+fx_cc_binary(
+    name = "example_second_test_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    tags = ["manual"],
+)
+
+# Tests `fx_unittest_package()` with a single unit test binary.
+fx_unittest_package(
+    name = "example_unittest_package",
+    package_name = "fx-unittest-package-example",
+    unit_tests = [":example_test_bin"],
+)
+
+verify_fx_test_realms(
+    name = "verify_example_unittest_package_realms",
+    testonly = True,
+    expected_realms = {
+        "fx-unittest-package-example": "",
+    },
+    test = ":example_unittest_package",
+)
+
+# Tests `fx_unittest_package()` with multiple unit test binaries.
+fx_unittest_package(
+    name = "example_multi_unittest_package",
+    package_name = "fx-multi-unittest-package-example",
+    unit_tests = [
+        ":example_test_bin",
+        ":example_second_test_bin",
+    ],
+)
+
+verify_fx_test_realms(
+    name = "verify_example_multi_unittest_package_realms",
+    testonly = True,
+    expected_realms = {
+        "example_test_bin": "",
+        "example_second_test_bin": "",
+    },
+    test = ":example_multi_unittest_package",
 )

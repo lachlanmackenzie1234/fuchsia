@@ -280,6 +280,21 @@ fx_test(
 )`,
 			wantGN: "",
 		},
+		{
+			name: "Ignored unittest targets",
+			bazel: `fx_unittest_component(
+	name = "foo-test-component",
+	component_name = "foo-test",
+	binary = ":foo_bin",
+)
+
+fx_unittest_package(
+	name = "foo-test",
+	package_name = "foo-test",
+	unit_tests = [":foo_bin"],
+)`,
+			wantGN: "",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

@@ -2,16 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load(
-    "//build/bazel/rules/components:fx_component.bzl",
-    "fx_component_manifest",
-    "fx_test_component",
-)
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
-load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
-load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
-load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -42,38 +35,8 @@ wrap_host_rust_test(
     binary_name = "replace-with_lib_test",
 )
 
-fx_packaged_binary(
-    name = "replace-with_lib_test_packaged_bin",
-    testonly = True,
-    binary = ":replace-with_lib_test",
-    binary_name = "replace-with_lib_test",
-)
-
-fx_component_manifest(
-    name = "replace-with-test-manifest",
-    testonly = True,
-    component_name = "replace-with-test",
-    includes = [
-        "//sdk/lib/syslog:use.shard.cml",
-        "//src/sys/test_runners/rust:default.shard.cml",
-    ],
-    manifest = "meta/replace_with_test.cml",
-)
-
-fx_test_component(
-    name = "replace-with-test-component",
-    compiled_manifest = ":replace-with-test-manifest",
-    component_name = "replace-with-test",
-    deps = [":replace-with_lib_test_packaged_bin"],
-)
-
-fx_package(
-    name = "replace-with-test-package",
-    package_name = "replace-with-test",
-    test_components = [":replace-with-test-component"],
-)
-
-fx_test(
+fx_unittest_package(
     name = "replace-with-test",
-    package = ":replace-with-test-package",
+    package_name = "replace-with-test",
+    unit_tests = [":replace-with_lib_test"],
 )
