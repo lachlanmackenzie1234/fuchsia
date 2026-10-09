@@ -3179,4 +3179,112 @@ TEST(PtraceTest, PokeInstructionCacheCoherency) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+// Verifies that modifying syscall argument registers at syscall-enter-stop affects the dispatched
+// syscall.
+TEST(PtraceTest, ModifySyscallArgumentAtSyscallEnterStop) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    int fd = SAFE_SYSCALL(open("/dev/null", O_WRONLY));
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    const char data[] = "hello";
+    ssize_t ret = SAFE_SYSCALL(write(fd, data, 5));
+
+    // Tracer modifies the syscall argument to only write 2 bytes.
+    ASSERT_EQ(ret, 2);
+    SAFE_SYSCALL(close(fd));
+  });
+
+  int status = 0;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, nullptr, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(StepToSyscallEntry(child_pid, {__NR_write}));
+
+  // Modifies the syscall argument to write 2 bytes instead of 5.
+  struct user_regs_struct regs = {};
+  struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+
+#if defined(__x86_64__)
+  ASSERT_EQ(regs.rdx, 5u);
+  regs.rdx = 2;
+#elif defined(__aarch64__) || defined(__arm__)
+  ASSERT_EQ(regs.regs[2], 5u);
+  regs.regs[2] = 2;
+#elif defined(__riscv)
+  ASSERT_EQ(regs.a2, 5u);
+  regs.a2 = 2;
+#else
+#error "Unsupported architecture"
+#endif
+
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  helper.ExpectExitValue(0);
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// Verifies that modifying the syscall number register at syscall-enter-stop affects the dispatched
+// syscall.
+TEST(PtraceTest, ModifySyscallNumberAtSyscallEnterStop) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    pid_t expected_pid = getpid();
+
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    pid_t ret = static_cast<pid_t>(SAFE_SYSCALL(syscall(__NR_getppid)));
+
+    // Tracer modifies the syscall number to getpid instead of getppid.
+    ASSERT_EQ(ret, expected_pid);
+  });
+
+  int status = 0;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, child_pid, nullptr, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(StepToSyscallEntry(child_pid, {__NR_getppid}));
+
+  // Modifies the syscall number to getpid instead of getppid.
+  struct user_regs_struct regs = {};
+  struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+
+#if defined(__x86_64__)
+  ASSERT_EQ(regs.orig_rax, static_cast<unsigned long>(__NR_getppid));
+  regs.orig_rax = __NR_getpid;
+#elif defined(__aarch64__)
+  ASSERT_EQ(regs.regs[8], static_cast<uint64_t>(__NR_getppid));
+  regs.regs[8] = __NR_getpid;
+#elif defined(__arm__)
+  ASSERT_EQ(regs.regs[7], static_cast<unsigned long>(__NR_getppid));
+  regs.regs[7] = __NR_getpid;
+#elif defined(__riscv)
+  ASSERT_EQ(regs.a7, static_cast<unsigned long>(__NR_getppid));
+  regs.a7 = __NR_getpid;
+#else
+#error "Unsupported architecture"
+#endif
+
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  helper.ExpectExitValue(0);
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace

@@ -7,7 +7,6 @@
 use anyhow::{Error, format_err};
 use extended_pstate::ExtendedPstatePointer;
 use starnix_core::arch::execution::new_syscall;
-use starnix_core::ptrace::{ptrace_syscall_enter, ptrace_syscall_exit};
 use starnix_core::signals::{SignalInfo, dequeue_signal, force_signal, prepare_to_restart_syscall};
 use starnix_core::task::{CurrentTask, ExceptionResult, ExitStatus, SeccompStateValue, TaskFlags};
 use starnix_logging::{
@@ -334,6 +333,8 @@ pub struct ErrorContext {
 pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
     current_task.thread_state.registers.save_registers_for_restart();
 
+    current_task.ptrace().on_syscall_enter();
+
     let syscall_decl = SyscallDecl::from_number(
         current_task.thread_state.registers.syscall_register(),
         current_task.thread_state.arch_width(),
@@ -341,10 +342,6 @@ pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
 
     fuchsia_trace::duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
     let syscall = new_syscall(syscall_decl, current_task);
-
-    if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
-        ptrace_syscall_enter(current_task);
-    }
 
     log_syscall!(current_task, "{syscall:?}");
 
@@ -380,9 +377,7 @@ pub fn execute_syscall(current_task: &mut CurrentTask) -> Option<ErrorContext> {
         }
     };
 
-    if current_task.trace_syscalls.load(std::sync::atomic::Ordering::Relaxed) {
-        ptrace_syscall_exit(current_task, return_value.is_some());
-    }
+    current_task.ptrace().on_syscall_exit(return_value.is_some());
 
     return_value
 }
