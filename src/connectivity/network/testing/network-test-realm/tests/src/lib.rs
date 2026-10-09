@@ -1900,11 +1900,11 @@ async fn join_multicast_group_with_non_existent_interface(
         .expect("start_hermetic_network_realm failed")
         .expect("start_hermetic_network_realm error");
 
-    // TODO(https://fxbug.dev/42074274): Resolve error code discrepancy for `IP_ADD_MEMBERSHIP`
-    // (called under the hood by `join_multicast_group` below).
     let expected_err = match netstack {
+        // NB: Netstack2 returns the wrong errno here, which NTR processes as
+        // as InvalidArgument.
         fntr::Netstack::V2 => fntr::Error::InvalidArguments,
-        fntr::Netstack::V3 => fntr::Error::Internal,
+        fntr::Netstack::V3 => fntr::Error::InterfaceNotFound,
     };
     assert_eq!(
         network_test_realm

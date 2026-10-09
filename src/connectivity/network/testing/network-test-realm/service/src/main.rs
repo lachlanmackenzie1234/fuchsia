@@ -1018,9 +1018,11 @@ impl Controller {
         .map_err(|e| match e.kind() {
             // The group `address` was not previously joined.
             std::io::ErrorKind::AddrNotAvailable => fntr::Error::AddressNotAvailable,
-            // The specified `interface_id` does not exist or the `address`
-            // does not correspond to a valid multicast address.
+            // The specified `address` does not correspond to a valid multicast
+            // address.
             std::io::ErrorKind::InvalidInput => fntr::Error::InvalidArguments,
+            // The specified `interface_id` does not exist.
+            _ if e.raw_os_error() == Some(libc::ENODEV) => fntr::Error::InterfaceNotFound,
             _kind => {
                 error!("leave_multicast_group failed: {:?}", e);
                 fntr::Error::Internal
@@ -1049,9 +1051,11 @@ impl Controller {
         .map_err(|e| match e.kind() {
             // The group `address` was already joined.
             std::io::ErrorKind::AddrInUse => fntr::Error::AddressInUse,
-            // The specified `interface_id` does not exist or the `address`
-            // does not correspond to a valid multicast address.
+            // The specified `address` does not correspond to a valid multicast
+            // address.
             std::io::ErrorKind::InvalidInput => fntr::Error::InvalidArguments,
+            // The specified `interface_id` does not exist.
+            _ if e.raw_os_error() == Some(libc::ENODEV) => fntr::Error::InterfaceNotFound,
             _kind => {
                 error!("join_multicast_group failed: {:?}", e);
                 fntr::Error::Internal
