@@ -977,7 +977,6 @@ impl Attempt<'_> {
             }
 
             if let Some(vbmeta) = fuchsia.vbmeta() {
-                target_version.vbmeta_hash = vbmeta.sha256().to_string();
                 // Determine if the vbmeta has changed in this update.
                 if should_write_image(
                     vbmeta.sha256(),
