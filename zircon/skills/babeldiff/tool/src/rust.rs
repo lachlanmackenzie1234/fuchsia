@@ -150,9 +150,7 @@ impl<'a> Ctx<'a> {
                 b.comment(self.text(*p), ts::line(*p), ts::end_line(*p), 0);
             }
         }
-        let is_pub = ts::children(n)
-            .iter()
-            .any(|c| c.kind() == "visibility_modifier");
+        let is_pub = ts::children(n).iter().any(|c| c.kind() == "visibility_modifier");
         for c in ts::children(n) {
             if is_pub && c.kind() == "function_modifiers" && self.text(c).contains("extern") {
                 is_ffi = true;
@@ -221,6 +219,7 @@ impl<'a> Ctx<'a> {
             calls,
             qcalls,
             is_ffi,
+            is_pub,
             test_only: false,
         })
     }
@@ -442,9 +441,7 @@ impl<'a> Ctx<'a> {
             }
         }
         if end > line
-            && b.units
-                .iter()
-                .all(|u| matches!(u.kind, UnitKind::Signature | UnitKind::Comment))
+            && b.units.iter().all(|u| matches!(u.kind, UnitKind::Signature | UnitKind::Comment))
         {
             if let Some(e) = expr {
                 if self.split_struct_init(e, depth, b) {
@@ -479,12 +476,7 @@ impl<'a> Ctx<'a> {
             };
             let fields: Vec<Node> = ts::named_children(body)
                 .into_iter()
-                .filter(|c| {
-                    matches!(
-                        c.kind(),
-                        "field_initializer" | "shorthand_field_initializer"
-                    )
-                })
+                .filter(|c| matches!(c.kind(), "field_initializer" | "shorthand_field_initializer"))
                 .collect();
             if fields.len() < 2 {
                 return false;
@@ -506,9 +498,8 @@ impl<'a> Ctx<'a> {
             if !is_pin_init {
                 return false;
             }
-            let Some(outer_tt) = ts::named_children(e)
-                .into_iter()
-                .find(|c| c.kind() == "token_tree")
+            let Some(outer_tt) =
+                ts::named_children(e).into_iter().find(|c| c.kind() == "token_tree")
             else {
                 return false;
             };
@@ -572,10 +563,7 @@ impl<'a> Ctx<'a> {
         let bodies: Vec<Node> =
             bodies.into_iter().filter(|x| ts::end_line(*x) > ts::line(*x)).collect();
         let mut f = self.features(n, &bodies);
-        if matches!(
-            n.kind(),
-            "integer_literal" | "boolean_literal" | "unit_expression"
-        ) {
+        if matches!(n.kind(), "integer_literal" | "boolean_literal" | "unit_expression") {
             f.plumbing = true;
         }
         let end = bodies.first().map_or(ts::end_line(n), |x| ts::line(*x));
@@ -660,10 +648,8 @@ impl<'a> Ctx<'a> {
             return None;
         }
         let body = v.child_by_field_name("body")?;
-        let arms: Vec<Node<'t>> = ts::named_children(body)
-            .into_iter()
-            .filter(|c| c.kind() == "match_arm")
-            .collect();
+        let arms: Vec<Node<'t>> =
+            ts::named_children(body).into_iter().filter(|c| c.kind() == "match_arm").collect();
         if arms.len() != 2 {
             return None;
         }
@@ -955,10 +941,8 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
     fn calls<'t>(n: Node<'t>, src: &[u8], out: &mut Vec<Node<'t>>) {
         match n.kind() {
             "call_expression" => {
-                let name = n
-                    .child_by_field_name("function")
-                    .map(|f| ts::text(f, src))
-                    .unwrap_or("");
+                let name =
+                    n.child_by_field_name("function").map(|f| ts::text(f, src)).unwrap_or("");
                 let is_plumbing_conversion =
                     crate::normalize::call(name).is_none() && !crate::normalize::is_mutating(name);
                 if !is_plumbing_conversion {
@@ -1044,10 +1028,7 @@ fn is_err_var(cond: &str) -> Option<&str> {
         Regex::new(r"^\(?\s*(?:(\w+)\.is_err\(\)|let\s+Err\s*\([^)]*\)\s*=\s*(\w+))\s*\)?$")
             .unwrap()
     });
-    IS_ERR
-        .captures(cond.trim())
-        .and_then(|c| c.get(1).or_else(|| c.get(2)))
-        .map(|m| m.as_str())
+    IS_ERR.captures(cond.trim()).and_then(|c| c.get(1).or_else(|| c.get(2))).map(|m| m.as_str())
 }
 
 fn relocate_closures(units: &mut [Unit], lines: &[String]) {

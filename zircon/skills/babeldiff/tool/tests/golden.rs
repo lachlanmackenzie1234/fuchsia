@@ -429,8 +429,6 @@ fn lantern_finds_the_planted_mistakes() {
             "call C++ calls the helper copy_color at 3 places (lines 44, 45, 46); the Rust never calls it, so its code is repeated inline",
             "call C++ macro COPY_WICKS is expanded inline in the Rust; keep it as a macro (macro_rules!) and use it where the C++ does",
             "call C++ macro COPY_WICKS is expanded inline in the Rust; keep it as a macro (macro_rules!) and use it where the C++ does",
-            "comment doc comment added in Rust where the C++ function has none; a conversion adds no comments other than SAFETY",
-            "comment doc comment added in Rust where the C++ function has none; a conversion adds no comments other than SAFETY",
             "error-path Rust adds a check `lantern.is_null() || out.is_null()`, returning INVALID_ARGS, that the C++ doesn't make",
             "pairing the change defines read_brightness twice, here and at zircon/kernel/arch/toy/src/lantern.rs:8, and the copies differ; both are compared with the C++, and callers may reach either",
             "value C++ sets LANTERN_BRIGHT_MASK here, and the Rust doesn't",
@@ -620,10 +618,8 @@ fn do_while_matches_loop_break() {
 fn exhaustive_match_demotes_default_fallback_and_flow() {
     let cpp = "const char* level_to_string(Level level) {\n  switch (level) {\n    case Level::kLow:\n      return \"Low\";\n    case Level::kHigh:\n      return \"High\";\n    default:\n      return \"Unknown\";\n  }\n}\n";
     let rust = "pub fn level_to_string(level: Level) -> &'static str {\n    match level {\n        Level::Low => \"Low\",\n        Level::High => \"High\",\n    }\n}\n";
-    let cs = ChangeSet::from_files(&[
-        ("lamp.cc".into(), cpp.into()),
-        ("lamp.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     let p = &report.pairs[0];
@@ -636,9 +632,7 @@ fn exhaustive_match_demotes_default_fallback_and_flow() {
     assert!(issues.is_empty(), "{issues:?}");
     assert_eq!(p.findings.len(), 1, "{:?}", p.findings);
     assert!(
-        p.findings[0]
-            .message
-            .contains("the Rust match covers every case, so it needs no default"),
+        p.findings[0].message.contains("the Rust match covers every case, so it needs no default"),
         "{:?}",
         p.findings
     );
@@ -847,16 +841,8 @@ impl Watchdog {
     };
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert!(report.shims.is_empty(), "{:?}", report.shims);
-    assert!(
-        report.unmatched_cpp.is_empty(),
-        "{:?}",
-        report.unmatched_cpp
-    );
-    assert!(
-        report.unmatched_rust.is_empty(),
-        "{:?}",
-        report.unmatched_rust
-    );
+    assert!(report.unmatched_cpp.is_empty(), "{:?}", report.unmatched_cpp);
+    assert!(report.unmatched_rust.is_empty(), "{:?}", report.unmatched_rust);
     let cb = report
         .pairs
         .iter()
@@ -865,11 +851,7 @@ impl Watchdog {
     assert_eq!(cb.rust.name, "eviction_trigger_callback");
     assert!(cb.findings.is_empty(), "{:?}", cb.findings);
 
-    let init = report
-        .pairs
-        .iter()
-        .find(|p| p.cpp.name == "Watchdog::Init")
-        .expect("init pair");
+    let init = report.pairs.iter().find(|p| p.cpp.name == "Watchdog::Init").expect("init pair");
     assert!(init.findings.is_empty(), "{:?}", init.findings);
 }
 
@@ -916,10 +898,7 @@ impl Watchdog {
         .iter()
         .find(|f| f.name == "RelaxedAtomicPressureLevel::store")
         .expect("unpaired store helper");
-    assert_eq!(
-        report.callers(store_fn),
-        vec!["Watchdog::wait_for_mem_change"]
-    );
+    assert_eq!(report.callers(store_fn), vec!["Watchdog::wait_for_mem_change"]);
 }
 
 #[test]
@@ -953,10 +932,7 @@ pub unsafe extern "C" fn rust_event_dispatcher_create() {
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert!(report.shims.is_empty(), "{:?}", report.shims);
     assert!(
-        report
-            .rust_facades
-            .iter()
-            .all(|(f, _)| f.name == "EventDispatcher::user_signal_self"),
+        report.rust_facades.iter().all(|(f, _)| f.name == "EventDispatcher::user_signal_self"),
         "{:?}",
         report.rust_facades
     );
@@ -1056,10 +1032,8 @@ pub fn init_and_shutdown(deadline: zx_instant_mono_t) {
     }
 }
 "#;
-    let cs = ChangeSet::from_files(&[
-        ("init.cc".into(), cpp.into()),
-        ("init.rs".into(), rust.into()),
-    ]);
+    let cs =
+        ChangeSet::from_files(&[("init.cc".into(), cpp.into()), ("init.rs".into(), rust.into())]);
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     let p = &report.pairs[0];
@@ -1125,11 +1099,7 @@ impl WatchdogState {
     let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
     assert_eq!(report.pairs.len(), 1);
     let p = &report.pairs[0];
-    assert!(
-        p.findings.is_empty(),
-        "expected 0 findings, got {:?}",
-        p.findings
-    );
+    assert!(p.findings.is_empty(), "expected 0 findings, got {:?}", p.findings);
 }
 
 #[test]
@@ -1169,8 +1139,115 @@ impl WatchdogState {
         .collect();
     assert_eq!(
         issues,
-        ["comment still uses C++ identifiers `kOutOfMemory`, `eviction_trigger_`; update to the Rust name"],
+        [
+            "comment still uses C++ identifiers `kOutOfMemory`, `eviction_trigger_`; update to the Rust name"
+        ],
         "{:?}",
         p.findings
     );
+}
+
+#[test]
+fn pub_fn_doc_comments_are_expected_additions() {
+    // 1. Free `pub fn`, `pub(crate) fn`, `pub unsafe fn`, and `impl` `pub fn`
+    //    adding single- and multi-paragraph doc comments where C++ has none.
+    let cpp = r#"
+uint32_t lamp_level(const Lamp& lamp) {
+  return lamp.level();
+}
+
+uint32_t lamp_wattage(const Lamp& lamp) {
+  return lamp.wattage();
+}
+
+void lamp_raw_reset(Lamp* lamp) {
+  lamp->reset();
+}
+
+void Lamp::Activate(uint32_t target) {
+  target_ = target;
+  enable();
+}
+"#;
+    let rust = r#"
+/// Returns the current brightness level of `lamp`.
+pub fn lamp_level(lamp: &Lamp) -> u32 {
+    lamp.level()
+}
+
+/// Returns the wattage of `lamp` for crate-internal callers.
+pub(crate) fn lamp_wattage(lamp: &Lamp) -> u32 {
+    lamp.wattage()
+}
+
+/// Resets `lamp` through a raw pointer.
+///
+/// # Safety
+///
+/// `lamp` must point to a valid, exclusively borrowed `Lamp`.
+pub unsafe fn lamp_raw_reset(lamp: *mut Lamp) {
+    // SAFETY: `lamp` is valid by caller contract.
+    unsafe { (*lamp).reset() };
+}
+
+impl Lamp {
+    /// Activates the lamp at `target`.
+    ///
+    /// Configures the target brightness before enabling hardware output.
+    pub fn activate(&mut self, target: u32) {
+        self.target = target;
+        self.enable();
+    }
+}
+"#;
+    let cs =
+        ChangeSet::from_files(&[("lamp.cc".into(), cpp.into()), ("lamp.rs".into(), rust.into())]);
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 4);
+    for p in &report.pairs {
+        assert!(
+            p.findings.is_empty(),
+            "expected no findings on `{}` when adding doc comments to pub fn, got {:?}",
+            p.rust.name,
+            p.findings
+        );
+    }
+    use babeldiff::html::{HtmlOptions, render_html};
+    let html = render_html(&report, &HtmlOptions::default());
+    assert!(
+        html.contains("title=\"Doc comment, expected in Rust\""),
+        "HTML output should mark pub fn doc comment rows as expected:\n{html}"
+    );
+
+    // 2. Expanding a C++ doc comment with an extra paragraph on a `pub fn` is
+    //    also an expected addition.
+    let cpp_with_doc = "// Returns the lamp level.\nuint32_t lamp_level(const Lamp& lamp) {\n  return lamp.level();\n}\n";
+    let rust_expanded_doc = "/// Returns the lamp level.\n///\n/// The returned value is in candelas.\npub fn lamp_level(lamp: &Lamp) -> u32 {\n    lamp.level()\n}\n";
+    assert!(only_issues(cpp_with_doc, rust_expanded_doc).is_empty());
+
+    // 3. Adding a doc comment to a private `fn` where C++ has none is still an issue.
+    let private_doc = "/// Returns the current brightness level.\nfn lamp_level(lamp: &Lamp) -> u32 {\n    lamp.level()\n}\n";
+    assert_eq!(
+        only_issues(
+            "uint32_t lamp_level(const Lamp& lamp) {\n  return lamp.level();\n}\n",
+            private_doc
+        ),
+        [
+            "doc comment added in Rust where the C++ function has none; a conversion adds no comments other than SAFETY"
+        ]
+    );
+
+    // 4. Adding a non-SAFETY in-body comment inside a `pub fn` is still an issue.
+    let in_body_comment = "pub fn lamp_level(lamp: &Lamp) -> u32 {\n    // Query the hardware register.\n    lamp.level()\n}\n";
+    assert_eq!(
+        only_issues(
+            "uint32_t lamp_level(const Lamp& lamp) {\n  return lamp.level();\n}\n",
+            in_body_comment
+        ),
+        ["comment added in Rust; a conversion adds no comments other than SAFETY"]
+    );
+
+    // 5. Dropping a C++ doc comment on a `pub fn` is still an issue.
+    let dropped_doc = "pub fn lamp_level(lamp: &Lamp) -> u32 {\n    lamp.level()\n}\n";
+    assert_eq!(only_issues(cpp_with_doc, dropped_doc), ["comment only in C++"]);
 }

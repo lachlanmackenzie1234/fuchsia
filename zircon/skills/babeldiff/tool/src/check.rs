@@ -323,10 +323,11 @@ pub fn check_with(
                 let u = &rust.units[j];
                 let moved =
                     find_moved(u, &cpp.units, &unmatched_c).map(|i| cpp.units[i].start_line);
-                // Safety comments and plumbing are expected additions, not
-                // findings.
+                // Safety comments, doc comments on `pub` functions, and plumbing
+                // are expected additions, not findings.
                 let expected = claimed.contains(&j)
-                    || u.kind == UnitKind::Comment && u.features.safety
+                    || u.kind == UnitKind::Comment
+                        && (u.features.safety || rust.is_pub && new_doc(rust, j))
                     || u.features.lock_plumbing
                     || u.features.plumbing;
                 // A doc comment for a C++ function that had none is new
@@ -473,11 +474,7 @@ fn unadapted_comment_idents(
         }
     }
     if !unadapted.is_empty() {
-        let list = unadapted
-            .iter()
-            .map(|s| format!("`{s}`"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let list = unadapted.iter().map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ");
         notes.push(Note::new(
             Severity::Issue,
             Category::Comment,
@@ -1038,7 +1035,7 @@ fn assert_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
 }
 
 /// Whether the unit at `j` is part of the function's leading doc comment.
-fn new_doc(f: &Function, j: usize) -> bool {
+pub(crate) fn new_doc(f: &Function, j: usize) -> bool {
     f.units[j].kind == UnitKind::Comment
         && f.units[j + 1..]
             .iter()
@@ -1618,16 +1615,11 @@ fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
         if !y.starts_with("cpp_") {
             return true;
         }
-        let Some(h) = elsewhere
-            .iter()
-            .find(|h| crate::normalize::ident(&h.base) == **y)
-        else {
+        let Some(h) = elsewhere.iter().find(|h| crate::normalize::ident(&h.base) == **y) else {
             return true;
         };
         if !h.calls.is_empty()
-            && h.calls
-                .iter()
-                .all(|hc| fa.calls.contains(hc) || name_matches(hc, fa))
+            && h.calls.iter().all(|hc| fa.calls.contains(hc) || name_matches(hc, fa))
         {
             only_a.retain(|x| !h.calls.contains(x));
             return false;
@@ -1649,10 +1641,7 @@ fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
     // (`ScopedOomKtrace::new()`) share the same stem once `scoped_`/`auto_`
     // and `_duration`/`_guard`/`_scope` are stripped.
     fn guard_stem(s: &str) -> &str {
-        let s = s
-            .strip_prefix("scoped_")
-            .or_else(|| s.strip_prefix("auto_"))
-            .unwrap_or(s);
+        let s = s.strip_prefix("scoped_").or_else(|| s.strip_prefix("auto_")).unwrap_or(s);
         s.strip_suffix("_duration")
             .or_else(|| s.strip_suffix("_guard"))
             .or_else(|| s.strip_suffix("_scope"))
@@ -1676,9 +1665,7 @@ fn compare(a: &Unit, b: &Unit, elsewhere: &[&Function], notes: &mut Vec<Note>) {
     // Functional-style C++ type cast passed to a helper named after the type
     // (`PressureLevelToString(PressureLevel(i))`).
     only_a.retain(|x| {
-        !fb.calls
-            .iter()
-            .any(|c| fa.calls.contains(c) && c.starts_with(&format!("{x}_")))
+        !fb.calls.iter().any(|c| fa.calls.contains(c) && c.starts_with(&format!("{x}_")))
     });
     for (x, y) in crate::normalize::EQUIVALENT_CALLS {
         let (i, j) = (
@@ -1715,10 +1702,7 @@ fn equivalent_kinds(a: UnitKind, b: UnitKind) -> bool {
 /// Whether a call on one side is a field or accessor on the other: C++
 /// `allocation()` and Rust `self.allocation`, or `set_key(k)` and `key_ = k`.
 fn name_matches(call: &str, other: &crate::model::Features) -> bool {
-    let stripped = call
-        .strip_prefix("set_")
-        .or_else(|| call.strip_prefix("get_"))
-        .unwrap_or(call);
+    let stripped = call.strip_prefix("set_").or_else(|| call.strip_prefix("get_")).unwrap_or(call);
     let bare = stripped.replace('_', "");
     other.names.contains(&bare)
         || other.idents.contains(&bare)
@@ -1968,11 +1952,7 @@ pub fn summarize(cpp: &Function, rust: &Function, rows: &[Row]) -> Summary {
     let mut skipped_cpp = Vec::new();
     let mut k = 0;
     while k < rows.len() {
-        if rows[k]
-            .notes
-            .iter()
-            .any(|n| n.message.ends_with(EXHAUSTIVE_DEFAULT_WHY))
-        {
+        if rows[k].notes.iter().any(|n| n.message.ends_with(EXHAUSTIVE_DEFAULT_WHY)) {
             if let Some(i) = rows[k].cpp {
                 let depth = cpp.units[i].depth;
                 skipped_cpp.push(i);

@@ -119,7 +119,8 @@ with `file:line` references on both sides. The marker column is:
 
 Rust safety comments (`// SAFETY: ...` and `# Safety` doc sections) are
 expected additions: they are shown, marked `>`, with no finding, and never
-aligned with a C++ comment.
+aligned with a C++ comment. Doc comments on `pub` Rust functions where the
+C++ function had none are also expected additions.
 
 Locking is compared through ksync's differences from C++. `ksync::lock!(let g
 = self.lock.lock())`, `self.read_lock()`, `self.write_lock()` and a

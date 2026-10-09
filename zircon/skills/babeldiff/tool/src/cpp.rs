@@ -27,16 +27,9 @@ pub fn extract(path: &str, src: &str) -> CppFile {
     let lines = crate::extract::split_lines(src);
     let src = &mask_annotations(src);
     let tree = ts::parse(Lang::Cpp, src);
-    let mut out = CppFile {
-        functions: Vec::new(),
-        decl_comments: HashMap::new(),
-        bases: HashMap::new(),
-    };
-    let ctx = Ctx {
-        path,
-        src: src.as_bytes(),
-        lines: &lines,
-    };
+    let mut out =
+        CppFile { functions: Vec::new(), decl_comments: HashMap::new(), bases: HashMap::new() };
+    let ctx = Ctx { path, src: src.as_bytes(), lines: &lines };
     ctx.walk_scope(tree.root_node(), &[], &mut out);
     out
 }
@@ -120,17 +113,11 @@ impl<'a> Ctx<'a> {
             let bases: Vec<String> = ts::named_children(c)
                 .into_iter()
                 .filter(|b| {
-                    matches!(
-                        b.kind(),
-                        "type_identifier" | "qualified_identifier" | "template_type"
-                    )
+                    matches!(b.kind(), "type_identifier" | "qualified_identifier" | "template_type")
                 })
                 .map(|b| unqualified_type(self.text(b)))
                 .collect();
-            out.bases
-                .entry(unqualified_type(self.text(name)))
-                .or_default()
-                .extend(bases);
+            out.bases.entry(unqualified_type(self.text(name))).or_default().extend(bases);
         }
         self.walk_scope(body, &path, out);
         self.synthesize_member_init_ctor(name, body, &path, out);
@@ -153,10 +140,7 @@ impl<'a> Ctx<'a> {
         }
         let mut fields = Vec::new();
         self.collect_data_fields(body, &mut fields);
-        if !fields
-            .iter()
-            .any(|f| f.child_by_field_name("default_value").is_some())
-        {
+        if !fields.iter().any(|f| f.child_by_field_name("default_value").is_some()) {
             return;
         }
         let start = ts::line(*fields.first().unwrap());
@@ -216,18 +200,12 @@ impl<'a> Ctx<'a> {
             b.push(UnitKind::Stmt, ts::line(fd), ts::end_line(fd), 1, f);
         }
 
-        let mut calls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.calls.clone())
-            .collect();
+        let mut calls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.calls.clone()).collect();
         calls.sort();
         calls.dedup();
-        let mut qcalls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.qcalls.clone())
-            .collect();
+        let mut qcalls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.qcalls.clone()).collect();
         qcalls.sort();
         qcalls.dedup();
         let cls = path.join("::");
@@ -245,6 +223,7 @@ impl<'a> Ctx<'a> {
             calls,
             qcalls,
             is_ffi: false,
+            is_pub: false,
             test_only: false,
         });
     }
@@ -253,9 +232,8 @@ impl<'a> Ctx<'a> {
         for c in ts::named_children(scope) {
             match c.kind() {
                 "function_definition" | "declaration" | "field_declaration" => {
-                    if let Some(fdecl) = c
-                        .child_by_field_name("declarator")
-                        .and_then(find_function_declarator)
+                    if let Some(fdecl) =
+                        c.child_by_field_name("declarator").and_then(find_function_declarator)
                     {
                         if let Some(n) = fdecl.child_by_field_name("declarator") {
                             if unqualified_type(self.text(n)) == base_cls {
@@ -336,9 +314,7 @@ impl<'a> Ctx<'a> {
                 .map(|l| self.lines.get(l - 1).cloned().unwrap_or_default())
                 .collect();
         }
-        out.decl_comments
-            .entry((cls.unwrap_or_default(), base))
-            .or_insert(b.units);
+        out.decl_comments.entry((cls.unwrap_or_default(), base)).or_insert(b.units);
     }
 
     /// Adds comment units for the comments directly above `outer` and returns
@@ -404,19 +380,15 @@ impl<'a> Ctx<'a> {
                     continue;
                 }
                 let text = self.lines.get(u.start_line - 1).map_or("", |l| l.trim());
-                if OUT
-                    .captures(text)
-                    .is_some_and(|c| outs.contains(&c[1].to_string()))
-                {
+                if OUT.captures(text).is_some_and(|c| outs.contains(&c[1].to_string())) {
                     u.features.plumbing = true;
                 }
             }
         }
         // `return Foo();` in a function returning a status passes Foo's status
         // on, which Rust writes `foo()?; Ok(())`.
-        let returns_status = n
-            .child_by_field_name("type")
-            .is_some_and(|t| self.text(t) == "zx_status_t");
+        let returns_status =
+            n.child_by_field_name("type").is_some_and(|t| self.text(t) == "zx_status_t");
         if returns_status {
             for u in &mut b.units {
                 if u.kind == UnitKind::Return
@@ -434,18 +406,12 @@ impl<'a> Ctx<'a> {
         branch_status(&mut b.units, self.lines);
 
         let end = ts::end_line(n);
-        let mut calls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.calls.clone())
-            .collect();
+        let mut calls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.calls.clone()).collect();
         calls.sort();
         calls.dedup();
-        let mut qcalls: Vec<String> = b
-            .units
-            .iter()
-            .flat_map(|u| u.features.qcalls.clone())
-            .collect();
+        let mut qcalls: Vec<String> =
+            b.units.iter().flat_map(|u| u.features.qcalls.clone()).collect();
         qcalls.sort();
         qcalls.dedup();
         let name = match &cls {
@@ -465,6 +431,7 @@ impl<'a> Ctx<'a> {
             calls,
             qcalls,
             is_ffi: false,
+            is_pub: false,
             test_only: false,
         })
     }
@@ -540,15 +507,10 @@ impl<'a> Ctx<'a> {
     /// one level deeper, then the `#elif`/`#else` that follows.
     fn preproc(&self, n: Node, depth: usize, b: &mut UnitBuilder) {
         let line = ts::line(n);
-        let cond = n
-            .child_by_field_name("condition")
-            .or_else(|| n.child_by_field_name("name"));
+        let cond = n.child_by_field_name("condition").or_else(|| n.child_by_field_name("name"));
         let alt = n.child_by_field_name("alternative");
         let directive = self.text(n).lines().next().unwrap_or("").to_string();
-        let f = Features {
-            idents: normalize::cfg_words(&directive),
-            ..Features::default()
-        };
+        let f = Features { idents: normalize::cfg_words(&directive), ..Features::default() };
         b.push(UnitKind::Cfg, line, line, depth, f);
         for c in ts::named_children(n) {
             if Some(c) == cond || Some(c) == alt {
@@ -604,13 +566,7 @@ impl<'a> Ctx<'a> {
                     let mut f = self.features(c, &[]);
                     self.conjuncts(c, &mut f.conjuncts);
                     b.push(UnitKind::If, cond_start, cond_end, depth + 1, f);
-                    b.push(
-                        UnitKind::Break,
-                        cond_end,
-                        cond_end,
-                        depth + 2,
-                        Features::default(),
-                    );
+                    b.push(UnitKind::Break, cond_end, cond_end, depth + 2, Features::default());
                 }
             }
             "switch_statement" => {
@@ -631,20 +587,12 @@ impl<'a> Ctx<'a> {
             }
             "case_statement" => self.case(n, depth, b),
             "return_statement" => self.return_statement(n, depth, b),
-            "break_statement" => b.push(
-                UnitKind::Break,
-                line,
-                ts::end_line(n),
-                depth,
-                Features::default(),
-            ),
-            "continue_statement" => b.push(
-                UnitKind::Continue,
-                line,
-                ts::end_line(n),
-                depth,
-                Features::default(),
-            ),
+            "break_statement" => {
+                b.push(UnitKind::Break, line, ts::end_line(n), depth, Features::default())
+            }
+            "continue_statement" => {
+                b.push(UnitKind::Continue, line, ts::end_line(n), depth, Features::default())
+            }
             "goto_statement" => {
                 let f = self.features(n, &[]);
                 b.push(UnitKind::Goto, line, ts::end_line(n), depth, f)
@@ -671,10 +619,8 @@ impl<'a> Ctx<'a> {
     fn plain(&self, n: Node, depth: usize, b: &mut UnitBuilder) {
         let mut lambdas = Vec::new();
         find_bodies(n, &mut lambdas);
-        let lambdas: Vec<Node> = lambdas
-            .into_iter()
-            .filter(|l| ts::end_line(*l) > ts::line(*l))
-            .collect();
+        let lambdas: Vec<Node> =
+            lambdas.into_iter().filter(|l| ts::end_line(*l) > ts::line(*l)).collect();
         let mut f = self.features(n, &lambdas);
         f.plumbing = self.is_plumbing(n, &f);
         let end = lambdas.first().map_or(ts::end_line(n), |l| ts::line(*l));
@@ -750,9 +696,9 @@ impl<'a> Ctx<'a> {
                 // Constructing a class type is a call (see `collect`).
                 f.calls.is_empty()
             }
-            "init_declarator" => d
-                .child_by_field_name("value")
-                .is_some_and(|v| is_pure_or_accessor(v, self.src)),
+            "init_declarator" => {
+                d.child_by_field_name("value").is_some_and(|v| is_pure_or_accessor(v, self.src))
+            }
             _ => false,
         })
     }
@@ -820,15 +766,11 @@ impl<'a> Ctx<'a> {
     }
 
     fn return_statement(&self, n: Node, depth: usize, b: &mut UnitBuilder) {
-        let expr = ts::named_children(n)
-            .into_iter()
-            .find(|c| !ts::is_comment(*c));
+        let expr = ts::named_children(n).into_iter().find(|c| !ts::is_comment(*c));
         let (line, end) = (ts::line(n), ts::end_line(n));
         // `return c ? a : b;` reads as `if c { return a } else { return b }`,
         // which is how Rust spells it.
-        if let Some(cond) = expr
-            .map(strip_parens)
-            .filter(|e| e.kind() == "conditional_expression")
+        if let Some(cond) = expr.map(strip_parens).filter(|e| e.kind() == "conditional_expression")
         {
             if let (Some(c), Some(t), Some(e)) = (
                 cond.child_by_field_name("condition"),
@@ -964,11 +906,7 @@ impl<'a> Ctx<'a> {
         if let Some(c) = cond {
             self.conjuncts(c, &mut f.conjuncts);
         }
-        let kind = if is_else_if {
-            UnitKind::ElseIf
-        } else {
-            UnitKind::If
-        };
+        let kind = if is_else_if { UnitKind::ElseIf } else { UnitKind::If };
         let d = if is_else_if { depth - 1 } else { depth };
         let mut line = line;
         // `zx_status_t status = Foo(); if (status != ZX_OK) { ... }` checks
@@ -1000,24 +938,13 @@ impl<'a> Ctx<'a> {
         }
         if let Some(a) = alt {
             // else_clause: `else` followed by a statement.
-            let inner = ts::named_children(a)
-                .into_iter()
-                .find(|x| !ts::is_comment(*x));
+            let inner = ts::named_children(a).into_iter().find(|x| !ts::is_comment(*x));
             match inner {
                 Some(i) if i.kind() == "if_statement" => self.if_statement(i, d + 1, true, b),
                 Some(i) => {
-                    let header_end = if i.kind() == "compound_statement" {
-                        ts::line(i)
-                    } else {
-                        ts::line(a)
-                    };
-                    b.push(
-                        UnitKind::Else,
-                        ts::line(a),
-                        header_end,
-                        d,
-                        Features::default(),
-                    );
+                    let header_end =
+                        if i.kind() == "compound_statement" { ts::line(i) } else { ts::line(a) };
+                    b.push(UnitKind::Else, ts::line(a), header_end, d, Features::default());
                     self.body(i, d + 1, b);
                 }
                 None => {}
@@ -1036,14 +963,11 @@ impl<'a> Ctx<'a> {
         };
         let n = strip_parens(n);
         if n.kind() == "binary_expression" {
-            let op = n
-                .child_by_field_name("operator")
-                .map_or("", |o| self.text(o));
+            let op = n.child_by_field_name("operator").map_or("", |o| self.text(o));
             if matches!(op, "&&" | "||" | "and" | "or") {
-                if let (Some(l), Some(r)) = (
-                    n.child_by_field_name("left"),
-                    n.child_by_field_name("right"),
-                ) {
+                if let (Some(l), Some(r)) =
+                    (n.child_by_field_name("left"), n.child_by_field_name("right"))
+                {
                     self.conjuncts(l, out);
                     self.conjuncts(r, out);
                     return;
@@ -1051,11 +975,7 @@ impl<'a> Ctx<'a> {
             }
         }
         out.push(crate::model::Conjunct {
-            text: self
-                .text(n)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" "),
+            text: self.text(n).split_whitespace().collect::<Vec<_>>().join(" "),
             names: self.features(n, &[]).names,
         });
     }
@@ -1077,9 +997,7 @@ impl<'a> Ctx<'a> {
         static HINT: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^\(\s*(?:un)?likely\s*(\(.*\))\s*\)$").unwrap());
         let text = self.text(cond).trim();
-        let text = HINT
-            .captures(text)
-            .map_or(text, |c| c.get(1).map_or(text, |m| m.as_str()));
+        let text = HINT.captures(text).map_or(text, |c| c.get(1).map_or(text, |m| m.as_str()));
         let c = NULL.captures(text)?;
         let var = (1..=3).find_map(|i| c.get(i))?.as_str().to_string();
         let ret = single_statement(cons)?;
@@ -1102,10 +1020,8 @@ impl<'a> Ctx<'a> {
             return false;
         }
         let ret = if cons.kind() == "compound_statement" {
-            let stmts: Vec<Node> = ts::named_children(cons)
-                .into_iter()
-                .filter(|c| !ts::is_comment(*c))
-                .collect();
+            let stmts: Vec<Node> =
+                ts::named_children(cons).into_iter().filter(|c| !ts::is_comment(*c)).collect();
             if stmts.len() != 1 {
                 return false;
             }
@@ -1116,9 +1032,7 @@ impl<'a> Ctx<'a> {
         if ret.kind() != "return_statement" {
             return false;
         }
-        let expr = ts::named_children(ret)
-            .into_iter()
-            .find(|c| !ts::is_comment(*c));
+        let expr = ts::named_children(ret).into_iter().find(|c| !ts::is_comment(*c));
         expr.is_some_and(|e| ts::classify_return(self.text(e)) == Ret::Status)
     }
 }
@@ -1286,9 +1200,8 @@ fn find_bodies<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
 fn find_function_declarator(n: Node) -> Option<Node> {
     if n.kind() == "function_declarator" {
         // `Foo(int x) TA_REQ(lock_)` parses as the macro "calling" `Foo(...)`.
-        if let Some(inner) = n
-            .child_by_field_name("declarator")
-            .filter(|d| d.kind() == "function_declarator")
+        if let Some(inner) =
+            n.child_by_field_name("declarator").filter(|d| d.kind() == "function_declarator")
         {
             return find_function_declarator(inner);
         }
@@ -1339,11 +1252,7 @@ fn split_name(name: &str, class: &[String]) -> (Option<String>, String) {
         i += 1;
     }
     let base = cur;
-    let cls = if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("::"))
-    };
+    let cls = if parts.is_empty() { None } else { Some(parts.join("::")) };
     (cls, base)
 }
 
@@ -1371,10 +1280,7 @@ fn is_pure_or_accessor(v: Node, src: &[u8]) -> bool {
             let no_args = c
                 .child_by_field_name("arguments")
                 .is_some_and(|a| ts::named_children(a).iter().all(|x| ts::is_comment(*x)));
-            let name = c
-                .child_by_field_name("function")
-                .map(|f| ts::text(f, src))
-                .unwrap_or("");
+            let name = c.child_by_field_name("function").map(|f| ts::text(f, src)).unwrap_or("");
             no_args && !crate::normalize::is_mutating(name)
         }
         _ => false,
@@ -1412,10 +1318,8 @@ fn single_statement(n: Node) -> Option<Node> {
     if n.kind() != "compound_statement" {
         return Some(n);
     }
-    let stmts: Vec<Node> = ts::named_children(n)
-        .into_iter()
-        .filter(|c| !ts::is_comment(*c))
-        .collect();
+    let stmts: Vec<Node> =
+        ts::named_children(n).into_iter().filter(|c| !ts::is_comment(*c)).collect();
     (stmts.len() == 1).then(|| stmts[0])
 }
 
@@ -1431,9 +1335,7 @@ fn mask_annotations(src: &str) -> String {
         .unwrap()
     });
     let masked = TA.replace_all(src, |c: &regex::Captures| {
-        c[0].chars()
-            .map(|ch| if ch == '\n' { '\n' } else { ' ' })
-            .collect::<String>()
+        c[0].chars().map(|ch| if ch == '\n' { '\n' } else { ' ' }).collect::<String>()
     });
     rewrite_init_captures(&masked)
 }
@@ -1467,10 +1369,7 @@ mod tests {
     fn rewrites_brace_init_captures() {
         let src = "auto f = [this, it{v.begin()}, n{3}](int x) mutable { return x; };";
         let out = super::rewrite_init_captures(src);
-        assert_eq!(
-            out,
-            "auto f = [this, it=v.begin() , n=3 ](int x) mutable { return x; };"
-        );
+        assert_eq!(out, "auto f = [this, it=v.begin() , n=3 ](int x) mutable { return x; };");
         assert_eq!(out.len(), src.len());
         // Array subscripts and plain captures are left alone.
         let plain = "a[i] = b[j]; auto g = [&x](int y) { return y; };";
@@ -1482,13 +1381,7 @@ mod tests {
         let src = "extern \"C\" {\nFFI_ALWAYS_INLINE zx_status_t\ncpp_memory_watchdog_halt_token_wait_for_ack(const Deadline* deadline) {\n  return HaltToken::Get().WaitForAck(*deadline);\n}\n}\n";
         let file = super::extract("memory_watchdog.cc", src);
         assert_eq!(file.functions.len(), 1);
-        assert_eq!(
-            file.functions[0].base,
-            "cpp_memory_watchdog_halt_token_wait_for_ack"
-        );
-        assert_eq!(
-            file.functions[0].name,
-            "cpp_memory_watchdog_halt_token_wait_for_ack"
-        );
+        assert_eq!(file.functions[0].base, "cpp_memory_watchdog_halt_token_wait_for_ack");
+        assert_eq!(file.functions[0].name, "cpp_memory_watchdog_halt_token_wait_for_ack");
     }
 }
