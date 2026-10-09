@@ -150,6 +150,20 @@ Orchestrator **MUST** verify that actual repository files were modified:
 
 ### Step 5: Review Phase
 
+Before messaging the Reviewer, run `babeldiff` on the working tree changes
+(build it first as described in `zircon/skills/babeldiff/SKILL.md`). The
+Reviewer has read-only tools and cannot run it. Running the tool and forwarding
+its output is part of routing, like the Git Verification Gate; the Orchestrator
+does not interpret the findings, and none of the agents read or debug
+`babeldiff`'s source while running this workflow. `git diff HEAD` omits
+untracked files, so first run `git add -N` on the new files listed by `git
+status -s`:
+
+```bash
+git diff HEAD | ./zircon/skills/babeldiff/tool/target/release/babeldiff \
+  patch -C . --base HEAD --summary --issues-only || [ $? -eq 1 ]
+```
+
 Send a message to the Reviewer subagent pointing to the actual in-tree files and
 git diff:
 
@@ -163,6 +177,9 @@ git diff:
 > Please inspect the real files in tree, review against `zircon/skills/cpp-to-rust-rubric/SKILL.md`
 > (and `zircon/skills/cpp-to-rust-dispatcher/SKILL.md` if applicable), and generate a
 > structured review report with an "Actionable Instructions" section.
+>
+> `babeldiff` output for this change:
+> `<babeldiff --summary --issues-only output>`
 
 Once the Reviewer completes the review:
 1.  Read the Reviewer's report.

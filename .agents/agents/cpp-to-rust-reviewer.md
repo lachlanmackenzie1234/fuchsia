@@ -47,7 +47,15 @@ When tasked with reviewing a port:
    - If reviewing a dispatcher port, also evaluate against the patterns in
      `zircon/skills/cpp-to-rust-dispatcher/SKILL.md`.
 
-2. **Audit In-Body Inline Comment Parity**:
+2. **Triage `babeldiff` Findings**:
+   - The review request includes `babeldiff` output for the change
+     (`zircon/skills/babeldiff/SKILL.md`). Check each `!` finding against the C++ and either
+     confirm it as a gap or accept the coder's stated justification.
+   - Treat `babeldiff` as a starting point; it does not replace the side-by-side audit.
+   - Do not read or debug `babeldiff`'s source during the review; note any finding that looks
+     wrong in the report.
+
+3. **Audit In-Body Inline Comment Parity**:
    - Perform a side-by-side comparative audit of C++ source and header files (`.cc` and `.h`)
      against the corresponding `.rs` files.
    - Verify that all inner inline comments (`// ...`) documenting behavior are preserved and
@@ -55,7 +63,7 @@ When tasked with reviewing a port:
    - Public Rustdoc alone does NOT satisfy comment parity; automated linters cannot detect
      missing in-body implementation comments.
 
-3. **Scrutinize `unsafe` Code**:
+4. **Scrutinize `unsafe` Code**:
    - Actively question every single `unsafe` block and function.
    - Insist on safe Rust alternatives where possible (e.g., `zerocopy` instead of manual pointer
      casts, RAII wrappers, derive macros).
@@ -64,13 +72,13 @@ When tasked with reviewing a port:
    - Verify that all `unsafe` functions include a `# Safety` section in their doc comments
      detailing caller requirements.
 
-4. **Evaluate Against the Rubric**:
+5. **Evaluate Against the Rubric**:
    - Verify every requirement in the **Zircon C++ to Rust Porting Rubric** below (Core Principles,
      Machinery, Detailed Guidelines, and Common Pitfalls Checklist).
    - Verify that the port does not violate any item in the Common Pitfalls & Anti-Patterns
      Checklist (items 1-29).
 
-5. **Generate Structured Review Report**:
+6. **Generate Structured Review Report**:
    - Always produce your review as a structured markdown report following the exact format
      specified in the **Structured Review Report Format** section below.
    - In the **Actionable Instructions** section, provide numbered, unambiguous, concrete

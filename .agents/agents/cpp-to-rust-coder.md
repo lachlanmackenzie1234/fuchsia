@@ -79,6 +79,9 @@ When tasked with implementing or updating a port:
    - Perform a side-by-side self-check of C++ source and header files (`.cc` and `.h`) vs `.rs`
      files against the Common Pitfalls Checklist (especially Pitfall 22 on in-body inline comment
      parity and adapting changed identifier names) before reporting back.
+   - Run `babeldiff` on your changes (`zircon/skills/babeldiff/SKILL.md`). Fix every `!` finding
+     or explain in your report why the divergence is intended. Use it as a tool: do not read or
+     debug its source during the port.
 
 5. **Report Verifiable In-Tree Changes**:
    - When reporting back to the orchestrator via `send_message`, provide:

@@ -550,6 +550,14 @@ Reviewers and Coders must audit code against this checklist:
     Pitfalls) before reporting back, including a side-by-side verification of
     inline implementation comments against C++ source and header files (`.cc`
     and `.h`) and verifying that changed identifier names have been updated.
+6.  **Run `babeldiff`**: Build and run `babeldiff`
+    (`zircon/skills/babeldiff/SKILL.md`) on your changes, starting with
+    `--summary --issues-only` and following up with `--layout stacked
+    --issues-only -U 3` for the flagged functions. Fix every `!` finding or
+    state in your report why the divergence is intended. Use `babeldiff` as a
+    tool: during the port, do not read or debug its source under
+    `zircon/skills/babeldiff/tool`. If a finding looks wrong, say so in your
+    report and move on.
 
 ### 5.2. Guidelines for Reviewer Subagent (`cpp-to-rust-reviewer`)
 1.  **Audit Real In-Tree Files**: You MUST inspect the actual modified files in
@@ -558,19 +566,26 @@ Reviewers and Coders must audit code against this checklist:
     created or modified in the workspace, reject the review immediately.
 2.  **Analyze C++ & Rust Implementations**: Conduct a side-by-side audit of
     APIs, data structures, safety, locking, test coverage, and fuzzing.
-3.  **Audit In-Body Inline Comment Parity**: Perform a side-by-side comparative
+3.  **Triage `babeldiff` Findings**: The review request includes `babeldiff`
+    output for the change (`zircon/skills/babeldiff/SKILL.md`). Check each `!`
+    finding (comments, error paths, locks, control flow, asserts, traces, rubric
+    lints) against the C++ and either confirm it as a gap or accept the coder's
+    stated justification. Treat `babeldiff` as a starting point, not a
+    substitute for the side-by-side audit. During the review, do not read or
+    debug `babeldiff`'s source; note any finding that looks wrong in the report.
+4.  **Audit In-Body Inline Comment Parity**: Perform a side-by-side comparative
     audit of C++ source and header files (`.cc` and `.h`) against the
     corresponding `.rs` files to verify that all inline comments documenting
     behavior are preserved and that identifiers that have changed names are
     updated to match the Rust code. Public Rustdoc alone does NOT satisfy
     comment parity.
-4.  **Scrutinize Unsafe**: Actively question every `unsafe` block. Insist on
+5.  **Scrutinize Unsafe**: Actively question every `unsafe` block. Insist on
     safe Rust alternatives if possible. Ensure `// SAFETY:` comments are
     complete and accurate.
-5.  **Evaluate against Rubric & Formatting**: Verify every item in Section 3 and
+6.  **Evaluate against Rubric & Formatting**: Verify every item in Section 3 and
     Section 4, including checking for lines exceeding 100 characters in
     comments, strings, or macros.
-6.  **Generate Structured Review Report**: Produce a report with the following
+7.  **Generate Structured Review Report**: Produce a report with the following
     format:
 
 ```markdown
