@@ -73,21 +73,17 @@ _all_named_fuchsia_envs += [
   },
 ]
 
-crosvm_env = {
+crosvm_arm64_env = {
   dimensions = {
     device_type = device_types.crosvm
+    host_device_type = host_device_types.gcp_c4a_highmem_96_bm
   }
 }
 
-# TODO(https://fxbug.dev/371274109): Unconditionally add when arm64 crosvm
-# support is present.
-if (target_cpu == "x64") {
-  _all_named_fuchsia_envs += [
-    {
-      name = "crosvm"
-      env = crosvm_env
-    },
-  ]
+crosvm_x64_env = {
+  dimensions = {
+    device_type = device_types.crosvm
+  }
 }
 
 bt_lacewing_sherlock_env = {
@@ -535,6 +531,25 @@ _all_named_fuchsia_envs += [
 ]
 
 # LINT.ThenChange(//build/testing/environments/BUILD.bazel:environments)
+
+if (target_cpu == "x64") {
+  crosvm_env = crosvm_x64_env
+} else if (target_cpu == "arm64") {
+  crosvm_env = crosvm_arm64_env
+} else {
+  crosvm_env = crosvm_x64_env
+}
+
+# TODO(https://fxbug.dev/371274109): Unconditionally add when arm64 crosvm
+# support is present.
+if (target_cpu == "x64") {
+  _all_named_fuchsia_envs += [
+    {
+      name = "crosvm"
+      env = crosvm_env
+    },
+  ]
+}
 
 with_display_envs = [
   aemu_env,
