@@ -125,7 +125,15 @@ impl<'a> ConfigQuery<'a> {
             (src, _) => src,
         };
 
-        Ok(ConfigValue::new(mapped.value, source))
+        let result = ConfigValue::new(mapped.value, source);
+
+        if let Some(name) = self.name {
+            if let Some(val) = result.value() {
+                ctx.record_query(name, val);
+            }
+        }
+
+        Ok(result)
     }
 
     fn eval_strict<T: ValueStrategy>(
@@ -206,6 +214,13 @@ impl<'a> ConfigQuery<'a> {
         let ctx = context;
         T::validate_query(self)?;
         let cv = self.get_config(ctx)?;
+
+        if let Some(name) = self.name {
+            if let Some(val) = cv.value() {
+                context.record_query(name, val);
+            }
+        }
+
         self.add_key_to_error(T::try_convert(cv))
     }
 
