@@ -37,9 +37,6 @@ pub use bitmap::IdSpan;
 pub use booleans::{ConditionalBoolean, ConditionalBooleanId};
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
-pub use constraints::{
-    ConstraintOperator, ConstraintSubject, ConstraintTerm, MlsOperands, MlsOperator, NameExpression,
-};
 pub use context::{Context, MlsLevel, MlsRange};
 use error::{ParseError, SerializeError, ValidateError};
 pub use filename_transitions::FilenameTransitions;

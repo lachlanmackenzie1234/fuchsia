@@ -6,8 +6,6 @@ pub mod error;
 pub mod parsed_policy;
 pub mod parser;
 
-mod constraints;
-
 pub use crate::kernel::FsUseLabelAndType;
 use crate::kernel::PolicyIndex;
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};

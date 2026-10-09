@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::constraints::evaluate_constraint;
 use super::error::ParseError;
 use super::parser::PolicyData;
 use super::{
@@ -138,7 +137,7 @@ impl ParsedPolicy {
     ) -> AccessVector {
         let mut denied = AccessVector::NONE;
         for constraint in target_class.constraints() {
-            if !evaluate_constraint(constraint.constraint_expr(), source_context, target_context) {
+            if !constraint.evaluate(source_context, target_context) {
                 denied |= constraint.access_vector();
             }
         }
