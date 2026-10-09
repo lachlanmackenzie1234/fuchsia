@@ -159,9 +159,36 @@ struct KeyedHeap<K, V, T> {
     heap: BinaryHeap<HeapEntry<T, K>>,
 }
 
+/// The lower bound for heap garbage collection.
+const GC_MIN_HEAP_SIZE: usize = 20;
+
 impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
     fn new() -> Self {
         Self { map: HashMap::new(), heap: BinaryHeap::new() }
+    }
+
+    /// Garbage collects stale entries from `heap`.
+    ///
+    /// Bounds the heap size to 2 times the map size (or `GC_MIN_HEAP_SIZE` for
+    /// small heaps). Returns `true` if garbage collection was performed.
+    fn maybe_gc(&mut self) -> bool {
+        let Self { map, heap } = self;
+        let threshold = GC_MIN_HEAP_SIZE.max(map.len() * 2);
+        if heap.len() > threshold {
+            // NB: Rebuilding the heap from scratch is expected to be more
+            // efficient than removing the stale entries. At least half the
+            // heap is stale.
+            heap.clear();
+            heap.extend(map.iter_mut().map(
+                |(key, MapEntry { time, value: _, synced_with_heap })| {
+                    *synced_with_heap = true;
+                    HeapEntry { time: *time, key: key.clone() }
+                },
+            ));
+            true
+        } else {
+            false
+        }
     }
 
     /// Schedules `key` with associated `value` at time `at`.
@@ -199,11 +226,21 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
                 (heap_entry, None)
             }
         };
-        if let Some(heap_entry) = heap_entry {
-            heap.push(heap_entry);
-        }
+        let did_gc = match heap_entry {
+            Some(heap_entry) => {
+                heap.push(heap_entry);
+                self.maybe_gc()
+            }
+            None => false,
+        };
         if was_front && !is_new_front {
-            let new_top = self.heal().expect("heap cannot be empty after a `schedule` operation");
+            // NB: If GC ran, the heap is already healed.
+            let new_top = if did_gc {
+                self.heap.peek().map(|HeapEntry { time, key: _ }| *time)
+            } else {
+                self.heal()
+            }
+            .expect("heap cannot be empty after a `schedule` operation");
             return (prev, Some(TimerChange::Scheduled(new_top)));
         }
         (prev, is_new_front.then_some(TimerChange::Scheduled(at)))
@@ -220,9 +257,18 @@ impl<K: Hash + Eq + Clone, V, T: Instant> KeyedHeap<K, V, T> {
         };
         // The front of the heap will be changed if we're cancelling the top.
         let was_front = heap.peek().is_some_and(|HeapEntry { time: _, key: top }| key == top);
-        let timer_change = was_front.then(|| match self.heal() {
-            Some(new_top) => TimerChange::Scheduled(new_top),
-            None => TimerChange::Canceled,
+        let did_gc = self.maybe_gc();
+        let timer_change = was_front.then(|| {
+            // NB: If GC ran, the heap is already healed.
+            let new_top = if did_gc {
+                self.heap.peek().map(|HeapEntry { time, key: _ }| *time)
+            } else {
+                self.heal()
+            };
+            match new_top {
+                Some(new_top) => TimerChange::Scheduled(new_top),
+                None => TimerChange::Canceled,
+            }
         });
         (Some((time, value)), timer_change)
     }
@@ -531,6 +577,10 @@ mod tests {
     type LocalTimerHeap = super::LocalTimerHeap<TimerId, (), FakeTimerCtx>;
 
     impl LocalTimerHeap {
+        fn heap_len(&self) -> usize {
+            self.heap.heap.len()
+        }
+
         #[track_caller]
         fn assert_heap_entries<I: IntoIterator<Item = (FakeInstant, TimerId)>>(&self, i: I) {
             let mut want = i.into_iter().collect::<Vec<_>>();
@@ -800,5 +850,88 @@ mod tests {
         heap.clear(&mut ctx);
         heap.assert_map_entries([]);
         assert_eq!(heap.next_wakeup.scheduled, None);
+    }
+
+    #[test]
+    fn reschedule_single_timer_will_trigger_gc() {
+        let mut ctx = FakeTimerCtx::default();
+        let mut heap = LocalTimerHeap::new(&mut ctx, ());
+
+        let mut next_time = FakeInstant { offset: Duration::from_secs(1000) };
+        assert_eq!(heap.schedule_instant(&mut ctx, TIMER1, (), next_time), None);
+
+        // Reschedule the timer to earlier, which will generate stale entries.
+        // The GC won't run until the `GC_MIN_HEAP_SIZE` threshold has been
+        // exceeded.
+        for i in 1..GC_MIN_HEAP_SIZE + 1 {
+            let prev_time = next_time;
+            next_time = next_time.checked_sub(Duration::from_secs(1)).unwrap();
+            assert_eq!(
+                heap.schedule_instant(&mut ctx, TIMER1, (), next_time),
+                Some((prev_time, ()))
+            );
+            if i == GC_MIN_HEAP_SIZE {
+                // Final Iteration: GC should have been triggered.
+                assert_eq!(heap.heap_len(), 1);
+            } else {
+                // Intermediate Iteration: GC should not have been triggered.
+                assert_eq!(heap.heap_len(), 1 + i);
+            }
+        }
+    }
+
+    #[test]
+    fn reschedule_multiple_timers_will_trigger_gc() {
+        let mut ctx = FakeTimerCtx::default();
+        let mut heap = LocalTimerHeap::new(&mut ctx, ());
+
+        // Setup `GC_MIN_HEAP_SIZE` independent timers.
+        let num_timers = GC_MIN_HEAP_SIZE;
+        for i in 0..num_timers {
+            assert_eq!(heap.schedule_instant(&mut ctx, TimerId(i), (), T3), None);
+        }
+        assert_eq!(heap.heap_len(), num_timers);
+
+        // Reschedule every timer to earlier, which will generate stale entries.
+        // The GC won't run because the `2*num_timers` threshold hasn't been
+        // exceeded.
+        for i in 0..num_timers {
+            assert_eq!(heap.schedule_instant(&mut ctx, TimerId(i), (), T2), Some((T3, ())));
+        }
+        assert_eq!(heap.heap_len(), num_timers * 2);
+
+        // Now that we're at the threshold, scheduling a timer again will
+        // trigger the GC.
+        assert_eq!(heap.schedule_instant(&mut ctx, TimerId(0), (), T1), Some((T2, ())));
+        assert_eq!(heap.heap_len(), num_timers);
+    }
+
+    #[test]
+    fn cancel_will_trigger_gc() {
+        let mut ctx = FakeTimerCtx::default();
+        let mut heap = LocalTimerHeap::new(&mut ctx, ());
+
+        // Setup a single timer at T1, and then `GC_MIN_HEAP_SIZE` independent
+        // timers at T2.
+        let num_timers = GC_MIN_HEAP_SIZE;
+        assert_eq!(heap.schedule_instant(&mut ctx, TimerId(num_timers), (), T1), None);
+        for i in 0..num_timers {
+            assert_eq!(heap.schedule_instant(&mut ctx, TimerId(i), (), T2), None);
+        }
+        assert_eq!(heap.heap_len(), num_timers + 1);
+
+        // Cancel the timers at T2. Because of the existence of the timer at T1,
+        // the heap's front doesn't change, and the canceled timers will remain
+        // as stale entries.
+        //
+        // We should be able to cancel num_timers / 2 timers, before GC
+        // exceeds the `2*num_timers` threshold and is triggered.
+        let tipping_point = num_timers / 2;
+        for i in 0..tipping_point {
+            assert_eq!(heap.cancel(&mut ctx, &TimerId(i)), Some((T2, ())));
+            assert_eq!(heap.heap_len(), num_timers + 1);
+        }
+        assert_eq!(heap.cancel(&mut ctx, &TimerId(tipping_point)), Some((T2, ())));
+        assert_eq!(heap.heap_len(), num_timers - tipping_point);
     }
 }
