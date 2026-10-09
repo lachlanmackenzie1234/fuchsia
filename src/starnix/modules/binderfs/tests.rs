@@ -7129,4 +7129,110 @@ pub mod tests {
         })
         .await;
     }
+
+    /// Dispatches a one-way `TXN_SECURITY_CTX` transaction into a receiver whose shared memory VMO
+    /// is pre-filled with `0xff` bytes, returning the backing VMO and allocated `security_context`
+    /// buffer descriptor.
+    fn execute_security_context_transaction(
+        current_task: &mut CurrentTask,
+    ) -> (MemoryObject, UserBuffer) {
+        let device = BinderDevice::default();
+        let sender = BinderProcessFixture::new_current(current_task, &device);
+        let receiver = BinderProcessFixture::new(current_task, &device);
+
+        let memory =
+            MemoryObject::from(zx::Vmo::create(VMO_LENGTH as u64).expect("failed to create VMO"));
+        // Pre-fill the VMO with non-zero bytes so tests can distinguish written NUL terminators
+        // from untouched alignment padding.
+        memory.write(&vec![0xffu8; VMO_LENGTH], 0).expect("failed to fill VMO");
+        *receiver.proc.shared_memory.lock() = Some(
+            SharedMemory::map(&memory, BASE_ADDR, VMO_LENGTH).expect("failed to map shared memory"),
+        );
+
+        const OBJECT_ADDR: UserAddress = UserAddress::const_from(0x01);
+        let (object, guard) = BinderObject::new(
+            &receiver.proc,
+            LocalBinderObject {
+                weak_ref_addr: OBJECT_ADDR,
+                strong_ref_addr: (OBJECT_ADDR + 1u64).unwrap(),
+            },
+            BinderObjectFlags::TXN_SECURITY_CTX,
+        );
+        receiver.proc.lock().objects.insert(OBJECT_ADDR, object);
+        let handle = sender
+            .proc
+            .lock()
+            .handles
+            .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+        let transaction = binder_transaction_data_sg {
+            transaction_data: binder_transaction_data {
+                code: 42,
+                flags: transaction_flags_TF_ONE_WAY,
+                target: binder_transaction_data__bindgen_ty_1 { handle: handle.into() },
+                ..binder_transaction_data::default()
+            },
+            buffers_size: 0,
+        };
+
+        device
+            .handle_transaction(&sender.context(current_task), &mut Vec::new(), transaction)
+            .expect("failed to handle transaction");
+
+        let queued = receiver.proc.lock().command_queue.pop_front().expect("command");
+        let Command::OnewayTransaction(transaction_data) = queued.command else {
+            panic!("expected oneway transaction");
+        };
+        let secctx_buffer =
+            transaction_data.buffers.security_context.expect("security_context buffer");
+        (memory, secctx_buffer)
+    }
+
+    #[fuchsia::test]
+    async fn transaction_security_context_fallback_single_nul() {
+        spawn_kernel_and_run(async |current_task| {
+            let (memory, secctx_buffer) = execute_security_context_transaction(current_task);
+
+            // When SELinux is disabled or no policy is loaded, TXN_SECURITY_CTX transactions
+            // must fall back to a single NUL byte. Buffer size is 8-byte aligned; the remaining
+            // 7 bytes of alignment padding must remain untouched (0xff).
+            assert_eq!(secctx_buffer.length, 8);
+            let mut secctx_bytes = [0u8; 8];
+            memory
+                .read(&mut secctx_bytes, (secctx_buffer.address - BASE_ADDR) as u64)
+                .expect("failed to read secctx");
+            assert_eq!(secctx_bytes[0], 0);
+            assert_eq!(&secctx_bytes[1..], &[0xffu8; 7]);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn transaction_security_context_with_selinux_single_nul() {
+        const HOOKS_TESTS_BINARY_POLICY: &[u8] =
+            include_bytes!("../../lib/selinux/testdata/micro_policies/hooks_tests_policy");
+
+        spawn_kernel_with_selinux_and_run(async |current_task, security_server| {
+            security_server
+                .load_policy(HOOKS_TESTS_BINARY_POLICY.to_vec())
+                .expect("policy load failed");
+            starnix_core::security::selinuxfs_policy_loaded(current_task);
+
+            let (memory, secctx_buffer) = execute_security_context_transaction(current_task);
+
+            // `u:object_r:kernel_t:s0\0` is 23 bytes, rounded up to 24 bytes (8-byte aligned).
+            // Verify that exactly one NUL terminator was written and the 24th byte remains
+            // untouched (0xff) rather than overwritten by a duplicate NUL byte.
+            const EXPECTED_SECCTX: &[u8] = b"u:object_r:kernel_t:s0\0";
+            assert_eq!(EXPECTED_SECCTX.len(), 23);
+            assert_eq!(secctx_buffer.length, 24);
+            let mut secctx_bytes = [0u8; 24];
+            memory
+                .read(&mut secctx_bytes, (secctx_buffer.address - BASE_ADDR) as u64)
+                .expect("failed to read secctx");
+            assert_eq!(&secctx_bytes[..EXPECTED_SECCTX.len()], EXPECTED_SECCTX);
+            assert_eq!(secctx_bytes[EXPECTED_SECCTX.len()], 0xff);
+        })
+        .await;
+    }
 }

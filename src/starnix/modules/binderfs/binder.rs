@@ -1066,19 +1066,12 @@ impl BinderDriver {
                 )?;
 
                 let security_context: Option<FsString> =
-                    if object.flags.contains(BinderObjectFlags::TXN_SECURITY_CTX) {
-                        let mut security_context = FsString::from(
-                            security::binder_get_context(
-                                context.current_task,
-                                &context.binder_proc.creds,
-                            )
-                            .unwrap_or_default(),
-                        );
-                        security_context.push(b'\0');
-                        Some(security_context)
-                    } else {
-                        None
-                    };
+                    object.flags.contains(BinderObjectFlags::TXN_SECURITY_CTX).then(|| {
+                        security::binder_get_context(
+                            context.current_task,
+                            &context.binder_proc.creds,
+                        )
+                    });
 
                 // Copy the transaction data to the target process.
                 let (buffers, mut transaction_state) = self.copy_transaction_buffers(

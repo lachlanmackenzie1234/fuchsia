@@ -918,7 +918,9 @@ class WithoutSEStarnix : public WithOrWithoutSEStarnix {
     return fork_helper.RunInForkedProcess(std::move(client_behavior));
   }
   void ValidateClientSecctxSeenByProvider(std::string_view secctx) override {
-    // Nothing to validate here in the Not-SE flavor.
+    // When SELinux is not active, the fallback security context is a single NUL byte,
+    // which appears as an empty string.
+    EXPECT_TRUE(secctx.empty());
   }
   bool SkipEntirely() override { return !test_helper::IsStarnix(); }
 };

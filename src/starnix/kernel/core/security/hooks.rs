@@ -349,17 +349,16 @@ pub fn binder_transfer_file(
     })
 }
 
-/// Returns the serialized Security Context associated with the specified credentials.
-/// If the SID cannot be resolved then None is returned.
-pub fn binder_get_context(
-    current_task: &CurrentTask,
-    source_creds: &Credentials,
-) -> Option<Vec<u8>> {
+/// Returns the serialized, NUL-terminated Security Context associated with the specified
+/// credentials, or an empty NUL-terminated string (`b"\0"`) if SELinux is not active.
+pub fn binder_get_context(current_task: &CurrentTask, source_creds: &Credentials) -> FsString {
     track_hook_duration!("security.hooks.binder_get_context");
     if_selinux_else(
         current_task,
-        |security_server| selinux_hooks::binder::binder_get_context(&security_server, source_creds),
-        || None,
+        |security_server| {
+            selinux_hooks::binder::binder_get_context(&security_server, source_creds).into()
+        },
+        || FsString::from(b"\0"),
     )
 }
 
