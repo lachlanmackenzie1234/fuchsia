@@ -271,9 +271,9 @@ def renew_linux_ip_address(runner: Runner, interface: str) -> None:
     except CalledProcessError:
         # No prior dhclient process or lease to release.
         pass
-    # Flush existing IP addresses to ensure stale leases from previous networks
+    # Flush existing IPv4 addresses to ensure stale leases from previous networks
     # are removed, preventing MultipleAddresses errors when a new lease is assigned.
-    runner.run(f"sudo ip addr flush dev {interface}")
+    runner.run(f"sudo ip -4 addr flush dev {interface}")
     # Negotiate a fresh lease for the current network scope and start a new daemon.
     runner.run(f"sudo dhclient {interface}")
 

@@ -389,7 +389,6 @@ class WlanRvrTest(base_test.WifiBaseTest):
             case IPVersion.V4:
                 iperf_server_ip_address = self._wait_for_iperf_ipv4_addr()
             case IPVersion.V6:
-                self.iperf_server.renew_test_interface_ip_address()
                 self.log.info(
                     "Waiting for iperf server to complete Duplicate "
                     "Address Detection..."
