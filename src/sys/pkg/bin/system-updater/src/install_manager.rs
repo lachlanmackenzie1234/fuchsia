@@ -89,8 +89,8 @@ async fn run<N, U, E>(
 
         // Now we can actually start the task that manages the update attempt.
         let update_url = &config.update_url.clone();
-        let should_write_recovery = config.should_write_recovery;
-        let manifest_range = config.manifest_range;
+        let should_write_recovery = config.options.should_write_recovery;
+        let manifest_range = config.options.manifest_range;
         let (cancel_sender, cancel_receiver) = oneshot::channel();
         let (attempt_id, attempt_stream) =
             updater.update(config, env, reboot_controller, cancel_receiver).await;
@@ -253,10 +253,10 @@ async fn handle_active_control_request<N>(
             // Note: We can only attach a reboot controller during the FIRST start request.
             // Any subsequent request with a reboot controller should fail.
             if reboot_controller.is_none()
-                && config.allow_attach_to_existing_attempt
+                && config.options.allow_attach_to_existing_attempt
                 && &config.update_url == update_url
-                && config.should_write_recovery == should_write_recovery
-                && config.manifest_range == manifest_range
+                && config.options.should_write_recovery == should_write_recovery
+                && config.options.manifest_range == manifest_range
             {
                 if let Err(e) = monitor_queue.add_client(monitor).await {
                     warn!("error adding client to monitor queue: {:#}", anyhow!(e));
@@ -440,15 +440,15 @@ impl<N: Notify> ControlRequest<N> {
         match self {
             Self::Start(data) => {
                 node.record_string("request", "start");
-                node.record_string("initiator", format!("{:?}", data.config.initiator));
+                node.record_string("initiator", format!("{:?}", data.config.options.initiator));
                 node.record_string("update_url", data.config.update_url.to_string());
                 node.record_string(
                     "should_write_recovery",
-                    format!("{:?}", data.config.should_write_recovery),
+                    format!("{:?}", data.config.options.should_write_recovery),
                 );
                 node.record_string(
                     "allow_attach_to_existing_attempt",
-                    format!("{:?}", data.config.allow_attach_to_existing_attempt),
+                    format!("{:?}", data.config.options.allow_attach_to_existing_attempt),
                 );
             }
             Self::Monitor(data) => {
@@ -1342,7 +1342,7 @@ mod tests {
                             already_in_progress_attempt_id: "None",
                             boot_ns: AnyProperty,
                             allow_attach_to_existing_attempt: "false",
-                            initiator: "Manual",
+                            initiator: "User",
                             should_write_recovery: "true",
                             update_url: "fuchsia-pkg://fuchsia.test/update",
                         },

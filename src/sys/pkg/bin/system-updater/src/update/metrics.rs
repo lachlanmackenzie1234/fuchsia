@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::update::config::Initiator;
 use crate::update::{AttemptError, FetchError, PrepareError, ResolveError, StageError};
 use anyhow::{Context, Error, format_err};
-use cobalt_client::traits::AsEventCode;
 use cobalt_sw_delivery_registry as metrics;
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
+use fidl_fuchsia_update_installer_ext::Initiator;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
 use futures::FutureExt;
@@ -95,20 +94,6 @@ pub(super) fn result_to_status_code(res: Result<(), &AttemptError>) -> StatusCod
         // Fallback to a generic catch-all error status code when the error didn't contain
         // context indicating more clearly what type of error happened.
         Err(_) => StatusCode::Error,
-    }
-}
-
-impl AsEventCode for Initiator {
-    fn as_event_code(&self) -> u32 {
-        match self {
-            Initiator::Automatic => {
-                metrics::SoftwareDeliveryMetricDimensionInitiator::AutomaticUpdateCheck
-            }
-            Initiator::Manual => {
-                metrics::SoftwareDeliveryMetricDimensionInitiator::UserInitiatedCheck
-            }
-        }
-        .as_event_code()
     }
 }
 
