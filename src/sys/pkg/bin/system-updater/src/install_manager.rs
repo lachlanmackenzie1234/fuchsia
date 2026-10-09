@@ -258,10 +258,10 @@ async fn handle_active_control_request<N>(
                     warn!("error adding client to monitor queue: {:#}", anyhow!(e));
                 }
                 let _ = responder.send(Ok(attempt_id.to_string()));
+                suspend_state.resume();
             } else {
                 let _ = responder.send(Err(UpdateNotStartedReason::AlreadyInProgress));
             }
-            suspend_state.resume();
         }
         ControlRequest::Monitor(MonitorRequestData { attempt_id, monitor, responder }) => {
             // If an attempt ID is provided, ensure it matches the current attempt.
@@ -317,6 +317,9 @@ async fn handle_active_control_request<N>(
                 }
                 None => Ok(()),
             };
+            if response.is_ok() {
+                suspend_state.resume();
+            }
             let _ = responder.send(response);
         }
     }
@@ -970,6 +973,19 @@ mod tests {
         let mut recv_fut = state_receiver.next();
         assert_eq!(exec.run_until_stalled(&mut recv_fut), Poll::Pending);
 
+        // A rejected start_update request should not resume the suspended update.
+        let () = run_fut(&mut exec, async {
+            let (notifier2, _state_receiver2) = FakeStateNotifier::new_callback_and_receiver();
+            assert_eq!(
+                install_manager_ch
+                    .start_update(ConfigBuilder::new().build().unwrap(), notifier2, None)
+                    .await,
+                Ok(Err(UpdateNotStartedReason::AlreadyInProgress))
+            );
+        });
+        assert_eq!(exec.run_until_stalled(&mut send_fut), Poll::Pending);
+        assert_eq!(exec.run_until_stalled(&mut recv_fut), Poll::Pending);
+
         assert_eq!(
             exec.wake_next_boot_timer().unwrap() - exec.boot_now(),
             MAX_SUSPEND_DURATION.into()
@@ -1093,6 +1109,7 @@ mod tests {
                 Ok(Ok("my-attempt".to_string()))
             );
             assert_eq!(state_receiver.next().await, Some(State::Prepare));
+            assert_eq!(install_manager_ch.suspend_update(None).await, Ok(Ok(())));
             assert_eq!(install_manager_ch.cancel_update(None).await, Ok(Ok(())));
             assert_eq!(state_receiver.next().await, Some(State::Canceled));
         }
