@@ -1463,8 +1463,10 @@ TEST_F(UnmanagedTestFixture, IrisExtensionHotplugMaintainsBandwidthAndResets) {
 
   // Reset count should include Init() reset and initial disconnected event reset.
   EXPECT_EQ(2u, reset_count->load());
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
+    EXPECT_EQ(env.path().set_bandwidth_count(), 1u);
+  });
 
   // Connect: votes default HS (40 MB/s) and executes ResetHw().
   dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
@@ -1505,9 +1507,11 @@ TEST_F(UnmanagedTestFixture, IrisExtensionSuspendAndResumeWhileDisconnected) {
 
   dut_.runtime().RunUntilIdle();
 
-  // Initially disconnected, bandwidth is 0 bps.
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
+  // Initially disconnected, bandwidth is 0 bps with no transient non-zero vote at startup.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
+    EXPECT_EQ(env.path().set_bandwidth_count(), 1u);
+  });
 
   // Suspend while disconnected.
   bool completer_called = false;
@@ -1520,7 +1524,7 @@ TEST_F(UnmanagedTestFixture, IrisExtensionSuspendAndResumeWhileDisconnected) {
   dut_.RunInEnvironmentTypeContext(
       [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
 
-  // Resume while disconnected: must preserve disconnected state and vote 0 bps (not kDefaultSpeed).
+  // Resume while disconnected: must preserve disconnected state and vote 0 bps (not High-Speed).
   completer_called = false;
   dut_.RunInDriverContext([&](Dwc3& drv) {
     fdf_power::ResumeCompleter completer([&]() { completer_called = true; });
@@ -1528,8 +1532,10 @@ TEST_F(UnmanagedTestFixture, IrisExtensionSuspendAndResumeWhileDisconnected) {
   });
   EXPECT_TRUE(completer_called);
 
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
+    EXPECT_EQ(env.path().set_bandwidth_count(), 1u);
+  });
 
   // Subsequent connect should transition bandwidth to provisional High-Speed (40 MB/s).
   dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
@@ -1557,7 +1563,7 @@ TEST_F(UnmanagedTestFixture, IrisExtensionDynamicSpeedBandwidthVotes) {
   ASSERT_OK(res);
   ASSERT_OK(WaitForPhy());
 
-  // Default speed is High-Speed: 40 MB/s.
+  // Provisional speed upon connection is High-Speed: 40 MB/s.
   dut_.RunInEnvironmentTypeContext(
       [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 40'000'000u); });
 

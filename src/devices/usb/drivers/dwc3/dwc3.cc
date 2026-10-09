@@ -440,8 +440,9 @@ constexpr uint32_t BandwidthForSpeed(fdescriptor::UsbSpeed speed) {
 
 class IrisExtension final : public PlatformExtension {
  public:
-  // Phase 1 Iris default speed is High-Speed (40 MB/s).
-  static constexpr fdescriptor::UsbSpeed kDefaultSpeed = fdescriptor::UsbSpeed::kHigh;
+  // Default to Undefined (0 bps) when disconnected; OnConnectStatusChanged votes provisional
+  // High-Speed (480 Mbps) upon connection before link speed negotiation completes.
+  static constexpr fdescriptor::UsbSpeed kDefaultSpeed = fdescriptor::UsbSpeed::kUndefined;
   static constexpr uint32_t kDefaultBandwidthBps = BandwidthForSpeed(kDefaultSpeed);
 
   static std::unique_ptr<IrisExtension> Create(Dwc3* parent) {
