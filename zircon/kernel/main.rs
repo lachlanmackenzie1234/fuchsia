@@ -25,6 +25,9 @@ extern crate ktrace_macro;
 #[path = "arch/src/mod.rs"]
 pub mod arch_rs;
 
+#[path = "dev/hw_rng/hw_rng.rs"]
+pub mod hw_rng;
+
 #[path = "dev/interrupt/interrupt.rs"]
 pub mod dev_interrupt;
 
