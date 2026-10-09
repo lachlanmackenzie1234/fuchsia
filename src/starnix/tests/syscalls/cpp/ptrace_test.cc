@@ -425,6 +425,41 @@ TEST(PtraceTest, PokeUser) {
 
 #endif  // __x86_64__
 
+// Pokes a caller-saved scratch register that is neither a syscall argument used by read() nor
+// the syscall number/return register. Callee-saved registers must not be used here: libc's
+// syscall wrappers may keep live values in them across the syscall instruction (e.g. glibc on
+// aarch64 holds a TLS pointer in x19 across `svc`), so clobbering them crashes the tracee.
+void PokeScratchRegister(pid_t tracee_pid, unsigned long val) {
+  struct user_regs_struct regs = {};
+  struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, tracee_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+#if defined(__x86_64__)
+  regs.r10 = val;
+#elif defined(__aarch64__) || defined(__arm__)
+  regs.regs[12] = val;
+#elif defined(__riscv)
+  regs.t0 = val;
+#else
+#error "Unsupported architecture"
+#endif
+  ASSERT_THAT(ptrace(PTRACE_SETREGSET, tracee_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+}
+
+void AssertPokeLanded(pid_t tracee_pid, unsigned long expected) {
+  struct user_regs_struct regs = {};
+  struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
+  ASSERT_THAT(ptrace(PTRACE_GETREGSET, tracee_pid, NT_PRSTATUS, &iov), SyscallSucceeds());
+#if defined(__x86_64__)
+  ASSERT_EQ(expected, static_cast<unsigned long>(regs.r10));
+#elif defined(__aarch64__) || defined(__arm__)
+  ASSERT_EQ(expected, static_cast<unsigned long>(regs.regs[12]));
+#elif defined(__riscv)
+  ASSERT_EQ(expected, static_cast<unsigned long>(regs.t0));
+#else
+#error "Unsupported architecture"
+#endif
+}
+
 // These tests validate that a tracer modifying registers at syscall-enter/exit must not disturb the
 // kernel's saved copy of the syscall number or arguments.
 class PtracePokePreservesRestartTest : public ::testing::Test {
@@ -468,39 +503,12 @@ class PtracePokePreservesRestartTest : public ::testing::Test {
     // At this point, the child is syscall-enter-stopped for read().
   }
 
-  // Pokes a caller-saved scratch register that is neither a syscall argument used by read() nor
-  // the syscall number/return register. Callee-saved registers must not be used here: libc's
-  // syscall wrappers may keep live values in them across the syscall instruction (e.g. glibc on
-  // aarch64 holds a TLS pointer in x19 across `svc`), so clobbering them crashes the tracee.
   void PokeScratchRegister(unsigned long val) {
-    struct user_regs_struct regs = {};
-    struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
-    ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid_, NT_PRSTATUS, &iov), SyscallSucceeds());
-#if defined(__x86_64__)
-    regs.r10 = val;
-#elif defined(__aarch64__) || defined(__arm__)
-    regs.regs[12] = val;
-#elif defined(__riscv)
-    regs.t0 = val;
-#else
-#error "Unsupported architecture"
-#endif
-    ASSERT_THAT(ptrace(PTRACE_SETREGSET, child_pid_, NT_PRSTATUS, &iov), SyscallSucceeds());
+    ASSERT_NO_FATAL_FAILURE(::PokeScratchRegister(child_pid_, val));
   }
 
   void AssertPokeLanded(unsigned long expected) {
-    struct user_regs_struct regs = {};
-    struct iovec iov = {.iov_base = &regs, .iov_len = sizeof(regs)};
-    ASSERT_THAT(ptrace(PTRACE_GETREGSET, child_pid_, NT_PRSTATUS, &iov), SyscallSucceeds());
-#if defined(__x86_64__)
-    ASSERT_EQ(expected, static_cast<unsigned long>(regs.r10));
-#elif defined(__aarch64__) || defined(__arm__)
-    ASSERT_EQ(expected, static_cast<unsigned long>(regs.regs[12]));
-#elif defined(__riscv)
-    ASSERT_EQ(expected, static_cast<unsigned long>(regs.t0));
-#else
-#error "Unsupported architecture"
-#endif
+    ASSERT_NO_FATAL_FAILURE(::AssertPokeLanded(child_pid_, expected));
   }
 
   void AssertSyscallRestartRegisters() {
@@ -591,6 +599,54 @@ TEST_F(PtracePokePreservesRestartTest, PokeAtSyscallExit) {
 
   ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid_, 0, kUnmaskedSignal), SyscallSucceeds());
   ASSERT_THAT(write(write_fd_.get(), "x", 1), SyscallSucceedsWithValue(1));
+}
+
+TEST(PtraceTest, PokePreservedAcrossBackToBackStop) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  int notify_pipe[2];
+  SAFE_SYSCALL(pipe(notify_pipe));
+  fbl::unique_fd read_fd(notify_pipe[0]);
+  fbl::unique_fd write_fd(notify_pipe[1]);
+
+  pid_t child_pid =
+      helper.RunInForkedProcess([read_fd = std::move(read_fd), write_pipe_fd = write_fd.get()] {
+        close(write_pipe_fd);
+        char c = 0;
+        ASSERT_THAT(read(read_fd.get(), &c, 1), SyscallSucceedsWithValue(1));
+        ASSERT_EQ('x', c);
+        _exit(0);
+      });
+  read_fd.reset();
+
+  // PTRACE_SEIZE attaches without delivering a SIGSTOP, allowing us to use PTRACE_INTERRUPT
+  // to cleanly stop the tracee while it is blocked in a syscall.
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, 0, 0), SyscallSucceeds());
+
+  // Interrupt and stop the tracee while it is blocked in read().
+  ASSERT_THAT(ptrace(PTRACE_INTERRUPT, child_pid, 0, 0), SyscallSucceeds());
+  int status = 0;
+  ASSERT_EQ(waitpid(child_pid, &status, 0), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(SIGTRAP | (PTRACE_EVENT_STOP << 8), status >> 8);
+
+  // Poke a scratch register so the kernel snapshot is dirty.
+  constexpr unsigned long kPokeValue = 0x1234abcd;
+  ASSERT_NO_FATAL_FAILURE(PokeScratchRegister(child_pid, kPokeValue));
+
+  // Issue another interrupt while the tracee is still stopped. In the kernel, ptrace_interrupt
+  // is a no-op on an already-stopped tracee, and the parked tracee is not awakened. Verify that
+  // issuing redundant stop interrupts does not disturb the tracee's stop state or corrupt the
+  // dirty register snapshot.
+  ASSERT_THAT(ptrace(PTRACE_INTERRUPT, child_pid, 0, 0), SyscallSucceeds());
+
+  EXPECT_NO_FATAL_FAILURE(AssertPokeLanded(child_pid, kPokeValue));
+
+  ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(write(write_fd.get(), "x", 1), SyscallSucceedsWithValue(1));
+
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST(PtraceTest, GetGeneralRegs) {

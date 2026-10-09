@@ -288,19 +288,21 @@ impl TaskMutableState {
     }
 
     pub fn take_captured_state(&mut self) -> Option<Box<CapturedThreadState>> {
-        if self.captured_thread_state.is_some() {
-            let mut state = None;
-            std::mem::swap(&mut state, &mut self.captured_thread_state);
-            return state;
-        }
-        None
+        self.captured_thread_state.take()
     }
 
-    pub fn copy_state_from(&mut self, current_task: &CurrentTask) {
-        self.captured_thread_state = Some(Box::new(CapturedThreadState {
-            thread_state: current_task.thread_state.extended_snapshot::<HeapRegs>(),
-            dirty: false,
-        }));
+    /// Captures the thread's register state if not already captured.
+    ///
+    /// If a snapshot is already present, this is a no-op to preserve any tracer
+    /// modifications (dirty register state) across consecutive stop events prior
+    /// to resumption and write-back.
+    fn copy_state_from(&mut self, current_task: &CurrentTask) {
+        if self.captured_thread_state.is_none() {
+            self.captured_thread_state = Some(Box::new(CapturedThreadState {
+                thread_state: current_task.thread_state.extended_snapshot::<HeapRegs>(),
+                dirty: false,
+            }));
+        }
     }
 
     /// Returns the task's currently active signal mask.
@@ -1805,6 +1807,26 @@ mod test {
 
             let renamed_role = scheduler.role_name(&child).unwrap();
             assert_ne!(renamed_role, "test-role");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_copy_state_from_preserves_dirty_snapshot() {
+        spawn_kernel_and_run(async |current_task| {
+            let mut state = current_task.write();
+            assert!(state.captured_thread_state.is_none());
+
+            state.copy_state_from(current_task);
+            assert!(state.captured_thread_state.is_some());
+            assert!(!state.captured_thread_state.as_ref().unwrap().dirty);
+
+            // Mark the captured state as dirty to simulate a tracer poking a register.
+            state.captured_thread_state.as_mut().unwrap().dirty = true;
+
+            // Consecutive calls to copy_state_from must preserve the existing snapshot.
+            state.copy_state_from(current_task);
+            assert!(state.captured_thread_state.as_ref().unwrap().dirty);
         })
         .await;
     }

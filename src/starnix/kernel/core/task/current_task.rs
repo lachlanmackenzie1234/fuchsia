@@ -1853,7 +1853,6 @@ impl CurrentTask {
     pub fn set_stopped_and_notify(&self, stopped: StopState, siginfo: Option<SignalInfo>) {
         let maybe_signal_info = {
             let mut state = self.write();
-            state.copy_state_from(self);
             state.set_stopped(stopped, siginfo, Some(self), None);
             state.prepare_signal_info(stopped)
         };
