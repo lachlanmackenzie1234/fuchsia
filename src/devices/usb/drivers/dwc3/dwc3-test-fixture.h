@@ -300,8 +300,14 @@ class Dwc3TestHelper {
   static void SetEp0OutEnabled(Dwc3& drv, bool enabled) { drv.ep0_.out.enabled = enabled; }
   static void SetEp0InEnabled(Dwc3& drv, bool enabled) { drv.ep0_.in.enabled = enabled; }
   static void SetEp0CurTransferLen(Dwc3& drv, size_t len) { drv.ep0_.cur_transfer_len = len; }
+  static size_t GetEp0CurTransferLen(const Dwc3& drv) { return drv.ep0_.cur_transfer_len; }
+  static void SetEp0MaxPacketSize(Dwc3& drv, uint16_t max_packet_size) {
+    drv.ep0_.out.max_packet_size = max_packet_size;
+    drv.ep0_.in.max_packet_size = max_packet_size;
+  }
   static uint64_t GetEp0OutTotalBytes(const Dwc3& drv) { return drv.ep0_.out.total_bytes; }
   static uint64_t GetEp0InTotalBytes(const Dwc3& drv) { return drv.ep0_.in.total_bytes; }
+  static dwc3_trb_t* GetCurrentReadTrb(Dwc3& drv) { return drv.ep0_.shared_fifo.current_read(); }
   static void PushTrbToSharedFifo(Dwc3& drv, const dwc3_trb_t& trb) {
     dwc3_trb_t* ptr = drv.ep0_.shared_fifo.AdvanceWrite();
     *ptr = trb;
@@ -330,8 +336,11 @@ class Dwc3TestHelper {
 
   static void SimulateDataOutPhase(Dwc3& drv, uint32_t received_len) {
     ZX_ASSERT_MSG(!drv.ep0_.shared_fifo.IsEmpty(), "SimulateDataOutPhase called on empty FIFO!");
+    ZX_ASSERT_MSG(received_len <= drv.ep0_.cur_transfer_len,
+                  "received_len %u exceeds cur_transfer_len %zu", received_len,
+                  drv.ep0_.cur_transfer_len);
     dwc3_trb_t* trb = drv.ep0_.shared_fifo.current_read();
-    trb->status = TRB_BUFSIZ(static_cast<uint32_t>(drv.ep0_.buffer->size() - received_len));
+    trb->status = TRB_BUFSIZ(static_cast<uint32_t>(drv.ep0_.cur_transfer_len - received_len));
 
     trb->control &= ~TRB_HWO;
     drv.HandleEp0TransferCompleteEvent(0);  // EP0 OUT

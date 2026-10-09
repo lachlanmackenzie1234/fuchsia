@@ -12,6 +12,7 @@
 
 #include <mutex>
 
+#include <fbl/algorithm.h>
 #include <usb/descriptors.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
@@ -147,9 +148,17 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       // through the stack. For all in-type transfers, the stack generates in-data, and then
       // transfers it to the host.
       if (is_out) {
-        ep0_.cur_transfer_len = ep0_.buffer->size();
+        // The DWC3 controller requires OUT TRB lengths to be multiples of the endpoint's max
+        // packet size, and only retires an unchained OUT TRB when a short packet arrives or
+        // TRB_BUFSIZ reaches zero. Round w_length up to ep0_.out.max_packet_size so MPS-aligned
+        // transfers reach TRB_BUFSIZ == 0 while unaligned transfers remain MPS-aligned and retire
+        // on the final short packet.
+        ZX_DEBUG_ASSERT(ep0_.out.max_packet_size > 0);
+        ep0_.cur_transfer_len =
+            fbl::round_up<size_t>(ep0_.cur_setup.w_length, ep0_.out.max_packet_size);
+        ZX_DEBUG_ASSERT(ep0_.cur_transfer_len <= ep0_.buffer->size());
         EpStartTransfer(ep0_.out, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA, ep0_.buffer->phys(),
-                        ep0_.buffer->size());
+                        ep0_.cur_transfer_len);
         ep0_.state = Ep0::State::DataOut;
       } else {
         ep0_.state = Ep0::State::DataIn;
@@ -184,6 +193,21 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
             expected, remaining);
       } else {
         received = expected - remaining;
+      }
+      if (received > ep0_.cur_setup.w_length) {
+        fdf::error(
+            "DataOut overflow: received {}, w_length {} "
+            "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x})",
+            received, ep0_.cur_setup.w_length, ep0_.cur_setup.bm_request_type,
+            ep0_.cur_setup.b_request, ep0_.cur_setup.w_value, ep0_.cur_setup.w_index);
+        metrics_.RecordEvent(std::format(
+            "ep0: Stalled DataOut overflow "
+            "[type=0x{:02x} req=0x{:02x} val=0x{:04x} idx=0x{:04x} len={} received={}]",
+            ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+            ep0_.cur_setup.w_index, ep0_.cur_setup.w_length, received));
+        Ep0EndAndStall(ep0_.out);
+        Ep0QueueSetup();
+        break;
       }
       ep0_.out.total_transfers++;
       ep0_.out.total_bytes += received;
