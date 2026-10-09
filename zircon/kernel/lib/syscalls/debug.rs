@@ -97,6 +97,16 @@ pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), Status>
 }
 
 #[syscall]
+pub fn sys_debug_suspend(_resource: HandleValue) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
+}
+
+#[syscall]
+pub fn sys_debug_resume(_resource: HandleValue) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
+}
+
+#[syscall]
 pub fn sys_debug_send_command(
     resource: HandleValue,
     ptr: UserInPtr<u8>,
