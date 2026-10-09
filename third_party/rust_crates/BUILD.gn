@@ -12215,7 +12215,7 @@ rustc_library("icu_collections-v2_3_0") {
 
   deps = []
   deps += [ ":displaydoc-v0_2_7($host_toolchain)" ]
-  deps += [ ":potential_utf-v0_1_5" ]
+  deps += [ ":potential_utf-v0_1_6" ]
   deps += [ ":utf8_iter-v1_0_4" ]
   deps += [ ":yoke-v0_8_3" ]
   deps += [ ":zerofrom-v0_1_8" ]
@@ -17182,17 +17182,17 @@ rustc_library("portable-atomic-util-v0_2_4") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("potential_utf-v0_1_5.license") {
+license("potential_utf-v0_1_6.license") {
   public_package_name = "potential_utf"
   license_files =
-      [ "//third_party/rust_crates/vendor/potential_utf-0.1.5/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/potential_utf-0.1.6/LICENSE" ]
 }
 
-rustc_library("potential_utf-v0_1_5") {
+rustc_library("potential_utf-v0_1_6") {
   crate_name = "potential_utf"
   source_root =
-      "//third_party/rust_crates/vendor/potential_utf-0.1.5/src/lib.rs"
-  output_name = "potential_utf-252bebd7807a16bf"
+      "//third_party/rust_crates/vendor/potential_utf-0.1.6/src/lib.rs"
+  output_name = "potential_utf-4c48cff85aa727d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17205,14 +17205,14 @@ rustc_library("potential_utf-v0_1_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=252bebd7807a16bf",
-    "-Cextra-filename=-252bebd7807a16bf",
+    "-Cmetadata=4c48cff85aa727d",
+    "-Cextra-filename=-4c48cff85aa727d",
     "--cfg=feature=\"zerovec\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":potential_utf-v0_1_5.license" ]
+  applicable_licenses = [ ":potential_utf-v0_1_6.license" ]
 }
 
 license("powerfmt-v0_2_1.license") {
