@@ -70,16 +70,7 @@ fn get_upload_timeout(context: Option<&EnvironmentContext>) -> Duration {
             // ```
             //
             // And they'd be stuck!
-            e.get(ffx_config::keys::METRICS_UPLOAD_TIMEOUT_KEY)
-                .map_err(|e| {
-                    // TODO(436934180): We shouldn't need to specify which key we couldn't fetch.
-                    // This should be the config's job to format this error properly for us.
-                    log::warn!(
-                        "unable to load `{}`: {e}",
-                        ffx_config::keys::METRICS_UPLOAD_TIMEOUT_KEY
-                    )
-                })
-                .ok()
+            e.get(ffx_config::keys::METRICS_UPLOAD_TIMEOUT_KEY).map_err(|e| log::warn!("{e}")).ok()
         })
         .unwrap_or(ffx_config::keys::METRICS_UPLOAD_TIMEOUT_DEFAULT);
     Duration::from_secs_f64(timeout_float)
