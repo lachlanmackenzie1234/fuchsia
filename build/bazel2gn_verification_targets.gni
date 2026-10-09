@@ -53,6 +53,7 @@ bazel2gn_verification_targets = [
   "//src/connectivity/bluetooth/lib/bt-obex/objects:verify_bazel2gn",
   "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:verify_bazel2gn",
   "//src/connectivity/bluetooth/lib/packet-encoding:verify_bazel2gn",
+  "//src/connectivity/bluetooth/lib/profile-client:verify_bazel2gn",
   "//src/connectivity/bluetooth/lib/vigil:verify_bazel2gn",
   "//src/connectivity/bluetooth/testing/bt-channel-test-support:verify_bazel2gn",
   "//src/connectivity/bluetooth/testing/test-harness-macro:verify_bazel2gn",
