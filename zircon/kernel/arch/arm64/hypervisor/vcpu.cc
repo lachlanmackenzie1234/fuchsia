@@ -36,7 +36,7 @@ static constexpr uint32_t kSpsrNzcv = 0b1111 << 28;
 
 static uint64_t vmpidr_of(uint16_t vpid) {
   constexpr uint64_t res1 = 1ul << 31;
-  return (vpid - 1) | res1;
+  return vpid | res1;
 }
 
 template <typename F>

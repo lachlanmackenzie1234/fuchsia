@@ -63,7 +63,7 @@ class Guest {
   uint16_t vmid_;
   hypervisor::GuestPhysicalAspace gpa_;
   hypervisor::TrapMap traps_;
-  id_allocator::IdAllocator<uint16_t, kMaxGuestVcpus> vpid_allocator_;
+  id_allocator::IdAllocator<uint16_t, kMaxGuestVcpus, 0> vpid_allocator_;
 
   explicit Guest(uint16_t vmid);
 };
