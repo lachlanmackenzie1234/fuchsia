@@ -336,7 +336,11 @@ zx_status_t GicDistributor::Read(uint64_t addr, IoValue* value) {
         value->u32 = 0;
         return ZX_OK;
       }
-      const uint8_t* masks = &cpu_masks_[addr - static_cast<uint64_t>(GicdRegister::ITARGETS8)];
+      const auto spi = static_cast<uint32_t>(addr - static_cast<uint64_t>(GicdRegister::ITARGETS8));
+      if (spi + value->access_size > std::size(cpu_masks_)) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
+      const uint8_t* masks = &cpu_masks_[spi];
       for (uint8_t i = 0; i < value->access_size; i++) {
         value->data[i] = masks[i];
       }
@@ -348,9 +352,12 @@ zx_status_t GicDistributor::Read(uint64_t addr, IoValue* value) {
         value->u32 = 0;
         return ZX_OK;
       }
-      const auto vector = static_cast<uint32_t>(
+      const auto spi = static_cast<uint32_t>(
           (addr - static_cast<uint64_t>(GicdRegister::IROUTE32)) / value->access_size);
-      value->u64 = cpu_masks_[vector - kSpiBase];
+      if (spi >= std::size(cpu_masks_)) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
+      value->u64 = cpu_masks_[spi];
       if (value->u64 == UINT8_MAX) {
         value->u64 |= kGicdIrouteIRMMask;
       }
@@ -417,7 +424,10 @@ zx_status_t GicDistributor::Write(uint64_t addr, const IoValue& value) {
       if (affinity_routing_) {
         return ZX_OK;
       }
-      auto spi = static_cast<uint32_t>(addr - static_cast<uint64_t>(GicdRegister::ITARGETS8));
+      const auto spi = static_cast<uint32_t>(addr - static_cast<uint64_t>(GicdRegister::ITARGETS8));
+      if (spi + value.access_size > std::size(cpu_masks_)) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
       for (uint8_t i = 0; i < value.access_size; i++) {
         const uint8_t cpu_mask = value.data[i];
         cpu_masks_[spi + i] = cpu_mask;
@@ -478,13 +488,16 @@ zx_status_t GicDistributor::Write(uint64_t addr, const IoValue& value) {
       if (!affinity_routing_) {
         return ZX_OK;
       }
-      auto vector = static_cast<uint32_t>((addr - static_cast<uint64_t>(GicdRegister::IROUTE32)) /
-                                          value.access_size);
+      const auto spi = static_cast<uint32_t>(
+          (addr - static_cast<uint64_t>(GicdRegister::IROUTE32)) / value.access_size);
+      if (spi >= std::size(cpu_masks_)) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
       uint8_t cpu_mask = UINT8_MAX;
       if (!(value.u64 & kGicdIrouteIRMMask)) {
         cpu_mask &= value.u64;
       }
-      cpu_masks_[vector - kSpiBase] = cpu_mask;
+      cpu_masks_[spi] = cpu_mask;
       return ZX_OK;
     }
     case GicdRegister::ICFG1... GicdRegister::ICFG31: {
