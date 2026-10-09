@@ -70,4 +70,5 @@ fx_package(
 fx_test(
     name = "packet-encoding-tests",
     package = ":packet-encoding-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

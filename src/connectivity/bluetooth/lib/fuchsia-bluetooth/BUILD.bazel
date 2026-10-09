@@ -140,4 +140,5 @@ fx_package(
 fx_test(
     name = "bluetooth-crate-tests",
     package = ":bluetooth-crate-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

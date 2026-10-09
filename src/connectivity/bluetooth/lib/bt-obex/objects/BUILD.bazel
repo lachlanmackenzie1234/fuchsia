@@ -111,5 +111,5 @@ fx_package(
 fx_test(
     name = "bt-obex-objects-tests",
     package = ":bt-obex-objects-tests-package",
-    visibility = ["//src/connectivity/bluetooth/lib/bt-obex:__pkg__"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

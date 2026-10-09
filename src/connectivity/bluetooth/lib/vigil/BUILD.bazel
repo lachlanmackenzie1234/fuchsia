@@ -82,4 +82,5 @@ fx_package(
 fx_test(
     name = "vigil-tests",
     package = ":vigil-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
