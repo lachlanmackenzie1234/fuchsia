@@ -437,10 +437,11 @@ void UsbFunction::CloseFunctionInterface() {
   CompletePendingUnconfigures(ZX_OK);
   auto completer = std::move(deconfigure_completer_);
   deconfigure_completer_.reset();
-  peripheral_->FunctionUnregistered();
-  if (completer.has_value()) {
-    completer->Reply(fit::ok());
-  }
+  peripheral_->FunctionUnregistered([completer = std::move(completer)]() mutable {
+    if (completer.has_value()) {
+      completer->Reply(fit::ok());
+    }
+  });
 }
 
 void UsbFunction::RequestRemoval() {
@@ -506,7 +507,8 @@ void UsbFunction::StartUnconfigure(fdescriptor::wire::UsbSpeed fspeed) {
           }
         } else if (result->is_error()) {
           if (result->error_value() != ZX_ERR_BAD_STATE &&
-              result->error_value() != ZX_ERR_NOT_CONNECTED) {
+              result->error_value() != ZX_ERR_NOT_CONNECTED &&
+              result->error_value() != ZX_ERR_CANCELED) {
             fdf::error("UsbFunctionInterface.SetConfigured error: {}",
                        zx_status_get_string(result->error_value()));
             status = result->error_value();
