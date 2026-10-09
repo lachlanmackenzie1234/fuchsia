@@ -1442,6 +1442,26 @@ impl PackagelessAttempt<'_> {
         info!("Targeting configuration: {:?}", desired_config);
         let target_config = desired_config.to_target_configuration();
 
+        let fallback_gc = async {
+            let () = replace_retained_blobs(
+                manifest.images.iter().map(|image| image.blob.fuchsia_merkle_root),
+                &self.env.retained_blobs,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                error!(
+                    "while fetching images, unable to minimize retained blobs set \
+                     before second gc attempt: {:#}",
+                    anyhow!(e)
+                )
+            });
+
+            if let Err(e) = gc(&self.env.space_manager).await {
+                error!("unable to gc blobs before retry fetching blobs: {:#}", anyhow!(e));
+            }
+        }
+        .shared();
+
         let mut stream = futures::stream::iter(manifest.images.iter())
             .map(async |image| {
                 if !self.config.should_write_recovery
@@ -1476,25 +1496,7 @@ impl PackagelessAttempt<'_> {
                     {
                         Ok(size) => size,
                         Err(fpkg::ResolveError::NoSpace) => {
-                            let () = replace_retained_blobs(
-                                manifest.images.iter().map(|image| image.blob.fuchsia_merkle_root),
-                                &self.env.retained_blobs,
-                            )
-                            .await
-                            .unwrap_or_else(|e| {
-                                error!(
-                                    "while fetching images, unable to minimize retained blobs set \
-                                     before second gc attempt: {:#}",
-                                    anyhow!(e)
-                                )
-                            });
-
-                            if let Err(e) = gc(&self.env.space_manager).await {
-                                error!(
-                                    "unable to gc blobs before retry fetching blobs: {:#}",
-                                    anyhow!(e)
-                                );
-                            }
+                            let () = fallback_gc.clone().await;
                             self.env
                                 .ota_downloader
                                 .fetch_blob(&blob_id, blob_base_url, false)
