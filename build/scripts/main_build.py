@@ -646,10 +646,10 @@ class FuchsiaBuildContext(object):
                 pass
 
         if not user:
-            if self.loas_type != "skip":
+            if self.auth_type in ("loas", "oauth"):
                 raise BuildConfigurationError(
                     "USER environment variable is not set and could not be "
-                    "inferred. This is required for RBE/ResultStore LOAS/gcert authentication."
+                    "inferred. This is required for RBE/ResultStore user authentication."
                 )
             user = "builder"
         return user
@@ -735,7 +735,7 @@ class FuchsiaBuildContext(object):
             The Path to the isolated credentials file, or None if isolation failed
             or was bypassed.
         """
-        if self.resolved_auth_mode in ("machine", "none"):
+        if self.auth_type in ("machine", "none"):
             return None
 
         isolate_script = self.gcloud_creds_script
@@ -779,7 +779,7 @@ class FuchsiaBuildContext(object):
         if not self.needs_auth:
             return env
 
-        env["FX_BUILD_LOAS_TYPE"] = self.loas_type
+        env["FX_BUILD_AUTH_TYPE"] = self.auth_type
 
         # Isolate Google Application Credentials to avoid global quota_project_id contamination.
         local_adc_path = self._isolate_gcloud_credentials()
@@ -789,7 +789,7 @@ class FuchsiaBuildContext(object):
             env["GOOGLE_APPLICATION_CREDENTIALS"] = self.env[
                 "GOOGLE_APPLICATION_CREDENTIALS"
             ]
-        elif self.resolved_auth_mode != "machine":
+        elif self.auth_type not in ("machine", "none"):
             try:
                 default_adc = pathlib.Path.home() / gcloud.ADC_SUBPATH
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = str(default_adc)
@@ -1030,8 +1030,8 @@ class FuchsiaBuildContext(object):
         return self.build_dir / "rbe_config.json"
 
     @property
-    def check_loas_script(self) -> pathlib.Path:
-        return self.source_dir / "build/auth/check_loas_restrictions.sh"
+    def select_auth_script(self) -> pathlib.Path:
+        return self.source_dir / "build/auth/select_auth_method.py"
 
     @property
     def gcloud_creds_script(self) -> pathlib.Path:
@@ -1120,22 +1120,6 @@ class FuchsiaBuildContext(object):
 
         return self._rbe_settings.needs_auth
 
-    @functools.cached_property
-    def resolved_auth_mode(self) -> str:
-        """Resolves the concrete authentication mode (user, machine, or none)."""
-        mode = self.config.auth_mode
-        if mode == "none" or not self.needs_auth:
-            return "none"
-
-        if mode == "auto":
-            # Auto-detect if we are in an infra/bot environment
-            infra_env_hints = ["BUILDBUCKET_ID", "SWARMING_TASK_ID"]
-            if any(hint in self.env for hint in infra_env_hints):
-                return "machine"
-            return "user"
-
-        return mode
-
     @property
     def concurrency(self) -> int:
         """The -j value to use. Returns the Fint job_count override if present,
@@ -1151,54 +1135,39 @@ class FuchsiaBuildContext(object):
 
         return min(factors)
 
+    def _run_select_auth_script(self) -> str:
+        """Invokes select_auth_method.py to determine the auth type."""
+        select_script = self.select_auth_script
+        try:
+            output = subprocess.check_output(
+                [str(PYTHON_BIN), str(select_script)],
+                text=True,
+                stderr=None,  # Let warnings flow through to the console directly
+                env=self.env,
+            )
+            lines = output.strip().splitlines()
+            if lines:
+                return lines[-1]
+            raise BuildConfigurationError(
+                "Authentication selection script succeeded but returned no output."
+            )
+        except subprocess.CalledProcessError:
+            raise BuildConfigurationError(
+                "Failed to detect valid build authentication. See error messages above."
+            )
+
     @functools.cached_property
-    def loas_type(self) -> str:
-        """Automatically detect the LOAS type."""
-        if self.resolved_auth_mode == "none":
-            return "skip"
+    def auth_type(self) -> str:
+        """Automatically detect the authentication type (loas, oauth, machine, or none)."""
+        mode = self.config.auth_mode
+        if mode == "none" or not self.needs_auth:
+            return "none"
 
-        if self.resolved_auth_mode == "machine":
-            return "skip"
+        if mode == "machine":
+            return "machine"
 
-        # Under 'user' mode: if we have LOAS, detect the specific restriction level
-        if has_loas():
-            check_loas_script = self.check_loas_script
-            if is_executable(check_loas_script):
-                try:
-                    output = subprocess.check_output(
-                        [str(check_loas_script)],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                        env=self.env,
-                    )
-                    lines = output.strip().splitlines()
-                    if lines:
-                        loas_type = lines[-1]
-                        if loas_type == "unrestricted":
-                            # In corporate environments, an unrestricted LOAS type implies we can use
-                            # Bazel's gcert credential helper. However, if that helper is not executable or
-                            # accessible (e.g. on new systems, cloudtops with unmounted SrcFS, or due to
-                            # specific subdirectory permission/ACL restrictions), any attempt to run Bazel
-                            # with --config=gcertauth will fail immediately with permission denied.
-                            # In these circumstances, we gracefully downgrade to "restricted" mode to fall
-                            # back to local gcloud Application Default Credentials (ADC).
-                            if not is_executable(BAZEL_CRED_HELPER):
-                                msg(
-                                    f"WARNING: Bazel credential helper on SrcFS is not accessible: {BAZEL_CRED_HELPER}",
-                                    file=sys.stderr,
-                                )
-                                msg(
-                                    "WARNING: Gracefully falling back to restricted (local gcloud/ADC) mode.",
-                                    file=sys.stderr,
-                                )
-                                return "restricted"
-                        return loas_type
-                except subprocess.CalledProcessError:
-                    pass
-            return "skip"
-
-        # If no LOAS is available but we are in 'user' mode, we must be using local OAuth/ADC
-        return "skip"
+        # Under 'user' or 'auto' mode: run our auth selection script
+        return self._run_select_auth_script()
 
 
 class BuildInvocation(object):
@@ -1356,10 +1325,10 @@ class BuildInvocation(object):
                 yield "--reproxy-cfg"
                 yield str(cfg_path)
 
-        # LOAS handling
-        yield "--loas-type"
-        yield context.loas_type
-        if context.resolved_auth_mode == "machine":
+        # Auth type handling
+        yield "--auth-type"
+        yield context.auth_type
+        if context.auth_type == "machine":
             yield "--use-machine-credentials"
 
         # Log directory setup
@@ -1462,7 +1431,7 @@ class BuildInvocation(object):
         if resultstore in ("all", "bazel"):
             # Decide between "resultstore" (developer) and "resultstore_infra" (infra).
             if (
-                self.context.loas_type == "unrestricted"
+                self.context.auth_type == "loas"
                 and "BUILDBUCKET_ID" not in self.context.env
             ):
                 resultstore_bazel = "resultstore"
@@ -1610,8 +1579,8 @@ class BuildCommandExecution(object):
         if config.verbose:
             auth_summary = (
                 f"\n[Auth Configuration Resolved]:\n"
-                f"  Auth Mode:       {self.invocation.context.resolved_auth_mode}\n"
-                f"  LOAS Type:       {self.invocation.context.loas_type}\n"
+                f"  Config Auth Mode: {config.auth_mode}\n"
+                f"  Resolved Auth:    {self.invocation.context.auth_type}\n"
                 f"  Auth User:       {self.invocation.context.authenticated_user}\n"
                 f"  Metadata Host:   {self.env.get('GCE_METADATA_HOST', 'NOT_SET')}\n"
                 f"  Java Metadata:   {self.env.get('G_CLOUD_METADATA_HOST', 'NOT_SET')}\n"

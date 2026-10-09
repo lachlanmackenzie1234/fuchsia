@@ -173,6 +173,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/auth/apt.py",
         "//build/auth/gcloud.py",
         "//build/auth/gcloud_creds.py",
+        "//build/auth/select_auth_method.py",
         "//build/regenerator",
         "//build/scripts/main_build.py",
         "//build/scripts/signal_utils.py",

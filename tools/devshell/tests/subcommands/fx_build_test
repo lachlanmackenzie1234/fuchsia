@@ -13,6 +13,7 @@ BT_FILE_DEPS=(
     "build/auth/apt.py"
     "build/auth/gcloud.py"
     "build/auth/gcloud_creds.py"
+    "build/auth/select_auth_method.py"
     "build/scripts/main_build.py"
     "build/scripts/signal_utils.py"
     "build/force_clean/force_clean_if_needed.py"

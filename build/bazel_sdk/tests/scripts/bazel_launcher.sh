@@ -100,14 +100,11 @@ if [[ -n "${_OUTPUT_USER_ROOT}" ]]; then
   mkdir -p "${_OUTPUT_USER_ROOT}"
 fi
 
-# Auto-detect LOAS certificate type when invoked directly outside `fx build`.
-if [[ -z "${FX_BUILD_LOAS_TYPE:-}" ]] && command -v gcert >/dev/null 2>&1; then
-  if [[ -x "${_FUCHSIA_SOURCE_DIR}/build/auth/check_loas_restrictions.sh" ]]; then
-    FX_BUILD_LOAS_TYPE="$("${_FUCHSIA_SOURCE_DIR}/build/auth/check_loas_restrictions.sh" 2>/dev/null | tail -n 1 || true)"
-    export FX_BUILD_LOAS_TYPE
-  elif [[ -x "${_FUCHSIA_SOURCE_DIR}/build/rbe/check_loas_restrictions.sh" ]]; then
-    FX_BUILD_LOAS_TYPE="$("${_FUCHSIA_SOURCE_DIR}/build/rbe/check_loas_restrictions.sh" 2>/dev/null | tail -n 1 || true)"
-    export FX_BUILD_LOAS_TYPE
+# Auto-detect authentication method when invoked directly outside `fx build`.
+if [[ -z "${FX_BUILD_AUTH_TYPE:-}" ]]; then
+  if [[ -x "${_FUCHSIA_SOURCE_DIR}/build/auth/select_auth_method.py" ]]; then
+    FX_BUILD_AUTH_TYPE="$("${_PYTHON_PREBUILT_DIR}/bin/python3" -S "${_FUCHSIA_SOURCE_DIR}/build/auth/select_auth_method.py" 2>/dev/null | tail -n 1 || true)"
+    export FX_BUILD_AUTH_TYPE
   fi
 fi
 
@@ -238,7 +235,7 @@ for _arg in "${_ALL_CONFIG_ARGS[@]}"; do
     break
   fi
 done
-if [[ -n "${_IS_REMOTE_BUILD}" && "${FX_BUILD_LOAS_TYPE:-}" == "unrestricted" ]]; then
+if [[ -n "${_IS_REMOTE_BUILD}" && "${FX_BUILD_AUTH_TYPE:-}" == "loas" ]]; then
   _BAZEL_CONFIG_ARGS+=(--config=gcertauth)
   unset GOOGLE_APPLICATION_CREDENTIALS
 fi
