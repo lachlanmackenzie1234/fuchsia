@@ -13,6 +13,7 @@
     program: {
         runner: "driver",
         binary: "driver/dw-spi.so",
+        default_dispatcher_scheduler_role: "fuchsia.devices.spi.drivers.spi.bus",
         bind: "meta/bind/dw-spi.bindbc",
     },
     capabilities: [

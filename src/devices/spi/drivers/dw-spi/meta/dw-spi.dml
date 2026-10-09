@@ -9,6 +9,7 @@
     ],
     program: {
         binary: "driver/dw-spi.so",
+        default_dispatcher_scheduler_role: "fuchsia.devices.spi.drivers.spi.bus",
     },
     capabilities: [
         { service: "fuchsia.hardware.spiimpl.Service" },
