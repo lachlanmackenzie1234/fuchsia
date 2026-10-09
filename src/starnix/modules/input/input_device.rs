@@ -7,11 +7,14 @@ use crate::input_event_relay::OpenedFiles;
 use futures::FutureExt;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
+use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
+use starnix_core::vfs::pseudo::simple_file::BytesFile;
+use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_sync::{InputDeviceFileNodesLock, InputDeviceInfoLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::input_id;
 use starnix_uapi::open_flags::OpenFlags;
 use std::sync::Arc;
@@ -248,21 +251,94 @@ impl InputDevice {
         }
     }
 
+    /// Registers the input device, and its event interface, with the kernel's device registry.
+    ///
+    /// Linux exposes each input device as an `inputN` device of the `input` class, with the
+    /// `eventN` character device for its event interface nested beneath it, e.g.:
+    ///
+    /// ```text
+    /// /sys/devices/virtual/input/input0/
+    /// ├── name
+    /// ├── uevent
+    /// ├── id/{bustype,vendor,product,version}
+    /// └── event0/
+    ///     ├── dev
+    ///     └── uevent
+    /// ```
+    ///
+    /// Since both devices belong to the `input` class, `event{minor}` is created directly within
+    /// the `input{minor}` directory, without an intermediate class directory. Each is also linked
+    /// from `/sys/class/input`.
+    ///
+    /// Only the `eventN` device generates a uevent, since it is the only device with a `/dev`
+    /// node.
+    ///
+    /// Returns the `eventN` [`Device`], which should be passed to [`Self::unregister`] to remove
+    /// both devices.
     pub fn register(self, kernel: &Kernel, minor: u32) -> Result<Device, Errno> {
         let registry = &kernel.device_registry;
-
         let input_class = registry.objects.input_class();
-        registry.register_device(
+        let info = self.info.clone();
+
+        let input_device = registry.add_numberless_device(
+            format!("input{minor}").as_str().into(),
+            /* parent = */ None,
+            input_class.clone(),
+            move |device, dir| {
+                build_device_directory(device, dir);
+                let name_info = info.clone();
+                dir.entry(
+                    "name",
+                    BytesFile::new_node(move || Ok(format!("{}\n", name_info.lock().name))),
+                    mode!(IFREG, 0o444),
+                );
+                dir.subdir("id", 0o755, |dir| {
+                    let fields: [(&str, fn(&input_id) -> u16); 4] = [
+                        ("bustype", |id| id.bustype),
+                        ("vendor", |id| id.vendor),
+                        ("product", |id| id.product),
+                        ("version", |id| id.version),
+                    ];
+                    for (attribute, selector) in fields {
+                        let attr_info = info.clone();
+                        dir.entry(
+                            attribute,
+                            BytesFile::new_node(move || {
+                                Ok(format!("{:04x}\n", selector(&attr_info.lock().input_id)))
+                            }),
+                            mode!(IFREG, 0o444),
+                        );
+                    }
+                });
+            },
+        );
+
+        registry.register_device_with_dir(
             kernel,
-            FsString::from(format!("event{}", minor)).as_ref(),
+            format!("event{minor}").as_str().into(),
             DeviceMetadata::new(
-                format!("input/event{}", minor).into(),
+                format!("input/event{minor}").into(),
                 StarnixDeviceId::new(INPUT_MAJOR, minor),
                 DeviceMode::Char,
             ),
+            Some(input_device),
             input_class,
+            build_device_directory,
             self,
         )
+    }
+
+    /// Unregisters an input device previously registered with [`Self::register`].
+    ///
+    /// `event_device` is the `eventN` [`Device`] returned by [`Self::register`]; its parent
+    /// `inputN` device is removed too.
+    pub fn unregister(current_task: &CurrentTask, event_device: Device) {
+        let registry = &current_task.kernel().device_registry;
+        let input_device = event_device.parent().cloned();
+        registry.remove_device(current_task, event_device);
+        if let Some(input_device) = input_device {
+            registry.remove_device(current_task, input_device);
+        }
     }
 
     pub fn open_internal(&self) -> Box<dyn FileOps> {
@@ -3493,6 +3569,91 @@ mod test {
                     device_listener_registered: false,
                 }
             });
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn register_nests_event_device_under_input_device() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let inspector = fuchsia_inspect::Inspector::default();
+            let info = InputDeviceInfo::new(KEYBOARD_INPUT_ID, "starnix_buttons".to_string());
+            let keyboard_device =
+                InputDevice::new_keyboard(info.clone(), "keyboard_device", &inspector.root());
+
+            let event_device =
+                keyboard_device.register(kernel, 7).expect("failed to register input device");
+            assert_eq!(event_device.name(), "event7");
+            assert_eq!(event_device.parent().map(|parent| parent.name()), Some("input7".into()));
+
+            let root = &kernel.device_registry.objects.root;
+            for path in [
+                "devices/virtual/input/input7/uevent",
+                "devices/virtual/input/input7/event7/dev",
+                "devices/virtual/input/input7/event7/uevent",
+                "class/input/input7",
+                "class/input/event7",
+                "dev/char/13:7",
+            ] {
+                assert!(root.lookup(path.into()).is_some(), "missing {path}");
+            }
+
+            let read_attr = |path: &str| -> String {
+                let node = root.lookup(path.into()).unwrap_or_else(|| panic!("missing {path}"));
+                let file_ops =
+                    node.create_file_ops(&current_task, OpenFlags::RDONLY).expect("open attr");
+                let file = starnix_core::testing::anon_test_file(
+                    &current_task,
+                    file_ops,
+                    OpenFlags::RDONLY,
+                );
+                let mut buf = VecOutputBuffer::new(64);
+                let bytes_read = file.read(&current_task, &mut buf).expect("read attr");
+                String::from_utf8(Vec::from(&buf.data()[..bytes_read])).expect("utf8 attr")
+            };
+            assert_eq!(read_attr("devices/virtual/input/input7/name"), "starnix_buttons\n");
+            assert_eq!(
+                read_attr("devices/virtual/input/input7/id/bustype"),
+                format!("{:04x}\n", KEYBOARD_INPUT_ID.bustype)
+            );
+            assert_eq!(
+                read_attr("devices/virtual/input/input7/id/vendor"),
+                format!("{:04x}\n", KEYBOARD_INPUT_ID.vendor)
+            );
+            assert_eq!(
+                read_attr("devices/virtual/input/input7/id/product"),
+                format!("{:04x}\n", KEYBOARD_INPUT_ID.product)
+            );
+            assert_eq!(
+                read_attr("devices/virtual/input/input7/id/version"),
+                format!("{:04x}\n", KEYBOARD_INPUT_ID.version)
+            );
+
+            // Dynamic metadata updates (as performed by uinput) must be reflected in sysfs.
+            *info.lock() = InputDeviceInfo {
+                input_id: input_id { bustype: 0x0003, vendor: 0x1234, product: 0x5678, version: 9 },
+                name: "custom_uinput".to_string(),
+            };
+            assert_eq!(read_attr("devices/virtual/input/input7/name"), "custom_uinput\n");
+            assert_eq!(read_attr("devices/virtual/input/input7/id/bustype"), "0003\n");
+            assert_eq!(read_attr("devices/virtual/input/input7/id/vendor"), "1234\n");
+            assert_eq!(read_attr("devices/virtual/input/input7/id/product"), "5678\n");
+            assert_eq!(read_attr("devices/virtual/input/input7/id/version"), "0009\n");
+
+            // Same-class children are created directly within their parent, without an
+            // intermediate class directory.
+            assert!(root.lookup("devices/virtual/input/input7/input".into()).is_none());
+
+            InputDevice::unregister(&current_task, event_device);
+            for path in [
+                "devices/virtual/input/input7",
+                "class/input/input7",
+                "class/input/event7",
+                "dev/char/13:7",
+            ] {
+                assert!(root.lookup(path.into()).is_none(), "unexpected {path}");
+            }
         })
         .await;
     }

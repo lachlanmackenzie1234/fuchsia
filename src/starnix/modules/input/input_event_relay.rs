@@ -1120,10 +1120,7 @@ impl InputEventsRelay {
                         if let Some(device_state) = self.devices.remove(&device_id) {
                             self.update_num_devices();
                             if let Some(starnix_device) = device_state.starnix_device {
-                                current_task
-                                    .kernel()
-                                    .device_registry
-                                    .remove_device(current_task, starnix_device);
+                                InputDevice::unregister(current_task, starnix_device);
                             }
                         }
                     }
@@ -1739,7 +1736,7 @@ fn register_and_add_device(
     if let Some(old_state) = devices_relay.devices.remove(&device_id) {
         devices_relay.update_num_devices();
         if let Some(old_starnix_device) = old_state.starnix_device {
-            current_task.kernel().device_registry.remove_device(current_task, old_starnix_device);
+            InputDevice::unregister(current_task, old_starnix_device);
         }
     }
 

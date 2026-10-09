@@ -150,9 +150,10 @@ TEST(UdevTest, AddInput) {
   }
 
   std::string event_node = device->event_node;
-  std::string event_uevent_path = "/sys/devices/virtual/input/" + event_node + "/uevent";
   ASSERT_TRUE(event_node.starts_with("event")) << "Unexpected device node: " << event_node;
   std::string minor_str = event_node.substr(std::string("event").length());
+  std::string devpath = "/devices/virtual/input/input" + minor_str + "/" + event_node;
+  std::string event_uevent_path = "/sys" + devpath + "/uevent";
 
   fbl::unique_fd write_fd(open(event_uevent_path.c_str(), O_WRONLY));
   ASSERT_TRUE(write_fd.is_valid()) << "failed to open uevent: " << strerror(errno);
@@ -166,9 +167,9 @@ TEST(UdevTest, AddInput) {
   std::map<std::string, std::string> parameters;
   ASSERT_TRUE(read_next_uevent(fd.get(), &command, &parameters));
   // These values are compatible with `ueventd`.
-  ASSERT_EQ(command, ("add@/devices/virtual/input/" + event_node));
+  ASSERT_EQ(command, "add@" + devpath);
   ASSERT_EQ(parameters["ACTION"], "add");
-  ASSERT_EQ(parameters["DEVPATH"], ("/devices/virtual/input/" + event_node));
+  ASSERT_EQ(parameters["DEVPATH"], devpath);
   ASSERT_EQ(parameters["SUBSYSTEM"], "input");
   ASSERT_EQ(parameters["SYNTH_UUID"], "0");
   ASSERT_EQ(parameters["MAJOR"], "13");
@@ -189,7 +190,7 @@ TEST(UdevTest, AddInput) {
 
   ASSERT_TRUE(!params.contains("ACTION"));
   ASSERT_TRUE(!params.contains("SEQNUM"));
-  ASSERT_EQ(params["DEVPATH"], ("/devices/virtual/input/" + event_node));
+  ASSERT_EQ(params["DEVPATH"], devpath);
   ASSERT_EQ(params["SUBSYSTEM"], "input");
   ASSERT_EQ(params["SYNTH_UUID"], "0");
   ASSERT_EQ(params["MAJOR"], "13");
