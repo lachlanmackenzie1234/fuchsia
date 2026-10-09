@@ -3668,6 +3668,18 @@ alias(
 )
 
 alias(
+    name = "zerotrie-0.2.5",
+    actual = "//third_party/rust_crates/vendor/zerotrie-0.2.5:zerotrie",
+    tags = ["manual"],
+)
+
+alias(
+    name = "zerotrie",
+    actual = "//third_party/rust_crates/vendor/zerotrie-0.2.5:zerotrie",
+    tags = ["manual"],
+)
+
+alias(
     name = "zip-8.6.0",
     actual = "//third_party/rust_crates/vendor/zip-8.6.0:zip",
     tags = ["manual"],

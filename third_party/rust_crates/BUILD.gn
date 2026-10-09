@@ -2865,6 +2865,14 @@ if (current_os == "fuchsia") {
   }
 }
 
+group("zerotrie") {
+  public_deps = [ ":zerotrie-v0_2_5" ]
+}
+
+group("zerotrie-0.2.5") {
+  public_deps = [ ":zerotrie-v0_2_5" ]
+}
+
 if (!(current_os == "fuchsia")) {
   group("zip") {
     public_deps = [ ":zip-v8_6_0" ]
@@ -27585,6 +27593,7 @@ rustc_library("zerotrie-v0_2_5") {
   deps += [ ":displaydoc-v0_2_7($host_toolchain)" ]
   deps += [ ":yoke-v0_8_3" ]
   deps += [ ":zerofrom-v0_1_8" ]
+  deps += [ ":zerovec-v0_11_8" ]
 
   rustenv = []
 
@@ -27592,6 +27601,8 @@ rustc_library("zerotrie-v0_2_5") {
     "--cap-lints=allow",
     "-Cmetadata=3271962b4b236f3b",
     "-Cextra-filename=-3271962b4b236f3b",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"yoke\"",
     "--cfg=feature=\"zerofrom\"",
   ]
@@ -27616,6 +27627,7 @@ rustc_library("zerovec-v0_11_8") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":serde-v1_0_229" ]
   deps += [ ":yoke-v0_8_3" ]
   deps += [ ":zerofrom-v0_1_8" ]
   deps += [ ":zerovec-derive-v0_11_6($host_toolchain)" ]
@@ -27626,6 +27638,7 @@ rustc_library("zerovec-v0_11_8") {
     "--cap-lints=allow",
     "-Cmetadata=27f5328ac35f1024",
     "-Cextra-filename=-27f5328ac35f1024",
+    "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"yoke\"",
   ]

@@ -283,6 +283,7 @@ which = "8.0.4"
 winnow = "1.0.4"
 xml = "1.4.0"
 zerocopy = { version = "0.8.48", features = ["derive", "simd"] }
+zerotrie = { version = "0.2.5", features = ["alloc"] }
 zstd = "0.13.3"
 zstd-safe = "7.2.4"
 # keep-sorted end
