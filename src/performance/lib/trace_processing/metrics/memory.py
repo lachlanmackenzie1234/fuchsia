@@ -6,6 +6,7 @@
 
 import collections
 import dataclasses
+import typing
 from collections.abc import Collection
 
 from reporting import metrics
@@ -163,12 +164,14 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
     """
 
     @property
+    @typing.override
     def event_patterns(self) -> set[str]:
         """Patterns describing the trace events needed to generate these metrics."""
         return set(_KERNEL_EVENT_NAMES)
 
     FREEFORM_METRICS_FILENAME = "memory"
 
+    @typing.override
     def process_freeform_metrics(
         self, model: trace_model.Model
     ) -> tuple[str, metrics.JSON]:
@@ -193,6 +196,7 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
             ),
         )
 
+    @typing.override
     def process_metrics(
         self, model: trace_model.Model
     ) -> Collection[metrics.TestCaseResult]:

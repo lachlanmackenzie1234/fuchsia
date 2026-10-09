@@ -6,6 +6,7 @@
 
 import collections
 import logging
+import typing
 from collections.abc import (
     Callable,
     Iterable,
@@ -146,6 +147,7 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
         return sorted(rails)
 
     @property
+    @typing.override
     def event_patterns(self) -> set[str]:
         """Patterns describing the trace events needed to generate these metrics."""
         if (
@@ -215,6 +217,7 @@ class OdpmPowerMetricsProcessor(trace_metrics.MetricsProcessor):
             )
         ]
 
+    @typing.override
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[metrics.TestCaseResult]:

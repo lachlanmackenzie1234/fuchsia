@@ -9,6 +9,7 @@ import dataclasses
 import itertools
 import logging
 import sys
+import typing
 from collections.abc import Collection, Mapping, MutableSequence, Sequence
 from typing import (
     NotRequired,
@@ -230,9 +231,11 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
         self._percent_cutoff = percent_cutoff
 
     @property
+    @typing.override
     def event_patterns(self) -> set[str]:
         return {_CPU_USAGE_EVENT_NAME, f"{_RATE_EVENT_NAME}.*"}
 
+    @typing.override
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[metrics.TestCaseResult]:
@@ -322,6 +325,7 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
     # specification to `-> tuple[str, ThreadBreakdown]`; the type-checker
     # ought understand that a ThreadBreakdown is suitable to use where a
     # metrics.JSON is needed.
+    @typing.override
     def process_freeform_metrics(
         self, model: trace_model.Model
     ) -> tuple[str, metrics.JSON]:
