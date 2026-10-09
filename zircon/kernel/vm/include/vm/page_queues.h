@@ -34,6 +34,31 @@ class PageQueues;
 extern "C" FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
 
 extern "C" {
+void rust_page_queues_set_wired(const void* storage, vm_page_t* page, VmCowPages* object,
+                                uint64_t page_offset);
+void rust_page_queues_set_anonymous(const void* storage, vm_page_t* page, VmCowPages* object,
+                                    uint64_t page_offset, bool skip_reclaim);
+void rust_page_queues_set_reclaim(const void* storage, vm_page_t* page, VmCowPages* object,
+                                  uint64_t page_offset);
+void rust_page_queues_set_pager_backed_dirty(const void* storage, vm_page_t* page,
+                                             VmCowPages* object, uint64_t page_offset);
+void rust_page_queues_set_anonymous_zero_fork(const void* storage, vm_page_t* page,
+                                              VmCowPages* object, uint64_t page_offset);
+void rust_page_queues_set_high_priority(const void* storage, vm_page_t* page, VmCowPages* object,
+                                        uint64_t page_offset);
+
+void rust_page_queues_change_object_offset(const void* storage, vm_page_t* page, VmCowPages* object,
+                                           uint64_t page_offset);
+void rust_page_queues_change_object_offset_array(const void* storage, vm_page_t** pages,
+                                                 VmCowPages* object, const uint64_t* offsets,
+                                                 size_t count);
+void rust_page_queues_change_object_offset_locked_list(const void* storage, vm_page_t* page,
+                                                       VmCowPages* object, uint64_t page_offset);
+
+void rust_page_queues_remove(const void* storage, vm_page_t* page);
+void rust_page_queues_remove_array_into_list(const void* storage, vm_page_t** pages, size_t count,
+                                             VmPageDoublyLinkedList* out_list);
+
 void rust_page_queues_get_reclaim_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
 void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
@@ -126,15 +151,31 @@ class PageQueues {
   // offset, the backlink information must be updated either by calling ChangeObjectOffsetLocked, or
   // removing the page completely from the queues.
 
-  void SetWired(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
+  // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+  FFI_ALWAYS_INLINE void SetWired(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
+    rust_page_queues_set_wired(this, page, object, page_offset);
+  }
   // |skip_reclaim| controls whether reclaiming the page should be forcibly skipped regardless of
   // whether anonymous pages are considered reclaimable in general.
-  void SetAnonymous(vm_page_t* page, VmCowPages* object, uint64_t page_offset,
-                    bool skip_reclaim = false);
-  void SetReclaim(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
-  void SetPagerBackedDirty(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
-  void SetAnonymousZeroFork(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
-  void SetHighPriority(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
+  FFI_ALWAYS_INLINE void SetAnonymous(vm_page_t* page, VmCowPages* object, uint64_t page_offset,
+                                      bool skip_reclaim = false) {
+    rust_page_queues_set_anonymous(this, page, object, page_offset, skip_reclaim);
+  }
+  FFI_ALWAYS_INLINE void SetReclaim(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
+    rust_page_queues_set_reclaim(this, page, object, page_offset);
+  }
+  FFI_ALWAYS_INLINE void SetPagerBackedDirty(vm_page_t* page, VmCowPages* object,
+                                             uint64_t page_offset) {
+    rust_page_queues_set_pager_backed_dirty(this, page, object, page_offset);
+  }
+  FFI_ALWAYS_INLINE void SetAnonymousZeroFork(vm_page_t* page, VmCowPages* object,
+                                              uint64_t page_offset) {
+    rust_page_queues_set_anonymous_zero_fork(this, page, object, page_offset);
+  }
+  FFI_ALWAYS_INLINE void SetHighPriority(vm_page_t* page, VmCowPages* object,
+                                         uint64_t page_offset) {
+    rust_page_queues_set_high_priority(this, page, object, page_offset);
+  }
 
   // All Move operations change the queue that a page is considered to be in, but do not change the
   // object or offset backlink information. The page must currently be in a valid page queue.
@@ -165,20 +206,30 @@ class PageQueues {
 
   // Changes the backlink information for a page and should only be called by the page owner under
   // its lock (that is the VMO lock). The page must currently be in a valid page queue.
-  void ChangeObjectOffset(vm_page_t* page, VmCowPages* object, uint64_t page_offset);
-  void ChangeObjectOffsetArray(vm_page_t** pages, VmCowPages* object, uint64_t* offsets,
-                               size_t count);
+  FFI_ALWAYS_INLINE void ChangeObjectOffset(vm_page_t* page, VmCowPages* object,
+                                            uint64_t page_offset) {
+    rust_page_queues_change_object_offset(this, page, object, page_offset);
+  }
+  FFI_ALWAYS_INLINE void ChangeObjectOffsetArray(vm_page_t** pages, VmCowPages* object,
+                                                 uint64_t* offsets, size_t count) {
+    rust_page_queues_change_object_offset_array(this, pages, object, offsets, count);
+  }
 
-  // Externally locked variant of CHangeObjectOffset that can be used for more efficient batch
+  // Externally locked variant of ChangeObjectOffset that can be used for more efficient batch
   // operations. In addition to the annotated lock_, the VMO lock of the owner is also required to
   // be held.
-  void ChangeObjectOffsetLockedList(vm_page_t* page, VmCowPages* object, uint64_t page_offset)
-      TA_REQ(list_lock_);
+  FFI_ALWAYS_INLINE void ChangeObjectOffsetLockedList(vm_page_t* page, VmCowPages* object,
+                                                      uint64_t page_offset) TA_REQ(get_lock()) {
+    rust_page_queues_change_object_offset_locked_list(this, page, object, page_offset);
+  }
 
   // Removes the page from any page list and returns ownership of the queue_node.
-  void Remove(vm_page_t* page);
+  FFI_ALWAYS_INLINE void Remove(vm_page_t* page) { rust_page_queues_remove(this, page); }
   // Batched version of Remove that also places all the pages in the specified list
-  void RemoveArrayIntoList(vm_page_t** page, size_t count, VmPageDoublyLinkedList* out_list);
+  FFI_ALWAYS_INLINE void RemoveArrayIntoList(vm_page_t** page, size_t count,
+                                             VmPageDoublyLinkedList* out_list) {
+    rust_page_queues_remove_array_into_list(this, page, count, out_list);
+  }
 
   // Tells the page queue this page has been accessed, and it should have its position in the queues
   // updated.
@@ -475,9 +526,6 @@ class PageQueues {
 
   // Helpers for adding and removing to the queues. All of the public Set/Move/Remove operations
   // are convenience wrappers around these.
-  void RemoveLockedList(vm_page_t* page) TA_REQ(list_lock_);
-  void SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintptr_t page_offset,
-                                  PageQueue queue) TA_REQ(list_lock_);
   void MoveToQueueLockedList(vm_page_t* page, PageQueue queue) TA_REQ(list_lock_);
   void MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_index) TA_REQ(list_lock_);
   // Potentially calls |CheckActiveRatioAgingLocked| based on the kActiveInactiveErrorMargin.

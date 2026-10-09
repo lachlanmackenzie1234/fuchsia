@@ -8,7 +8,7 @@ use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::relaxed_atomic::{RelaxedAtomicBool, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::platform_rs::timer::DurationMono;
-use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
+use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::vm_cow_pages::VmCowPages;
 use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_void};
@@ -17,9 +17,9 @@ use core::mem::{MaybeUninit, offset_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
-use fbl::RefPtr;
+use fbl::{DoublyLinkedListContainable, RefPtr};
 use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
-use page_bindings::vm_page_t;
+use page_bindings::{vm_page_state, vm_page_t};
 use page_queues_bindings as bindings;
 use pin_init::{PinInit, pin_data};
 
@@ -266,6 +266,22 @@ zr::static_assert!(
 /// checking for contention and potentially releasing the lock if contended, allowing other
 /// operations to proceed.
 const OP_BATCH_SIZE: usize = 64;
+
+/// Removes `page` from its intrusive doubly-linked list node in O(1) time without knowing which
+/// list it belongs to, matching C++ `internal_erase`.
+///
+/// # Safety
+///
+/// Caller must guarantee that the `list_lock` guarding the containing list is held and `page` is
+/// currently in an intrusive container.
+#[inline]
+unsafe fn remove_page_from_list_node(page: &VmPage) {
+    // SAFETY: Caller guarantees `list_lock` is held and `page` is in an untracked
+    // `VmPageDoublyLinkedList`.
+    unsafe {
+        let _ = fbl::remove_from_container::<VmPage, fbl::DefaultObjectTag, NonNull<VmPage>>(page);
+    }
+}
 
 /// Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
 /// The page queues provide a way to
@@ -732,16 +748,144 @@ impl PageQueues {
     // non-racy if the mru/lru generations cannot change, which requires holding the lock to
     // guarantee.
     #[inline]
-    fn can_increment_mru_gen_locked(&self) -> bool {
+    fn can_increment_mru_gen_locked(&self, _token: &LockToken<'_, PageQueuesLockClass>) -> bool {
         self.mru_gen.load(Ordering::Relaxed) - self.lru_gen.load(Ordering::Relaxed)
             < NUM_RECLAIM as u64 - 1
     }
 
     // Similar to |can_increment_mru_gen_locked|, but for the lru.
     #[inline]
-    fn can_increment_lru_gen_locked(&self) -> bool {
+    fn can_increment_lru_gen_locked(&self, _token: &LockToken<'_, PageQueuesLockClass>) -> bool {
         self.mru_gen.load(Ordering::Relaxed) - self.lru_gen.load(Ordering::Relaxed)
             > NUM_ACTIVE_QUEUES as u64
+    }
+
+    // Records that |pages| have potentially changed queue impacting the active/inactive ratio, and
+    // returns |true| if checking the active ratio can be skipped.
+    #[inline]
+    fn record_active_ratio_skips(&self, pages: usize) -> bool {
+        // Add the pages to the skip count and check if our specific addition caused the count to
+        // cross the threshold. This prevents a thundering herd of threads all noticing once
+        // the count passes the threshold.
+        let old_count = self.lazy_active_ratio_aging_skips.fetch_add(pages as u64);
+        if old_count < ACTIVE_INACTIVE_ERROR_MARGIN as u64
+            && old_count + (pages as u64) >= ACTIVE_INACTIVE_ERROR_MARGIN as u64
+        {
+            // Reset the skips counter to zero. This possibly loses some counts, but as the active
+            // ratio has not yet been checked, this is fine.
+            self.lazy_active_ratio_aging_skips.store(0);
+            return false;
+        }
+        true
+    }
+
+    // Potentially calls |check_active_ratio_aging_locked| based on the
+    // ACTIVE_INACTIVE_ERROR_MARGIN. |pages| indicates how many pages might have changed queue, and
+    // hence how much the ratio could have changed by.
+    #[inline]
+    fn maybe_check_active_ratio_aging(&self, pages: usize) {
+        if !self.record_active_ratio_skips(pages) {
+            #[cold]
+            fn cold_path(pq: &PageQueues) {
+                ksync::lock!(let mut guard = pq.lock_lock());
+                pq.check_active_ratio_aging_locked(&mut guard);
+            }
+            cold_path(self);
+        }
+    }
+
+    // Checks if the active ratio has exceeded the threshold to cause aging, and if so signals the
+    // event.
+    fn check_active_ratio_aging_locked(&self, guard: &mut Pin<&mut PageQueuesLockGuard<'_>>) {
+        if *guard.as_mut().fields().active_ratio_triggered {
+            // Already triggered, nothing more to do.
+            return;
+        }
+        if self.is_active_ratio_triggering_aging(guard) {
+            *guard.as_mut().fields_mut().active_ratio_triggered = true;
+            self.mru_event.signal();
+        }
+    }
+
+    // Helper method that calculates whether the current active ratio would trigger aging.
+    fn is_active_ratio_triggering_aging(&self, guard: &Pin<&mut PageQueuesLockGuard<'_>>) -> bool {
+        let counts = self.get_active_inactive_counts();
+        counts.active * (*guard.fields().active_ratio_multiplier as usize) > counts.inactive
+    }
+
+    // Helpers for adding and removing to the queues. All of the public Set/Move/Remove operations
+    // are convenience wrappers around these.
+
+    /// # Safety
+    ///
+    /// Caller must guarantee that `page` is owned by `cow` (in the `OBJECT` state) and not
+    /// currently assigned to a `PageQueue`.
+    #[inline]
+    unsafe fn set_queue_backlink_locked_list(
+        &self,
+        page: VmPagePtr,
+        cow: &VmCowPages,
+        page_offset: u64,
+        queue: PageQueue,
+        list_guard: &mut Pin<&mut PageQueuesListLockGuard<'_>>,
+    ) {
+        debug_assert!(queue != PageQueue::RECLAIM_ISOLATE);
+        let fields = list_guard.as_mut().fields_mut();
+        // SAFETY: Caller guarantees `page` is attached to a VM object and not currently in a
+        // container, `fields.page_queues` is pinned in memory, and `list_lock` is held.
+        unsafe {
+            let raw = page.as_ref();
+            debug_assert_eq!(raw.state().0, vm_page_state::OBJECT);
+            debug_assert!(!raw.is_free());
+            debug_assert!(!raw.get_node().in_container());
+            debug_assert!(raw.get_object().is_null());
+            debug_assert_eq!(raw.get_page_offset(), 0);
+
+            raw.set_object(cow.as_raw().cast());
+            raw.set_page_offset(page_offset);
+
+            let queue_ref = raw.get_page_queue_ref();
+            debug_assert_eq!(queue_ref.load(Ordering::Relaxed), PageQueue::NONE.0);
+            queue_ref.store(queue.0, Ordering::Relaxed);
+
+            let page_queues = fields.page_queues.get_unchecked_mut();
+            page_queues[queue.0 as usize].push_front_raw(page.as_non_null());
+        }
+        self.page_queue_counts[queue.0 as usize].fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// # Safety
+    ///
+    /// Caller must guarantee that `page` is owned by a VMO and currently assigned to this
+    /// `PageQueue`. `_token` proves the `list_lock` is held.
+    #[inline]
+    unsafe fn remove_locked_list(
+        &self,
+        page: VmPagePtr,
+        _token: &LockToken<'_, PageQueuesListLockClass>,
+    ) {
+        // Directly exchange the old gen.
+        // SAFETY: Caller guarantees `page` is attached to a VM object, currently in a queue of
+        // `self`, and `list_lock` is held.
+        unsafe {
+            let raw = page.as_ref();
+            let old_queue = raw.get_page_queue_ref().swap(PageQueue::NONE.0, Ordering::Relaxed);
+            debug_assert_ne!(old_queue, PageQueue::NONE.0);
+            self.page_queue_counts[old_queue as usize].fetch_sub(1, Ordering::Relaxed);
+            raw.set_object(core::ptr::null_mut());
+            raw.set_page_offset(0);
+            remove_page_from_list_node(raw);
+        }
+    }
+
+    // Helper that checks if iterations is at a multiple of the OP_BATCH_SIZE, and if so whether or
+    // not the lock is presently contested and hence should be yielded.
+    #[inline]
+    fn batch_op_should_drop_lock(&self, iterations: usize) -> bool {
+        if iterations.is_multiple_of(OP_BATCH_SIZE) {
+            return self.list_lock.raw_mutex().is_contested();
+        }
+        false
     }
 
     /// Helper for DebugPageIs* methods that checks if `page` is in any reclaim queue and passes
@@ -826,16 +970,12 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_wired(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
+        ksync::lock!(let mut guard = self.lock_list_lock());
+        // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a PageQueue.
         unsafe {
-            bindings::cpp_page_queues_set_wired(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-            )
+            self.set_queue_backlink_locked_list(page, cow, offset, PageQueue::WIRED, &mut guard);
         }
     }
 
@@ -847,6 +987,7 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_anonymous(
         &self,
         page: VmPagePtr,
@@ -854,17 +995,33 @@ impl PageQueues {
         offset: u64,
         skip_reclaim: bool,
     ) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_set_anonymous(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-                skip_reclaim,
-            )
+        {
+            ksync::lock!(let mut guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a
+            // PageQueue.
+            unsafe {
+                self.set_queue_backlink_locked_list(
+                    page,
+                    cow,
+                    offset,
+                    if self.anonymous_is_reclaimable.load() && !skip_reclaim {
+                        self.mru_gen_to_queue()
+                    } else {
+                        PageQueue::ANONYMOUS
+                    },
+                    &mut guard,
+                );
+            }
+            #[cfg(debug_assertions)]
+            {
+                // SAFETY: `list_lock` is held.
+                let maybe_dc = unsafe { &*self.debug_compressor.get() };
+                if let Some(dc) = maybe_dc.as_ref() {
+                    dc.add(page, cow, offset);
+                }
+            }
         }
+        self.maybe_check_active_ratio_aging(1);
     }
 
     /// Places `page` into the general reclaimable queue.
@@ -872,17 +1029,23 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_reclaim(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_set_reclaim(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-            )
+        {
+            ksync::lock!(let mut guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a
+            // PageQueue.
+            unsafe {
+                self.set_queue_backlink_locked_list(
+                    page,
+                    cow,
+                    offset,
+                    self.mru_gen_to_queue(),
+                    &mut guard,
+                );
+            }
         }
+        self.maybe_check_active_ratio_aging(1);
     }
 
     /// Places `page` into the pager backed dirty queue.
@@ -890,16 +1053,18 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_pager_backed_dirty(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
+        ksync::lock!(let mut guard = self.lock_list_lock());
+        // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a PageQueue.
         unsafe {
-            bindings::cpp_page_queues_set_pager_backed_dirty(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
+            self.set_queue_backlink_locked_list(
+                page,
+                cow,
                 offset,
-            )
+                PageQueue::PAGER_BACKED_DIRTY,
+                &mut guard,
+            );
         }
     }
 
@@ -908,17 +1073,35 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_anonymous_zero_fork(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_set_anonymous_zero_fork(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-            )
+        {
+            ksync::lock!(let mut guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a
+            // PageQueue.
+            unsafe {
+                self.set_queue_backlink_locked_list(
+                    page,
+                    cow,
+                    offset,
+                    if self.zero_fork_is_reclaimable.load() {
+                        self.mru_gen_to_queue()
+                    } else {
+                        PageQueue::ANONYMOUS_ZERO_FORK
+                    },
+                    &mut guard,
+                );
+            }
+            #[cfg(debug_assertions)]
+            {
+                // SAFETY: `list_lock` is held.
+                let maybe_dc = unsafe { &*self.debug_compressor.get() };
+                if let Some(dc) = maybe_dc.as_ref() {
+                    dc.add(page, cow, offset);
+                }
+            }
         }
+        self.maybe_check_active_ratio_aging(1);
     }
 
     /// Places `page` into the high priority queue.
@@ -926,16 +1109,18 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO, but not yet assigned to a PageQueue.
+    #[inline]
     pub unsafe fn set_high_priority(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // not attached to a VM object per function safety preconditions.
+        ksync::lock!(let mut guard = self.lock_list_lock());
+        // SAFETY: Caller guarantees `page` is owned by `cow` and not yet assigned to a PageQueue.
         unsafe {
-            bindings::cpp_page_queues_set_high_priority(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
+            self.set_queue_backlink_locked_list(
+                page,
+                cow,
                 offset,
-            )
+                PageQueue::HIGH_PRIORITY,
+                &mut guard,
+            );
         }
     }
 
@@ -1057,45 +1242,55 @@ impl PageQueues {
     ///
     /// The caller must guarantee `page` is owned by a VMO (and that VMOs lock is held), and
     /// assigned to this PageQueue.
-    pub unsafe fn change_object_offset(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe {
-            bindings::cpp_page_queues_change_object_offset(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-            )
-        }
+    #[inline]
+    pub unsafe fn change_object_offset(
+        &self,
+        page: VmPagePtr,
+        object: &VmCowPages,
+        page_offset: u64,
+    ) {
+        ksync::lock!(let guard = self.lock_list_lock());
+        // SAFETY: Caller guarantees `page` is owned by `object` (with its lock held) and `guard`
+        // holds `list_lock`.
+        unsafe { self.change_object_offset_locked_list(page, object, page_offset, guard.token()) };
     }
 
-    /// Changes the backlink information for an array of pages.
+    /// Batched version of `change_object_offset`.
     ///
     /// # Safety
     ///
     /// The caller must guarantee `pages` are owned by a VMO, assigned to this PageQueue, and that
     /// `pages` and `offsets` have matching lengths.
+    #[inline]
     pub unsafe fn change_object_offset_array(
         &self,
         pages: &[VmPagePtr],
-        cow: &VmCowPages,
+        object: &VmCowPages,
         offsets: &[u64],
     ) {
-        assert_eq!(pages.len(), offsets.len());
-        if pages.is_empty() {
-            return;
-        }
-        // SAFETY: `self` is valid, `pages` and `offsets` have matching lengths, and the caller
-        // guarantees preconditions on `pages`.
-        unsafe {
-            bindings::cpp_page_queues_change_object_offset_array(
-                self.as_raw(),
-                pages.as_ptr().cast_mut().cast(),
-                cow.as_raw().cast(),
-                offsets.as_ptr(),
-                pages.len(),
-            );
+        debug_assert_eq!(pages.len(), offsets.len());
+        let count = pages.len();
+        let mut i = 0;
+        while i < count {
+            ksync::lock!(let guard = self.lock_list_lock());
+            // Use a do/while structure for the inner loop to ensure we at least make some progress
+            // before checking again for a lock drop.
+            loop {
+                // SAFETY: Caller guarantees `pages[i]` is owned by `object` and `guard` holds
+                // `list_lock`.
+                unsafe {
+                    self.change_object_offset_locked_list(
+                        pages[i],
+                        object,
+                        offsets[i],
+                        guard.token(),
+                    )
+                };
+                i += 1;
+                if i >= count || self.batch_op_should_drop_lock(i) {
+                    break;
+                }
+            }
         }
     }
 
@@ -1107,22 +1302,24 @@ impl PageQueues {
     ///
     /// The caller must guarantee `page` is owned by a VMO (and its lock is held) and assigned to
     /// this PageQueue.`_token` proves the page queues `list_lock` is held.
+    #[inline]
     pub unsafe fn change_object_offset_locked_list(
         &self,
-        _token: &LockToken<'_, PageQueuesListLockClass>,
         page: VmPagePtr,
-        cow: &VmCowPages,
-        offset: u64,
+        object: &VmCowPages,
+        page_offset: u64,
+        _token: &LockToken<'_, PageQueuesListLockClass>,
     ) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object and relevant locks are held.
+        // SAFETY: Caller guarantees `page` is in the OBJECT state, currently resides in a valid
+        // page queue, and both the VMO lock and `list_lock` are held.
         unsafe {
-            bindings::cpp_page_queues_change_object_offset_locked_list(
-                self.as_raw(),
-                page.as_ffi(),
-                cow.as_raw().cast(),
-                offset,
-            );
+            let raw = page.as_ref();
+            debug_assert_eq!(raw.state().0, vm_page_state::OBJECT);
+            debug_assert!(!raw.is_free());
+            debug_assert!(raw.get_node().in_container());
+            debug_assert!(!raw.get_object().is_null());
+            raw.set_object(object as *const VmCowPages as *mut core::ffi::c_void);
+            raw.set_page_offset(page_offset);
         }
     }
 
@@ -1131,10 +1328,15 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `page` is owned by a VMO and assigned to this PageQueue.
+    #[inline]
     pub unsafe fn remove(&self, page: VmPagePtr) {
-        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
-        // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_remove(self.as_raw(), page.as_ffi()) }
+        {
+            ksync::lock!(let guard = self.lock_list_lock());
+            // SAFETY: Caller guarantees `page` is owned by a VMO and assigned to this PageQueue,
+            // and `guard` holds `list_lock`.
+            unsafe { self.remove_locked_list(page, guard.token()) };
+        }
+        self.maybe_check_active_ratio_aging(1);
     }
 
     /// Batched version of `remove` that also places all the pages in the specified list.
@@ -1142,26 +1344,33 @@ impl PageQueues {
     /// # Safety
     ///
     /// The caller must guarantee `pages` are owned by a VMO and assigned to this PageQueue.
+    #[inline]
     pub unsafe fn remove_array_into_list(
         &self,
         pages: &[VmPagePtr],
         mut out_list: Pin<&mut VmPageDoublyLinkedList>,
     ) {
-        if pages.is_empty() {
-            return;
+        let count = pages.len();
+        let mut i = 0;
+        while i < count {
+            ksync::lock!(let guard = self.lock_list_lock());
+            // Use a do/while structure for the inner loop to ensure we at least make some progress
+            // before checking again for a lock drop.
+            loop {
+                // SAFETY: Caller guarantees `pages[i]` is assigned to this PageQueue, `guard`
+                // holds `list_lock`, and `pages[i]` is removed from queues before being pushed
+                // into `out_list`.
+                unsafe {
+                    self.remove_locked_list(pages[i], guard.token());
+                    out_list.as_mut().get_unchecked_mut().push_back_raw(pages[i].as_non_null());
+                }
+                i += 1;
+                if i >= count || self.batch_op_should_drop_lock(i) {
+                    break;
+                }
+            }
         }
-        let list_ptr: *mut bindings::VmPageDoublyLinkedList =
-            (unsafe { out_list.as_mut().get_unchecked_mut() } as *mut VmPageDoublyLinkedList)
-                .cast();
-        // SAFETY: `self.as_raw()` is valid, and caller guarantees `pages` are attached.
-        unsafe {
-            bindings::cpp_page_queues_remove_array_into_list(
-                self.as_raw(),
-                pages.as_ptr().cast_mut().cast(),
-                pages.len(),
-                list_ptr,
-            );
-        }
+        self.maybe_check_active_ratio_aging(count);
     }
 
     /// Tells the page queue this page has been accessed, and it should have its position in the
@@ -1625,6 +1834,277 @@ impl PageQueues {
     }
 }
 
+/// Converts a raw pointer and count into a slice, returning an empty slice when `count == 0`.
+///
+/// # Safety
+///
+/// `ptr` must be non-null. If `count > 0`, `ptr` must be properly aligned and valid for reads of
+/// `count` elements of type `T` for lifetime `'a`.
+#[inline]
+unsafe fn slice_from_raw_parts_or_empty<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
+    debug_assert!(!ptr.is_null());
+    if count == 0 {
+        &[]
+    } else {
+        // SAFETY: Caller guarantees `ptr` is valid for `count` elements when `count > 0`.
+        unsafe { core::slice::from_raw_parts(ptr, count) }
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_wired`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_wired`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_wired(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding `set_wired`
+    // preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_wired(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_anonymous`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_anonymous`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_anonymous(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+    skip_reclaim: bool,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding `set_anonymous`
+    // preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_anonymous(page_ptr, cow, page_offset, skip_reclaim);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_reclaim`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_reclaim`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_reclaim(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding `set_reclaim`
+    // preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_reclaim(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_pager_backed_dirty`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_pager_backed_dirty`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_pager_backed_dirty(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding
+    // `set_pager_backed_dirty` preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_pager_backed_dirty(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_anonymous_zero_fork`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_anonymous_zero_fork`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_anonymous_zero_fork(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding
+    // `set_anonymous_zero_fork` preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_anonymous_zero_fork(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::set_high_priority`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::set_high_priority`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_set_high_priority(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid pointers upholding
+    // `set_high_priority` preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.set_high_priority(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::change_object_offset`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::change_object_offset`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_change_object_offset(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid non-null pointers upholding
+    // `change_object_offset` preconditions.
+    unsafe {
+        let cow = &*(object as *const VmCowPages);
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.change_object_offset(page_ptr, cow, page_offset);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::change_object_offset_array`].
+///
+/// # Safety
+///
+/// `pages` and `offsets` must be valid for `count` elements and `cow` must be a valid
+/// `VmCowPages` pointer meeting the preconditions of [`PageQueues::change_object_offset_array`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_change_object_offset_array(
+    queues: &PageQueues,
+    pages: *mut *mut vm_page_t,
+    cow: *mut bindings::VmCowPages,
+    offsets: *const u64,
+    count: usize,
+) {
+    debug_assert!(!cow.is_null());
+    // SAFETY: `VmPagePtr` is `#[repr(transparent)]` over `NonNull<VmPage>`, and caller
+    // guarantees `cow`, `pages`, and `offsets` are valid non-null pointers upholding
+    // `change_object_offset_array` preconditions.
+    unsafe {
+        let cow = cow as *const VmCowPages;
+        debug_assert!(slice_from_raw_parts_or_empty(pages, count).iter().all(|x| !x.is_null()));
+        let pages_slice = slice_from_raw_parts_or_empty(pages as *const VmPagePtr, count);
+        let offsets_slice = slice_from_raw_parts_or_empty(offsets, count);
+        queues.change_object_offset_array(pages_slice, &*cow, offsets_slice);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::change_object_offset_locked_list`].
+///
+/// # Safety
+///
+/// `page` and `object` must be valid pointers meeting the preconditions of
+/// [`PageQueues::change_object_offset_locked_list`], and the page queues lock (`get_lock()`) must
+/// be held by the caller.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_change_object_offset_locked_list(
+    queues: &PageQueues,
+    page: *mut vm_page_t,
+    object: *mut bindings::VmCowPages,
+    page_offset: u64,
+) {
+    debug_assert!(!object.is_null());
+    // SAFETY: Caller guarantees `page` and `object` are valid non-null pointers, `list_lock`
+    // (`get_lock()`) is held, and `change_object_offset_locked_list` preconditions are met.
+    unsafe {
+        let cow = object as *const VmCowPages;
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        let token = LockToken::new();
+        queues.change_object_offset_locked_list(page_ptr, &*cow, page_offset, &token);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::remove`].
+///
+/// # Safety
+///
+/// `page` must be a valid pointer meeting the preconditions of [`PageQueues::remove`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_remove(queues: &PageQueues, page: *mut vm_page_t) {
+    // SAFETY: Caller guarantees `page` is a valid `vm_page_t` pointer upholding `remove`
+    // preconditions.
+    unsafe {
+        let page_ptr = VmPagePtr::from_ffi_unchecked(page);
+        queues.remove(page_ptr);
+    }
+}
+
+/// FFI wrapper for [`PageQueues::remove_array_into_list`].
+///
+/// # Safety
+///
+/// `pages` must be valid for `count` elements and `out_list` must be a valid
+/// `VmPageDoublyLinkedList` pointer meeting the preconditions of
+/// [`PageQueues::remove_array_into_list`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_page_queues_remove_array_into_list(
+    queues: &PageQueues,
+    pages: *mut *mut vm_page_t,
+    count: usize,
+    out_list: *mut VmPageDoublyLinkedList,
+) {
+    debug_assert!(!out_list.is_null());
+    // SAFETY: `VmPagePtr` is `#[repr(transparent)]` over `NonNull<VmPage>`, and caller
+    // guarantees `pages` and `out_list` are valid non-null pointers upholding
+    // `remove_array_into_list` preconditions.
+    unsafe {
+        debug_assert!(slice_from_raw_parts_or_empty(pages, count).iter().all(|x| !x.is_null()));
+        let pages_slice = slice_from_raw_parts_or_empty(pages as *const VmPagePtr, count);
+        let list_ref = Pin::new_unchecked(&mut *out_list);
+        queues.remove_array_into_list(pages_slice, list_ref);
+    }
+}
 /// FFI wrapper for [`PageQueues::get_reclaim_queue_counts`].
 ///
 /// # Safety

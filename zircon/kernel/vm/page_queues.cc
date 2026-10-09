@@ -939,25 +939,6 @@ void PageQueues::MaybeCheckActiveRatioAgingLocked(size_t pages) {
   }
 }
 
-void PageQueues::SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintptr_t page_offset,
-                                            PageQueue queue) {
-  DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
-  DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
-  DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(!page->queue_node.InContainer());
-  DEBUG_ASSERT(object);
-  DEBUG_ASSERT(!page->object.get_object());
-  DEBUG_ASSERT(page->object.get_page_offset() == 0);
-
-  page->object.set_object(object);
-  page->object.set_page_offset(page_offset);
-
-  DEBUG_ASSERT(page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) == PageQueueNone);
-  page->object.get_page_queue_ref().store(queue, ktl::memory_order_relaxed);
-  page_queues_[queue].push_front(page);
-  page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
-}
-
 void PageQueues::MoveToQueueLockedList(vm_page_t* page, PageQueue queue) {
   DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
@@ -989,38 +970,12 @@ void PageQueues::MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_i
   page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
 }
 
-void PageQueues::SetWired(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  Guard<CriticalMutex> guard{&list_lock_};
-  SetQueueBacklinkLockedList(page, object, page_offset, PageQueueWired);
-}
-
 void PageQueues::MoveToWired(vm_page_t* page) {
   {
     Guard<CriticalMutex> guard{&list_lock_};
     MoveToQueueLockedList(page, PageQueueWired);
   }
   MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::SetAnonymous(vm_page_t* page, VmCowPages* object, uint64_t page_offset,
-                              bool skip_reclaim) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    SetQueueBacklinkLockedList(
-        page, object, page_offset,
-        anonymous_is_reclaimable_ && !skip_reclaim ? mru_gen_to_queue() : PageQueueAnonymous);
-#if DEBUG_ASSERT_IMPLEMENTED
-    if (debug_compressor_) {
-      debug_compressor_->Add(page, object, page_offset);
-    }
-#endif
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::SetHighPriority(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  Guard<CriticalMutex> guard{&list_lock_};
-  SetQueueBacklinkLockedList(page, object, page_offset, PageQueueHighPriority);
 }
 
 void PageQueues::MoveToHighPriority(vm_page_t* page) {
@@ -1046,14 +1001,6 @@ void PageQueues::MoveToAnonymous(vm_page_t* page, bool skip_reclaim) {
   MaybeCheckActiveRatioAging(1);
 }
 
-void PageQueues::SetReclaim(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    SetQueueBacklinkLockedList(page, object, page_offset, mru_gen_to_queue());
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
 void PageQueues::MoveToReclaim(vm_page_t* page) {
   {
     Guard<CriticalMutex> guard{&list_lock_};
@@ -1070,30 +1017,10 @@ void PageQueues::MoveToReclaimDontNeed(vm_page_t* page) {
   MaybeCheckActiveRatioAging(1);
 }
 
-void PageQueues::SetPagerBackedDirty(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  Guard<CriticalMutex> guard{&list_lock_};
-  SetQueueBacklinkLockedList(page, object, page_offset, PageQueuePagerBackedDirty);
-}
-
 void PageQueues::MoveToPagerBackedDirty(vm_page_t* page) {
   {
     Guard<CriticalMutex> guard{&list_lock_};
     MoveToQueueLockedList(page, PageQueuePagerBackedDirty);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::SetAnonymousZeroFork(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    SetQueueBacklinkLockedList(
-        page, object, page_offset,
-        zero_fork_is_reclaimable_ ? mru_gen_to_queue() : PageQueueAnonymousZeroFork);
-#if DEBUG_ASSERT_IMPLEMENTED
-    if (debug_compressor_) {
-      debug_compressor_->Add(page, object, page_offset);
-    }
-#endif
   }
   MaybeCheckActiveRatioAging(1);
 }
@@ -1142,78 +1069,6 @@ void PageQueues::CompressFailed(vm_page_t* page) {
     }
   }
   MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::ChangeObjectOffset(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
-  Guard<CriticalMutex> guard{&list_lock_};
-  ChangeObjectOffsetLockedList(page, object, page_offset);
-}
-
-void PageQueues::ChangeObjectOffsetArray(vm_page_t** pages, VmCowPages* object, uint64_t* offsets,
-                                         size_t count) {
-  DEBUG_ASSERT(pages);
-  DEBUG_ASSERT(offsets);
-  DEBUG_ASSERT(object);
-
-  for (size_t i = 0; i < count;) {
-    Guard<CriticalMutex> guard{&list_lock_};
-    // Use a do/while structure for the inner loop to ensure we at least make some progress before
-    // checking again for a lock drop.
-    do {
-      DEBUG_ASSERT(pages[i]);
-      ChangeObjectOffsetLockedList(pages[i], object, offsets[i]);
-      i++;
-    } while (i < count && !BatchOpShouldDropLock(i));
-  }
-}
-
-void PageQueues::ChangeObjectOffsetLockedList(vm_page_t* page, VmCowPages* object,
-                                              uint64_t page_offset) {
-  DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
-  DEBUG_ASSERT(!page->is_free());
-  DEBUG_ASSERT(page->queue_node.InContainer());
-  DEBUG_ASSERT(object);
-  DEBUG_ASSERT(page->object.get_object());
-  page->object.set_object(object);
-  page->object.set_page_offset(page_offset);
-}
-
-void PageQueues::RemoveLockedList(vm_page_t* page) {
-  // Directly exchange the old gen.
-  uint32_t old_queue =
-      page->object.get_page_queue_ref().exchange(PageQueueNone, ktl::memory_order_relaxed);
-  DEBUG_ASSERT(old_queue != PageQueueNone);
-  page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
-  page->object.set_object(nullptr);
-  page->object.set_page_offset(0);
-  page->queue_node.template RemoveFromContainer<vm_page_node_traits>();
-}
-
-void PageQueues::Remove(vm_page_t* page) {
-  {
-    Guard<CriticalMutex> guard{&list_lock_};
-    RemoveLockedList(page);
-  }
-  MaybeCheckActiveRatioAging(1);
-}
-
-void PageQueues::RemoveArrayIntoList(vm_page_t** pages, size_t count,
-                                     VmPageDoublyLinkedList* out_list) {
-  DEBUG_ASSERT(pages);
-
-  for (size_t i = 0; i < count;) {
-    Guard<CriticalMutex> guard{&list_lock_};
-    // Use a do/while structure for the inner loop to ensure we at least make some progress before
-    // checking again for a lock drop.
-    do {
-      DEBUG_ASSERT(pages[i]);
-      RemoveLockedList(pages[i]);
-      out_list->push_back(pages[i]);
-      i++;
-    } while (i < count && !BatchOpShouldDropLock(i));
-  }
-
-  MaybeCheckActiveRatioAging(count);
 }
 
 PageQueues::ReclaimCounts PageQueues::GetReclaimQueueCounts() const {

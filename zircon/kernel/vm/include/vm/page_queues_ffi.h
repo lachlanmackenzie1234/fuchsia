@@ -29,20 +29,6 @@ __BEGIN_CDECLS
 FFI_ALWAYS_INLINE void cpp_page_queues_stop_threads(PageQueues* queues);
 FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queues);
 
-FFI_ALWAYS_INLINE void cpp_page_queues_set_wired(PageQueues* queues, vm_page_t* page,
-                                                 VmCowPages* cow, uint64_t offset);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_anonymous(PageQueues* queues, vm_page_t* page,
-                                                     VmCowPages* cow, uint64_t offset,
-                                                     bool skip_reclaim);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_reclaim(PageQueues* queues, vm_page_t* page,
-                                                   VmCowPages* cow, uint64_t offset);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_pager_backed_dirty(PageQueues* queues, vm_page_t* page,
-                                                              VmCowPages* cow, uint64_t offset);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_anonymous_zero_fork(PageQueues* queues, vm_page_t* page,
-                                                               VmCowPages* cow, uint64_t offset);
-FFI_ALWAYS_INLINE void cpp_page_queues_set_high_priority(PageQueues* queues, vm_page_t* page,
-                                                         VmCowPages* cow, uint64_t offset);
-
 FFI_ALWAYS_INLINE void cpp_page_queues_move_to_wired(PageQueues* queues, vm_page_t* page);
 FFI_ALWAYS_INLINE void cpp_page_queues_move_to_anonymous(PageQueues* queues, vm_page_t* page,
                                                          bool skip_reclaim);
@@ -56,20 +42,6 @@ FFI_ALWAYS_INLINE void cpp_page_queues_move_anonymous_to_anonymous_zero_fork(Pag
                                                                              vm_page_t* page);
 
 FFI_ALWAYS_INLINE void cpp_page_queues_compress_failed(PageQueues* queues, vm_page_t* page);
-
-FFI_ALWAYS_INLINE void cpp_page_queues_change_object_offset(PageQueues* queues, vm_page_t* page,
-                                                            VmCowPages* cow, uint64_t page_offset);
-FFI_ALWAYS_INLINE void cpp_page_queues_change_object_offset_array(
-    PageQueues* queues, vm_page_t** pages, VmCowPages* cow, const uint64_t* offsets, size_t count);
-FFI_ALWAYS_INLINE void cpp_page_queues_change_object_offset_locked_list(PageQueues* queues,
-                                                                        vm_page_t* page,
-                                                                        VmCowPages* cow,
-                                                                        uint64_t offset);
-
-FFI_ALWAYS_INLINE void cpp_page_queues_remove(PageQueues* queues, vm_page_t* page);
-FFI_ALWAYS_INLINE void cpp_page_queues_remove_array_into_list(PageQueues* queues, vm_page_t** pages,
-                                                              size_t count,
-                                                              VmPageDoublyLinkedList* out_list);
 
 FFI_ALWAYS_INLINE void cpp_page_queues_mark_accessed(PageQueues* queues, vm_page_t* page);
 
