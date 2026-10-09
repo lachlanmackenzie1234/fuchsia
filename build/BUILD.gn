@@ -41,6 +41,7 @@ group("tests") {
     "go:tests",
     "licenses:tests",
     "packages:tests",
+    "prebuilt:tests",
     "profile:tests",
     "python:tests($host_toolchain)",
     "rbe:tests",
