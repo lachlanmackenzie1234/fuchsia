@@ -537,6 +537,10 @@
              path="prebuilt/tools/cas"
              platforms="linux-amd64,linux-arm64"
              version="git_revision:13d579e8534846c05f268676313a97f5f1d3ecfb"/>
+    <package name="infra/tools/luci-auth/${platform}"
+             path="prebuilt/tools/luci-auth"
+             platforms="linux-amd64,linux-arm64"
+             version="git_revision:13d579e8534846c05f268676313a97f5f1d3ecfb"/>
     <package name="infra/tools/rdb/${platform}"
              path="prebuilt/tools/resultdb"
              platforms="linux-amd64,linux-arm64"

@@ -895,6 +895,16 @@
         "instance_id": "ihCU4G64RdzQFuHmXTYxinHUv8jPnZ1k6vpK_8P3fOMC"
     },
     {
+        "package": "infra/tools/luci-auth/linux-amd64",
+        "version": "git_revision:13d579e8534846c05f268676313a97f5f1d3ecfb",
+        "instance_id": "t0lZFLVudLJVASbdqv04bjkZhf2T5-WwjANL03-TDVQC"
+    },
+    {
+        "package": "infra/tools/luci-auth/linux-arm64",
+        "version": "git_revision:13d579e8534846c05f268676313a97f5f1d3ecfb",
+        "instance_id": "MDE-C80lpve594tbCQJzPb9BCB3feWB4GhHorh4eXncC"
+    },
+    {
         "package": "infra/tools/luci/cas/linux-amd64",
         "version": "git_revision:13d579e8534846c05f268676313a97f5f1d3ecfb",
         "instance_id": "u2jS7EToicfQWf6HfyYfRJC0kzK72C6a2ZmcsTlOe4UC"
