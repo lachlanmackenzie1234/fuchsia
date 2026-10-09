@@ -462,6 +462,18 @@ ktl::string_view ArmAspaceTypeName(ArmAspaceType type) {
   __UNREACHABLE;
 }
 
+// Returns true if the given physical page address is mapped in the kernel
+// physmap. Non-RAM physical pages (such as reserved firmware runtime regions)
+// are excluded from the physmap even when they fall below gPhysmapSize.
+bool IsPhysmapPageMapped(paddr_t pa) {
+  if (!is_physmap_phys_addr(pa)) {
+    return false;
+  }
+  paddr_t unused;
+  return arm64_mmu_translate(reinterpret_cast<vaddr_t>(paddr_to_physmap(pa)), &unused,
+                             /*user=*/false, /*write=*/false) == ZX_OK;
+}
+
 }  // namespace
 
 // A consistency manager that tracks TLB updates, walker syncs and free pages in an effort to
@@ -1532,8 +1544,7 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
   {
     Guard<CriticalMutex> a{&lock_};
     ASSERT(updates_enabled_);
-    if (((mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) || type_ == ArmAspaceType::kGuest) &&
-        is_physmap_phys_addr(paddr)) {
+    if ((mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) || type_ == ArmAspaceType::kGuest) {
       // The icache gets synced both for executable mappings, which is the expected case, as well
       // as for any physmap-backed guest mapping. For guest mappings we additionally need to clean
       // the cache fully to PoC (not just PoU as required for icache consistency) as guests, who
@@ -1543,7 +1554,12 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
       if (type_ == ArmAspaceType::kGuest) {
         cache_cm.ForceCleanToPoC();
       }
-      cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), count * kPageSize);
+      for (size_t idx = 0; idx < count; ++idx) {
+        const paddr_t page_paddr = paddr + idx * kPageSize;
+        if (IsPhysmapPageMapped(page_paddr)) {
+          cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(page_paddr)), kPageSize);
+        }
+      }
     }
     pte_t attrs = MmuParamsFromFlags(mmu_flags);
 
@@ -1628,8 +1644,9 @@ zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
         cache_cm.ForceCleanToPoC();
       }
       for (size_t idx = 0; idx < count; ++idx) {
-        // Ignore non-physmap pages, such as passed-through device MMIO ranges.
-        if (unlikely(!is_physmap_phys_addr(phys[idx]))) {
+        // Ignore non-physmap pages, such as passed-through device MMIO ranges or reserved
+        // firmware runtime regions.
+        if (unlikely(!IsPhysmapPageMapped(phys[idx]))) {
           continue;
         }
         cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(phys[idx])), kPageSize);
@@ -1750,7 +1767,7 @@ zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, arch_mmu_flags
       paddr_t paddr;
       arch_mmu_flags_t flags;
       if (QueryLocked(vaddr + idx * kPageSize, &paddr, &flags) == ZX_OK &&
-          !(flags & ARCH_MMU_FLAG_PERM_EXECUTE)) {
+          !(flags & ARCH_MMU_FLAG_PERM_EXECUTE) && IsPhysmapPageMapped(paddr)) {
         cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), kPageSize);
         pages_synced++;
       }
