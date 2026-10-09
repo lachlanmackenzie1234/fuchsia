@@ -6,13 +6,18 @@
 
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::ffi::{c_char, c_void};
-use core::marker::PhantomData;
+use core::marker::{PhantomData, PhantomPinned};
+use core::pin::Pin;
 use core::ptr::NonNull;
+use pin_init::{PinInit, pin_data, pinned_drop};
+use thread_lock_guard_bindings as lock_guard_bindings;
+use zr::Opaque;
 use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
 use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
 #[allow(improper_ctypes)]
@@ -45,6 +50,13 @@ unsafe extern "C" {
     fn cpp_thread_kill(thread: *mut Thread);
     fn cpp_thread_suspend(thread: *mut Thread) -> zx_status_t;
     fn cpp_thread_is_blocked(thread: *mut Thread) -> bool;
+    fn cpp_thread_lock_guard_init(
+        guard: *mut lock_guard_bindings::ThreadLockGuard,
+        thread: *mut Thread,
+        label: &'static InternedString,
+        line: u32,
+    );
+    fn cpp_thread_lock_guard_destroy(guard: *mut lock_guard_bindings::ThreadLockGuard);
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_current_active_aspace() -> *mut VmAspace;
     fn cpp_thread_fxt_ref(thread: *mut Thread) -> FxtRef;
@@ -229,6 +241,101 @@ impl ThreadPtr {
     /// underlying thread has not been destroyed.
     pub unsafe fn fxt_ref(self) -> FxtRef {
         unsafe { cpp_thread_fxt_ref(self.as_raw()) }
+    }
+}
+
+/// A chain lock transaction's call site, matching C++ `ChainLockTransaction::CallsiteInfo`.
+/// Build one with `clt_tag!`.
+#[derive(Clone, Copy)]
+pub struct CltTag {
+    /// The interned label naming the call site.
+    pub label: &'static InternedString,
+    /// The source line of the call site.
+    pub line: u32,
+}
+
+/// Returns a [`CltTag`] for the given string literal label at the current source line, like C++
+/// `CLT_TAG(label)`.
+#[macro_export]
+macro_rules! clt_tag {
+    ($label:literal) => {
+        $crate::kernel::thread::CltTag {
+            label: $crate::ktrace_rs::resolve_string!($label),
+            line: line!(),
+        }
+    };
+}
+
+/// A thread's lock, held with interrupts disabled until the guard is dropped: the
+/// `SingleChainLockGuard{IrqSaveOption, thread->get_lock(), tag}` that a C++ scope would hold.
+///
+/// Built in place as a pinned local, for example
+/// `ksync::lock!(let guard = ThreadLockGuard::lock(thread, clt_tag!("label")))`. The chain lock
+/// transaction inside records its own address, so the guard never moves.
+#[pin_data(PinnedDrop)]
+#[repr(C)]
+pub struct ThreadLockGuard {
+    raw: Opaque<lock_guard_bindings::ThreadLockGuard>,
+    thread: NonNull<Thread>,
+    phantom: PhantomData<PhantomPinned>,
+}
+
+impl ThreadLockGuard {
+    /// Returns an initializer that takes `thread`'s lock with interrupts disabled, tagging the
+    /// chain lock transaction with `tag`.
+    ///
+    /// # Safety
+    /// - `thread` points to a valid C++ `Thread` instance for as long as the guard lives.
+    /// - The calling CPU is not already in a chain lock transaction, and none starts while the
+    ///   guard lives.
+    /// - The guard is a stack-pinned local (`ksync::lock!` or `pin_init::stack_pin_init!`) that is
+    ///   dropped on this CPU, before anything that can block.
+    pub unsafe fn lock(
+        thread: *mut Thread,
+        tag: CltTag,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
+        debug_assert!(!thread.is_null());
+        // SAFETY: the closure initializes every field of `slot` in place and never moves it:
+        // `thread` by a write, `raw` by the C++ constructor, and `phantom` is zero-sized. The
+        // caller upholds the rest of `lock`'s contract.
+        unsafe {
+            pin_init::pin_init_from_closure(move |slot: *mut Self| {
+                (&raw mut (*slot).thread).write(NonNull::new_unchecked(thread));
+                cpp_thread_lock_guard_init(
+                    (&raw mut (*slot).raw).cast(),
+                    thread,
+                    tag.label,
+                    tag.line,
+                );
+                Ok(())
+            })
+        }
+    }
+
+    /// Returns the raw pointer to the locked thread.
+    pub fn thread(&self) -> *mut Thread {
+        self.thread.as_ptr()
+    }
+
+    /// Returns a pointer to the architecture-specific state (`arch_thread`) of the locked thread.
+    pub fn arch(&self) -> *mut c_void {
+        // SAFETY: `lock`'s caller guarantees the thread is a live C++ `Thread`.
+        unsafe { get_arch(self.thread()) }
+    }
+
+    /// Checks whether user state is saved for the locked thread, like C++
+    /// `Thread::IsUserStateSavedLocked()`.
+    pub fn is_user_state_saved_locked(&self) -> bool {
+        // SAFETY: the thread is a live C++ `Thread` whose lock this guard holds.
+        unsafe { cpp_thread_is_user_state_saved_locked(self.thread()) }
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for ThreadLockGuard {
+    fn drop(self: Pin<&mut Self>) {
+        // SAFETY: `raw` holds the C++ guard that `lock` built, and this is its only destruction.
+        unsafe { cpp_thread_lock_guard_destroy(self.raw.get()) };
     }
 }
 

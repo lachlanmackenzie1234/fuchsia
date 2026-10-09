@@ -19,15 +19,6 @@ pub type ArchSavedNormalState = riscv64_restricted_bindings::ArchSavedNormalStat
 zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
 zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
 
-unsafe extern "C" {
-    fn cpp_riscv64_get_general_regs(
-        regs: *mut zx_thread_state_general_regs_t,
-    ) -> Result<(), Status>;
-    fn cpp_riscv64_set_general_regs(
-        regs: *const zx_thread_state_general_regs_t,
-    ) -> Result<(), Status>;
-}
-
 #[inline(always)]
 fn ints_disabled() -> bool {
     super::arch::arch_ints_disabled()
@@ -158,8 +149,13 @@ pub fn save_restricted_iframe_state(state: &mut zx_restricted_state_t, frame: &I
 
 pub fn save_restricted_exception_state(state: &mut zx_restricted_state_t) {
     let mut regs = zx_thread_state_general_regs_t::default();
-    // SAFETY: Gets general registers of the current thread.
-    let status = unsafe { cpp_riscv64_get_general_regs(&mut regs) };
+    // SAFETY: Gets general registers of the current thread into a local.
+    let status = unsafe {
+        super::debugger::arch_get_general_regs(
+            crate::kernel::thread::current_get().cast(),
+            &mut regs,
+        )
+    };
     // This will only fail if register state has not been saved, but this will always
     // have happened by this stage of exception handling.
     debug_assert!(status.is_ok());
@@ -178,8 +174,10 @@ pub fn redirect_restricted_exception_to_normal(
         a1: reason,
         ..Default::default()
     };
-    // SAFETY: Sets general registers of the current thread.
-    let status = unsafe { cpp_riscv64_set_general_regs(&regs) };
+    // SAFETY: Sets general registers of the current thread from a local.
+    let status = unsafe {
+        super::debugger::arch_set_general_regs(crate::kernel::thread::current_get().cast(), &regs)
+    };
     // This will only fail if register state has not been saved, but this will always
     // have happened by this stage of exception handling.
     debug_assert!(status.is_ok());

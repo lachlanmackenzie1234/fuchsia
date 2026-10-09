@@ -8,7 +8,6 @@
 #include <sys/types.h>
 #include <zircon/types.h>
 
-#include <arch/debugger.h>
 #include <arch/mp.h>
 #include <arch/regs.h>
 #include <arch/riscv64.h>
@@ -18,17 +17,6 @@
 #include <kernel/thread.h>
 
 extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
-FFI_ALWAYS_INLINE zx_status_t cpp_riscv64_get_general_regs(zx_thread_state_general_regs_t* regs) {
-  return arch_get_general_regs(Thread::Current::Get(), regs);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
-FFI_ALWAYS_INLINE zx_status_t
-cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
-  return arch_set_general_regs(Thread::Current::Get(), regs);
-}
 
 zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi);
 void cpp_interrupt_init_percpu();

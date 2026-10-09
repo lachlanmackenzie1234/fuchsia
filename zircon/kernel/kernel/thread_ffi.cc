@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <assert.h>
+#include <lib/fxt/interned_string.h>
 #include <lib/kconcurrent/chainlock.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
 #include <zircon/types.h>
@@ -16,6 +17,8 @@
 #include <kernel/restricted_state.h>
 #include <kernel/scheduler_state.h>
 #include <kernel/thread.h>
+#include <kernel/thread_ffi.h>
+#include <ktl/memory.h>
 #include <ktl/string_view.h>
 #include <vm/vm_object_paged.h>
 
@@ -149,6 +152,24 @@ bool cpp_thread_is_blocked(Thread* thread) {
   DEBUG_ASSERT(thread != nullptr);
   SingleChainLockGuard guard{IrqSaveOption, thread->get_lock(), CLT_TAG("cpp_thread_is_blocked")};
   return thread->state() == THREAD_BLOCKED || thread->state() == THREAD_BLOCKED_READ_LOCK;
+}
+
+static_assert(sizeof(ffi::Uninitialized<ThreadLockGuard>) == sizeof(ThreadLockGuard));
+static_assert(alignof(ffi::Uninitialized<ThreadLockGuard>) == alignof(ThreadLockGuard));
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_lock_guard_init(ffi::Uninitialized<ThreadLockGuard>* guard,
+                                                  Thread* thread, const fxt::InternedString* label,
+                                                  uint32_t line) {
+  DEBUG_ASSERT(guard != nullptr);
+  DEBUG_ASSERT(thread != nullptr);
+  guard->Initialize(thread, ChainLockTransaction::CallsiteInfo{label, line});
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_lock_guard_destroy(ThreadLockGuard* guard) {
+  DEBUG_ASSERT(guard != nullptr);
+  ktl::destroy_at(guard);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

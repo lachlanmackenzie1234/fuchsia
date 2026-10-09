@@ -14,6 +14,8 @@ use super::arch::{
     RISCV64_CSR_SSTATUS_VS_SHIFT, riscv64_csr_read,
 };
 use super::vm::is_user_accessible;
+use crate::kernel::thread::ThreadLockGuard;
+use core::pin::Pin;
 use debug::{dprintf, ltracef};
 use zx_types::zx_restricted_state_t;
 
@@ -124,6 +126,27 @@ unsafe extern "C" {
 pub unsafe fn thread_arch(thread: *mut core::ffi::c_void) -> *mut ArchThread {
     // SAFETY: The caller guarantees `thread`; the facade only offsets the pointer.
     unsafe { crate::kernel::thread::get_arch(thread.cast()).cast() }
+}
+
+/// Returns the architectural state of the thread whose lock `guard` holds.
+///
+/// # Safety
+/// The thread must not run while the reference lives: it is suspended or stopped in an exception,
+/// as the debugger register accessors require of their callers. Its lock keeps out other code
+/// that takes it.
+pub unsafe fn locked_thread_arch(guard: &ThreadLockGuard) -> &ArchThread {
+    // SAFETY: the lock and the caller's guarantee leave no writer while the borrow lives.
+    unsafe { &*thread_arch(guard.thread().cast()) }
+}
+
+/// Mutable variant of [`locked_thread_arch`].
+///
+/// # Safety
+/// As for [`locked_thread_arch`].
+pub unsafe fn locked_thread_arch_mut(guard: Pin<&mut ThreadLockGuard>) -> &mut ArchThread {
+    // SAFETY: as for `locked_thread_arch`; borrowing the guard uniquely makes this the only
+    // reference handed out.
+    unsafe { &mut *thread_arch(guard.thread().cast()) }
 }
 
 /// Initialize the architecture state of a thread.

@@ -167,11 +167,6 @@ pub fn riscv64_feature_init() {
 // C FFI exports for C++ callers
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_riscv64_feature_has_vector() -> bool {
-    has_vector()
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_riscv64_feature_cbom_size() -> u32 {
     cbom_size()
 }

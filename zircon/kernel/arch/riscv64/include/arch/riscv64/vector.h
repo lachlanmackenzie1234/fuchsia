@@ -23,7 +23,6 @@
 #include <arch/riscv64.h>
 #include <ktl/byte.h>
 #include <ktl/memory.h>
-#include <ktl/optional.h>
 #include <ktl/span.h>
 
 // Vector register state at context switch time.
@@ -62,19 +61,6 @@ inline Riscv64VectorStatus riscv64_vector_status() {
 }
 
 struct Thread;
-
-extern "C" {
-uint64_t rust_riscv64_vlmax(uint64_t vtype, bool* has_value);
-}
-
-inline ktl::optional<uint64_t> riscv64_vlmax(uint64_t vtype) {
-  bool has_value = false;
-  uint64_t val = rust_riscv64_vlmax(vtype, &has_value);
-  if (!has_value) {
-    return ktl::nullopt;
-  }
-  return val;
-}
 
 // Low-level vector context zero/save/restore routines, implemented in assembly.
 extern "C" void riscv64_vector_zero();
