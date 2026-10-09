@@ -803,6 +803,7 @@ multiconst!(u32, [
     ZX_ARM64_FEATURE_ISA_I8MM             = 1 << 19;
     ZX_ARM64_FEATURE_ISA_SVE              = 1 << 20;
     ZX_ARM64_FEATURE_ISA_ARM32            = 1 << 21;
+    ZX_ARM64_FEATURE_ISA_MOPS             = 1 << 22;
     ZX_ARM64_FEATURE_ISA_SHA2             = 1 << 6;
     ZX_ARM64_FEATURE_ADDRESS_TAGGING_TBI  = 1 << 0;
 ]);
