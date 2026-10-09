@@ -29,6 +29,7 @@ use crate::kernel::timer::Timer;
 use crate::platform_rs::HaltToken;
 use crate::platform_rs::power::{PlatformHaltAction, ZirconCrashReason, platform_halt};
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
+use crate::stall::StallAggregator;
 use crate::vm::vm::oom_ktrace_duration;
 use crate::vm::{evictor, pmm};
 
@@ -116,10 +117,6 @@ fn count_pressure_event(level: PressureLevel) {
         PressureLevel::Warning => PRESSURE_LEVEL_WARNING.add(1),
         PressureLevel::Normal => PRESSURE_LEVEL_NORMAL.add(1),
     }
-}
-
-unsafe extern "C" {
-    fn cpp_memory_watchdog_read_stall_stats(some: *mut DurationMono, full: *mut DurationMono);
 }
 
 fn handle_on_oom_reboot() {
@@ -973,8 +970,7 @@ impl MemoryWatchdogState {
 
     /// Dumps the current memory watchdog state to the kernel log.
     pub fn dump(&self) {
-        // SAFETY: `mem_watermarks` and `watermark_debounce` are not modified after `init`,
-        // and the FFI calls query PMM free pages and stall stats safely.
+        // SAFETY: `mem_watermarks` and `watermark_debounce` are not modified after `init`.
         unsafe {
             let mut buf1 = [0u8; pretty::MAX_FORMAT_SIZE_LEN];
             let mut buf2 = [0u8; pretty::MAX_FORMAT_SIZE_LEN];
@@ -1007,10 +1003,12 @@ impl MemoryWatchdogState {
                     (pmm::node().count_free_pages() * PAGE_SIZE) as usize
                 )
             );
-            let mut some = DurationMono::ZERO;
-            let mut full = DurationMono::ZERO;
-            cpp_memory_watchdog_read_stall_stats(&mut some, &mut full);
-            kprintln!("memory stall time: some {}, full {}", some.into_nanos(), full.into_nanos());
+            let stats = StallAggregator::get().read_stats();
+            kprintln!(
+                "memory stall time: some {}, full {}",
+                stats.stalled_time_some.into_nanos(),
+                stats.stalled_time_full.into_nanos()
+            );
         }
     }
 

@@ -16,9 +16,14 @@ kernel_rust_mod("stall_rs") {
   source_root = "src/mod.rs"
   sources = [ "src/mod.rs" ]
   deps = [
+    "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/ksync",
+    "//src/lib/lazy_init:lazy_init_rs",
+    "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/init:init_rust",
+    "//zircon/system/ulib/fbl/rust:fbl",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
@@ -27,10 +32,7 @@ source_set("stall") {
   public_deps = [ ":headers" ]
 
   sources = [ "stall.cc" ]
-  deps = [
-    ":stall_rs",
-    "//zircon/kernel/lib/init",
-  ]
+  deps = [ ":stall_rs" ]
 }
 
 group("tests") {
@@ -39,7 +41,6 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
-  deps = [ "tests" ]
 }
 
 group("phys-tests") {

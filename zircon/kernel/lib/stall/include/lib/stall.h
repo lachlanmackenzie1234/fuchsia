@@ -6,16 +6,11 @@
 #ifndef ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_
 #define ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_
 
+#include <lib/zx/result.h>
 #include <zircon/types.h>
 
-#include <fbl/array.h>
-#include <fbl/intrusive_double_list.h>
-#include <kernel/mutex.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
-#include <ktl/unique_ptr.h>
-
-inline constexpr zx_duration_mono_t kStallSampleInterval = ZX_MSEC(10);
 
 // Maintains per-CPU stall timers in real time.
 //
@@ -105,9 +100,10 @@ void rust_stall_accumulator_flush(StallAccumulator *accumulator,
 // greater than or equal to the given threshold value and then notifies its callback function
 // accordingly.
 //
-// This class doesn't need to be thread safe because all its usages are protected by the
-// StallAggregator's observers_lock_.
-class StallObserver : public fbl::DoublyLinkedListable<StallObserver *> {
+// Instances live in Rust (see ../../src/mod.rs); this is an opaque handle to one, so C++ only ever
+// holds pointers. Removing an observer from the StallAggregator is what guarantees the sampling
+// thread is not part way through a callback, so always unregister before destroying.
+class StallObserver {
  public:
   class EventReceiver {
    public:
@@ -115,32 +111,19 @@ class StallObserver : public fbl::DoublyLinkedListable<StallObserver *> {
     virtual void OnBelowThreshold() = 0;
   };
 
-  StallObserver(const StallObserver &) = delete;
-  StallObserver(StallObserver &&) = delete;
-  StallObserver &operator=(const StallObserver &) = delete;
-  StallObserver &operator=(StallObserver &&) = delete;
+  StallObserver() = delete;
 
-  static zx::result<ktl::unique_ptr<StallObserver>> Create(zx_duration_mono_t threshold,
-                                                           zx_duration_mono_t window,
-                                                           EventReceiver *event_receiver);
+  static zx::result<StallObserver *> Create(zx_duration_mono_t threshold, zx_duration_mono_t window,
+                                            EventReceiver *event_receiver);
 
-  void PushSample(zx_duration_mono_t sample);
-
- private:
-  StallObserver(zx_duration_mono_t threshold, EventReceiver *event_receiver,
-                fbl::Array<zx_duration_mono_t> samples);
-
-  const zx_duration_mono_t threshold_;
-  EventReceiver *const event_receiver_;
-
-  // Circular queue of samples.
-  fbl::Array<zx_duration_mono_t> samples_;
-  size_t samples_pos_ = 0;
-  zx_duration_mono_t samples_sum_ = 0;  // cached sum of all samples_ in the queue.
+  static void Destroy(StallObserver *observer);
 };
 
 // Maintains system-wide stall stats by periodically aggregating measurements from per-CPU
 // `StallAccumulator`s.
+//
+// The implementation and the singleton instance live in Rust (see ../../src/mod.rs); these are
+// forwarders to it.
 class StallAggregator {
  public:
   struct Stats {
@@ -151,43 +134,31 @@ class StallAggregator {
     zx_duration_mono_t stalled_time_full = 0;
   };
 
-  // Gets this class' singleton instance.
-  static StallAggregator *GetStallAggregator() { return &singleton_; }
-
-  // Starts the sampling thread on the singleton instance.
-  static void StartSamplingThread(uint level);
-
   // Returns the values of the aggregated stats.
-  Stats ReadStats() const;
+  static Stats ReadStats();
 
-  void AddObserverSome(StallObserver *observer);
-  void RemoveObserverSome(StallObserver *observer);
+  static void AddObserverSome(StallObserver *observer);
+  static void RemoveObserverSome(StallObserver *observer);
 
-  void AddObserverFull(StallObserver *observer);
-  void RemoveObserverFull(StallObserver *observer);
-
- private:
-  friend class StallAggregatorTests;
-
-  static StallAggregator singleton_;
-
-  // Aggregates a new set of per-CPU samples. Called periodically by the sampling thread.
-  //
-  // The `iterate_per_cpu_stats` argument is a function that takes a callback and calls it for each
-  // CPU, passing its per-CPU measurements collected since the previous call. It's always
-  // `IteratePerCpuStats` at runtime, except for tests that inject a custom fake data provider.
-  using PerCpuStatsCallback = fit::inline_function<void(const StallAccumulator::Stats &)>;
-  void SampleOnce(
-      fit::inline_function<void(PerCpuStatsCallback)> iterate_per_cpu_stats = IteratePerCpuStats);
-
-  static void IteratePerCpuStats(PerCpuStatsCallback callback);
-
-  mutable DECLARE_CRITICAL_MUTEX(StallAggregator) stats_lock_;
-  Stats stats_ TA_GUARDED(stats_lock_) = {};
-
-  DECLARE_CRITICAL_MUTEX(StallAggregator) observers_lock_;
-  fbl::DoublyLinkedList<StallObserver *> observers_some_ TA_GUARDED(observers_lock_);
-  fbl::DoublyLinkedList<StallObserver *> observers_full_ TA_GUARDED(observers_lock_);
+  static void AddObserverFull(StallObserver *observer);
+  static void RemoveObserverFull(StallObserver *observer);
 };
+
+extern "C" {
+
+zx_status_t rust_stall_observer_create(zx_duration_mono_t threshold, zx_duration_mono_t window,
+                                       StallObserver::EventReceiver *event_receiver,
+                                       StallObserver **out_observer);
+
+void rust_stall_observer_destroy(StallObserver *observer);
+
+void rust_stall_aggregator_read_stats(StallAggregator::Stats *out_stats);
+
+void rust_stall_aggregator_add_observer_some(StallObserver *observer);
+void rust_stall_aggregator_remove_observer_some(StallObserver *observer);
+
+void rust_stall_aggregator_add_observer_full(StallObserver *observer);
+void rust_stall_aggregator_remove_observer_full(StallObserver *observer);
+}
 
 #endif  // ZIRCON_KERNEL_LIB_STALL_INCLUDE_LIB_STALL_H_

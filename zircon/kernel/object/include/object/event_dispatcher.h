@@ -88,10 +88,13 @@ class MemoryStallEventDispatcher final : public EventDispatcher,
   // 1:1 correspondence between instances of StallObserver and
   // MemoryStallEventDispatcher.
   //
+  // The observer lives in Rust, so this is an owning raw pointer that our
+  // destructor releases with StallObserver::Destroy.
+  //
   // This would ideally be const (once set, the pointer never changes), but it
   // cannot be because the StallObserver is created after our constructor has
   // already been executed.
-  ktl::unique_ptr<StallObserver> observer_;
+  StallObserver* observer_ = nullptr;
 
   // The kind of memory stall that the observer_ has been registered to (used by
   // our destructor to unregister it).

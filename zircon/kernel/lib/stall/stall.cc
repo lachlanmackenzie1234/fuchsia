@@ -6,10 +6,8 @@
 
 #include "lib/stall.h"
 
+#include <kernel/ffi.h>
 #include <kernel/percpu.h>
-#include <lk/init.h>
-
-StallAggregator StallAggregator::singleton_;
 
 StallAccumulator::StallAccumulator() { rust_stall_accumulator_init(this); }
 
@@ -78,142 +76,50 @@ void StallAccumulator::ApplyContextSwitch(Thread *current_thread, Thread *next_t
   }
 }
 
-zx::result<ktl::unique_ptr<StallObserver>> StallObserver::Create(zx_duration_mono_t threshold,
-                                                                 zx_duration_mono_t window,
-                                                                 EventReceiver *event_receiver) {
-  if (window <= 0 || threshold <= 0 || threshold > window) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+zx::result<StallObserver *> StallObserver::Create(zx_duration_mono_t threshold,
+                                                  zx_duration_mono_t window,
+                                                  EventReceiver *event_receiver) {
+  StallObserver *observer = nullptr;
+  zx_status_t status = rust_stall_observer_create(threshold, window, event_receiver, &observer);
+  if (status != ZX_OK) {
+    return zx::error(status);
   }
-
-  size_t samples_size = (window + kStallSampleInterval - 1) / kStallSampleInterval;
-
-  fbl::AllocChecker ac;
-  fbl::Array<zx_duration_mono_t> samples = fbl::MakeArray<zx_duration_mono_t>(&ac, samples_size);
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  ktl::unique_ptr<StallObserver> result{
-      new (&ac) StallObserver(threshold, event_receiver, ktl::move(samples))};
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  return zx::ok(ktl::move(result));
+  return zx::ok(observer);
 }
 
-StallObserver::StallObserver(zx_duration_mono_t threshold, EventReceiver *event_receiver,
-                             fbl::Array<zx_duration_mono_t> samples)
-    : threshold_(threshold), event_receiver_(event_receiver), samples_(ktl::move(samples)) {}
+void StallObserver::Destroy(StallObserver *observer) { rust_stall_observer_destroy(observer); }
 
-void StallObserver::PushSample(zx_duration_mono_t sample) {
-  samples_sum_ += sample - samples_[samples_pos_];
-  samples_[samples_pos_++] = sample;
-  if (samples_pos_ == samples_.size()) {
-    samples_pos_ = 0;
-  }
-
-  if (samples_sum_ >= threshold_) {
-    event_receiver_->OnAboveThreshold();
-  } else {
-    event_receiver_->OnBelowThreshold();
-  }
-}
-
-StallAggregator::Stats StallAggregator::ReadStats() const {
-  Guard<CriticalMutex> guard{&stats_lock_};
-  return stats_;
+StallAggregator::Stats StallAggregator::ReadStats() {
+  Stats result;
+  rust_stall_aggregator_read_stats(&result);
+  return result;
 }
 
 void StallAggregator::AddObserverSome(StallObserver *observer) {
-  Guard<CriticalMutex> guard{&observers_lock_};
-  observers_some_.push_back(observer);
+  rust_stall_aggregator_add_observer_some(observer);
 }
 
 void StallAggregator::RemoveObserverSome(StallObserver *observer) {
-  Guard<CriticalMutex> guard{&observers_lock_};
-  observers_some_.erase(*observer);
+  rust_stall_aggregator_remove_observer_some(observer);
 }
 
 void StallAggregator::AddObserverFull(StallObserver *observer) {
-  Guard<CriticalMutex> guard{&observers_lock_};
-  observers_full_.push_back(observer);
+  rust_stall_aggregator_add_observer_full(observer);
 }
 
 void StallAggregator::RemoveObserverFull(StallObserver *observer) {
-  Guard<CriticalMutex> guard{&observers_lock_};
-  observers_full_.erase(*observer);
+  rust_stall_aggregator_remove_observer_full(observer);
 }
 
-void StallAggregator::SampleOnce(
-    fit::inline_function<void(PerCpuStatsCallback)> iterate_per_cpu_stats) {
-  // Aggregate stats from all CPUs.
-  struct {
-    zx_duration_mono_t weighted_some = 0;
-    zx_duration_mono_t weighted_full = 0;
-    zx_duration_mono_t total_weight = 0;
-  } totals;
-  iterate_per_cpu_stats([&totals](const StallAccumulator::Stats &stats) {
-    totals.weighted_some += stats.total_time_stall_some * stats.total_time_active;
-    totals.weighted_full += stats.total_time_stall_full * stats.total_time_active;
-    totals.total_weight += stats.total_time_active;
-  });
+extern "C" {
 
-  // Compute weighted average.
-  zx_duration_mono_t delta_some, delta_full;
-  if (totals.total_weight != 0) {
-    delta_some = totals.weighted_some / totals.total_weight;
-    delta_full = totals.weighted_full / totals.total_weight;
-  } else {
-    delta_some = 0;
-    delta_full = 0;
-  }
-
-  // Update stored stats.
-  {
-    Guard<CriticalMutex> guard{&stats_lock_};
-    stats_.stalled_time_some += delta_some;
-    stats_.stalled_time_full += delta_full;
-  }
-
-  // Notify observers.
-  {
-    Guard<CriticalMutex> guard{&observers_lock_};
-    for (StallObserver &observer : observers_some_) {
-      observer.PushSample(delta_some);
-    }
-    for (StallObserver &observer : observers_full_) {
-      observer.PushSample(delta_full);
-    }
-  }
+FFI_ALWAYS_INLINE void cpp_stall_observer_event_receiver_on_above_threshold(
+    StallObserver::EventReceiver *event) {
+  event->OnAboveThreshold();
 }
 
-void StallAggregator::IteratePerCpuStats(PerCpuStatsCallback callback) {
-  percpu::ForEach([callback = std::move(callback)](cpu_num_t cpu_num, percpu *cpu_data) {
-    StallAccumulator &cpu_accum = cpu_data->memory_stall_accumulator;
-    StallAccumulator::Stats stats = cpu_accum.Flush();
-    callback(stats);
-  });
+FFI_ALWAYS_INLINE void cpp_stall_observer_event_receiver_on_below_threshold(
+    StallObserver::EventReceiver *event) {
+  event->OnBelowThreshold();
 }
-
-void StallAggregator::StartSamplingThread(uint level) {
-  auto worker_thread = [](void *) {
-    StallAggregator *aggregator = GetStallAggregator();
-    zx_instant_mono_t deadline = current_mono_time();
-
-    for (;;) {
-      aggregator->SampleOnce();
-
-      deadline += kStallSampleInterval;
-      Thread::Current::Sleep(deadline);
-    }
-
-    return 0;
-  };
-
-  Thread *t = Thread::Create("stall-aggregator", worker_thread, nullptr, LOW_PRIORITY);
-  ZX_ASSERT(t != nullptr);
-  t->DetachAndResume();
 }
-
-LK_INIT_HOOK(stall, StallAggregator::StartSamplingThread, LK_INIT_LEVEL_USER)

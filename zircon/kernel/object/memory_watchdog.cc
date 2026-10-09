@@ -9,7 +9,6 @@
 #include <lib/ktrace.h>
 #include <lib/object-constants.h>
 #include <lib/page/size.h>
-#include <lib/stall.h>
 
 #include <kernel/ffi.h>
 #include <object/memory_watchdog.h>
@@ -63,15 +62,3 @@ void MemoryWatchdog::Dump() { rust_memory_watchdog_dump(&opaque_storage_); }
 Thread* MemoryWatchdog::DebugGetWorkerThread() {
   return rust_memory_watchdog_debug_get_worker_thread(&opaque_storage_);
 }
-
-extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_memory_watchdog_read_stall_stats(zx_duration_mono_t* some,
-                                                            zx_duration_mono_t* full) {
-  StallAggregator::Stats stats = StallAggregator::GetStallAggregator()->ReadStats();
-  *some = stats.stalled_time_some;
-  *full = stats.stalled_time_full;
-}
-
-}  // extern "C"
