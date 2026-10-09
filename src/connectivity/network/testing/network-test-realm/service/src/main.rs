@@ -35,13 +35,8 @@ use std::convert::TryFrom as _;
 use std::num::NonZeroU64;
 use std::pin::pin;
 
-/// URL for the realm that contains the hermetic network components with a
-/// Netstack2 instance.
-const HERMETIC_NETWORK_V2_URL: &'static str = "#meta/hermetic_network_v2.cm";
-
-/// URL for the realm that contains the hermetic network components with a
-/// Netstack3 instance.
-const HERMETIC_NETWORK_V3_URL: &'static str = "#meta/hermetic_network_v3.cm";
+/// URL for the realm that contains the hermetic network components.
+const HERMETIC_NETWORK_URL: &'static str = "#meta/hermetic_network.cm";
 
 /// Values for creating an interface on the hermetic Netstack.
 ///
@@ -795,8 +790,8 @@ impl Controller {
         request: fntr::ControllerRequest,
     ) -> Result<(), fidl::Error> {
         match request {
-            fntr::ControllerRequest::StartHermeticNetworkRealm { netstack, responder } => {
-                let result = self.start_hermetic_network_realm(netstack).await;
+            fntr::ControllerRequest::StartHermeticNetworkRealm { responder } => {
+                let result = self.start_hermetic_network_realm().await;
                 responder.send(result)?;
             }
             fntr::ControllerRequest::StopHermeticNetworkRealm { responder } => {
@@ -1194,8 +1189,6 @@ impl Controller {
                     // TODO(https://github.com/rust-lang/rust/issues/86442): once
                     // std::io::ErrorKind::HostUnreachable is stable, we should use that instead.
                     match e.raw_os_error() {
-                        // TODO(https://fxbug.dev/42051708): Return ENETUNREACH when no route found in
-                        // Netstack2.
                         Some(libc::EHOSTUNREACH) | Some(libc::ENETUNREACH) => {
                             fntr::Error::AddressUnreachable
                         }
@@ -1353,14 +1346,11 @@ impl Controller {
         Ok(())
     }
 
-    /// Starts the "hermetic-network" realm with the provided `netstack`.
+    /// Starts the "hermetic-network" realm.
     ///
     /// Adds the "hermetic-network" component to the "enclosed-network"
     /// collection.
-    async fn start_hermetic_network_realm(
-        &mut self,
-        netstack: fntr::Netstack,
-    ) -> Result<(), fntr::Error> {
+    async fn start_hermetic_network_realm(&mut self) -> Result<(), fntr::Error> {
         if let Some(_hermetic_network_connector) = &self.hermetic_network_connector {
             // The `Controller` only configures one hermetic network realm
             // at a time. As a result, any existing realm must be stopped before
@@ -1386,16 +1376,14 @@ impl Controller {
             })?;
         }
 
-        let url = match netstack {
-            fntr::Netstack::V2 => HERMETIC_NETWORK_V2_URL,
-            fntr::Netstack::V3 => HERMETIC_NETWORK_V3_URL,
-        };
-
         create_child(
             fdecl::CollectionRef {
                 name: network_test_realm::HERMETIC_NETWORK_COLLECTION_NAME.to_string(),
             },
-            create_child_decl(network_test_realm::HERMETIC_NETWORK_REALM_NAME, url),
+            create_child_decl(
+                network_test_realm::HERMETIC_NETWORK_REALM_NAME,
+                HERMETIC_NETWORK_URL,
+            ),
             &SystemConnector,
         )
         .await?;
