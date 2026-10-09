@@ -176,6 +176,24 @@ func TestSet(t *testing.T) {
 		}
 	})
 
+	t.Run("populates set_artifacts fields (experiments)", func(t *testing.T) {
+		staticSpec := proto.Clone(staticSpec).(*fintpb.Static)
+		staticSpec.Experiments = []string{"use_test_pilot"}
+		runner := &fakeSubprocessRunner{
+			mockStdout: []byte("some stdout"),
+		}
+		artifacts, err := setImpl(ctx, runner, staticSpec, contextSpec, "linux-x64", false, []string{})
+		if err != nil {
+			t.Fatalf("Unexpected error from setImpl: %s", err)
+		}
+		if diff := cmp.Diff(artifacts.ExperimentSpecs, []string{"use_test_pilot"}); diff != "" {
+			t.Errorf("Wrong experiment_specs (-got +want):\n%s", diff)
+		}
+		if diff := cmp.Diff(artifacts.EnabledExperiments, []string{"use_test_pilot"}); diff != "" {
+			t.Errorf("Wrong enabled_experiments (-got +want):\n%s", diff)
+		}
+	})
+
 	t.Run("leaves failure summary empty in case of success", func(t *testing.T) {
 		runner := &fakeSubprocessRunner{
 			mockStdout: []byte("some stdout"),
@@ -188,6 +206,33 @@ func TestSet(t *testing.T) {
 			t.Errorf("Expected setImpl to leave failure summary empty but got: %q", artifacts.FailureSummary)
 		}
 	})
+}
+
+func TestGetEnabledExperiments(t *testing.T) {
+	origSupported := supportedExperiments
+	origRandInt := randInt
+	defer func() {
+		supportedExperiments = origSupported
+		randInt = origRandInt
+	}()
+	supportedExperiments = []string{"exp1", "exp2", "exp3", "exp5", "exp6"}
+	randInt = func(_ int) int {
+		return 49
+	}
+
+	experiments := []string{"exp1:0", "exp2:50", "exp3:100", "exp5:40", "exp6"}
+	got, err := GetEnabledExperiments(experiments)
+	if err != nil {
+		t.Fatalf("failed to get enabled experiments: %s", err)
+	}
+	want := []string{"exp2", "exp3", "exp6"}
+	if diff := cmp.Diff(got, want); diff != "" {
+		t.Fatalf("unexpected enabled experiments (-got +want):\n%s", diff)
+	}
+
+	if _, err := GetEnabledExperiments([]string{"unsupported_exp"}); err == nil {
+		t.Errorf("got nil error, want error for unsupported experiment")
+	}
 }
 
 func TestRunGen(t *testing.T) {
@@ -363,6 +408,8 @@ func TestGenArgs(t *testing.T) {
 		skipLocalArgs bool
 		// assembly developer overrides strings
 		assemblyOverridesStrings []string
+		// enabled experiments
+		enabledExperiments []string
 	}{
 		{
 			name: "minimal specs",
@@ -640,6 +687,13 @@ func TestGenArgs(t *testing.T) {
 				`]`,
 			},
 		},
+		{
+			name:               "use_test_pilot experiment enabled",
+			enabledExperiments: []string{"use_test_pilot"},
+			expectedArgs: []string{
+				"use_test_pilot=true",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -676,7 +730,7 @@ func TestGenArgs(t *testing.T) {
 				}
 			}
 
-			args, err := genArgs(ctx, tc.staticSpec, tc.contextSpec, tc.skipLocalArgs, tc.assemblyOverridesStrings)
+			args, err := genArgs(ctx, tc.staticSpec, tc.contextSpec, tc.skipLocalArgs, tc.assemblyOverridesStrings, tc.enabledExperiments)
 			if err != nil {
 				if tc.expectErr {
 					return
