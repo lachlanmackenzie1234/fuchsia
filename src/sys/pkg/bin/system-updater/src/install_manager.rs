@@ -305,13 +305,13 @@ async fn handle_active_control_request<N>(
                 let _ = responder.send(Err(CancelError::AttemptIdMismatch));
                 return;
             }
+            if *num_cancel_requests >= MAX_NUM_CANCEL_REQUESTS {
+                let _ = responder.send(Err(CancelError::CancelLimitExceeded));
+                return;
+            }
 
             let response = match cancel_sender.take() {
                 Some(cancel_sender) => {
-                    if *num_cancel_requests >= MAX_NUM_CANCEL_REQUESTS {
-                        let _ = responder.send(Err(CancelError::CancelLimitExceeded));
-                        return;
-                    }
                     *num_cancel_requests += 1;
                     cancel_sender.send(()).map_err(|()| CancelError::UpdateCannotBeCanceled)
                 }
@@ -997,9 +997,8 @@ mod tests {
         ) -> (String, Self::UpdateStream) {
             let stream = async_generator::generate(move |mut co| async move {
                 co.yield_(State::Prepare).await;
-                if let Ok(()) = cancel_receiver.await {
-                    co.yield_(State::Canceled).await;
-                }
+                let () = cancel_receiver.await.expect("cancel sender should not be dropped");
+                co.yield_(State::Canceled).await;
             })
             .into_yielded();
             ("my-attempt".to_string(), Box::pin(stream))
@@ -1106,6 +1105,11 @@ mod tests {
             Ok(Ok("my-attempt".to_string()))
         );
         assert_eq!(state_receiver.next().await, Some(State::Prepare));
+        assert_eq!(
+            install_manager_ch.cancel_update(None).await,
+            Ok(Err(CancelError::CancelLimitExceeded))
+        );
+        // The update should still be running and cancel_sender should not have been dropped.
         assert_eq!(
             install_manager_ch.cancel_update(None).await,
             Ok(Err(CancelError::CancelLimitExceeded))
