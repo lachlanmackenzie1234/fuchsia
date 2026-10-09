@@ -10,7 +10,7 @@ use crate::bedrock::structured_dict::{
 use crate::bedrock::use_dictionary_router::UseDictionaryRouter;
 use crate::bedrock::with_service_renames_and_filter::WithServiceRenamesAndFilter;
 use crate::component_instance::ComponentInstanceInterface;
-use crate::error::{ErrorReporter, PrettyPrintRef, RouteVerb, RoutingError};
+use crate::error::{ErrorReporter, RouteVerb, RoutingError};
 use crate::error_logging_router::ErrorLoggingRouter;
 use crate::intermediate_router::{IntermediateRouter, RouteRequest, WeakDictionaryOrRouter};
 use crate::to_request::ToRequest;
@@ -24,7 +24,7 @@ use capability_source::{
 use cm_rust::offer::{OfferDeclCommon, OfferTarget};
 use cm_rust::{
     CapabilityTypeName, DictionaryValue, ExposeDeclCommon, ExposeTarget, FidlIntoNative,
-    SourceName, SourcePath, UseDeclCommon,
+    GenericRef, SourceName, SourcePath, UseDeclCommon,
 };
 use cm_types::{BorrowedName, IterablePath, Name, RelativePath};
 use fidl_fuchsia_component_decl as fdecl;
@@ -536,7 +536,7 @@ where
             // filtering rules, as they will not be contributing any instances to the
             // aggregate.
             continue;
-        } else if let PrettyPrintRef::Collection(collection_name) = decl.to_source() {
+        } else if let GenericRef::Collection(collection_name) = decl.to_source() {
             aggregate_sources.push(AggregateSource::Collection { collection_name });
         } else {
             let router_capability = new_intermediate_router(component, sandbox, *decl);
@@ -544,12 +544,12 @@ where
                 .try_into()
                 .expect("invalid type returned by new_intermediate_router");
             let source_instance = match decl.to_source() {
-                PrettyPrintRef::Self_ => AggregateInstance::Self_,
-                PrettyPrintRef::Parent => AggregateInstance::Parent,
-                PrettyPrintRef::Child(name) => {
+                GenericRef::Self_ => AggregateInstance::Self_,
+                GenericRef::Parent => AggregateInstance::Parent,
+                GenericRef::Child(name) => {
                     AggregateInstance::Child(ChildName::new(name.to_long(), None))
                 }
-                PrettyPrintRef::ChildInCollection(name, collection) => {
+                GenericRef::ChildInCollection(name, collection) => {
                     AggregateInstance::Child(ChildName::new(name, Some(collection)))
                 }
                 other_source => {
@@ -796,37 +796,35 @@ fn new_intermediate_router_inner(
     request: RouteRequest,
     default_token: Arc<WeakInstanceToken>,
     verb: RouteVerb,
-    ref_: PrettyPrintRef,
+    ref_: GenericRef,
     source_path: RelativePath,
 ) -> Capability {
     let source: WeakDictionaryOrRouter = match &ref_ {
-        PrettyPrintRef::Parent => Arc::downgrade(&sandbox.component_input.capabilities()).into(),
-        PrettyPrintRef::Self_ => Arc::downgrade(&sandbox.program_output_dict).into(),
-        PrettyPrintRef::Child(name) => {
+        GenericRef::Parent => Arc::downgrade(&sandbox.component_input.capabilities()).into(),
+        GenericRef::Self_ => Arc::downgrade(&sandbox.program_output_dict).into(),
+        GenericRef::Child(name) => {
             let guard = sandbox.child_outputs.lock();
             let router = guard.get(name.as_str()).expect("reference to non-existent child");
             Arc::downgrade(&router).into()
         }
-        PrettyPrintRef::ChildInCollection(name, collection) => {
+        GenericRef::ChildInCollection(name, collection) => {
             let child_name = moniker::ChildName::new(name.clone(), Some(collection.clone()));
             let guard = sandbox.child_outputs.lock();
             let router = guard.get(&child_name).expect("reference to non-existent child");
             Arc::downgrade(&router).into()
         }
-        PrettyPrintRef::Collection(_) => unimplemented!(),
-        PrettyPrintRef::Framework => Arc::downgrade(&*sandbox.framework_router.lock()).into(),
-        PrettyPrintRef::Capability(_) => {
+        GenericRef::Collection(_) => unimplemented!(),
+        GenericRef::Framework => Arc::downgrade(&*sandbox.framework_router.lock()).into(),
+        GenericRef::Capability(_) => {
             Arc::downgrade(&sandbox.capability_sourced_capabilities_dict).into()
         }
-        PrettyPrintRef::Debug => {
-            Arc::downgrade(&sandbox.component_input.environment().debug()).into()
-        }
-        PrettyPrintRef::Void => {
+        GenericRef::Debug => Arc::downgrade(&sandbox.component_input.environment().debug()).into(),
+        GenericRef::Void => {
             let source_name = source_path.basename().expect("invalid source capability path");
             let type_name = request.build_type_name;
             return UnavailableRouter::new_from_type_name(source_name.into(), type_name, moniker);
         }
-        PrettyPrintRef::Environment => {
+        GenericRef::Environment => {
             let type_name = request.build_type_name;
             match type_name {
                 CapabilityTypeName::Runner => {
@@ -1047,7 +1045,7 @@ where
 {
     let source = decl.to_source();
     let source_path = match &source {
-        PrettyPrintRef::Capability(name)
+        GenericRef::Capability(name)
             if decl.source_path().basename.as_str() == "fuchsia.component.StorageAdmin"
                 || decl.source_path().basename.as_str() == "fuchsia.sys2.StorageAdmin" =>
         {

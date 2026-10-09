@@ -955,7 +955,7 @@ mod tests {
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
     use ::routing::bedrock::request_metadata::service_metadata;
     use ::routing::component_instance::ComponentInstanceInterface;
-    use ::routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
+    use ::routing::error::{RouteVerb, RoutingError};
     use ::routing::intermediate_router::{IntermediateRouter, RouteRequest};
     use capability_source::ComponentCapability;
     use cm_rust::offer::*;
@@ -989,7 +989,7 @@ mod tests {
                         moniker: Moniker::root(),
                         verb: RouteVerb::Offer,
                         counter_verb: RouteVerb::Offer,
-                        source: PrettyPrintRef::Parent,
+                        source: GenericRef::Parent,
                         capability_type: CapabilityTypeName::Service,
                         capability_name: RelativePath::new("my.service.Service").unwrap(),
                     },
@@ -1037,7 +1037,7 @@ mod tests {
                         self.weak_component.clone().into(),
                         self.weak_component.moniker.clone(),
                         RouteVerb::Declare,
-                        PrettyPrintRef::Self_,
+                        GenericRef::Self_,
                     )
                     .try_into()
                     .expect("wrong type from intermediate router"))

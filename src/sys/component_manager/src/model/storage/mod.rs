@@ -8,13 +8,13 @@ use crate::model::start::Start;
 use crate::model::storage::admin_protocol::StorageAdmin;
 use crate::sandbox_util::LaunchTaskOnReceive;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
+use ::routing::error::{RouteVerb, RoutingError};
 use ::routing::intermediate_router::{IntermediateRouter, RouteRequest};
 use capability_source::{
     CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
     NamespaceSource, StorageBackingDirectorySource,
 };
-use cm_rust::{CapabilityTypeName, StorageDirectorySource};
+use cm_rust::{CapabilityTypeName, GenericRef, StorageDirectorySource};
 use cm_types::{Name, RelativePath};
 use component_id_index::InstanceId;
 use derivative::Derivative;
@@ -183,12 +183,11 @@ pub async fn route_backing_directory(
     let (source_dictionary, source_ref) = match &storage_decl.source {
         StorageDirectorySource::Parent => (
             storage_component.component_sandbox().await?.component_input.capabilities(),
-            PrettyPrintRef::Parent,
+            GenericRef::Parent,
         ),
-        StorageDirectorySource::Self_ => (
-            storage_component.component_sandbox().await?.program_output_dict,
-            PrettyPrintRef::Self_,
-        ),
+        StorageDirectorySource::Self_ => {
+            (storage_component.component_sandbox().await?.program_output_dict, GenericRef::Self_)
+        }
         StorageDirectorySource::Child(name) => {
             let child_name = ChildName::parse(name)
                 .expect("invalid child name, this should be prevented by manifest validation");
@@ -196,7 +195,7 @@ pub async fn route_backing_directory(
             let child_sandbox = child_component.component_sandbox().await?;
             (
                 child_sandbox.component_output.capabilities(),
-                PrettyPrintRef::Child(Name::new(name).unwrap()),
+                GenericRef::Child(Name::new(name).unwrap()),
             )
         }
     };

@@ -100,6 +100,16 @@ impl From<ChildName> for cm_rust::ChildRef {
     }
 }
 
+impl From<ChildName> for cm_rust::GenericRef {
+    fn from(child_name: ChildName) -> Self {
+        if let Some(collection_name) = child_name.collection() {
+            Self::ChildInCollection(child_name.name().into(), collection_name.into())
+        } else {
+            Self::Child(Name::new(child_name.name()).unwrap())
+        }
+    }
+}
+
 impl AsRef<str> for ChildName {
     #[inline]
     fn as_ref(&self) -> &str {
