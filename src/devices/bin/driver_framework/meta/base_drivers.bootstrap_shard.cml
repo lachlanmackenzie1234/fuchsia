@@ -230,6 +230,7 @@
                 "fuchsia.hardware.haptics.Service",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.power.suspend.SuspendService",
+                "fuchsia.hardware.power.usb.DebugService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
                 "fuchsia.hardware.qualcomm.router.ClientService",

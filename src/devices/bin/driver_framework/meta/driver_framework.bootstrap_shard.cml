@@ -562,6 +562,7 @@
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.pci.BusService",
                 "fuchsia.hardware.power.suspend.SuspendService",
+                "fuchsia.hardware.power.usb.DebugService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
                 "fuchsia.hardware.rpmb.Service",
