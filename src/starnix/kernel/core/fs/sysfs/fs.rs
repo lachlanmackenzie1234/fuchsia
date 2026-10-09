@@ -8,13 +8,13 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::BytesFile;
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{
-    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
+    CacheMode, DirEntry, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr,
 };
-use starnix_logging::bug_ref;
+use starnix_logging::{Level, bug_ref, track_stub_log};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::{SYSFS_MAGIC, statfs};
+use starnix_uapi::{SYSFS_MAGIC, errno, statfs};
 
 struct SysFs;
 impl FileSystemOps for SysFs {
@@ -24,6 +24,16 @@ impl FileSystemOps for SysFs {
     fn name(&self) -> &'static FsStr {
         "sysfs".into()
     }
+}
+
+/// Reports lookups of missing `/sys` entries via `track_stub_log!`, to surface sysfs nodes that
+/// userspace expects but which Starnix does not (yet) provide.
+///
+/// Each distinct missing path is logged once, and counted in the kernel's Inspect `stubs` node.
+fn sysfs_not_found_handler(entry: &DirEntry, name: &FsStr) -> Errno {
+    let message = format!("Looking for {name} in {entry:?}");
+    track_stub_log!(Level::Warn, TODO("https://fxbug.dev/493488790"), &message);
+    errno!(ENOENT, message)
 }
 
 impl SysFs {
@@ -37,6 +47,9 @@ impl SysFs {
         let registry = &kernel.device_registry;
         let root = &registry.objects.root;
         fs.create_root(fs.allocate_ino(), root.clone());
+        if kernel.features.log_sysfs_lookup_misses {
+            root.set_not_found_handler(sysfs_not_found_handler);
+        }
         let dir = SimpleDirectoryMutator::new(fs.clone(), root.clone());
 
         let dir_mode = 0o755;
@@ -315,7 +328,10 @@ pub fn get_sysfs(kernel: &Kernel) -> FileSystemHandle {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::spawn_kernel_and_run;
+    use super::*;
+    use crate::task::KernelFeatures;
+    use crate::testing::{spawn_kernel_and_run, spawn_kernel_with_features_and_run};
+    use crate::vfs::MountInfo;
     use std::sync::Arc;
 
     #[::fuchsia::test]
@@ -359,5 +375,33 @@ mod tests {
             );
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_log_sysfs_lookup_misses() {
+        for (log_sysfs_lookup_misses, name) in
+            [(false, "missing_when_disabled"), (true, "missing_when_enabled")]
+        {
+            spawn_kernel_with_features_and_run(
+                async move |current_task| {
+                    let sysfs = get_sysfs(current_task.kernel());
+                    let res = sysfs.root().component_lookup(
+                        current_task,
+                        &MountInfo::detached(),
+                        name.into(),
+                    );
+                    assert_eq!(res.unwrap_err(), errno!(ENOENT));
+                },
+                KernelFeatures { log_sysfs_lookup_misses, ..Default::default() },
+            )
+            .await;
+
+            let inspector =
+                starnix_logging::track_stub_lazy_node_callback().await.expect("lazy node callback");
+            let hierarchy = fuchsia_inspect::reader::read(&inspector).await.expect("read inspect");
+            let expected =
+                format!(r#"Looking for {name} in DirEntry {{ fs: "sysfs", path: "/" }}"#);
+            assert_eq!(hierarchy.get_child(&expected).is_some(), log_sysfs_lookup_misses);
+        }
     }
 }

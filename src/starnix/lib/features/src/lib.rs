@@ -62,6 +62,7 @@ pub enum Feature {
     FakeIon,
     UnifiedTracing,
     RemotevolInProcess,
+    LogSysfsLookupMisses,
 }
 
 /// Error returned when a feature is not recognized.
@@ -163,6 +164,7 @@ mod test {
             (Feature::FakeIon, "fake_ion"),
             (Feature::UnifiedTracing, "unified_tracing"),
             (Feature::RemotevolInProcess, "remotevol_in_process"),
+            (Feature::LogSysfsLookupMisses, "log_sysfs_lookup_misses"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);

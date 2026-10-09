@@ -97,7 +97,6 @@ impl SimpleDirectoryMutator {
 ///
 /// Child [`SimpleDirectory`] nodes created via [`SimpleDirectory::subdir`] or attached via
 /// [`SimpleDirectoryMutator`] inherit their parent directory's handler.
-#[allow(dead_code)]
 pub(crate) type NotFoundHandler = fn(&DirEntry, &FsStr) -> Errno;
 
 struct SimpleDirectoryState {
@@ -133,7 +132,6 @@ impl SimpleDirectory {
 
     /// Installs `not_found_handler` on this directory and recursively across all existing
     /// and future [`SimpleDirectory`] descendants.
-    #[allow(dead_code)]
     pub(crate) fn set_not_found_handler(&self, not_found_handler: NotFoundHandler) {
         // Collect the child directories and release this directory's lock before recursing, so
         // that at most one `SimpleDirectoryEntriesLock` is held at a time.

@@ -190,6 +190,7 @@ impl Features {
                         dirent_cache_size,
                         fake_ion,
                         remotevol_in_process,
+                        log_sysfs_lookup_misses,
                     },
                 system_limits,
                 selinux,
@@ -309,6 +310,7 @@ impl Features {
                     kernel_node.record_bool("crash_report_throttling", *crash_report_throttling);
                     kernel_node
                         .record_uint("cached_zx_map_info_bytes", *cached_zx_map_info_bytes as u64);
+                    kernel_node.record_bool("log_sysfs_lookup_misses", *log_sysfs_lookup_misses);
                     inspect_node.record_string(
                         "default_ns_mount_options",
                         format!("{:?}", default_ns_mount_options),
@@ -487,6 +489,7 @@ pub fn parse_features(
             (Feature::AndroidUsb, _) => features.android_usb = true,
             (Feature::GoogleOdpm, _) => features.google_odpm = true,
             (Feature::RemotevolInProcess, _) => features.kernel.remotevol_in_process = true,
+            (Feature::LogSysfsLookupMisses, _) => features.kernel.log_sysfs_lookup_misses = true,
         };
     }
 

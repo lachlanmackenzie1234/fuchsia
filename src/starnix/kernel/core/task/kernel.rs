@@ -137,6 +137,9 @@ pub struct KernelFeatures {
 
     /// Whether `remotevol` mounts the volume in-process rather than over FIDL.
     pub remotevol_in_process: bool,
+
+    /// Whether to log unexpected lookup misses in `sysfs` via `track_stub_log!`.
+    pub log_sysfs_lookup_misses: bool,
 }
 
 impl KernelFeatures {
