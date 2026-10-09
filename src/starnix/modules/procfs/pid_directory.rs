@@ -1300,18 +1300,15 @@ impl DynamicFileSource for StatFile {
         {
             let thread_group = task.thread_group().read();
             ppid = thread_group.get_ppid();
-            pgrp = thread_group.process_group.leader.id;
-            session = thread_group.process_group.session.leader.id;
+            pgrp = thread_group.process_group.id;
+            session = thread_group.session.id;
 
             // TTY device ID.
-            {
-                let session = thread_group.process_group.session.read();
-                tty_nr = session
-                    .controlling_terminal
-                    .as_ref()
-                    .map(|t| t.terminal.device().bits())
-                    .unwrap_or(0) as i32;
-            }
+            tty_nr = thread_group
+                .controlling_terminal
+                .as_ref()
+                .map(|t| t.terminal.device().bits())
+                .unwrap_or(0) as i32;
 
             cutime = duration_to_scheduler_clock(thread_group.children_time_stats.user_time);
             cstime = duration_to_scheduler_clock(thread_group.children_time_stats.system_time);

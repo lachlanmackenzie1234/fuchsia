@@ -1196,7 +1196,7 @@ mod tests {
                         &kernel,
                         TaskCommand::new(b"kthreadd"),
                         fs,
-                        |pid, process_group| {
+                        |pid| {
                             let process = fuchsia_runtime::process_self()
                                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
                                 .expect("process");
@@ -1205,7 +1205,6 @@ mod tests {
                                 process,
                                 init_thread_group.write(),
                                 pid,
-                                process_group,
                             );
                             Ok(TaskInfo { thread_group, memory_manager }.into())
                         },

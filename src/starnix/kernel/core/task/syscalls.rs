@@ -330,7 +330,7 @@ pub fn sys_getsid(current_task: &CurrentTask, pid: pid_t) -> Result<pid_t, Errno
     if pid != 0 {
         security::check_task_getsid(current_task, &target_task)?;
     }
-    let sid = target_task.thread_group().read().process_group.session.leader.id;
+    let sid = target_task.thread_group().read().session.id;
     Ok(sid)
 }
 
@@ -338,7 +338,7 @@ pub fn sys_getpgid(current_task: &CurrentTask, pid: pid_t) -> Result<pid_t, Errn
     let task = get_task_or_current(current_task, pid)?;
 
     security::check_getpgid_access(current_task, &task)?;
-    let pgid = task.thread_group().read().process_group.leader.id;
+    let pgid = task.thread_group().read().process_group.id;
     Ok(pgid)
 }
 

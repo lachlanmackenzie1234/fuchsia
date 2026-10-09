@@ -1370,7 +1370,9 @@ impl FileAsyncOwner {
         } else {
             let pgid = pid.checked_neg().ok_or_else(|| errno!(EINVAL))?;
             let entry = current_task.kernel().pids.get(pgid)?;
-            entry.get_process_group()?;
+            if !entry.is_process_group(&fuchsia_rcu::RcuReadScope::new()) {
+                return error!(ESRCH);
+            }
             Ok(Self::ProcessGroup(Some(entry)))
         }
     }
@@ -1386,7 +1388,9 @@ impl FileAsyncOwner {
             } else {
                 let entry = pids.get(requested_owner.pid)?;
                 if lookup_pg {
-                    entry.get_process_group()?;
+                    if !entry.is_process_group(&fuchsia_rcu::RcuReadScope::new()) {
+                        return error!(ESRCH);
+                    }
                 } else {
                     entry.get_task()?;
                 }

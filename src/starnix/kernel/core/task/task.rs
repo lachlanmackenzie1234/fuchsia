@@ -979,8 +979,10 @@ impl Task {
             return;
         }
 
-        let pgid = self.thread_group().read().process_group.leader.clone();
-        let exit_signal = self.thread_group().read().exit_signal.clone();
+        let (pgid, exit_signal) = {
+            let tg = self.thread_group().read();
+            (tg.process_group.clone(), tg.exit_signal.clone())
+        };
         let mut state = self.write();
         state.set_stopped(StopState::ForceAwake, None, None, None);
         if let Some(ptrace) = &mut state.ptrace {
@@ -1572,7 +1574,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to read memory generally indicates that the memory
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_read_memory(addr, bytes)
     }
 
@@ -1584,7 +1586,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to read memory generally indicates that the memory
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_read_memory_partial_until_null_byte(addr, bytes)
     }
 
@@ -1596,7 +1598,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to read memory generally indicates that the memory
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_read_memory_partial(addr, bytes)
     }
 
@@ -1604,7 +1606,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to write memory generally indicates that the memory
         // is being written to a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_write_memory(addr, bytes)
     }
 
@@ -1612,7 +1614,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to write memory generally indicates that the memory
         // is being written to a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_write_memory_partial(addr, bytes)
     }
 
@@ -1620,7 +1622,7 @@ impl MemoryAccessor for Task {
         // Using a `Task` to zero memory generally indicates that the memory
         // is being zeroed from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
-        // so we need to go through the VMO.
+        // so access must go through the VMO.
         self.mm()?.syscall_zero(addr, length)
     }
 }

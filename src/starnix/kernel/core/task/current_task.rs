@@ -1680,8 +1680,6 @@ impl CurrentTask {
                 } else {
                     self.thread_group().signal_actions.fork()
                 };
-                let process_group = thread_group_state.process_group.clone();
-
                 let task_info = {
                     fuchsia_trace::duration!(CATEGORY_STARNIX, "create_zircon_process");
                     create_zircon_process(
@@ -1689,7 +1687,6 @@ impl CurrentTask {
                         Some(thread_group_state),
                         pid.clone(),
                         child_exit_signal,
-                        process_group,
                         signal_actions,
                         command.clone(),
                     )?
@@ -1723,6 +1720,11 @@ impl CurrentTask {
             abstract_socket_namespace = running_state.abstract_socket_namespace.clone();
             abstract_vsock_namespace = running_state.abstract_vsock_namespace.clone();
         }
+
+        let (pgid_pid, sid_pid) = {
+            let tg_state = thread_group.read();
+            (tg_state.process_group.clone(), tg_state.session.clone())
+        };
 
         let mut child = TaskBuilder::new(Task::new(
             pid,
@@ -1776,18 +1778,28 @@ impl CurrentTask {
                 std::mem::drop(pids);
             } else {
                 child.thread_group().add(Arc::clone(&child.task))?;
-                {
-                    let tg_state = child.thread_group().read();
-                    pids.attach_pgid(&tg_state.process_group.leader, child.thread_group());
-                    pids.attach_sid(&tg_state.process_group.session.leader, child.thread_group());
-                }
+                pids.attach_pgid(&pgid_pid, child.thread_group());
+                pids.attach_sid(&sid_pid, child.thread_group());
                 std::mem::drop(pids);
 
+                // Inherit `controlling_terminal` from the parent now that `child` is attached to
+                // `sid_pid`. Holding `child.thread_group().write()` across `terminal.read()`
+                // ensures any concurrent terminal disassociation or steal either already updated
+                // `terminal.write()` before this check or visits `child` afterward in
+                // `sid_thread_groups`.
+                if let Some(ct) = self.thread_group().controlling_terminal() {
+                    let mut child_state = child.thread_group().write();
+                    if child_state.session == sid_pid
+                        && ct.terminal.read().controlling_session() == Some(&sid_pid)
+                    {
+                        child_state.controlling_terminal = Some(ct);
+                    }
+                }
+
                 // These manipulations of the signal handling state appear to be related to
-                // CLONE_SIGHAND and CLONE_VM rather than CLONE_THREAD. However, we do not support
-                // all the combinations of these flags, which means doing these operations here
-                // might actually be correct. However, if you find a test that fails because of the
-                // placement of this logic here, we might need to move it.
+                // CLONE_SIGHAND and CLONE_VM rather than CLONE_THREAD. However, Starnix does not
+                // support all combinations of these flags, so performing these operations here
+                // might be sufficient unless a test requires moving this logic.
                 let (sigaltstack, signal_mask) = {
                     let state = self.read();
                     (state.sigaltstack(), state.signal_mask())
@@ -1798,8 +1810,8 @@ impl CurrentTask {
             }
 
             if !clone_vm {
-                // We do not support running threads in the same process with different
-                // MemoryManagers.
+                // Running threads in the same process with different MemoryManagers is not
+                // supported.
                 assert!(!clone_thread);
                 let child_mm = MemoryManager::snapshot_of(
                     &self.mm()?,
@@ -2166,8 +2178,8 @@ impl CurrentTask {
         }
 
         if Signal::try_from(unchecked_signal) == Ok(SIGCONT) {
-            let target_session = target.thread_group().read().process_group.session.leader.clone();
-            let self_session = self.thread_group().read().process_group.session.leader.clone();
+            let target_session = target.thread_group().read().session.clone();
+            let self_session = self.thread_group().read().session.clone();
             if target_session == self_session {
                 return Ok(());
             }
