@@ -186,7 +186,6 @@
         "src/virtualization/packages/termina_guest/update_cipd_prebuilts.sh",
         "src/virtualization/scripts/bit-print.sh",
         "src/virtualization/scripts/build-blobs.sh",
-        "tools/net/digest/digest.go",
         "tools/power_config/tests/BUILD.gn",
         "zircon/system/ulib/bitmap/test/raw-bitmap-fuzzer.cc",
         "zircon/system/ulib/mock-function/include/lib/mock-function/mock-function.h",
