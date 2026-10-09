@@ -31,6 +31,8 @@ zx_status_t cpp_memory_stall_event_dispatcher_create(
     uint32_t kind, zx_duration_mono_t threshold, zx_duration_mono_t window,
     ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle,
     ffi::Uninitialized<zx_rights_t>* out_rights);
+zx_status_t cpp_event_dispatcher_user_signal_self(EventDispatcher* event, uint32_t clear_mask,
+                                                  uint32_t set_mask);
 }
 
 class EventDispatcher : public Dispatcher {

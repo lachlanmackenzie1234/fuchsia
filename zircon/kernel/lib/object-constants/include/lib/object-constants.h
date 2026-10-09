@@ -202,6 +202,10 @@ constexpr size_t kVmAddressRegionDispatcherStateSize = 56 + kLockClassIdSize;
 constexpr size_t kVmAddressRegionDispatcherStateAlign = 8;
 constexpr size_t kVmAddressRegionDispatcherStateOffset = 48;
 
+// Size and alignment for MemoryWatchdogState.
+constexpr size_t kMemoryWatchdogStateSize = 304;
+constexpr size_t kMemoryWatchdogStateAlign = 8;
+
 // Size, alignment, and offset for VmObjectDispatcherState.
 constexpr size_t kVmObjectDispatcherStateSize = 64 + kLockClassIdSize;
 constexpr size_t kVmObjectDispatcherStateAlign = 8;
