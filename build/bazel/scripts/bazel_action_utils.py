@@ -89,6 +89,7 @@ class BazelTargetInfo(object):
     update_rust_project: bool = False
     copy_debug_symbols: bool = False
     extra_bazel_targets_file: str | None = None
+    debug_symbols_manifest: str | None = None
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
         default_factory=list
@@ -123,6 +124,7 @@ class BazelTargetInfosMap(object):
             update_rust_project = entry["update_rust_project"]
             copy_debug_symbols = entry.get("copy_debug_symbols", False)
             extra_bazel_targets_file = entry.get("extra_bazel_targets_file")
+            debug_symbols_manifest = entry.get("debug_symbols_manifest")
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
                 BazelTargetInfo(
@@ -135,6 +137,7 @@ class BazelTargetInfosMap(object):
                     update_rust_project=update_rust_project,
                     copy_debug_symbols=copy_debug_symbols,
                     extra_bazel_targets_file=extra_bazel_targets_file,
+                    debug_symbols_manifest=debug_symbols_manifest,
                 ),
             )
 
@@ -207,6 +210,12 @@ class BazelTargetInfosMap(object):
                 _check_add_ninja_path_to_map(
                     self._targets_by_ninja_output_paths,
                     symlink.ninja_path,
+                    target_info,
+                )
+            if target_info.debug_symbols_manifest:
+                _check_add_ninja_path_to_map(
+                    self._targets_by_ninja_output_paths,
+                    target_info.debug_symbols_manifest,
                     target_info,
                 )
             _check_add_ninja_path_to_map(

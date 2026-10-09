@@ -136,6 +136,53 @@ class BazelTargetInfosMapTest(unittest.TestCase):
 
         self.assertEqual(list(target_map.all_infos()), [foo_info, bar_info])
 
+    def test_debug_symbols_manifest(self) -> None:
+        from bazel_action_utils import BazelTargetInfosMap
+
+        def entry(name: str, **extra: T.Any) -> dict[str, T.Any]:
+            return {
+                "type": "file",
+                "bazel_target": f"//src:{name}",
+                "bazel_platform_label": "//build/bazel/platforms:host",
+                "bazel_platform_config": "host",
+                "ninja_depfile": f"obj/src/{name}.d",
+                "gn_targets_manifest": "gen/gn_targets.manifest",
+                "stamp_path": f"obj/src/{name}.stamp",
+                "bazel_file": name,
+                "ninja_file": name,
+                "update_rust_project": False,
+                **extra,
+            }
+
+        target_map = BazelTargetInfosMap(
+            [
+                entry(
+                    "foo",
+                    debug_symbols_manifest="obj/src/foo.debug_symbols.json",
+                ),
+                entry("bar"),
+            ]
+        )
+
+        foo_info = target_map.get_info(
+            "//src:foo", "//build/bazel/platforms:host"
+        )
+        assert foo_info is not None
+        self.assertEqual(
+            foo_info.debug_symbols_manifest,
+            "obj/src/foo.debug_symbols.json",
+        )
+        self.assertEqual(
+            target_map.get_target("obj/src/foo.debug_symbols.json"),
+            foo_info,
+        )
+
+        bar_info = target_map.get_info(
+            "//src:bar", "//build/bazel/platforms:host"
+        )
+        assert bar_info is not None
+        self.assertIsNone(bar_info.debug_symbols_manifest)
+
 
 class AspectManifestOutputsTest(unittest.TestCase):
     def test_to_from_dict_and_file(self) -> None:
