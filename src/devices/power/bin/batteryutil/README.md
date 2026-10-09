@@ -91,11 +91,12 @@ Sorrel `SPMI 0x2954` + legacy `fuchsia.power.battery.ChargerService`). Supported
 - `passthrough`: `OperatingMode::Passthrough` (USB powers system, charging inhibited)
 - `discharging` / `battery`: `OperatingMode::Discharging` (active discharging from battery)
 - `otg`: `OperatingMode::Otg` (reverse boost)
-- `auto`: clears all `DebugService` overrides (`Debug.ClearOverrides`)
+- `auto`: clears the operating mode override on `DebugService` (`Debug.ClearControl`)
 
 Modes set through `DebugService` are sticky overrides: they stay in effect after `batteryutil`
 exits and take precedence over the production policy client connected to `Controller` until they
-are cleared with `batteryutil mode auto`.
+are cleared with `batteryutil mode auto` (operating mode only) or `batteryutil clear` (all
+`DebugService` overrides).
 
 ```console
 $ batteryutil mode charging
@@ -108,7 +109,10 @@ $ batteryutil mode discharging
 Successfully set charger operating mode to Discharging via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
 
 $ batteryutil mode auto
-Successfully cleared charger overrides via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+Successfully cleared charger operating mode override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil clear
+Successfully cleared all charger overrides via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
 ```
 
 

@@ -31,6 +31,7 @@ pub enum Subcommand {
     Get(GetCommand),
     Watch(WatchCommand),
     Mode(ModeCommand),
+    Clear(ClearCommand),
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
@@ -48,9 +49,14 @@ pub struct WatchCommand {}
 /// set charger operating mode (charging/usb, passthrough, discharging/battery, otg, auto)
 pub struct ModeCommand {
     #[argh(positional)]
-    /// mode: charging/usb, passthrough, discharging/battery, otg, or auto (clear overrides)
+    /// mode: charging/usb, passthrough, discharging/battery, otg, or auto (clear mode override)
     pub mode: ModeArg,
 }
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "clear")]
+/// clear all sticky charger DebugService overrides
+pub struct ClearCommand {}
 
 #[fuchsia::main]
 async fn main() -> Result<()> {
@@ -62,8 +68,9 @@ async fn main() -> Result<()> {
         Some(Subcommand::Watch(_)) => battery::watch_battery(path).await,
         Some(Subcommand::Mode(ModeCommand { mode })) => match mode {
             ModeArg::Set(ChargerModeArg(mode)) => charger::set_charger_mode(path, mode).await,
-            ModeArg::Auto => charger::clear_charger_overrides(path).await,
+            ModeArg::Auto => charger::clear_charger_mode_override(path).await,
         },
+        Some(Subcommand::Clear(_)) => charger::clear_all_charger_overrides(path).await,
     }
 }
 
@@ -100,5 +107,8 @@ mod tests {
 
         let args = Args::from_args(&["batteryutil"], &["mode", "auto"]).unwrap();
         assert_eq!(args.command, Some(Subcommand::Mode(ModeCommand { mode: ModeArg::Auto })));
+
+        let args = Args::from_args(&["batteryutil"], &["clear"]).unwrap();
+        assert_eq!(args.command, Some(Subcommand::Clear(ClearCommand {})));
     }
 }

@@ -489,14 +489,14 @@ async fn set_legacy_charger_enable(path: &str, enable: bool) -> Result<String> {
     Ok(format!("fuchsia.power.battery.Charger ({legacy_path_str})"))
 }
 
-/// Argument for `batteryutil mode`: an operating mode to apply, or `auto` to clear all overrides
-/// applied through the charger `DebugService`.
+/// Argument for `batteryutil mode`: an operating mode to apply, or `auto` to clear the operating
+/// mode override applied through the charger `DebugService`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModeArg {
     /// Applies an operating mode: as a sticky `Debug` override where the charger `DebugService`
     /// is available, otherwise through the legacy or Sorrel controls.
     Set(ChargerModeArg),
-    /// Clears every override applied through the charger `DebugService`.
+    /// Clears the operating mode override applied through the charger `DebugService`.
     Auto,
 }
 
@@ -515,17 +515,49 @@ impl std::str::FromStr for ModeArg {
     }
 }
 
-/// Withdraws all sticky overrides applied through the charger `DebugService`, handing control back
-/// to the production policy client or the charger's autonomous defaults.
-pub(crate) async fn clear_charger_overrides(path: Option<&str>) -> Result<()> {
+/// Withdraws sticky overrides matching `options` (or all overrides when `options` is empty)
+/// through the charger `DebugService`, handing control back to the production policy client or
+/// the charger's autonomous defaults.
+pub(crate) async fn clear_charger_overrides(
+    path: Option<&str>,
+    options: &fcharger::ControlOptions,
+    command: &str,
+    description: &str,
+) -> Result<()> {
     let instance = match path {
         Some(p) => debug_service_instance(p)?,
-        None => select_instance(fcharger::DebugServiceMarker::SERVICE_NAME)
-            .context("'mode auto' requires fuchsia.hardware.power.charger.DebugService")?,
+        None => select_instance(fcharger::DebugServiceMarker::SERVICE_NAME).with_context(|| {
+            format!("'{command}' requires {}", fcharger::DebugServiceMarker::SERVICE_NAME)
+        })?,
     };
-    let target = clear_debug_overrides(&instance).await?;
-    println!("Successfully cleared charger overrides via {target}");
+    let target = clear_debug_overrides(&instance, options).await?;
+    println!("Successfully cleared {description} via {target}");
     Ok(())
+}
+
+/// Withdraws the sticky operating mode override applied through the charger `DebugService`,
+/// handing operating mode control back to the production policy client or the charger's autonomous
+/// defaults while leaving any other debug overrides intact.
+pub(crate) async fn clear_charger_mode_override(path: Option<&str>) -> Result<()> {
+    // `ClearControl` only inspects field presence; `Charging` is a placeholder to mark
+    // `operating_mode` as set in the mask.
+    let options = fcharger::ControlOptions {
+        operating_mode: Some(fcharger::OperatingMode::Charging),
+        ..Default::default()
+    };
+    clear_charger_overrides(path, &options, "mode auto", "charger operating mode override").await
+}
+
+/// Withdraws all sticky overrides applied through the charger `DebugService`, handing control of
+/// all fields back to the production policy client or the charger's autonomous defaults.
+pub(crate) async fn clear_all_charger_overrides(path: Option<&str>) -> Result<()> {
+    clear_charger_overrides(
+        path,
+        &fcharger::ControlOptions::default(),
+        "clear",
+        "all charger overrides",
+    )
+    .await
 }
 
 /// Maps a charger service instance path to the matching `DebugService` instance, since overrides
@@ -540,18 +572,23 @@ fn debug_service_instance(path: &str) -> Result<String> {
         .replace(fcharger::ServiceMarker::SERVICE_NAME, fcharger::DebugServiceMarker::SERVICE_NAME))
 }
 
-async fn clear_debug_overrides(path: &str) -> Result<String> {
+async fn clear_debug_overrides(path: &str, options: &fcharger::ControlOptions) -> Result<String> {
     let (proxy, target) = connect_debug(path)?;
-    clear_debug_overrides_with_proxy(&proxy).await?;
+    clear_debug_overrides_with_proxy(&proxy, options).await?;
     Ok(target)
 }
 
-async fn clear_debug_overrides_with_proxy(proxy: &fcharger::DebugProxy) -> Result<()> {
+async fn clear_debug_overrides_with_proxy(
+    proxy: &fcharger::DebugProxy,
+    options: &fcharger::ControlOptions,
+) -> Result<()> {
     proxy
-        .clear_overrides()
+        .clear_control(options)
         .await
-        .context("Debug ClearOverrides call failed")?
-        .map_err(|status| anyhow!("Debug ClearOverrides rejected with error: {:?}", status))
+        .context("Debug ClearControl call failed")?
+        .map_err(|domain_error| {
+            anyhow!("Debug ClearControl rejected with error: {:?}", domain_error)
+        })
 }
 
 #[cfg(test)]
@@ -744,20 +781,38 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_clear_debug_overrides_sends_clear_overrides() {
+    async fn test_clear_debug_overrides_sends_clear_control() {
         let (debug_proxy, mut debug_stream) =
             fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
         let debug_server = fuchsia_async::Task::local(async move {
-            let Some(Ok(fcharger::DebugRequest::ClearOverrides { responder })) =
+            // 1. Selective mode override clear.
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
                 debug_stream.next().await
             else {
-                panic!("expected a ClearOverrides request");
+                panic!("expected a ClearControl request");
             };
-            responder.send(Ok(())).expect("send ClearOverrides response");
+            assert!(options.operating_mode.is_some());
+            assert!(options.input_current_limit_ua.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            // 2. Empty table clears all overrides.
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected a second ClearControl request");
+            };
+            assert_eq!(options, fcharger::ControlOptions::default());
+            responder.send(Ok(())).expect("send ClearControl response");
         });
-        clear_debug_overrides_with_proxy(&debug_proxy)
+        let mask = build_mode_control_options(fcharger::OperatingMode::Charging);
+        clear_debug_overrides_with_proxy(&debug_proxy, &mask)
             .await
             .expect("clear_debug_overrides_with_proxy succeeded");
+        clear_debug_overrides_with_proxy(&debug_proxy, &fcharger::ControlOptions::default())
+            .await
+            .expect("clear_debug_overrides_with_proxy clear-all succeeded");
         debug_server.await;
     }
 
@@ -766,14 +821,16 @@ mod tests {
         let (debug_proxy, mut debug_stream) =
             fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
         let debug_server = fuchsia_async::Task::local(async move {
-            let Some(Ok(fcharger::DebugRequest::ClearOverrides { responder })) =
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
                 debug_stream.next().await
             else {
-                panic!("expected a ClearOverrides request");
+                panic!("expected a ClearControl request");
             };
-            responder.send(Err(fcharger::Error::Io)).expect("send ClearOverrides error");
+            assert!(options.operating_mode.is_some());
+            responder.send(Err(fcharger::Error::Io)).expect("send ClearControl error");
         });
-        let err = clear_debug_overrides_with_proxy(&debug_proxy).await.unwrap_err();
+        let mask = build_mode_control_options(fcharger::OperatingMode::Charging);
+        let err = clear_debug_overrides_with_proxy(&debug_proxy, &mask).await.unwrap_err();
         assert!(format!("{err:#}").contains("Io"), "unexpected error: {err:#}");
         debug_server.await;
     }
