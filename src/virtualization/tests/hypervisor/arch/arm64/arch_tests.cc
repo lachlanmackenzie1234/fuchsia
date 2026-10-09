@@ -6,6 +6,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/zx/vcpu.h>
+#include <zircon/features.h>
 #include <zircon/syscalls/hypervisor.h>
 #include <zircon/syscalls/port.h>
 
@@ -49,6 +50,12 @@ zx::result<fuchsia_sysinfo::InterruptControllerType> GetInterruptControllerType(
     return zx::error(result->status);
   }
   return zx::ok(result->info->type);
+}
+
+bool SupportsAarch32() {
+  uint32_t features = 0;
+  zx_status_t status = zx_system_get_features(ZX_FEATURE_KIND_CPU, &features);
+  return status == ZX_OK && (features & ZX_ARM64_FEATURE_ISA_ARM32) != 0;
 }
 
 TEST(Guest, VcpuReadWriteState) {
@@ -153,6 +160,10 @@ TEST(Guest, VcpuWfiPendingInterrupt) {
 }
 
 TEST(Guest, VcpuWfiAarch32) {
+  if (!SupportsAarch32()) {
+    GTEST_SKIP();
+  }
+
   TestCase test;
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_wfi_aarch32_start, vcpu_wfi_aarch32_end));
 
@@ -172,6 +183,10 @@ TEST(Guest, VcpuFp) {
 }
 
 TEST(Guest, VcpuFpAarch32) {
+  if (!SupportsAarch32()) {
+    GTEST_SKIP();
+  }
+
   TestCase test;
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_fp_aarch32_start, vcpu_fp_aarch32_end));
 
