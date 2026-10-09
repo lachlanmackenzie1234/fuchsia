@@ -8,9 +8,12 @@ from iperf import (
     iperf_client,
     iperf_server,
 )
+from legacy_access_point import (
+    access_point,
+    ap_lib,
+)
 
 from . import (
-    access_point,
     attenuator,
     fuchsia_device,
     packet_capture,
@@ -21,6 +24,7 @@ from . import (
 # using antlion.controllers instead of "from antlion.controller import ..."
 __all__ = [
     "access_point",
+    "ap_lib",
     "attenuator",
     "fuchsia_device",
     "iperf_client",

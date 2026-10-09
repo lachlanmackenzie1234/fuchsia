@@ -5,8 +5,8 @@
 import logging
 import time
 
-from antlion.controllers.ap_lib.dhcp_config import DhcpConfig
 from antlion.controllers.utils_lib.commands import shell
+from legacy_access_point.ap_lib.dhcp_config import DhcpConfig
 from libs.proc.runner import Runner
 from mobly import logger
 from tenacity import (

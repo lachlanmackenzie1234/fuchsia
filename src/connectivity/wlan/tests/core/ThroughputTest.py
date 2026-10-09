@@ -14,19 +14,19 @@ from typing import Any, Literal, TypedDict, get_args, overload
 import fidl_fuchsia_wlan_internal as fidl_security
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib.hostapd import (
-    StationStatus as HostapdStationStatus,
-)
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
-)
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
 from honeydew.typing.custom_types import MacAddress
 from iperf.iperf_server import IPerfServerOverSsh
+from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.ap_lib.hostapd import (
+    StationStatus as HostapdStationStatus,
+)
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point import StationStatus as OpenWrtStationStatus

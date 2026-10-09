@@ -10,13 +10,13 @@ from typing import Literal, NamedTuple, cast
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.regulatory_channels import (
+from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
+from legacy_access_point.access_point import setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.regulatory_channels import (
     COUNTRY_CHANNELS,
     TEST_CHANNELS,
 )
-from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point.lib.access_point_config import (

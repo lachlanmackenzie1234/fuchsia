@@ -14,9 +14,9 @@ from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
 from antlion import utils
-from antlion.controllers.access_point import AccessPoint
 from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from iperf import iperf_client, iperf_server
+from legacy_access_point.access_point import AccessPoint
 from libs.validation import MapValidator
 from mobly import logger, signals
 from openwrt_access_point import OpenWrtAP

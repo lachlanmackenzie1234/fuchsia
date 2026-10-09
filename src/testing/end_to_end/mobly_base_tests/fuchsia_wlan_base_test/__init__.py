@@ -8,7 +8,6 @@ import time
 
 import fuchsia_base_test
 import openwrt_access_point
-from antlion.controllers import access_point
 from honeydew.affordances.connectivity import netstack
 from honeydew.affordances.connectivity.netstack.types import (
     InterfaceProperties,
@@ -16,6 +15,7 @@ from honeydew.affordances.connectivity.netstack.types import (
 )
 from iperf import iperf_server
 from iperf.iperf_server import IPerfServerOverSsh
+from legacy_access_point import access_point
 from mobly import signals
 from mobly.config_parser import TestRunConfig
 from openwrt_access_point import OpenWrtAP

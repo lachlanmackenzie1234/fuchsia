@@ -6,7 +6,7 @@
 
 from typing import NewType
 
-from antlion.controllers.ap_lib.radio_measurement import NeighborReportElement
+from legacy_access_point.ap_lib.radio_measurement import NeighborReportElement
 
 BssTransitionCandidateList = NewType(
     "BssTransitionCandidateList", list[NeighborReportElement]

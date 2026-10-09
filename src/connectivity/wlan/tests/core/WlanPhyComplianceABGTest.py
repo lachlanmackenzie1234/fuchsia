@@ -10,14 +10,14 @@ from dataclasses import dataclass
 import fidl_fuchsia_wlan_internal as fidl_security
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
+from legacy_access_point.access_point import setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,

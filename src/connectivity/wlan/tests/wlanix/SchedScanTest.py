@@ -15,21 +15,21 @@ from typing import Any, Iterator
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib.hostapd_constants import (
+from common.utils.ies import read_ssid
+from fuchsia_controller_py import Channel
+from honeydew.utils.deadline import Deadline
+from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
     AP_DEFAULT_CHANNEL_5G,
     AP_SSID_LENGTH_2G,
 )
-from antlion.controllers.ap_lib.hostapd_security import (
+from legacy_access_point.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import (
+from legacy_access_point.ap_lib.hostapd_security import (
     SecurityMode,
 )
-from common.utils.ies import read_ssid
-from fuchsia_controller_py import Channel
-from honeydew.utils.deadline import Deadline
 from mobly import test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 from openwrt_access_point import OpenWrtAP

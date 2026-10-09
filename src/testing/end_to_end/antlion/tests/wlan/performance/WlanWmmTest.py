@@ -10,15 +10,15 @@ import time
 from typing import Any
 
 from antlion import context
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
-)
 from antlion.test_utils.abstract_devices import wmm_transceiver
 from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from antlion.test_utils.fuchsia import wmm_test_cases
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from mobly import asserts, test_runner
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib import capabilities

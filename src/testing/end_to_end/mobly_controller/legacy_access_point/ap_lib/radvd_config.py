@@ -5,7 +5,7 @@
 import collections
 from typing import Any
 
-from antlion.controllers.ap_lib import radvd_constants
+from legacy_access_point.ap_lib import radvd_constants
 
 
 class RadvdConfig(object):

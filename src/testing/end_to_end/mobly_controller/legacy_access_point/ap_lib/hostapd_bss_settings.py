@@ -4,7 +4,7 @@
 
 import collections
 
-from antlion.controllers.ap_lib.hostapd_security import Security
+from legacy_access_point.ap_lib.hostapd_security import Security
 
 
 class BssSettings(object):

@@ -9,11 +9,6 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum, auto, unique
 
-from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
-)
-from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.attenuator import (
     Attenuator,
     get_attenuators_for_device,
@@ -21,6 +16,11 @@ from antlion.controllers.attenuator import (
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from iperf.iperf_server import IPerfResult
+from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as HostapdSecurity,
+)
+from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 from libs.validation import MapValidator
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig

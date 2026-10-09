@@ -13,8 +13,6 @@ from typing import Protocol, TypedDict, TypeVar
 import fuchsia_async_extension
 import openwrt_access_point
 from antlion import context, controllers
-from antlion.controllers.access_point import AccessPoint
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.attenuator import Attenuator
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.pdu import PduDevice
@@ -22,6 +20,8 @@ from antlion.test_utils.abstract_devices.wlan_device import FuchsiaWlanDevice
 from honeydew.typing import custom_types
 from iperf.iperf_client import IPerfClientBase
 from iperf.iperf_server import IPerfServer, IPerfServerOverSsh
+from legacy_access_point.access_point import AccessPoint
+from legacy_access_point.ap_lib.hostapd_security import SecurityMode
 from libs.types import ControllerConfig, Json
 from mobly import signals
 from mobly.base_test import BaseTestClass

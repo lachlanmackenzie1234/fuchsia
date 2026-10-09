@@ -4,12 +4,12 @@
 # LINT.IfChange
 
 
-from antlion.controllers.ap_lib import (
+from legacy_access_point.ap_lib import (
     hostapd_config,
     hostapd_constants,
     hostapd_utils,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from legacy_access_point.ap_lib.hostapd_security import Security, SecurityMode
 
 
 def asus_rtac66u(

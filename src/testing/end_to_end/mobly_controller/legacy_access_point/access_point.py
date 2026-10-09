@@ -15,27 +15,6 @@ from typing import Any, FrozenSet
 
 from antlion import utils
 from antlion.capabilities.ssh import SSHConfig, SSHProvider
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.ap_get_interface import ApInterfaces
-from antlion.controllers.ap_lib.ap_iwconfig import ApIwconfig
-from antlion.controllers.ap_lib.dhcp_config import DhcpConfig, Subnet
-from antlion.controllers.ap_lib.dhcp_server import DhcpServer, NoInterfaceError
-from antlion.controllers.ap_lib.extended_capabilities import (
-    ExtendedCapabilities,
-)
-from antlion.controllers.ap_lib.hostapd import Error as HostapdError
-from antlion.controllers.ap_lib.hostapd import (
-    Hostapd,
-    StationStatus,
-)
-from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
-from antlion.controllers.ap_lib.hostapd_config import HostapdConfig
-from antlion.controllers.ap_lib.hostapd_security import Security
-from antlion.controllers.ap_lib.radvd import Radvd
-from antlion.controllers.ap_lib.radvd_config import RadvdConfig
-from antlion.controllers.ap_lib.wireless_network_management import (
-    BssTransitionManagementRequest,
-)
 from antlion.controllers.pdu import PduDevice, get_pdu_port_for_device
 from antlion.controllers.utils_lib.commands import (
     ip,
@@ -43,6 +22,27 @@ from antlion.controllers.utils_lib.commands import (
 )
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.ap_get_interface import ApInterfaces
+from legacy_access_point.ap_lib.ap_iwconfig import ApIwconfig
+from legacy_access_point.ap_lib.dhcp_config import DhcpConfig, Subnet
+from legacy_access_point.ap_lib.dhcp_server import DhcpServer, NoInterfaceError
+from legacy_access_point.ap_lib.extended_capabilities import (
+    ExtendedCapabilities,
+)
+from legacy_access_point.ap_lib.hostapd import Error as HostapdError
+from legacy_access_point.ap_lib.hostapd import (
+    Hostapd,
+    StationStatus,
+)
+from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset
+from legacy_access_point.ap_lib.hostapd_config import HostapdConfig
+from legacy_access_point.ap_lib.hostapd_security import Security
+from legacy_access_point.ap_lib.radvd import Radvd
+from legacy_access_point.ap_lib.radvd_config import RadvdConfig
+from legacy_access_point.ap_lib.wireless_network_management import (
+    BssTransitionManagementRequest,
+)
 from libs.commands import (
     command,
     journalctl,

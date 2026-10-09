@@ -5,13 +5,13 @@ from __future__ import annotations
 
 from typing import Any, FrozenSet, TypeVar
 
-from antlion.controllers.ap_lib import (
+from legacy_access_point.ap_lib import (
     hostapd_config,
     hostapd_constants,
     hostapd_utils,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security
-from antlion.controllers.ap_lib.third_party_ap_profiles import (
+from legacy_access_point.ap_lib.hostapd_security import Security
+from legacy_access_point.ap_lib.third_party_ap_profiles import (
     actiontec,
     asus,
     belkin,

@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from antlion.controllers.ap_lib.hostapd_constants import BandType
-from antlion.controllers.ap_lib.hostapd_security import (
+from legacy_access_point.ap_lib.hostapd_constants import BandType
+from legacy_access_point.ap_lib.hostapd_security import (
     SecurityMode as HostapdSecurityMode,
 )
 from openwrt_access_point.lib.access_point_config import (
@@ -70,7 +70,7 @@ class AccessPointConfigMapper:
     @staticmethod
     def to_hostapd_n_cap(cap: str) -> object:
         """Maps a generic capability string to its hostapd_constants equivalent."""
-        from antlion.controllers.ap_lib import hostapd_constants
+        from legacy_access_point.ap_lib import hostapd_constants
         from openwrt_access_point.lib import capabilities
 
         mapping = {
@@ -94,7 +94,7 @@ class AccessPointConfigMapper:
     @staticmethod
     def to_hostapd_ac_cap(cap: str) -> object:
         """Maps a generic capability string to its hostapd_constants equivalent."""
-        from antlion.controllers.ap_lib import hostapd_constants
+        from legacy_access_point.ap_lib import hostapd_constants
         from openwrt_access_point.lib import capabilities
 
         mapping = {

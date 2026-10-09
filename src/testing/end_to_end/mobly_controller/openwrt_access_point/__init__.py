@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Dict, List
 
-from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
 from iperf.iperf_server import IPerfServerOverSsh
+from legacy_access_point.ap_lib import hostapd_constants
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
@@ -811,7 +811,7 @@ class OpenWrtAP:
 
         Note:
             This implementation is derived from Antlion's `hostapd.py`
-            (`antlion.controllers.ap_lib.hostapd._bss_tm_req`) to construct
+            (`legacy_access_point.ap_lib.hostapd._bss_tm_req`) to construct
             the command for `hostapd_cli`.
         """
 

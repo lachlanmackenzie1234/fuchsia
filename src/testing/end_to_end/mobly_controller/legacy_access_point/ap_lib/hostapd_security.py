@@ -7,7 +7,7 @@ import string
 from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-from antlion.controllers.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib import hostapd_constants
 
 
 class SecurityModeInt(int, Enum):

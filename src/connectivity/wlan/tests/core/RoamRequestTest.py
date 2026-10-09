@@ -13,16 +13,16 @@ import fidl_fuchsia_wlan_internal as fidl_security
 import fidl_fuchsia_wlan_sme as fidl_sme
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
-)
 from honeydew.affordances.connectivity.wlan.core import (
     ConnectTransactionEventHandler,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
+)
+from legacy_access_point.access_point import AccessPoint, setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
 )
 from mobly import signals, test_runner
 from mobly.asserts import (

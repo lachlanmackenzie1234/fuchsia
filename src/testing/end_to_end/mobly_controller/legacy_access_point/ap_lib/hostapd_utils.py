@@ -4,8 +4,8 @@
 
 
 from antlion import utils
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_security import Security, SecurityMode
 from mobly import utils as mobly_utils
 
 

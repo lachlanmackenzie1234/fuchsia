@@ -6,11 +6,11 @@ import logging
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants, hostapd_security
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanRequestRejectedError,
 )
+from legacy_access_point.access_point import setup_ap
+from legacy_access_point.ap_lib import hostapd_constants, hostapd_security
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,

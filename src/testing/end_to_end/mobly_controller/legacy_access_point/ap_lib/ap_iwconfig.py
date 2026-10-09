@@ -8,7 +8,7 @@ import subprocess
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from antlion.controllers.access_point import AccessPoint
+    from legacy_access_point.access_point import AccessPoint
 
 
 class ApIwconfigError(Exception):

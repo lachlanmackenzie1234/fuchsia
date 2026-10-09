@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from libs.proc.runner import CalledProcessError
 
 if TYPE_CHECKING:
-    from antlion.controllers.access_point import AccessPoint
+    from legacy_access_point.access_point import AccessPoint
 
 GET_ALL_INTERFACE = "ls /sys/class/net"
 GET_VIRTUAL_INTERFACE = "ls /sys/devices/virtual/net"

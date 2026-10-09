@@ -7,17 +7,17 @@ from datetime import timedelta
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
-)
 from antlion.utils import get_addr
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import power
 from honeydew.utils.deadline import Deadline
+from legacy_access_point.access_point import setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName

@@ -6,9 +6,9 @@ import collections
 import logging
 from typing import Any, FrozenSet
 
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_bss_settings import BssSettings
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_bss_settings import BssSettings
+from legacy_access_point.ap_lib.hostapd_security import Security, SecurityMode
 
 
 def ht40_plus_allowed(channel: int) -> bool:

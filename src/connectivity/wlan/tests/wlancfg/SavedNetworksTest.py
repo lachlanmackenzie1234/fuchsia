@@ -8,14 +8,14 @@ import logging
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.controllers.access_point import setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import (
-    Security as DeprecatedSecurity,
-)
 from antlion.utils import rand_hex_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
+)
+from legacy_access_point.access_point import setup_ap
+from legacy_access_point.ap_lib import hostapd_constants
+from legacy_access_point.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
 )
 from mobly import asserts, signals, test_runner
 from openwrt_access_point.lib.access_point_config import (
