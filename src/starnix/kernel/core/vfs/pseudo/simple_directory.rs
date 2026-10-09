@@ -336,10 +336,11 @@ impl FileOps for SimpleDirectory {
         // Subtract 2 from the offset to account for `.` and `..`.
         let state = self.state.lock();
         for (name, node) in state.entries.iter().skip(sink.offset() as usize - 2) {
+            let mode = node.info().mode;
             sink.add(
                 node.ino,
                 sink.offset() + 1,
-                DirectoryEntryType::from_mode(node.info().mode),
+                DirectoryEntryType::from_mode(mode),
                 name.as_ref(),
             )?;
         }

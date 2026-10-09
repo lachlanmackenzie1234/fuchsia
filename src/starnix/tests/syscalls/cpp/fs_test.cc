@@ -2361,4 +2361,43 @@ TEST_P(FsCasefoldTest, UnicodeCanonicalEquivalenceWithMultiByteExpansion) {
   EXPECT_THAT(access(dotted_i_lower_path.c_str(), F_OK), SyscallSucceeds());
 }
 
+TEST(FsTest, GetdentsLazyAndUnmappedBuffer) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  test_helper::ScopedTempDir temp_dir;
+  std::string child_file = temp_dir.path() + "/child_file";
+  {
+    fbl::unique_fd fd(open(child_file.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+  }
+
+  for (const std::string &dir_path :
+       {temp_dir.path(), std::string("/proc"), std::string("/sys"), std::string("/")}) {
+    // 1. Fresh un-faulted anonymous mapping exercises lazy mapping materialization inside
+    // getdents64.
+    auto lazy_buf = test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ | PROT_WRITE,
+                                                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_THAT(lazy_buf, SyscallResultIsOk());
+
+    fbl::unique_fd dir_fd(open(dir_path.c_str(), O_RDONLY | O_DIRECTORY));
+    ASSERT_THAT(dir_fd.get(), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_getdents64, dir_fd.get(), lazy_buf->mapping(), page_size),
+                SyscallSucceedsWithValue(::testing::Gt(0)));
+
+    // 2. Buffer adjacent to a PROT_NONE guard page exercises partial usercopy faults after `.` and
+    // `..` entries have been emitted.
+    auto two_pages = test_helper::ScopedMMap::MMap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE,
+                                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_THAT(two_pages, SyscallResultIsOk());
+    auto *bytes = static_cast<uint8_t *>(two_pages->mapping());
+    ASSERT_THAT(mprotect(bytes + page_size, page_size, PROT_NONE), SyscallSucceeds());
+
+    ASSERT_THAT(lseek(dir_fd.get(), 0, SEEK_SET), SyscallSucceeds());
+    // Leave room for `.` and `..` (24 bytes each = 48 bytes) before hitting the PROT_NONE page.
+    void *straddling_buf = bytes + page_size - 48;
+    EXPECT_THAT(syscall(SYS_getdents64, dir_fd.get(), straddling_buf, page_size),
+                SyscallSucceedsWithValue(::testing::Gt(0)));
+  }
+}
+
 }  // namespace

@@ -235,12 +235,8 @@ impl FileOps for ProcDirectory {
         // Iterate through all the named entries (i.e., non "task directories") and add them to
         // the sink. Subtract 2 from the offset, to account for `.` and `..`.
         for (name, node) in self.nodes.iter().skip((sink.offset() - 2) as usize) {
-            sink.add(
-                node.ino,
-                sink.offset() + 1,
-                DirectoryEntryType::from_mode(node.info().mode),
-                name,
-            )?;
+            let mode = node.info().mode;
+            sink.add(node.ino, sink.offset() + 1, DirectoryEntryType::from_mode(mode), name)?;
         }
 
         // Add 2 to the number of non-"task directories", to account for `.` and `..`.

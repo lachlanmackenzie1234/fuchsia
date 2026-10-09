@@ -1019,8 +1019,9 @@ pub fn default_vfs_ioctl(
             error!(ENODATA)
         }
         FS_IOC_GET_ENCRYPTION_POLICY_EX => {
-            let attributes = file.node().fetch_and_refresh_info(current_task)?;
-            let Some(node_policy) = attributes.encryption_policy else {
+            let Some(node_policy) =
+                file.node().fetch_and_refresh_info(current_task)?.encryption_policy
+            else {
                 return error!(ENODATA);
             };
 
