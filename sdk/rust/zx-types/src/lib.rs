@@ -359,6 +359,7 @@ multiconst!(u32, [
 multiconst!(u64, [
     ZX_SYSTEM_SUSPEND_OPTION_DISCARD     = 1 << 0;
     ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY = 1 << 1;
+    ZX_SYSTEM_SUSPEND_OPTION_DEEP        = 1 << 2;
 ]);
 
 // LINT.IfChange(zx_status_t)
