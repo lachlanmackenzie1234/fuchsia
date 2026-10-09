@@ -12252,7 +12252,7 @@ rustc_library("icu_locale_core-v2_3_0") {
 
   deps = []
   deps += [ ":displaydoc-v0_2_7($host_toolchain)" ]
-  deps += [ ":litemap-v0_8_2" ]
+  deps += [ ":litemap-v0_8_3" ]
   deps += [ ":tinystr-v0_8_4" ]
   deps += [ ":writeable-v0_6_4" ]
   deps += [ ":zerovec-v0_11_8" ]
@@ -13357,15 +13357,15 @@ rustc_library("linux-raw-sys-v0_12_1") {
   applicable_licenses = [ ":linux-raw-sys-v0_12_1.license" ]
 }
 
-license("litemap-v0_8_2.license") {
+license("litemap-v0_8_3.license") {
   public_package_name = "litemap"
-  license_files = [ "//third_party/rust_crates/vendor/litemap-0.8.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/litemap-0.8.3/LICENSE" ]
 }
 
-rustc_library("litemap-v0_8_2") {
+rustc_library("litemap-v0_8_3") {
   crate_name = "litemap"
-  source_root = "//third_party/rust_crates/vendor/litemap-0.8.2/src/lib.rs"
-  output_name = "litemap-374f9fb0ae14f10e"
+  source_root = "//third_party/rust_crates/vendor/litemap-0.8.3/src/lib.rs"
+  output_name = "litemap-8a45c24ad07c242a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13377,13 +13377,13 @@ rustc_library("litemap-v0_8_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=374f9fb0ae14f10e",
-    "-Cextra-filename=-374f9fb0ae14f10e",
+    "-Cmetadata=8a45c24ad07c242a",
+    "-Cextra-filename=-8a45c24ad07c242a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":litemap-v0_8_2.license" ]
+  applicable_licenses = [ ":litemap-v0_8_3.license" ]
 }
 
 license("lock_api-v0_4_14.license") {
