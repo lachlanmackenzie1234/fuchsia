@@ -75,7 +75,6 @@ struct arm64_percpu {
 static_assert(offsetof(struct arm64_percpu, in_restricted_mode) == PERCPU_IN_RESTRICTED_MODE,
               "in_restricted mode is at the wrong offset");
 
-void arch_init_cpu_map(uint cluster_count, const uint* cluster_cpus);
 void arch_register_mpid(uint cpu_id, uint64_t mpid);
 void arm64_init_percpu_early();
 

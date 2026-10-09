@@ -164,23 +164,11 @@ bool arm64_validate_debug_state(arm64_debug_state_t* debug_state, uint32_t* acti
 uint8_t arm64_hw_breakpoint_count();
 uint8_t arm64_hw_watchpoint_count();
 
-/* Read from the CPU registers into |debug_state|. */
-void arm64_read_hw_debug_regs(arm64_debug_state_t* debug_state);
-
 /* Write from the |debug_state| into the CPU registers.
  *
  * IMPORTANT: This function is used in the context switch, so no validation is done, just writing.
  *            In any other context (eg. setting debug values from a syscall), you *MUST* call
  *            arm64_validate_debug_state first. */
 void arm64_write_hw_debug_regs(const arm64_debug_state_t* debug_state);
-
-// Will zero out the debug registers for the current CPOU.
-void arm64_clear_hw_debug_regs();
-
-#ifndef NDEBUG
-// Debug only.
-void arm64_print_debug_registers(const arm64_debug_state_t*);
-void arm64_print_mdscr();
-#endif
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_ARM64_REGISTERS_H_

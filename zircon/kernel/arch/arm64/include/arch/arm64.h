@@ -82,7 +82,6 @@ void platform_irq(iframe_t* frame);
 arm64_context_switch_frame* arm64_get_context_switch_frame(Thread* thread);
 
 // FPU routines
-void arm64_fpu_exception(iframe_t* iframe, uint exception_flags);
 void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
 void arm64_fpu_save_state(Thread* t);
 void arm64_fpu_restore_state(const Thread* t);
