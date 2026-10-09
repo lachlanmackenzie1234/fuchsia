@@ -35,6 +35,7 @@ per-file lint=haowei@google.com,phosek@google.com
 per-file list-packages,list_packages.py,list_packages_test.py = file: /src/sys/pkg/OWNERS
 per-file ls-buildid=joshuaseaton@google.com
 per-file merge-package-config=chaselatta@google.com
+per-file min-owners,min_owners.py,min_owners_test.py = olivernewman@google.com
 per-file mkinstaller = file: /src/firmware/OWNERS
 per-file mkinstaller-remote = file: /src/firmware/OWNERS
 per-file pprof = file: /tools/devshell/contrib/lib/OWNERS
