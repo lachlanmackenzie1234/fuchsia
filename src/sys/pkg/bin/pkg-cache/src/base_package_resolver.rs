@@ -125,7 +125,7 @@ impl Resolver {
         url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         let root_dir = match url {
             PackageUrl::Absolute(url) => {
                 if !context.bytes.is_empty() {
@@ -153,7 +153,7 @@ impl Resolver {
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         let root_dir = self.resolve(url).await?;
         let hash = *root_dir.hash();
         vfs::directory::serve_on(Arc::clone(&root_dir), FLAGS, self.scope.clone(), dir);
@@ -163,7 +163,7 @@ impl Resolver {
     async fn resolve(
         &self,
         url: &AbsolutePackageUrl,
-    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+    ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         let pkg_id = self.lookup(url)?;
         self.open_packages.get_or_insert(pkg_id, None).await.map_err(Error::CreatePackageDirectory)
     }
@@ -209,7 +209,7 @@ impl Resolver {
         &self,
         url: &fuchsia_url::RelativePackageUrl,
         context: fpkg::ResolutionContext,
-    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+    ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         let super_hash = self.authenticator.clone().authenticate(context)?;
         let super_package = self.open_packages.get(&super_hash).ok_or_else(|| {
             Error::SuperpackageNotOpen { superpackage: super_hash, subpackage: url.clone() }
@@ -234,7 +234,7 @@ impl crate::component_resolver::PackageResolver for Resolver {
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         self.resolve_and_serve(url, dir).await
     }
 
@@ -243,7 +243,7 @@ impl crate::component_resolver::PackageResolver for Resolver {
         url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         self.resolve_with_context_and_serve(url, context, dir).await
     }
 }

@@ -191,7 +191,7 @@ impl Resolver {
         url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         let root_dir = match url {
             PackageUrl::Absolute(url) => {
                 if !context.bytes.is_empty() {
@@ -221,7 +221,7 @@ impl Resolver {
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         let root_dir = self.resolve_manage_inspect(url).await?;
         let hash = *root_dir.hash();
         let flags = self.executability_decider.decide(hash).into();
@@ -232,7 +232,7 @@ impl Resolver {
     async fn resolve_manage_inspect(
         &self,
         url: &AbsolutePackageUrl,
-    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+    ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         let inspect = self.inspect_active.create_child(
             self.request_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(),
         );
@@ -252,7 +252,7 @@ impl Resolver {
         &self,
         url: &AbsolutePackageUrl,
         inspect: &finspect::Node,
-    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+    ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         inspect.record_int("start_boot_ns", zx::BootInstant::get().into_nanos());
         inspect.record_string("url", url.to_string());
         let (pkg_id, blob_source) = self.lookup(url, inspect).await?;
@@ -264,7 +264,7 @@ impl Resolver {
         if let Some(blob_source) = blob_source {
             return self
                 .package_fetcher
-                .fetch(pkg_id, blob_source, fpkg::GcProtection::OpenPackageTracking)
+                .fetch_with_open_package_tracking(pkg_id, blob_source)
                 .await
                 .map_err(Error::PackageFetcher);
         }
@@ -359,7 +359,7 @@ impl Resolver {
         &self,
         url: &fuchsia_url::RelativePackageUrl,
         context: fpkg::ResolutionContext,
-    ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
+    ) -> Result<Arc<crate::root_dir::CachedRootDir>, Error> {
         let super_hash = self
             .authenticator
             .clone()
@@ -457,7 +457,7 @@ impl crate::component_resolver::PackageResolver for Resolver {
         &self,
         url: &AbsolutePackageUrl,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         self.resolve_and_serve(url, dir).await
     }
 
@@ -466,7 +466,7 @@ impl crate::component_resolver::PackageResolver for Resolver {
         url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Error> {
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Error> {
         self.resolve_with_context_and_serve(url, context, dir).await
     }
 }

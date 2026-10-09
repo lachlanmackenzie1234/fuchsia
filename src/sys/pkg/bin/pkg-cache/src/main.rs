@@ -58,7 +58,7 @@ mod retained_packages_service;
 mod root_dir;
 mod upgradable_packages;
 
-use root_dir::{RootDir, RootDirCache, RootDirFactory};
+use root_dir::{CachedRootDir, RootDir, RootDirCache, RootDirFactory};
 
 #[cfg(test)]
 mod test_utils;
@@ -627,7 +627,7 @@ async fn serve_base_package_if_present(
     match resolver
         .resolve_and_serve(&url, server)
         .await
-        .map(|(_context, _root_dir): (fpkg::ResolutionContext, Arc<RootDir>)| ())
+        .map(|(_, _): (fpkg::ResolutionContext, Arc<CachedRootDir>)| ())
     {
         Ok(()) => (),
         Err(base_package_resolver::Error::PackageNotInIndex) => {

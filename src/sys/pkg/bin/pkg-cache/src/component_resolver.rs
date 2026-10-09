@@ -25,14 +25,14 @@ pub(crate) trait PackageResolver {
         &self,
         url: &AbsolutePackageUrl,
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Self::Error>;
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Self::Error>;
 
     async fn resolve_with_context_and_serve(
         &self,
         url: &PackageUrl,
         context: fpkg::ResolutionContext,
         dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
-    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>), Self::Error>;
+    ) -> Result<(fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>), Self::Error>;
 }
 
 /// This is just `impl Into<fcomponent_resolution::ResolverError> for &Self`, except the bound can
@@ -293,7 +293,7 @@ mod tests {
             _: &AbsolutePackageUrl,
             _: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
         ) -> Result<
-            (fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>),
+            (fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>),
             BrokenPackageResolverError,
         > {
             unimplemented!();
@@ -305,7 +305,7 @@ mod tests {
             _: fpkg::ResolutionContext,
             _: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
         ) -> Result<
-            (fpkg::ResolutionContext, Arc<crate::root_dir::RootDir>),
+            (fpkg::ResolutionContext, Arc<crate::root_dir::CachedRootDir>),
             BrokenPackageResolverError,
         > {
             unimplemented!();
