@@ -24,7 +24,7 @@ impl ChildName {
     pub fn new(name: LongName, collection: Option<Name>) -> Self {
         match collection {
             Some(collection) => Self { rep: format!("{collection}:{name}").into() },
-            None => Self { rep: format!("{name}").into() },
+            None => Self { rep: name.into() },
         }
     }
 

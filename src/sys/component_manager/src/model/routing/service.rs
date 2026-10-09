@@ -961,7 +961,6 @@ mod tests {
     use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;
-    use fidl_fuchsia_component_decl as fdecl;
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng as _;
@@ -1038,7 +1037,7 @@ mod tests {
                         self.weak_component.clone().into(),
                         self.weak_component.moniker.clone(),
                         RouteVerb::Declare,
-                        fdecl::Ref::Self_(fdecl::SelfRef {}),
+                        PrettyPrintRef::Self_,
                     )
                     .try_into()
                     .expect("wrong type from intermediate router"))

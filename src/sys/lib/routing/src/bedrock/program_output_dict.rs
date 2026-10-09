@@ -8,13 +8,13 @@ use crate::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, WeakComponentInstanceInterface,
     WeakExtendedInstanceInterface,
 };
-use crate::error::{RouteVerb, RoutingError};
+use crate::error::{PrettyPrintRef, RouteVerb, RoutingError};
 use crate::intermediate_router::{IntermediateRouter, RouteRequest, WeakDictionaryOrRouter};
 use crate::{DictExt, WeakInstanceTokenExt};
 use async_trait::async_trait;
 use capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
 use cm_rust::{CapabilityTypeName, NativeIntoFidl};
-use cm_types::{Path, RelativePath};
+use cm_types::{Name, Path, RelativePath};
 use component_id_index::InstanceId;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime as fruntime;
@@ -130,27 +130,31 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             subdir,
             storage_id,
         }) => {
-            let backing_source: WeakDictionaryOrRouter = match source {
-                cm_rust::StorageDirectorySource::Parent => {
-                    Arc::downgrade(&component_input.capabilities()).into()
-                }
-                cm_rust::StorageDirectorySource::Self_ => {
-                    Arc::downgrade(program_output_dict).into()
-                }
-                cm_rust::StorageDirectorySource::Child(child_name) => {
-                    let child_name = ChildName::parse(child_name).expect("invalid child name");
-                    let Some(child_component_output) =
-                        child_outgoing_dictionary_routers.get(&child_name)
-                    else {
-                        panic!(
-                            "use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation",
-                            component.moniker(),
-                            child_name
-                        );
-                    };
-                    Arc::downgrade(child_component_output).into()
-                }
-            };
+            let (backing_source, source_ref): (WeakDictionaryOrRouter, PrettyPrintRef) =
+                match source {
+                    cm_rust::StorageDirectorySource::Parent => (
+                        Arc::downgrade(&component_input.capabilities()).into(),
+                        PrettyPrintRef::Parent,
+                    ),
+                    cm_rust::StorageDirectorySource::Self_ => {
+                        (Arc::downgrade(program_output_dict).into(), PrettyPrintRef::Self_)
+                    }
+                    cm_rust::StorageDirectorySource::Child(child_name) => {
+                        let Some(child_component_output) =
+                            child_outgoing_dictionary_routers.get(child_name.as_str())
+                        else {
+                            panic!(
+                                "use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation",
+                                component.moniker(),
+                                child_name
+                            );
+                        };
+                        (
+                            Arc::downgrade(child_component_output).into(),
+                            PrettyPrintRef::Child(Name::new(child_name).unwrap()),
+                        )
+                    }
+                };
             let router: Arc<Router<DirConnector>> = IntermediateRouter::new(
                 backing_source,
                 vec![backing_dir.clone()].into(),
@@ -165,7 +169,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 component.as_weak().into(),
                 component.moniker().clone(),
                 RouteVerb::Declare,
-                source.clone().native_into_fidl(),
+                source_ref,
             )
             .try_into()
             .expect("wrong type from intermediate router");

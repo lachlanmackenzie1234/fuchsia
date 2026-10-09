@@ -9,7 +9,6 @@ use capability_source::CapabilitySource;
 use cm_rust::{CapabilityTypeName, FidlIntoNative, NativeIntoFidl};
 use cm_rust_derive::FidlDecl;
 use cm_types::RelativePath;
-use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use moniker::{ChildName, Moniker};
@@ -162,7 +161,7 @@ impl IntermediateRouter {
         default_token: Arc<WeakInstanceToken>,
         moniker: Moniker,
         route_verb: RouteVerb,
-        source: fdecl::Ref,
+        source: PrettyPrintRef,
     ) -> Capability {
         assert!(source_path.len() != 0);
         let type_name = default_request.build_type_name;
@@ -175,11 +174,7 @@ impl IntermediateRouter {
             default_request,
             default_token,
             moniker,
-            not_found_context: NotFoundErrorContext {
-                verb: route_verb,
-                source: source.into(),
-                type_name,
-            },
+            not_found_context: NotFoundErrorContext { verb: route_verb, source, type_name },
             enable_tracing,
         };
 
