@@ -744,11 +744,10 @@ impl FunctionFsRootDir {
         &self,
         current_task: &CurrentTask,
         file: &FileObject,
-        bytes: &[u8],
+        data: Vec<u8>,
     ) -> Result<usize, Errno> {
         self.wait_until_online(current_task, file)?;
 
-        let data = Vec::from(bytes);
         let pending = Arc::<PendingResult<usize>>::default();
         let guard = pending.event.begin_wait();
 
@@ -768,7 +767,7 @@ impl FunctionFsRootDir {
                 "FunctionFsRootDir::write (ep2 bulk IN) called by task {} (pid {}) with {} bytes, but adb_write_channel is None (ENODEV)",
                 current_task.command(),
                 current_task.get_pid(),
-                bytes.len()
+                data.len()
             );
             return error!(ENODEV);
         }
@@ -1019,7 +1018,7 @@ impl FileOps for FunctionFsInputEndpoint {
             err
         })?;
         let rootdir = FunctionFsRootDir::from_file(file);
-        rootdir.write(current_task, file, &bytes)
+        rootdir.write(current_task, file, bytes)
     }
 }
 
