@@ -12,7 +12,6 @@
 #include <lib/stall.h>
 
 #include <kernel/ffi.h>
-#include <object/executor.h>
 #include <object/memory_watchdog.h>
 #include <platform/halt_helper.h>
 #include <vm/evictor.h>
@@ -29,7 +28,6 @@ extern "C" {
 
 void rust_memory_watchdog_construct(ffi::Uninitialized<MemoryWatchdog>* storage);
 void rust_memory_watchdog_destroy(void* storage);
-void rust_memory_watchdog_init(void* storage, void* executor);
 void rust_memory_watchdog_get_mem_pressure_event(
     const void* storage, uint32_t kind,
     ffi::Uninitialized<fbl::RefPtr<EventDispatcher>>* out_event);
@@ -46,10 +44,6 @@ MemoryWatchdog::MemoryWatchdog() {
 }
 
 MemoryWatchdog::~MemoryWatchdog() { rust_memory_watchdog_destroy(&opaque_storage_); }
-
-void MemoryWatchdog::Init(Executor* executor) {
-  rust_memory_watchdog_init(&opaque_storage_, executor);
-}
 
 fbl::RefPtr<EventDispatcher> MemoryWatchdog::GetMemPressureEvent(uint32_t kind) {
   fbl::RefPtr<EventDispatcher> out;
@@ -71,15 +65,6 @@ Thread* MemoryWatchdog::DebugGetWorkerThread() {
 }
 
 extern "C" {
-
-bool cpp_memory_watchdog_kill_job_with_kill_on_oom(void* executor);
-void cpp_memory_watchdog_read_stall_stats(zx_duration_mono_t* some, zx_duration_mono_t* full);
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_memory_watchdog_kill_job_with_kill_on_oom(void* executor) {
-  Executor* exec = reinterpret_cast<Executor*>(executor);
-  return exec->GetRootJobDispatcher()->KillJobWithKillOnOOM();
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_memory_watchdog_read_stall_stats(zx_duration_mono_t* some,

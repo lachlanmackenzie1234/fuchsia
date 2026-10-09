@@ -20,6 +20,7 @@ mod event_dispatcher;
 mod event_dispatcher_ffi;
 mod event_pair_dispatcher;
 mod event_pair_dispatcher_ffi;
+mod executor;
 mod fifo_dispatcher;
 mod fifo_dispatcher_ffi;
 mod guest;
@@ -95,6 +96,7 @@ pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use event_dispatcher::EventDispatcher;
 pub use event_pair_dispatcher::EventPairDispatcher;
+pub use executor::Executor;
 pub use fifo_dispatcher::FifoDispatcher;
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
@@ -121,6 +123,7 @@ pub use resource::{
     validate_resource_kind_base, validate_system_resource,
 };
 pub use resource_dispatcher::{ResourceDispatcher, is_valid_kind};
+pub use root_job_observer::RootJobObserver;
 pub use root_job_observer_ffi::start_root_job_observer;
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};

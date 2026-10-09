@@ -15,7 +15,6 @@
 #include <object/event_dispatcher.h>
 #include <object/opaque_storage.h>
 
-class Executor;
 struct Thread;
 
 // Object is thread safe.
@@ -36,9 +35,6 @@ class MemoryWatchdog {
 
   MemoryWatchdog(const MemoryWatchdog&) = delete;
   MemoryWatchdog& operator=(const MemoryWatchdog&) = delete;
-
-  // Init must be called before any other methods.
-  void Init(Executor* executor);
 
   fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind);
 

@@ -209,6 +209,34 @@ kernel_bindgen_crate("process-dispatcher-bindings") {
   ]
 }
 
+kernel_bindgen_crate("executor-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/object/executor.h" ]
+  non_rust_deps = [ ":headers" ]
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  function_blocklist = [ ".*" ]
+  type_allowlist = [
+    "Executor",
+    "HandleOwner",
+    "MemoryWatchdog",
+  ]
+  type_blocklist = [ "MemoryWatchdog_.*" ]
+  opaque_types = [
+    "HandleOwner",
+    "MemoryWatchdog",
+    "fbl::RefPtr",
+    "ktl::unique_ptr",
+    "std::unique_ptr",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
+}
+
 kernel_rust_mod("object-rs") {
   output_name = "object"
   source_root = "object.rs"
@@ -229,6 +257,7 @@ kernel_rust_mod("object-rs") {
     "event_dispatcher_ffi.rs",
     "event_pair_dispatcher.rs",
     "event_pair_dispatcher_ffi.rs",
+    "executor.rs",
     "fifo_dispatcher.rs",
     "fifo_dispatcher_ffi.rs",
     "guest.rs",
@@ -298,6 +327,7 @@ kernel_rust_mod("object-rs") {
   ]
 
   deps = [
+    ":executor-bindings",
     ":process-dispatcher-bindings",
     "//sdk/rust/iob",
     "//sdk/rust/zx-status",

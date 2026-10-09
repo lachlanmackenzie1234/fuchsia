@@ -17,6 +17,7 @@ use pin_init::{InPlaceWrite, PinInit, Wrapper, pin_data, pin_init};
 use zx_status::Status;
 
 use super::event_dispatcher::EventDispatcher;
+use super::executor::Executor;
 use crate::counters::define_kcounter;
 use crate::debuglog_rs::dlog_shutdown;
 use crate::kernel;
@@ -118,7 +119,6 @@ fn count_pressure_event(level: PressureLevel) {
 }
 
 unsafe extern "C" {
-    fn cpp_memory_watchdog_kill_job_with_kill_on_oom(executor: *mut c_void) -> bool;
     fn cpp_memory_watchdog_read_stall_stats(some: *mut DurationMono, full: *mut DurationMono);
 }
 
@@ -284,7 +284,7 @@ pub struct MemoryWatchdogState {
     /// Record of the thread running `worker_thread` created during `init`.
     worker_thread: UnsafeCell<Option<kernel::thread::ThreadPtr>>,
 
-    executor: UnsafeCell<*mut c_void>,
+    executor: UnsafeCell<Option<NonNull<Executor>>>,
 }
 
 /// Type alias for [`MemoryWatchdogState`].
@@ -319,7 +319,7 @@ impl MemoryWatchdogState {
             continuous_eviction_active: AtomicBool::new(false),
             eviction_strategy: UnsafeCell::new(EvictionStrategy::OneShot),
             worker_thread: UnsafeCell::new(None),
-            executor: UnsafeCell::new(core::ptr::null_mut()),
+            executor: UnsafeCell::new(None),
         })
     }
 
@@ -454,7 +454,8 @@ impl MemoryWatchdogState {
         match BootOptions::get().oom_behavior {
             boot_options::OomBehavior::JobKill => {
                 // SAFETY: `executor` is initialized in `init` before the worker thread starts.
-                if !unsafe { cpp_memory_watchdog_kill_job_with_kill_on_oom(*self.executor.get()) } {
+                let executor = unsafe { (*self.executor.get()).unwrap().as_ref() };
+                if !executor.get_root_job_dispatcher().kill_job_with_kill_on_oom() {
                     kprintln!("memory-pressure: no alive job has a kill bit");
                 }
 
@@ -777,13 +778,13 @@ impl MemoryWatchdogState {
     /// # Safety
     ///
     /// The caller must guarantee that `executor` is safe to dereference.
-    pub unsafe fn init(&self, executor: *mut c_void) {
+    pub unsafe fn init(&self, executor: NonNull<Executor>) {
         // SAFETY: `init` is called once during boot before any other methods or threads access
         // `self`.
         unsafe {
-            debug_assert!((*self.executor.get()).is_null());
+            debug_assert!((*self.executor.get()).is_none());
 
-            *self.executor.get() = executor;
+            *self.executor.get() = Some(executor);
 
             let events = &mut *self.mem_pressure_events.get();
             for (i, event) in events.iter_mut().enumerate().take(NUM_LEVELS) {
@@ -951,7 +952,7 @@ impl MemoryWatchdogState {
         // `init`.
         unsafe {
             // Check we have been initialized.
-            debug_assert!(!(*self.executor.get()).is_null());
+            debug_assert!((*self.executor.get()).is_some());
             if self.mem_event_idx.load() <= level {
                 // Already in level, or in a state with less available memory than level
                 return 0;
@@ -1044,26 +1045,6 @@ pub unsafe extern "C" fn rust_memory_watchdog_destroy(storage: *mut MemoryWatchd
     // SAFETY: `storage` points to an initialized `MemoryWatchdogState`.
     unsafe {
         core::ptr::drop_in_place(storage);
-    }
-}
-
-/// Initializes the memory watchdog events, watermarks, and worker thread.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`, `executor` must point to a
-/// valid `Executor`, and `init` must only be called once before any other methods on
-/// `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_init(
-    storage: *mut MemoryWatchdogState,
-    executor: *mut c_void,
-) {
-    // SAFETY: `storage` points to a valid, initialized `MemoryWatchdogState`.
-    let state = unsafe { &*storage };
-    // SAFETY: `executor` is safe to dereference as guaranteed by the caller.
-    unsafe {
-        MemoryWatchdogState::init(state, executor);
     }
 }
 
