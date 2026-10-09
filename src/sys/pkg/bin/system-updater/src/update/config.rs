@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::metrics;
 use fidl_fuchsia_update_installer_ext::options::Range;
 use fidl_fuchsia_update_installer_ext::{Initiator as ExtInitiator, Options};
 use std::time::{Instant, SystemTime};
@@ -24,8 +23,7 @@ impl Config {
     /// Constructs update configuration from url, options and signature.
     pub fn new(update_url: http::Uri, options: Options) -> Self {
         let start_time = SystemTime::now();
-        let start_time_mono =
-            metrics::system_time_to_monotonic_time(start_time).unwrap_or_else(Instant::now);
+        let start_time_mono = Instant::now();
 
         Self {
             initiator: options.initiator.into(),
