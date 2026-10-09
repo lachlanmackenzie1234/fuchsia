@@ -15,8 +15,16 @@ use core::ptr::NonNull;
 use fbl::{HasRefCount, OpaqueRefCountedFacade, Recyclable, RefCounted, RefPtr};
 use zr::ToMutPtr;
 use zx_status::Status;
+use zx_types::ZX_MAX_NAME_LEN;
 
 use vm_address_region_bindings as bindings;
+
+fn name_to_c_buf(name: &[u8]) -> [u8; ZX_MAX_NAME_LEN] {
+    let mut buf = [0u8; ZX_MAX_NAME_LEN];
+    let len = name.len().min(buf.len() - 1);
+    buf[..len].copy_from_slice(&name[..len]);
+    buf
+}
 
 pub mod flag {
     use vm_address_region_bindings as bindings;
@@ -176,8 +184,9 @@ impl VmAddressRegion {
         size: usize,
         align_pow2: u8,
         vmar_flags: u32,
-        name: &CStr,
+        name: &[u8],
     ) -> Result<RefPtr<VmAddressRegion>, Status> {
+        let name_buf = name_to_c_buf(name);
         let mut status = 0;
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
         let raw = unsafe {
@@ -187,7 +196,7 @@ impl VmAddressRegion {
                 size,
                 align_pow2,
                 vmar_flags,
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 &mut status,
             )
         };
@@ -210,8 +219,9 @@ impl VmAddressRegion {
         vmo: RefPtr<VmObject>,
         vmo_offset: u64,
         arch_mmu_flags: ArchMmuFlags,
-        name: &CStr,
+        name: &[u8],
     ) -> Result<MapResult, Status> {
+        let name_buf = name_to_c_buf(name);
         let mut base = 0;
         let mut status = 0;
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
@@ -225,7 +235,7 @@ impl VmAddressRegion {
                 RefPtr::into_raw(vmo).cast(),
                 vmo_offset,
                 arch_mmu_flags,
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 &mut base,
                 &mut status,
             )
@@ -355,16 +365,17 @@ impl VmAddressRegion {
     /// Reserves a memory region within this VMAR without allocating physical pages.
     pub fn reserve_space(
         &self,
-        name: &CStr,
+        name: &[u8],
         base: usize,
         size: usize,
         arch_mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
+        let name_buf = name_to_c_buf(name);
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAddressRegion`.
         Status::ok(unsafe {
             bindings::cpp_vm_address_region_reserve_space(
                 self.as_ffi_ptr(),
-                name.as_ptr(),
+                name_buf.as_ptr().cast(),
                 base,
                 size,
                 arch_mmu_flags,

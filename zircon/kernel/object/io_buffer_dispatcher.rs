@@ -727,7 +727,7 @@ impl IoBufferDispatcher {
                     kernel_vmo,
                     0,
                     ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
-                    c"IOBuffer region (ID allocator)",
+                    b"IOBuffer region (ID allocator)",
                 )?;
                 let allocator = IobRegionIdAllocator::new(
                     ep0_vmo,

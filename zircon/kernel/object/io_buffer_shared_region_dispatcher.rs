@@ -140,7 +140,7 @@ impl IoBufferSharedRegionDispatcher {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
-            c"IOBuffer shared region",
+            b"IOBuffer shared region",
         )?;
 
         mapping.mapping.map_range(0, size as usize, true, false)?;

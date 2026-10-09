@@ -208,7 +208,7 @@ impl VmAddressRegionDispatcher {
         }
 
         let new_vmar =
-            state.vmar.create_sub_vmar(offset, size, alignment, vmar_flags, c"useralloc")?;
+            state.vmar.create_sub_vmar(offset, size, alignment, vmar_flags, b"useralloc")?;
 
         Self::create(new_vmar, state.base_arch_mmu_flags)
     }
@@ -272,7 +272,7 @@ impl VmAddressRegionDispatcher {
             vmo,
             vmo_offset,
             arch_mmu_flags,
-            c"useralloc",
+            b"useralloc",
         )
     }
 

@@ -797,7 +797,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let status = vmar.set_memory_priority(MemoryPriority::High);
@@ -824,7 +824,7 @@ mod aspace_rs {
             vmo_child.clone(),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         // Validate the root and clone received the priority.
@@ -869,7 +869,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let status = vmar.set_memory_priority(MemoryPriority::High);
@@ -885,7 +885,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -914,7 +914,7 @@ mod aspace_rs {
             vmo_reference,
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
         let _ = mapping_result;
 
@@ -940,7 +940,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4));
@@ -953,7 +953,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
@@ -970,7 +970,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 16,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test sub-vmar",
+            b"test sub-vmar",
         ));
 
         let vmo2 = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 4));
@@ -983,7 +983,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo2.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
         expect_true!(vmo2.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
 
@@ -1012,7 +1012,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
@@ -1025,7 +1025,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
         let mapping = mapping_result.mapping;
 
@@ -1046,7 +1046,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo2.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping2",
+            b"test-mapping2",
         ));
 
         // Original VMO should have lost its priority, and the VMO for our new mapping should have
@@ -1071,7 +1071,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE * 8));
@@ -1084,7 +1084,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         // Set the priority in our vmar and validate it propagates to the VMO and the aspace.
@@ -1161,7 +1161,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         let status = vmar.set_memory_priority(MemoryPriority::High);
@@ -1177,7 +1177,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo.clone()),
             0,
             ARCH_RW_USER_FLAGS,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         expect_true!(vmo.debug_get_cow_pages().unwrap().debug_is_high_memory_priority());
@@ -1224,7 +1224,7 @@ mod aspace_rs {
             PAGE_SIZE_USIZE * 64,
             0,
             vmar::flag::CAN_MAP_SPECIFIC | vmar::flag::CAN_MAP_READ | vmar::flag::CAN_MAP_WRITE,
-            c"test vmar",
+            b"test vmar",
         ));
 
         struct CleanupSubVmar<'a>(&'a vmar::VmAddressRegion);
@@ -1248,7 +1248,7 @@ mod aspace_rs {
             VmObjectPaged::into_vm_object(vmo),
             0,
             arch_read_user_flags,
-            c"test-mapping",
+            b"test-mapping",
         ));
 
         let status = vmar.set_memory_priority(vmar::MemoryPriority::High);
