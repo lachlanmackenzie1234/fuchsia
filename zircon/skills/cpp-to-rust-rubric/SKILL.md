@@ -385,8 +385,7 @@ pin_init!(Self {
   - Rust exported to C++: `rust_$modpath_$struct_$functionname`
 - Prototype Declarations in C++ Headers: All C++ FFI helper functions defined in
   `.cc` files (`cpp_*`) MUST have prototype declarations in an included C++
-  header file enclosed in `extern "C"` blocks to prevent GCC
-  `-Werror=missing-declarations`.
+  header file enclosed in `extern "C"` blocks.
 - Prefer References in FFI Trampolines: FFI trampolines callable from C++ that
   receive non-null pointers to initialized objects should prefer taking
   `&<Type>` or `&mut <State>` directly in Rust signatures rather than raw
@@ -659,7 +658,14 @@ Reviewers and Coders must audit code against this checklist:
     compilation, and run `fx test` (or `k ut`) to verify test execution.
     Manually wrap any comments, strings, or macro bodies exceeding 100
     characters (since `fx format-code` does not format them), and then run `fx
-    format-code`.
+    format-code`. Run `fx format-code` and `fx clippy` on the files of every
+    commit in the change, not only the final state. Confirm that every function
+    declared in a Rust `extern` block has a C++ definition in the kernel. The
+    default build does not cover the `lk_debug_level` variant toolchains, CFI or
+    LTO, which caused many CQ failures and most reverts of port CLs. When a
+    change adds GN dependencies between kernel targets, C callbacks implemented
+    in Rust, or crate-level attributes, say so in the report so the first CQ dry
+    run includes those builders.
 5.  **Self-Check**: Audit your implementation against Section 4 (Common
     Pitfalls) before reporting back, including a side-by-side verification of
     inline implementation comments against C++ source and header files (`.cc`
@@ -672,6 +678,11 @@ Reviewers and Coders must audit code against this checklist:
     tool: during the port, do not read or debug its source under
     `zircon/skills/babeldiff/tool`. If a finding looks wrong, say so in your
     report and move on.
+7.  **Report Accurately**: The report and any commit message describe only what
+    the change contains; do not claim tests or fixes that are not in the diff.
+    After a rebase, check that fixes from earlier review rounds are still
+    present. Draft replies to Gerrit review comments for the human to post; do
+    not post them yourself.
 
 ### 5.2. Guidelines for Reviewer Subagent (`cpp-to-rust-reviewer`)
 1.  **Audit Real In-Tree Files**: You MUST inspect the actual modified files in

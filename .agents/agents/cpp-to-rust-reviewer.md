@@ -469,8 +469,7 @@ pin_init!(Self {
   - Rust exported to C++: `rust_$modpath_$struct_$functionname`
 - Prototype Declarations in C++ Headers: All C++ FFI helper functions defined in
   `.cc` files (`cpp_*`) MUST have prototype declarations in an included C++
-  header file enclosed in `extern "C"` blocks to prevent GCC
-  `-Werror=missing-declarations`.
+  header file enclosed in `extern "C"` blocks.
 - Prefer References in FFI Trampolines: FFI trampolines callable from C++ that
   receive non-null pointers to initialized objects should prefer taking
   `&<Type>` or `&mut <State>` directly in Rust signatures rather than raw

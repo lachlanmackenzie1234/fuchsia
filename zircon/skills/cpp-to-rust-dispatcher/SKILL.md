@@ -501,9 +501,7 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
 5.  **C++ Header Prototype Declarations**: All C++ FFI helper functions defined
     in `.cc` files (e.g. `cpp_*`) MUST have prototype declarations enclosed in
     `extern "C"` blocks inside an included C++ header file (e.g. `debuglog.h`,
-    `resource.h`, `dispatcher.h`). Defining `extern "C"` functions in C++
-    without prior prototype declarations in header files causes GCC
-    `-Werror=missing-declarations` build failures.
+    `resource.h`, `dispatcher.h`).
 6.  **Use Rust References in FFI Signatures Instead of Raw Pointers**: FFI
     trampolines callable from C++ that receive non-null references to
     initialized objects (such as `rust_<type>_dispatcher_state_destroy` or
@@ -515,12 +513,12 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
 7.  **Always-Inline Annotations for Short FFI Routines**: Include
     `<kernel/ffi.h>` and annotate definitions of short C++ FFI helper routines
     (e.g., trivial one-line accessors or simple forwarding wrappers) with the
-    `FFI_ALWAYS_INLINE` macro (which expands to `[[gnu::always_inline]]` under
-    Clang and nothing under GCC). Include a TODO comment tied to
-    `https://fxbug.dev/537458631` (e.g. `// TODO(https://fxbug.dev/537458631):
-    Remove the annotations once cross-language inlining works.`) to remove the
-    annotations once cross-language inlining works. Recommend and apply this
-    only for short FFI routines.
+    `FFI_ALWAYS_INLINE` macro (which expands to `[[gnu::always_inline]]`).
+    Include a TODO comment tied to `https://fxbug.dev/537458631` (e.g. `//
+    TODO(https://fxbug.dev/537458631): Remove the annotations once
+    cross-language inlining works.`) to remove the annotations once
+    cross-language inlining works. Recommend and apply this only for short FFI
+    routines.
 8.  **Cross-Object Operations & Facade Safety**: When an operation targets
     another kernel object type (such as `ThreadDispatcher` or
     `VmAddressRegionDispatcher`), provide safe wrapper methods directly on that

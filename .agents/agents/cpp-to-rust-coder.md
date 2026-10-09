@@ -88,3 +88,7 @@ When tasked with implementing or updating a port:
      - Exact file paths created or modified in the repository.
      - Summary of `git status` verifying that the working tree reflects your edits.
      - Exact build and test execution results.
+     - Which of the build variants named in the rubric (Section 5.1, step 4) the change may affect.
+   - Describe only what the change contains; do not claim tests or fixes that are not in the diff.
+   - After a rebase, check that fixes from earlier review rounds are still present.
+   - Draft replies to Gerrit review comments for the human to post; do not post them yourself.
