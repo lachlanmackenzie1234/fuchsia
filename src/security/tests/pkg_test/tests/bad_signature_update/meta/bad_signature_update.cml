@@ -54,7 +54,7 @@
         // Production non-package delivery components.
         {
             name: "netstack",
-            url: "#meta/netstack.cm",
+            url: "#meta/netstack3.cm",
         },
         {
             name: "http-client",
