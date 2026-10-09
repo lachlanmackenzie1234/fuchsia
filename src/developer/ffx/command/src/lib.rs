@@ -192,9 +192,15 @@ pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
             // when a help error is returned. So look for the `--machine json` flag
             // and either `help` or `--help` or `-h`.
             let argv = Vec::from_iter(std::env::args());
-            let c = ffx::FfxCommandLine::from_args_for_help(&argv)?;
+            let mut c = ffx::FfxCommandLine::from_args_for_help(&argv)?;
             let context = c.global.load_context(exe_kind)?;
-            if find_machine_and_help(&c).is_some() {
+            if c.global.subcommand.first().map(String::as_str) == Some("help")
+                && c.global.subcommand.get(1).is_some_and(|s| !s.starts_with('-'))
+            {
+                c.global.subcommand.remove(0);
+                c.global.subcommand.push("--help".to_string());
+                Ok(InitializedCmd { cmd: c, context, help_state: HelpState::None })
+            } else if find_machine_and_help(&c).is_some() {
                 Ok(InitializedCmd { cmd: c, context, help_state: HelpState::ReturnArgsInfo })
             } else {
                 Ok(InitializedCmd {
@@ -313,6 +319,24 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
                     println!("{}", output.bug_context("Error serializing args")?);
                     return Ok(ExitStatus::from_raw(0));
                 } else {
+                    let is_subcommand_help = cmd.subcmd_iter().next() != Some("commands")
+                        && cmd.subcmd_iter().any(|c| c == "help" || c == "--help" || c == "-h");
+                    if code == 0 && is_subcommand_help {
+                        let top_level_help =
+                            <crate::Ffx as argh::FromArgs>::from_args(&["ffx"], &["--help"])
+                                .unwrap_err()
+                                .output;
+                        if let Some(opts_idx) = top_level_help.find("Options:\n") {
+                            let end_idx = top_level_help
+                                .find("Commands:\n")
+                                .or_else(|| top_level_help.find("Subcommands:\n"))
+                                .unwrap_or(top_level_help.len());
+                            let global_opts = &top_level_help[opts_idx..end_idx];
+                            output.push_str("\n\nGlobal ");
+                            output.push_str(global_opts.trim_end());
+                        }
+                    }
+
                     let command_clone = command.clone();
                     append_strict_help(&mut output, app.strict, code);
                     let res: Result<ExitStatus, Error> = Err(Error::Help { command, output, code });

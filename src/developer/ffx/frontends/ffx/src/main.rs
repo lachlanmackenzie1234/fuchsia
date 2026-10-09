@@ -382,4 +382,46 @@ mod test {
         let actual = find_info_from_cmd(&args, &some_info);
         assert!(actual.is_some());
     }
+
+    #[fuchsia::test]
+    async fn test_global_options_in_subcommand_help() {
+        let env =
+            ffx_config::test_env().runtime_config("log.enabled", false).build().expect("test env");
+
+        let cmd = FfxCommandLine::new(None, &["ffx", "target", "list", "--help"]).unwrap();
+        let icmd = ffx_command::InitializedCmd {
+            cmd,
+            context: env.context.clone(),
+            help_state: ffx_command::HelpState::None,
+        };
+
+        let res = ffx_command::run::<FfxSuite>(icmd).await;
+        if let Err(ffx_command::Error::Help { output, .. }) = res {
+            assert!(output.contains("Global Options:"));
+            assert!(output.contains("--machine"));
+        } else {
+            panic!("Expected Help error");
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_commands_does_not_include_global_options() {
+        let env =
+            ffx_config::test_env().runtime_config("log.enabled", false).build().expect("test env");
+
+        let cmd = FfxCommandLine::new(None, &["ffx", "commands"]).unwrap();
+        let icmd = ffx_command::InitializedCmd {
+            cmd,
+            context: env.context.clone(),
+            help_state: ffx_command::HelpState::None,
+        };
+
+        let res = ffx_command::run::<FfxSuite>(icmd).await;
+        if let Err(ffx_command::Error::Help { output, .. }) = res {
+            assert!(output.contains("Built-in Commands:"));
+            assert!(!output.contains("Global Options:"));
+        } else {
+            panic!("Expected Help error");
+        }
+    }
 }
