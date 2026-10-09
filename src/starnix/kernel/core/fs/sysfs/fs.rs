@@ -66,23 +66,6 @@ impl SysFs {
         dir.subdir("block", dir_mode, empty_dir);
 
         dir.subdir("bus", dir_mode, |dir| {
-            dir.subdir("mmc", dir_mode, |dir| {
-                dir.subdir("devices", dir_mode, |dir| {
-                    dir.subdir("mmc0:0001", dir_mode, |dir| {
-                        dir.subdir("block", dir_mode, |dir| {
-                            dir.subdir("mmcblk0", dir_mode, |dir| {
-                                dir.entry(
-                                    "size",
-                                    StubEmptyFile::new_node(bug_ref!(
-                                        "https://fxbug.dev/452096300"
-                                    )),
-                                    mode!(IFREG, 0o444),
-                                );
-                            });
-                        });
-                    });
-                });
-            });
             dir.subdir("platform", dir_mode, |dir| {
                 dir.subdir("drivers", dir_mode, |dir| {
                     dir.entry(
@@ -95,68 +78,7 @@ impl SysFs {
         });
 
         dir.subdir("class", dir_mode, |dir| {
-            dir.subdir("backlight", dir_mode, |dir| {
-                dir.subdir("panel0-backlight", dir_mode, |dir| {
-                    dir.entry(
-                        "brightness",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
-            dir.subdir("bdi", dir_mode, |dir| {
-                dir.subdir("0:80", dir_mode, |dir| {
-                    dir.entry(
-                        "max_ratio",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                    dir.entry(
-                        "read_ahead_kb",
-                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                        mode!(IFREG, 0o444),
-                    );
-                });
-            });
-            dir.subdir("mmc_host", dir_mode, |dir| {
-                dir.subdir("mmc0", dir_mode, |dir| {
-                    dir.subdir("mmc0:0001", dir_mode, |dir| {
-                        dir.entry(
-                            "fwrev",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "hwrev",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "life_time",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "manfid",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "pre_eol_info",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                        dir.entry(
-                            "serial",
-                            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                            mode!(IFREG, 0o444),
-                        );
-                    });
-                });
-            });
             dir.subdir("net", dir_mode, empty_dir);
-            dir.subdir("powercap", dir_mode, |_dir| {});
-            dir.subdir("udc", dir_mode, |_dir| {});
         });
         dir.subdir("dev", dir_mode, |dir| {
             dir.subdir("char", dir_mode, empty_dir);
@@ -269,18 +191,6 @@ impl SysFs {
                 dir.subdir("cpu", dir_mode, |dir| build_cpu_class_directory(kernel, dir));
             });
             dir.subdir("leds", dir_mode, |_dir| {});
-            dir.subdir("soc0", dir_mode, |dir| {
-                dir.entry(
-                    "revision",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-                dir.entry(
-                    "serial_number",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-            });
             dir.subdir("virtual", dir_mode, |dir| {
                 dir.subdir("leds", dir_mode, |_dir| {});
                 dir.subdir("power_supply", dir_mode, |dir| {
@@ -403,5 +313,48 @@ mod tests {
                 format!(r#"Looking for {name} in DirEntry {{ fs: "sysfs", path: "/" }}"#);
             assert_eq!(hierarchy.get_child(&expected).is_some(), log_sysfs_lookup_misses);
         }
+    }
+
+    #[::fuchsia::test]
+    async fn sysfs_registers_stub_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let root = &current_task.kernel().device_registry.objects.root;
+
+            // Backlight, parented by the display controller.
+            assert!(root.lookup("class/backlight/panel0-backlight".into()).is_some());
+            assert!(
+                root.lookup(
+                    "devices/platform/soc/5e00000.qcom,mdss_mdp/backlight/panel0-backlight/brightness"
+                        .into(),
+                )
+                .is_some()
+            );
+
+            // eMMC host, card and block stub share a single device directory tree.
+            assert!(root.lookup("class/mmc_host/mmc0".into()).is_some());
+            assert!(root.lookup("bus/mmc/devices/mmc0:0001".into()).is_some());
+            assert!(root.lookup("devices/virtual/mmc_host/mmc0/uevent".into()).is_some());
+            assert!(
+                root.lookup("devices/virtual/mmc_host/mmc0/mmc0:0001/life_time".into()).is_some()
+            );
+            assert!(
+                root.lookup("devices/virtual/mmc_host/mmc0/mmc0:0001/block/mmcblk0/size".into())
+                    .is_some()
+            );
+
+            // SoC identification device.
+            assert!(root.lookup("bus/soc/devices/soc0".into()).is_some());
+            assert!(root.lookup("devices/soc0/revision".into()).is_some());
+            assert!(root.lookup("devices/soc0/uevent".into()).is_some());
+
+            // Backing device info.
+            assert!(root.lookup("class/bdi/0:80".into()).is_some());
+            assert!(root.lookup("devices/virtual/bdi/0:80/read_ahead_kb".into()).is_some());
+
+            // Device-less classes.
+            assert!(root.lookup("class/powercap".into()).is_some());
+            assert!(root.lookup("class/udc".into()).is_some());
+        })
+        .await;
     }
 }

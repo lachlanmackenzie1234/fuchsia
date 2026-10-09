@@ -43,6 +43,24 @@ impl KObjectStore {
     fn register_initial_devices(&self, kernel: &Kernel) {
         let registry = &kernel.device_registry;
 
+        // Generic Linux device and class registrations.
+
+        // TODO(https://fxbug.dev/452096300): Register backing_dev_info devices from actual
+        // superblocks instead of a hardcoded 0:80 stub.
+        registry.add_numberless_device(
+            "0:80".into(),
+            /* parent = */ None,
+            self.get_or_create_class("bdi".into()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                add_stub_attributes(dir, &["max_ratio", "read_ahead_kb"]);
+            },
+        );
+
+        // TODO(https://fxbug.dev/452096300): Populate or remove stub powercap and udc classes.
+        self.get_or_create_class("powercap".into());
+        self.get_or_create_class("udc".into());
+
         // Board / SoC-specific stub device registrations.
         // TODO(https://fxbug.dev/452096300): Replace hardcoded board/SoC stub devices with dynamic
         // device configuration.
@@ -74,11 +92,7 @@ impl KObjectStore {
         let iio_bus = self.get_or_create_bus("iio".into());
         registry.add_bus_device("iio:device3".into(), Some(qbg), iio_bus, |device, dir| {
             build_device_directory(device, dir);
-            dir.entry(
-                "in_resistance_resistance_id_input",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
+            add_stub_attributes(dir, &["in_resistance_resistance_id_input"]);
         });
 
         // TODO(https://fxbug.dev/452096300): Stub Qualcomm MDSS display controller and DRM
@@ -92,7 +106,7 @@ impl KObjectStore {
         let drm_class = self.get_or_create_class("drm".into());
         let card0 = registry.add_numberless_device(
             "card0".into(),
-            Some(mdss_mdp),
+            Some(mdss_mdp.clone()),
             drm_class.clone(),
             build_device_directory,
         );
@@ -112,6 +126,59 @@ impl KObjectStore {
                     StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
                     mode!(IFREG, 0o644),
                 );
+            },
+        );
+
+        // TODO(https://fxbug.dev/452096300): Stub panel backlight device parented by the display
+        // controller.
+        registry.add_numberless_device(
+            "panel0-backlight".into(),
+            Some(mdss_mdp),
+            self.get_or_create_class("backlight".into()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                add_stub_attributes(dir, &["brightness"]);
+            },
+        );
+
+        // TODO(https://fxbug.dev/452096300): Stub eMMC host, card, and block device. The card's
+        // `block/mmcblk0` directory is left as a plain stub rather than a `block` class device,
+        // since there is no backing block device.
+        // TODO(https://fxbug.dev/425942145): Parent `mmc0` under the SoC's SDHCI controller
+        // platform device, once the product-specific controller address is known.
+        let mmc0 = registry.add_numberless_device(
+            "mmc0".into(),
+            /* parent = */ None,
+            self.get_or_create_class("mmc_host".into()),
+            build_device_directory,
+        );
+        registry.add_bus_device(
+            "mmc0:0001".into(),
+            Some(mmc0),
+            self.get_or_create_bus("mmc".into()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                add_stub_attributes(
+                    dir,
+                    &["fwrev", "hwrev", "life_time", "manfid", "pre_eol_info", "serial"],
+                );
+                dir.subdir("block", 0o755, |dir| {
+                    dir.subdir("mmcblk0", 0o755, |dir| {
+                        add_stub_attributes(dir, &["size"]);
+                    });
+                });
+            },
+        );
+
+        // TODO(https://fxbug.dev/452096300): Stub SoC identification device (`/sys/devices/soc0`),
+        // attached to the `soc` bus.
+        registry.add_bus_device(
+            "soc0".into(),
+            /* parent = */ None,
+            self.get_or_create_bus("soc".into()),
+            |device, dir| {
+                build_device_directory(device, dir);
+                add_stub_attributes(dir, &["revision", "serial_number"]);
             },
         );
     }
@@ -416,5 +483,19 @@ impl Default for KObjectStore {
             platform_device: OnceLock::new(),
             soc_device: OnceLock::new(),
         }
+    }
+}
+
+/// Adds read-only [`StubEmptyFile`] attributes named `names` to `dir`.
+///
+/// Reads of these attributes are tracked to identify which unimplemented sysfs attributes are used
+/// by userspace.
+fn add_stub_attributes(dir: &SimpleDirectoryMutator, names: &[&str]) {
+    for name in names {
+        dir.entry(
+            name,
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
+            mode!(IFREG, 0o444),
+        );
     }
 }
