@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::channel_dispatcher::ChannelDispatcher;
+use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use super::job_dispatcher::JobDispatcher;
 use core::mem::MaybeUninit;
@@ -164,5 +166,25 @@ unsafe extern "C" {
         is_jobs: bool,
         out_count: *mut usize,
         out_avail: *mut usize,
+    ) -> zx_status_t;
+
+    /// Returns a pointer to the job's normal `Exceptionate`.
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`.
+    pub(crate) fn cpp_job_dispatcher_exceptionate(job: *mut JobDispatcher) -> *mut Exceptionate;
+
+    /// Creates a debug `Exceptionate` on `job` backed by `channel`.
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`, and `channel` must point to a valid
+    /// `KernelHandle<ChannelDispatcher>`.
+    pub(crate) fn cpp_job_dispatcher_create_debug_exceptionate(
+        job: *mut JobDispatcher,
+        channel: *mut KernelHandle<ChannelDispatcher>,
+        thread_rights: zx_rights_t,
+        process_rights: zx_rights_t,
     ) -> zx_status_t;
 }

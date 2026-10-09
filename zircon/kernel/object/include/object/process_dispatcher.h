@@ -102,6 +102,8 @@ zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, Threa
                                                bool ensure_initial_thread,
                                                const UserEntryState* entry);
 void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
+Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process);
+Exceptionate* cpp_process_dispatcher_debug_exceptionate(ProcessDispatcher* process);
 
 }  // extern "C"
 

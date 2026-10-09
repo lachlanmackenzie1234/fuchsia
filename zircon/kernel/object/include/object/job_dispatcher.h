@@ -338,6 +338,11 @@ zx_info_task_runtime_t cpp_job_dispatcher_get_runtime_stats(const JobDispatcher*
 zx_status_t cpp_job_dispatcher_enumerate_children(const JobDispatcher* job, zx_koid_t* user_koids,
                                                   size_t max, bool is_jobs, size_t* out_count,
                                                   size_t* out_avail);
+Exceptionate* cpp_job_dispatcher_exceptionate(JobDispatcher* job);
+zx_status_t cpp_job_dispatcher_create_debug_exceptionate(JobDispatcher* job,
+                                                         KernelHandle<ChannelDispatcher>* channel,
+                                                         zx_rights_t thread_rights,
+                                                         zx_rights_t process_rights);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

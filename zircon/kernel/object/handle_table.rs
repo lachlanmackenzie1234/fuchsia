@@ -155,6 +155,13 @@ impl HandleTable {
         Some(unsafe { HandleOwner::from_raw(raw).unwrap() })
     }
 
+    /// Adds an owned handle to this handle table.
+    pub fn add_handle(&self, handle: HandleOwner) {
+        let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
+        ksync::lock!(let mut guard = self.write_lock());
+        self.add_handle_locked(guard.as_mut().token_mut(), handle);
+    }
+
     /// Removes a handle from this handle table and returns the owned handle if found.
     pub fn remove_handle(
         &self,

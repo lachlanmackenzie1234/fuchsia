@@ -248,4 +248,15 @@ FFI_ALWAYS_INLINE void cpp_process_remove_thread(ProcessDispatcher* process,
   process->RemoveThread(thread);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process) {
+  return process->exceptionate();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Exceptionate* cpp_process_dispatcher_debug_exceptionate(
+    ProcessDispatcher* process) {
+  return process->debug_exceptionate();
+}
+
 }  // extern "C"

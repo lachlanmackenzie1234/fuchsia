@@ -16,6 +16,7 @@ mod cprng;
 mod debug;
 mod debuglog;
 mod event;
+mod exceptions;
 mod fifo;
 mod guest;
 mod iob;

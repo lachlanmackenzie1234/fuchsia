@@ -18,10 +18,15 @@ the port and **Reviewer agents** evaluating the port.
 
 ## 1. Core Principles
 
-1.  **Direct Translation & API Parity**: Translate C++ code to Rust using
-    equivalent data structures and algorithms. The Rust API must expose all
-    public functions, methods, constructors, and configurations present in the
-    C++ version.
+1.  **Direct Translation, Control-Flow Fidelity, & API Parity**: Translate C++
+    code to Rust using equivalent data structures, algorithms, and control flow.
+    The Rust API must expose all public functions, methods, constructors, and
+    configurations present in the C++ version, and function bodies should
+    preserve the structure and check ordering of the C++ original rather than
+    restructuring control flow or inventing local helper types without cause.
+    When C++ calls a specific method or overload on a collaborating object, call
+    the corresponding method on the Rust type (adding it if missing) rather than
+    re-implementing its logic inline at the call site.
 2.  **Exact Memory Layout & Alignment Parity**: Rust structs shared across FFI
     or replacing C++ objects must match the memory layout, alignment, and size
     of corresponding C++ objects exactly. Verify with compile-time static
@@ -56,17 +61,20 @@ the port and **Reviewer agents** evaluating the port.
       preserved in the corresponding Rust code, updating identifiers that have
       changed names to make sense in Rust.
 8.  **Ergonomic Design & DRY**: Apply idiomatic Rust practices (derive macros,
-    `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator) without
-    breaking layout or safety requirements. Keep visibility as tight as possible
-    (`pub(crate)` or file-private). Preserve named constants. Apply idioms
-    within the C++ structure: keep function boundaries, helpers and control-flow
-    shape so the port can be compared side by side. Do not inline helpers, merge
-    or split functions, or unroll macros unless the C++ shape cannot be
-    expressed in Rust. Out-parameters may become return values.
+    `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator, returning
+    values via `Option<T>` or `Result<T, Status>` instead of C-style
+    out-parameters) without breaking layout or safety requirements. Keep
+    visibility as tight as possible (`pub(crate)` or file-private). Preserve
+    named constants. Apply idioms within the C++ structure: keep function
+    boundaries, helpers and control-flow shape so the port can be compared side
+    by side. Do not inline helpers, merge or split functions, or unroll macros
+    unless the C++ shape cannot be expressed in Rust.
 9.  **Cross-Language FFI Interoperability**: FFI shims must be minimal and
-    declarative, with no business logic. C++ helper functions exposed to Rust
-    must be prefixed with `cpp_` and declared in C++ header files. Rust
-    functions exposed to C++ must be prefixed with `rust_`.
+    declarative 1:1 forwards with zero business logic, branching, or sub-object
+    chaining. Facade methods for unported C++ classes must correspond 1:1 to
+    actual methods on the C++ class. C++ helper functions exposed to Rust must
+    be prefixed with `cpp_` and declared in C++ header files. Rust functions
+    exposed to C++ must be prefixed with `rust_`.
 10.  **Allocation Tier & Stack Parity**: Respect the original C++ memory
      placement (heap, static, intrusive, or stack). Because kernel thread stacks
      are constrained, do not shift heap or static storage onto the stack.
@@ -331,10 +339,33 @@ pin_init!(Self {
 - Preserve `dprintf` using the `dprintf!` macro from `//zircon/kernel/lib/debug`
 - Use `kprint` and `kprintln!` from `//src/lib/kprint` to replace `printf`.
 
-### 3.10. Code Organization, Ergonomics, & Visibility
+### 3.10. Code Organization, Control Flow, Ergonomics, & Visibility
 - **File Structure Parity**: Organize Rust modules matching C++ header/source
   files. Re-export public types at root level (`pub use`) to preserve flat C++
   header APIs.
+- **Control-Flow & Structural Fidelity**: Preserve the control flow, variable
+  structure, and sequence of checks within function and method bodies from the
+  C++ original (e.g., shared post-branch validation checks or extracting a
+  common target reference across `if`/`else if` branches) unless Rust's borrow
+  checker or safety rules strictly require restructuring. Do not invent local
+  helper enums or duplicate branch checks when the C++ control flow can be
+  expressed directly in Rust.
+- **Exact Collaborator Method / Overload Parity**: When C++ calls a specific
+  method or overload on a collaborating object (for example, a lookup method
+  that both validates required preconditions/rights and returns outputs, or a
+  lookup method that requires no rights), call the corresponding method on the
+  Rust type (adding the missing method or variant to that type if needed) rather
+  than calling a lower-level method and re-implementing the check inline at the
+  call site.
+- **Idiomatic Return Values Instead of Out-Parameters**: When a C++ method or
+  function returns `bool` or `zx_status_t` and populates one or more
+  out-parameters (`T* out`) by value (where the caller does not need to provide
+  pre-allocated backing storage or pinned in-place memory), the Rust method MUST
+  return the value directly via `Option<T>`, `Result<T, Status>`, or a tuple
+  `Result<(T, U), Status>` rather than taking `&mut T` out-parameters. If C++
+  callers still invoke the method via a `rust_*` FFI trampoline, perform the
+  out-parameter adaptation inside the FFI trampoline, not on the Rust method
+  itself.
 - **Tight Visibility**: Keep items private or `pub(crate)`. Functions, types, or
   helpers used only within a single file MUST NOT be marked `pub` or
   `pub(crate)`.
@@ -372,14 +403,25 @@ pin_init!(Self {
   elsewhere, copy the license lines from neighboring files in the same
   directory.
 
-### 3.13. FFI Interoperability
-- Minimal Shims: FFI functions (`*_ffi.cc`/`*_ffi.rs`) should be purely
-  declarative with zero logic.
+### 3.13. FFI Interoperability & Facade Method Parity
+- Minimal Shims: Isolate FFI functions in `*_ffi.cc` / `*_ffi.rs`; they should
+  be purely declarative with zero logic.
 - Shim Existing APIs: Expose the C++ methods the original code calls. Do not add
   new C++ methods for the port's convenience. Where a shim would only forward to
   a simple C++ free function, giving that function `extern "C"` linkage and
   declaring it in a Rust `unsafe extern "C"` block is an alternative to a
   `cpp_*` shim.
+- **Strict 1:1 Parity for Facade Methods & `cpp_*` FFI Shims**:
+  - Every method added to a Rust facade for an unported C++ class MUST
+    correspond 1:1 to an actual method on that C++ class. Never invent synthetic
+    convenience or composite methods on a facade that do not exist on the C++
+    class.
+  - Every `cpp_*` FFI function (`*_ffi.cc` / `*_ffi.rs`) must be a single direct
+    forwarding call to one C++ method or function with zero business logic.
+    Never encode branching logic (`if`/`else`) or chain across sub-objects
+    (`obj->sub_obj()->Method()`) inside a `cpp_*` FFI function. If C++ accesses
+    a sub-object or helper class (`sub_obj()`), define a Rust facade for that
+    sub-object type as well and expose each method 1:1.
 - Consistent Naming:
   - C++ exported to Rust: `cpp_$namespace_$classname_$functionname`
   - Rust exported to C++: `rust_$modpath_$struct_$functionname`
@@ -439,7 +481,7 @@ Ok(())
   in-body implementation comments.
 - **Preserve Comments Documenting Behavior**: Preserve all inline comments (`//
   ...`) from C++ source and header files (`.cc` and `.h`) documenting behavior
-  in the corresponding Rust code—it does not matter what behavior is being
+  in the corresponding Rust code; it does not matter what behavior is being
   described; if it documents behavior, preserve it.
 - **Adapt Identifiers for Rust**: Update ported comments so they make sense with
   the Rust port of the code. Identifiers that have changed names (e.g., methods
@@ -636,6 +678,20 @@ Reviewers and Coders must audit code against this checklist:
      than new ones added for the port.
 47.  [ ] **Copied and Narrating Comments**: No comment copied from a neighboring
      block onto different code, and no "ported from" notes.
+48.  [ ] **C-Style Out-Parameters on Rust Methods**: Rust methods do not retain
+     C-style `&mut T` out-parameters paired with `bool` or `Status` returns when
+     returning `Option<T>` or `Result<T, Status>` by value is possible (any
+     out-pointer adaptation belongs only in `rust_*` FFI trampolines).
+49.  [ ] **Unnecessary Control-Flow Divergence or Ad-Hoc Caller Checks**: Ported
+     functions and syscalls preserve the C++ control flow and call the exact
+     corresponding methods/overloads on collaborating types rather than
+     inventing local enums, duplicating branch checks, or re-implementing checks
+     inline at the call site.
+50.  [ ] **Synthetic Facade Methods or Non-Trivial `cpp_*` FFI Shims**: Rust
+     facades for unported C++ types only expose methods that actually exist on
+     the C++ class, and `cpp_*` FFI shims are strict 1:1 single-call forwards
+     without branching (`if`/`else`) or sub-object method chaining
+     (`a->b()->c()`).
 
 ---
 

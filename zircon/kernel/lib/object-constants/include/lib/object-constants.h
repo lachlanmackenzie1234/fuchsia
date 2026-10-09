@@ -59,6 +59,11 @@ constexpr size_t kEventPairDispatcherStateSize = 32;
 constexpr size_t kEventPairDispatcherStateAlign = 8;
 constexpr size_t kEventPairDispatcherStateOffset = 48;
 
+// Size, alignment, and offset for ExceptionDispatcherState.
+constexpr size_t kExceptionDispatcherStateSize = 160 + kLockClassIdSize;
+constexpr size_t kExceptionDispatcherStateAlign = 8;
+constexpr size_t kExceptionDispatcherStateOffset = 48;
+
 // Size, alignment, and offset for FifoDispatcherState.
 constexpr size_t kFifoDispatcherStateSize = 72;
 constexpr size_t kFifoDispatcherStateAlign = 8;

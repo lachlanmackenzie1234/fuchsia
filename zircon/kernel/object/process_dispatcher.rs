@@ -511,6 +511,26 @@ impl ProcessDispatcher {
         // SAFETY: `self` and `thread` are valid references.
         unsafe { cpp_process_remove_thread(self.as_ffi(), thread as *const _) }
     }
+
+    /// Returns the process's normal `Exceptionate`.
+    pub fn exceptionate(&self) -> &super::exceptionate::Exceptionate {
+        // SAFETY: `self` is a valid `ProcessDispatcher`, which owns `exceptionate_` for its entire
+        // lifetime.
+        unsafe {
+            &*super::process_dispatcher_ffi::cpp_process_dispatcher_exceptionate(self.as_ffi_mut())
+        }
+    }
+
+    /// Returns the process's debug `Exceptionate`.
+    pub fn debug_exceptionate(&self) -> &super::exceptionate::Exceptionate {
+        // SAFETY: `self` is a valid `ProcessDispatcher`, which owns `debug_exceptionate_` for its
+        // entire lifetime.
+        unsafe {
+            &*super::process_dispatcher_ffi::cpp_process_dispatcher_debug_exceptionate(
+                self.as_ffi_mut(),
+            )
+        }
+    }
 }
 
 zr::static_assert!(core::mem::size_of::<ProcessDispatcher>() == 0);

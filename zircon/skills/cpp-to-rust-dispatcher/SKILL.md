@@ -370,15 +370,23 @@ impl DispatcherOps for CounterDispatcher {
 
 ### Generic Handle Resolution & Downcasting
 
-Handle resolution is centralized in `Dispatcher` and `ProcessDispatcher` to
-avoid duplicated downcasting logic:
+Handle resolution is centralized in `HandleTable` (and convenience wrappers on
+`Dispatcher` / `ProcessDispatcher`) to avoid duplicated downcasting or rights
+validation logic:
 
-- **`Dispatcher::get_with_rights<T>(handle, rights)`**: Fetches a
-  `RefPtr<Dispatcher>` from the handle table, verifies rights, verifies
-  `dispatcher.get_type() == T::TYPE`, and safely casts to `RefPtr<T>`.
-- **`ProcessDispatcher::get_dispatcher_with_rights<T>(&self, handle, rights)`**:
-  Method on `ProcessDispatcher` to look up typed dispatcher handles directly for
-  a process.
+- **Match Exact C++ `HandleTable` Method / Overload**: Always call the Rust
+  `HandleTable` method that corresponds to the exact C++ `HandleTable` overload
+  used in the original code (e.g., `GetDispatcher`, `GetDispatcherWithRights`
+  returning only the dispatcher, `GetDispatcherWithRights` checking desired
+  rights AND returning both the dispatcher and its actual rights, or
+  `GetDispatcherAndRights`). If a corresponding method or variant is missing on
+  `HandleTable` in `handle_table.rs`, add it there rather than calling a
+  different method (like `get_dispatcher_and_rights`) and re-implementing rights
+  checks inline in the syscall body.
+- **`Dispatcher::get_with_rights<T>(handle, rights)`** /
+  **`ProcessDispatcher::get_dispatcher_with_rights<T>(&self, handle, rights)`**:
+  Look up typed dispatcher handles directly for a process and verify required
+  rights.
 
 Example usage in a syscall:
 
@@ -486,8 +494,11 @@ Preserve all C++ `LTRACE` statements when porting syscalls:
 
 When interfacing between C++ and Rust during incremental dispatcher migrations:
 
-1.  **Minimal Shims**: Keep FFI functions (`*_ffi.cc` / `*_ffi.rs`) purely
-    declarative with zero business logic.
+1.  **Minimal 1:1 Shims**: Keep FFI functions (`*_ffi.cc` / `*_ffi.rs`) purely
+    declarative with zero business logic. Every `cpp_*` function must be a
+    single direct call to one C++ method or function; never encode `if`/`else`
+    branching or chain across sub-objects (`disp->sub_object()->Method()`) in a
+    `cpp_*` FFI shim.
 2.  **Naming Conventions**:
    - Rust exposed to C++: `rust_$module_$type_$method`
    - C++ exposed to Rust: `cpp_$namespace_$type_$method`
@@ -519,11 +530,13 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
     cross-language inlining works.`) to remove the annotations once
     cross-language inlining works. Recommend and apply this only for short FFI
     routines.
-8.  **Cross-Object Operations & Facade Safety**: When an operation targets
-    another kernel object type (such as `ThreadDispatcher` or
-    `VmAddressRegionDispatcher`), provide safe wrapper methods directly on that
-    target object's Rust facade (creating the facade and its `*_ffi` files if
-    they do not yet exist). Group the corresponding C++ FFI functions with that
-    object's `*_ffi` files, perform downcasts on the Rust side using
-    `.downcast::<TargetType>()`, and call the facade methods directly from Rust
-    rather than making cross-object FFI calls or C++ helper shims.
+8.  **Cross-Object Operations & Strict 1:1 Facade Parity**: When an operation
+    targets another kernel object type (such as `ThreadDispatcher`,
+    `VmAddressRegionDispatcher`, or an unported helper class owned by a
+    dispatcher), provide safe wrapper methods directly on that target object's
+    Rust facade (creating the facade and its `*_ffi` files if they do not yet
+    exist). Every method on a Rust facade MUST correspond 1:1 to an actual
+    method on that C++ class; never invent synthetic convenience methods on a
+    dispatcher facade that do not exist on the C++ class, and if a dispatcher
+    method returns a pointer/reference to a sub-object, create a Rust facade for
+    that sub-object as well rather than hiding it behind a composite FFI shim.

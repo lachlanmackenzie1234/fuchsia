@@ -335,4 +335,22 @@ unsafe extern "C" {
         process: *const ProcessDispatcher,
         thread: *const ThreadDispatcher,
     );
+
+    /// Returns a pointer to the process's normal `Exceptionate`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_exceptionate(
+        process: *mut ProcessDispatcher,
+    ) -> *mut super::exceptionate::Exceptionate;
+
+    /// Returns a pointer to the process's debug `Exceptionate`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_debug_exceptionate(
+        process: *mut ProcessDispatcher,
+    ) -> *mut super::exceptionate::Exceptionate;
 }
