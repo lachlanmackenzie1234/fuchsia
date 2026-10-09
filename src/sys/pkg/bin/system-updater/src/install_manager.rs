@@ -90,6 +90,7 @@ async fn run<N, U, E>(
         // Now we can actually start the task that manages the update attempt.
         let update_url = &config.update_url.clone();
         let should_write_recovery = config.should_write_recovery;
+        let manifest_range = config.manifest_range;
         let (cancel_sender, cancel_receiver) = oneshot::channel();
         let (attempt_id, attempt_stream) =
             updater.update(config, env, reboot_controller, cancel_receiver).await;
@@ -148,6 +149,7 @@ async fn run<N, U, E>(
                         &attempt_id,
                         update_url,
                         should_write_recovery,
+                        manifest_range,
                         &mut suspend_state,
                         suspend_deadline,
                         &mut cancel_sender,
@@ -229,6 +231,7 @@ async fn handle_active_control_request<N>(
     attempt_id: &str,
     update_url: &http::Uri,
     should_write_recovery: bool,
+    manifest_range: Option<fidl_fuchsia_update_installer_ext::options::Range>,
     suspend_state: &mut SuspendState,
     suspend_deadline: fasync::BootInstant,
     cancel_sender: &mut Option<oneshot::Sender<()>>,
@@ -253,6 +256,7 @@ async fn handle_active_control_request<N>(
                 && config.allow_attach_to_existing_attempt
                 && &config.update_url == update_url
                 && config.should_write_recovery == should_write_recovery
+                && config.manifest_range == manifest_range
             {
                 if let Err(e) = monitor_queue.add_client(monitor).await {
                     warn!("error adding client to monitor queue: {:#}", anyhow!(e));
@@ -1207,6 +1211,27 @@ mod tests {
                         .build()
                         .unwrap(),
                     notifier3,
+                    None
+                )
+                .await,
+            Ok(Err(UpdateNotStartedReason::AlreadyInProgress))
+        );
+
+        // Fails because incompatible configs (i.e. manifest_range is different).
+        let (notifier_range, _state_receiver_range) =
+            FakeStateNotifier::new_callback_and_receiver();
+        assert_eq!(
+            install_manager_ch
+                .start_update(
+                    ConfigBuilder::new()
+                        .allow_attach_to_existing_attempt(true)
+                        .manifest_range(Some(fidl_fuchsia_update_installer_ext::options::Range {
+                            offset: 10,
+                            size: 20,
+                        }))
+                        .build()
+                        .unwrap(),
+                    notifier_range,
                     None
                 )
                 .await,

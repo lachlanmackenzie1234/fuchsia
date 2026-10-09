@@ -92,6 +92,7 @@ pub struct ConfigBuilder<'a> {
     update_url: &'a str,
     should_write_recovery: bool,
     allow_attach_to_existing_attempt: bool,
+    manifest_range: Option<Range>,
 }
 
 #[cfg(test)]
@@ -101,6 +102,7 @@ impl<'a> ConfigBuilder<'a> {
             update_url: "fuchsia-pkg://fuchsia.test/update",
             should_write_recovery: true,
             allow_attach_to_existing_attempt: false,
+            manifest_range: None,
         }
     }
     pub fn update_url(mut self, update_url: &'a str) -> Self {
@@ -118,15 +120,24 @@ impl<'a> ConfigBuilder<'a> {
         self.should_write_recovery = should_write_recovery;
         self
     }
+    pub fn manifest_range(mut self, manifest_range: Option<Range>) -> Self {
+        self.manifest_range = manifest_range;
+        self
+    }
     pub fn build(self) -> Result<Config, anyhow::Error> {
-        let Self { update_url, should_write_recovery, allow_attach_to_existing_attempt } = self;
+        let Self {
+            update_url,
+            should_write_recovery,
+            allow_attach_to_existing_attempt,
+            manifest_range,
+        } = self;
         Ok(Config::new(
             update_url.parse()?,
             Options {
                 allow_attach_to_existing_attempt,
                 should_write_recovery,
                 initiator: ExtInitiator::User,
-                manifest_range: None,
+                manifest_range,
                 manifest_headers: vec![],
             },
         ))
