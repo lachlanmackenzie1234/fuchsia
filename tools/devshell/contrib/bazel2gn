@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Source tree
+#### PREBUILTS=${PREBUILT_BAZEL} ${PREBUILT_BUILDIFIER} ${PREBUILT_GN} ${PREBUILT_JQ} ${PREBUILT_PYTHON3}
 ### Syncs BUILD.gn and BUILD.bazel for targets that are dual-building in both.
 
 ## usage: fx bazel2gn [-d|--directory <path/to/dir>]... [-h|--help] [--no-build]

@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Build
+#### PREBUILTS=${PREBUILT_BINUTILS_DIR} ${PREBUILT_CLANG_DIR} ${PREBUILT_PYTHON3}
 ### Disassembles a given binary in the build.
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
