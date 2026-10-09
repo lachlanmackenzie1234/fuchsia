@@ -75,6 +75,8 @@ unsafe extern "C" {
     fn cpp_thread_name(thread: *const Thread) -> *const c_char;
     fn cpp_thread_process_pending_signals(frame: *mut c_void);
     fn cpp_thread_in_restricted(thread: *mut Thread) -> bool;
+    fn cpp_thread_is_user_thread(thread: *const Thread) -> bool;
+    fn cpp_thread_active_aspace(thread: *mut Thread) -> *mut VmAspace;
     fn cpp_thread_current_restricted_state() -> *mut RestrictedState;
     fn cpp_thread_current_set_restricted_state(raw_rs: *mut RestrictedState);
     fn cpp_thread_current_is_signaled() -> bool;
@@ -735,6 +737,43 @@ pub unsafe fn name(thread: *const Thread) -> *const c_char {
 pub unsafe fn in_restricted(thread: *mut Thread) -> bool {
     // SAFETY: Forwarded to C++ Thread::in_restricted() with caller-verified pointer.
     unsafe { cpp_thread_in_restricted(thread) }
+}
+
+/// Checks whether `thread` is a user thread, i.e. has an associated `ThreadDispatcher`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+pub unsafe fn is_user_thread(thread: *const Thread) -> bool {
+    // SAFETY: Forwarded to C++ Thread::user_thread() with caller-verified pointer.
+    unsafe { cpp_thread_is_user_thread(thread) }
+}
+
+/// Returns the currently active address space of `thread`, which is the address space currently
+/// hosting page tables for the thread.
+///
+/// The active address space should be used only when context switching. It should not be used for
+/// resolving faults, as it may be a unified aspace that does not keep track of its own mappings.
+///
+/// Kernel-only thread -- This will return null, unless a caller has explicitly set the aspace
+/// using `switch_aspace`, which is done by a few kernel unittests.
+///
+/// User thread -- If the thread is in Restricted Mode, this will return the restricted aspace.
+/// Otherwise, it will return the process's normal aspace.
+///
+/// Note, the normal aspace is, by definition, the aspace that's active when a thread is in Normal
+/// Mode. All threads not in Restricted Mode are said to be in Normal Mode. See
+/// `ProcessDispatcher::normal_aspace()` for more information.
+///
+/// Only the thread itself, or the context switch path for the two threads it is switching
+/// between, may read a thread's active aspace without holding a reference to it; see the rules for
+/// `Thread::aspace_` in `kernel/thread.h`.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a valid C++ `Thread` instance that is either the current
+/// thread or one of the two threads of a context switch in progress.
+pub unsafe fn active_aspace(thread: *mut Thread) -> *mut VmAspace {
+    // SAFETY: Forwarded to C++ Thread::active_aspace() with caller-verified pointer.
+    unsafe { cpp_thread_active_aspace(thread) }
 }
 
 /// Returns the current thread's restricted mode state pointer.

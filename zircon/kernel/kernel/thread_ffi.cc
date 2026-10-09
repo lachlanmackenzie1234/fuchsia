@@ -81,6 +81,8 @@ void cpp_thread_dump_current_stack();
 bool cpp_thread_is_user_state_saved_locked(Thread* thread);
 bool cpp_thread_is_running(const Thread* thread);
 const char* cpp_thread_name(const Thread* thread);
+bool cpp_thread_is_user_thread(const Thread* thread);
+VmAspace* cpp_thread_active_aspace(Thread* thread);
 void cpp_thread_process_pending_signals(void* frame);
 VmAspace* cpp_thread_current_active_aspace();
 
@@ -298,6 +300,18 @@ FFI_ALWAYS_INLINE bool cpp_thread_current_check_for_restricted_kick() {
 FFI_ALWAYS_INLINE bool cpp_thread_in_restricted(Thread* thread) {
   DEBUG_ASSERT(thread != nullptr);
   return thread->in_restricted();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_is_user_thread(const Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->user_thread() != nullptr;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_thread_active_aspace(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->active_aspace();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
