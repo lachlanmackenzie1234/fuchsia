@@ -632,11 +632,17 @@ config("debuginfo_debug") {
   rustflags = [ "-Cdebuginfo=2" ]
 }
 
+# LINT.IfChange(dwarf_version)
 config("dwarf_version") {
   cflags = [ "-gdwarf-${dwarf_version}" ]
   asmflags = cflags
   ldflags = cflags
 }
+
+# LINT.ThenChange(
+#    BUILD.bazel:dwarf_version,
+#    dwarf_version.bzl:dwarf_version
+# )
 
 config("compress_debuginfo") {
   if (compress_debuginfo != "none") {

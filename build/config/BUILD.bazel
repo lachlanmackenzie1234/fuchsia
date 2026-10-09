@@ -4,6 +4,7 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
+load(":dwarf_version.bzl", "dwarf_version_build_flags")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -80,3 +81,13 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/BUILD.gn:no_exceptions)
+
+# LINT.IfChange(dwarf_version)
+# This uses a custom rule to extract the value of the
+# dwarf_version at analysis time and generate a target
+# that produces the corresponding BuildFlagsInfo value.
+dwarf_version_build_flags(
+    name = "dwarf_version",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:dwarf_version)
