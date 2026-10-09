@@ -165,8 +165,6 @@
 #define MMU_TCR_EPD0                            BM( 7, 1, 1)
 #define MMU_TCR_T0SZ(size)                      BM( 0, 6, (size))
 
-#define MMU_TCR_EL2_RES1                        (BM(31, 1, 1) | BM(23, 1, 1))
-
 #define MMU_VTCR_EL2_RES1                       BM(31, 1, 1)
 #define MMU_VTCR_EL2_SL0(starting_level)        BM( 6, 2, (starting_level))
 
@@ -198,7 +196,6 @@
 
 // Block/Page attrs
 #define MMU_PTE_ATTR_RES_SOFTWARE               BM(55, 4, 0xf)
-#define MMU_PTE_ATTR_XN                         BM(54, 1, 1) // for single translation regimes
 #define MMU_PTE_ATTR_UXN                        BM(54, 1, 1)
 #define MMU_PTE_ATTR_PXN                        BM(53, 1, 1)
 #define MMU_PTE_ATTR_CONTIGUOUS                 BM(52, 1, 1)
@@ -341,8 +338,6 @@
                         MMU_TCR_ORGN0(MMU_RGN_WRITE_BACK_ALLOCATE) | \
                         MMU_TCR_IRGN0(MMU_RGN_WRITE_BACK_ALLOCATE) | \
                         MMU_TCR_T0SZ(64 - MMU_GUEST_SIZE_SHIFT))
-
-#define MMU_TCR_EL2_FLAGS (MMU_TCR_EL2_RES1 | MMU_TCR_FLAGS0_IDENT)
 
 // See ARM DDI 0487B.b, Table D4-7 for details on how to configure SL0. We chose
 // a starting level of 1, due to our use of a 4KB granule and a 40-bit PARange.
