@@ -15,7 +15,6 @@
 #include <arch/riscv64/riscv64_ffi.h>
 #include <dev/interrupt.h>
 #include <kernel/ffi.h>
-#include <kernel/interrupt.h>
 #include <kernel/thread.h>
 
 extern "C" {
@@ -33,22 +32,12 @@ cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
 
 zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi);
 void cpp_interrupt_init_percpu();
-void cpp_int_handler_start(uint64_t* state);
-uint32_t cpp_int_handler_finish(uint64_t* state);
 
 FFI_ALWAYS_INLINE zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi) {
   return interrupt_send_ipi(cpu_mask, static_cast<mp_ipi>(ipi));
 }
 
 FFI_ALWAYS_INLINE void cpp_interrupt_init_percpu() { interrupt_init_percpu(); }
-
-FFI_ALWAYS_INLINE void cpp_int_handler_start(uint64_t* state) {
-  int_handler_start(reinterpret_cast<int_handler_saved_state_t*>(state));
-}
-
-FFI_ALWAYS_INLINE uint32_t cpp_int_handler_finish(uint64_t* state) {
-  return int_handler_finish(reinterpret_cast<int_handler_saved_state_t*>(state)) ? 1 : 0;
-}
 
 void cpp_print_current_thread_backtrace() {
   Backtrace bt;
