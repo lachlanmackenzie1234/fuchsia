@@ -161,10 +161,6 @@
                 // TODO(https://fxbug.dev/568843829): Populate aio_ring header magic in AioContext::create.
                 "AIOTest.BasicWrite",
 
-                // arch_prctl_test
-                // TODO(https://fxbug.dev/322874054): Implement ARCH_GET_FS.
-                "ArchPrctlTest.GetSetFS",
-
                 // cgroup_test
                 "CPUAcctCgroup.CPUAcctStat",
                 "CPUAcctCgroup.CPUAcctUsage",

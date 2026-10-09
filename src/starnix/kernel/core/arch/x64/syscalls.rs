@@ -26,9 +26,9 @@ use starnix_uapi::signals::{SIGCHLD, SigSet};
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
 use starnix_uapi::vfs::EpollEvent;
 use starnix_uapi::{
-    __kernel_time_t, ARCH_SET_FS, ARCH_SET_GS, AT_REMOVEDIR, AT_SYMLINK_NOFOLLOW, CLONE_VFORK,
-    CLONE_VM, CSIGNAL, ITIMER_REAL, clone_args, errno, error, gid_t, itimerval, pid_t, pollfd,
-    tid_t, uapi, uid_t,
+    __kernel_time_t, ARCH_GET_FS, ARCH_GET_GS, ARCH_SET_FS, ARCH_SET_GS, AT_REMOVEDIR,
+    AT_SYMLINK_NOFOLLOW, CLONE_VFORK, CLONE_VM, CSIGNAL, ITIMER_REAL, clone_args, errno, error,
+    gid_t, itimerval, pid_t, pollfd, tid_t, uapi, uid_t,
 };
 
 pub fn sys_access(
@@ -79,6 +79,16 @@ pub fn sys_arch_prctl(
                 return error!(EPERM);
             }
             current_task.thread_state.registers.gs_base = addr.ptr() as u64;
+            Ok(())
+        }
+        ARCH_GET_FS => {
+            current_task
+                .write_object(UserRef::new(addr), &current_task.thread_state.registers.fs_base)?;
+            Ok(())
+        }
+        ARCH_GET_GS => {
+            current_task
+                .write_object(UserRef::new(addr), &current_task.thread_state.registers.gs_base)?;
             Ok(())
         }
         _ => {
