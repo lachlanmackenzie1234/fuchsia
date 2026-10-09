@@ -151,7 +151,7 @@ resume_context          .req x24
 #if __has_feature(shadow_call_stack)
   ldr shadow_call_sp, [x0] // arm64_sp_info.shadow_call_sp
 #endif
-  add x1, x0, #32 // compute the top of the structure for TPIDR (see arch.cc)
+  add x1, x0, #32 // compute the top of the structure for TPIDR (see secondary.cc)
   msr tpidr_el1, x1
 
   // SP will start at the bottom of this structure growing down.

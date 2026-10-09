@@ -54,6 +54,7 @@
 
 #include <arch.h>
 #include <lib/zbi-format/driver-config.h>
+#include <lib/zx/result.h>
 
 #include <arch/arm64/mp.h>
 #include <dev/power.h>

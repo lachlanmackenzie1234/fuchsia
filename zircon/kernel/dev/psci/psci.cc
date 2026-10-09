@@ -7,6 +7,7 @@
 #include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/zbi-format/driver-config.h>
+#include <lib/zx/result.h>
 #include <string.h>
 #include <trace.h>
 

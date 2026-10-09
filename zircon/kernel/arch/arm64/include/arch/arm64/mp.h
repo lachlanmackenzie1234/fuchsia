@@ -81,7 +81,7 @@ extern "C" void arm64_init_percpu_early();
 // The cold start-up routine for secondary CPUs when starting from an OFF state.
 //
 // |stack| is the pointer to the stack that should be put in SP with a bootstrap
-// payload placed at the top (see arm64_stack_info).
+// payload placed at the top (see arm64_sp_info in secondary.cc).
 extern "C" void arm64_secondary_start(void* stack);
 
 // The start-up routine for secondary CPUs when resuming primary or secondary

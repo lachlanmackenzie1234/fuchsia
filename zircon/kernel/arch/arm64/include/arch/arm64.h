@@ -12,7 +12,6 @@
 
 #include <lib/arch/asm.h>
 #include <lib/arch/intrin.h>
-#include <lib/zx/result.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -92,14 +91,17 @@ inline uint64_t arm64_get_boot_el() { return __arm_rsr64("CurrentEL") >> 2; }
 // have started.
 extern "C" void arm64_allow_pct_in_el0();
 
+// Puts the calling cpu in a working state and reads its feature flags.
+extern "C" void arm64_cpu_early_init();
+
 // Allocates a stack for the secondary cpu with bootstrap data placed on it.
 // Ready to be passed to the cpu when starting it for the first time.
-// Returns a virtual address near the top of the stack just below the bootstrap
-// payload.
-zx::result<uintptr_t> arm64_create_secondary_stack(cpu_num_t cpu_num);
+// On success, |*out| is a virtual address near the top of the stack just below
+// the bootstrap payload.
+extern "C" zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uintptr_t* out);
 
 // Frees a stack created by |arm64_create_secondary_stack|.
-zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
+extern "C" zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num);
 
 // Shortcuts for setting and clearing PSTATE.PAN.
 inline void arm64_enable_pan() { __arm_wsr64("PAN", 1); }

@@ -12,6 +12,7 @@
 #include <lib/ktrace.h>
 #include <lib/root_resource_filter.h>
 #include <lib/zbi-format/driver-config.h>
+#include <lib/zx/result.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>

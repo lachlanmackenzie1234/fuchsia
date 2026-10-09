@@ -110,6 +110,7 @@ if (toolchain_environment == "kernel.phys" ||
       "registers.cc",
       "restricted.cc",
       "secondary.S",
+      "secondary.cc",
       "smccc.S",
       "spinlock.cc",
       "sysreg.cc",
