@@ -456,7 +456,7 @@ extern paddr_t root_lower_page_table_phys;
 
 // use built-in virtual to physical translation instructions to query
 // the physical address of a virtual address
-zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write);
+extern "C" zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write);
 
 void arm64_mmu_early_init();
 

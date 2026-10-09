@@ -82,15 +82,15 @@ void platform_irq(iframe_t* frame);
 arm64_context_switch_frame* arm64_get_context_switch_frame(Thread* thread);
 
 // FPU routines
-void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
-void arm64_fpu_save_state(Thread* t);
-void arm64_fpu_restore_state(const Thread* t);
+extern "C" void arm64_fpu_context_switch(Thread* oldthread, Thread* newthread);
+extern "C" void arm64_fpu_save_state(Thread* t);
+extern "C" void arm64_fpu_restore_state(const Thread* t);
 
 inline uint64_t arm64_get_boot_el() { return __arm_rsr64("CurrentEL") >> 2; }
 
 // Called during clock selection (if it is called at all) before secondary CPUs
 // have started.
-void arm64_allow_pct_in_el0();
+extern "C" void arm64_allow_pct_in_el0();
 
 // Allocates a stack for the secondary cpu with bootstrap data placed on it.
 // Ready to be passed to the cpu when starting it for the first time.
