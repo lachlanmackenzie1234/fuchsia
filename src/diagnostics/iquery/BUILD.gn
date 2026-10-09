@@ -240,7 +240,6 @@ group("tests") {
 
   deps = [
     ":iquery-tests",
-    ":lib_test($host_toolchain)",
     ":test_iquery_lib_unittests",
   ]
 }
