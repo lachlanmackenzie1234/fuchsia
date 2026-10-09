@@ -6,6 +6,7 @@ load(
     "@bazel_skylib//rules:common_settings.bzl",
     "bool_flag",
     "int_flag",
+    "string_flag",
 )
 
 package(default_applicable_licenses = ["//:license"])
@@ -24,3 +25,11 @@ int_flag(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/compiler.gni:dwarf_version)
+
+# LINT.IfChange(compress_debuginfo)
+string_flag(
+    name = "compress_debuginfo",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(//build/config/compiler.gni:compress_debuginfo)

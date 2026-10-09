@@ -644,6 +644,8 @@ config("dwarf_version") {
 #    dwarf_version.bzl:dwarf_version
 # )
 
+# LINT.IfChange(compress_debuginfo)
+
 config("compress_debuginfo") {
   if (compress_debuginfo != "none") {
     gz_flag = "-gz=${compress_debuginfo}"
@@ -662,6 +664,10 @@ config("compress_debuginfo") {
     }
   }
 }
+
+# LINT.ThenChange(
+#   BUILD.bazel:compress_debuginfo,
+#   compress_debuginfo_build_flags.bzl)
 
 compiler_config("default_debuginfo") {
   cflags = []

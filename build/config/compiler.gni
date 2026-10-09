@@ -124,8 +124,12 @@ if (is_gcc) {
 }
 
 declare_args() {
+  # LINT.IfChange(compress_debuginfo)
   # Enable compression of debug sections.
   compress_debuginfo = default_compress_debuginfo
+  # LINT.ThenChange(
+  #    //build/bazel/config/bazel_args:compress_debuginfo,
+  #    //build/bazel/config/variables/BUILD.bazel:compress_debuginfo.bzl)
 }
 
 _compress_debuginfo_valid = [

@@ -4,6 +4,7 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
+load(":compress_debuginfo.bzl", "compress_debuginfo_build_flags")
 load(":dwarf_version.bzl", "dwarf_version_build_flags")
 
 package(default_applicable_licenses = ["//:license"])
@@ -91,3 +92,12 @@ dwarf_version_build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:dwarf_version)
+
+# LINT.IfChange(compress_debuginfo)
+# Use a custom rule which produces a BuildFlagsInfo value that
+# depends on the toolchain-specific compress_debuginfo variable.
+compress_debuginfo_build_flags(
+    name = "compress_debuginfo",
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:compress_debuginfo)
