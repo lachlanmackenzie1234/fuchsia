@@ -577,7 +577,6 @@ foreach(named_env, _all_named_fuchsia_envs) {
 guest_envs = all_fuchsia_envs - [
                aemu_env,
                qemu_env,
-               vim3_env,
              ]
 
 # TODO(https://fxbug.dev/371274109): Unconditionally remove when
