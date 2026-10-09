@@ -6,6 +6,7 @@
 
 #include <bits.h>
 #include <lib/affine/ratio.h>
+#include <lib/arch/arm64/feature.h>
 #include <lib/arch/cache.h>
 #include <lib/page/size.h>
 #include <platform.h>
@@ -34,6 +35,18 @@
     LTRACEF("guest " #sysreg ": %#lx\n", guest_state->system_state.sysreg); \
     next_pc(guest_state);                                                   \
     return zx::ok();                                                        \
+  }
+
+#define READ_SYSREG(val)                     \
+  {                                          \
+    if (!si.read) {                          \
+      return zx::error(ZX_ERR_INVALID_ARGS); \
+    }                                        \
+    if (si.xt < GS_NUM_REGS) {               \
+      guest_state->x[si.xt] = (val);         \
+    }                                        \
+    next_pc(guest_state);                    \
+    return zx::ok();                         \
   }
 
 namespace {
@@ -299,10 +312,60 @@ zx::result<> handle_system_instruction(uint32_t iss, uint64_t& hcr, GuestState* 
       next_pc(guest_state);
       return zx::ok();
     }
-    default:
-      dprintf(CRITICAL, "hypervisor: Unhandled guest system register %#x access\n",
-              static_cast<uint16_t>(si.sysreg));
+    case SystemRegister::ID_AA64PFR0_EL1:
+      // Disable SCXTNUM_EL0/EL1 (HCR_EL2.ENSCXT = 0), SVE, AMU, and MPAM.
+      READ_SYSREG(arch::ArmIdAa64Pfr0El1::Read()
+                      .set_csv2(arch::ArmIdAa64Pfr0El1::Csv2::kNone)
+                      .set_amu(arch::ArmIdAa64Pfr0El1::Amu::kNone)
+                      .set_mpam(arch::ArmIdAa64Pfr0El1::Mpam::kNone)
+                      .set_sve(arch::ArmIdAa64Pfr0El1::Sve::kNone)
+                      .reg_value());
+    case SystemRegister::ID_AA64PFR1_EL1:
+      // Disable MTE (HCR_EL2.ATA = 0), SCXTNUM_EL0/EL1 (HCR_EL2.ENSCXT = 0), SME, GCS, and THE.
+      READ_SYSREG(arch::ArmIdAa64Pfr1El1::Read()
+                      .set_mtex(arch::ArmIdAa64Pfr1El1::Mtex::kNone)
+                      .set_the(arch::ArmIdAa64Pfr1El1::The::kNone)
+                      .set_gcs(arch::ArmIdAa64Pfr1El1::Gcs::kNone)
+                      .set_mte_frac(arch::ArmIdAa64Pfr1El1::Mte_frac::kNone)
+                      .set_csv2_frac(arch::ArmIdAa64Pfr1El1::Csv2_frac::kNone)
+                      .set_sme(arch::ArmIdAa64Pfr1El1::Sme::kNone)
+                      .set_mte(arch::ArmIdAa64Pfr1El1::Mte::kNone)
+                      .reg_value());
+    case SystemRegister::ID_AA64DFR0_EL1:
+      READ_SYSREG(__arm_rsr64("id_aa64dfr0_el1"));
+    case SystemRegister::ID_AA64ISAR0_EL1:
+      READ_SYSREG(arch::ArmIdAa64IsaR0El1::Read().reg_value());
+    case SystemRegister::ID_AA64ISAR1_EL1:
+      // Disable Pointer Authentication (HCR_EL2.APK = 0, HCR_EL2.API = 0).
+      READ_SYSREG(arch::ArmIdAa64IsaR1El1::Read()
+                      .set_gpi(arch::ArmIdAa64IsaR1El1::Gpi::kNone)
+                      .set_gpa(arch::ArmIdAa64IsaR1El1::Gpa::kNone)
+                      .set_api(arch::ArmIdAa64IsaR1El1::Pauth::kNone)
+                      .set_apa(arch::ArmIdAa64IsaR1El1::Pauth::kNone)
+                      .reg_value());
+    case SystemRegister::ID_AA64ISAR2_EL1:
+      // Disable Pointer Authentication (HCR_EL2.APK = 0, HCR_EL2.API = 0).
+      READ_SYSREG(arch::ArmIdAa64IsaR2El1::Read()
+                      .set_pac_frac(arch::ArmIdAa64IsaR2El1::Pac_frac::kNone)
+                      .set_apa3(arch::ArmIdAa64IsaR2El1::Apa3::kNone)
+                      .set_gpa3(arch::ArmIdAa64IsaR2El1::Gpa3::kNone)
+                      .reg_value());
+    case SystemRegister::ID_AA64MMFR0_EL1:
+      READ_SYSREG(arch::ArmIdAa64Mmfr0El1::Read().reg_value());
+    case SystemRegister::ID_AA64MMFR1_EL1:
+      READ_SYSREG(arch::ArmIdAa64Mmfr1El1::Read().reg_value());
+    case SystemRegister::ID_AA64MMFR2_EL1:
+      READ_SYSREG(arch::ArmIdAa64Mmfr2El1::Read().reg_value());
+    default: {
+      // Other Group 3 ID registers trapped by HCR_EL2.TID3 (Op0=3, Op1=0, CRn=0, CRm=1..7)
+      // are Read-As-Zero (RAZ).
+      const uint16_t raw = static_cast<uint16_t>(si.sysreg);
+      if ((raw & 0xc7f0) == 0xc000 && (raw & 0x000f) >= 1 && (raw & 0x000f) <= 7) {
+        READ_SYSREG(0);
+      }
+      dprintf(CRITICAL, "hypervisor: Unhandled guest system register %#x access\n", raw);
       return zx::error(ZX_ERR_NOT_SUPPORTED);
+    }
   }
 }
 

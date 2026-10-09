@@ -94,6 +94,17 @@ enum class SystemRegister : uint16_t {
   DC_ISW          = 0b01010000 << 8 /* op */ | 0b01110110 /* cr */,
   DC_CISW         = 0b01010000 << 8 /* op */ | 0b01111110 /* cr */,
   DC_CSW          = 0b01010000 << 8 /* op */ | 0b01111010 /* cr */,
+
+  // Feature ID Registers, trapped by HCR_EL2.TID3 = 1
+  ID_AA64PFR0_EL1  = 0b11000000 << 8 /* op */ | 0b00000100 /* cr */,
+  ID_AA64PFR1_EL1  = 0b11001000 << 8 /* op */ | 0b00000100 /* cr */,
+  ID_AA64DFR0_EL1  = 0b11000000 << 8 /* op */ | 0b00000101 /* cr */,
+  ID_AA64ISAR0_EL1 = 0b11000000 << 8 /* op */ | 0b00000110 /* cr */,
+  ID_AA64ISAR1_EL1 = 0b11001000 << 8 /* op */ | 0b00000110 /* cr */,
+  ID_AA64ISAR2_EL1 = 0b11010000 << 8 /* op */ | 0b00000110 /* cr */,
+  ID_AA64MMFR0_EL1 = 0b11000000 << 8 /* op */ | 0b00000111 /* cr */,
+  ID_AA64MMFR1_EL1 = 0b11001000 << 8 /* op */ | 0b00000111 /* cr */,
+  ID_AA64MMFR2_EL1 = 0b11010000 << 8 /* op */ | 0b00000111 /* cr */,
 };
 
 // clang-format on
