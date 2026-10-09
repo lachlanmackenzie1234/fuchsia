@@ -114,9 +114,7 @@ void VmAspace::KernelAspaceInitPreHeap() TA_NO_THREAD_SAFETY_ANALYSIS {
   g_kernel_aspace.Initialize(KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, VmAspace::Type::Kernel,
                              CreateAslrConfig(VmAspace::Type::Kernel), "kernel");
 
-#if LK_DEBUGLEVEL > 1
   g_kernel_aspace->Adopt();
-#endif
 
   g_kernel_root_vmar.Initialize(g_kernel_aspace.Get());
   g_kernel_aspace->root_vmar_ = fbl::AdoptRef(&g_kernel_root_vmar.Get());
