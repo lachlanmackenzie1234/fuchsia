@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::security::selinux_hooks::{
-    CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, ProcessPermission,
-    build_permission_check, check_permission, check_self_permission, current_task_state,
-    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
-    has_file_permissions, is_internal_operation, permissions_from_flags, task_consistent_attrs,
+    CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, PermissionFlagsVec,
+    ProcessPermission, build_permission_check, check_permission, check_self_permission,
+    current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
+    fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
+    permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, Auditable, ProcAttr, SecurityId, SecurityServer};
 use crate::task::loader::ResolvedProgram;
@@ -93,10 +94,14 @@ fn close_inaccessible_file_descriptors(
     // `[child-process] [fd-from-child-fd-table]:fd { use }`,
     // or for any of the file permissions associated with the file mode and flags.
     current_task.files().remap(current_task, |file| {
-        let permissions = permissions_from_flags(
-            file.flags().into(),
-            fs_node_effective_sid_and_class(file.node()).class,
-        );
+        let permissions = if file.node().is_private() {
+            PermissionFlagsVec::new()
+        } else {
+            permissions_from_flags(
+                file.flags().into(),
+                fs_node_effective_sid_and_class(file.node()).class,
+            )
+        };
         let permission_result = has_file_permissions(
             &permission_check,
             current_task,

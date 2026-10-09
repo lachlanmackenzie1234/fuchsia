@@ -440,6 +440,12 @@
             ]
         },
         {
+            "name": "FcntlOrderingTest.ClearAppendChecksFdUse",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
             "name": "FcntlOrderingTest.SetLeaseChecksMacBeforeArgs",
             "audit_expectations": [
                 "avc:  denied  { use } for path=2F746D702F2333202864656C6574656429 dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
