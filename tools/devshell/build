@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Build
+#### PREBUILTS=${PREBUILT_BAZEL} ${PREBUILT_GN} ${PREBUILT_JQ} ${PREBUILT_NINJA} ${PREBUILT_PYTHON3}
 ### Run Ninja to build Fuchsia
 
 ## usage: fx build [options] [LABELS_OR_TARGETS]... [-- EXTRA_OPTIONS...]

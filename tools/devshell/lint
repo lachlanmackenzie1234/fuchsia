@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Source tree
+#### PREBUILTS=${PREBUILT_BLACK_DIR} ${PREBUILT_BUILDIFIER} ${PREBUILT_CLANG_DIR} ${PREBUILT_DART_DIR} ${PREBUILT_GN} ${PREBUILT_GO_DIR} ${PREBUILT_KEEP_SORTED} ${PREBUILT_PYTHON3} ${PREBUILT_RUST_DIR} ${PREBUILT_SHAC}
 ### runs static analysis checks on modified files
 
 ## Usage: fx lint
