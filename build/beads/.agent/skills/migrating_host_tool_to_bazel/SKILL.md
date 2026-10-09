@@ -53,11 +53,17 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
 2. Refer to [`build_bazel_header_template.md`](../../../../bazel/references/build_bazel_header_template.md) to add the copyright header and `package(default_applicable_licenses = ["//:license"])` declaration.
    - **NOTE:** Place `package(...)` after any `load(...)` statements, as required by Bazel syntax.
 
-3. Refer to language-specific guides and examples to create bazel targets in
-   the BUILD.bazel file.
+3. Refer to the language-specific guide to create Bazel targets in the
+   BUILD.bazel file:
    - [Go Migration Guide](references/go_migration.md)
    - [Rust](references/rust_migration.md)
+
+   These references apply to all languages:
    - [Determining Bazel Visibility](../determining_bazel_visibility/SKILL.md)
+   - [Common Attribute Mappings](../../../references/common_attribute_mappings.md)
+   - [Target Platform Constraints](../../../references/target_compatible_with.md)
+   - [Bazel Style Guide](../../../../../docs/development/languages/bazel/style/README.md)
+   - [Build Configuration Variables](../../../../bazel/config/BUILD_CONFIGURATION_VARIABLES.md)
 
 ## Phase 3: Add bazel_host_tool() target
 

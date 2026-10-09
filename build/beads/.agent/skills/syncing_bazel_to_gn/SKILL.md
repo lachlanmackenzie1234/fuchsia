@@ -51,6 +51,17 @@ the Bazel targets to GN:
     fx build --host //build:bazel2gn_verifications
     ```
 
+## Shared Lists
+
+If several targets share a list of deps or sources through a top-level
+variable, annotate the variable with `# @bazel2gn:transformer=deps` or
+`# @bazel2gn:transformer=file_paths`. Without it, `bazel2gn` copies the list
+verbatim and skips the label and path rewrites it applies to target
+attributes. Add the annotation even if the list doesn't need rewriting today,
+so a later dep that does need it is still translated. See
+`@bazel2gn:transformer` in the
+[`bazel2gn` README](../../../../../tools/bazel2gn/README.md).
+
 ## Third-Party Dependency Translation
 
 `bazel2gn` automatically translates Bazel external repository targets (such as

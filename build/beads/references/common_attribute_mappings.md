@@ -38,8 +38,18 @@ Except for the file-level copyright header, **you must copy all comments from th
 
 ---
 
+## `testonly`
+
+Don't copy GN's `testonly` onto a Bazel target without checking what uses it. GN marks many targets `testonly` that still ship, such as "eng" assembly inputs. In Bazel, nothing that goes into an assembly input bundle, the IDK, or the SDK can be `testonly`, because product assembly can't be. The GN/Bazel boundary drops `testonly`, so GN won't catch the mistake; it shows up later as a broken assembly.
+
+Bazel test rules (`*_test`) and `test_suite()` are implicitly `testonly`, so don't set it on them. Do set `testonly = True` on other targets that only tests use, such as test helper libraries.
+
+---
+
 ## Related Skills and Scoping
 
 - **Target Visibility:** For determining appropriate visibility and translating visibility declarations from GN to Bazel, follow the [`determining-bazel-visibility`](../.agent/skills/determining_bazel_visibility/SKILL.md) skill.
 - **Host Tool Platform Constraints:** For setting `target_compatible_with`, refer to [`target_compatible_with.md`](target_compatible_with.md).
 - **Syncing to GN:** For syncing library targets back to GN when unmigrated dependers remain, follow [`syncing-bazel-to-gn`](../.agent/skills/syncing_bazel_to_gn/SKILL.md).
+- **General Bazel Style:** For writing rules, macros, and `BUILD.bazel` files, follow the [Bazel style guide](../../../docs/development/languages/bazel/style/README.md).
+- **GN Build Arguments:** For reading GN build arguments from Bazel, see [`BUILD_CONFIGURATION_VARIABLES.md`](../../bazel/config/BUILD_CONFIGURATION_VARIABLES.md).

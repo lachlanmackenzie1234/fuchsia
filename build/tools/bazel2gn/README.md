@@ -261,9 +261,15 @@ source_set("foo") {
 This annotation tells `bazel2gn` to apply a transformer to the annotated
 statement. It is useful for controlling the conversion process.
 
+`bazel2gn` knows which attributes of a target hold labels or file paths, but it
+can't tell what a top-level variable holds, so it copies variables verbatim.
+Annotate shared lists of deps or sources with a transformer so that `bazel2gn`
+converts them the same way it would convert the attribute directly.
+
 **Example:**
 
 ```bzl
+# @bazel2gn:transformer=deps
 COMMON_DEPS = ["//third_party/rust_crates/vendor:lock_api"]
 ```
 
