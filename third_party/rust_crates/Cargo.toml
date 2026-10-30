@@ -256,7 +256,7 @@ test-case = "3.4.0"
 textwrap = { version = "0.16.4", default-features = false }
 thiserror = "2.0.21"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
-toml = "1.1.6"
+toml = "1.1.8"
 toml_edit = "0.24.0"
 tower-service = "0.3"
 tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes", "log"] }
