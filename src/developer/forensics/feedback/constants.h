@@ -115,8 +115,6 @@ constexpr zx::duration kSystemTimeTrackerWritePeriod = zx::min(1);
 
 constexpr size_t kRedactionIdCacheCapacity = 1500;
 
-constexpr bool kEnableDiskBackedCurrentBootLogs = true;
-
 }  // namespace forensics::feedback
 
 #endif  // SRC_DEVELOPER_FORENSICS_FEEDBACK_CONSTANTS_H_

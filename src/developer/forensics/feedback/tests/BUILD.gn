@@ -540,28 +540,6 @@ cc_test_executable("stop_signals_unittest_exe") {
   ]
 }
 
-cc_test_executable("system_log_unittest_exe") {
-  testonly = true
-
-  sources = [ "system_log_unittest.cc" ]
-
-  deps = [
-    "//src/developer/forensics/feedback/attachments",
-    "//src/developer/forensics/feedback/attachments:system_log",
-    "//src/developer/forensics/feedback_data:constants",
-    "//src/developer/forensics/testing:gmatchers",
-    "//src/developer/forensics/testing:gpretty_printers",
-    "//src/developer/forensics/testing:gtest_with_syslog_main",
-    "//src/developer/forensics/testing:unit_test_fixture",
-    "//src/developer/forensics/testing/stubs:diagnostics",
-    "//src/developer/forensics/utils:errors",
-    "//src/developer/forensics/utils/redact",
-    "//src/lib/timekeeper:testing",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 cc_test_executable("system_time_tracker_unittest_exe") {
   testonly = true
 
@@ -798,13 +776,6 @@ fuchsia_unittest_component("stop_signals_unittest") {
   deps = [ ":stop_signals_unittest_exe" ]
 }
 
-fuchsia_unittest_component("system_log_unittest") {
-  deps = [
-    ":system_log_unittest_exe",
-    "//src/sys/test_runners/gtest:death_test",
-  ]
-}
-
 fuchsia_unittest_component("system_time_tracker_unittest") {
   deps = [
     ":system_time_tracker_unittest_exe",
@@ -856,7 +827,6 @@ fuchsia_test_package("feedback-tests") {
     ":redactor_factory_unittest",
     ":startup_annotations_unittest",
     ":stop_signals_unittest",
-    ":system_log_unittest",
     ":system_time_tracker_unittest",
     ":target_channel_provider_unittest",
     ":time_provider_unittest",
