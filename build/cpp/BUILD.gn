@@ -44,14 +44,6 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/connectivity/network/tun/network-tun:network_tun_unittest",
-
-    #------------------
-    #------------------
-    "//src/connectivity/network/tun/network-tun:src",
-
-    #------------------
-    #------------------
     "//src/developer/forensics/crasher/cpp:crasher_exe",
 
     #------------------
