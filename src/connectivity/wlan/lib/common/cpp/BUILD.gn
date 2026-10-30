@@ -74,8 +74,7 @@ source_set("common") {
   }
 }
 
-executable("mcs_rate_lookup_test") {
-  testonly = true
+test("mcs_rate_lookup_test") {
   sources = [ "mcs_rate_lookup_test.cc" ]
   deps = [
     ":common",
@@ -94,8 +93,7 @@ fuchsia_unittest_package("mcs_rate_lookup_tests") {
   ]
 }
 
-executable("wlan_cpp_bitfield_test") {
-  testonly = true
+test("wlan_cpp_bitfield_test") {
   sources = [ "bitfield_test.cc" ]
   deps = [
     ":common",

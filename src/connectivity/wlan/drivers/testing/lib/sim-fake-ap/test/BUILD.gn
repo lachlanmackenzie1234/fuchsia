@@ -27,8 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-executable("assoc_unittests") {
-  testonly = true
+test("assoc_unittests") {
   sources = [ "assoc_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -39,8 +38,7 @@ executable("assoc_unittests") {
   ]
 }
 
-executable("auth_unittests") {
-  testonly = true
+test("auth_unittests") {
   sources = [ "auth_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -51,8 +49,7 @@ executable("auth_unittests") {
   ]
 }
 
-executable("beacon_unittests") {
-  testonly = true
+test("beacon_unittests") {
   sources = [ "beacon_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -64,8 +61,7 @@ executable("beacon_unittests") {
   ]
 }
 
-executable("data_unittests") {
-  testonly = true
+test("data_unittests") {
   sources = [ "data_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -76,8 +72,7 @@ executable("data_unittests") {
   ]
 }
 
-executable("probe_unittests") {
-  testonly = true
+test("probe_unittests") {
   sources = [ "probe_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [

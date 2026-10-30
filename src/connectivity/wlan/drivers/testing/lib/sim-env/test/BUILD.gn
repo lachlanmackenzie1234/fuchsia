@@ -27,8 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-executable("event_unittests") {
-  testonly = true
+test("event_unittests") {
   sources = [ "event_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -38,8 +37,7 @@ executable("event_unittests") {
   ]
 }
 
-executable("rx_tests") {
-  testonly = true
+test("rx_tests") {
   sources = [ "rx_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -50,8 +48,7 @@ executable("rx_tests") {
   ]
 }
 
-executable("frame_ie_tests") {
-  testonly = true
+test("frame_ie_tests") {
   sources = [ "frame_ie_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -62,8 +59,7 @@ executable("frame_ie_tests") {
   ]
 }
 
-executable("location_tests") {
-  testonly = true
+test("location_tests") {
   sources = [ "location_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -74,8 +70,7 @@ executable("location_tests") {
   ]
 }
 
-executable("trans_time_tests") {
-  testonly = true
+test("trans_time_tests") {
   sources = [ "trans_time_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
