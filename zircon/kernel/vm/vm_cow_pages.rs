@@ -79,7 +79,8 @@ impl VmCowRange {
         VmCowRange::new(self.offset + delta, self.len)
     }
 
-    /// Trims `amount` bytes from the start of the range. The caller must ensure `amount <= self.len`.
+    /// Trims `amount` bytes from the start of the range. The caller must ensure
+    /// `amount <= self.len`.
     #[inline]
     pub const fn trimmed_from_start(self, amount: u64) -> VmCowRange {
         debug_assert!(amount <= self.len);

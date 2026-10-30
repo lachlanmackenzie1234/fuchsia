@@ -102,4 +102,61 @@ void cpp_page_source_dump(const PageSource* page_source, uint32_t depth, uint32_
   page_source->Dump(depth, max_items);
 }
 
+FFI_ALWAYS_INLINE AnonymousPageRequest* cpp_multi_page_request_get_anonymous(
+    MultiPageRequest* req) {
+  return req->GetAnonymous();
+}
+
+FFI_ALWAYS_INLINE PageRequest* cpp_multi_page_request_get_read_request(MultiPageRequest* req) {
+  return req->GetReadRequest();
+}
+
+FFI_ALWAYS_INLINE LazyPageRequest* cpp_multi_page_request_get_lazy_dirty_request(
+    MultiPageRequest* req) {
+  return req->GetLazyDirtyRequest();
+}
+
+FFI_ALWAYS_INLINE void cpp_multi_page_request_made_dirty_request(MultiPageRequest* req) {
+  req->MadeDirtyRequest();
+}
+
+FFI_ALWAYS_INLINE PageRequest* cpp_lazy_page_request_get(LazyPageRequest* req) {
+  return req->get();
+}
+
+__PURE FFI_ALWAYS_INLINE bool cpp_lazy_page_request_is_initialized(const LazyPageRequest* req) {
+  return req->is_initialized();
+}
+
+__PURE FFI_ALWAYS_INLINE PageSourceProperties
+cpp_page_source_properties(const PageSource* page_source) {
+  return page_source->properties();
+}
+
+__PURE FFI_ALWAYS_INLINE bool cpp_page_source_should_trap_dirty_transitions(
+    const PageSource* page_source) {
+  return page_source->ShouldTrapDirtyTransitions();
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_page_source_get_pages(PageSource* page_source, uint64_t offset,
+                                                        uint64_t len, PageRequest* req,
+                                                        VmoDebugInfo vmo_debug_info) {
+  return page_source->GetPages(offset, len, req, vmo_debug_info);
+}
+
+FFI_ALWAYS_INLINE zx_status_t
+cpp_page_source_request_dirty_transition(PageSource* page_source, PageRequest* req, uint64_t offset,
+                                         uint64_t len, VmoDebugInfo vmo_debug_info) {
+  return page_source->RequestDirtyTransition(req, offset, len, vmo_debug_info);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_source_on_pages_supplied(PageSource* page_source, uint64_t offset,
+                                                         uint64_t len) {
+  page_source->OnPagesSupplied(offset, len);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_source_on_pages_dirtied(PageSource* page_source, uint64_t offset,
+                                                        uint64_t len) {
+  page_source->OnPagesDirtied(offset, len);
+}
 }  // extern "C"

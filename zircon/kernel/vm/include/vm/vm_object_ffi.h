@@ -154,6 +154,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range_untracked(VmObject* vmo, 
                                                                  uint64_t len);
 FFI_ALWAYS_INLINE void cpp_vm_object_set_user_stream_size(VmObject* vmo, StreamSizeManager* ssm);
 
+void cpp_vm_object_get_name_locked(const VmObject* vmo, char* out_name, size_t len);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_FFI_H_

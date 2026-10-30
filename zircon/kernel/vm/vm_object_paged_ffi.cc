@@ -148,4 +148,14 @@ FFI_ALWAYS_INLINE void cpp_vm_object_paged_mark_modified_locked(VmObjectPaged* v
   vmo->mark_modified_locked();
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_object_paged_range_change_update_locked(
+    VmObjectPaged* vmo, uint64_t offset, uint64_t len, VmObject::RangeChangeOp op)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmo->RangeChangeUpdateLocked(VmCowRange(offset, len), op);
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_object_paged_can_dedup_zero_pages_locked(VmObjectPaged* vmo)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return vmo->CanDedupZeroPagesLocked();
+}
 }  // extern "C"

@@ -945,12 +945,28 @@ kernel_bindgen_crate("anonymous-page-request-bindings") {
     "cpp_anonymous_page_request_construct",
     "cpp_anonymous_page_request_destroy",
     "cpp_anonymous_page_request_cancel",
+    "cpp_anonymous_page_request_make_active",
+    "cpp_anonymous_page_request_allocate",
+    "cpp_anonymous_page_request_has_page",
+    "cpp_anonymous_page_request_take_page",
   ]
   type_allowlist = [ "AnonymousPageRequest" ]
+  type_blocklist = [
+    "vm_page_t",
+    "zx_status_t",
+  ]
   opaque_types = [ "AnonymousPageRequest" ]
   function_blocklist = [ "AnonymousPageRequest_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  raw_lines = [ "#![no_std]" ]
+  deps = [
+    ":page-bindings",
+    "//sdk/rust/zx-types",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "use page_bindings::vm_page_t;",
+    "use zx_types::zx_status_t;",
+  ]
 }
 
 kernel_bindgen_crate("page-source-bindings") {
@@ -967,6 +983,12 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_multi_page_request_destroy",
     "cpp_multi_page_request_cancel_requests",
     "cpp_multi_page_request_wait",
+    "cpp_multi_page_request_get_anonymous",
+    "cpp_multi_page_request_get_read_request",
+    "cpp_multi_page_request_get_lazy_dirty_request",
+    "cpp_multi_page_request_made_dirty_request",
+    "cpp_lazy_page_request_get",
+    "cpp_lazy_page_request_is_initialized",
     "cpp_page_request_get_type",
     "cpp_page_request_get_offset",
     "cpp_page_request_get_len",
@@ -978,30 +1000,47 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_page_source_is_valid_internal_failure_code",
     "cpp_page_source_paged_vmo_lock_is_held",
     "cpp_page_source_dump",
+    "cpp_page_source_properties",
+    "cpp_page_source_should_trap_dirty_transitions",
+    "cpp_page_source_get_pages",
+    "cpp_page_source_request_dirty_transition",
+    "cpp_page_source_on_pages_supplied",
+    "cpp_page_source_on_pages_dirtied",
   ]
   type_allowlist = [
+    "LazyPageRequest",
     "MultiPageRequest",
     "PageRequest",
     "PageSource",
     "PageSourceProperties",
+    "VmoDebugInfo",
     "page_request_type",
   ]
-  type_blocklist = [ "zx_status_t" ]
+  type_blocklist = [
+    "AnonymousPageRequest",
+    "zx_status_t",
+  ]
   opaque_types = [
+    "LazyPageRequest",
     "MultiPageRequest",
     "PageRequest",
     "PageSource",
   ]
   rustified_enum = [ "page_request_type" ]
   function_blocklist = [
+    "LazyPageRequest_.*",
     "MultiPageRequest_.*",
     "PageRequest_.*",
     "PageSource_.*",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  deps = [ "//sdk/rust/zx-types" ]
+  deps = [
+    ":anonymous-page-request-bindings",
+    "//sdk/rust/zx-types",
+  ]
   raw_lines = [
     "#![no_std]",
+    "pub use anonymous_page_request_bindings::AnonymousPageRequest;",
     "pub use zx_types::zx_status_t;",
   ]
   expect_lints = [
@@ -1071,6 +1110,7 @@ kernel_bindgen_crate("vm-object-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_vm_object_add_mapping_locked",
+    "cpp_vm_object_get_name_locked",
     "cpp_vm_object_commit_high_priority_pages",
     "cpp_vm_object_commit_range",
     "cpp_vm_object_decommit_range",
@@ -1151,6 +1191,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_CacheOpType",
     "VmObject_ChildType",
     "VmObject_LookupFunction",
+    "VmObject_RangeChangeOp",
     "VmObjectChildObserver",
     "VmObjectReadWriteOptions",
     "arch_mmu_flags_t",
@@ -1175,7 +1216,6 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_MappingKey",
     "VmObject_MappingTree",
     "VmObject_OnWriteBytesTransferredCallback",
-    "VmObject_RangeChangeOp",
   ]
   opaque_types = [
     "StreamSizeManager",
@@ -1190,6 +1230,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_CacheOpType",
     "VmObject_ChildType",
     "VmObject_EvictionHint",
+    "VmObject_RangeChangeOp",
   ]
   function_blocklist = [ "VmObject_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
@@ -1232,6 +1273,8 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   notice_year = 2026
   function_allowlist = [
     "cpp_vm_object_as_vm_object_paged",
+    "cpp_vm_object_paged_range_change_update_locked",
+    "cpp_vm_object_paged_can_dedup_zero_pages_locked",
     "cpp_vm_object_paged_as_vm_object",
     "cpp_vm_object_paged_cow_pages",
     "cpp_vm_object_paged_lock_order",
@@ -1261,6 +1304,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "PageSource",
     "VmCowPages",
     "VmObject",
+    "VmObject_RangeChangeOp",
     "vm_page_t",
     "zx_status_t",
   ]
@@ -1296,7 +1340,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
     "use page_bindings::vm_page_t;",
     "use page_source_bindings::PageSource;",
     "use vm_cow_pages_bindings::VmCowPages;",
-    "use vm_object_bindings::VmObject;",
+    "use vm_object_bindings::{VmObject, VmObject_RangeChangeOp};",
     "use zx_types::zx_status_t;",
   ]
 }

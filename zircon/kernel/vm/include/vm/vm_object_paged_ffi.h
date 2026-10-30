@@ -50,6 +50,9 @@ zx_status_t cpp_vm_object_paged_get_lookup_cursor_locked(
     uint64_t max_len);
 void cpp_vm_object_paged_mark_modified_locked(VmObjectPaged* vmo);
 
+void cpp_vm_object_paged_range_change_update_locked(VmObjectPaged* vmo, uint64_t offset,
+                                                    uint64_t len, VmObject::RangeChangeOp op);
+bool cpp_vm_object_paged_can_dedup_zero_pages_locked(VmObjectPaged* vmo);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_PAGED_FFI_H_

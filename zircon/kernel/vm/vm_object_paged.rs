@@ -7,8 +7,10 @@
 use super::page::VmPagePtr;
 use super::page_source::PageSource;
 use super::stream_size_manager::StreamSizeManager;
-use super::vm_cow_pages::{DeferredOps, LookupCursor, PriorityChanger, VmCowPages};
-use super::vm_object::{VmObject, VmObjectLockClass, VmObjectReadWriteOptions};
+use super::vm_cow_pages::{
+    DeferredOps, LookupCursor, PriorityChanger, VmCowPages, VmCowPagesLockClass, VmCowRange,
+};
+use super::vm_object::{RangeChangeOp, VmObject, VmObjectLockClass, VmObjectReadWriteOptions};
 use crate::user_copy::{UserInIovec, UserOutIovec};
 use core::marker::PhantomPinned;
 use core::mem::ManuallyDrop;
@@ -495,6 +497,43 @@ impl VmObjectPaged {
         }
 
         Some(::page::round_up(user_stream_size as usize) as u64)
+    }
+
+    /// Apply the specified operation to all mappings in the given range.
+    ///
+    /// Preconditions
+    /// * This range may not include pages mapped in the kernel address space without the
+    ///   VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING flag.
+    /// * `range` must be page-aligned.
+    #[inline]
+    pub fn range_change_update_locked(
+        &self,
+        range: VmCowRange,
+        op: RangeChangeOp,
+        _token: &LockToken<'_, VmCowPagesLockClass>,
+    ) {
+        // SAFETY: `self.as_raw()` points to a valid `VmObjectPaged`. The caller holds the
+        // `VmCowPages` lock, which is the underlying lock shared by `VmObjectPaged` and its
+        // `VmCowPages`.
+        unsafe {
+            bindings::cpp_vm_object_paged_range_change_update_locked(
+                self.as_raw(),
+                range.offset,
+                range.len,
+                op,
+            )
+        }
+    }
+
+    /// Returns whether or not zero pages can be safely deduped from this VMO. Zero pages cannot be
+    /// deduped if the VMO is in use for kernel mappings, or if the pages cannot be accessed
+    /// from the physmap due to not being cached.
+    #[inline]
+    pub fn can_dedup_zero_pages_locked(&self, _token: &LockToken<'_, VmCowPagesLockClass>) -> bool {
+        // SAFETY: `self.as_raw()` points to a valid `VmObjectPaged`. The caller holds the
+        // `VmCowPages` lock, which is the underlying lock shared by `VmObjectPaged` and its
+        // `VmCowPages`.
+        unsafe { bindings::cpp_vm_object_paged_can_dedup_zero_pages_locked(self.as_raw()) }
     }
 }
 

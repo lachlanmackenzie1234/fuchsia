@@ -35,7 +35,8 @@ use zx_types::{ZX_KOID_INVALID, zx_koid_t, zx_pager_vmo_stats_t, zx_status_t};
 
 pub use bindings::{
     Resizability, SnapshotType, VmObject_CacheOpType as CacheOpType,
-    VmObject_ChildType as ChildType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
+    VmObject_ChildType as ChildType, VmObject_EvictionHint as EvictionHint,
+    VmObject_RangeChangeOp as RangeChangeOp, VmObjectChildObserver,
 };
 pub use zx_types::zx_vmo_lock_state_t;
 
@@ -181,8 +182,8 @@ impl VmObject {
 
     #[inline]
     pub fn lock_ref(&self) -> &VmObjectMutex {
-        // SAFETY: The pointer returned by cpp_vm_object_lock is valid for reads for the lifetime of
-        // self.
+        // SAFETY: The pointer returned by cpp_vm_object_lock is valid for reads for the lifetime
+        // of self.
         unsafe { &*bindings::cpp_vm_object_lock(self.as_raw()).cast::<VmObjectMutex>() }
     }
 
@@ -226,7 +227,23 @@ impl VmObject {
         }
     }
 
+    /// Retrieve the name of the object.
+    #[inline]
+    pub fn get_name_locked(&self, out_name: &mut [u8], _token: &LockToken<'_, VmObjectLockClass>) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer and `out_name` points to
+        // `out_name.len()` bytes of valid memory. The caller holds the VMO lock.
+        unsafe {
+            bindings::cpp_vm_object_get_name_locked(
+                self.as_raw(),
+                out_name.as_mut_ptr().cast(),
+                out_name.len(),
+            );
+        }
+    }
+
     /// Sets the child observer for the VMO.
+    ///
+    /// The associated VmObjectDispatcher will set an observer to notify user mode.
     ///
     /// # Safety
     ///

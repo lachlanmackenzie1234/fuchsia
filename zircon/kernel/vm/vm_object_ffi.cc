@@ -113,6 +113,7 @@ FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const 
 
 FFI_ALWAYS_INLINE arch_mmu_flags_t
 cpp_vm_object_get_mapping_cache_policy_locked(const VmObject* vmo) TA_NO_THREAD_SAFETY_ANALYSIS {
+  AssertHeld(vmo->lock_ref());
   return vmo->GetMappingCachePolicyLocked();
 }
 
@@ -376,4 +377,8 @@ FFI_ALWAYS_INLINE void cpp_vm_object_commit_high_priority_pages(VmObject* vmo, u
   vmo->CommitHighPriorityPages(offset, len);
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_object_get_name_locked(const VmObject* vmo, char* out_name,
+                                                     size_t len) TA_NO_THREAD_SAFETY_ANALYSIS {
+  vmo->get_name_locked(out_name, len);
+}
 }  // extern "C"

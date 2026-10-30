@@ -34,4 +34,20 @@ FFI_ALWAYS_INLINE void cpp_anonymous_page_request_cancel(AnonymousPageRequest* r
   req->Cancel();
 }
 
+FFI_ALWAYS_INLINE void cpp_anonymous_page_request_make_active(AnonymousPageRequest* req) {
+  req->MakeActive();
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_anonymous_page_request_allocate(AnonymousPageRequest* req,
+                                                                  bool suspendable) {
+  return req->Allocate(suspendable).status_value();
+}
+
+__PURE FFI_ALWAYS_INLINE bool cpp_anonymous_page_request_has_page(const AnonymousPageRequest* req) {
+  return req->has_page();
+}
+
+FFI_ALWAYS_INLINE vm_page_t* cpp_anonymous_page_request_take_page(AnonymousPageRequest* req) {
+  return req->take_page();
+}
 }  // extern "C"
