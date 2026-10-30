@@ -23,7 +23,7 @@ rustc_library(
         "//src/connectivity/wlan/lib/power_manager",
         "//src/connectivity/wlan/lib/sme:wlan-sme",
         "//src/connectivity/wlan/lib/trace:wlan-trace",
-        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/inspect/rust",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:anyhow",

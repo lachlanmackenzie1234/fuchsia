@@ -104,7 +104,7 @@ rustc_binary(
         "//src/connectivity/wlan/lib/power_manager",
         "//src/connectivity/wlan/lib/telemetry:wlan-telemetry",
         "//src/lib/diagnostics/inspect/runtime/rust",
-        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/inspect/rust",
         "//src/lib/diagnostics/log/rust",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia",
