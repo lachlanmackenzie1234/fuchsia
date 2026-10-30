@@ -10,8 +10,10 @@ capabilities (including self.adb) directly via inheritance.
 
 import contextlib
 import ipaddress
+import json
 import logging
 import re
+import shutil
 import types
 from pathlib import Path
 from typing import Any
@@ -31,7 +33,7 @@ from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.adb import adb as adb_transport
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.typing import custom_types
-from honeydew.utils import properties
+from honeydew.utils import host_shell, properties
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ _DEFAULT_TCP_ADB_PORT: int = 5555
 _DEFAULT_TCP_ADB_SERIAL: str = (
     f"{_DEFAULT_TCP_ADB_HOST}:{_DEFAULT_TCP_ADB_PORT}"
 )
+_PONTIS_STATUS_TIMEOUT_SECS: float = 5.0
 
 
 # TODO(b/564946370): Remove temporary wrapper once 'adb root' operations are
@@ -149,28 +152,172 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         )
         self.initialize()
 
-    def _is_pontis_target(self) -> bool:
-        """Returns True if the target device is connected via Pontis."""
+    def _get_target_addr(self) -> custom_types.TargetAddr | None:
+        """Returns the target address from DeviceInfo or FFX, or None.
+
+        Returns:
+            TargetAddr if available, or None otherwise.
+        """
         target_addr: custom_types.TargetAddr | None = self._device_info.address
         if target_addr is None:
             try:
                 target_addr = self.ffx.get_target_address()
-            except Exception as err:
+            except errors.HoneydewError as err:
                 _LOGGER.debug(
                     "Failed to get target address from FFX for %s: %s",
                     self.device_name,
                     err,
                 )
-                return False
+                return None
+        return target_addr
+
+    def _get_pontis_target_addr(self) -> custom_types.IpPort | None:
+        """Returns the target IpPort if connected via Pontis, else None.
+
+        Returns:
+            The target IpPort if connected via Pontis, or None otherwise.
+        """
+        target_addr = self._get_target_addr()
 
         if isinstance(target_addr, custom_types.IpPort) and isinstance(
             target_addr.ip, ipaddress.IPv6Address
         ):
             scope_id: str | None = target_addr.ip.scope_id
             if scope_id is not None and "pontis" in scope_id.lower():
-                return True
+                return target_addr
 
-        return False
+        return None
+
+    def _is_pontis_target(self) -> bool:
+        """Returns True if the target device is connected via Pontis.
+
+        Returns:
+            True if connected via Pontis, or False otherwise.
+        """
+        return self._get_pontis_target_addr() is not None
+
+    def _resolve_pontis_adb_serial(
+        self,
+        pontis_addr: custom_types.IpPort,
+        hardware_serial: str | None = None,
+    ) -> str:
+        """Resolves the TCP ADB serial endpoint for a Pontis-connected target.
+
+        Queries `pontis status --format=json` for a local ADB proxy listen port
+        (matching `hardware_serial` when multiple ADB devices are present) and
+        falls back to `[<pontis_ip>]:5555`. Expected command or JSON parsing
+        errors are caught and logged at debug level so resolution falls back
+        gracefully; unexpected exceptions (such as Mobly test signals) propagate
+        to the caller.
+
+        Args:
+            pontis_addr: The Pontis IPv6 target address and port.
+            hardware_serial: Optional hardware serial number to match when
+                multiple ADB devices are present in `pontis status`.
+
+        Returns:
+            The resolved `<host>:<port>` TCP ADB serial string.
+        """
+        if shutil.which("pontis") is not None:
+            try:
+                # Relevant structure of `pontis status --format=json`:
+                # {
+                #   "bridgeStatus": [
+                #     {
+                #       "deviceStatus": [
+                #         {
+                #           "deviceType": "ADB with optimizations",
+                #           "localDeviceId": "ADBFuchsia<hardware_serial>",
+                #           "listenPort": 39181
+                #         }
+                #       ]
+                #     }
+                #   ]
+                # }
+                output = host_shell.run(
+                    cmd=["pontis", "status", "--format=json"],
+                    capture_output=True,
+                    timeout=_PONTIS_STATUS_TIMEOUT_SECS,
+                )
+                status = json.loads(output or "{}")
+                candidates: list[tuple[str, int]] = []
+                for bridge in status.get("bridgeStatus", []):
+                    if not isinstance(bridge, dict):
+                        continue
+                    for device in bridge.get("deviceStatus", []):
+                        if not isinstance(device, dict):
+                            continue
+                        device_type = str(device.get("deviceType", "")).upper()
+                        if (
+                            "ADB" in device_type
+                            and "WIRELESS_ADB" not in device_type
+                        ):
+                            listen_port = device.get("listenPort")
+                            if (
+                                isinstance(listen_port, int)
+                                and not isinstance(listen_port, bool)
+                                and listen_port > 0
+                            ):
+                                local_id = str(device.get("localDeviceId", ""))
+                                candidates.append((local_id, listen_port))
+
+                if hardware_serial:
+                    for local_id, listen_port in candidates:
+                        if hardware_serial in local_id:
+                            return f"{_DEFAULT_TCP_ADB_HOST}:{listen_port}"
+                elif len(candidates) == 1:
+                    return f"{_DEFAULT_TCP_ADB_HOST}:{candidates[0][1]}"
+                if len(candidates) > 1:
+                    _LOGGER.warning(
+                        "Multiple Pontis ADB candidates (%d) found for %s, but "
+                        "none matched hardware_serial=%r; falling back to "
+                        "[%s]:%d",
+                        len(candidates),
+                        self.device_name,
+                        hardware_serial,
+                        pontis_addr.ip,
+                        _DEFAULT_TCP_ADB_PORT,
+                    )
+            except (
+                errors.HoneydewError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as err:
+                _LOGGER.debug(
+                    "Failed to resolve Pontis ADB port via `pontis status` for %s: %s",
+                    self.device_name,
+                    err,
+                )
+        else:
+            _LOGGER.debug(
+                "`pontis` binary not found in PATH; skipping `pontis status` for %s",
+                self.device_name,
+            )
+
+        return str(
+            custom_types.IpPort(ip=pontis_addr.ip, port=_DEFAULT_TCP_ADB_PORT)
+        )
+
+    def _get_hardware_serial(self) -> str | None:
+        """Returns the hardware serial number from DeviceInfo or FFX, or None.
+
+        Returns:
+            Hardware serial number string if available, or None otherwise.
+        """
+        serial_number: str | None = self._device_info.serial_number
+        if serial_number is None:
+            try:
+                serial_number = self.ffx.serial_number
+            except errors.HoneydewError as err:
+                _LOGGER.debug(
+                    "Failed to get serial number from FFX for %s: %s",
+                    self.device_name,
+                    err,
+                )
+                return None
+        return serial_number
 
     def _resolve_adb_serial(self, *, use_adb_usb: bool = True) -> str:
         """Resolves the ADB serial identifier (USB serial or TCP `<ip>:<port>`) for the target.
@@ -188,40 +335,31 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         adb_serial: str | None = None
         # ADB Over USB
         if use_adb_usb is True:
-            adb_serial = self._device_info.serial_number
-            if adb_serial is None:
-                try:
-                    adb_serial = self.ffx.serial_number
-                except errors.HoneydewError as err:
-                    _LOGGER.debug(
-                        "Failed to get serial number from FFX for %s: %s",
-                        self.device_name,
-                        err,
-                    )
-                    adb_serial = None
+            adb_serial = self._get_hardware_serial()
         # ADB Over TCP
         else:
-            target_addr: custom_types.TargetAddr | None = (
-                self._device_info.address
+            pontis_addr: custom_types.IpPort | None = (
+                self._get_pontis_target_addr()
             )
-            if target_addr is None:
-                try:
-                    target_addr = self.ffx.get_target_address()
-                except errors.HoneydewError as err:
-                    _LOGGER.debug(
-                        "Failed to get target address from FFX for %s: %s",
-                        self.device_name,
-                        err,
-                    )
-                    target_addr = None
-            if isinstance(target_addr, custom_types.IpPort):
-                adb_serial = str(
-                    custom_types.IpPort(
-                        ip=target_addr.ip, port=_DEFAULT_TCP_ADB_PORT
-                    )
+            # ADB Over TCP on remote/Pontis based setup
+            if pontis_addr:
+                adb_serial = self._resolve_pontis_adb_serial(
+                    pontis_addr=pontis_addr,
+                    hardware_serial=self._get_hardware_serial(),
                 )
+            # ADB Over TCP local setup
             else:
-                adb_serial = _DEFAULT_TCP_ADB_SERIAL
+                target_addr: custom_types.TargetAddr | None = (
+                    self._get_target_addr()
+                )
+                if isinstance(target_addr, custom_types.IpPort):
+                    adb_serial = str(
+                        custom_types.IpPort(
+                            ip=target_addr.ip, port=_DEFAULT_TCP_ADB_PORT
+                        )
+                    )
+                else:
+                    adb_serial = _DEFAULT_TCP_ADB_SERIAL
 
         if adb_serial is None:
             _LOGGER.warning(
@@ -255,7 +393,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         enabled = True
         output_dir: Path | str | None = None
         attempts = adb_transport._DEFAULT_RUN_ATTEMPTS
-        use_adb_usb: bool = True
+        adb_config: dict[str, Any] = {}
 
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
@@ -266,7 +404,6 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             attempts = adb_config.get(
                 "attempts", adb_transport._DEFAULT_RUN_ATTEMPTS
             )
-            use_adb_usb = adb_config.get("use_adb_usb", use_adb_usb)
 
         if not output_dir and self._ffx_config_data.logs_dir:
             ffx_logs_path = Path(self._ffx_config_data.logs_dir)
@@ -291,17 +428,11 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
                 f"ADB transport is not enabled for '{self.device_name}'"
             )
 
-        # TODO(b/572903114): Enable ADB on Pontis targets once ADB-over-TCP is
-        # supported.
-        if self._is_pontis_target():
-            _LOGGER.info(
-                "ADB transport is disabled for '%s' as it is connected via Pontis",
-                self.device_name,
-            )
-            raise errors.NotEnabledError(
-                f"ADB transport is disabled for '{self.device_name}' as it is connected via Pontis"
-            )
-
+        use_adb_usb: bool = (
+            adb_config["use_adb_usb"]
+            if "use_adb_usb" in adb_config
+            else not self._is_pontis_target()
+        )
         adb_serial: str = self._resolve_adb_serial(use_adb_usb=use_adb_usb)
 
         adb_obj: adb_transport.Adb = adb_transport.Adb(

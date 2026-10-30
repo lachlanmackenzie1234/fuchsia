@@ -5,6 +5,7 @@
 
 import dataclasses
 import ipaddress
+import shutil
 import unittest
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 from honeydew.typing import custom_types
+from honeydew.utils import host_shell
 from mobly import signals
 
 # pylint: disable=protected-access
@@ -108,6 +110,15 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
         ffx_monitor_patcher.start()
         self.addCleanup(ffx_monitor_patcher.stop)
+
+        pontis_which_patcher = mock.patch.object(
+            shutil,
+            "which",
+            return_value="/usr/bin/pontis",
+            autospec=True,
+        )
+        pontis_which_patcher.start()
+        self.addCleanup(pontis_which_patcher.stop)
 
         with (
             mock.patch.object(
@@ -188,8 +199,16 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
                 config=config,
             )
-            with self.assertRaises(errors.NotEnabledError):
+            with (
+                mock.patch.object(
+                    ad_obj,
+                    "_is_pontis_target",
+                    autospec=True,
+                ) as mock_is_pontis,
+                self.assertRaises(errors.NotEnabledError),
+            ):
                 _ = ad_obj.adb
+            mock_is_pontis.assert_not_called()
 
     def test_is_pontis_target_device_info_address(self) -> None:
         """Test case for _is_pontis_target() using device_info.address."""
@@ -254,8 +273,38 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         finally:
             self.ad_obj._device_info = orig_device_info
 
-    def test_adb_transport_disabled_on_pontis(self) -> None:
-        """Test case to make sure AndroidDevice raises NotEnabledError on Pontis targets."""
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=(
+            '{"bridgeStatus":[{"deviceStatus":['
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<other_serial>",'
+            '"listenPort":39180},'
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<12345678>",'
+            '"listenPort":39181}'
+            "]}]}"
+        ),
+        autospec=True,
+    )
+    def test_adb_transport_on_pontis_uses_pontis_status_port(
+        self,
+        mock_host_shell_run: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test case for AndroidDevice resolving Pontis ADB port via pontis status."""
         orig_device_info = self.ad_obj._device_info
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
@@ -268,11 +317,237 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.ad_obj.__dict__.pop("adb", None)
         try:
-            with self.assertRaises(errors.NotEnabledError):
-                _ = self.ad_obj.adb
+            adb_obj = self.ad_obj.adb
+            self.assertEqual(adb_obj.serial_number, "127.0.0.1:39181")
+            mock_host_shell_run.assert_called_once_with(
+                cmd=["pontis", "status", "--format=json"],
+                capture_output=True,
+                timeout=5.0,
+            )
+            mock_verify_supported.assert_called_once()
+            mock_check_connection.assert_called_once()
         finally:
             self.ad_obj._device_info = orig_device_info
             self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=errors.HostCmdError("pontis not found"),
+        autospec=True,
+    )
+    def test_adb_transport_on_pontis_falls_back_to_target_ip(
+        self,
+        mock_host_shell_run: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test case for AndroidDevice falling back to [<pontis_ip>]:5555 on Pontis."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            address=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            adb_obj = self.ad_obj.adb
+            self.assertEqual(
+                adb_obj.serial_number,
+                "[fe80::bcd3:bbce:3ee9:4d87%pontis]:5555",
+            )
+            mock_host_shell_run.assert_called_once()
+            mock_verify_supported.assert_called_once()
+            mock_check_connection.assert_called_once()
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        autospec=True,
+    )
+    def test_adb_transport_on_pontis_skips_status_when_pontis_binary_missing(
+        self,
+        mock_host_shell_run: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test AndroidDevice skips pontis status when pontis binary is not in PATH."""
+        orig_device_info = self.ad_obj._device_info
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number="12345678",
+            address=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            with mock.patch.object(
+                shutil, "which", return_value=None
+            ) as mock_which:
+                adb_obj = self.ad_obj.adb
+                mock_which.assert_called_once_with("pontis")
+            self.assertEqual(
+                adb_obj.serial_number,
+                "[fe80::bcd3:bbce:3ee9:4d87%pontis]:5555",
+            )
+            mock_host_shell_run.assert_not_called()
+            mock_verify_supported.assert_called_once()
+            mock_check_connection.assert_called_once()
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "serial_number",
+        new_callable=mock.PropertyMock,
+        return_value="12345678",
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=(
+            '{"bridgeStatus":[{"deviceStatus":['
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<12345678>",'
+            '"listenPort":39181}'
+            "]}]}"
+        ),
+        autospec=True,
+    )
+    def test_adb_transport_on_pontis_with_use_adb_usb_false_and_no_serial(
+        self,
+        mock_host_shell_run: mock.Mock,
+        mock_ffx_serial_number: mock.Mock,
+        mock_verify_supported: mock.Mock,
+        mock_check_connection: mock.Mock,
+    ) -> None:
+        """Test Pontis resolution runs before use_adb_usb=False fallback when serial_number is None."""
+        orig_device_info = self.ad_obj._device_info
+        orig_config = self.ad_obj._config
+        self.ad_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            address=custom_types.IpPort(
+                ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+                port=8022,
+            ),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.ad_obj._config = {"transports": {"adb": {"use_adb_usb": False}}}
+        self.ad_obj.__dict__.pop("adb", None)
+        try:
+            adb_obj = self.ad_obj.adb
+            self.assertEqual(adb_obj.serial_number, "127.0.0.1:39181")
+            mock_ffx_serial_number.assert_called_once()
+            mock_host_shell_run.assert_called_once_with(
+                cmd=["pontis", "status", "--format=json"],
+                capture_output=True,
+                timeout=5.0,
+            )
+            mock_verify_supported.assert_called_once()
+            mock_check_connection.assert_called_once()
+        finally:
+            self.ad_obj._device_info = orig_device_info
+            self.ad_obj._config = orig_config
+            self.ad_obj.__dict__.pop("adb", None)
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=signals.TestAbortAll("abort"),
+        autospec=True,
+    )
+    def test_resolve_pontis_adb_serial_propagates_unexpected_exceptions(
+        self,
+        mock_host_shell_run: mock.Mock,
+    ) -> None:
+        """Test _resolve_pontis_adb_serial propagates unexpected exceptions (e.g. Mobly signals)."""
+        pontis_addr = custom_types.IpPort(
+            ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+            port=8022,
+        )
+        with self.assertRaises(signals.TestAbortAll):
+            self.ad_obj._resolve_pontis_adb_serial(pontis_addr=pontis_addr)
+        mock_host_shell_run.assert_called_once()
+
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=(
+            '{"bridgeStatus":[{"deviceStatus":['
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<serial_a>",'
+            '"listenPort":39180},'
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<serial_b>",'
+            '"listenPort":39181}'
+            "]}]}"
+        ),
+        autospec=True,
+    )
+    def test_resolve_pontis_adb_serial_warns_on_multiple_unmatched_candidates(
+        self,
+        mock_host_shell_run: mock.Mock,
+    ) -> None:
+        """Test _resolve_pontis_adb_serial logs warning and falls back when multiple candidates don't match."""
+        pontis_addr = custom_types.IpPort(
+            ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
+            port=8022,
+        )
+        with self.assertLogs(android_device._LOGGER, level="WARNING") as cm:
+            resolved = self.ad_obj._resolve_pontis_adb_serial(
+                pontis_addr=pontis_addr,
+                hardware_serial="unmatched_serial",
+            )
+        self.assertEqual(resolved, "[fe80::bcd3:bbce:3ee9:4d87%pontis]:5555")
+        self.assertTrue(
+            any(
+                "Multiple Pontis ADB candidates (2) found" in msg
+                for msg in cm.output
+            )
+        )
+        mock_host_shell_run.assert_called_once()
 
     @mock.patch.object(
         adb_transport.Adb,
@@ -850,15 +1125,40 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj.__dict__.pop("adb", None)
 
     @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=(
+            '{"bridgeStatus":[{"deviceStatus":['
+            '{"deviceType":"ADB with optimizations",'
+            '"localDeviceId":"ADBFuchsia<12345678>",'
+            '"listenPort":39181}'
+            "]}]}"
+        ),
+        autospec=True,
+    )
+    @mock.patch.object(
         fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )
     @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
-    def test_health_check_adb_disabled_on_pontis(
+    def test_health_check_on_pontis(
         self,
         mock_ffx_check_connection: mock.Mock,
         mock_fc_check_connection: mock.Mock,
+        mock_host_shell_run: mock.Mock,
+        mock_adb_verify_supported: mock.Mock,
+        mock_adb_check_connection: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.health_check() when target is connected via Pontis."""
         orig_device_info = self.ad_obj._device_info
@@ -879,7 +1179,10 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             mock_fc_check_connection.assert_called_once_with(
                 self.ad_obj.fuchsia_controller
             )
-            self.assertNotIn("adb", self.ad_obj.__dict__)
+            mock_host_shell_run.assert_called_once()
+            mock_adb_verify_supported.assert_called_once()
+            mock_adb_check_connection.assert_called()
+            self.assertEqual(self.ad_obj.adb.serial_number, "127.0.0.1:39181")
         finally:
             self.ad_obj._device_info = orig_device_info
             self.ad_obj.__dict__.pop("adb", None)
@@ -1009,8 +1312,33 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         "on_device_boot",
         autospec=True,
     )
-    async def test_on_device_boot_adb_disabled_on_pontis(
+    @mock.patch.object(
+        adb_transport.Adb,
+        "on_device_boot",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        adb_transport.Adb,
+        "verify_supported",
+        autospec=True,
+    )
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=errors.HostCmdError("pontis not found"),
+        autospec=True,
+    )
+    async def test_on_device_boot_on_pontis(
         self,
+        mock_host_shell_run: mock.Mock,
+        mock_adb_verify_supported: mock.Mock,
+        mock_adb_check_connection: mock.Mock,
+        mock_adb_on_device_boot: mock.Mock,
         mock_super_on_device_boot: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.on_device_boot() when target is connected via Pontis."""
@@ -1027,8 +1355,15 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj.__dict__.pop("adb", None)
         try:
             await self.ad_obj.on_device_boot()
+            mock_host_shell_run.assert_called_once()
+            mock_adb_verify_supported.assert_called_once()
+            mock_adb_check_connection.assert_called_once()
+            mock_adb_on_device_boot.assert_called_once_with(self.ad_obj.adb)
             mock_super_on_device_boot.assert_called_once_with(self.ad_obj)
-            self.assertNotIn("adb", self.ad_obj.__dict__)
+            self.assertEqual(
+                self.ad_obj.adb.serial_number,
+                "[fe80::bcd3:bbce:3ee9:4d87%pontis]:5555",
+            )
         finally:
             self.ad_obj._device_info = orig_device_info
             self.ad_obj.__dict__.pop("adb", None)
