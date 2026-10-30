@@ -152,6 +152,16 @@ def generate_invocation(
         except Exception:
             pass
 
+    # Resolve CASFS virtualization preference if not already set in the environment.
+    if casfs.ENV_CASFS_VIRTUALIZE not in effective_env:
+        try:
+            casfs_cfg = casfs.load(_DEFAULT_FUCHSIA_DIR, effective_env)
+            effective_env[casfs.ENV_CASFS_VIRTUALIZE] = (
+                "1" if casfs_cfg.virtualize else "0"
+            )
+        except Exception:
+            pass
+
     linkage = rel_inv.resolve(effective_env, invocation_id=invocation_id)
 
     header = [
@@ -170,12 +180,12 @@ def generate_invocation(
 
     bazelrc_lines.extend(_resultstore_config_bazelrc(env))
     bazelrc_lines.extend(_auth_bazelrc(env))
-    bazelrc_lines.extend(_service_proxies_bazelrc(env))
+    bazelrc_lines.extend(_service_proxies_bazelrc(effective_env))
 
     if log_dir:
         bazelrc_lines.extend(_log_options_bazelrc(log_dir))
 
-    child_env = dict(env)
+    child_env = dict(effective_env)
     child_env.update(linkage.child_env)
 
     return InvocationConfig(

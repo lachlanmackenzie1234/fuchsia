@@ -286,6 +286,30 @@ class ServiceProxiesBazelrcTest(unittest.TestCase):
             rc,
         )
 
+    @mock.patch.object(casfs, "load")
+    def test_casfs_resolution_auto_loaded_enabled(
+        self, mock_load: mock.MagicMock
+    ) -> None:
+        mock_load.return_value = casfs.CasfsConfig(virtualize=True)
+        config = gen.generate_invocation({})
+        self.assertEqual(config.child_env[casfs.ENV_CASFS_VIRTUALIZE], "1")
+        self.assertIn(
+            f"startup --unix_digest_hash_attribute_name={casfs.XATTR_RBE_ARI_BIN_HASH}",
+            config.bazelrc_lines,
+        )
+
+    @mock.patch.object(casfs, "load")
+    def test_casfs_resolution_auto_loaded_disabled(
+        self, mock_load: mock.MagicMock
+    ) -> None:
+        mock_load.return_value = casfs.CasfsConfig(virtualize=False)
+        config = gen.generate_invocation({})
+        self.assertEqual(config.child_env[casfs.ENV_CASFS_VIRTUALIZE], "0")
+        self.assertNotIn(
+            f"startup --unix_digest_hash_attribute_name={casfs.XATTR_RBE_ARI_BIN_HASH}",
+            config.bazelrc_lines,
+        )
+
 
 class GenerateInvocationTest(unittest.TestCase):
     def test_generate_invocation_with_metadata(self) -> None:

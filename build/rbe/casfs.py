@@ -21,7 +21,6 @@ _RBE_CASFS_CONFIG = pathlib.Path(".fx/config/rbe_casfs")
 # LINT.IfChange(rbe_casfs_env_vars)
 ENV_CASFS_VIRTUALIZE = "FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE"
 # LINT.ThenChange(
-#   //build/bazel/wrapper.bazel.sh:rbe_casfs_env_vars,
 #   //build/rbe/fuchsia-reproxy-wrap.sh:rbe_casfs_env_vars,
 #   //build/rbe/reclient_cxx.sh:rbe_casfs_env_vars
 # )

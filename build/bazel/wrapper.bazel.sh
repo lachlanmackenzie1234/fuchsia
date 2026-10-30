@@ -188,15 +188,6 @@ _BAZEL_EXTRA_ARGS=()
 # These environment-sensitive modifications to config definitions
 # manifest in the short-lived 'invocation.bazelrc'.
 # Cleanup handler called on script exit.
-# main_build.py sets FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE to 0 or 1,
-# but resolve it via casfs.py when invoked standalone.
-# LINT.IfChange(rbe_casfs_env_vars)
-if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "0" && "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "1" ]]; then
-  FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE="$("${_PREBUILT_PYTHON3}" -S "${_SRCDIR}/../rbe/casfs.py")"
-  export FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE
-fi
-# LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_env_vars)
-
 # Save per-invocation logs.
 # Log directories are generated dynamically per fx-build invocation,
 # organized by bazel invocations.
