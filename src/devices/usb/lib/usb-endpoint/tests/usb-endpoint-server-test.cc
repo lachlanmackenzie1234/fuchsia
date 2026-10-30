@@ -15,6 +15,8 @@
 
 namespace {
 
+namespace frequest = fuchsia_hardware_usb_request;
+
 class FakeEndpoint : public usb::EndpointServer {
  public:
   FakeEndpoint(const zx::bti& bti, uint8_t ep_addr,
@@ -693,6 +695,96 @@ TEST_F(UsbEndpointServerTest, GetIterUnsupportedScatterGatherTest) {
   auto iters_zero = unsupported_ep->get_iter(req_zero_var, page_size);
   ASSERT_TRUE(iters_zero.is_ok());
   EXPECT_EQ(iters_zero->size(), 0);
+}
+
+TEST_F(UsbEndpointServerTest, UnregisterVmoWhileRequestInFlightDefersUnpinTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+  VerifyRegisteredVmos(1);
+
+  frequest::Request req;
+  req.defer_completion(false);
+  req.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(64);
+  auto req_var = usb::RequestVariant(usb::FidlRequest(std::move(req)));
+  auto iters = ep_->get_iter(req_var, page_size);
+  ASSERT_TRUE(iters.is_ok());
+
+  // Unregister VMO while req_var is still holding the shared_context from get_iter().
+  sync_completion_reset(&wait);
+  client_->UnregisterVmos({{8}}).Then(
+      [&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::UnregisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        EXPECT_TRUE(result->failed_vmo_ids().empty());
+        EXPECT_TRUE(result->errors().empty());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  // The VMO is removed from the server's map, but its PMT remains pinned in BTI while req_var is
+  // in flight.
+  EXPECT_TRUE(ep_->GetRegisteredVmosInfo().empty());
+  VerifyRegisteredVmos(1);
+
+  // Completing the request invokes take_request() -> Unpin(), releasing the shared_context and
+  // unpinning the PMT.
+  ep_->RequestComplete(ZX_OK, 64, std::move(req_var));
+  VerifyRegisteredVmos(0);
+  sync_completion_wait(&event_handler_.received_on_completion_, zx::time::infinite().get());
+}
+
+TEST_F(UsbEndpointServerTest, UnbindWhileRequestInFlightDefersUnpinTest) {
+  const size_t page_size = zx_system_get_page_size();
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size)));
+  sync_completion_t wait;
+  client_->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+  VerifyRegisteredVmos(1);
+
+  frequest::Request req;
+  req.defer_completion(false);
+  req.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(64);
+  auto req_var = usb::RequestVariant(usb::FidlRequest(std::move(req)));
+  auto iters = ep_->get_iter(req_var, page_size);
+  ASSERT_TRUE(iters.is_ok());
+
+  // Trigger unbind while req_var is still holding the shared_context from get_iter().
+  {
+    auto unused = std::move(client_);
+  }
+  sync_completion_wait(&ep_->unbound_, zx::time::infinite().get());
+
+  // OnUnbound clears the server's registered VMO map, but the VMO's PMT remains pinned in BTI
+  // while req_var is in flight.
+  EXPECT_TRUE(ep_->GetRegisteredVmosInfo().empty());
+  VerifyRegisteredVmos(1);
+
+  // Completing the request invokes take_request() -> Unpin(), releasing the shared_context and
+  // unpinning the PMT.
+  ep_->RequestComplete(ZX_OK, 64, std::move(req_var));
+  VerifyRegisteredVmos(0);
 }
 
 }  // namespace

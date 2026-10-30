@@ -6,10 +6,10 @@
 #define SRC_DEVICES_USB_LIB_USB_ENDPOINT_INCLUDE_USB_ENDPOINT_USB_ENDPOINT_SERVER_H_
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
-#include <lib/fit/result.h>
 #include <lib/io-buffer/phys-iter.h>
 #include <lib/zx/eventpair.h>
 
+#include <memory>
 #include <mutex>
 #include <utility>
 
@@ -65,7 +65,7 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
     std::lock_guard<std::mutex> lock(lock_);
     std::vector<VmoInfo> info;
     for (const auto& [id, vmo] : registered_vmos_) {
-      info.push_back({id, vmo.size});
+      info.push_back({id, vmo->size});
     }
     return info;
   }
@@ -87,21 +87,21 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
   std::vector<fuchsia_hardware_usb_endpoint::Completion> completions_ __TA_GUARDED(lock_);
 
   struct RegisteredVmo {
-    zx_handle_t pmt;
-    uint64_t* phys_list;
-    size_t phys_count;
-    uint64_t size;
+    RegisteredVmo(zx_handle_t pmt, uint64_t* phys_list, size_t phys_count, uint64_t size)
+        : pmt(pmt), phys_list(phys_list), phys_count(phys_count), size(size) {}
+    ~RegisteredVmo();
+    RegisteredVmo(const RegisteredVmo&) = delete;
+    RegisteredVmo& operator=(const RegisteredVmo&) = delete;
+
+    zx_handle_t pmt = ZX_HANDLE_INVALID;
+    uint64_t* phys_list = nullptr;
+    size_t phys_count = 0;
+    uint64_t size = 0;
   };
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to RegisteredVmo.
-  std::map<fuchsia_hardware_usb_request::VmoId, RegisteredVmo> registered_vmos_ __TA_GUARDED(lock_);
-
-  // Unpins all VMOs in |vmos|, frees physical lists, and removes them from the map.
-  // Returns a successful result if all VMOs were unpinned successfully.
-  // Otherwise, returns a vector of pairs containing the VMO ID and the error status
-  // for each failed unpin operation.
-  fit::result<std::vector<std::pair<fuchsia_hardware_usb_request::VmoId, zx_status_t>>> UnpinVmos(
-      std::map<fuchsia_hardware_usb_request::VmoId, RegisteredVmo>& vmos);
+  std::map<fuchsia_hardware_usb_request::VmoId, std::shared_ptr<RegisteredVmo>> registered_vmos_
+      __TA_GUARDED(lock_);
 
   mutable std::mutex lock_;
 };

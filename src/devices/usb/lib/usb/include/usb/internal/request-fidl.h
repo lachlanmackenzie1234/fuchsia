@@ -780,8 +780,11 @@ class FidlRequest {
       }
       delete[] pinned.phys_list;
     }
+    shared_contexts_.clear();
     return ZX_OK;
   }
+
+  void add_shared_context(std::shared_ptr<void> ctx) { shared_contexts_.push_back(std::move(ctx)); }
 
   // Gets a PhysIterType for the buffer at request.data()->at(idx). PhysIterTypes return a
   // std::pair<zx_paddr_t, size_t> on iteration. For template specialization, see the public
@@ -901,6 +904,10 @@ class FidlRequest {
 
   // _length: Total length saved so calculation doesn't have to be done multiple times.
   mutable std::optional<size_t> _length = std::nullopt;
+
+  // shared_contexts_: Reference-counted external objects (such as registered VMOs) whose lifetime
+  // must extend until this request is unpinned or destroyed.
+  std::vector<std::shared_ptr<void>> shared_contexts_;
 };
 
 // FidlRequestPool: pool of FidlRequests.
