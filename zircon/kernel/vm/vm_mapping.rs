@@ -579,7 +579,16 @@ unsafe impl Send for VmMapping {}
 // held, or atomically.
 unsafe impl Sync for VmMapping {}
 
+zr::static_assert!(
+    VmMapping::PAGE_FAULT_MAX_OPTIMISTIC_PAGES as u64
+        == constants::kVmMappingPageFaultMaxOptimisticPages
+);
+
 impl VmMapping {
+    /// The maximum number of pages that a page fault can optimistically extend the fault to
+    /// include. This is defined and exposed here for the purposes of unittests.
+    pub const PAGE_FAULT_MAX_OPTIMISTIC_PAGES: usize = 16;
+
     /// private constructor, use `VmAddressRegion::create...()` instead
     #[expect(clippy::too_many_arguments)]
     fn new(

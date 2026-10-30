@@ -253,6 +253,12 @@ impl VmObjectPhysical {
         }
     }
 
+    #[inline]
+    pub fn size_locked(&self, _token: &LockToken<'_, VmObjectLockClass>) -> u64 {
+        // SAFETY: `self.state_ptr()` is valid for reads.
+        unsafe { (*self.state_ptr()).size }
+    }
+
     /// Attempts to lookup the given range in the VMO. If it exists and is physically contiguous,
     /// returns the physical address of the start of the range. The offset must be page aligned.
     /// Ranges of length zero are considered invalid and will return `Status::INVALID_ARGS`.

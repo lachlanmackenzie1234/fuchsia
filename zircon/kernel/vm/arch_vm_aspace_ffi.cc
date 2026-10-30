@@ -91,6 +91,9 @@ FFI_ALWAYS_INLINE bool cpp_arch_vm_aspace_accessed_since_last_check(ArchVmAspace
 FFI_ALWAYS_INLINE paddr_t cpp_arch_vm_aspace_arch_table_phys(ArchVmAspace* aspace) {
   return aspace->arch_table_phys();
 }
+FFI_ALWAYS_INLINE vaddr_t cpp_arch_vm_aspace_next_user_page_table_offset(vaddr_t va) {
+  return ArchVmAspace::NextUserPageTableOffset(va);
+}
 
 FFI_ALWAYS_INLINE paddr_t cpp_kernel_physical_address_of(uintptr_t va) {
   return KernelPhysicalAddressOf(va);

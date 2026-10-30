@@ -1191,7 +1191,7 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
 
   // The maximum number of pages that a page fault can optimistically extend the fault to include.
   // This is defined and exposed here for the purposes of unittests.
-  static constexpr uint64_t kPageFaultMaxOptimisticPages = 16;
+  static constexpr uint64_t kPageFaultMaxOptimisticPages = kVmMappingPageFaultMaxOptimisticPages;
 
   // TODO(https://fxbug.dev/42106188): Informs the mapping that a write is going to be performed to
   // the backing VMO, even if the VMO is not writable. This gives the mapping an opportunity to

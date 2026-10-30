@@ -465,4 +465,10 @@ impl ArchVmAspace {
             unsafe { bindings::cpp_arch_vm_aspace_arch_table_phys(self.as_ffi_ptr()) };
         PAddr(phys)
     }
+
+    #[inline(always)]
+    pub fn next_user_page_table_offset(va: usize) -> usize {
+        // SAFETY: This has no preconditions.
+        unsafe { bindings::cpp_arch_vm_aspace_next_user_page_table_offset(va) }
+    }
 }
