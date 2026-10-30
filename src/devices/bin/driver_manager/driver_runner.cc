@@ -1602,7 +1602,8 @@ void DriverRunner::LeaseAllDriversForShutdown(fit::callback<void()> callback) {
 }
 
 fpromise::promise<inspect::Inspector> DriverRunner::InspectHealthChecks() const {
-  inspect::Inspector inspector;
+  // Allocate a 1 MiB VMO to accommodate the health history ring buffers across all nodes.
+  inspect::Inspector inspector(inspect::InspectSettings{.maximum_size = size_t{1024} * 1024});
   std::unordered_set<const Node*> unique_nodes;
   std::queue<const Node*> remaining_nodes;
   if (root_node_) {
@@ -1617,51 +1618,80 @@ fpromise::promise<inspect::Inspector> DriverRunner::InspectHealthChecks() const 
     for (const auto& child : node->children()) {
       remaining_nodes.push(child.get());
     }
-    if (!node->last_health_check().has_value()) {
+    if (!node->last_health_check().has_value() && node->health_history().empty()) {
       continue;
     }
-    const auto& hc = node->last_health_check().value();
+
     inspect::Node hc_node = inspector.GetRoot().CreateChild(node->MakeComponentMoniker());
-    // Same encoding as the driver-side SDK mirrors: a response publishes its status, a failed
-    // check publishes status "ERROR" and names the error separately.
-    if (hc.error.has_value()) {
-      hc_node.RecordString("status", "ERROR");
-      hc_node.RecordString("error", Node::HealthCheckErrorString(*hc.error));
-    } else {
-      hc_node.RecordString("status", Node::HealthStatusString(hc.status));
-    }
-    if (hc.level.has_value()) {
-      hc_node.RecordString("level", Node::HealthCheckLevelString(*hc.level));
-    }
-    hc_node.RecordInt("last_check_monotonic_ns", hc.timestamp.get());
     hc_node.RecordString("driver_url", node->driver_url());
-    if (!hc.diagnostics.empty()) {
-      RecordHealthDiagnostics(hc_node, hc.diagnostics);
-    }
-    if (!hc.conditions.empty()) {
-      inspect::Node conditions_node = hc_node.CreateChild("conditions");
-      for (const auto& condition : hc.conditions) {
-        inspect::Node condition_node =
-            conditions_node.CreateChild(condition.reason_code().value_or("UNKNOWN"));
-        condition_node.RecordString("status", Node::HealthStatusString(condition.status()));
-        if (condition.message().has_value()) {
-          condition_node.RecordString("message", condition.message().value());
+    hc_node.RecordUint("unhealthy_count", node->unhealthy_count());
+    hc_node.RecordUint("recovered_count", node->recovered_count());
+
+    if (!node->health_history().empty()) {
+      inspect::Node history_node = hc_node.CreateChild("history");
+      size_t idx = 0;
+      for (const auto& entry : node->health_history()) {
+        inspect::Node entry_node = history_node.CreateChild(std::to_string(idx++));
+        entry_node.RecordInt("timestamp_ns", entry.timestamp.get());
+        if (entry.error.has_value()) {
+          entry_node.RecordString("status", "ERROR");
+          entry_node.RecordString("error", Node::HealthCheckErrorString(*entry.error));
+        } else {
+          entry_node.RecordString("status", Node::HealthStatusString(entry.status));
         }
-        if (condition.first_observed().has_value()) {
-          condition_node.RecordInt("first_observed", condition.first_observed().value().get());
+        // The synthetic DRIVER_STARTED marker is not produced by a check or an alert.
+        if (entry.reason_code != Node::kDriverStartedReasonCode) {
+          entry_node.RecordString("level", Node::HealthCheckLevelString(entry.level));
         }
-        if (condition.last_observed().has_value()) {
-          condition_node.RecordInt("last_observed", condition.last_observed().value().get());
+        entry_node.RecordString("reason_code", entry.reason_code);
+        if (!entry.message.empty()) {
+          entry_node.RecordString("message", entry.message);
         }
-        if (condition.occurrence_count().has_value()) {
-          condition_node.RecordUint("occurrence_count", condition.occurrence_count().value());
-        }
-        if (condition.diagnostics().has_value() && !condition.diagnostics()->empty()) {
-          RecordHealthDiagnostics(condition_node, condition.diagnostics().value());
-        }
-        conditions_node.Record(std::move(condition_node));
+        history_node.Record(std::move(entry_node));
       }
-      hc_node.Record(std::move(conditions_node));
+      hc_node.Record(std::move(history_node));
+    }
+
+    if (node->last_health_check().has_value()) {
+      const auto& hc = node->last_health_check().value();
+      if (hc.error.has_value()) {
+        hc_node.RecordString("status", "ERROR");
+        hc_node.RecordString("error", Node::HealthCheckErrorString(*hc.error));
+      } else {
+        hc_node.RecordString("status", Node::HealthStatusString(hc.status));
+      }
+      if (hc.level.has_value()) {
+        hc_node.RecordString("level", Node::HealthCheckLevelString(hc.level));
+      }
+      hc_node.RecordInt("last_check_monotonic_ns", hc.timestamp.get());
+      if (!hc.diagnostics.empty()) {
+        RecordHealthDiagnostics(hc_node, hc.diagnostics);
+      }
+      if (!hc.conditions.empty()) {
+        inspect::Node conditions_node = hc_node.CreateChild("conditions");
+        for (const auto& condition : hc.conditions) {
+          inspect::Node condition_node = conditions_node.CreateChild(
+              condition.reason_code().has_value() ? condition.reason_code().value() : "UNKNOWN");
+          condition_node.RecordString("status", Node::HealthStatusString(condition.status()));
+          if (condition.message().has_value()) {
+            condition_node.RecordString("message", condition.message().value());
+          }
+          if (condition.first_observed().has_value()) {
+            condition_node.RecordInt("first_observed", condition.first_observed().value().get());
+          }
+          if (condition.last_observed().has_value()) {
+            condition_node.RecordInt("last_observed", condition.last_observed().value().get());
+          }
+          if (condition.occurrence_count().has_value()) {
+            condition_node.RecordUint("occurrence_count", condition.occurrence_count().value());
+          }
+          if (condition.diagnostics().has_value() && !condition.diagnostics()->empty()) {
+            RecordHealthDiagnostics(condition_node, condition.diagnostics().value());
+          }
+          conditions_node.Record(std::move(condition_node));
+        }
+        hc_node.Record(std::move(conditions_node));
+      }
     }
     inspector.GetRoot().Record(std::move(hc_node));
   }

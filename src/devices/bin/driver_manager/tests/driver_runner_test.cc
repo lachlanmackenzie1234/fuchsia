@@ -3132,6 +3132,18 @@ TEST_P(DriverRunnerTest, InspectHealthChecks) {
               root_node->node().get_property<inspect::IntPropertyValue>("last_check_monotonic_ns"));
     EXPECT_EQ(root_driver_url,
               root_node->node().get_property<inspect::StringPropertyValue>("driver_url")->value());
+    EXPECT_EQ(
+        1u, root_node->node().get_property<inspect::UintPropertyValue>("unhealthy_count")->value());
+    EXPECT_EQ(
+        0u, root_node->node().get_property<inspect::UintPropertyValue>("recovered_count")->value());
+
+    const auto* hist_0 = hierarchy.GetByPath({"root", "history", "0"});
+    ASSERT_NE(nullptr, hist_0);
+    EXPECT_EQ("UNHEALTHY",
+              hist_0->node().get_property<inspect::StringPropertyValue>("status")->value());
+    EXPECT_EQ("FAST", hist_0->node().get_property<inspect::StringPropertyValue>("level")->value());
+    EXPECT_EQ("VSYNC_STALLED",
+              hist_0->node().get_property<inspect::StringPropertyValue>("reason_code")->value());
 
     const auto* diag_node = hierarchy.GetByPath({"root", "diagnostics"});
     ASSERT_NE(nullptr, diag_node);

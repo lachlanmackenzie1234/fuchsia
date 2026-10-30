@@ -3510,11 +3510,40 @@ fuchsia_driver_framework::HealthCondition Node::HealthCheckRecord::SyntheticCond
   }};
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+const fuchsia_driver_framework::HealthCondition* Node::HealthCheckRecord::primary_condition()
+    const {
+  if (conditions.empty()) {
+    return nullptr;
+  }
+  if (status.has_value()) {
+    for (const auto& cond : conditions) {
+      const auto cond_status =
+          cond.status().value_or(fuchsia_driver_framework::HealthStatus::kUnhealthy);
+      if (cond_status == *status) {
+        return &cond;
+      }
+    }
+  }
+  return &conditions.front();
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 std::string_view Node::HealthCheckRecord::first_reason_code() const {
-  if (conditions.empty() || !conditions.front().reason_code().has_value()) {
+  const auto* cond = primary_condition();
+  if (!cond || !cond->reason_code().has_value() || cond->reason_code()->empty()) {
     return "-";
   }
-  return conditions.front().reason_code().value();
+  return cond->reason_code().value();
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+std::string_view Node::HealthCheckRecord::first_message() const {
+  const auto* cond = primary_condition();
+  if (!cond || !cond->message().has_value()) {
+    return "";
+  }
+  return cond->message().value();
 }
 
 bool Node::HealthCheckRecord::is_informative() const {
@@ -3589,9 +3618,13 @@ Node::HealthCheckRecord Node::HealthCheckRecord::FromError(
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-const char* Node::HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level) {
+const char* Node::HealthCheckLevelString(
+    std::optional<fuchsia_driver_framework::HealthCheckRequest> level) {
+  if (!level.has_value()) {
+    return "ALERT";
+  }
   // NOLINTNEXTLINE(readability-trivial-switch)
-  switch (level) {
+  switch (*level) {
     case fuchsia_driver_framework::HealthCheckRequest::kPing:
       return "PING";
     case fuchsia_driver_framework::HealthCheckRequest::kFast:
@@ -3657,7 +3690,62 @@ int RecordSeverityRank(const Node::HealthCheckRecord& record) {
   return 0;
 }
 
+bool SameEffectiveHealthOutcome(const Node::HealthCheckRecord& a,
+                                const Node::HealthCheckRecord& b) {
+  return a.status == b.status && a.error == b.error &&
+         a.first_reason_code() == b.first_reason_code();
+}
+
+bool IsRecordOk(const Node::HealthCheckRecord& record) {
+  return !record.error.has_value() && record.status == fuchsia_driver_framework::HealthStatus::kOk;
+}
+
+std::string TruncateMessageUtf8(std::string_view raw) {
+  constexpr size_t kMaxLen = 256;
+  if (raw.size() <= kMaxLen) {
+    return std::string(raw);
+  }
+  size_t len = kMaxLen;
+  while (len > 0 && (static_cast<uint8_t>(raw[len]) & 0xc0u) == 0x80u) {
+    --len;
+  }
+  return std::string(raw.substr(0, len));
+}
+
 }  // namespace
+
+void Node::MaybeRecordHealthTransition(bool had_informative_prev, bool same_outcome,
+                                       const HealthCheckRecord& next,
+                                       std::optional<zx::time> transition_time) {
+  if (had_informative_prev && same_outcome) {
+    return;
+  }
+  // A node that has never been anything but OK has nothing to record. Once there is history (a
+  // past fault or a DRIVER_STARTED marker), an OK result is a transition worth keeping so the
+  // history shows how the episode ended.
+  if (!had_informative_prev && health_history_.empty() && IsRecordOk(next)) {
+    return;
+  }
+  const bool next_unhealthy = IsRecordUnhealthyOrError(next);
+  if (!currently_unhealthy_ && next_unhealthy) {
+    ++unhealthy_count_;
+  } else if (currently_unhealthy_ && !next_unhealthy) {
+    ++recovered_count_;
+  }
+  currently_unhealthy_ = next_unhealthy;
+
+  if (health_history_.size() >= kMaxHealthHistoryEntries) {
+    health_history_.pop_front();
+  }
+  health_history_.push_back(HealthTransitionEntry{
+      .timestamp = transition_time.value_or(next.timestamp),
+      .status = next.status,
+      .error = next.error,
+      .level = next.level,
+      .reason_code = std::string(next.first_reason_code()),
+      .message = TruncateMessageUtf8(next.first_message()),
+  });
+}
 
 void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
   // (a) A result that carries no health information never hides one that does.
@@ -3667,6 +3755,13 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
     }
     return;
   }
+
+  // Capture what the transition is measured against before last_health_check_ changes.
+  const bool had_informative_prev =
+      last_health_check_.has_value() && last_health_check_->is_informative();
+  const bool same_outcome =
+      had_informative_prev && SameEffectiveHealthOutcome(*last_health_check_, record);
+
   if (!record.is_ping()) {
     // Only cache non-PING records that produced a status (FAST/DEEP response, SELF_FAULT alert, or
     // DRIVER_HOST_PEER_CLOSED) in last_non_ping_health_check_. A status-less TIMEOUT or
@@ -3679,8 +3774,10 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
       last_non_ping_health_check_ = record;
     }
     last_health_check_ = std::move(record);
+    MaybeRecordHealthTransition(had_informative_prev, same_outcome, *last_health_check_);
     return;
   }
+
   // (b) A liveness ping says nothing about the hardware, so a lower-severity PING response (e.g.
   // OK, or DEGRADED when the retained non-PING status is UNHEALTHY) does not hide a higher-severity
   // result from a FAST or DEEP check or a self_fault alert. The non-PING record is kept separately
@@ -3688,15 +3785,39 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
   // dispatcher or crashed host is the more urgent news) cannot launder the hardware fault away.
   if (record.status.has_value() && last_non_ping_health_check_.has_value() &&
       RecordSeverityRank(record) < RecordSeverityRank(*last_non_ping_health_check_)) {
+    // The republished record keeps its own timestamp; the history entry gets the PING's, which is
+    // when the node was observed to be back on the retained outcome.
+    const auto ping_timestamp = record.timestamp;
+    const bool same_republished_outcome =
+        had_informative_prev &&
+        SameEffectiveHealthOutcome(*last_health_check_, *last_non_ping_health_check_);
     last_health_check_ = last_non_ping_health_check_;
+    MaybeRecordHealthTransition(had_informative_prev, same_republished_outcome, *last_health_check_,
+                                ping_timestamp);
     return;
   }
   last_health_check_ = std::move(record);
+  MaybeRecordHealthTransition(had_informative_prev, same_outcome, *last_health_check_);
 }
 
 void Node::ResetHealthCheckState() {
   last_health_check_.reset();
   last_non_ping_health_check_.reset();
+  if (!health_history_.empty()) {
+    // Consecutive restarts collapse into one marker so a crash loop cannot evict the fault that
+    // caused it from the bounded history.
+    if (health_history_.back().reason_code == kDriverStartedReasonCode) {
+      health_history_.back().timestamp = async::Now(dispatcher_);
+    } else {
+      if (health_history_.size() >= kMaxHealthHistoryEntries) {
+        health_history_.pop_front();
+      }
+      health_history_.push_back(HealthTransitionEntry{
+          .timestamp = async::Now(dispatcher_),
+          .reason_code = std::string(kDriverStartedReasonCode),
+      });
+    }
+  }
   last_alert_probe_time_.reset();
   last_alert_probe_level_.reset();
 }
