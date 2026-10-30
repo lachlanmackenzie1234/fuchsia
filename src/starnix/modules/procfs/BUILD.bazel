@@ -81,7 +81,6 @@ rustc_library(
         "//src/starnix/lib/starnix_uapi",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:futures",
-        "//third_party/rust_crates/vendor:itertools",
         "//third_party/rust_crates/vendor:itoa",
         "//third_party/rust_crates/vendor:maplit",
         "//third_party/rust_crates/vendor:regex-lite",

@@ -352,6 +352,10 @@ impl TaskMutableState {
         self.run_state.clone()
     }
 
+    pub fn state_code(&self) -> TaskStateCode {
+        if self.exit_status.is_some() { TaskStateCode::Zombie } else { self.run_state.state_code() }
+    }
+
     /// Unblocks the task by interrupting whatever wait it is currently blocked upon.
     pub fn wake(&self) {
         // SAFETY: Holding `&self` (the task's state lock guard) ensures that if `self.run_state` is
@@ -1561,12 +1565,7 @@ impl Task {
     }
 
     pub fn state_code(&self) -> TaskStateCode {
-        let status = self.read();
-        if status.exit_status.is_some() {
-            TaskStateCode::Zombie
-        } else {
-            status.run_state.state_code()
-        }
+        self.read().state_code()
     }
 
     pub fn time_stats(&self) -> TaskTimeStats {
