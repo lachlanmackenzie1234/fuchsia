@@ -47,9 +47,9 @@ class DiagnosticsImpl : public DiagnosticsInterface {
   // `shuffler_key_state` and `analyzer_key_state` ("uninitialized", "bundled_fallback", "valid",
   // or "expired") are evaluated for each maker against its clock at call time (at startup after
   // loading the disk cache and after each scheduled fetch attempt). `bundled_fallback` is
-  // reported when a maker has `expiration_timestamp_secs() == kBundledKeyExpirationSecs`. When
-  // both makers hold non-bundled keys, `expiration_time_utc` is published as the minimum of
-  // their expiration timestamps; otherwise it is published as 0 so the
+  // reported when a maker has `expiration_timestamp_secs() == kBundledKeyExpirationSecs`.
+  // `expiration_time_utc` is published as the minimum expiration timestamp across whichever
+  // maker(s) hold dynamic (non-bundled) keys, or 0 when neither maker holds a dynamic key so the
   // `kBundledKeyExpirationSecs` sentinel is not reported as a timestamp.
   //
   // `last_fetch_attempt_time_secs` is the UTC Unix timestamp in seconds of the most recent

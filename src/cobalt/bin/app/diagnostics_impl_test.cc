@@ -339,21 +339,21 @@ TEST_F(DiagnosticsTest, UpdateKeyRotationInspectPartiallyInitializedMakers) {
                                       /*consecutive_fetch_failures=*/0,
                                       /*last_fetch_attempt_time_secs=*/0);
 
-  EXPECT_THAT(
-      InspectHierarchy(),
-      AllOf(NodeMatches(NameMatches("root")),
-            ChildrenMatch(UnorderedElementsAre(
-                AllOf(NodeMatches(NameMatches("core")),
-                      ChildrenMatch(Contains(NodeMatches(AllOf(
-                          NameMatches("key_rotation"),
-                          PropertyList(UnorderedElementsAre(
-                              StringIs("shuffler_key_state", "valid"),
-                              StringIs("analyzer_key_state", "uninitialized"),
-                              UintIs("analyzer_key_index", 0),
-                              UintIs("shuffler_key_index", kShufflerKeyIndex),
-                              IntIs("expiration_time_utc", 0), IntIs("last_fetch_attempt_time", 0),
-                              StringIs("last_fetch_status", "Uninitialized"),
-                              UintIs("consecutive_fetch_failures", 0))))))))))));
+  EXPECT_THAT(InspectHierarchy(),
+              AllOf(NodeMatches(NameMatches("root")),
+                    ChildrenMatch(UnorderedElementsAre(
+                        AllOf(NodeMatches(NameMatches("core")),
+                              ChildrenMatch(Contains(NodeMatches(
+                                  AllOf(NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "valid"),
+                                            StringIs("analyzer_key_state", "uninitialized"),
+                                            UintIs("analyzer_key_index", 0),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kShufflerExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", 0),
+                                            StringIs("last_fetch_status", "Uninitialized"),
+                                            UintIs("consecutive_fetch_failures", 0))))))))))));
 }
 
 TEST_F(DiagnosticsTest, UpdateKeyRotationInspectUninitializedShufflerInitializedAnalyzer) {
@@ -371,18 +371,19 @@ TEST_F(DiagnosticsTest, UpdateKeyRotationInspectUninitializedShufflerInitialized
 
   EXPECT_THAT(InspectHierarchy(),
               AllOf(NodeMatches(NameMatches("root")),
-                    ChildrenMatch(UnorderedElementsAre(AllOf(
-                        NodeMatches(NameMatches("core")),
-                        ChildrenMatch(Contains(NodeMatches(AllOf(
-                            NameMatches("key_rotation"),
-                            PropertyList(UnorderedElementsAre(
-                                StringIs("shuffler_key_state", "uninitialized"),
-                                StringIs("analyzer_key_state", "valid"),
-                                UintIs("analyzer_key_index", kAnalyzerKeyIndex),
-                                UintIs("shuffler_key_index", 0), IntIs("expiration_time_utc", 0),
-                                IntIs("last_fetch_attempt_time", 0),
-                                StringIs("last_fetch_status", "Uninitialized"),
-                                UintIs("consecutive_fetch_failures", 0))))))))))));
+                    ChildrenMatch(UnorderedElementsAre(
+                        AllOf(NodeMatches(NameMatches("core")),
+                              ChildrenMatch(Contains(NodeMatches(
+                                  AllOf(NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "uninitialized"),
+                                            StringIs("analyzer_key_state", "valid"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", 0),
+                                            IntIs("expiration_time_utc", kAnalyzerExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", 0),
+                                            StringIs("last_fetch_status", "Uninitialized"),
+                                            UintIs("consecutive_fetch_failures", 0))))))))))));
 }
 
 TEST_F(DiagnosticsTest, UpdateKeyRotationInspectBundledFallbackDoesNotCreateStatusCounter) {
@@ -436,21 +437,21 @@ TEST_F(DiagnosticsTest, UpdateKeyRotationInspectOneBundledFallbackOneValidExpose
                                       /*consecutive_fetch_failures=*/0,
                                       /*last_fetch_attempt_time_secs=*/0);
 
-  EXPECT_THAT(
-      InspectHierarchy(),
-      AllOf(NodeMatches(NameMatches("root")),
-            ChildrenMatch(UnorderedElementsAre(
-                AllOf(NodeMatches(NameMatches("core")),
-                      ChildrenMatch(Contains(NodeMatches(AllOf(
-                          NameMatches("key_rotation"),
-                          PropertyList(UnorderedElementsAre(
-                              StringIs("shuffler_key_state", "bundled_fallback"),
-                              StringIs("analyzer_key_state", "valid"),
-                              UintIs("analyzer_key_index", kAnalyzerKeyIndex),
-                              UintIs("shuffler_key_index", kShufflerKeyIndex),
-                              IntIs("expiration_time_utc", 0), IntIs("last_fetch_attempt_time", 0),
-                              StringIs("last_fetch_status", "Uninitialized"),
-                              UintIs("consecutive_fetch_failures", 0))))))))))));
+  EXPECT_THAT(InspectHierarchy(),
+              AllOf(NodeMatches(NameMatches("root")),
+                    ChildrenMatch(UnorderedElementsAre(
+                        AllOf(NodeMatches(NameMatches("core")),
+                              ChildrenMatch(Contains(NodeMatches(
+                                  AllOf(NameMatches("key_rotation"),
+                                        PropertyList(UnorderedElementsAre(
+                                            StringIs("shuffler_key_state", "bundled_fallback"),
+                                            StringIs("analyzer_key_state", "valid"),
+                                            UintIs("analyzer_key_index", kAnalyzerKeyIndex),
+                                            UintIs("shuffler_key_index", kShufflerKeyIndex),
+                                            IntIs("expiration_time_utc", kAnalyzerExpirationUtc),
+                                            IntIs("last_fetch_attempt_time", 0),
+                                            StringIs("last_fetch_status", "Uninitialized"),
+                                            UintIs("consecutive_fetch_failures", 0))))))))))));
 }
 
 TEST_F(DiagnosticsTest, UpdateKeyRotationInspectCumulativeStatusCounterIncrement) {

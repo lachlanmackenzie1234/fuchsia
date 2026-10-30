@@ -41,6 +41,37 @@ bool WriteFile(const std::string& file, const std::string& to_write) {
   return files::WriteFile(files::JoinPath(kTestDir, file), to_write.c_str(), to_write.length());
 }
 
+class StubHTTPClient : public lib::HTTPClient {
+ public:
+  StubHTTPClient(int64_t http_code, Status status, std::string response_body)
+      : http_code_(http_code),
+        status_(std::move(status)),
+        response_body_(std::move(response_body)) {}
+
+  lib::statusor::StatusOr<lib::HTTPResponse> PostSync(
+      lib::HTTPRequest request, std::chrono::steady_clock::time_point deadline) override {
+    return MakeResponse();
+  }
+
+  lib::statusor::StatusOr<lib::HTTPResponse> GetSync(
+      lib::HTTPRequest request, std::chrono::steady_clock::time_point deadline) override {
+    return MakeResponse();
+  }
+
+ private:
+  lib::HTTPResponse MakeResponse() const {
+    lib::HTTPResponse response;
+    response.http_code = http_code_;
+    response.status = status_;
+    response.response = response_body_;
+    return response;
+  }
+
+  int64_t http_code_;
+  Status status_;
+  std::string response_body_;
+};
+
 }  // namespace
 
 class CreateCobaltConfigTest : public gtest::TestLoopFixture {
@@ -79,9 +110,17 @@ class CreateCobaltConfigTest : public gtest::TestLoopFixture {
   std::unique_ptr<KeyFetcher> ConfigureKeyRotation(TargetPipelineInterface* target_pipeline,
                                                    util::SystemClockInterface* encryption_clock,
                                                    DiagnosticsImpl* diagnostics) {
-    return CobaltApp::ConfigureKeyRotation(
-        dispatcher(), target_pipeline, std::make_unique<lib::EmptyHTTPClient>(), encryption_clock,
-        diagnostics, kTestDir, kTestPublicKeysUrl);
+    return ConfigureKeyRotation(target_pipeline, std::make_unique<lib::EmptyHTTPClient>(),
+                                encryption_clock, diagnostics);
+  }
+
+  std::unique_ptr<KeyFetcher> ConfigureKeyRotation(TargetPipelineInterface* target_pipeline,
+                                                   std::unique_ptr<lib::HTTPClient> http_client,
+                                                   util::SystemClockInterface* encryption_clock,
+                                                   DiagnosticsImpl* diagnostics) {
+    return CobaltApp::ConfigureKeyRotation(dispatcher(), target_pipeline, std::move(http_client),
+                                           encryption_clock, diagnostics, kTestDir,
+                                           kTestPublicKeysUrl);
   }
 
   sys::testing::ServiceDirectoryProvider service_directory_provider_;
@@ -488,6 +527,96 @@ TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationScheduledFetchFailureUpdatesI
       status_counts_node->node().get_property<inspect::UintPropertyValue>("NetworkError");
   ASSERT_NE(network_error_count, nullptr);
   EXPECT_EQ(network_error_count->value(), 1u);
+}
+
+TEST_F(CreateCobaltConfigTest, ConfigureKeyRotationScheduledFetchSuccessUpdatesInspect) {
+  constexpr uint32_t kFetchedShufflerKeyIndex = 9;
+  constexpr uint32_t kFetchedAnalyzerKeyIndex = 10;
+  constexpr int64_t kInitialTimeSecs = 1000;
+  constexpr int64_t kFetchedExpirationSecs = 2000;
+
+  CobaltEncryptionKey bundled_shuffler;
+  ASSERT_TRUE(
+      bundled_shuffler.ParseFromString(ReadPublicKeyPem("/pkg/data/keys/shuffler_devel_public")));
+  CobaltEncryptionKey bundled_analyzer;
+  ASSERT_TRUE(
+      bundled_analyzer.ParseFromString(ReadPublicKeyPem("/pkg/data/keys/analyzer_devel_public")));
+
+  CobaltPublicKeys fetched_keys;
+  fetched_keys.mutable_dev_shuffler_key()->set_public_tink_keyset(
+      bundled_shuffler.serialized_key());
+  fetched_keys.mutable_dev_shuffler_key()->set_key_index(kFetchedShufflerKeyIndex);
+  fetched_keys.mutable_dev_shuffler_key()->set_expiration_timestamp_secs(kFetchedExpirationSecs);
+  fetched_keys.mutable_dev_analyzer_key()->set_public_tink_keyset(
+      bundled_analyzer.serialized_key());
+  fetched_keys.mutable_dev_analyzer_key()->set_key_index(kFetchedAnalyzerKeyIndex);
+  fetched_keys.mutable_dev_analyzer_key()->set_expiration_timestamp_secs(kFetchedExpirationSecs);
+
+  FakeSystemClock encryption_clock(kInitialTimeSecs);
+  // Invalid bundled keys leave both makers uninitialized, so the first fetch
+  // runs immediately instead of after the randomized initial delay, which is
+  // measured on the real boot clock that the test loop does not advance.
+  TargetPipeline target_pipeline(system_data::Environment::DEVEL, "not-a-valid-key-proto",
+                                 /*analyzer_encryption_key_bytes=*/"",
+                                 std::make_unique<lib::EmptyHTTPClient>(),
+                                 /*clearcut_max_retries=*/1);
+  inspect::Inspector inspector;
+  DiagnosticsImpl diagnostics(inspector.GetRoot().CreateChild("core"));
+  std::unique_ptr<KeyFetcher> key_fetcher =
+      ConfigureKeyRotation(&target_pipeline,
+                           std::make_unique<StubHTTPClient>(/*http_code=*/200, Status::OkStatus(),
+                                                            fetched_keys.SerializeAsString()),
+                           &encryption_clock, &diagnostics);
+  ASSERT_NE(key_fetcher, nullptr);
+
+  key_fetcher->OnSystemClockBecomesAccurate();
+  RunLoopUntilIdle();
+  ASSERT_EQ(key_fetcher->last_fetch_status(), KeyFetchStatus::kSuccess);
+
+  fpromise::result<inspect::Hierarchy> hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo());
+  ASSERT_TRUE(hierarchy.is_ok());
+  const inspect::Hierarchy* core_node = hierarchy.value().GetByPath({"core", "key_rotation"});
+  ASSERT_NE(core_node, nullptr);
+  const auto* shuffler_key_state =
+      core_node->node().get_property<inspect::StringPropertyValue>("shuffler_key_state");
+  ASSERT_NE(shuffler_key_state, nullptr);
+  EXPECT_EQ(shuffler_key_state->value(), "valid");
+  const auto* analyzer_key_state =
+      core_node->node().get_property<inspect::StringPropertyValue>("analyzer_key_state");
+  ASSERT_NE(analyzer_key_state, nullptr);
+  EXPECT_EQ(analyzer_key_state->value(), "valid");
+  const auto* shuffler_idx =
+      core_node->node().get_property<inspect::UintPropertyValue>("shuffler_key_index");
+  ASSERT_NE(shuffler_idx, nullptr);
+  EXPECT_EQ(shuffler_idx->value(), kFetchedShufflerKeyIndex);
+  const auto* analyzer_idx =
+      core_node->node().get_property<inspect::UintPropertyValue>("analyzer_key_index");
+  ASSERT_NE(analyzer_idx, nullptr);
+  EXPECT_EQ(analyzer_idx->value(), kFetchedAnalyzerKeyIndex);
+  const auto* expiration =
+      core_node->node().get_property<inspect::IntPropertyValue>("expiration_time_utc");
+  ASSERT_NE(expiration, nullptr);
+  EXPECT_EQ(expiration->value(), kFetchedExpirationSecs);
+  const auto* last_attempt =
+      core_node->node().get_property<inspect::IntPropertyValue>("last_fetch_attempt_time");
+  ASSERT_NE(last_attempt, nullptr);
+  EXPECT_EQ(last_attempt->value(), kInitialTimeSecs);
+  const auto* last_status =
+      core_node->node().get_property<inspect::StringPropertyValue>("last_fetch_status");
+  ASSERT_NE(last_status, nullptr);
+  EXPECT_EQ(last_status->value(), "Success");
+  const auto* failures =
+      core_node->node().get_property<inspect::UintPropertyValue>("consecutive_fetch_failures");
+  ASSERT_NE(failures, nullptr);
+  EXPECT_EQ(failures->value(), 0u);
+
+  const inspect::Hierarchy* status_counts_node =
+      hierarchy.value().GetByPath({"core", "internal_metrics", "key_fetch_status"});
+  ASSERT_NE(status_counts_node, nullptr);
+  const auto* success_count =
+      status_counts_node->node().get_property<inspect::UintPropertyValue>("Success");
+  ASSERT_NE(success_count, nullptr);
+  EXPECT_EQ(success_count->value(), 1u);
 }
 
 using inspect::testing::ChildrenMatch;

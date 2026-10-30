@@ -208,13 +208,18 @@ void DiagnosticsImpl::UpdateKeyRotationInspect(
     uint32_t consecutive_fetch_failures, int64_t last_fetch_attempt_time_secs) {
   const KeyState shuffler_key_state = GetKeyState(shuffler_maker);
   const KeyState analyzer_key_state = GetKeyState(analyzer_maker);
+  const bool shuffler_has_dynamic_key = shuffler_key_state != KeyState::kUninitialized &&
+                                        shuffler_key_state != KeyState::kBundledFallback;
+  const bool analyzer_has_dynamic_key = analyzer_key_state != KeyState::kUninitialized &&
+                                        analyzer_key_state != KeyState::kBundledFallback;
   int64_t expiration_time_utc = 0;
-  if (shuffler_key_state != KeyState::kUninitialized &&
-      shuffler_key_state != KeyState::kBundledFallback &&
-      analyzer_key_state != KeyState::kUninitialized &&
-      analyzer_key_state != KeyState::kBundledFallback) {
+  if (shuffler_has_dynamic_key && analyzer_has_dynamic_key) {
     expiration_time_utc = std::min(shuffler_maker.expiration_timestamp_secs(),
                                    analyzer_maker.expiration_timestamp_secs());
+  } else if (shuffler_has_dynamic_key) {
+    expiration_time_utc = shuffler_maker.expiration_timestamp_secs();
+  } else if (analyzer_has_dynamic_key) {
+    expiration_time_utc = analyzer_maker.expiration_timestamp_secs();
   }
 
   const uint32_t analyzer_key_index = analyzer_maker.key_index();
