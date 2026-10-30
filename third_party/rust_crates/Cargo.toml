@@ -234,7 +234,7 @@ serde_json5 = "0.2.1"
 serde_repr = "0.1.21"
 sha1 = "0.11.0"
 sha1-0_10 = { package = "sha1", version = "0.10.7" }
-sha2 = "0.11.0"
+sha2 = "0.11.1"
 sha2-0_10 = { package = "sha2", version = "0.10.9" }
 # TODO(https://fxbug.dev/385403698): add a visibility allowlist to prevent unintended usage when
 # targetting fuchsia.

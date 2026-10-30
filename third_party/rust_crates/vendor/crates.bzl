@@ -493,7 +493,7 @@ _NORMAL_DEPENDENCIES = {
             "serde_json5": Label("//third_party/rust_crates/vendor/serde_json5-0.2.1:serde_json5"),
             "sha1": Label("//third_party/rust_crates/vendor/sha1-0.11.0:sha1"),
             "sha1_0_10": Label("//third_party/rust_crates/vendor/sha1-0.10.7:sha1"),
-            "sha2": Label("//third_party/rust_crates/vendor/sha2-0.11.0:sha2"),
+            "sha2": Label("//third_party/rust_crates/vendor/sha2-0.11.1:sha2"),
             "sha2_0_10": Label("//third_party/rust_crates/vendor/sha2-0.10.9:sha2"),
             "simplelog": Label("//third_party/rust_crates/vendor/simplelog-0.12.2:simplelog"),
             "siphasher": Label("//third_party/rust_crates/vendor/siphasher-1.0.4:siphasher"),

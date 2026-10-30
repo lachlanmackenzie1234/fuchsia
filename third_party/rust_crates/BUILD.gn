@@ -2245,11 +2245,11 @@ group("sha2-0.10.9") {
 }
 
 group("sha2") {
-  public_deps = [ ":sha2-v0_11_0" ]
+  public_deps = [ ":sha2-v0_11_1" ]
 }
 
-group("sha2-0.11.0") {
-  public_deps = [ ":sha2-v0_11_0" ]
+group("sha2-0.11.1") {
+  public_deps = [ ":sha2-v0_11_1" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -13634,7 +13634,7 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
   deps += [ ":p256-v0_14_0" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
   deps += [ ":url-v2_5_8" ]
 
   rustenv = []
@@ -13687,7 +13687,7 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
   deps += [ ":p256-v0_14_0" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
   deps += [ ":url-v2_5_8" ]
 
   rustenv = []
@@ -13740,7 +13740,7 @@ rustc_library("mock-omaha-server-v0_5_0") {
   deps += [ ":p256-v0_14_0" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
   deps += [ ":url-v2_5_8" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
@@ -13797,7 +13797,7 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   deps += [ ":p256-v0_14_0" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
   deps += [ ":url-v2_5_8" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
@@ -14892,7 +14892,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":serde_repr-v0_1_21($host_toolchain)" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
   deps += [ ":signature-v3_0_0" ]
   deps += [ ":thiserror-v2_0_21" ]
   deps += [ ":typed-builder-v0_23_2" ]
@@ -15192,7 +15192,7 @@ rustc_library("p256-v0_14_0") {
   deps += [ ":primefield-v0_14_0" ]
   deps += [ ":primeorder-v0_14_0" ]
   deps += [ ":serdect-v0_4_3" ]
-  deps += [ ":sha2-v0_11_0" ]
+  deps += [ ":sha2-v0_11_1" ]
 
   rustenv = []
 
@@ -21205,18 +21205,18 @@ rustc_library("sha2-v0_10_9") {
   applicable_licenses = [ ":sha2-v0_10_9.license" ]
 }
 
-license("sha2-v0_11_0.license") {
+license("sha2-v0_11_1.license") {
   public_package_name = "sha2"
   license_files = [
-    "//third_party/rust_crates/vendor/sha2-0.11.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/sha2-0.11.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/sha2-0.11.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/sha2-0.11.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("sha2-v0_11_0") {
+rustc_library("sha2-v0_11_1") {
   crate_name = "sha2"
-  source_root = "//third_party/rust_crates/vendor/sha2-0.11.0/src/lib.rs"
-  output_name = "sha2-81f099c288ceeaae"
+  source_root = "//third_party/rust_crates/vendor/sha2-0.11.1/src/lib.rs"
+  output_name = "sha2-dfc038d08296ba47"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -21233,8 +21233,8 @@ rustc_library("sha2-v0_11_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=81f099c288ceeaae",
-    "-Cextra-filename=-81f099c288ceeaae",
+    "-Cmetadata=dfc038d08296ba47",
+    "-Cextra-filename=-dfc038d08296ba47",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"oid\"",
@@ -21242,7 +21242,7 @@ rustc_library("sha2-v0_11_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":sha2-v0_11_0.license" ]
+  applicable_licenses = [ ":sha2-v0_11_1.license" ]
 }
 
 license("sharded-slab-v0_1_7.license") {
