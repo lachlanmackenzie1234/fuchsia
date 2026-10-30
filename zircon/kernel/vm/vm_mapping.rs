@@ -2625,6 +2625,7 @@ struct VmMappingCoalescer<'a, const N: usize> {
     phys: [MaybeUninit<PAddr>; N],
     // Safety invariant: `count <= N`.
     count: usize,
+    total_mapped: usize,
     mmu_flags: ArchMmuFlags,
     existing_entry_action: ExistingEntryAction,
 }
@@ -2648,6 +2649,7 @@ impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
             base,
             phys: [const { MaybeUninit::uninit() }; N],
             count: 0,
+            total_mapped: 0,
             mmu_flags,
             existing_entry_action,
         }
@@ -2671,6 +2673,57 @@ impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
         self.phys[count].write(paddr);
         self.count = count + 1;
         Ok(())
+    }
+
+    /// # Safety
+    ///
+    /// `paddr` is valid to map at `vaddr` until `self` is dropped.
+    unsafe fn append_or_adjust_mapping(
+        &mut self,
+        vaddr: usize,
+        paddr: PAddr,
+        mmu_flags: ArchMmuFlags,
+    ) -> Result<(), Status> {
+        // If this isn't the expected vaddr or mmu_flags have changed, flush the run we have first.
+        let count = if self.can_append(vaddr) && mmu_flags == self.mmu_flags {
+            self.count
+        } else {
+            self.flush()?;
+            self.base = vaddr;
+            self.mmu_flags = mmu_flags;
+            0
+        };
+
+        self.phys[count].write(paddr);
+        self.count = count + 1;
+        Ok(())
+    }
+
+    /// How much space remains in the `phys` array, starting from `vaddr`, that can be used to
+    /// opportunistically map additional pages.
+    fn extra_page_capacity_from(&self, vaddr: usize) -> usize {
+        // vaddr must be appendable & the coalescer can't be empty.
+        if self.can_append(vaddr) && self.count != 0 { N - self.count } else { 0 }
+    }
+
+    // Functions for the user to manually manage the pages array. It is up to the user to manage
+    // the page count and ensure the coalescer doesn't overflow, maintains the correct page count
+    // and that the pages are contiguous.
+    fn next_page_slots(&mut self) -> &mut [MaybeUninit<PAddr>] {
+        &mut self.phys[self.count..]
+    }
+
+    fn mmu_flags(&self) -> ArchMmuFlags {
+        self.mmu_flags
+    }
+
+    /// # Safety
+    ///
+    /// `i` is at most `N` minus the current count, and the `i` slots after the current count are
+    /// initialized with physical addresses that are valid to map at the virtual addresses that
+    /// follow the current run until `self` is dropped.
+    unsafe fn increment_count(&mut self, i: usize) {
+        self.count += i;
     }
 
     /// Submit any outstanding mappings to the MMU.
@@ -2725,8 +2778,13 @@ impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
             trace_map_error(status, self.count, self.base);
         }
         self.base = self.base.wrapping_add(self.count * kernel_page::SIZE);
+        self.total_mapped += self.count;
         self.count = 0;
         ret
+    }
+
+    fn total_mapped(&self) -> usize {
+        self.total_mapped
     }
 
     /// Drop the current outstanding mappings without sending them to the MMU.
