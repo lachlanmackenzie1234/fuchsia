@@ -23,8 +23,6 @@ use traces::{CATEGORY_MEMORY_CAPTURE, CATEGORY_MEMORY_SUPPRESS_PERIODIC};
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_metrics as fmetrics;
 
-const PERIODIC_MONITORING_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_minutes(5);
-
 /// Waits while periodic monitoring is suppressed (`is_suppressed() == true`), awaiting
 /// `on_state_changed()` between checks. Breaks out and falls through if `on_state_changed()`
 /// returns an error.
@@ -61,7 +59,7 @@ pub enum ManualMonitoringEvent {
     Completed(Box<ManualMonitoringData>),
 }
 
-/// Waits for [PERIODIC_MONITORING_INTERVAL], restarting the countdown when an on-demand snapshot
+/// Waits for `interval`, restarting the countdown when an on-demand snapshot
 /// starts and returning `Some(data)` immediately if a completed manual snapshot newer than
 /// `last_timestamp` arrives to be recorded in Inspect history, or `None` when the periodic timer
 /// fires. Queued events are drained and coalesced so only the newest `Completed` snapshot is
@@ -69,13 +67,14 @@ pub enum ManualMonitoringEvent {
 async fn wait_for_next_collection(
     manual_events: &mut (impl FusedStream<Item = ManualMonitoringEvent> + Unpin),
     last_timestamp: zx::BootInstant,
+    interval: zx::MonotonicDuration,
 ) -> Option<Box<ManualMonitoringData>> {
-    let mut timer = std::pin::pin!(PERIODIC_MONITORING_INTERVAL.into_timer().fuse());
+    let mut timer = std::pin::pin!(interval.into_timer().fuse());
     loop {
         select! {
             _ = timer => return None,
             first_event = manual_events.select_next_some() => {
-                timer.set(PERIODIC_MONITORING_INTERVAL.into_timer().fuse());
+                timer.set(interval.into_timer().fuse());
                 let mut latest_completed: Option<Box<ManualMonitoringData>> = None;
                 let mut next_event = Some(first_event);
                 while let Some(event) = next_event {
@@ -117,6 +116,7 @@ pub async fn periodic_monitoring(
     bucket_definitions: &BucketDefinitions,
     inspect_root: Node,
     manual_events: impl Stream<Item = ManualMonitoringEvent> + Unpin,
+    interval: zx::MonotonicDuration,
 ) -> Result<()> {
     let mut _current: Option<StringProperty> = None; // Ensure the inspect property is kept as long as necessary.
     let mut bucket_list_node = std::cell::OnceCell::new();
@@ -221,7 +221,7 @@ pub async fn periodic_monitoring(
                     let _ = done_tx.send(());
                 }
             }),
-            wait_for_next_collection(&mut manual_events, timestamp)
+            wait_for_next_collection(&mut manual_events, timestamp, interval)
         );
         manual_collection = next;
     }
@@ -720,6 +720,7 @@ mod tests {
             &bucket_definitions,
             inspector.root().create_child("logger"),
             rx,
+            zx::MonotonicDuration::from_minutes(5),
         ));
 
         // Initial periodic collection runs immediately at t = 0.

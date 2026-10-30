@@ -37,7 +37,7 @@ const std::map<zx_duration_boot_t, TimeSinceBoot> UptimeLevelMap = {
 // Metrics polls the memory state periodically asynchroniously using the passed dispatcher and sends
 // information about the memory Digests to Cobalt, in the form of several Events.
 Metrics::Metrics(const std::vector<memory::BucketMatch>& bucket_matches,
-                 zx::duration poll_frequency, async_dispatcher_t* dispatcher,
+                 std::optional<zx::duration> poll_frequency, async_dispatcher_t* dispatcher,
                  inspect::ComponentInspector* inspector,
                  fidl::Client<fuchsia_metrics::MetricEventLogger> logger, CaptureCb capture_cb,
                  DigestCb digest_cb)
@@ -92,7 +92,9 @@ Metrics::Metrics(const std::vector<memory::BucketMatch>& bucket_matches,
         element.first, metric_memory_node_.CreateUint(element.first, 0)));
   }
 
-  task_.PostDelayed(dispatcher_, zx::usec(1));
+  if (poll_frequency_) {
+    task_.PostDelayed(dispatcher_, zx::usec(1));
+  }
 }
 
 void Metrics::CollectMetrics() {
@@ -130,7 +132,7 @@ void Metrics::CollectMetrics() {
         response.error_value().domain_error() == fuchsia_metrics::Error::kInvalidArguments) {
       FX_LOGS(ERROR) << "LogMetricEvents() returned status INVALID_ARGUMENTS";
     }
-    task_.PostDelayed(dispatcher_, poll_frequency_);
+    task_.PostDelayed(dispatcher_, *poll_frequency_);
   });
 }
 

@@ -47,7 +47,8 @@ const std::string kBucketConfigPath = "/config/data/buckets.json";
 constexpr std::string kLoggerInspectKey = "logger";
 const zx::duration kHighWaterPollFrequency = zx::sec(10);
 const uint64_t kHighWaterThreshold = 10ul * 1024 * 1024;
-constexpr zx::duration kMetricsPollFrequency = zx::min(5);
+// Default delay between periodic captures, if the configured delay is invalid.
+constexpr zx::duration kDefaultMetricsPollFrequency = zx::min(5);
 const char kTraceNameHighPrecisionBandwidth[] = "memory_monitor:high_precision_bandwidth";
 const char kTraceNameHighPrecisionBandwidthCamera[] =
     "memory_monitor:high_precision_bandwidth_camera";
@@ -189,8 +190,17 @@ void Monitor::CreateMetrics() {
           FX_LOGS(ERROR) << "Unable to get metrics.Logger from factory.";
           return;
         }
+        std::optional<zx::duration> poll_frequency;
+        if (config_.capture_periodically()) {
+          if (config_.periodic_capture_delay_s() > 0) {
+            poll_frequency = zx::sec(config_.periodic_capture_delay_s());
+          } else {
+            FX_LOGS(WARNING) << "Invalid periodic capture delay of 0s, using the default delay";
+            poll_frequency = kDefaultMetricsPollFrequency;
+          }
+        }
         metrics_.emplace(
-            bucket_matches_, kMetricsPollFrequency, dispatcher_, &inspector_,
+            bucket_matches_, poll_frequency, dispatcher_, &inspector_,
             fidl::Client<fuchsia_metrics::MetricEventLogger>(std::move(client), dispatcher_),
             [this](Capture* c) { return capture_maker_.GetCapture(c, CaptureLevel::VMO); },
             [this](const Capture& c, Digest* d) { digester_.Digest(c, d); });

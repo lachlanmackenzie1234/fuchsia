@@ -284,9 +284,11 @@ TEST_F(InspectTest, SecondLaunch) {
   EXPECT_THAT(data.GetByPath({"root", "config"}), EqJson(R"json(
     {
       "capture_on_pressure_change": false,
+      "capture_periodically": true,
       "critical_capture_delay_s": 10,
       "imminent_oom_capture_delay_s": 10,
       "normal_capture_delay_s": 10,
+      "periodic_capture_delay_s": 300,
       "warning_capture_delay_s": 10
     }
   )json"));

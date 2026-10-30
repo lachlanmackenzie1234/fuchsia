@@ -10,6 +10,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/inspect/component/cpp/component.h>
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -25,8 +26,10 @@ class Metrics {
  public:
   using CaptureCb = fit::function<zx_status_t(memory::Capture*)>;
   using DigestCb = fit::function<void(const memory::Capture&, memory::Digest*)>;
-  Metrics(const std::vector<memory::BucketMatch>& bucket_matches, zx::duration poll_frequency,
-          async_dispatcher_t* dispatcher, inspect::ComponentInspector* inspector,
+  // If |poll_frequency| is std::nullopt, memory is not periodically captured and reported.
+  Metrics(const std::vector<memory::BucketMatch>& bucket_matches,
+          std::optional<zx::duration> poll_frequency, async_dispatcher_t* dispatcher,
+          inspect::ComponentInspector* inspector,
           fidl::Client<fuchsia_metrics::MetricEventLogger> logger, CaptureCb capture_cb,
           DigestCb digest_cb);
 
@@ -57,7 +60,7 @@ class Metrics {
   static cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot GetUpTimeEventCode(
       zx_instant_boot_t capture_time);
 
-  zx::duration poll_frequency_;
+  std::optional<zx::duration> poll_frequency_;
   async_dispatcher_t* dispatcher_;
   fidl::Client<fuchsia_metrics::MetricEventLogger> logger_;
   CaptureCb capture_cb_;

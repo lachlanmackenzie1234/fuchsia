@@ -54,9 +54,11 @@
         {
             config: [
                 "fuchsia.memory.CaptureOnPressureChange",
+                "fuchsia.memory.CapturePeriodically",
                 "fuchsia.memory.CriticalCaptureDelay",
                 "fuchsia.memory.ImminentOomCaptureDelay",
                 "fuchsia.memory.NormalCaptureDelay",
+                "fuchsia.memory.PeriodicCaptureDelay",
                 "fuchsia.memory.WarningCaptureDelay",
             ],
             from: "parent",

@@ -109,9 +109,11 @@ class MemoryBandwidthInspectTest : public gtest::TestLoopFixture {
     monitor_ = std::make_unique<Monitor>(
         dispatcher(),
         // Arbitrary non-zero delays
-        memory_monitor_config::Config{{.critical_capture_delay_s = 10,
+        memory_monitor_config::Config{{.capture_periodically = true,
+                                       .critical_capture_delay_s = 10,
                                        .imminent_oom_capture_delay_s = 10,
                                        .normal_capture_delay_s = 10,
+                                       .periodic_capture_delay_s = 300,
                                        .warning_capture_delay_s = 10}},
         *memory::CaptureMaker::Create(memory::CreateDefaultOS()),
         /* pressure_provider */ std::nullopt, /* imminent_oom_observer */ nullptr,

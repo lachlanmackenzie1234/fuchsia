@@ -48,6 +48,10 @@ enum Service {
 
 const INTROSPECTOR_PATH: &str = "/svc/fuchsia.component.Introspector.root";
 
+/// Delay between periodic captures, if the configured delay is invalid.
+const DEFAULT_PERIODIC_CAPTURE_INTERVAL: zx::MonotonicDuration =
+    zx::MonotonicDuration::from_minutes(5);
+
 // Lower this thread priority to avoid affecting the system.
 fn run_with_lower_priority() -> Result<()> {
     fuchsia_scheduler::set_role_for_this_thread("fuchsia.memory-monitor.main").into()
@@ -74,6 +78,9 @@ async fn main() -> Result<()> {
     let page_fault_tracker = stalls::refaults::PageFaultProviderImpl::default();
 
     let root_node = fuchsia_inspect::component::inspector().root();
+    let config = memory_monitor2_config::Config::take_from_startup_handle();
+    // Register the current config.
+    root_node.record_child("config", |node| config.record_inspect(node));
     let task_health_node = root_node.create_child("task health");
 
     // Serves Fuchsia performance trace system.
@@ -127,6 +134,13 @@ async fn main() -> Result<()> {
     .await?;
     let (manual_monitoring_tx, manual_monitoring_rx) =
         futures::channel::mpsc::unbounded::<ManualMonitoringEvent>();
+    let capture_periodically = config.capture_periodically;
+    let periodic_capture_interval = if config.periodic_capture_delay_s > 0 {
+        zx::MonotonicDuration::from_seconds(config.periodic_capture_delay_s.into())
+    } else {
+        warn!("Invalid periodic capture delay of 0s, using the default delay");
+        DEFAULT_PERIODIC_CAPTURE_INTERVAL
+    };
     let mut periodic_collection = fuchsia_async::Task::local({
         let attribution_data_provider = fast_attribution_data_provider.clone();
         let stall_provider = stall_provider.clone();
@@ -135,6 +149,14 @@ async fn main() -> Result<()> {
         let metric_event_logger = metric_event_logger.clone();
         let bucket_definitions = bucket_definitions.clone();
         async move {
+            if !capture_periodically {
+                // Periodic collection is disabled by configuration: never complete, so that this
+                // task is not reported as having stopped unexpectedly. Drop the receiver so that
+                // on-demand snapshots do not wait for periodic monitoring to process them.
+                info!("Periodic collection is disabled");
+                drop(manual_monitoring_rx);
+                return std::future::pending().await;
+            }
             periodic_monitoring(
                 kernel_stats,
                 &*attribution_data_provider,
@@ -144,6 +166,7 @@ async fn main() -> Result<()> {
                 &*bucket_definitions,
                 root_node.create_child("logger"),
                 manual_monitoring_rx,
+                periodic_capture_interval,
             )
             .await
         }
@@ -151,8 +174,10 @@ async fn main() -> Result<()> {
         .inspect_err(|e| error!("Periodic collection unexpectedly failed: {:?}", e))
     })
     .fuse();
-    let periodic_collection_health =
-        task_health_node.create_string("periodic_collection_health", "ok");
+    let periodic_collection_health = task_health_node.create_string(
+        "periodic_collection_health",
+        if capture_periodically { "ok" } else { "disabled" },
+    );
 
     let mut collect_stalls_task = fuchsia_async::Task::spawn({
         let stall_provider = stall_provider.clone();
