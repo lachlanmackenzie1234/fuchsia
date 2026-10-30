@@ -2330,6 +2330,106 @@ TEST_F(Dfv2NodeTest, RunHealthCheckFastInternalErrorDoesNotPoisonSubsequentOkPin
   EXPECT_GE(node->last_health_check()->timestamp, before_ping);
 }
 
+TEST_F(Dfv2NodeTest, DhcLogThrottleSuppressesFlappingTransitionsAndFiresTrailingSummary) {
+  auto node = CreateNode("test-hc-throttle");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-throttle");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+  using NodeType = std::remove_reference_t<decltype(*node)>;
+
+  auto flap_to = [&](bool unhealthy) {
+    fuchsia_driver_framework::HealthCheckResponse response;
+    if (unhealthy) {
+      response.conditions({{fuchsia_driver_framework::HealthCondition()
+                                .status(fuchsia_driver_framework::HealthStatus::kUnhealthy)
+                                .reason_code("FLAP")}});
+    }
+    EXPECT_EQ(ZX_OK, fake_driver
+                         .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                             std::move(response)))
+                         .status_value());
+    RunLoopUntilIdle();
+  };
+
+  RunLoopFor(zx::sec(100));
+  for (int i = 0; i < 10; ++i) {
+    flap_to(/*unhealthy=*/i % 2 == 0);
+    RunLoopFor(zx::msec(1));
+  }
+  const uint64_t suppressed_in_window = 10u - NodeType::kMaxDhcLogsPerWindow;
+  EXPECT_EQ(suppressed_in_window, node->dhc_logs_suppressed());
+  EXPECT_EQ(suppressed_in_window, node->dhc_logs_suppressed_pending());
+
+  // The trailing summary fires when the window ends and reports the pending count.
+  RunLoopFor(NodeType::kDhcLogWindow);
+  EXPECT_EQ(0u, node->dhc_logs_suppressed_pending());
+  EXPECT_EQ(suppressed_in_window, node->dhc_logs_suppressed());
+
+  // A subsequent transition is in a new window and starts logging again.
+  flap_to(/*unhealthy=*/true);
+  EXPECT_EQ(suppressed_in_window, node->dhc_logs_suppressed());
+  EXPECT_EQ(0u, node->dhc_logs_suppressed_pending());
+
+  // Suppressed lines pending when the driver restarts are flushed by the restart rather than
+  // leaking onto the new driver instance's first transition.
+  for (int i = 0; i < 6; ++i) {
+    flap_to(/*unhealthy=*/i % 2 == 1);
+    RunLoopFor(zx::msec(1));
+  }
+  EXPECT_GT(node->dhc_logs_suppressed_pending(), 0u);
+  node->ResetHealthCheckState();
+  EXPECT_EQ(0u, node->dhc_logs_suppressed_pending());
+}
+
+TEST_F(Dfv2NodeTest, GlobalDhcWarnTokenBucketCapsLogsAcrossNodes) {
+  // The bucket is process-wide; start from a known state and leave the window expired so other
+  // tests are unaffected by the 40 WARN attempts below. Log output itself is not observable here,
+  // so this exercises the bucket's bookkeeping across many nodes without crashing.
+  driver_manager::Node::ResetGlobalDhcWarnBucketForTesting();
+  RunLoopFor(zx::sec(100));
+  for (int i = 0; i < 40; ++i) {
+    auto node = CreateNode("test-global-bucket-" + std::to_string(i));
+    StartTestDriver(node);
+    auto [driver_server_end, node_client_end] =
+        node_manager->driver_host().TakeDriver("test-global-bucket-" + std::to_string(i));
+    FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+
+    EXPECT_EQ(ZX_OK, fake_driver
+                         .SendHealthAlert(fuchsia_driver_framework::HealthAlert::WithSelfFault(
+                             fuchsia_driver_framework::HealthCheckResponse().conditions(
+                                 {{fuchsia_driver_framework::HealthCondition()
+                                       .status(fuchsia_driver_framework::HealthStatus::kUnhealthy)
+                                       .reason_code("BUCKET_TEST")}})))
+                         .status_value());
+    RunLoopUntilIdle();
+    EXPECT_EQ(1u, node->unhealthy_count());
+  }
+  driver_manager::Node::ResetGlobalDhcWarnBucketForTesting();
+}
+
+TEST(DhcSanitizeTest, SanitizeDhcStrings) {
+  EXPECT_EQ("OK", driver_manager::Node::SanitizeDhcReason("OK"));
+  EXPECT_EQ("invalid_chars", driver_manager::Node::SanitizeDhcReason("invalid\nchars"));
+
+  EXPECT_EQ("Clean message", driver_manager::Node::SanitizeDhcMessage("Clean message"));
+  EXPECT_EQ("Clean 'message'", driver_manager::Node::SanitizeDhcMessage("Clean \"message\""));
+  EXPECT_EQ("Clean  message ", driver_manager::Node::SanitizeDhcMessage("Clean \nmessage\t"));
+
+  // Truncation at 256 bytes on valid UTF-8
+  std::string long_msg(300, 'A');
+  EXPECT_EQ(256u, driver_manager::Node::SanitizeDhcMessage(long_msg).size());
+
+  // Multi-byte UTF-8 character ("\xc3\xa9", 2 bytes) starting at index 255 (split across 256)
+  // must drop the split character without corrupting a preceding multi-byte character at 253..254.
+  std::string utf8_split = std::string(253, 'A') + "\xc3\xa9" + "\xc3\xa9" + "BC";
+  EXPECT_EQ(255u, driver_manager::Node::SanitizeDhcMessage(utf8_split).size());
+
+  // Multi-byte UTF-8 character starting cleanly at index 256 must keep all 256 preceding bytes.
+  std::string utf8_boundary = std::string(254, 'A') + "\xc3\xa9" + "\xc3\xa9" + "BC";
+  EXPECT_EQ(256u, driver_manager::Node::SanitizeDhcMessage(utf8_boundary).size());
+}
+
 TEST_F(Dfv2NodeTest, HealthTransitionHistoryBoundedAndTracksFlapping) {
   auto node = CreateNode("test-hc-flap");
   StartTestDriver(node);

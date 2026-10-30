@@ -742,9 +742,30 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Clears the cached records and alert probe timestamps and appends a DRIVER_STARTED entry to a
   // non-empty transition history. Counters, the history, and whether the node was unhealthy
-  // survive the restart so a recovery after a restart still counts. Called when a new driver is
-  // started.
+  // survive the restart so a recovery after a restart still counts. Any pending [DHC] log
+  // suppression summary is flushed first. Called when a new driver is started.
   void ResetHealthCheckState();
+
+  // [DHC] transition log throttling: at most kMaxDhcLogsPerWindow lines per node per kDhcLogWindow,
+  // followed by one trailing summary of the lines suppressed in that window.
+  static constexpr size_t kMaxDhcLogsPerWindow = 4;
+  static constexpr zx::duration kDhcLogWindow = zx::sec(60);
+  // Across all nodes, at most kMaxGlobalDhcWarns fault transitions per kGlobalDhcWarnWindow are
+  // logged at WARN; the rest are demoted to DEBUG so a fleet-wide fault storm cannot flood syslog.
+  static constexpr size_t kMaxGlobalDhcWarns = 32;
+  static constexpr zx::duration kGlobalDhcWarnWindow = zx::sec(60);
+  // Total [DHC] lines this node suppressed since it was created (including ones already
+  // summarized), and the ones suppressed in the current window that no summary has reported yet.
+  uint64_t dhc_logs_suppressed() const { return dhc_logs_suppressed_total_; }
+  uint64_t dhc_logs_suppressed_pending() const { return dhc_logs_suppressed_pending_; }
+  // Empties the process-wide WARN token bucket. Tests only.
+  static void ResetGlobalDhcWarnBucketForTesting();
+
+  // Replace control and non-ASCII bytes in a reason code with '_', and quotes/control bytes in a
+  // (UTF-8 truncated) message with ' ' / '\'', so a driver-supplied string cannot forge or break a
+  // [DHC] log line.
+  static std::string SanitizeDhcReason(std::string_view raw);
+  static std::string SanitizeDhcMessage(std::string_view raw);
 
  private:
   // Which side of this node's topology a neighbor sweep walks.
@@ -754,13 +775,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // policy documented on HealthCheckRecord. Every cache write goes through here.
   void MaybeStoreHealthCheckRecord(HealthCheckRecord record);
 
-  // Records a health transition (updating unhealthy/recovered counters and the bounded history)
-  // unless |next| has the same effective outcome as the previous informative record
-  // (|same_outcome|) or is an initial OK on a node with no history. |transition_time| overrides
-  // |next.timestamp| when a retained record is republished.
+  // Records a health transition (updating unhealthy/recovered counters and the bounded history,
+  // and emitting a throttled [DHC] log line) unless |next| has the same effective outcome as the
+  // previous informative record (|same_outcome|) or is an initial OK on a node with no history.
+  // |republished| marks a retained non-PING record being published again after a PING, which is
+  // logged at INFO rather than as a new fault. |transition_time| overrides |next.timestamp| in
+  // that case.
   void MaybeRecordHealthTransition(bool had_informative_prev, bool same_outcome,
-                                   const HealthCheckRecord& next,
+                                   const HealthCheckRecord& next, bool republished = false,
                                    std::optional<zx::time> transition_time = std::nullopt);
+
+  // Logs one INFO line summarizing the [DHC] lines suppressed in the window that just ended.
+  void EmitTrailingDhcSummary();
 
   // Returns the nearest nodes on |side| that have a running driver, routing through up to three
   // intermediate composite parent or owned-by-parent nodes.
@@ -1089,11 +1115,15 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::optional<HealthCheckRecord> last_non_ping_health_check_;
   uint64_t unhealthy_count_ = 0;
   uint64_t recovered_count_ = 0;
-  // True while the latest recorded transition was UNHEALTHY or an error. Unlike
+  // Severity rank (0 OK, 1 DEGRADED, 2 UNHEALTHY/error) of the latest recorded transition. Unlike
   // last_health_check_, this survives ResetHealthCheckState() so that a node that recovers after
   // a driver restart still increments recovered_count_.
-  bool currently_unhealthy_ = false;
+  int last_transition_rank_ = 0;
   std::deque<HealthTransitionEntry> health_history_;
+  zx::time dhc_log_window_start_ = zx::time::infinite_past();
+  size_t dhc_logs_in_window_ = 0;
+  uint64_t dhc_logs_suppressed_pending_ = 0;
+  uint64_t dhc_logs_suppressed_total_ = 0;
   // When and at what level this node was last probed in response to a health alert.
   std::optional<zx::time> last_alert_probe_time_;
   std::optional<fuchsia_driver_framework::HealthCheckRequest> last_alert_probe_level_;
