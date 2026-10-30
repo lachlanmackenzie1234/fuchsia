@@ -78,7 +78,9 @@ def _fx_package_impl(
         visibility,
         **kwargs):
     # The default value of non-mandatory inherited attributes is always overridden to be None,
-    # regardless of the original attribute definition's default value.
+    # regardless of the original attribute definition's default value. Thus, `testonly` must be
+    # checked against `None` to distinguish an explicit `testonly = False` from an omitted value,
+    # and inherited list attributes below require `or []` before concatenation.
     #
     # See https://bazel.build/extending/macros#attribute-inheritance.
     if test_components:
@@ -143,6 +145,9 @@ fx_package = macro(
 
             Defaults to `name` to match the behavior of the GN `fuchsia_package()` template.
             Note that this is different from the Bazel SDK behavior.""",
+            # Otherwise an unset value reaches the impl as an always-truthy
+            # select(), and the `name` fallback never applies.
+            configurable = False,
         ),
         # Do not inherit implementation details passed to `_build_fuchsia_package()`.
         "collected_resources": None,

@@ -49,6 +49,7 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 load("//build/testing/environments:device_types.bzl", "device_types")
 load(":fx_test_validation_tests.bzl", "fx_test_validation_tests")
 load(":gn_visibility_test.bzl", "gn_visibility_test")
+load(":rules.bzl", "verify_names_in_fx_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -470,6 +471,9 @@ filegroup(
         ":verify_example_cc_test_unittest_package_unstripped_binaries",
         ":verify_example_cc_test_unstripped_binaries",
         ":verify_example_compiled_manifest_paths",
+        ":verify_example_custom_names_package",
+        ":verify_example_default_name_package",
+        ":verify_example_default_name_test_package",
         ":verify_example_disabled_extra_linker_flags_unstripped_binaries",
         ":verify_example_extra_linker_flags_shared_lib_unstripped_binaries",
         ":verify_example_extra_linker_flags_unstripped_binaries",
@@ -1352,4 +1356,86 @@ verify_fx_test_unstripped_binaries(
         "libfdio.so",
     ],
     test = ":example_cc_test",
+)
+
+# Tests that `fx_component()` defaults `component_name` to `name` (overriding
+# `compiled_manifest`'s `component_name`) and `fx_package()` defaults
+# `package_name` (and `archive_name`) to `name`.
+fx_component(
+    name = "example_default_name_component",
+    compiled_manifest = ":example_helper_manifest",
+)
+
+fx_package(
+    name = "example_default_name_package",
+    components = [":example_default_name_component"],
+)
+
+verify_names_in_fx_package(
+    name = "verify_example_default_name_package",
+    expected_component_names = ["example_default_name_component"],
+    expected_far_name = "example_default_name_package.far",
+    expected_package_name = "example_default_name_package",
+    package = ":example_default_name_package",
+)
+
+# Tests that `fx_test_component()` defaults `component_name` to `name`
+# (overriding `compiled_manifest`'s `component_name`) when `component_name` is
+# omitted.
+fx_test_component(
+    name = "example_default_name_test_component",
+    compiled_manifest = ":example_test_manifest",
+    deps = [":example_test_packaged_bin"],
+)
+
+fx_package(
+    name = "example_default_name_test_package",
+    test_components = [":example_default_name_test_component"],
+)
+
+verify_names_in_fx_package(
+    name = "verify_example_default_name_test_package",
+    testonly = True,
+    expected_component_names = ["example_default_name_test_component"],
+    expected_far_name = "example_default_name_test_package.far",
+    expected_package_name = "example_default_name_test_package",
+    package = ":example_default_name_test_package",
+)
+
+# Tests that explicit `component_name` on `fx_component()` and
+# `fx_test_component()` overrides both `name` and `compiled_manifest`'s
+# `component_name`, and explicit `package_name` and `archive_name` on
+# `fx_package()` override `name`.
+fx_component(
+    name = "example_custom_name_component",
+    testonly = True,
+    compiled_manifest = ":example_helper_manifest",
+    component_name = "custom_helper_component",
+)
+
+fx_test_component(
+    name = "example_custom_name_test_component",
+    compiled_manifest = ":example_test_manifest",
+    component_name = "custom_test_component",
+    deps = [":example_test_packaged_bin"],
+)
+
+fx_package(
+    name = "example_custom_names_package",
+    package_name = "custom_package_name",
+    archive_name = "custom_archive_name",
+    components = [":example_custom_name_component"],
+    test_components = [":example_custom_name_test_component"],
+)
+
+verify_names_in_fx_package(
+    name = "verify_example_custom_names_package",
+    testonly = True,
+    expected_component_names = [
+        "custom_helper_component",
+        "custom_test_component",
+    ],
+    expected_far_name = "custom_archive_name.far",
+    expected_package_name = "custom_package_name",
+    package = ":example_custom_names_package",
 )

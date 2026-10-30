@@ -399,6 +399,9 @@ _COMMON_COMPONENT_ATTRS = {
         Defaults to the `name` of this target.
         """,
         mandatory = False,
+        # Otherwise an unset value reaches the impl as an always-truthy
+        # select(), and the `name` fallback never applies.
+        configurable = False,
     ),
     "check_includes": attr.bool(
         doc = """Whether to check against `expect_includes()` in `deps`.
