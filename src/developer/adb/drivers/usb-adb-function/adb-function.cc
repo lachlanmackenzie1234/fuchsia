@@ -27,6 +27,10 @@ namespace ffunction = fuchsia_hardware_usb_function;
 
 namespace {
 
+constexpr bool IsTeardownStatus(zx_status_t status) {
+  return status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED || status == ZX_ERR_BAD_STATE;
+}
+
 // CompleterType follows fidl::internal::WireCompleter<RequestType>::Async
 template <typename CompleterType>
 void CompleteTxn(CompleterType& completer, zx_status_t status) {
@@ -274,6 +278,12 @@ void UsbAdbDevice::SendQueued() {
   }
 
   for (auto it = tx_pending_reqs_.begin(); it != tx_pending_reqs_.end();) {
+    if (it->status != ZX_OK) {
+      // A chunk of this transaction already failed while other chunks remain in flight.
+      // Wait for those in-flight chunks to drain in TxComplete() rather than queueing more
+      // chunks for a failed transfer or sending subsequent transfers out of stream order.
+      return;
+    }
     if (it->start == it->request.data().size()) {
       ++it;
       continue;
@@ -321,8 +331,7 @@ void UsbAdbDevice::SendQueued() {
           UpdateQueueStats();
           continue;
         }
-        ++it;
-        continue;
+        return;
       }
       // Out of hardware request descriptors; return until in-flight completions return descriptors.
       return;
@@ -352,8 +361,7 @@ void UsbAdbDevice::SendQueued() {
     if (copy_failed) {
       it->status = ZX_ERR_INTERNAL;
       it->start = it->request.data().size();
-      ++it;
-      continue;
+      return;
     }
 
     if (it->start < it->request.data().size()) {
@@ -377,13 +385,12 @@ void UsbAdbDevice::ReceiveQueued() {
     pending_replies_.pop();
 
     zx_status_t status = completion.status().value_or(ZX_ERR_INTERNAL);
+    const bool is_teardown = IsTeardownStatus(status);
     auto req = usb::FidlRequest(std::move(completion.request().value()));
 
     if (status != ZX_OK) {
-      zx_status_t reply_status = (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED)
-                                     ? ZX_ERR_CANCELED
-                                     : ZX_ERR_INTERNAL;
-      if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED) {
+      zx_status_t reply_status = is_teardown ? ZX_ERR_CANCELED : ZX_ERR_INTERNAL;
+      if (is_teardown) {
         zxlogf(INFO, "RxComplete called with teardown status: %s.", zx_status_get_string(status));
       } else {
         zxlogf(ERROR, "RxComplete called with error %s.", zx_status_get_string(status));
@@ -419,8 +426,8 @@ void UsbAdbDevice::ReceiveQueued() {
     req.reset_buffers(bulk_out_ep_.GetMapped());
 
     // Do not re-queue requests onto the hardware endpoint if the completion failed due to
-    // disconnect or cancellation; return the request to the pool instead.
-    if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED) {
+    // disconnect, cancellation, or disabled endpoint state; return the request to the pool instead.
+    if (is_teardown) {
       bulk_out_ep_.PutRequest(std::move(req));
       continue;
     }
@@ -617,7 +624,8 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
               if (status != ZX_OK && it->status == ZX_OK) {
                 it->status = status;
               }
-              if (it->start == it->request.data().size() && it->in_flight_vmo_ids.empty()) {
+              if ((it->start == it->request.data().size() || it->status != ZX_OK) &&
+                  it->in_flight_vmo_ids.empty()) {
                 CompleteTxn(it->completer, it->status);
                 tx_pending_reqs_.erase(it);
               }
@@ -627,10 +635,11 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
         }
         UpdateQueueStats();
 
-        // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, as the underlying connection
-        // could be disconnected or USB_RESET is being processed. Calling adb_send_locked in such
-        // scenario will deadlock and crash the driver (see https://fxbug.dev/42174506).
-        if (status != ZX_ERR_IO_NOT_PRESENT) {
+        // Do not queue requests if status is ZX_ERR_IO_NOT_PRESENT, ZX_ERR_CANCELED, or
+        // ZX_ERR_BAD_STATE, as the underlying connection could be disconnected or USB_RESET is
+        // being processed. Calling adb_send_locked in such scenario will deadlock and crash the
+        // driver (see https://fxbug.dev/42174506).
+        if (!IsTeardownStatus(status)) {
           SendQueued();
         }
         break;
