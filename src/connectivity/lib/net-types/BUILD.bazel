@@ -80,6 +80,7 @@ rustc_test(
         "//src/connectivity/network:performance_critical_rust_crate",
     ],
     crate = ":net-types",
+    crate_features = ["std"],
     deps = ["//third_party/rust_crates/vendor:test-case"],
 )
 

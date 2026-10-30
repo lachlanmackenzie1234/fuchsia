@@ -105,6 +105,7 @@ rustc_test("net-types_test") {
     "//build/config/rust/lints:deny_unused_results",
     "//src/connectivity/network:performance_critical_rust_crate",
   ]
+  features = [ "std" ]
 }
 
 rustc_test("net-types-redaction_test") {

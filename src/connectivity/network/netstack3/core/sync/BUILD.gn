@@ -170,6 +170,7 @@ rustc_test("netstack3-sync-instrumented_test") {
   proc_macro_deps = _COMMON_PROC_MACRO_DEPS
   deps = _COMMON_DEPS + [ "//src/lib/fuchsia-sync" ]
   configs += _COMMON_BUILD_FLAGS
+  features = [ "rc-debug-names" ]
   visibility = [ ":*" ]
 }
 

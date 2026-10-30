@@ -115,6 +115,7 @@ rustc_test(
     name = "netstack3-sync-instrumented_test",
     build_flags = _COMMON_BUILD_FLAGS,
     crate = ":netstack3-sync-instrumented",
+    crate_features = ["rc-debug-names"],
     edition = "2024",
     visibility = ["//visibility:private"],
     deps = ["//src/lib/fuchsia-sync"],
