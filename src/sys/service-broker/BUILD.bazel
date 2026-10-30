@@ -57,4 +57,5 @@ fx_package(
 fx_test(
     name = "service-broker-unittests",
     package = ":service-broker-unittests-package",
+    visibility = ["//src/sys:__pkg__"],
 )

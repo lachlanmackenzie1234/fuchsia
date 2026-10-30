@@ -30,6 +30,7 @@ group("tests") {
     "process-resolver:tests",
     "run_test_suite:tests",
     "runners:tests",
+    "service-broker:tests",
     "stash:tests",
     "test_manager:tests",
     "test_runners:tests",
