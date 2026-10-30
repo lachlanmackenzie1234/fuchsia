@@ -22,9 +22,7 @@ def cipd_platform_name(ctx):
 
     This is the platform name that appears in most prebuilt paths.
     """
-    os = {
-        "darwin": "mac",
-    }.get(ctx.platform.os, ctx.platform.os)
+    os = ctx.platform.os
     arch = {
         "amd64": "x64",
     }.get(ctx.platform.arch, ctx.platform.arch)

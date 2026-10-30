@@ -535,23 +535,9 @@ elif which inotifywait >/dev/null; then
       @"${fuchsia_dir}"/out \
       @"${fuchsia_dir}"/zircon/public
   }
-elif which apt-get >/dev/null; then
+else
   echo "Missing inotifywait"
   echo "Try: sudo apt-get install inotify-tools"
-  exit 1
-elif which fswatch >/dev/null; then
-  monitor_source_changes() {
-    fswatch --one-per-batch --event=Updated \
-      -e "${fuchsia_dir}"/out/ \
-      -e "${fuchsia_dir}"/zircon/public/ \
-      -e "/\." \
-      -e "/lock" \
-      -e "/compile_commands.json" \
-      .
-  }
-else
-  echo "Missing fswatch"
-  echo "Try: brew install fswatch"
   exit 1
 fi
 
@@ -560,18 +546,14 @@ monitor_and_run() {
   local -r display_name="$2"
   shift 2
 
-  # Explicitly bind $event_pipe to a numbered FD so read behaves consistently
-  # on Linux and Mac shells ("read <$event_pipe" closes $event_pipe after the
-  # first read on Mac bash).
+  # Explicitly bind $event_pipe to a numbered FD.
   exec 3<"${event_pipe}"
 
   while read -r -u 3; do
-    if [[ "$(uname -s)" != "Darwin" ]]; then
-      # Drain all subsequent events in a batch.
-      # Otherwise when multiple files are changes at once we'd run multiple
-      # times.
-      read -r -u 3 -d "" -t .01
-    fi
+    # Drain all subsequent events in a batch.
+    # Otherwise when multiple files are changes at once we'd run multiple
+    # times.
+    read -r -u 3 -d "" -t .01
     # Allow at most one fx -i invocation per Fuchsia dir at a time.
     # Otherwise multiple concurrent fx -i invocations can trigger each other
     # and cause a storm.
