@@ -8,12 +8,8 @@ import("//build/cpp/library_headers.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("params.gni")
 
-static_library("crashlog") {
+group("crashlog") {
   public_deps = [ ":headers" ]
-
-  complete_static_lib = true
-
-  sources = [ "crashlog_ffi.cc" ]
   deps = [ ":crashlog-rs" ]
 }
 
@@ -29,7 +25,6 @@ kernel_rust_mod("crashlog-rs") {
     "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",
-    "//src/lib/zr",
     "//third_party/rust_crates:bitflags",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/console:console_rs",

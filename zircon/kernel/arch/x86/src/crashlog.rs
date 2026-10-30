@@ -7,12 +7,11 @@
 //! Architectural crashlog register formatting for x86_64.
 
 use core::fmt::Write;
-use libc::stdio::FILE;
 
 use super::Iframe;
 
 /// Hardware crashlog registers capturing CPU exception state on x86_64 (`crashlog_regs_t`).
-pub(super) use x86_crashlog_bindings::crashlog_regs_t as CrashlogRegs;
+pub use x86_crashlog_bindings::crashlog_regs_t as CrashlogRegs;
 
 // `regs.iframe` is read as an `Iframe`, whose field offsets mod.rs pins to `iframe_t`'s.
 zr::static_assert!(
@@ -24,7 +23,7 @@ zr::static_assert!(
 
 #[cold]
 #[inline(never)]
-fn write_hex_reg(w: &mut FILE, name: &str, val: u64) -> core::fmt::Result {
+fn write_hex_reg(w: &mut impl Write, name: &str, val: u64) -> core::fmt::Result {
     if val == 0 {
         writeln!(w, "{:>13}:                  0", name)
     } else {
@@ -33,7 +32,7 @@ fn write_hex_reg(w: &mut FILE, name: &str, val: u64) -> core::fmt::Result {
 }
 
 /// Render the architecture-specific details of an [`Iframe`] in a fashion suitable for a crashlog
-/// into the specified `FILE` target.
+/// into `target`.
 ///
 /// # Safety
 ///
@@ -42,7 +41,7 @@ fn write_hex_reg(w: &mut FILE, name: &str, val: u64) -> core::fmt::Result {
 /// (no concurrent mutation) for the duration of the call.
 #[cold]
 #[sanitize(address = "off")]
-pub(super) unsafe fn arch_render_crashlog_registers(target: &mut FILE, regs: &CrashlogRegs) {
+pub unsafe fn render_crashlog_registers(target: &mut impl Write, regs: &CrashlogRegs) {
     if regs.iframe.is_null() {
         let _ = write!(target, "missing");
         return;

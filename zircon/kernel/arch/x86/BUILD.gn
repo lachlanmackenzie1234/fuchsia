@@ -414,7 +414,6 @@ kernel_rust_mod("arch-x86-rs") {
     "src/cache_ffi.rs",
     "src/cpuid.rs",
     "src/crashlog.rs",
-    "src/crashlog_ffi.rs",
     "src/descriptor.rs",
     "src/descriptor_ffi.rs",
     "src/fake_msr_access.rs",

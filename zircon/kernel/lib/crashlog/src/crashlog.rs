@@ -21,6 +21,7 @@ use ksync::{KCell, declare_singleton_mutex};
 use libc::stdio::{FILE, StringFile};
 use zx_types::ZX_KOID_INVALID;
 
+use crate::arch_rs::crashlog::{CrashlogRegs, render_crashlog_registers};
 use crate::backtrace::Backtrace;
 use crate::debuglog_rs::dlog_render_to_crashlog;
 use crate::kernel::thread;
@@ -50,32 +51,10 @@ mod tests;
 use panic_buffer::PANIC_BUFFER;
 
 unsafe extern "C" {
-    fn arch_render_crashlog_registers(target: *mut FILE, regs: *const CrashlogRegs);
-
     // Defined in //zircon/kernel/lib/io.
     #[allow(non_upper_case_globals)]
     static mut gStdoutNoPersist: FILE;
 }
-
-/// Size of the architecture's `crashlog_regs_t`.
-#[cfg(target_arch = "aarch64")]
-const CRASHLOG_REGS_SIZE: usize = 48;
-/// Size of the architecture's `crashlog_regs_t`.
-#[cfg(target_arch = "x86_64")]
-const CRASHLOG_REGS_SIZE: usize = 40;
-/// Size of the architecture's `crashlog_regs_t`.
-#[cfg(target_arch = "riscv64")]
-const CRASHLOG_REGS_SIZE: usize = 24;
-
-/// Storage for the architecture's `crashlog_regs_t`.
-///
-/// The arch-independent crashlog code never looks inside the registers; they are written by the
-/// architecture's exception handlers and rendered by `arch_render_crashlog_registers`.
-#[repr(C, align(8))]
-struct CrashlogRegs(zr::OpaqueBytes<CRASHLOG_REGS_SIZE>);
-
-zr::static_assert!(core::mem::size_of::<CrashlogRegs>() == CRASHLOG_REGS_SIZE);
-zr::static_assert!(core::mem::align_of::<CrashlogRegs>() == 8);
 
 /// The C++ `crashlog_t`.
 #[repr(C)]
@@ -108,7 +87,9 @@ impl CrashlogCell {
 /// The global crashlog, exported to C++ as `g_crashlog`.
 #[unsafe(export_name = "g_crashlog")]
 static G_CRASHLOG: CrashlogCell = CrashlogCell(UnsafeCell::new(Crashlog {
-    regs: CrashlogRegs(zr::OpaqueBytes::new([0; CRASHLOG_REGS_SIZE])),
+    // SAFETY: `CrashlogRegs` holds only integers and raw pointers, for which all-zero bytes are
+    // valid.
+    regs: unsafe { core::mem::zeroed() },
 }));
 
 /// Holder for [`STDOUT_PANIC_BUFFER`], which hands out raw mutable [`FILE`] pointers for
@@ -326,12 +307,13 @@ pub(crate) fn crashlog_to_string(target: &mut [u8], reason: u32) -> usize {
         // Note: it is the architecture specific implementation which is responsible
         // for determining if the crashlog registers are valid, and what (if
         // anything) to print.
-        outfile.with_file(|file| {
-            // SAFETY: `file.as_mut_ptr()` points to a valid `FILE` for the duration of the call,
-            // and `regs_ptr()` points to the global crashlog registers, whose `iframe` is null or
-            // points to the live `iframe_t` of the crashing CPU.
-            unsafe { arch_render_crashlog_registers(file.as_mut_ptr(), G_CRASHLOG.regs_ptr()) }
-        });
+        // SAFETY: `regs_ptr()` is valid and aligned for reads of an initialized `CrashlogRegs`.
+        // Copying them out keeps a nested fault while rendering, which rewrites the global
+        // registers, from writing under a live reference.
+        let regs = unsafe { G_CRASHLOG.regs_ptr().read() };
+        // SAFETY: `regs.iframe` is null or points to the `iframe_t` of the crashing CPU, on the
+        // stack of an exception handler that does not return, so it stays live and unwritten.
+        unsafe { render_crashlog_registers(&mut outfile, &regs) };
 
         let _ = writeln!(outfile, "BACKTRACE (up to 16 calls)");
         let mut bt = Backtrace::new();

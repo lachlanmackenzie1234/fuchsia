@@ -29,6 +29,7 @@ static_assert((kMinCrashlogSize % kPersistentRamAllocationGranularity) == 0,
 struct crashlog_t {
   crashlog_regs_t regs;
 };
+static_assert(sizeof(crashlog_t) == sizeof(crashlog_regs_t));
 
 // Defined in Rust.
 extern crashlog_t g_crashlog;

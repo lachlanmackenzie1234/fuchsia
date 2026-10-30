@@ -7,7 +7,7 @@
 mod arch;
 mod asid_allocator;
 pub mod cache;
-mod crashlog;
+pub mod crashlog;
 mod exceptions;
 mod feature;
 mod fpu;

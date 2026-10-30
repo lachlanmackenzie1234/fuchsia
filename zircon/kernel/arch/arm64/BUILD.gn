@@ -92,7 +92,6 @@ if (toolchain_environment == "kernel.phys" ||
       "asm.S",
       "cache-ops.S",
       "coresight.cc",
-      "crashlog.cc",
       "dap.cc",
       "debugger.cc",
       "exceptions.S",
