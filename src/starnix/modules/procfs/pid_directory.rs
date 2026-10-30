@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::fs::{HidePid, ProcFs};
-use itertools::Itertools;
 use regex_lite::Regex;
 use starnix_core::mm::{
     MemoryAccessor, MemoryAccessorExt, MemoryManager, MemoryStats, PAGE_SIZE, ProcMapsFile,
@@ -1490,74 +1489,85 @@ impl DynamicFileSource for StatusFile {
         let start_monotonic = zx::MonotonicInstant::get();
         let start_boot = zx::BootInstant::get();
         let task = self.target.get_task()?;
-        let creds_string = {
-            // Collect everything stored in info in this block.  There is a lock ordering
-            // issue with the task lock acquired below, and cloning info is
-            // expensive.
-            write!(sink, "Name:\t")?;
-            sink.write(task.persistent_info.command_guard().comm_name());
-            let creds = task.persistent_info.real_creds();
-            format!(
-                "Uid:\t{}\t{}\t{}\t{}\nGid:\t{}\t{}\t{}\t{}\nGroups:\t{}",
-                creds.uid,
-                creds.euid,
-                creds.saved_uid,
-                creds.fsuid,
-                creds.gid,
-                creds.egid,
-                creds.saved_gid,
-                creds.fsgid,
-                creds.groups.iter().map(|n| n.to_string()).join(" ")
-            )
-        };
 
-        writeln!(sink)?;
+        // Typical `/proc/<pid>/status` output fits in 1024 bytes; grow the buffer once.
+        sink.reserve(1024);
+
+        sink.write(b"Name:\t");
+        sink.write(task.persistent_info.command_guard().comm_name());
+        sink.write(b"\n");
 
         if let Ok(fs) = task.fs() {
             writeln!(sink, "Umask:\t0{:03o}", fs.umask().bits())?;
         }
-        {
+
+        // Snapshot everything needed from the task state up front so `task.read()` is acquired
+        // only once and nothing is formatted while holding it.
+        let (sigblk, sigpnd, no_new_privs, state_code, tracer_tg) = {
             let task_state = task.read();
-            writeln!(sink, "SigBlk:\t{:016x}", task_state.signal_mask().0)?;
-            writeln!(sink, "SigPnd:\t{:016x}", task_state.task_specific_pending_signals().0)?;
+            (
+                task_state.signal_mask().0,
+                task_state.task_specific_pending_signals().0,
+                task_state.no_new_privs() as u8,
+                task_state.state_code(),
+                task_state.ptrace.as_ref().and_then(|p| p.core_state.thread_group.upgrade()),
+            )
+        };
+        // The tracer's `Arc<ThreadGroup>` is dropped here, outside of the task lock.
+        let tracer_pid = tracer_tg.map_or(0, |tg| tg.leader.id);
+
+        let thread_group = task.thread_group();
+        let shdpnd = thread_group.pending_signals.lock().pending().0;
+        let (sigign, sigcgt) = thread_group.signal_actions.ignored_and_caught();
+        let (ppid, threads) = {
+            let tg_state = thread_group.read();
+            (tg_state.get_ppid(), tg_state.tasks_count())
+        };
+
+        writeln!(sink, "SigBlk:\t{:016x}", sigblk)?;
+        writeln!(sink, "SigPnd:\t{:016x}", sigpnd)?;
+        writeln!(sink, "ShdPnd:\t{:016x}", shdpnd)?;
+        writeln!(sink, "SigIgn:\t{:016x}", sigign.0)?;
+        writeln!(sink, "SigCgt:\t{:016x}", sigcgt.0)?;
+        writeln!(sink, "NoNewPrivs:\t{}", no_new_privs)?;
+
+        {
+            // Since version 3.8 all nonexistent capabilities are reported as not-enabled.
+            let creds = task.real_creds();
+            writeln!(sink, "CapInh:\t{:016x}", creds.cap_inheritable)?;
+            writeln!(sink, "CapPrm:\t{:016x}", creds.cap_permitted)?;
+            writeln!(sink, "CapEff:\t{:016x}", creds.cap_effective)?;
+            writeln!(sink, "CapBnd:\t{:016x}", creds.cap_bounding)?;
+            writeln!(sink, "CapAmb:\t{:016x}", creds.cap_ambient)?;
+
+            writeln!(sink, "State:\t{} ({})", state_code.code_char(), state_code.name())?;
+            writeln!(sink, "Tgid:\t{}", task.pid)?;
+            writeln!(sink, "Pid:\t{}", self.target.tid)?;
+            writeln!(sink, "PPid:\t{}", ppid)?;
+            writeln!(sink, "TracerPid:\t{}", tracer_pid)?;
+
             writeln!(
                 sink,
-                "ShdPnd:\t{:016x}",
-                task.thread_group().pending_signals.lock().pending().0
+                "Uid:\t{}\t{}\t{}\t{}",
+                creds.uid, creds.euid, creds.saved_uid, creds.fsuid
+            )?;
+            writeln!(
+                sink,
+                "Gid:\t{}\t{}\t{}\t{}",
+                creds.gid, creds.egid, creds.saved_gid, creds.fsgid
             )?;
 
-            let (sigign, sigcgt) = task.thread_group().signal_actions.ignored_and_caught();
-            writeln!(sink, "SigIgn:\t{:016x}", sigign.0)?;
-            writeln!(sink, "SigCgt:\t{:016x}", sigcgt.0)?;
-
-            writeln!(sink, "NoNewPrivs:\t{}", task_state.no_new_privs() as u8)?;
+            // Stream supplementary groups directly into the sink to avoid intermediate `String`s.
+            sink.write(b"Groups:\t");
+            let mut itoa_buf = itoa::Buffer::new();
+            for (i, &gid) in creds.groups.iter().enumerate() {
+                if i > 0 {
+                    sink.write(b" ");
+                }
+                sink.write(itoa_buf.format(gid).as_bytes());
+            }
+            sink.write(b"\n");
         }
-
-        // Since version 3.8 all nonexistent capabilities are reported as not-enabled.
-        let creds = task.real_creds();
-        writeln!(sink, "CapInh:\t{:016x}", creds.cap_inheritable)?;
-        writeln!(sink, "CapPrm:\t{:016x}", creds.cap_permitted)?;
-        writeln!(sink, "CapEff:\t{:016x}", creds.cap_effective)?;
-        writeln!(sink, "CapBnd:\t{:016x}", creds.cap_bounding)?;
-        writeln!(sink, "CapAmb:\t{:016x}", creds.cap_ambient)?;
-
-        let state_code = task.state_code();
-        writeln!(sink, "State:\t{} ({})", state_code.code_char(), state_code.name())?;
-
-        writeln!(sink, "Tgid:\t{}", task.pid)?;
-        writeln!(sink, "Pid:\t{}", self.target.tid)?;
-        let (ppid, threads, tracer_pid) = {
-            let tracer_pid =
-                task.read().ptrace.as_ref().map_or(0, |p| {
-                    p.core_state.thread_group.upgrade().map_or(0, |tg| tg.leader.id)
-                });
-            let task_group = task.thread_group().read();
-            (task_group.get_ppid(), task_group.tasks_count(), tracer_pid)
-        };
-        writeln!(sink, "PPid:\t{}", ppid)?;
-        writeln!(sink, "TracerPid:\t{}", tracer_pid)?;
-
-        writeln!(sink, "{}", creds_string)?;
 
         if let Ok(mm) = task.mm() {
             // TODO(b/525059309): Bypassed for traced_probes due to VMAR walk slowness. Re-enable when optimized.
@@ -1756,8 +1766,12 @@ impl BytesFileOps for ClearRefsFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starnix_core::testing::{anon_test_file, spawn_kernel_and_run};
+    use starnix_core::task::{ExitStatus, KernelFeatures};
+    use starnix_core::testing::{
+        anon_test_file, create_task, spawn_kernel_and_run, spawn_kernel_with_features_and_run,
+    };
     use starnix_core::vfs::VecOutputBuffer;
+    use starnix_uapi::auth::Credentials;
 
     #[::fuchsia::test]
     async fn test_fdinfo_file_lazy_and_cloexec() {
@@ -1810,6 +1824,41 @@ mod tests {
             let mut buf3 = VecOutputBuffer::new(256);
             assert_eq!(fdinfo_file.read_at(current_task, 0, &mut buf3), error!(ENOENT));
         })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_status_file_groups_and_state() {
+        spawn_kernel_with_features_and_run(
+            async move |current_task| {
+                let target_task = create_task(current_task.kernel(), "status_target");
+                let status_file = anon_test_file(
+                    current_task,
+                    Box::new(DynamicFile::new(StatusFile {
+                        target: TaskContainer::from_task(&target_task.task),
+                    })),
+                    OpenFlags::RDONLY,
+                );
+                let has_line = |line: &str| {
+                    let mut buf = VecOutputBuffer::new(2048);
+                    let n = status_file.read_at(current_task, 0, &mut buf).expect("read status");
+                    std::str::from_utf8(&buf.data()[..n]).unwrap().lines().any(|l| l == line)
+                };
+
+                let mut creds = Credentials::with_ids(1001, 2001);
+                for groups in [vec![], vec![3001], vec![3001, 3002, 3003]] {
+                    creds.groups = groups.clone();
+                    target_task.set_creds(creds.clone());
+                    let expected = groups.iter().map(u32::to_string).collect::<Vec<_>>().join(" ");
+                    assert!(has_line(&format!("Groups:\t{expected}")));
+                }
+
+                assert!(has_line("State:\tR (running)"));
+                target_task.write().set_exit_status(ExitStatus::Exit(0));
+                assert!(has_line("State:\tZ (zombie)"));
+            },
+            KernelFeatures { cached_zx_map_info_bytes: 4096, ..Default::default() },
+        )
         .await;
     }
 }
