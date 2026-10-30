@@ -8695,18 +8695,18 @@ rustc_macro("enumn-v0_1_14") {
   applicable_licenses = [ ":enumn-v0_1_14.license" ]
 }
 
-license("equivalent-v1_0_2.license") {
+license("equivalent-v1_0_3.license") {
   public_package_name = "equivalent"
   license_files = [
-    "//third_party/rust_crates/vendor/equivalent-1.0.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/equivalent-1.0.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/equivalent-1.0.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/equivalent-1.0.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("equivalent-v1_0_2") {
+rustc_library("equivalent-v1_0_3") {
   crate_name = "equivalent"
-  source_root = "//third_party/rust_crates/vendor/equivalent-1.0.2/src/lib.rs"
-  output_name = "equivalent-1c786095d572ad0e"
+  source_root = "//third_party/rust_crates/vendor/equivalent-1.0.3/src/lib.rs"
+  output_name = "equivalent-a36f493b92f3584a"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -8718,13 +8718,13 @@ rustc_library("equivalent-v1_0_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1c786095d572ad0e",
-    "-Cextra-filename=-1c786095d572ad0e",
+    "-Cmetadata=a36f493b92f3584a",
+    "-Cextra-filename=-a36f493b92f3584a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":equivalent-v1_0_2.license" ]
+  applicable_licenses = [ ":equivalent-v1_0_3.license" ]
 }
 
 license("erased-serde-v0_3_31.license") {
@@ -12232,7 +12232,7 @@ rustc_library("indexmap-v2_14_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":equivalent-v1_0_2" ]
+  deps += [ ":equivalent-v1_0_3" ]
   deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":serde_core-v1_0_229" ]
   if (true) {
@@ -13920,7 +13920,7 @@ rustc_library("moka-v0_12_16") {
   deps += [ ":crossbeam-channel-v0_5_17" ]
   deps += [ ":crossbeam-epoch-v0_9_21" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
-  deps += [ ":equivalent-v1_0_2" ]
+  deps += [ ":equivalent-v1_0_3" ]
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":smallvec-v1_16_3" ]
   deps += [ ":tagptr-v0_2_0" ]
