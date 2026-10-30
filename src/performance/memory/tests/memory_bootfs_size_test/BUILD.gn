@@ -29,6 +29,9 @@ if (is_host) {
       ]
     }
 
+    data_package_name = "test_data"
+    data_sources = [ "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.memory.bootfs.txt" ]
+    libraries = [ "//src/performance/lib/perf_publish" ]
     test_data_deps = [ ":memory_bootfs_size_test_data" ]
   }
 

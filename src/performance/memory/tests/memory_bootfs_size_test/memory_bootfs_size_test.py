@@ -14,6 +14,14 @@ import unittest
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Self
 
+import test_data
+from perf_publish import publish
+
+TEST_SUITE = "fuchsia.memory.bootfs"
+EXPECTED_METRICS_FILENAME = "fuchsia.memory.bootfs.txt"
+EXPORTED_GROUPS = ("bin", "blob", "config", "data", "lib", "zircon")
+OTHER_GROUP = "other"
+
 ZBI_TYPE_CONTAINER = b"BOOT"
 ZBI_CONTAINER_MAGIC = b"\xe6\xf7\x8c\x86"
 ZBI_ITEM_MAGIC = b"\x29\x17\x78\xb5"
@@ -219,19 +227,66 @@ class PyHostTestWithLibTests(unittest.TestCase):
                         key
                     ] = f"blob/[pkg:{pkg_desc}]/{content.name}"
 
+            zbi_entries = list(zbi.enumerate_contents())
             bootfs_file_size = [
                 dict(
                     path=blob_path_rewrite.get(zbi_entry.path)
                     or zbi_entry.path,
                     size=zbi_entry.size,
                 )
-                for zbi_entry in zbi.enumerate_contents()
+                for zbi_entry in zbi_entries
             ]
 
             output_path = test_outdir() / "bootfs_file_size.freeform.json"
             print("Publish freeform metrics:", output_path)
             with open(output_path, "wt") as file:
                 json.dump(bootfs_file_size, file, indent=4)
+
+            group_sizes: Dict[str, int] = {
+                group: 0 for group in (*EXPORTED_GROUPS, OTHER_GROUP)
+            }
+            total_size = 0
+            for zbi_entry in zbi_entries:
+                path = blob_path_rewrite.get(zbi_entry.path) or zbi_entry.path
+                group = path.lstrip("/").split("/", maxsplit=1)[0]
+                if group not in EXPORTED_GROUPS:
+                    group = OTHER_GROUP
+                group_sizes[group] += zbi_entry.size
+                total_size += zbi_entry.size
+
+            fuchsiaperf_data = [
+                {
+                    "test_suite": TEST_SUITE,
+                    "label": "Total",
+                    "values": [total_size],
+                    "unit": "bytes",
+                },
+                *[
+                    {
+                        "test_suite": TEST_SUITE,
+                        "label": f"Groups/{group}",
+                        "values": [size],
+                        "unit": "bytes",
+                    }
+                    for group, size in sorted(group_sizes.items())
+                ],
+            ]
+
+            fuchsiaperf_path = (
+                test_outdir() / "bootfs_file_size.fuchsiaperf.json"
+            )
+            print("Publish structured metrics:", fuchsiaperf_path)
+            with open(fuchsiaperf_path, "wt") as file:
+                json.dump(fuchsiaperf_data, file, indent=4)
+
+            publish.publish_fuchsiaperf(
+                [fuchsiaperf_path],
+                EXPECTED_METRICS_FILENAME,
+                test_data_module=test_data,
+                # Pass runtime_deps_dir to avoid CatapultConverter falling back
+                # to get_associated_runtime_deps_dir(__file__), which fails in .pyz tests.
+                runtime_deps_dir=test_outdir(),
+            )
 
 
 if __name__ == "__main__":
