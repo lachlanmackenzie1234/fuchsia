@@ -12,6 +12,7 @@
 #include <sys/fsuid.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
@@ -919,6 +920,29 @@ TEST(Task, ExecveArgvExceedsLimit) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+TEST(Task, ExecveArgvExceedsArgCountLimit) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    // Lower RLIMIT_STACK in the child so the combined argv/envp limit in execve(2) is floored at
+    // 32 pages (32 * PAGE_SIZE) rather than 1/4 of the default 8 MiB stack limit.
+    const size_t limit_bytes = kPageLimit * static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    struct rlimit rlim = {};
+    ASSERT_THAT(getrlimit(RLIMIT_STACK, &rlim), SyscallSucceeds());
+    rlim.rlim_cur = limit_bytes;
+    ASSERT_THAT(setrlimit(RLIMIT_STACK, &rlim), SyscallSucceeds());
+
+    // Each empty string element consumes sizeof(char*) bytes for the pointer plus 1 byte for the
+    // terminating NUL byte. Choose a count (~15,000 on 4 KiB pages) whose string bytes alone stay
+    // well below the 32-page limit, but whose combined pointer and string bytes exceed it.
+    const size_t num_args = (limit_bytes / (sizeof(char*) + 1)) + 1;
+    std::vector<char*> argv(num_args + 1, const_cast<char*>(""));
+    argv[num_args] = nullptr;
+    char* envp[] = {nullptr};
+    EXPECT_THAT(execve("/proc/self/exe", argv.data(), envp), SyscallFailsWithErrno(E2BIG));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 TEST(Task, ExecveArgvEnvExceedLimit) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
@@ -931,6 +955,24 @@ TEST(Task, ExecveArgvEnvExceedLimit) {
     envp[kVecSize - 1] = nullptr;
     EXPECT_NE(execve("/proc/self/exe", argv, envp), 0);
     EXPECT_EQ(errno, E2BIG);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, ExecveEnvpExceedsArgCountLimit) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    const size_t limit_bytes = kPageLimit * static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    struct rlimit rlim = {};
+    ASSERT_THAT(getrlimit(RLIMIT_STACK, &rlim), SyscallSucceeds());
+    rlim.rlim_cur = limit_bytes;
+    ASSERT_THAT(setrlimit(RLIMIT_STACK, &rlim), SyscallSucceeds());
+
+    const size_t num_env = (limit_bytes / (sizeof(char*) + 1)) + 1;
+    std::vector<char*> envp(num_env + 1, const_cast<char*>(""));
+    envp[num_env] = nullptr;
+    char* argv[] = {const_cast<char*>("/proc/self/exe"), nullptr};
+    EXPECT_THAT(execve("/proc/self/exe", argv, envp.data()), SyscallFailsWithErrno(E2BIG));
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
