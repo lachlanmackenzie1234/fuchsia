@@ -1933,18 +1933,29 @@ class BpfTest : public testing::Test {
 
     packet_socket_fd_ = fbl::unique_fd(socket(AF_PACKET, SOCK_RAW, 0));
     ASSERT_TRUE(packet_socket_fd_) << strerror(errno);
-    sockaddr_ll addr_ll = {
-        .sll_family = AF_PACKET,
-        .sll_protocol = htons(ETH_P_ALL),
-    };
-    ASSERT_EQ(bind(packet_socket_fd_.get(), reinterpret_cast<sockaddr*>(&addr_ll), sizeof(addr_ll)),
-              0);
   }
 
+  void AttachFilterAndBind(const sock_fprog& filter);
   void SendPacketAndCheckReceived(int domain, uint16_t dst_port, bool expected);
 
   fbl::unique_fd packet_socket_fd_;
 };
+
+void BpfTest::AttachFilterAndBind(const sock_fprog& filter) {
+  // Attach the BPF filter before binding to ETH_P_ALL so no unfiltered packets
+  // (e.g. asynchronous loopback ICMP errors from prior tests) can be queued
+  // between bind() and setsockopt(SO_ATTACH_FILTER).
+  ASSERT_EQ(
+      setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter, sizeof(filter)), 0)
+      << strerror(errno);
+  sockaddr_ll addr_ll = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_ALL),
+  };
+  ASSERT_EQ(bind(packet_socket_fd_.get(), reinterpret_cast<sockaddr*>(&addr_ll), sizeof(addr_ll)),
+            0)
+      << strerror(errno);
+}
 
 void BpfTest::SendPacketAndCheckReceived(int domain, uint16_t dst_port, bool expected) {
   sockaddr_in addr4 = {
@@ -2051,18 +2062,36 @@ TEST_F(BpfTest, SoAttachFilter) {
       filter_code,
   };
 
-  ASSERT_EQ(
-      setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter, sizeof(filter)),
-      0);
+  ASSERT_NO_FATAL_FAILURE(AttachFilterAndBind(filter));
 
-  SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv4, true);
-  SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv6, true);
-  SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv6, false);
-  SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv4, false);
+  ASSERT_NO_FATAL_FAILURE(SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv4, true));
+  ASSERT_NO_FATAL_FAILURE(SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv6, true));
+  ASSERT_NO_FATAL_FAILURE(SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv6, false));
+  ASSERT_NO_FATAL_FAILURE(SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv4, false));
 }
 
 TEST_F(BpfTest, SoAttachFilterBpfLen) {
+  constexpr uint16_t kTestDstPortIpv4 = 1235;
+
   static sock_filter filter_code[] = {
+      // Check if this is IPv4.
+      BPF_STMT(BPF_LD | BPF_H | BPF_ABS, (__u32)SKF_AD_OFF + SKF_AD_PROTOCOL),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETHERTYPE_IP, 0, 6),
+
+      // Check that the protocol is UDP.
+      BPF_STMT(BPF_LD | BPF_B | BPF_ABS, (__u32)SKF_NET_OFF + 9),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, IPPROTO_UDP, 1, 0),
+      BPF_STMT(BPF_RET | BPF_K, 0),
+
+      // Get the IP header length.
+      BPF_STMT(BPF_LDX | BPF_B | BPF_MSH, (__u32)SKF_NET_OFF),
+
+      // Check the destination port.
+      BPF_STMT(BPF_LD | BPF_H | BPF_IND, (__u32)SKF_NET_OFF + 2),
+      BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kTestDstPortIpv4, 1, 0),
+      BPF_STMT(BPF_RET | BPF_K, 0),
+
+      // Accept up to packet length loaded via BPF_LEN.
       BPF_STMT(BPF_LDX | BPF_W | BPF_LEN, 0),
       BPF_STMT(BPF_LD | BPF_W | BPF_LEN, 0),
       BPF_STMT(BPF_RET | BPF_A, 0),
@@ -2073,15 +2102,13 @@ TEST_F(BpfTest, SoAttachFilterBpfLen) {
       filter_code,
   };
 
-  ASSERT_EQ(
-      setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter, sizeof(filter)),
-      0);
+  ASSERT_NO_FATAL_FAILURE(AttachFilterAndBind(filter));
 
-  SendPacketAndCheckReceived(AF_INET, 1234, true);
+  ASSERT_NO_FATAL_FAILURE(SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv4, true));
 }
 
 TEST_F(BpfTest, SoAttachFilterPktType) {
-  const uint16_t kTestDstPortIpv4 = 1234;
+  constexpr uint16_t kTestDstPortIpv4 = 1237;
 
   auto make_filter = [](uint8_t packet_type) -> std::vector<sock_filter> {
     return {
@@ -2118,9 +2145,7 @@ TEST_F(BpfTest, SoAttachFilterPktType) {
       .filter = filter_outgoing_code.data(),
   };
 
-  ASSERT_EQ(setsockopt(packet_socket_fd_.get(), SOL_SOCKET, SO_ATTACH_FILTER, &filter_outgoing,
-                       sizeof(filter_outgoing)),
-            0);
+  ASSERT_NO_FATAL_FAILURE(AttachFilterAndBind(filter_outgoing));
 
   // Send a packet to loopback. When sent to loopback without a filter, the packet is captured twice
   // (once as PACKET_OUTGOING on egress, once as PACKET_HOST on ingress). With the filter above,
