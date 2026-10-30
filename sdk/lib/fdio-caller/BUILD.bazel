@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/543568916): <lib/fdio/cpp/caller.h> includes headers
+# from these dependencies, so GN consumers need them as public dependencies.
+# Bazel propagates the headers of `deps` transitively, while bazel2gn maps
+# `fx_cc_library_headers.deps` to GN `deps`, so emit GN `public_deps` via
+# `@bazel2gn:raw_attribute` and skip the Bazel `deps` attribute.
+# @bazel2gn:raw_attribute:public_deps = [ "//sdk/fidl/fuchsia.io:fuchsia.io_cpp", "//sdk/lib/fdio", "//zircon/system/ulib/fbl", "//zircon/system/ulib/zx" ]
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/lib/fdio/cpp/caller.h"],
+    # TODO(https://fxbug.dev/543568916): Emitted as `public_deps` via `@bazel2gn:raw_attribute` above.
+    # @bazel2gn:skip
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "fdio-caller",
+    visibility = [
+        "//sdk/lib/fdio-caller/test:__pkg__",
+        "//src:__subpackages__",
+        "//vendor:__subpackages__",
+        "//zircon/system:__subpackages__",
+    ],
+    deps = [":headers"],
+    alwayslink = True,
+)
