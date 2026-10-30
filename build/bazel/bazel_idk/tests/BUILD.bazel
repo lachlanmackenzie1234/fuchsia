@@ -7,6 +7,7 @@
 load("@fuchsia_build_info//:args.bzl", "target_cpu")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/idk:idk_atom.bzl", "idk_noop_atom")
 load(
     "//build/bazel/rules/idk:idk_cc_prebuilt_library.bzl",
@@ -254,6 +255,8 @@ idk_cc_shared_library(
     ],
     hdrs = ["include/lib/test_lib/test_header.h"],
     api_area = "Developer",
+    # TODO(https://fxbug.dev/449812165): Also test an `api_file_path` in another
+    # package, from which the "PLATFORM" `.ifs` golden file is resolved.
     api_file_path = "different_file_name_shared_library.api",
     category = "partner",
     fuchsia_deps = [
@@ -903,6 +906,15 @@ cc_binary(
     deps = [":test-shared-library"],
 )
 
+# Tests that the headers of a shared library's public `deps` (dependency.h) are
+# available to in-tree dependents of the library.
+fx_cc_binary(
+    name = "test_executable_using_cc_shared_library_public_deps_headers",
+    testonly = True,
+    srcs = ["test_executable_using_public_deps_headers.cc"],
+    deps = [":test-shared-library"],
+)
+
 cc_binary(
     name = "test_executable_using_cc_source_library",
     testonly = True,
@@ -988,6 +1000,7 @@ filegroup(
     srcs = [
         # In the order they are defined above.
         ":test_executable_using_cc_shared_library",
+        ":test_executable_using_cc_shared_library_public_deps_headers",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
         ":test_executable_using_platform_dependent_source_library",
