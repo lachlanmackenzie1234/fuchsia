@@ -425,7 +425,7 @@ CRATE_ANNOTATIONS = {
     ],
     "serde_json": [
         crate.annotation(
-            version = "1.0.151",
+            version = "1.0.154",
             rustc_flags = [
                 '--cfg=fast_arithmetic="64"',
             ],

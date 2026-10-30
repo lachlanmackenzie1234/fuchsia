@@ -229,7 +229,7 @@ schemars = { version = "1.2.2", features = ["chrono04", "preserve_order"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_derive = "1.0.229"
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 serde_json5 = "0.2.1"
 serde_repr = "0.1.21"
 sha1 = "0.11.0"
@@ -1231,7 +1231,7 @@ env_vars = [
   "CARGO_PKG_VERSION_PATCH=229",
 ]
 
-[gn.package.serde_json."1.0.151"]
+[gn.package.serde_json."1.0.154"]
 rustflags = ["--cfg=fast_arithmetic=\\\"64\\\""]
 
 [gn.package.serial_test."4.0.1"]
