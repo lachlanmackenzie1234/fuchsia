@@ -12,6 +12,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
+        "//src/lib/fidl/c/walker_tests:fidl-walker-host-tests_host_test",
         "//src/lib/fidl/rust/fidl_test_util:fidl_test_util_host_test",
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle-shutdown-test",
         "//src/lib/fuchsia-emulated-handle:fuchsia-emulated-handle_test",
@@ -43,6 +44,8 @@ test_suite(
         "//src/lib/debug/test:backtrace-request-test-pkg",
         "//src/lib/error/clonable_error:clonable_error_tests",
         "//src/lib/fable:fable-lib-unit-tests",
+        "//src/lib/fidl/c/walker_tests:fidl-handle-closing-tests_test",
+        "//src/lib/fidl/c/walker_tests:fidl-walker-tests",
         "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_manual_conformance_tests",
         "//src/lib/fidl/llcpp/tests/conformance:fidl_llcpp_request_response_tests",
         "//src/lib/fidl/rust/fidl_test_util:fidl_test_util_target_test",
