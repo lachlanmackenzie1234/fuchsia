@@ -1095,6 +1095,40 @@ void Dwc2::SetConnected(bool connected) {
     return;
   }
 
+  if (!connected) {
+    configured_.store(false);
+
+    // Complete any pending requests before notifying upper layers of disconnect.
+    for (size_t i = 0; i < std::size(endpoints_); i++) {
+      auto& ep = endpoints_[i];
+
+      std::optional<usb::RequestVariant> in_flight_req;
+      std::queue<usb::RequestVariant> complete_reqs;
+      {
+        std::lock_guard<std::mutex> _(ep->lock);
+        if (ep->current_req.has_value()) {
+          // usb::FidlRequest has a deleted move-assignment operator, so use emplace().
+          in_flight_req.emplace(std::move(*ep->current_req));
+          ep->current_req.reset();
+        }
+        complete_reqs.swap(ep->queued_reqs);
+
+        ep->enabled = false;
+        ep->pending_zlp = false;
+      }
+
+      // Requests must be completed outside of the lock in FIFO submission order (in_flight_req
+      // first, followed by queued_reqs).
+      if (in_flight_req.has_value()) {
+        ep->RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(*in_flight_req));
+      }
+      while (!complete_reqs.empty()) {
+        ep->RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(complete_reqs.front()));
+        complete_reqs.pop();
+      }
+    }
+  }
+
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
     auto result = dci_intf_.buffer(arena)->SetConnected(connected);
@@ -1107,37 +1141,6 @@ void Dwc2::SetConnected(bool connected) {
       fdf::warn("Call to ConnectStatusChanged on usb phy failed: {}",
                 connect.error_value().FormatDescription().c_str());
       // Continue despite failure.
-    }
-  }
-
-  if (!connected) {
-    // Complete any pending requests
-    for (size_t i = 0; i < std::size(endpoints_); i++) {
-      auto& ep = endpoints_[i];
-
-      std::queue<usb::RequestVariant> complete_reqs;
-      {
-        std::lock_guard<std::mutex> _(ep->lock);
-        complete_reqs.swap(ep->queued_reqs);
-
-        if (ep->current_req) {
-          complete_reqs.emplace(std::move(*ep->current_req));
-          ep->current_req.reset();
-        }
-
-        ep->enabled = false;
-        ep->pending_zlp = false;
-      }
-
-      // Requests must be completed outside of the lock.
-      while (true) {
-        if (complete_reqs.empty()) {
-          break;
-        }
-
-        ep->RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(complete_reqs.front()));
-        complete_reqs.pop();
-      }
     }
   }
 }
@@ -1621,6 +1624,7 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
 }
 
 void Dwc2::Endpoint::CancelAll() {
+  std::optional<usb::RequestVariant> in_flight_req;
   std::queue<usb::RequestVariant> queue;
   {
     std::lock_guard<std::mutex> ep_guard(lock);
@@ -1631,13 +1635,17 @@ void Dwc2::Endpoint::CancelAll() {
     } else {
       dwc2_->FlushTxFifoRetryIndefinite(ep_addr());
     }
-    queue = std::move(queued_reqs);
-    if (current_req) {
-      queue.push(std::move(current_req.value()));
+    if (current_req.has_value()) {
+      // usb::FidlRequest has a deleted move-assignment operator, so use emplace().
+      in_flight_req.emplace(std::move(*current_req));
       current_req.reset();
     }
+    queue.swap(queued_reqs);
   }
 
+  if (in_flight_req.has_value()) {
+    RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(*in_flight_req));
+  }
   while (!queue.empty()) {
     auto req = std::move(queue.front());
     queue.pop();

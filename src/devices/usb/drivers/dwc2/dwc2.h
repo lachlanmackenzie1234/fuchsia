@@ -261,7 +261,7 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
 
   fuchsia_hardware_usb_dwc2::Metadata metadata_;
   std::atomic<bool> connected_ = false;
-  bool configured_ = false;
+  std::atomic<bool> configured_ = false;
   // The length of the last IN-data sent to the host.
   uint32_t last_transmission_len_;
   // Raw IRQ timestamp from kernel

@@ -214,9 +214,13 @@ class Dwc2Test : public testing::Test {
 
   void SetConnectedState(Dwc2& driver, bool connected) { driver.connected_.store(connected); }
 
-  void SetConfiguredState(Dwc2& driver, bool configured) { driver.configured_ = configured; }
+  void SetConfiguredState(Dwc2& driver, bool configured) { driver.configured_.store(configured); }
+
+  void SetConnected(Dwc2& driver, bool connected) { driver.SetConnected(connected); }
 
   bool IsConnected(const Dwc2& driver) const { return driver.connected_.load(); }
+
+  bool IsConfigured(const Dwc2& driver) const { return driver.configured_.load(); }
 
   // Inspects whether Dwc2.lock_ is locked.
   // This check is sound here because the driver dispatcher thread is synchronously blocked
@@ -516,26 +520,171 @@ namespace {
 class EndpointEventHandler
     : public fidl::AsyncEventHandler<fuchsia_hardware_usb_endpoint::Endpoint> {
  public:
+  struct CompletionRecord {
+    zx_status_t status;
+    std::optional<bool> is_short;
+  };
+
   void OnCompletion(
       fidl::Event<fuchsia_hardware_usb_endpoint::Endpoint::OnCompletion>& event) override {
+    std::lock_guard<std::mutex> lock(mutex_);
     auto signal = fit::defer([this] { completion_.Signal(); });
     ASSERT_FALSE(event.completion().empty());
-    ASSERT_TRUE(event.completion()[0].status().has_value());
-    last_status_.store(*event.completion()[0].status());
+    for (const auto& completion : event.completion()) {
+      ASSERT_TRUE(completion.status().has_value());
+      std::optional<bool> is_short;
+      if (completion.request().has_value()) {
+        is_short = completion.request()->short_();
+      }
+      completions_.push({.status = *completion.status(), .is_short = is_short});
+    }
   }
 
-  zx_status_t WaitForStatus() {
-    completion_.Wait();
-    completion_.Reset();
-    return last_status_.load();
+  zx::result<CompletionRecord> WaitForCompletion(zx::duration timeout) {
+    const zx::time deadline = zx::deadline_after(timeout);
+    while (true) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!completions_.empty()) {
+          CompletionRecord record = completions_.front();
+          completions_.pop();
+          if (completions_.empty()) {
+            completion_.Reset();
+          }
+          return zx::ok(record);
+        }
+        completion_.Reset();
+      }
+      zx_status_t wait_status = completion_.Wait(deadline);
+      if (wait_status != ZX_OK) {
+        return zx::error(wait_status);
+      }
+    }
   }
+
+  CompletionRecord WaitForCompletion() {
+    zx::result<CompletionRecord> record = WaitForCompletion(zx::duration::infinite());
+    EXPECT_TRUE(record.is_ok()) << record.status_string();
+    return record.value_or(CompletionRecord{.status = record.status_value(), .is_short = {}});
+  }
+
+  zx_status_t WaitForStatus() { return WaitForCompletion().status; }
 
  private:
-  std::atomic<zx_status_t> last_status_{ZX_OK};
+  std::mutex mutex_;
+  std::queue<CompletionRecord> completions_ __TA_GUARDED(mutex_);
   libsync::Completion completion_;
 };
 
 }  // namespace
+
+TEST_F(Dwc2Test, SetConnectedFalseDrainsEndpointsBeforeNotifyingDci) {
+  FakeUsbDciInterface fake_dci;
+  fdf::UnownedSynchronizedDispatcher dci_dispatcher = dut_.runtime().StartBackgroundDispatcher();
+  fdf::UnownedSynchronizedDispatcher ep_dispatcher = dut_.runtime().StartBackgroundDispatcher();
+
+  auto cleanup_dispatchers = fit::defer([&] {
+    libsync::Completion dci_shutdown;
+    dut_.runtime().ShutdownBackgroundDispatcher(dci_dispatcher->get(),
+                                                [&] { dci_shutdown.Signal(); });
+    dci_shutdown.Wait();
+
+    libsync::Completion ep_shutdown;
+    dut_.runtime().ShutdownBackgroundDispatcher(ep_dispatcher->get(),
+                                                [&] { ep_shutdown.Signal(); });
+    ep_shutdown.Wait();
+  });
+
+  auto dci_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_dci::UsbDciInterface>();
+  ASSERT_TRUE(dci_endpoints.is_ok());
+  auto binding = fidl::BindServer(dci_dispatcher->async_dispatcher(),
+                                  std::move(dci_endpoints->server), &fake_dci);
+
+  zx::result dci_client_end = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_client_end.is_ok());
+  fidl::SyncClient dci_client(std::move(*dci_client_end));
+
+  auto set_intf_result = dci_client->SetInterface({std::move(dci_endpoints->client)});
+  ASSERT_TRUE(set_intf_result.is_ok()) << set_intf_result.error_value().FormatDescription();
+
+  auto ep_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  ASSERT_TRUE(ep_endpoints.is_ok());
+
+  constexpr uint8_t kEpAddr = 0x81;  // EP 1 IN
+  auto connect_result = dci_client->ConnectToEndpoint({kEpAddr, std::move(ep_endpoints->server)});
+  ASSERT_TRUE(connect_result.is_ok());
+
+  EndpointEventHandler event_handler;
+  fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint> ep_client(
+      std::move(ep_endpoints->client), ep_dispatcher->async_dispatcher(), &event_handler);
+
+  bool callback_invoked = false;
+  bool configured_in_cb = true;
+  bool ep_enabled_in_cb = true;
+  bool pending_zlp_in_cb = true;
+  bool has_current_req_in_cb = true;
+  bool queued_reqs_empty_in_cb = false;
+
+  dut_.RunInDriverContext([&](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(kEpAddr);
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(nullptr, ep);
+
+    {
+      std::lock_guard<std::mutex> lock(ep->lock);
+      ep->max_packet_size = 64;
+      ep->enabled = true;
+      ep->pending_zlp = true;
+
+      usb::FidlRequest active_req(usb::EndpointType::BULK);
+      active_req->defer_completion(false);
+      active_req->short_(true);
+      ep->current_req.emplace(std::move(active_req));
+
+      usb::FidlRequest queued_req(usb::EndpointType::BULK);
+      queued_req->defer_completion(false);
+      queued_req->short_(false);
+      ep->queued_reqs.push(std::move(queued_req));
+    }
+
+    SetConnectedState(driver, true);
+    SetConfiguredState(driver, true);
+
+    fake_dci.set_connected_callback([&](bool connected) {
+      if (!connected) {
+        callback_invoked = true;
+        configured_in_cb = IsConfigured(driver);
+        std::lock_guard<std::mutex> lock(ep->lock);
+        ep_enabled_in_cb = ep->enabled;
+        pending_zlp_in_cb = ep->pending_zlp;
+        has_current_req_in_cb = ep->current_req.has_value();
+        queued_reqs_empty_in_cb = ep->queued_reqs.empty();
+      }
+    });
+
+    // dci_intf_->SetConnected() is a synchronous two-way fidl::WireSyncClient call, so
+    // set_connected_cb_ runs to completion on dci_dispatcher before SetConnected() and
+    // RunInDriverContext() return.
+    SetConnected(driver, false);
+  });
+
+  EXPECT_TRUE(callback_invoked);
+  EXPECT_FALSE(configured_in_cb);
+  EXPECT_FALSE(ep_enabled_in_cb);
+  EXPECT_FALSE(pending_zlp_in_cb);
+  EXPECT_FALSE(has_current_req_in_cb);
+  EXPECT_TRUE(queued_reqs_empty_in_cb);
+
+  // Verify that the in-flight request (current_req, short_ == true) is completed before the
+  // queued request (queued_reqs, short_ == false).
+  EndpointEventHandler::CompletionRecord first_completion = event_handler.WaitForCompletion();
+  EXPECT_EQ(first_completion.status, ZX_ERR_IO_NOT_PRESENT);
+  EXPECT_EQ(first_completion.is_short, std::optional<bool>(true));
+
+  EndpointEventHandler::CompletionRecord second_completion = event_handler.WaitForCompletion();
+  EXPECT_EQ(second_completion.status, ZX_ERR_IO_NOT_PRESENT);
+  EXPECT_EQ(second_completion.is_short, std::optional<bool>(false));
+}
 
 TEST_F(Dwc2Test, QueueRequestOnDisabledOrUnconfiguredEndpointReturnsIoNotPresent) {
   fdf::UnownedSynchronizedDispatcher ep_dispatcher = dut_.runtime().StartBackgroundDispatcher();
