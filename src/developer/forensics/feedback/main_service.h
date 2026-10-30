@@ -5,8 +5,8 @@
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_MAIN_SERVICE_H_
 
 #include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <fidl/fuchsia.process.lifecycle/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
-#include <fuchsia/process/lifecycle/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/dispatcher.h>
@@ -51,7 +51,7 @@ class MainService {
   MainService(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
               timekeeper::Clock* clock, inspect::Node* inspect_root, cobalt::Logger* cobalt,
               const Annotations& startup_annotations,
-              fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_channel,
+              fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle_channel,
               std::unique_ptr<RedactorBase> redactor, Options options);
 
   ~MainService();

@@ -4,10 +4,9 @@
 
 #include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
+#include <fidl/fuchsia.process.lifecycle/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
-#include <fuchsia/process/lifecycle/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/fidl/cpp/interface_request.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/job.h>
@@ -161,7 +160,7 @@ int main() {
   std::unique_ptr<MainService> main_service = std::make_unique<MainService>(
       component.Dispatcher(), component.Services(), component.Clock(), component.InspectRoot(),
       cobalt.get(), startup_annotations,
-      fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
+      fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>(std::move(lifecycle_channel)),
       std::move(redactor),
       MainService::Options{
           local_device_id_path, kCurrentGracefulShutdownInfoFile, kCurrentSystemTimePath,

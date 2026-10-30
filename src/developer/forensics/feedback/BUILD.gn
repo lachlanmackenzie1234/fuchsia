@@ -58,6 +58,7 @@ source_set("main") {
     "reboot_log",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
@@ -94,8 +95,10 @@ source_set("main_service") {
     "reboot_log",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
@@ -208,12 +211,17 @@ source_set("stop_signals") {
 
   public_deps = [
     "reboot_log",
-    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_hlcpp",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit",
     "//src/developer/forensics/utils:errors",
     "//zircon/system/ulib/zx",
+  ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp_hlcpp_conversion",
+    "//sdk/lib/syslog/cpp",
   ]
 }
 

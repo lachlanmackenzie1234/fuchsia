@@ -4,9 +4,9 @@
 
 #include "src/developer/forensics/feedback/main_service.h"
 
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/fidl.h>
+#include <fidl/fuchsia.process.lifecycle/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
-#include <fuchsia/hardware/power/statecontrol/cpp/fidl.h>
-#include <fuchsia/process/lifecycle/cpp/fidl.h>
 #include <lib/async-loop/default.h>
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/fit/defer.h>
@@ -27,8 +27,6 @@
 
 namespace forensics::feedback {
 namespace {
-
-using fuchsia::hardware::power::statecontrol::ShutdownWatcherRegister_RegisterWatcher_Result;
 
 std::unique_ptr<CachedAsyncAnnotationProvider> MakeDeviceIdProvider(
     const std::optional<std::string>& local_device_id_path, async_dispatcher_t* dispatcher,
@@ -54,12 +52,12 @@ std::set<std::string> RemoveExcludedAnnotations(const std::set<std::string>& def
 
 }  // namespace
 
-MainService::MainService(
-    async_dispatcher_t* dispatcher, const std::shared_ptr<sys::ServiceDirectory> services,
-    timekeeper::Clock* clock, inspect::Node* inspect_root, cobalt::Logger* cobalt,
-    const Annotations& startup_annotations,
-    fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_channel,
-    std::unique_ptr<RedactorBase> redactor, Options options)
+MainService::MainService(async_dispatcher_t* dispatcher,
+                         const std::shared_ptr<sys::ServiceDirectory> services,
+                         timekeeper::Clock* clock, inspect::Node* inspect_root,
+                         cobalt::Logger* cobalt, const Annotations& startup_annotations,
+                         fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle_channel,
+                         std::unique_ptr<RedactorBase> redactor, Options options)
     : dispatcher_(dispatcher),
       executor_(dispatcher),
       services_(services),
@@ -115,9 +113,10 @@ MainService::MainService(
             FX_LOGS(ERROR) << "Won't receive lifecycle signal: " << ToString(error);
           }));
 
-  fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::ShutdownWatcher> handle;
+  auto [watcher_client, watcher_server] =
+      fidl::Endpoints<fuchsia_hardware_power_statecontrol::ShutdownWatcher>::Create();
   executor_.schedule_task(
-      WaitForShutdownInfo(dispatcher_, handle.NewRequest())
+      WaitForShutdownInfo(dispatcher_, std::move(watcher_server))
           .and_then([this, path = options.graceful_shutdown_info_write_path](
                         GracefulShutdownInfoSignal& signal) {
             const GracefulShutdownAction action = signal.Action();
@@ -138,9 +137,16 @@ MainService::MainService(
   //
   // The ack response is ignored because the failures aren't expected unless the system is in a dire
   // state.
-  services->Connect<fuchsia::hardware::power::statecontrol::ShutdownWatcherRegister>()
-      ->RegisterWatcher(std::move(handle),
-                        [](const ShutdownWatcherRegister_RegisterWatcher_Result& result) {});
+  auto [register_client, register_server] =
+      fidl::Endpoints<fuchsia_hardware_power_statecontrol::ShutdownWatcherRegister>::Create();
+  services->Connect(
+      fidl::DiscoverableProtocolName<fuchsia_hardware_power_statecontrol::ShutdownWatcherRegister>,
+      register_server.TakeChannel());
+  const fidl::Client client(std::move(register_client), dispatcher_);
+  client->RegisterWatcher({std::move(watcher_client)})
+      .Then([](const fidl::Result<
+                fuchsia_hardware_power_statecontrol::ShutdownWatcherRegister::RegisterWatcher>&
+                   result) {});
 
   network_watcher_.Register(
       fit::bind_member(&crash_reports_, &CrashReports::SetNetworkIsReachable));
