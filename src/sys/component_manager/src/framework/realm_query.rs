@@ -106,21 +106,6 @@ async fn handle_request(
             let result = open_directory(scope, &moniker, dir_type, object).await;
             responder.send(result)
         }
-        fsys::RealmQueryRequest::ConnectToStorageAdmin {
-            moniker,
-            storage_name,
-            server_end,
-            responder,
-        } => {
-            let result = connect_to_storage_admin(
-                scope,
-                &moniker,
-                storage_name,
-                ServerEnd::new(server_end.into_channel()),
-            )
-            .await;
-            responder.send(result)
-        }
         fsys::RealmQueryRequest::OpenStorageAdmin {
             moniker,
             storage_name,
