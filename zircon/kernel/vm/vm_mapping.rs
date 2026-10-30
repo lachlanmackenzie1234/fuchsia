@@ -7,15 +7,18 @@
 use super::arch_vm_aspace::{
     ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_RWX_MASK, ARCH_MMU_FLAG_PERM_WRITE,
     ARCH_UNMAP_OPTION_ENLARGE, ARCH_UNMAP_OPTION_HARVEST, ARCH_UNMAP_OPTION_NONE, ArchMmuFlags,
+    ExistingEntryAction,
 };
 use super::page_source::MultiPageRequest;
+use super::vm::{vm_get_zero_page_paddr, vm_ktrace_duration};
 use super::vm_address_region::{
     LifeCycleState, MemoryPriority, VmAddressRegion, VmAddressRegionOrMapping, flag, region_list,
 };
 use super::vm_aspace::{VmAspace, VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
 use crate::counters::define_kcounter;
-use crate::kernel::types::VAddr;
+use crate::kernel::types::{PAddr, VAddr};
+use crate::ktrace_rs::ArgValue;
 use ::page as kernel_page;
 use bitflags::bitflags;
 use core::cell::{Cell, UnsafeCell};
@@ -29,8 +32,9 @@ use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicBool, Ordering};
 use debug::{ltracef, tracef};
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
-use ksync::{KCell, LockToken};
-use pin_init::{PinInit, pin_data};
+use ksync::{KCell, LockToken, RawCriticalMutexOrderedPolicy};
+use libarch::store_memory_barrier;
+use pin_init::{PinInit, pin_data, stack_pin_init, stack_try_pin_init};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;
 use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
@@ -2110,8 +2114,8 @@ impl VmMapping {
     }
 
     /// Map in pages from the underlying vm object, optionally committing pages as it goes.
-    /// |ignore_existing| controls whether existing hardware mappings in the specified range should
-    /// be ignored or treated as an error. |ignore_existing| should only be set to true for user
+    /// `ignore_existing` controls whether existing hardware mappings in the specified range should
+    /// be ignored or treated as an error. `ignore_existing` should only be set to true for user
     /// mappings where populating mappings may already be racy with multiple threads, and where we
     /// are already tolerant of mappings being arbitrarily created and destroyed.
     pub fn map_range(
@@ -2121,16 +2125,240 @@ impl VmMapping {
         commit: bool,
         ignore_existing: bool,
     ) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        Status::ok(unsafe {
-            bindings::cpp_vm_mapping_map_range(
-                self.as_ffi_ptr(),
-                offset,
-                len,
-                commit,
-                ignore_existing,
-            )
-        })
+        ksync::lock!(let aspace_guard = self.lock().lock());
+        // SAFETY: `aspace_guard` is never released.
+        let token = unsafe { aspace_guard.token_unchecked() };
+        self.state().canary.assert();
+
+        let len = kernel_page::round_up(len);
+        if len == 0 {
+            hint::cold_path();
+            return Err(Status::INVALID_ARGS);
+        }
+
+        if self.state_locked(token) != LifeCycleState::Alive {
+            hint::cold_path();
+            return Err(Status::BAD_STATE);
+        }
+
+        ltracef!(
+            "region {:p}, offset {:#x}, size {:#x}, commit {}\n",
+            self,
+            offset,
+            len,
+            commit as i32
+        );
+
+        let object = self.object_locked(token);
+        debug_assert!(object.is_some());
+        let range_base = self.base().0.wrapping_add(offset);
+        if !kernel_page::is_page_rounded(offset) || !self.is_in_range(VAddr(range_base), len) {
+            hint::cold_path();
+            return Err(Status::INVALID_ARGS);
+        }
+        // SAFETY: An `Alive` mapping always has a backing `object`.
+        let object = unsafe { object.as_ref().unwrap_unchecked() };
+
+        // If this is a kernel mapping then validate that all pages being mapped are currently
+        // pinned, ensuring that they cannot be taken away for any reason, unless the mapping has
+        // specifically opted out of this debug check due to it performing its own dynamic
+        // management.
+        debug_assert!(
+            self.aspace().is_user()
+                || self.aspace().is_guest_physical()
+                || (self.flags() & flag::DEBUG_DYNAMIC_KERNEL_MAPPING) != 0
+                || object.debug_is_range_pinned(self.object_offset() + offset as u64, len as u64)
+        );
+
+        // Cache whether the object is dirty tracked, we need to know this when computing mmu flags
+        // later.
+        let dirty_tracked = object.is_dirty_tracked();
+
+        let existing_entry_action =
+            if ignore_existing { ExistingEntryAction::Skip } else { ExistingEntryAction::Error };
+
+        // The region to map could have multiple different current arch mmu flags, so we need to
+        // iterate over them to ensure we install mappings with the correct permissions.
+        self.enumerate_protection_ranges_locked(
+            token,
+            range_base,
+            len,
+            move |base, len, mut mmu_flags| {
+                // Remove the write permission if this maps a vmo that supports dirty tracking, in
+                // order to trigger write permission faults when writes occur, enabling us to track
+                // when pages are dirtied.
+                if dirty_tracked {
+                    mmu_flags &= !ARCH_MMU_FLAG_PERM_WRITE;
+                }
+
+                // If there are no access permissions on this region then mapping has no effect, so
+                // skip.
+                if (mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == 0 {
+                    return Err(Status::NEXT);
+                }
+
+                let map_offset = (base - self.base().0) as u64;
+                let vmo_offset = self.object_offset() + map_offset;
+                if let Some(paged) = object.as_paged() {
+                    // In the scenario where we are committing, and calling `require_owned_page`, we
+                    // are supposed to pass in a `LazyPageRequest`. Technically we could get away
+                    // with not passing in a `PageRequest` since:
+                    //  * Only internal kernel VMOs will have the 'commit' flag passed in for their
+                    //    mappings
+                    //  * Only pager backed VMOs or VMOs that support delayed memory allocations
+                    //    need to fill out a `PageRequest`
+                    //  * Internal kernel VMOs are never pager backed or have the delayed memory
+                    //    allocation flag set.
+                    // However, should these assumptions ever get violated it's better to catch this
+                    // gracefully than have `require_owned_page` error/crash internally, and it
+                    // costs nothing to create and pass in.
+                    stack_pin_init!(let page_request = MultiPageRequest::new());
+
+                    // grab the lock for the vmo
+                    stack_pin_init!(let deferred = paged.make_deferred_ops());
+                    #[rustfmt::skip]
+                    ksync::lock!(let mut object_guard = object
+                        .lock_ref()
+                        .lock_policy_with::<RawCriticalMutexOrderedPolicy>(
+                            paged.lock_order() as usize,
+                        ));
+                    // SAFETY: `object_guard` is never released.
+                    let object_token = unsafe { object_guard.as_mut().token_mut_unchecked() };
+
+                    // Trim our range to the current VMO size. Our mapping might exceed the VMO in
+                    // the case where the VMO is resizable, and this should not be considered an
+                    // error.
+                    let len = self.trimmed_object_range_locked(
+                        token,
+                        object_token,
+                        map_offset,
+                        len as u64,
+                    ) as usize;
+                    if len == 0 {
+                        return Err(Status::STOP);
+                    }
+
+                    // SAFETY: The object lock is held until `coalescer` is dropped.
+                    let mut coalescer = unsafe {
+                        VmMappingCoalescer::<16>::new(
+                            self,
+                            object_token,
+                            base,
+                            mmu_flags,
+                            existing_entry_action,
+                        )
+                    };
+
+                    let writing = (mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0;
+                    // SAFETY: `object_token` is for the lock of `paged`. `vmo_offset` and `len`
+                    // are page-aligned, and `len` is non-zero.
+                    let cursor = unsafe {
+                        paged.get_lookup_cursor_locked(object_token, vmo_offset, len as u64)
+                    };
+                    stack_try_pin_init!(let cursor = cursor);
+                    let mut cursor = cursor?;
+                    // Do not consider pages touched when mapping in, if they are actually touched
+                    // they will get an accessed bit set in the hardware.
+                    cursor.as_mut().disable_mark_accessed();
+                    let mut off = 0;
+                    while off < len {
+                        let page = if commit {
+                            // SAFETY: `deferred` was made for the VMO that `cursor` was made for,
+                            // the range of `cursor` has a page left, and `page_request` does not
+                            // hold an active request.
+                            let result = unsafe {
+                                cursor.as_mut().require_owned_page(
+                                    writing,
+                                    1,
+                                    deferred.as_mut(),
+                                    page_request.as_mut(),
+                                )
+                            };
+                            match result {
+                                Ok(result) => Some(result.page),
+                                Err(status) => {
+                                    hint::cold_path();
+                                    // As per the comment above `page_request` definition, there
+                                    // should never be commit + pager backed VMO and so we should
+                                    // never end up with a `PageRequest` needing to be waited on.
+                                    assert!(status != Status::SHOULD_WAIT);
+                                    // fail when we can't commit every requested page
+                                    coalescer.drop_outstanding();
+                                    return Err(status);
+                                }
+                            }
+                        } else {
+                            // Not committing so get a page if one exists. This increments the
+                            // cursor, returning `None` if no page.
+                            // SAFETY: The range of `cursor` has a page left.
+                            let page = unsafe { cursor.as_mut().maybe_page(writing) };
+                            // This page was not present and if we are in a run of absent pages we
+                            // would like to efficiently skip them, instead of querying each virtual
+                            // address individually. Due to the assumptions of the cursor, we cannot
+                            // call `skip_missing_pages` if we had just requested the last page in
+                            // the range of the cursor.
+                            if page.is_none() && off + kernel_page::SIZE < len {
+                                // Increment `off` for the any pages we skip and let the original
+                                // page from `maybe_page` get incremented on the way around the loop
+                                // before the range gets checked.
+                                // SAFETY: The range of `cursor` has a page left.
+                                off += unsafe { cursor.as_mut().skip_missing_pages() } as usize
+                                    * kernel_page::SIZE;
+                            }
+                            page
+                        };
+                        if let Some(page) = page {
+                            // SAFETY: `page` was returned by `cursor` while holding the VMO lock,
+                            // so its state is valid to inspect.
+                            let paddr = unsafe { page.paddr() };
+                            // SAFETY: `paddr` is valid to map at `base + off` until `coalescer` is
+                            // dropped.
+                            unsafe { coalescer.append(base + off, paddr) }?;
+                        }
+                        off += kernel_page::SIZE;
+                    }
+                    coalescer.flush()?;
+                    Err(Status::NEXT)
+                } else if let Some(phys) = object.as_physical() {
+                    hint::cold_path();
+                    // grab the lock for the vmo
+                    ksync::lock!(let object_guard = object.lock_ref().lock());
+                    // SAFETY: `object_guard` is never released.
+                    let object_token = unsafe { object_guard.token_unchecked() };
+                    // Physical VMOs are never resizable, so do not need to worry about trimming the
+                    // range.
+                    debug_assert!(!phys.is_resizable());
+                    // SAFETY: The object lock is held until `coalescer` is dropped.
+                    let mut coalescer = unsafe {
+                        VmMappingCoalescer::<16>::new(
+                            self,
+                            object_token,
+                            base,
+                            mmu_flags,
+                            existing_entry_action,
+                        )
+                    };
+
+                    // Physical VMOs are always allocated and contiguous, just need to get the
+                    // paddr.
+                    let phys_base = phys
+                        .lookup_contiguous_locked(object_token, vmo_offset, len as u64)
+                        .expect("physical VMO range must be valid");
+
+                    let mut offset = 0;
+                    while offset < len {
+                        // SAFETY: `phys_base + offset` is valid to map at `base + offset` until
+                        // `coalescer` is dropped.
+                        unsafe { coalescer.append(base + offset, PAddr(phys_base.0 + offset)) }?;
+                        offset += kernel_page::SIZE;
+                    }
+                    coalescer.flush()?;
+                    Err(Status::NEXT)
+                } else {
+                    panic!("VmObject should be paged or physical");
+                }
+            },
+        )
     }
 
     /// Unlocked convenience wrapper around unmap for testing.
@@ -2352,6 +2580,147 @@ impl<'a> CurrentlyFaulting<'a> {
     }
 }
 
+/// Helper class for batching installing mappings into the arch aspace. The mappings object lock
+/// must be held over the entirety of the lifetime of this object, without ever being released.
+struct VmMappingCoalescer<'a, const N: usize> {
+    mapping: &'a VmMapping,
+    base: usize,
+    // Safety invariant: `phys[..count]` is initialized, and each `phys[i]` in it is valid to map at
+    // `base + i * kernel_page::SIZE` until `self` is dropped.
+    phys: [MaybeUninit<PAddr>; N],
+    // Safety invariant: `count <= N`.
+    count: usize,
+    mmu_flags: ArchMmuFlags,
+    existing_entry_action: ExistingEntryAction,
+}
+
+impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
+    /// # Safety
+    ///
+    /// The object lock of `mapping` is held until the returned value is dropped.
+    #[inline(always)]
+    unsafe fn new(
+        mapping: &'a VmMapping,
+        _object_token: &LockToken<'_, VmObjectLockClass>,
+        base: usize,
+        mmu_flags: ArchMmuFlags,
+        existing_entry_action: ExistingEntryAction,
+    ) -> Self {
+        // Mapping is only valid if there is at least some access in the flags.
+        debug_assert!((mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) != 0);
+        Self {
+            mapping,
+            base,
+            phys: [const { MaybeUninit::uninit() }; N],
+            count: 0,
+            mmu_flags,
+            existing_entry_action,
+        }
+    }
+
+    /// Add a page to the mapping run.
+    ///
+    /// # Safety
+    ///
+    /// `paddr` is valid to map at `vaddr` until `self` is dropped.
+    #[inline(always)]
+    unsafe fn append(&mut self, vaddr: usize, paddr: PAddr) -> Result<(), Status> {
+        // If this isn't the expected vaddr, flush the run we have first.
+        let count = if self.can_append(vaddr) {
+            self.count
+        } else {
+            self.flush()?;
+            self.base = vaddr;
+            0
+        };
+        self.phys[count].write(paddr);
+        self.count = count + 1;
+        Ok(())
+    }
+
+    /// Submit any outstanding mappings to the MMU.
+    fn flush(&mut self) -> Result<(), Status> {
+        if self.count == 0 {
+            return Ok(());
+        }
+
+        vm_ktrace_duration!(
+            2,
+            "map_page",
+            "va" => ArgValue::Pointer(self.base),
+            "count" => self.count as u64,
+            "mmu_flags" => self.mmu_flags as u32,
+        );
+
+        // Assert that we're not accidentally mapping the zero page writable. Unless called from a
+        // kernel aspace, as the zero page can be mapped writable from the kernel aspace.
+        debug_assert!(
+            (self.mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) == 0
+                || self.phys[..self.count].iter().all(|p| {
+                    // SAFETY: The first `count` entries of `phys` are initialized.
+                    let p = unsafe { p.assume_init() };
+                    p != vm_get_zero_page_paddr()
+                })
+                || !self.mapping.aspace().is_user()
+        );
+
+        // The caller likely overwrote the previous contents of the new pages before supplying them
+        // to this `VmMappingCoalescer`. It's important that these writes are observed before the
+        // page table entries corresponding to these pages are written out. Otherwise, there is a
+        // risk of leaking the previous content.
+        //
+        // This site needs special synchronization; other sites guarantee this order by at least
+        // releasing and acquiring the object lock between manipulating the new pages and modifying
+        // mappings. See https://fxrev.dev/517176302.
+        store_memory_barrier();
+
+        // SAFETY: `phys` points to an array of at least `count` initialized physical addresses, and
+        // the virtual and physical ranges are valid to map.
+        let ret = unsafe {
+            self.mapping.aspace().arch_aspace().map(
+                self.base,
+                self.phys.as_mut_ptr().cast::<PAddr>(),
+                self.count,
+                self.mmu_flags,
+                self.existing_entry_action,
+            )
+        };
+        if let Err(status) = ret {
+            hint::cold_path();
+            trace_map_error(status, self.count, self.base);
+        }
+        self.base = self.base.wrapping_add(self.count * kernel_page::SIZE);
+        self.count = 0;
+        ret
+    }
+
+    /// Drop the current outstanding mappings without sending them to the MMU.
+    fn drop_outstanding(&mut self) {
+        self.count = 0;
+    }
+
+    /// `vaddr` can be appended if it's the next free slot and the coalescer isn't full.
+    #[inline(always)]
+    fn can_append(&self, vaddr: usize) -> bool {
+        self.count < N && vaddr == self.base.wrapping_add(self.count * kernel_page::SIZE)
+    }
+}
+
+/// Prints the error of a failed `map` in `VmMappingCoalescer::flush`, out of line so that its
+/// format arguments do not take stack space in `flush`, which is on the page fault path.
+#[cold]
+#[inline(never)]
+fn trace_map_error(status: Status, count: usize, base: usize) {
+    tracef!("error {} mapping {} pages starting at va {:#x}\n", status.into_raw(), count, base);
+}
+
+impl<const N: usize> Drop for VmMappingCoalescer<'_, N> {
+    fn drop(&mut self) {
+        // Make sure no outstanding mappings.
+        debug_assert!(self.count == 0);
+    }
+}
+
 /// # Safety
 ///
 /// `vmo` is null or an owned reference to a live `VmObject`.
@@ -2544,22 +2913,6 @@ pub extern "C" fn rust_vm_mapping_decommit_range(
 
 /// # Safety
 ///
-/// The aspace lock and the object lock are held.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_mapping_trimmed_object_range_locked(
-    this: &VmMapping,
-    offset: u64,
-    len: u64,
-) -> u64 {
-    // SAFETY: The aspace lock is held by the caller.
-    let aspace_token = unsafe { LockToken::new() };
-    // SAFETY: The object lock is held by the caller.
-    let object_token = unsafe { LockToken::new() };
-    this.trimmed_object_range_locked(&aspace_token, &object_token, offset, len)
-}
-
-/// # Safety
-///
 /// The aspace lock is held and the object lock is not held.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_vm_mapping_set_mem_priority_locked(
@@ -2684,6 +3037,17 @@ pub unsafe extern "C" fn rust_vm_mapping_destroy_locked_object(
         unmap,
         remove_region,
     ))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_map_range(
+    this: &VmMapping,
+    offset: usize,
+    len: usize,
+    commit: bool,
+    ignore_existing: bool,
+) -> zx_status_t {
+    Status::result_into_raw(this.map_range(offset, len, commit, ignore_existing))
 }
 
 /// # Safety

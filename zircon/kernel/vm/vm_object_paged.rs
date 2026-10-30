@@ -176,6 +176,12 @@ impl VmObjectPaged {
         }
     }
 
+    #[inline]
+    pub(super) fn lock_order(&self) -> u64 {
+        // SAFETY: `self.as_raw()` is a valid `VmObjectPaged` pointer.
+        unsafe { bindings::cpp_vm_object_paged_lock_order(self.as_raw()) }
+    }
+
     /// See the comments on `PriorityChanger` for how to use this object.
     pub fn make_priority_changer(&self, delta: i64) -> impl PinInit<PriorityChanger<'_>> {
         PriorityChanger::new(self.cow_pages(), delta)

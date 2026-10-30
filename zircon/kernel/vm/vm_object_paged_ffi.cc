@@ -77,6 +77,10 @@ FFI_ALWAYS_INLINE const VmCowPages* cpp_vm_object_paged_cow_pages(const VmObject
   return vmo->cow_pages_.get();
 }
 
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_paged_lock_order(const VmObjectPaged* vmo) {
+  return vmo->lock_order();
+}
+
 FFI_ALWAYS_INLINE VmObjectPaged* cpp_vm_object_as_vm_object_paged(VmObject* vmo) {
   return DownCastVmObject<VmObjectPaged>(vmo);
 }

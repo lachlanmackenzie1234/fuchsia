@@ -1348,13 +1348,6 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
   fbl::RefPtr<VmMapping> TryMergeRightNeighborLocked(VmMapping* right_candidate)
       TA_REQ(region_lock()) TA_REQ(lock());
 
-  // Returns the minimum of the requested map length, the size of the VMO or, if
-  // FAULT_BEYOND_STREAM_SIZE is set, the  page containing the stream size. MapRange can be trimmed
-  // to these lengths as it should not be considered an error to call MapRange past the VMO size in
-  // a resizable VMO or past the page containing the stream size in a FAULT_BEYOND_STREAM_SIZE VMO.
-  uint64_t TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) const TA_REQ(lock())
-      TA_REQ(object_locked()->lock());
-
   const btree::BTree<vaddr_t, arch_mmu_flags_t>& rest_protection_ranges_locked() const
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return rest_protection_ranges_;
@@ -1415,8 +1408,6 @@ VmMapping* rust_vm_mapping_create_with_ranges(VmAddressRegion* parent, bool priv
                                               VmMapping::Mergeable mergeable);
 void rust_vm_mapping_recycle(VmMapping* mapping);
 zx_status_t rust_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
-uint64_t rust_vm_mapping_trimmed_object_range_locked(const VmMapping* mapping, uint64_t offset,
-                                                     uint64_t len);
 void rust_vm_mapping_set_mem_priority_locked(VmMapping* mapping,
                                              VmAddressRegion::MemoryPriority priority);
 void rust_vm_mapping_set_mem_priority_locked_split(VmMapping* mapping,
@@ -1428,6 +1419,8 @@ void rust_vm_mapping_set_mem_priority_high_already_positive_locked_object_split(
 void rust_vm_mapping_activate_no_insert_locked(VmMapping* mapping);
 zx_status_t rust_vm_mapping_destroy_locked_object(VmMapping* mapping, VmMapping::DestroyUnmap unmap,
                                                   VmMapping::DestroyRemoveFromParent remove_region);
+zx_status_t rust_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
+                                      bool ignore_existing);
 zx_status_t rust_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
                                           arch_mmu_flags_t new_arch_mmu_flags);
 zx_status_t rust_vm_mapping_protect_locked(VmMapping* mapping, vaddr_t base, size_t size,
@@ -1467,6 +1460,10 @@ inline arch_mmu_flags_t VmMapping::first_region_arch_mmu_flags_locked() const {
 }
 inline void VmMapping::set_first_region_arch_mmu_flags_locked(arch_mmu_flags_t flags) {
   rust_vm_mapping_set_first_region_arch_mmu_flags(this, flags);
+}
+inline zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit,
+                                       bool ignore_existing) {
+  return rust_vm_mapping_map_range(this, offset, len, commit, ignore_existing);
 }
 inline zx_status_t VmMapping::DebugProtect(vaddr_t base, size_t size,
                                            arch_mmu_flags_t new_arch_mmu_flags) {

@@ -101,8 +101,6 @@ void cpp_vm_mapping_construct_with_ranges(ffi::Uninitialized<VmMapping>* slot,
                                           VmMappingProtectionRanges* ranges, bool mergeable);
 void cpp_vm_mapping_destruct(VmMapping* mapping);
 void* cpp_vm_mapping_state(VmMapping* mapping);
-zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
-                                     bool ignore_existing);
 zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t size);
 zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
 void cpp_vm_mapping_mark_mergeable(VmMapping* mapping);
