@@ -3117,6 +3117,62 @@ TEST(PtraceTest, ReplaceForcedSignalWithIgnoredSignal) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+// Verifies that a synchronous forced hardware exception signal (SIGTRAP from a software
+// breakpoint) while blocked unmasks the signal and resets its handler to SIG_DFL (preserving other
+// sigaction fields) before entering ptrace signal-delivery-stop.
+TEST(PtraceTest, BlockedForcedSignalUnmasksAndResetsHandlerAtSendTime) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  helper.KillChildrenOnDestroy();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    struct sigaction sa = {};
+    sa.sa_handler = [](int) { _exit(1); };
+    sa.sa_flags = SA_RESTART;
+    SAFE_SYSCALL(sigaction(SIGTRAP, &sa, nullptr));
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTRAP);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &mask, nullptr));
+
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr));
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    FunctionToBreak();
+
+    sigset_t current_mask = {};
+    SAFE_SYSCALL(sigprocmask(SIG_SETMASK, nullptr, &current_mask));
+    EXPECT_EQ(sigismember(&current_mask, SIGTRAP), 0);
+
+    struct sigaction current_sa = {};
+    SAFE_SYSCALL(sigaction(SIGTRAP, nullptr, &current_sa));
+    EXPECT_EQ(current_sa.sa_handler, SIG_DFL);
+    EXPECT_EQ(current_sa.sa_flags & SA_RESTART, SA_RESTART);
+  });
+
+  int status = 0;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+
+  const void *breakpoint_addr = reinterpret_cast<const void *>(&FunctionToBreak);
+  long original_data = PokeBreakpoint(child_pid, breakpoint_addr);
+  ASSERT_FALSE(::testing::Test::HasFailure());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  // Wait for the forced SIGTRAP from the breakpoint exception.
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP);
+
+  // Restore original instruction and suppress SIGTRAP so the child can inspect its post-exception
+  // signal mask and disposition.
+  ASSERT_THAT(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, original_data),
+              SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, nullptr, 0), SyscallSucceeds());
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 extern "C" void GetConstantFromCodeInsn();
 
 #if defined(__arm__)
