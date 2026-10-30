@@ -19,5 +19,7 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/devices/lib/io-buffer/tests:phys-iter-test",
+        "//src/devices/radar/bin/radarutil:radarutil-test",
+        "//src/devices/radar/lib/vmo-manager:vmo-manager-test",
     ],
 )
