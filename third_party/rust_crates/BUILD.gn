@@ -1144,11 +1144,11 @@ group("lru-0.18.5") {
 }
 
 group("macro_rules_attribute") {
-  public_deps = [ ":macro_rules_attribute-v0_2_2" ]
+  public_deps = [ ":macro_rules_attribute-v0_2_3" ]
 }
 
-group("macro_rules_attribute-0.2.2") {
-  public_deps = [ ":macro_rules_attribute-v0_2_2" ]
+group("macro_rules_attribute-0.2.3") {
+  public_deps = [ ":macro_rules_attribute-v0_2_3" ]
 }
 
 group("maplit") {
@@ -13160,56 +13160,56 @@ rustc_library("lru-cache-v0_1_2") {
   applicable_licenses = [ ":lru-cache-v0_1_2.license" ]
 }
 
-license("macro_rules_attribute-v0_2_2.license") {
+license("macro_rules_attribute-v0_2_3.license") {
   public_package_name = "macro_rules_attribute"
   license_files = [
-    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2/LICENSE-ZLIB",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.3/LICENSE-ZLIB",
   ]
 }
 
-rustc_library("macro_rules_attribute-v0_2_2") {
+rustc_library("macro_rules_attribute-v0_2_3") {
   crate_name = "macro_rules_attribute"
   source_root =
-      "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2/src/lib.rs"
-  output_name = "macro_rules_attribute-44988f14ef53abf1"
+      "//third_party/rust_crates/vendor/macro_rules_attribute-0.2.3/src/lib.rs"
+  output_name = "macro_rules_attribute-e018123465fc5f22"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":macro_rules_attribute-proc_macro-v0_2_2($host_toolchain)" ]
-  deps += [ ":paste-v1_0_15($host_toolchain)" ]
+  deps += [ ":macro_rules_attribute-proc_macro-v0_2_3($host_toolchain)" ]
+  deps += [ ":pastey-v0_2_3($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=44988f14ef53abf1",
-    "-Cextra-filename=-44988f14ef53abf1",
+    "-Cmetadata=e018123465fc5f22",
+    "-Cextra-filename=-e018123465fc5f22",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":macro_rules_attribute-v0_2_2.license" ]
+  applicable_licenses = [ ":macro_rules_attribute-v0_2_3.license" ]
 }
 
-license("macro_rules_attribute-proc_macro-v0_2_2.license") {
+license("macro_rules_attribute-proc_macro-v0_2_3.license") {
   public_package_name = "macro_rules_attribute_proc_macro"
   license_files = [
-    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.2/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.2/LICENSE-ZLIB",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.3/LICENSE-ZLIB",
   ]
 }
 
-rustc_macro("macro_rules_attribute-proc_macro-v0_2_2") {
+rustc_macro("macro_rules_attribute-proc_macro-v0_2_3") {
   crate_name = "macro_rules_attribute_proc_macro"
-  source_root = "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.2/mod.rs"
-  output_name = "macro_rules_attribute_proc_macro-9ac07210d0a5692b"
+  source_root = "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.2.3/mod.rs"
+  output_name = "macro_rules_attribute_proc_macro-1e274db46bbb6af1"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -13221,13 +13221,13 @@ rustc_macro("macro_rules_attribute-proc_macro-v0_2_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ac07210d0a5692b",
-    "-Cextra-filename=-9ac07210d0a5692b",
+    "-Cmetadata=1e274db46bbb6af1",
+    "-Cextra-filename=-1e274db46bbb6af1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":macro_rules_attribute-proc_macro-v0_2_2.license" ]
+  applicable_licenses = [ ":macro_rules_attribute-proc_macro-v0_2_3.license" ]
 }
 
 license("maplit-v1_0_2.license") {
@@ -15440,6 +15440,38 @@ rustc_macro("paste-v1_0_15") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":paste-v1_0_15.license" ]
+}
+
+license("pastey-v0_2_3.license") {
+  public_package_name = "pastey"
+  license_files = [
+    "//third_party/rust_crates/vendor/pastey-0.2.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pastey-0.2.3/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("pastey-v0_2_3") {
+  crate_name = "pastey"
+  source_root = "//third_party/rust_crates/vendor/pastey-0.2.3/src/lib.rs"
+  output_name = "pastey-67969c5f49a1f510"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=67969c5f49a1f510",
+    "-Cextra-filename=-67969c5f49a1f510",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":pastey-v0_2_3.license" ]
 }
 
 license("pathdiff-v0_2_3.license") {

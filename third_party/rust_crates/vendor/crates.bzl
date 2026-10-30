@@ -423,7 +423,7 @@ _NORMAL_DEPENDENCIES = {
             "lock_api": Label("//third_party/rust_crates/vendor/lock_api-0.4.14:lock_api"),
             "log": Label("//third_party/rust_crates/vendor/log-0.4.34:log"),
             "lru": Label("//third_party/rust_crates/vendor/lru-0.18.5:lru"),
-            "macro_rules_attribute": Label("//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2:macro_rules_attribute"),
+            "macro_rules_attribute": Label("//third_party/rust_crates/vendor/macro_rules_attribute-0.2.3:macro_rules_attribute"),
             "maplit": Label("//third_party/rust_crates/vendor/maplit-1.0.2:maplit"),
             "maybe-owned": Label("//third_party/rust_crates/vendor/maybe-owned-0.3.4:maybe_owned"),
             "md-5": Label("//third_party/rust_crates/vendor/md-5-0.11.0:md5"),
