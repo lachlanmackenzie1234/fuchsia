@@ -104,7 +104,7 @@ rustc_binary("bin") {
   ]
 }
 
-rustc_test("bin_test") {
+rustc_test("wlandevicemonitor_bin_test") {
   sources = [
     "src/device.rs",
     "src/device_watch.rs",
@@ -148,13 +148,12 @@ rustc_test("bin_test") {
            "//third_party/rust_crates:test-case",
          ]
   source_root = "src/main.rs"
-  output_name = "wlandevicemonitor_bin_test"
 }
 
 fuchsia_unittest_package("wlandevicemonitor-tests") {
   package_name = "wlandevicemonitor-tests-gn"
   component_name = "wlandevicemonitor-tests"
-  deps = [ ":bin_test" ]
+  deps = [ ":wlandevicemonitor_bin_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
