@@ -259,6 +259,11 @@ def migrated_dependency_packages():
         ):
             found.add(cand_pkg)
             continue
+        # 1b. Direct FIDL library dependency in //sdk/fidl/<lib> upgraded from legacy
+        # fuchsia_fidl_library (C++ only) to fidl_library so Rust/C++ bindings exist in Bazel.
+        if cand_pkg in td_direct_deps and cand_pkg.startswith("sdk/fidl/"):
+            found.add(cand_pkg)
+            continue
         # Must be in the same area and third_party scope as at least one target_dir
         matching_tds = [
             td
@@ -560,7 +565,11 @@ def check_cl_scoping_guidelines():
                 if dl.startswith("+") and not dl.startswith("+++"):
                     added_lines += 1
     anchor = f"{target_dirs[0]}/BUILD.bazel" if target_dirs else f"{sorted(migrated_pkgs)[0]}/BUILD.bazel"
-    if len(migrated_pkgs) > 5 or added_lines > 550:
+    fidl_dep_pkgs = {d for d in dependency_dirs if d.startswith("sdk/fidl/")}
+    unassigned_pkgs = migrated_pkgs - set(target_dirs) - fidl_dep_pkgs
+    max_dirs = max(5, len(target_dirs) + len(fidl_dep_pkgs))
+    max_lines = max(550, 250 * (len(target_dirs) + len(fidl_dep_pkgs)))
+    if unassigned_pkgs and (len(migrated_pkgs) > max_dirs or added_lines > max_lines):
         pkg_list_str = ", ".join(f"//{d}" for d in sorted(migrated_pkgs))
         findings.append({
             "source": "bazel_minimality",

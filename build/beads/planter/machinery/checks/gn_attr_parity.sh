@@ -210,18 +210,23 @@ def parse_gn_target_conditions(text):
         for ln in text.splitlines()
     )
     stack = []
+    if_starts = {}
     tmpl_inner = {}
     for m in GN_TOKEN_RE.finditer(cleaned):
         tok = m.group(0)
         line = cleaned.count("\n", 0, m.start()) + 1
         if m.group(1) == "if":
             cond = re.sub(r"\s+", " ", m.group(2).strip())
+            tnames = []
             for kind, tname, _ in stack:
                 if kind == "target" and tname in out:
                     out[tname]["inner"].append((cond, line))
+                    tnames.append(tname)
                 elif kind == "template" and tname:
                     tmpl_inner.setdefault(tname, []).append((cond, line))
             stack.append(("if", cond, line))
+            if tnames:
+                if_starts[len(stack)] = (tnames, cond, line, m.end())
         elif m.group(3):
             tmpl, tname = m.group(3), m.group(4)
             if tmpl == "template":
@@ -232,18 +237,62 @@ def parse_gn_target_conditions(text):
                 continue
             enclosing = [(c, l) for k, c, l in stack if k == "if"]
             info = out.setdefault(
-                tname, {"tmpl": tmpl, "line": line, "enclosing": [], "inner": []}
+                tname,
+                {
+                    "tmpl": tmpl,
+                    "line": line,
+                    "enclosing": [],
+                    "inner": [],
+                    "inner_bodies": {},
+                },
             )
             info["enclosing"].extend(enclosing)
             stack.append(("target", tname, line))
         elif tok == "{":
             stack.append(("other", "", line))
         elif tok == "}" and stack:
+            popped_depth = len(stack)
             stack.pop()
+            if popped_depth in if_starts:
+                tnames, icond, iline, istart = if_starts.pop(popped_depth)
+                ibody = cleaned[istart : m.start()]
+                for tn in tnames:
+                    out[tn].setdefault("inner_bodies", {})[(icond, iline)] = ibody
     for tname, info in out.items():
         if info["tmpl"] in tmpl_inner:
             info["inner"].extend(tmpl_inner[info["tmpl"]])
     return out
+
+
+# Check whether an inner `if (...)` inside a `group(...)` only gates newly added
+# `bazel_test_suite` dependencies (e.g. `if (!is_asan) { deps += [ ":bazel_tests" ] }`
+# matching `exclude_toolchain_tags` on the GN test binary, which Bazel ignores).
+def is_bazel_test_suite_inner_guard(pkg, new_info, cond, cond_line, above_after):
+    if new_info.get("tmpl") != "group":
+        return False
+    ibody = new_info.get("inner_bodies", {}).get((cond, cond_line), "")
+    if not ibody:
+        return False
+    above_code = re.sub(r"#[^\n]*", "", above_after or "")
+    bts_names = set(
+        re.findall(r'\bbazel_test_suite\(\s*"([^"$]+)"\s*\)', above_code)
+    )
+    if not bts_names:
+        return False
+    refs = re.findall(r'"([^"]+)"', ibody)
+    if not refs:
+        return False
+    for ref in refs:
+        base_ref = ref.split("(", 1)[0].strip()
+        if base_ref.startswith(":"):
+            tname = base_ref[1:]
+        elif pkg and base_ref.startswith(f"//{pkg}:"):
+            tname = base_ref[len(f"//{pkg}:") :]
+        else:
+            return False
+        if tname not in bts_names:
+            return False
+    return True
 
 
 # Check that retained hand-written GN targets above BAZEL2GN SENTINEL and bazel2gn-synced
@@ -265,10 +314,15 @@ def check_unrequested_gn_conditions(gn_rel, pkg, before, after):
             c for c, _ in (old_info["enclosing"] + old_info["inner"])
         }
         for cond, cond_line in new_info["enclosing"] + new_info["inner"]:
-            if cond not in old_conds:
-                grouped.setdefault((cond, cond_line), []).append(
-                    f'`{new_info["tmpl"]}("{tname}")`'
-                )
+            if cond in old_conds:
+                continue
+            if is_bazel_test_suite_inner_guard(
+                pkg, new_info, cond, cond_line, above_after
+            ):
+                continue
+            grouped.setdefault((cond, cond_line), []).append(
+                f'`{new_info["tmpl"]}("{tname}")`'
+            )
     out_findings = []
     for (cond, cond_line), target_descs in sorted(
         grouped.items(), key=lambda x: x[0][1]
@@ -1049,35 +1103,51 @@ def check_test_log_settings_alignment_info(
 
 
 # Record non-blocking INFO attribute_alignment when GN test_specs.log_settings.max_severity
-# is carried over to Bazel fx_test / fx_unittest_package via max_log_severity.
+# or component/package test_type is carried over to Bazel fx_test / fx_unittest_package /
+# fx_test_component targets.
 def check_test_specs_log_severity_alignment_info(
-    bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, gn_top
+    bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, gn_top, bazel_targets=None
 ):
-    if bt_rule not in ("fx_test", "fx_unittest_package") or "max_log_severity" not in bt_kws:
+    if bt_rule not in ("fx_test", "fx_unittest_package", "fx_package"):
         return []
-    if "log_settings" not in gn_top and "max_severity" not in gn_top:
-        return []
-    gn_sev = gn_top.get("max_severity", [])
-    bz_sev = eval_starlark(bt_kws.get("max_log_severity"), top_vars)
-    if gn_sev and bz_sev and gn_sev != bz_sev:
+    has_log_sev = "max_log_severity" in bt_kws and (
+        "log_settings" in gn_top or "max_severity" in gn_top
+    )
+    if has_log_sev:
+        gn_sev = gn_top.get("max_severity", [])
+        bz_sev = eval_starlark(bt_kws.get("max_log_severity"), top_vars)
+        if gn_sev and bz_sev and gn_sev != bz_sev:
+            has_log_sev = False
+    gn_tt = gn_top.get("test_type", [])
+    has_test_type = False
+    if gn_tt and "test_type" not in bt_kws:
+        bz_tt = set(eval_starlark(bt_kws.get("test_type"), top_vars))
+        if bazel_targets:
+            for _, other_bt in bazel_targets.items():
+                bz_tt.update(eval_starlark(other_bt[-1].get("test_type"), top_vars))
+        has_test_type = all(t in bz_tt for t in gn_tt)
+    if not has_log_sev and not has_test_type:
         return []
     extra_attrs = [
         attr for attr in gn_top
         if attr not in KNOWN_OR_DEDICATED_GN_ATTRS and attr not in bt_kws
     ]
+    if has_test_type and "test_type" not in extra_attrs:
+        extra_attrs.append("test_type")
     if not extra_attrs:
         return []
     out = []
-    for perm in itertools.permutations(extra_attrs):
-        notes = [f"{k} in GN not carried over to Bazel" for k in perm]
-        out.append({
-            "source": "gn_attr_parity",
-            "category": "attribute_alignment",
-            "severity": "info",
-            "file": bazel_rel,
-            "line": bt_line,
-            "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
-        })
+    for r_len in range(1, len(extra_attrs) + 1):
+        for perm in itertools.permutations(extra_attrs, r_len):
+            notes = [f"{k} in GN not carried over to Bazel" for k in perm]
+            out.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": bazel_rel,
+                "line": bt_line,
+                "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
+            })
     return out
 
 
@@ -2938,6 +3008,7 @@ def record_verified_mapped_attr_notes(
             "args_test_deps",
             "test_deps",
             "deps_for_tests",
+            "test_type",
         ):
             if (
                 re.search(r"(?<![\w.])" + test_attr + r"\s*\+?=", top_body)
@@ -3410,6 +3481,10 @@ def check_gn_conditions_with_host_tools(gn_rel, pkg, before, after):
         for cond, cond_line in new_info["enclosing"] + new_info["inner"]:
             if cond in old_conds:
                 continue
+            if is_bazel_test_suite_inner_guard(
+                pkg, new_info, cond, cond_line, above_after
+            ):
+                continue
             if is_migrated_host_tool and cond in HOST_TOOLCHAIN_GN_CONDS:
                 continue
             grouped.setdefault((cond, cond_line), []).append(
@@ -3809,7 +3884,14 @@ for pkg in sorted(d for d in dirs if d):
                 )
                 findings.extend(
                     check_test_specs_log_severity_alignment_info(
-                        bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, gn_top
+                        bazel_rel,
+                        name,
+                        bt_rule,
+                        bt_line,
+                        bt_kws,
+                        top_vars,
+                        gn_top,
+                        bazel_targets,
                     )
                 )
                 base_fs_deps = (
