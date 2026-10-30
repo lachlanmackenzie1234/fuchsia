@@ -674,6 +674,9 @@ void brcmf_sdio_if_ctrl_frame_stat_set(struct brcmf_sdio* bus, std::function<voi
 void brcmf_sdio_if_ctrl_frame_stat_clear(struct brcmf_sdio* bus, std::function<void()> fn);
 void brcmf_sdio_wait_event_wakeup(struct brcmf_sdio* bus);
 zx_status_t brcmf_sdio_bus_txctl(brcmf_bus* bus_if, unsigned char* msg, uint msglen);
+zx_status_t brcmf_sdio_prepare_vmo(brcmf_bus* bus_if, uint8_t vmo_id, zx_handle_t vmo,
+                                   uint8_t* mapped_addr, size_t mapped_size);
+zx_status_t brcmf_sdio_release_vmo(brcmf_bus* bus_if, uint8_t vmo_id);
 
 // Load firmware, nvram and CLM binary files. The parameter "reload" means whether this function is
 // called for the firmware reloading process when it crashes.

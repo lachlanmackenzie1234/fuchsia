@@ -2339,8 +2339,8 @@ zx::result<uint8_t*> brcmf_map_vmo(brcmf_sdio* bus, uint8_t vmo_id, zx_handle_t 
   return zx::success(reinterpret_cast<uint8_t*>(addr));
 }
 
-static zx_status_t brcmf_sdio_prepare_vmo(brcmf_bus* bus_if, uint8_t vmo_id, zx_handle_t vmo,
-                                          uint8_t* mapped_addr, size_t mapped_size) {
+zx_status_t brcmf_sdio_prepare_vmo(brcmf_bus* bus_if, uint8_t vmo_id, zx_handle_t vmo,
+                                   uint8_t* mapped_addr, size_t mapped_size) {
   struct brcmf_sdio_dev* sdiodev = bus_if->bus_priv.sdio;
   struct brcmf_sdio* bus = sdiodev->bus;
 
@@ -2390,7 +2390,7 @@ static zx_status_t brcmf_sdio_prepare_vmo(brcmf_bus* bus_if, uint8_t vmo_id, zx_
   return ZX_OK;
 }
 
-static zx_status_t brcmf_sdio_release_vmo(brcmf_bus* bus_if, uint8_t vmo_id) {
+zx_status_t brcmf_sdio_release_vmo(brcmf_bus* bus_if, uint8_t vmo_id) {
   struct brcmf_sdio_dev* sdiodev = bus_if->bus_priv.sdio;
   struct brcmf_sdio* bus = sdiodev->bus;
 
@@ -2425,12 +2425,13 @@ static zx_status_t brcmf_sdio_release_vmo(brcmf_bus* bus_if, uint8_t vmo_id) {
   brcmf_proto_bcdc_txcomplete(sdiodev->drvr, frames, ZX_ERR_CANCELED);
 
   // Unregister VMO for both f1 and f2
-  zx_handle_t vmo = ZX_HANDLE_INVALID;
-  zx_status_t err = sdio_unregister_vmo(&sdiodev->sdio_proto_fn1, vmo_id, &vmo);
+  zx::vmo vmo;
+  zx_status_t err =
+      sdio_unregister_vmo(&sdiodev->sdio_proto_fn1, vmo_id, vmo.reset_and_get_address());
   if (err != ZX_OK) {
     BRCMF_ERR("Failed to release VMO %u for func1: %s", vmo_id, zx_status_get_string(err));
   }
-  err = sdio_unregister_vmo(&sdiodev->sdio_proto_fn2, vmo_id, &vmo);
+  err = sdio_unregister_vmo(&sdiodev->sdio_proto_fn2, vmo_id, vmo.reset_and_get_address());
   if (err != ZX_OK) {
     BRCMF_ERR("Failed to release VMO %u for func2: %s", vmo_id, zx_status_get_string(err));
   }
