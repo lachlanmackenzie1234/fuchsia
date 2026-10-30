@@ -2,10 +2,54 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Shared helpers for merging and compiling Fuchsia component manifests."""
+
 load(
     ":providers.bzl",
     "FuchsiaComponentManifestInfo",
 )
+
+def merge_component_manifests(
+        ctx,
+        cmc_tool,
+        srcs,
+        output_name = None,
+        toolchain = None):
+    """Merges component manifest files (`.cml`, `.shard.cml`, or `.json`) with `cmc merge`.
+
+    Args:
+        ctx: The rule context.
+        cmc_tool: The `cmc` executable.
+        srcs: A non-empty list of `.cml`, `.shard.cml`, or `.json` `File`s to merge, in order.
+        output_name: Output file path relative to the package's output directory.
+            Defaults to `<name>.cml`.
+        toolchain: The toolchain type to run `cmc` with, if any.
+
+    Returns:
+        The merged `File`.
+    """
+    if not srcs:
+        fail("`srcs` must not be empty.")
+
+    merged_output = ctx.actions.declare_file(output_name or "{}.cml".format(ctx.label.name))
+
+    args = [
+        "merge",
+        "--output",
+        merged_output.path,
+    ] + [f.path for f in srcs]
+
+    ctx.actions.run(
+        executable = cmc_tool,
+        arguments = args,
+        inputs = list(srcs),
+        outputs = [merged_output],
+        mnemonic = "CmcMerge",
+        progress_message = "Merging component manifests for %{label}",
+        **({"toolchain": toolchain} if toolchain else {})
+    )
+
+    return merged_output
 
 def compile_component_manifest(
         ctx,
@@ -61,7 +105,7 @@ def compile_component_manifest(
     ctx.actions.run(
         executable = cmc_tool,
         arguments = args,
-        inputs = [manifest_in] + includes,
+        inputs = depset([manifest_in] + includes),
         outputs = [manifest_out],
         mnemonic = "CmcCompile",
         **({"toolchain": toolchain} if toolchain else {})

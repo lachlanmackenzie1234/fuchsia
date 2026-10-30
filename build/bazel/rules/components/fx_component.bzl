@@ -8,6 +8,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
+    "merge_component_manifests",
 )
 load(
     "@fuchsia_rules_common//components:fuchsia_component_common.bzl",
@@ -161,32 +162,28 @@ def _compile_fx_manifest(ctx, output_name = None, include_sources_info = True):
     include_paths = [".", "sdk/lib"]
     if debugdata_shard:
         include_paths.append(manifest_in.dirname)
-        manifest_merged = ctx.actions.declare_file("{}_merge.cml".format(ctx.label.name))
-        ctx.actions.run(
-            executable = cmc,
-            arguments = [
-                "merge",
-                "--output",
-                manifest_merged.path,
-                debugdata_shard.path,
-                manifest_in.path,
-            ],
-            inputs = [
+        manifest_in = merge_component_manifests(
+            ctx = ctx,
+            cmc_tool = cmc,
+            srcs = [
                 debugdata_shard,
                 manifest_in,
             ],
-            outputs = [manifest_merged],
-            mnemonic = "CmcMerge",
+            output_name = "{}_merge.cml".format(ctx.label.name),
         )
-        manifest_in = manifest_merged
 
     # LINT.ThenChange(//tools/cmc/build/cml.gni:debugdata_merge)
 
-    # `includes` accepts both `cml_shard` targets (which carry `FuchsiaCmlShardInfo`
-    # with their transitive shard dependencies) and raw `.cml` / `.shard.cml` leaf
-    # files (which do not include other shards and only provide `DefaultInfo.files`).
+    # `includes` accepts both `cml_shard` targets (which carry
+    # `FuchsiaCmlShardInfo` with their transitive shard dependencies) and raw
+    # `.cml` / `.shard.cml` leaf files (which do not include other shards and
+    # only provide `DefaultInfo.files`). Also propagate transitive shards from
+    # `manifest` when `manifest` is a `cmc_merge` or `cml_shard` target.
+    manifest_transitive_shards = (
+        [ctx.attr.manifest[FuchsiaCmlShardInfo].transitive_shards] if FuchsiaCmlShardInfo in ctx.attr.manifest else []
+    )
     includes = depset(
-        transitive = [
+        transitive = manifest_transitive_shards + [
             dep[FuchsiaCmlShardInfo].transitive_shards if FuchsiaCmlShardInfo in dep else dep[DefaultInfo].files
             for dep in ctx.attr.includes
         ],

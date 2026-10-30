@@ -5,6 +5,7 @@
 load(
     "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
+    "merge_component_manifests",
 )
 load(
     "@fuchsia_rules_common//components:providers.bzl",
@@ -84,25 +85,16 @@ def _compile_component_manifest(ctx, manifest_in, component_name, includes_in):
 
     if ctx.configuration.coverage_enabled:
         coverage_shard = ctx.attr._sdk_coverage_shard[FuchsiaComponentManifestShardInfo]
-        manifest_merged = ctx.actions.declare_file("%s_merged.cml" % _component_name_from_cml_file(manifest_in))
-        ctx.actions.run(
-            executable = sdk.cmc,
-            arguments = [
-                "merge",
-                "--output",
-                manifest_merged.path,
-                manifest_in.path,
-                coverage_shard.file.path,
-            ],
-            inputs = [
+        manifest_in = merge_component_manifests(
+            ctx = ctx,
+            cmc_tool = sdk.cmc,
+            srcs = [
                 manifest_in,
                 coverage_shard.file,
             ],
-            outputs = [manifest_merged],
-            mnemonic = "CmcMergeManifests",
+            output_name = "%s_merged.cml" % _component_name_from_cml_file(manifest_in),
             toolchain = FUCHSIA_TOOLCHAIN_DEFINITION,
         )
-        manifest_in = manifest_merged
 
     # use a dict to eliminate duplicate include paths
     include_path_dict = {}

@@ -102,6 +102,8 @@ filegroup(
         "//src/recovery/factory-reset-trigger",
         # Tests `compiled_action()`.
         "//src/sys/pkg/testing/invalid-fars:resource",
+        # Tests `cmc_merge()` and `fx_component_manifest()`.
+        "//build/bazel/rules/components/tests:build_only_tests",
         # Tests `fx_test()`.
         "//build/bazel/rules/packages/tests:build_only_tests",
         # Tests `fx_package()`, `fx_test_component()`, `fx_test()`,
@@ -128,8 +130,9 @@ filegroup(
         "//build/bazel/rules/fidl/tests:targets_to_build_in_host_configurations",
         "//build/bazel/toolchains/tests",
 
-        # Aspect tests
+        # Aspect and component rule tests
         "//build/bazel/aspects/tests",
+        "//build/bazel/rules/components/tests",
         "//build/bazel/rules/rust/tests",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
