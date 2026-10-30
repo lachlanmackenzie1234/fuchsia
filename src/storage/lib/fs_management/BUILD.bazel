@@ -9,5 +9,6 @@ exports_files(
     visibility = [
         "//bundles/assembly:__subpackages__",
         "//src/sys/pkg/bin/system-updater:__pkg__",
+        "//src/sys/pkg/lib/package-directory:__pkg__",
     ],
 )
