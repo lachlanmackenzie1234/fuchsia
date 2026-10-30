@@ -350,9 +350,6 @@ impl<Source: SequenceFileSource> DynamicFileState<Source> {
 #[derive(Debug, Default)]
 pub struct DynamicFileBuf(VecDeque<u8>);
 impl DynamicFileBuf {
-    pub fn reserve(&mut self, additional: usize) {
-        self.0.reserve(additional);
-    }
     pub fn write(&mut self, data: &[u8]) {
         self.0.extend(data);
     }
