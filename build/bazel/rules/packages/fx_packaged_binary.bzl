@@ -47,6 +47,41 @@ load(
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 load("@rules_rust//rust:defs.bzl", "rust_common")
 
+def _get_rust_runtime_shared_libraries(binary):
+    """Returns the shared libraries a Rust executable links against at runtime.
+
+    On Bazel 8 (`< 9.0.0-pre.20250911`), `@rules_cc`'s
+    `@cc_compatibility_proxy//:proxy.bzl` (`rules_cc+/cc/extensions.bzl`)
+    aliases `cc_import` to `native.cc_import`, whose built-in implementation
+    (`builtins_bzl/common/cc/cc_import.bzl`) returns `[merged_cc_info]` with no
+    `DefaultInfo` runfiles. In addition, `@rules_rust` (`rustc.bzl`) only adds
+    shared libraries from `CcInfo` to runfiles for `bin`/`cdylib`/`dylib`/
+    `staticlib` targets and only inspects the target's own `deps` and
+    `link_deps`. As a result, shared libraries reached through an `rlib`'s
+    `link_deps` in a `rust_test(crate = ...)` are linked (via `DepInfo`) but
+    missing from the test binary's runfiles, and the test fails to load on
+    device with `Error loading shared library lib<name>.so: ZX_ERR_NOT_FOUND`.
+
+    `DepInfo.transitive_noncrates` contains every native library that rustc
+    linked into the executable, so collect the shared libraries from there.
+    These are the same `File` objects that @rules_rust adds to runfiles for
+    executables' direct dependencies, so they deduplicate when merged.
+
+    Args:
+        binary: The binary target.
+
+    Returns:
+        A list of shared library `File`s.
+    """
+    if rust_common.dep_info not in binary:
+        return []
+    return [
+        library.dynamic_library
+        for linker_input in binary[rust_common.dep_info].transitive_noncrates.to_list()
+        for library in linker_input.libraries
+        if library.dynamic_library and not (library.static_library or library.pic_static_library)
+    ]
+
 def _fx_packaged_binary_impl(ctx):
     if CcSharedLibraryInfo in ctx.attr.binary:
         fail("fx_packaged_binary does not support cc_shared_library target")
@@ -64,7 +99,9 @@ def _fx_packaged_binary_impl(ctx):
         ),
     ] + get_runfiles_shared_lib_binary_info(
         # TODO(https://fxbug.dev/532024842): Consider collecting from @rules_cc providers instead.
-        runfiles = ctx.attr.binary[DefaultInfo].default_runfiles,
+        runfiles = ctx.attr.binary[DefaultInfo].default_runfiles.merge(
+            ctx.runfiles(files = _get_rust_runtime_shared_libraries(ctx.attr.binary)),
+        ),
         shared_lib_dest = ctx.attr.shared_lib_dest,
         exclude_libs = [
             target_in.basename,

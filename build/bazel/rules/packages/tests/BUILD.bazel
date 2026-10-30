@@ -8,7 +8,10 @@ load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
 load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load("@rules_cc//cc:defs.bzl", "cc_import")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_shared_library.bzl", "fx_cc_shared_library")
 load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
 load(
     "//build/bazel/rules/components:cml_shard.bzl",
@@ -451,6 +454,7 @@ filegroup(
         ":example_resource_rust_binary_failure_test",
         ":example_restricted_feature_not_allowed_failure_test",
         ":example_rust_dylib_unittest_package",
+        ":example_rust_shared_lib_dep_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
         ":example_test_with_subpackage",
@@ -474,6 +478,7 @@ filegroup(
         ":verify_example_multi_unittest_package_realms",
         ":verify_example_multi_unittest_package_unstripped_binaries",
         ":verify_example_rust_runner_shard",
+        ":verify_example_rust_shared_lib_dep_unittest_package_unstripped_binaries",
         ":verify_example_rust_unittest_package_unstripped_binaries",
         ":verify_example_test_default_realm",
         ":verify_example_test_unstripped_binaries",
@@ -565,6 +570,60 @@ fx_unittest_package(
     name = "example_rust_dylib_unittest_package",
     package_name = "fx-rust-dylib-unittest-package-example",
     unit_tests = [":example_rust_dylib_dep_test_bin"],
+)
+
+# Tests that a shared library reached only through the `link_deps` of the crate
+# under test in `rustc_test(crate = ...)` is packaged. The shared library is
+# imported with `cc_import()`, as `idk_cc_shared_library()` does, which does not
+# add it to runfiles, so `fx_packaged_binary()` must collect it from `DepInfo`.
+fx_cc_library(
+    name = "example_rust_shared_lib_dep_impl",
+    srcs = ["example_shared_lib.cc"],
+    tags = ["manual"],
+)
+
+fx_cc_shared_library(
+    name = "example_rust_shared_lib_dep",
+    tags = ["manual"],
+    deps = [":example_rust_shared_lib_dep_impl"],
+)
+
+cc_import(
+    name = "example_rust_shared_lib_dep_import",
+    shared_library = ":example_rust_shared_lib_dep",
+    tags = ["manual"],
+)
+
+rustc_library(
+    name = "example_rust_shared_lib_dep_lib",
+    srcs = ["example_test.rs"],
+    edition = "2024",
+    link_deps = [":example_rust_shared_lib_dep_import"],
+    tags = ["manual"],
+)
+
+rustc_test(
+    name = "example_rust_shared_lib_dep_test_bin",
+    crate = ":example_rust_shared_lib_dep_lib",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+fx_unittest_package(
+    name = "example_rust_shared_lib_dep_unittest_package",
+    package_name = "fx-rust-shared-lib-dep-unittest-package-example",
+    unit_tests = [":example_rust_shared_lib_dep_test_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_rust_shared_lib_dep_unittest_package_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_rust_shared_lib_dep_test_bin",
+        "libexample_rust_shared_lib_dep.so",
+        "libfdio.so",
+    ],
+    test = ":example_rust_shared_lib_dep_unittest_package",
 )
 
 fx_cc_binary(
