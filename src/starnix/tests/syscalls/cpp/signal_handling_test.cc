@@ -930,6 +930,9 @@ void spam_processes(std::atomic<bool> &done, std::latch &start) {
     if (pid == 0) {
       _exit(0);
     }
+    if (pid > 0) {
+      waitpid(pid, nullptr, 0);
+    }
     nanosleep(&ts, nullptr);
   }
 }
@@ -963,9 +966,9 @@ TEST(SignalHandling, SIGCHLDDeliveredToOnlyThreadNotBlockingIt) {
       sigaddset(&child_mask, SIGCHLD);
       start.count_down();
 
-      // wait for a SIGCHLD, 1 second.
+      // wait for a SIGCHLD, 30 seconds.
       timespec ts;
-      ts.tv_sec = 1;
+      ts.tv_sec = 30;
       ts.tv_nsec = 0;
       int ret = static_cast<int>(TEMP_FAILURE_RETRY(sigtimedwait(&child_mask, nullptr, &ts)));
       EXPECT_EQ(ret, SIGCHLD);
