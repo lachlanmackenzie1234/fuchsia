@@ -216,22 +216,8 @@ KeyFetchStatus KeyFetcher::FetchAndCachePublicKeys() {
 }
 
 void KeyFetcher::ApplyKeyset(util::ParsedKeyset keyset) {
-  // Clamp both keys to the earlier expiration timestamp so they expire together and
-  // neither maker remains usable while the other is expired.
-  // TODO(https://fxbug.dev/539564173): Pass keyset.TakeShufflerKey() and
-  // keyset.TakeAnalyzerKey() directly after https://fxrev.dev/1887274 rolls into
-  // //third_party/cobalt.
-  const int64_t effective_expiration_secs =
-      std::min(keyset.shuffler_key().expiration_timestamp_secs(),
-               keyset.analyzer_key().expiration_timestamp_secs());
-  util::ParsedKey shuffler_key = keyset.TakeShufflerKey();
-  util::ParsedKey analyzer_key = keyset.TakeAnalyzerKey();
-  const uint32_t shuffler_index = shuffler_key.key_index();
-  const uint32_t analyzer_index = analyzer_key.key_index();
-  shuffler_maker_->UpdateKey(util::ParsedKey(std::move(shuffler_key).TakeMaker(), shuffler_index,
-                                             effective_expiration_secs));
-  analyzer_maker_->UpdateKey(util::ParsedKey(std::move(analyzer_key).TakeMaker(), analyzer_index,
-                                             effective_expiration_secs));
+  shuffler_maker_->UpdateKey(keyset.TakeShufflerKey());
+  analyzer_maker_->UpdateKey(keyset.TakeAnalyzerKey());
 }
 
 void KeyFetcher::RunScheduledFetch() {
