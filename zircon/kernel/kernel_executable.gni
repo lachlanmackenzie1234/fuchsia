@@ -148,6 +148,9 @@ template("kernel_executable") {
       "--crate-type=$crate_type",
       "--crate-name=$crate_name",
       "-Cmetadata=clippy",
+
+      # See the comment on -Znext-solver in //build/rust/rust_auxiliary.gni.
+      "-Znext-solver=coherence",
     ]
 
     script = "//build/rust/clippy_wrapper.py"
