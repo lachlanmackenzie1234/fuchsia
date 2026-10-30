@@ -62,7 +62,8 @@ pub struct Mapping {
 // The size of this type *heavily* influences Starnix's heap usage in common scenarios, please
 // think twice about increasing the size here.
 #[cfg(not(any(test, debug_assertions)))]
-static_assertions::assert_eq_size!(Mapping, [u8; 24]);
+static_assertions::assert_eq_size!(Mapping, [u8; 32]);
+static_assertions::assert_eq_size!(MappingBacking, [u8; 16]);
 
 impl Mapping {
     pub fn new(backing: MappingBacking, flags: MappingFlags, mode: MappingMode) -> Mapping {
@@ -367,7 +368,7 @@ impl Mapping {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum MappingBacking {
-    Memory(Box<MappingBackingMemory>),
+    Memory(MappingBackingMemory),
 
     PrivateAnonymous,
 }
@@ -435,7 +436,7 @@ pub struct MappingBackingMemory {
     address_to_offset_delta_and_flags: u64,
 }
 
-// Keep the size of the backing of memory mappings, which are allocated for each mapping.
+// Keep the size of the backing of memory mappings small, as it is stored inline in `Mapping`.
 static_assertions::assert_eq_size!(MappingBackingMemory, [u8; 16]);
 
 /// Set in `MappingBackingMemory::address_to_offset_delta_and_flags` when the backing memory is

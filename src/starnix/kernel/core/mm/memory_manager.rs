@@ -1018,12 +1018,8 @@ impl MemoryManagerState {
         if cow_modified {
             backing.set_cow_modified();
         }
-        let mapping = Mapping::with_name(
-            MappingBacking::Memory(Box::new(backing)),
-            flags,
-            name,
-            mapping_mode,
-        );
+        let mapping =
+            Mapping::with_name(MappingBacking::Memory(backing), flags, name, mapping_mode);
         if mapping_mode == MappingMode::Eager {
             // For unmodified writable private file mappings, `mapping.vmar_flags()` omits `WRITE`,
             // which also causes `populate` (`MAP_POPULATE`) to prefetch pages read-only rather
@@ -2077,8 +2073,10 @@ impl MemoryManagerState {
             let cow_modified = run_mapping.has_cow_modifications();
             let memory_offset = run_mapping.address_to_offset(run_range.start);
             let flags = run_mapping.flags().difference(MappingFlags::LAZY_PRIVATE_FILE);
-            run_mapping.set_backing_internal(MappingBacking::Memory(Box::new(
-                MappingBackingMemory::new(run_range.start, child_memory.clone(), memory_offset),
+            run_mapping.set_backing_internal(MappingBacking::Memory(MappingBackingMemory::new(
+                run_range.start,
+                child_memory.clone(),
+                memory_offset,
             )));
             if cow_modified {
                 run_mapping.set_cow_modified();
@@ -4324,7 +4322,7 @@ impl MappingContext {
         if mapping.has_cow_modifications() {
             backing.set_cow_modified();
         }
-        mapping.set_backing_internal(MappingBacking::Memory(Box::new(backing)));
+        mapping.set_backing_internal(MappingBacking::Memory(backing));
         Ok(())
     }
 
@@ -4749,7 +4747,7 @@ impl MemoryManager {
                             target_backing.set_cow_modified();
                         }
                         let mapping = Mapping::with_name(
-                            MappingBacking::Memory(Box::new(target_backing)),
+                            MappingBacking::Memory(target_backing),
                             target_mapping_flags,
                             mapping.name().to_owned(),
                             MappingMode::Lazy,
@@ -6835,7 +6833,7 @@ mod tests {
             );
 
             let mapping = Mapping::with_name(
-                MappingBacking::Memory(Box::new(MappingBackingMemory::new(addr, memory, 0))),
+                MappingBacking::Memory(MappingBackingMemory::new(addr, memory, 0)),
                 flags,
                 MappingName::None,
                 MappingMode::Lazy,
@@ -9120,11 +9118,11 @@ mod tests {
                         MappingOptions::ANONYMOUS,
                     );
                     let lazy_mapping = Mapping::with_name(
-                        MappingBacking::Memory(Box::new(MappingBackingMemory::new(
+                        MappingBacking::Memory(MappingBackingMemory::new(
                             lazy_addr,
                             lazy_memory,
                             0,
-                        ))),
+                        )),
                         lazy_flags,
                         MappingName::None,
                         MappingMode::Lazy,
