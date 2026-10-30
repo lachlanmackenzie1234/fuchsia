@@ -88,7 +88,6 @@ const (
 	LanguageDynfidl           Language = "dynfidl"
 	LanguageFuchsiaController Language = "fuchsia_controller"
 	LanguageFuzzerCorpus      Language = "fuzzer_corpus"
-	LanguageGo                Language = "go"
 	LanguageHlcpp             Language = "hlcpp"
 	LanguageLlcpp             Language = "llcpp"
 	LanguagePython            Language = "python"
@@ -107,7 +106,6 @@ func AllLanguages() []Language {
 		LanguageDynfidl,
 		LanguageFuchsiaController,
 		LanguageFuzzerCorpus,
-		LanguageGo,
 		LanguageHlcpp,
 		LanguageLlcpp,
 		LanguagePython,

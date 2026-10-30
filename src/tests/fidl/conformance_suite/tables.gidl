@@ -48,7 +48,7 @@ success("TableFieldInlinedHandle") {
 // This tests logic checking that values are inlined in the correct situations.
 success("TableFieldInlinedReservedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldInlinedReservedDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     value = TableFieldInlinedStruct{
         t: TableFieldInlined{
             2: {
@@ -70,7 +70,7 @@ success("TableFieldInlinedReservedStored") {
 
 decode_success("TableFieldInlinedReservedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     value = TableFieldInlinedStruct{
         t: TableFieldInlined{},
     },
@@ -224,7 +224,7 @@ decode_failure("TableFieldOutOfLineBadOutlinedMarker") {
 // Tests a table in which a value is inlined into an unknown field.
 success("TableFieldUnknownInlinedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -245,7 +245,7 @@ success("TableFieldUnknownInlinedStored") {
 // Tests a table in which a value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -287,7 +287,7 @@ encode_success("TableFieldUnknownInlinedDropped") {
 // Tests a table in which a handle value is inlined into an unknown field.
 success("TableFieldUnknownInlinedHandleStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownInlinedHandleDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     handle_defs = {
         #0 = channel(),
     },
@@ -315,7 +315,7 @@ success("TableFieldUnknownInlinedHandleStored") {
 // Tests a table in which a handle value is inlined into an unknown field.
 decode_success("TableFieldUnknownInlinedHandleDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = channel(),
     },
@@ -369,7 +369,7 @@ encode_success("TableFieldUnknownInlinedHandleDropped") {
 // Tests a table in which a value is stored out of line in an unknown field.
 success("TableFieldUnknownOutOfLineStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of TableFieldUnknownOutOfLineDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{
             1: {
@@ -392,7 +392,7 @@ success("TableFieldUnknownOutOfLineStored") {
 // Tests a table in which a value is stored out of line in an unknown field.
 decode_success("TableFieldUnknownOutOfLineDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     value = TableFieldUnknownStruct{
         t: TableFieldUnknown{},
     },
@@ -723,7 +723,7 @@ success("TableWithGaps") {
 
 decode_success("ValueTableUnknownReservedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     bytes = {
         v2 = [
             5, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -786,7 +786,7 @@ encode_success("ValueTableUnknownReservedDropped") {
 
 decode_success("ResourceTableUnknownReservedDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     bytes = {
         v2 = [
             5, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -849,7 +849,7 @@ encode_success("ResourceTableUnknownReservedDropped") {
 
 success("ValueTableUnknownReservedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ValueTableUnknownReservedDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     bytes = {
         v2 = [
             5, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -877,7 +877,7 @@ success("ValueTableUnknownReservedStored") {
 
 success("ResourceTableUnknownReservedStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ResourceTableUnknownReservedDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     bytes = {
         v2 = [
             5, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -905,7 +905,7 @@ success("ResourceTableUnknownReservedStored") {
 
 decode_success("ValueTableUnknownTrailingDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     bytes = {
         v2 = [
             6, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -970,7 +970,7 @@ encode_success("ValueTableUnknownTrailingDropped") {
 
 decode_success("ResourceTableUnknownTrailingDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     bytes = {
         v2 = [
             6, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -1035,7 +1035,7 @@ encode_success("ResourceTableUnknownTrailingDropped") {
 
 success("ValueTableUnknownTrailingStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ValueTableUnknownTrailingDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     bytes = {
         v2 = [
             6, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -1064,7 +1064,7 @@ success("ValueTableUnknownTrailingStored") {
 
 success("ResourceTableUnknownTrailingStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ResourceTableUnknownTrailingDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     bytes = {
         v2 = [
             6, 0, 0, 0, 0, 0, 0, 0, // max ordinal
@@ -1093,7 +1093,7 @@ success("ResourceTableUnknownTrailingStored") {
 
 decode_success("ValueTableUnknownTrailingHandlesDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -1174,7 +1174,7 @@ encode_success("ValueTableUnknownTrailingHandlesDropped") {
 
 decode_success("ResourceTableUnknownTrailingHandlesDropped") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_denylist = [dart, go],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -1255,7 +1255,7 @@ encode_success("ResourceTableUnknownTrailingHandlesDropped") {
 
 decode_failure("ValueTableUnknownTrailingHandlesRejected") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ValueTableUnknownTrailingHandlesDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),
@@ -1286,7 +1286,7 @@ decode_failure("ValueTableUnknownTrailingHandlesRejected") {
 
 success("ResourceTableUnknownTrailingHandlesStored") {
     // TODO(https://fxbug.dev/42166276): Remove in favor of ResourceTableUnknownTrailingHandlesDropped.
-    bindings_allowlist = [dart, go],
+    bindings_allowlist = [dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),
