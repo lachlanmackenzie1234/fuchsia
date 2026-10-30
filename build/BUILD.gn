@@ -439,6 +439,8 @@ group("non_hermetic_deps") {
     "//src/connectivity/bluetooth/hci/virtual:virtual.package",
     "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg",
     "//src/connectivity/network/tests/benchmarks/fake-netstack:fake-netstack-pkg.package",
+    "//src/connectivity/policy/socket-proxy/integration/fake-socket-proxy:pkg",
+    "//src/connectivity/policy/socket-proxy/integration/fake-socket-proxy:pkg.package",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
