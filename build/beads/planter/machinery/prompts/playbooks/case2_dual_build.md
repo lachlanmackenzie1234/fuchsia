@@ -48,3 +48,16 @@ working).
   as `:<name>($host_toolchain)`). This applies to Rust unit tests as well as C++
   and Go tests (for Go, move `*_test.go` files from GN `go_library.sources` into
   `host_go_test`/`go_test` `srcs` with `embed = [":<lib>"]`).
+- Starnix unit tests (`test_type = "starnix"` or `.cml` including
+  `//src/sys/test_runners/starnix/unit_test.shard.cml`) MUST move to Bazel (starnix `kernel/core`,
+  `kernel/vdso` and `unit_test.shard.cml` have Bazel targets; ASan exclusion stays in GN):
+  `fx_packaged_binary` (`binary_name` = `program.binary` without `bin/`) + `fx_component_manifest`
+  (`component_name` = old GN package name; `includes` = the `.cml` shards) +
+  `fx_test_component(test_type = "starnix", deps = [<packaged bin>, ...])` + `fx_package` +
+  `fx_test` (`max_log_severity = "ERROR"` only if GN had it). Add `"//src/starnix/kernel/vdso"` to
+  `fx_test_component(deps)` ONLY when the test binary transitively links `//src/starnix/kernel/core`
+  (GN propagates the vDSO through `core`). In BUILD.gn delete the hand-written test package and its
+  comment; `group("tests")` gets `deps = [ ":<pkg>-package" ]` and
+  `if (!is_asan) { deps += [ ":bazel_tests" ] }` (`# TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.`).
+  No `Build-Only: true` (CQ must run `<pkg>` and `<pkg>-gn`). Keep a test in GN only if its own deps
+  lack a Bazel target (e.g. `//zircon/system/ulib/trace-test-utils`).
