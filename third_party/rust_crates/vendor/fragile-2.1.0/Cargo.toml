@@ -11,8 +11,9 @@
 
 [package]
 edition = "2018"
+rust-version = "1.56.0"
 name = "fragile"
-version = "2.0.1"
+version = "2.1.0"
 authors = ["Armin Ronacher <armin.ronacher@active-4.com>"]
 build = false
 autolib = false
@@ -33,6 +34,14 @@ keywords = [
 license = "Apache-2.0"
 repository = "https://github.com/mitsuhiko/fragile"
 
+[features]
+default = ["stream"]
+future = []
+stream = [
+    "future",
+    "futures-core",
+]
+
 [lib]
 name = "fragile"
 path = "src/lib.rs"
@@ -45,6 +54,16 @@ path = "examples/basic-fragile.rs"
 name = "basic-sticky"
 path = "examples/basic-sticky.rs"
 
+[dependencies.futures-core]
+version = "0.3.11"
+optional = true
+
 [dependencies.slab]
 version = "0.4.5"
 optional = true
+
+[dev-dependencies.futures-executor]
+version = "0.3.11"
+
+[dev-dependencies.futures-util]
+version = "0.3.11"

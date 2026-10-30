@@ -96,12 +96,19 @@
 //! By default the crate has no dependencies.  Optionally the `slab` feature can
 //! be enabled which optimizes the internal storage of the [`Sticky`] type to
 //! make it use a [`slab`](https://docs.rs/slab/latest/slab/) instead.
+//!
+//! When turning on the `future` feature, then the containers implement the
+//! [`Future`](std::future::Future) crate from the standard library to
+//! automatically wrap futures.  The `stream` crate does the same for the
+//! `future_core::Stream` type.
 mod errors;
 mod fragile;
 mod registry;
 mod semisticky;
 mod sticky;
-mod thread_id;
+
+#[cfg(feature = "future")]
+mod futures;
 
 use std::marker::PhantomData;
 

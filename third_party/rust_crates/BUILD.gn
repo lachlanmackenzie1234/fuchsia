@@ -9570,33 +9570,38 @@ rustc_library("form_urlencoded-v1_2_2") {
   applicable_licenses = [ ":form_urlencoded-v1_2_2.license" ]
 }
 
-license("fragile-v2_0_1.license") {
+license("fragile-v2_1_0.license") {
   public_package_name = "fragile"
-  license_files = [ "//third_party/rust_crates/vendor/fragile-2.0.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/fragile-2.1.0/LICENSE" ]
 }
 
-rustc_library("fragile-v2_0_1") {
+rustc_library("fragile-v2_1_0") {
   crate_name = "fragile"
-  source_root = "//third_party/rust_crates/vendor/fragile-2.0.1/src/lib.rs"
-  output_name = "fragile-e190f49dad8fd2fd"
+  source_root = "//third_party/rust_crates/vendor/fragile-2.1.0/src/lib.rs"
+  output_name = "fragile-c85412ea078fac18"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":futures-core-v0_3_34" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e190f49dad8fd2fd",
-    "-Cextra-filename=-e190f49dad8fd2fd",
+    "-Cmetadata=c85412ea078fac18",
+    "-Cextra-filename=-c85412ea078fac18",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"future\"",
+    "--cfg=feature=\"futures-core\"",
+    "--cfg=feature=\"stream\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":fragile-v2_0_1.license" ]
+  applicable_licenses = [ ":fragile-v2_1_0.license" ]
 }
 
 license("fragile-v3_0_0.license") {
@@ -13837,7 +13842,7 @@ rustc_library("mockall-v0_15_0") {
   deps = []
   deps += [ ":cfg-if-v1_0_5" ]
   deps += [ ":downcast-v0_11_0" ]
-  deps += [ ":fragile-v2_0_1" ]
+  deps += [ ":fragile-v2_1_0" ]
   deps += [ ":mockall_derive-v0_15_0($host_toolchain)" ]
   deps += [ ":predicates-tree-v1_0_13" ]
   deps += [ ":predicates-v3_1_4" ]
