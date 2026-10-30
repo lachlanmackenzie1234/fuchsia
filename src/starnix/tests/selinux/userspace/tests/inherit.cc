@@ -589,7 +589,8 @@ TEST(InheritTest, RlimitinhAllowedRlimitsInherited) {
 }
 
 // When the `noatsecure` permission is denied and the security domain is changing
-// during exec, the `AT_SECURE` entry is set in the executable's auxiliary vector.
+// during exec, the `AT_SECURE` entry is set in the executable's auxiliary vector and
+// `pdeath_signal` is cleared.
 TEST(InheritTest, NoAtSecureDenied) {
   constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
   constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_deny_noatsecure_t:s0";
@@ -597,10 +598,14 @@ TEST(InheritTest, NoAtSecureDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    ASSERT_THAT(prctl(PR_SET_PDEATHSIG, SIGUSR1), SyscallSucceeds());
+
     std::string binary_name = "is_at_secure_set_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_at_secure_set = std::to_string(int(true));
-    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+    std::string expect_pdeathsig = std::to_string(0);
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), expect_pdeathsig.data(),
+                          nullptr};
 
     ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
@@ -638,23 +643,29 @@ TEST(InheritTest, NoAtSecureDeniedPreservesAmbientCapabilities) {
 }
 
 // When the security domain does not change during exec, the `noatsecure` permission is not
-// checked and the `AT_SECURE` entry is not set in the executable's auxiliary vector.
+// checked, the `AT_SECURE` entry is not set in the executable's auxiliary vector, and
+// `pdeath_signal` is preserved.
 TEST(InheritTest, NoAtSecureDeniedSameDomain) {
   constexpr char kConstantSecurityContext[] = "test_u:test_r:test_inherit_constant_t:s0";
 
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kConstantSecurityContext, [&] {
+    ASSERT_THAT(prctl(PR_SET_PDEATHSIG, SIGUSR1), SyscallSucceeds());
+
     std::string binary_name = "is_at_secure_set_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_at_secure_set = std::to_string(int(false));
-    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+    std::string expect_pdeathsig = std::to_string(SIGUSR1);
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), expect_pdeathsig.data(),
+                          nullptr};
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
 
 // When the `noatsecure` permission is allowed and the security domain is changing
-// during exec, the AT_SECURE entry is not set in the executable's auxiliary vector.
+// during exec, the AT_SECURE entry is not set in the executable's auxiliary vector,
+// but `pdeath_signal` is still cleared.
 TEST(InheritTest, NoAtSecureAllowed) {
   constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
   constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_allow_noatsecure_t:s0";
@@ -662,10 +673,14 @@ TEST(InheritTest, NoAtSecureAllowed) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    ASSERT_THAT(prctl(PR_SET_PDEATHSIG, SIGUSR1), SyscallSucceeds());
+
     std::string binary_name = "is_at_secure_set_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_at_secure_set = std::to_string(int(false));
-    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), nullptr};
+    std::string expect_pdeathsig = std::to_string(0);
+    char* const args[] = {binary_name.data(), expect_at_secure_set.data(), expect_pdeathsig.data(),
+                          nullptr};
 
     ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
