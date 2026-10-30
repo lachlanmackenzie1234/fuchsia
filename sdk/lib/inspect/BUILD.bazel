@@ -28,6 +28,7 @@ cml_shard(
     name = "offer.shard",
     shard = "offer.shard.cml",
     visibility = [
+        "//sdk/lib/fdio/tests/getaddrinfo:__pkg__",
         "//src/lib/fuchsia-hyper:__pkg__",
         "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
         "//src/sys/lib/elf_runner/tests/lifecycle:__pkg__",
