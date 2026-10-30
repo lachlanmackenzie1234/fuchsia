@@ -179,6 +179,17 @@ impl CcPinState {
         matches!(self, Self::RpDefault | Self::Rp1a5 | Self::Rp3a0)
     }
 
+    /// Returns the partner Source `Rp` current advertisement if this pin senses `Rp*`
+    /// while presenting `Rd`.
+    pub const fn rp_value(self) -> Option<RpValue> {
+        match self {
+            Self::RpDefault => Some(RpValue::Default),
+            Self::Rp1a5 => Some(RpValue::Rp1a5),
+            Self::Rp3a0 => Some(RpValue::Rp3a0),
+            _ => None,
+        }
+    }
+
     /// Returns `true` if this pin carries an active partner CC termination (`Rp*` or `SrcRd`).
     ///
     /// [`CcPinState::SrcRa`] indicates an active cable `Ra` (`VCONN`) load rather than the active CC
@@ -315,6 +326,19 @@ impl CcStatus {
         }
     }
 
+    /// Returns the [`PowerRole`] the port may attach as, or `None` for an `Rp/Rp` Sink Debug
+    /// Accessory when `sink_debug_accessory_mode` is disabled.
+    pub(crate) const fn attachable_role(
+        self,
+        sink_debug_accessory_mode: bool,
+    ) -> Option<PowerRole> {
+        if !sink_debug_accessory_mode && matches!(self.accessory(), Some(Accessory::SinkDebug)) {
+            None
+        } else {
+            self.power_role()
+        }
+    }
+
     /// Returns `true` if `self` and `other` resolve to the same [`PowerRole`] and the exact same
     /// set of CC signal wires (`CC1`, `CC2`, or both for [`Accessory::SinkDebug`]) remain
     /// connected across both snapshots.
@@ -325,6 +349,20 @@ impl CcStatus {
                 | (Some(PowerRole::Source), Some(PowerRole::Source))
         ) && self.cc1.is_cc_connected() == other.cc1.is_cc_connected()
             && self.cc2.is_cc_connected() == other.cc2.is_cc_connected()
+    }
+
+    /// Returns the partner Source's advertised `Rp` current level when attached as a Sink (or
+    /// oriented Sink Debug Accessory, USB Type-C Rel 2.4 §4.6.2.1 Table 4-38 & §B.2.4.1.2), or
+    /// `None` if unattached, acting as a Source, or attached to an unoriented Debug Accessory.
+    pub const fn sink_rp_level(self) -> Option<RpValue> {
+        if !matches!(self.power_role(), Some(PowerRole::Sink)) {
+            return None;
+        }
+        match self.orientation() {
+            Some(Orientation::Normal) => self.cc1.rp_value(),
+            Some(Orientation::Reverse) => self.cc2.rp_value(),
+            _ => None,
+        }
     }
 
     /// Resolves the Type-C cable plug [`Orientation`] from the CC pin states.

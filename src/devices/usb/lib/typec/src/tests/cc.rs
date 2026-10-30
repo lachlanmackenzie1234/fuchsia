@@ -46,6 +46,12 @@ fn test_register_bitfields() {
 #[fuchsia::test]
 fn test_cc_state_formatting() {
     assert_eq!(CcPinState::default(), CcPinState::Open);
+    assert_eq!(CcPinState::Open.rp_value(), None);
+    assert_eq!(CcPinState::RpDefault.rp_value(), Some(RpValue::Default));
+    assert_eq!(CcPinState::Rp1a5.rp_value(), Some(RpValue::Rp1a5));
+    assert_eq!(CcPinState::Rp3a0.rp_value(), Some(RpValue::Rp3a0));
+    assert_eq!(CcPinState::SrcRa.rp_value(), None);
+    assert_eq!(CcPinState::SrcRd.rp_value(), None);
     let states = [
         (CcPinState::Open, "Open"),
         (CcPinState::RpDefault, "RpDefault"),
@@ -74,6 +80,7 @@ fn test_cc_status_clamping_and_role_resolution() {
     assert_eq!(searching.power_role(), None);
     assert_eq!(searching.accessory(), None);
     assert_eq!(searching.orientation(), None);
+    assert_eq!(searching.sink_rp_level(), None);
 
     for manual_searching in [
         CcStatus { cc1: CcPinState::Rp3a0, cc2: CcPinState::Open, looking_for_connection: true },
@@ -91,9 +98,11 @@ fn test_cc_status_clamping_and_role_resolution() {
     assert_eq!(static_rd_snk.cc2, CcPinState::Open);
     assert_eq!(static_rd_snk.power_role(), Some(PowerRole::Sink));
     assert_eq!(static_rd_snk.orientation(), Some(Orientation::Normal));
+    assert_eq!(static_rd_snk.sink_rp_level(), Some(RpValue::Rp3a0));
     let static_rd_cc2_3a0 = CcStatus::from_tcpci(0x1c, RoleControl::STATIC_RD);
     assert_eq!(static_rd_cc2_3a0.cc1, CcPinState::Open);
     assert_eq!(static_rd_cc2_3a0.cc2, CcPinState::Rp3a0);
+    assert_eq!(static_rd_cc2_3a0.sink_rp_level(), Some(RpValue::Rp3a0));
 
     // Static Rp (`DRP = 0, CC1 = Rp, CC2 = Rp`) ignores a stale `ConnectResult = 1` bit and
     // decodes `CC1 = SrcRa, CC2 = SrcRd` as Source, while reserved `11b` comparator bits on `Rp`
@@ -109,6 +118,7 @@ fn test_cc_status_clamping_and_role_resolution() {
     assert_eq!(static_rp_src.cc2, CcPinState::SrcRd);
     assert_eq!(static_rp_src.power_role(), Some(PowerRole::Source));
     assert_eq!(static_rp_src.orientation(), Some(Orientation::Reverse));
+    assert_eq!(static_rp_src.sink_rp_level(), None);
     assert_eq!(CcStatus::from_tcpci(0x0f, static_rp), CcStatus::default());
 
     // Force Open (`DRP = 0, CC1 = Open, CC2 = Open`) clamps comparator bits to `CcPinState::Open`.
@@ -132,6 +142,7 @@ fn test_cc_status_clamping_and_role_resolution() {
     let snk_cc2 = CcStatus::from_tcpci(0x14, RoleControl::DRP_RD);
     assert_eq!(snk_cc2.power_role(), Some(PowerRole::Sink));
     assert_eq!(snk_cc2.orientation(), Some(Orientation::Reverse));
+    assert_eq!(snk_cc2.sink_rp_level(), Some(RpValue::Default));
 }
 
 /// Verifies that `CcStatus::accessory` decodes `SinkDebug`, `SourceDebug`, and `Audio` modes,
@@ -145,12 +156,14 @@ fn test_accessory_and_unsupported_terminations() {
     assert_eq!(snk_dbg_normal.accessory(), Some(Accessory::SinkDebug));
     assert_eq!(snk_dbg_normal.power_role(), Some(PowerRole::Sink));
     assert_eq!(snk_dbg_normal.orientation(), Some(Orientation::Normal));
+    assert_eq!(snk_dbg_normal.sink_rp_level(), Some(RpValue::Rp3a0));
     assert!(!snk_dbg_normal.shares_connected_cc_pin(snk_cc1));
 
     let snk_dbg_reverse = CcStatus::new(CcPinState::RpDefault, CcPinState::Rp1a5);
     assert_eq!(snk_dbg_reverse.accessory(), Some(Accessory::SinkDebug));
     assert_eq!(snk_dbg_reverse.power_role(), Some(PowerRole::Sink));
     assert_eq!(snk_dbg_reverse.orientation(), Some(Orientation::Reverse));
+    assert_eq!(snk_dbg_reverse.sink_rp_level(), Some(RpValue::Rp1a5));
     assert!(snk_dbg_normal.shares_connected_cc_pin(snk_dbg_reverse));
 
     // Unoriented Sink Debug Accessory with CC1 == CC2 -> orientation is `None`.

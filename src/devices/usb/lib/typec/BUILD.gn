@@ -12,13 +12,28 @@ rustc_library("typec") {
   sources = [
     "src/cc.rs",
     "src/lib.rs",
+    "src/port.rs",
+    "src/state.rs",
     "src/tests/cc.rs",
     "src/tests/mod.rs",
+    "src/tests/state.rs",
+    "src/typec.rs",
   ]
 
-  deps = [ "//sdk/fidl/fuchsia.hardware.usb.connector:fuchsia.hardware.usb.connector_rust_next" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.usb.connector:fuchsia.hardware.usb.connector_rust_next",
+    "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:log",
+  ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fuchsia",
+  ]
 }
 
 fuchsia_unittest_package("typec-tests") {
