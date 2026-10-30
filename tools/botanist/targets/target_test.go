@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
+	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
 )
 
 func TestAddressLogic(t *testing.T) {
@@ -340,5 +341,85 @@ func TestCaptureSerialLogReturnsErrorOnUnexpectedDisconnect(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), constants.SerialReadErrorMsg) {
 		t.Errorf("CaptureSerialLog() error = %q, want substring %q", err.Error(), constants.SerialReadErrorMsg)
+	}
+}
+
+func TestAddFFXPackageRepositoryReRegistersOnReconnect(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	registerLog := filepath.Join(tmpDir, "register.log")
+	reconnectTrigger := filepath.Join(tmpDir, "reconnect")
+	ffxPath := filepath.Join(tmpDir, "ffx")
+	script := `#!/bin/bash
+for arg in "$@"; do
+  if [[ "$arg" == "forward" ]]; then
+    echo '{"forwarding":[{"host":{"Tcp":"127.0.0.1:10050"},"target":{"Tcp":"127.0.0.1:64251"},"direction":"TargetToHost"}]}'
+    while [[ ! -f "` + reconnectTrigger + `" ]]; do
+      sleep 0.01
+    done
+    echo '{"forwarding":[{"host":{"Tcp":"127.0.0.1:10050"},"target":{"Tcp":"127.0.0.1:56700"},"direction":"TargetToHost"}]}'
+    sleep 60
+    exit 0
+  fi
+  if [[ "$arg" == "register" ]]; then
+    echo "$@" >> "` + registerLog + `"
+    echo '{"ok":{}}'
+    exit 0
+  fi
+done
+echo '{"ok":{}}'
+`
+	if err := os.WriteFile(ffxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write mock ffx tool: %v", err)
+	}
+	sshPriv := filepath.Join(tmpDir, "ssh_priv")
+	sshPub := filepath.Join(tmpDir, "ssh_pub")
+	if err := os.WriteFile(sshPriv, []byte("PRIVATE KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sshPub, []byte("PUBLIC KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ffxInstance, err := ffxutil.NewFFXInstance(ctx, ffxPath, tmpDir, nil, "id:test-serial", &ffxutil.SSHInfo{SshPriv: sshPriv, SshPub: sshPub}, tmpDir, ffxutil.UseFFXStrict)
+	if err != nil {
+		t.Fatalf("failed to create ffx instance: %s", err)
+	}
+	ffxInstance.SetStdoutStderr(io.Discard, io.Discard)
+
+	target := &genericFuchsiaTarget{
+		targetCtx: ctx,
+		nodename:  "fuchsia-test-node",
+		ffx:       &FFXInstance{FFXInstance: ffxInstance},
+	}
+
+	cleanup, err := target.AddFFXPackageRepository(ctx, "fuchsia-package-server", 10050, true)
+	if err != nil {
+		t.Fatalf("AddFFXPackageRepository() failed: %v", err)
+	}
+	defer cleanup()
+
+	gotBytes, err := os.ReadFile(registerLog)
+	if err != nil {
+		t.Fatalf("failed to read register log: %v", err)
+	}
+	if !strings.Contains(string(gotBytes), "--address-override 127.0.0.1:64251") {
+		t.Fatalf("initial registration missing 127.0.0.1:64251; got:\n%s", string(gotBytes))
+	}
+
+	// Simulate target reboot causing ffx forward to reconnect on a new target port.
+	if err := os.WriteFile(reconnectTrigger, []byte("1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		b, err := os.ReadFile(registerLog)
+		if err == nil && strings.Contains(string(b), "--address-override 127.0.0.1:56700") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for re-registration with 127.0.0.1:56700; got:\n%s", string(b))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -38,6 +38,12 @@ import (
 const (
 	localhostPlaceholder = "localhost"
 	repoID               = "fuchsia-pkg://fuchsia.com"
+
+	// Timeout for waiting for `ffx forward` to establish the initial port
+	// forwarding tunnel and print the target address. Arbitrarily chosen;
+	// the target is already connected when `AddFFXPackageRepository` runs,
+	// so setup normally completes in under a second.
+	ffxForwardStartupTimeout = 5 * time.Second
 )
 
 // FFXInstance is a wrapper around ffxutil.FFXInstance with extra fields to
@@ -494,33 +500,103 @@ func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey
 func (t *genericFuchsiaTarget) AddFFXPackageRepository(ctx context.Context, repoName string, pkgSrvPort int, useForward bool) (func(), error) {
 	cleanup := func() {}
 	var overrideAddr string
+	var lines chan string
+	var regCtx context.Context
 	if useForward {
-		var forwardOutput bytes.Buffer
-		t.GetFFX().SetStdoutStderr(io.MultiWriter(os.Stdout, &forwardOutput), os.Stderr)
-		cleanup = botanist.WaitForProcess(ctx, func(processCtx context.Context) error {
-			return t.GetFFX().Forward(processCtx, pkgSrvPort)
+		pr, pw := io.Pipe()
+		var cancelReg context.CancelFunc
+		regCtx, cancelReg = context.WithCancel(botanist.GetLoggerCtx(ctx))
+		forwardCleanup := botanist.WaitForProcess(ctx, func(processCtx context.Context) error {
+			defer pw.Close()
+			return t.GetFFX().Forward(processCtx, pkgSrvPort, pw)
 		}, "ffx forward")
-		if err := retry.Retry(ctx, retry.WithMaxDuration(retry.NewConstantBackoff(time.Second), 5*time.Second), func() error {
-			line, err := (&forwardOutput).ReadString('\n')
-			if err != nil {
-				return err
-			}
-			addr, err := parseFFXForwardTarget(line)
-			if err != nil {
-				return retry.Fatal(err)
-			}
-			overrideAddr = addr
-			return nil
-		}, nil); err != nil {
-			return cleanup, err
+		cleanup = func() {
+			cancelReg()
+			_ = pr.Close()
+			forwardCleanup()
 		}
-		t.GetFFX().SetStdoutStderr(os.Stdout, os.Stderr)
+		lines = make(chan string)
+		readErr := make(chan error, 1)
+		go func() {
+			defer close(lines)
+			reader := bufio.NewReader(pr)
+			for {
+				line, err := reader.ReadString('\n')
+				if line != "" {
+					select {
+					case lines <- line:
+					case <-regCtx.Done():
+						return
+					}
+				}
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
+						readErr <- err
+					}
+					return
+				}
+			}
+		}()
+		var firstLine string
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				cleanup()
+				select {
+				case err := <-readErr:
+					return func() {}, err
+				default:
+					return func() {}, fmt.Errorf("ffx forward exited before outputting forwarding address")
+				}
+			}
+			firstLine = line
+		case <-time.After(ffxForwardStartupTimeout):
+			cleanup()
+			return func() {}, fmt.Errorf("timed out waiting for ffx forward output")
+		case <-ctx.Done():
+			cleanup()
+			return func() {}, ctx.Err()
+		}
+		addr, err := parseFFXForwardTarget(firstLine)
+		if err != nil {
+			cleanup()
+			return func() {}, err
+		}
+		overrideAddr = addr
 	}
 	if err := t.GetFFX().RegisterRepository(ctx, repoName, pkgSrvPort, overrideAddr); err != nil {
 		logger.Errorf(ctx, "failed to register repository: %s", err)
-		return cleanup, err
+		cleanup()
+		return func() {}, err
 	}
 	logger.Debugf(ctx, "added package repo to target %s", t.nodename)
+	if useForward {
+		reRegisterDone := make(chan struct{})
+		go func() {
+			defer close(reRegisterDone)
+			for line := range lines {
+				addr, err := parseFFXForwardTarget(line)
+				if err != nil {
+					logger.Errorf(ctx, "failed to parse ffx forward output: %s", err)
+					continue
+				}
+				if err := retry.Retry(regCtx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), 3), func() error {
+					return t.GetFFX().RegisterRepository(regCtx, repoName, pkgSrvPort, addr)
+				}, nil); err != nil {
+					if regCtx.Err() == nil {
+						logger.Errorf(ctx, "failed to re-register repository: %s", err)
+					}
+					continue
+				}
+				logger.Debugf(ctx, "re-registered package repo to target %s at %s", t.nodename, addr)
+			}
+		}()
+		baseCleanup := cleanup
+		cleanup = func() {
+			baseCleanup()
+			<-reRegisterDone
+		}
+	}
 	return cleanup, nil
 }
 
