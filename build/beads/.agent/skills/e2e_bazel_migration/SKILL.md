@@ -5,10 +5,10 @@ description: >
   covering pre-migration checks, workspace branching, migration package
   selection from the control table, Buganizer ticket creation, package
   migration/verification, CL creation, review, and status reporting. Use this
-  skill whenever the user asks to migrate targets using Planter (e.g., "migrate
-  X using planter", "migrate the next X targets", "migrate targets in <dir>
-  using planter"), run the automated GN-to-Bazel package migration workflow, or
-  migrate packages from the control table.
+  skill whenever the user asks to migrate targets using Planter (e.g.,
+  "migrate X using planter", "migrate the next X targets", "migrate targets in
+  using planter"), run the automated GN-to-Bazel package migration workflow,
+  or migrate packages from the control table.
 ---
 
 ## Terminology
@@ -65,14 +65,17 @@ description: >
 
 * **migration groups** : The groups the **migration packages** are split into at
   the [Migration Package Selection](#migration-package-selection) step,
-  according to the grouping rules. The targets in the packages of a **migration
-  group** and their package internal dependencies are migrated together by one
-  Planter task and uploaded as one CL. If there are 5 or fewer **migration
-  packages**, they are kept in one single **migration group** so they produce
-  only one CL. If there are more than 5 **migration packages**, they are split
-  into as few **migration groups** as possible (up to 5 packages per group),
-  which are migrated in parallel by the Planter fleet, one CL for each
-  **migration group**.
+  according to the grouping rules in
+  [scoping_changelists.md](../../../references/migration/scoping_changelists.md).
+  The targets in the packages of a **migration group** and their package
+  internal dependencies are migrated together by one Planter task and uploaded
+  as one CL. Each **migration group** contains at most 5 cohesive packages of
+  the same area and target type and adds at most roughly 500 new lines of code.
+  The **migration packages** are split into as few **migration groups** as
+  possible that satisfy the grouping rules (forming a single **migration group**
+  when 5 or fewer packages already satisfy the grouping rules together), and are
+  migrated in parallel by the Planter fleet, one CL for each **migration
+  group**.
 
 * **commit message guidelines** : The guidelines in this
   [migration_commit_message_guidelines.md](../../../references/migration/commit_message/guidelines.md)
@@ -100,10 +103,10 @@ description: >
   is disabled.
 
 * **reviewer OOO threshold** : The number of working days a reviewer of a
-  migration CL can be out of office before they are swapped for another
-  reviewer from the reviewer routing table at
-  go/fuchsia-bazel-migration-reviewers. If the user specifies it in the
-  prompt, use that number. Otherwise, it defaults to 1.
+  migration CL can be out of office before they are swapped for another reviewer
+  from the reviewer routing table at go/fuchsia-bazel-migration-reviewers. If
+  the user specifies it in the prompt, use that number. Otherwise, it defaults
+  to 1.
 
 * **Planter check script** : The script in the "Script" section of the document
   at go/planter_check_and_update. It checks whether the installed Planter is up
@@ -115,9 +118,9 @@ description: >
   guide in the prompt, use that one instead.
 
 * **Planter tag** : The `TAG: planter planter-<freshness>` footer that Planter
-  writes into the commit message of every CL it creates (e.g.,
-  `TAG: planter planter-20261008-633b8b4b94a`). `<freshness>` identifies the
-  Planter machinery that generated the CL. Only Planter knows it.
+  writes into the commit message of every CL it creates (e.g., `TAG: planter
+  planter-20261008-633b8b4b94a`). `<freshness>` identifies the Planter machinery
+  that generated the CL. Only Planter knows it.
 
 * **Planter warnings** : The environment, checkout, and machinery staleness
   lines Planter prints that start with `⚠️` (e.g., "This planter binary is out
@@ -145,58 +148,58 @@ description: >
 ## Planter Rules
 
 These rules apply to every step of this skill, and to any later work on a
-migration CL (e.g., addressing review comments, fixing CQ failures, rebasing
-or re-uploading).
+migration CL (e.g., addressing review comments, fixing CQ failures, rebasing or
+re-uploading).
 
-1. **Preserve the Planter tag. Never invent one.**
-   * Planter generates the commit message of every migration CL. Commit and
-     upload migration CLs with Planter (`scripts/planter_task_add_run.sh`,
-     `planter run --gerrit` or `planter fleet --gerrit`); do not create the
-     commits of new migration CLs yourself.
-   * When you amend a commit message of a migration CL, keep the **Planter
-     tag** exactly as Planter wrote it: copy the line verbatim from the current
-     commit message (`git log -1 --format=%B`) or from the CL on Gerrit. Do not
-     remove it, move it out of the footer block, or change any character of it.
-     It goes right before the `Change-Id:` line.
-   * Never write a `TAG:` line yourself: do not make up a `<freshness>` value,
-     copy one from another CL, or add a `TAG:` line to get past a check. If a
-     migration CL has no **Planter tag**, leave it without one and tell the user
-     that the CL has no **Planter tag** and was probably not generated or
-     uploaded by Planter.
+1.  **Preserve the Planter tag. Never invent one.**
+    * Planter generates the commit message of every migration CL. Commit and
+      upload migration CLs with Planter (`scripts/planter_task_add_run.sh`,
+      `planter run --gerrit` or `planter fleet --gerrit`); do not create the
+      commits of new migration CLs yourself.
+    * When you amend a commit message of a migration CL, keep the **Planter
+      tag** exactly as Planter wrote it: copy the line verbatim from the current
+      commit message (`git log -1 --format=%B`) or from the CL on Gerrit. Do not
+      remove it, move it out of the footer block, or change any character of it.
+      It goes right before the `Change-Id:` line.
+    * Never write a `TAG:` line yourself: do not make up a `<freshness>` value,
+      copy one from another CL, or add a `TAG:` line to get past a check. If a
+      migration CL has no **Planter tag**, leave it without one and tell the
+      user that the CL has no **Planter tag** and was probably not generated or
+      uploaded by Planter.
 
-2. **Relay the Planter warnings to the user.**
-   * Whenever Planter or
-     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
-     prints **Planter warnings**, relay them to the user verbatim, with the
-     command Planter suggests (if any), in your next message to the user. Also
-     list them in the "Planter Warnings" section of the notifications (see the
-     [Notification Templates](assets/notification_templates.md)). Relay each
-     distinct warning once; do not drop a warning because it looks unimportant.
-   * Do not run the suggested commands yourself unless this skill or the user
-     tells you to: they rewrite the user's checkouts (e.g., `jiri update`,
-     `git rebase`) or upload machinery for review (`planter upload-machinery`).
+2.  **Relay the Planter warnings to the user.**
+    * Whenever Planter or
+      `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
+      prints **Planter warnings**, relay them to the user verbatim, with the
+      command Planter suggests (if any), in your next message to the user. Also
+      list them in the "Planter Warnings" section of the notifications (see the
+      [Notification Templates](assets/notification_templates.md)). Relay each
+      distinct warning once; do not drop a warning because it looks unimportant.
+    * Do not run the suggested commands yourself unless this skill or the user
+      tells you to: they rewrite the user's checkouts (e.g., `jiri update`, `git
+      rebase`) or upload machinery for review (`planter upload-machinery`).
 
-3. **Do not start new migrations with an out-of-date Planter.**
-   * Before starting a new migration (adding a new Planter task), run
-     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
-     from the root of the Fuchsia checkout. If the user specified a different
-     **Planter freshness limit**, pass it in hours as `PLANTER_MAX_STALE_HOURS`
-     to this script and to
-     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`.
-     If it exits with `2`, Planter or its shared machinery is out of date by
-     more than the **Planter freshness limit**: do not start the migration.
-     Tell the user how out of date Planter is and relay the **Planter
-     warnings**, which say how to update it.
-     `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`
-     runs this check itself and refuses to add the task.
-   * Never bypass the check on your own: do not set `PLANTER_ALLOW_STALE`, or
-     raise `PLANTER_MAX_STALE_HOURS` above the **Planter freshness limit**, and
-     do not run `planter add-task` directly to get around it. Do so only if the
-     user explicitly asks to start new migrations with an out-of-date Planter.
-   * The check does not apply to existing migrations: you may still amend
-     existing migration CLs (e.g., address review comments, fix CQ failures,
-     fix the commit message, rebase and re-upload) with an out-of-date Planter.
-     Relay the **Planter warnings** while doing so.
+3.  **Do not start new migrations with an out-of-date Planter.**
+    * Before starting a new migration (adding a new Planter task), run
+      `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_freshness.sh`
+      from the root of the Fuchsia checkout. If the user specified a different
+      **Planter freshness limit**, pass it in hours as `PLANTER_MAX_STALE_HOURS`
+      to this script and to
+      `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`.
+      If it exits with `2`, Planter or its shared machinery is out of date by
+      more than the **Planter freshness limit**: do not start the migration.
+      Tell the user how out of date Planter is and relay the **Planter
+      warnings**, which say how to update it.
+      `build/beads/.agent/skills/e2e_bazel_migration/scripts/planter_task_add_run.sh`
+      runs this check itself and refuses to add the task.
+    * Never bypass the check on your own: do not set `PLANTER_ALLOW_STALE`, or
+      raise `PLANTER_MAX_STALE_HOURS` above the **Planter freshness limit**, and
+      do not run `planter add-task` directly to get around it. Do so only if the
+      user explicitly asks to start new migrations with an out-of-date Planter.
+    * The check does not apply to existing migrations: you may still amend
+      existing migration CLs (e.g., address review comments, fix CQ failures,
+      fix the commit message, rebase and re-upload) with an out-of-date Planter.
+      Relay the **Planter warnings** while doing so.
 
 ## End-to-End Bazel Migration
 
@@ -229,10 +232,10 @@ packages** and split them into **migration groups**.
 Refer to `references/bazel_migration_planter.md` to migrate the targets within
 the **migration packages**, one CL for each **migration group**.
 
-  * If this step fails because it failed to get the generated CL number,
-    because no CL is created for any of several **migration groups**, or
-    because Planter is out of date by more than the **Planter freshness
-    limit**, it's a **STOP** condition.
+  * If this step fails because it failed to get the generated CL number, because
+    no CL is created for any of several **migration groups**, or because Planter
+    is out of date by more than the **Planter freshness limit**, it's a **STOP**
+    condition.
   * If this step fails because of other reasons, it's a **PLANTER ERROR**
     condition.
 
@@ -244,16 +247,17 @@ to it.
 ## Reviewer Availability
 
 Refer to `references/reviewer_availability.md` to check the human reviewers of
-each created CL, and swap each reviewer who is out of office for longer than
-the **reviewer OOO threshold** for an available reviewer from the reviewer
-routing table.
+each created CL, and swap each reviewer who is out of office for longer than the
+**reviewer OOO threshold** for an available reviewer from the reviewer routing
+table.
+
   * If this step fails, ignore the failure and continue.
 
 If the user asks only about the reviewers of existing migration CLs (e.g., "my
 migration CL's reviewer is OOO", "check the reviewers of my migration CLs"),
-skip all the other steps and run only this step. Use the CL numbers given in
-the prompt, or find the user's open migration CLs with
-`curl -s "https://fuchsia-review.googlesource.com/changes/?q=owner:<ldap>@google.com+status:open+intitle:bazel_migration"`,
+skip all the other steps and run only this step. Use the CL numbers given in the
+prompt, or find the user's open migration CLs with `curl -s
+"https://fuchsia-review.googlesource.com/changes/?q=owner:<ldap>@google.com+status:open+intitle:bazel_migration"`,
 where `<ldap>` is the user's LDAP.
 
 ## Error Handling

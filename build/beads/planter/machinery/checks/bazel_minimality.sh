@@ -191,15 +191,21 @@ def get_pkg_area(pkg: str) -> str:
     parts = [p for p in pkg.strip("/").split("/") if p]
     if not parts:
         return ""
-    if parts[0] in ("src", "sdk", "tools", "zircon") and len(parts) >= 2:
+    if parts[0] in ("src", "sdk", "tools", "zircon", "third_party") and len(parts) >= 2:
         return f"{parts[0]}/{parts[1]}"
     return parts[0]
 
 
+def third_party_project(pkg: str) -> str:
+    parts = [p for p in pkg.strip("/").split("/") if p]
+    if "third_party" not in parts:
+        return ""
+    idx = parts.index("third_party")
+    return "/".join(parts[: idx + 2])
+
+
 def is_same_third_party_scope(pkg_a: str, pkg_b: str) -> bool:
-    tp_a = "third_party" in pkg_a.strip("/").split("/")
-    tp_b = "third_party" in pkg_b.strip("/").split("/")
-    return tp_a == tp_b
+    return third_party_project(pkg_a) == third_party_project(pkg_b)
 
 
 def package_eliminated_gn_or_sentinel(pkg: str) -> bool:

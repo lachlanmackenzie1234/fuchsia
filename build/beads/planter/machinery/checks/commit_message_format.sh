@@ -285,12 +285,69 @@ if head and base_rev and head != base_rev:
         alt_subj = ""
     alt_note = f" (or '{alt_subj}')" if alt_subj and alt_subj != pref_subj else ""
     subj_path = (
-        subject.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
+        subject.split(" //", 1)[1].split(":", 1)[0].split(" targets", 1)[0].strip().rstrip(".").strip("/")
         if " //" in subject
         else ""
     )
-    m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] //\S+(?<![.,;:])$", subject)
-    m_none = re.match(r"^\[bazel_migration\] //\S+(?<![.,;:])$", subject)
+    def _bz_dir_migrated(rel_dir):
+        if f"{rel_dir}/BUILD.gn" in changed:
+            return True
+        base_btxt = git("show", f"{base_rev}:{rel_dir}/BUILD.bazel")
+        if not base_btxt:
+            return True
+        try:
+            with open(os.path.join(workdir, rel_dir, "BUILD.bazel")) as fh:
+                cur_btxt = fh.read()
+        except OSError:
+            cur_btxt = ""
+        base_names = set(re.findall(r'^\s*name\s*=\s*"([^"]+)"', base_btxt, re.M))
+        cur_names = set(re.findall(r'^\s*name\s*=\s*"([^"]+)"', cur_btxt, re.M))
+        return bool(cur_names - base_names)
+
+    is_multi_dir_change = len(dirs) > 1 or len([
+        f
+        for f in changed
+        if os.path.basename(f) == "BUILD.bazel" and _bz_dir_migrated(os.path.dirname(f))
+    ]) > 1
+    # Per //build/beads/references/migration/commit_message/guidelines.md Section 2:
+    # - 2.A / 2.B: `//<dir>` or `//<dir>:<target>` (no comma-separated `//dir1, //dir2`)
+    # - 2.C: `//<dir> targets`
+    # - 2.D (multi-directory): `//<root_dir>`, `<family_or_dirs> libraries`, or
+    #   `//<shared_parent>: <dir1>, <dir2>`
+    single_dir_ref_pat = r"//[^\s,]+(?:\s+targets)?(?<![.,;:])"
+    _sub_item = r"[A-Za-z0-9_.\-/]+"
+    _sub_list = (
+        _sub_item
+        + r"(?:\s+and\s+"
+        + _sub_item
+        + r"|(?:,\s+(?:and\s+)?"
+        + _sub_item
+        + r")+|,\s+\.\.\.)"
+    )
+    _family_list = (
+        _sub_item
+        + r"(?:\s+and\s+"
+        + _sub_item
+        + r"|(?:,\s+(?:and\s+)?"
+        + _sub_item
+        + r")+|\s+"
+        + _sub_item
+        + r")?"
+    )
+    multi_dir_ref_pat = (
+        r"(?:"
+        + single_dir_ref_pat
+        + r"|//[^\s,:]+:\s+"
+        + _sub_list
+        + r"(?:(?<![.,;:])|(?<=\.\.\.))"
+        + r"|(?!//)"
+        + _family_list
+        + r"\s+(?:libraries|packages|targets|tools|drivers|tests|modules|components|binaries)(?<![.,;:])"
+        + r")"
+    )
+    ref_pat = multi_dir_ref_pat if is_multi_dir_change else single_dir_ref_pat
+    m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] " + ref_pat + r"$", subject)
+    m_none = re.match(r"^\[bazel_migration\] " + ref_pat + r"$", subject)
     m_infra = (
         re.match(r"^(?:\[[A-Za-z0-9_.\-]+\])+ \S.*(?<![.,;:])$", subject)
         if not dirs and not subject.startswith("[bazel_migration]")
@@ -340,6 +397,8 @@ if head and base_rev and head != base_rev:
         )
     elif (
         len(dirs) == 1
+        and not is_multi_dir_change
+        and not re.search(r":\s+[A-Za-z0-9_.\-]+", subject)
         and subj_path
         and "..." not in subj_path
         and first.startswith(subj_path + "/")
@@ -785,6 +844,21 @@ if head and base_rev and head != base_rev:
         "Migrated targets:",
     }
 
+    def get_pkg_area(pkg: str) -> str:
+        parts = [p for p in pkg.strip("/").split("/") if p]
+        if not parts:
+            return ""
+        if parts[0] in ("src", "sdk", "tools", "zircon", "third_party") and len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+        return parts[0]
+
+    def third_party_project(pkg: str) -> str:
+        parts = [p for p in pkg.strip("/").split("/") if p]
+        if "third_party" not in parts:
+            return ""
+        idx = parts.index("third_party")
+        return "/".join(parts[: idx + 2])
+
     def check_checkout_relative_paths(msg_lines):
         in_also_migrated = False
         for idx, raw in enumerate(msg_lines, start=1):
@@ -859,6 +933,29 @@ if head and base_rev and head != base_rev:
                         rem_text,
                         severity="error",
                     )
+                elif first and (
+                    get_pkg_area(b_dir) != get_pkg_area(first)
+                    or third_party_project(b_dir) != third_party_project(first)
+                ):
+                    msg_text = (
+                        f"`Also migrated in this change:` bullet `{bullet}` names "
+                        f"`//{b_dir}`, which is outside the subsystem area or third-party "
+                        f"scope of `//{first}` (`//build/beads/references/migration/scoping_changelists.md`)."
+                    )
+                    rem_text = (
+                        "Per `//build/beads/references/migration/scoping_changelists.md`, "
+                        "never combine directories from different areas or across "
+                        f"`third_party/` boundaries in one CL. Revert the out-of-scope "
+                        f"changes in `{b_dir}/` and remove `- {bullet}` from `Also migrated "
+                        "in this change:`."
+                    )
+                    add(
+                        "also_migrated_out_of_scope",
+                        idx,
+                        msg_text,
+                        rem_text,
+                        severity="error",
+                    )
                 elif ":" not in b_spec:
                     unmig_all, _, new_bz_lbls = inspect_dir_migration(b_dir)
                     if unmig_all:
@@ -892,10 +989,14 @@ if head and base_rev and head != base_rev:
     # before this commit or imply an entire directory is migrated when BUILD.gn still retains
     # unmigrated non-test targets.
     def check_subject_partial_directory(subj_str):
-        m_subj = re.match(r"^\[bazel_migration\](?:\[[A-Za-z0-9_.\-]+\])? //(\S+)$", subj_str)
+        m_subj = re.match(
+            r"^\[bazel_migration\](?:\[[A-Za-z0-9_.\-]+\])? //([^\s,:]+(?::[^\s,]+)?)(\s+targets)?$",
+            subj_str,
+        )
         if not m_subj:
             return
         raw_spec = m_subj.group(1).strip("/")
+        has_targets_suffix = bool(m_subj.group(2))
         subj_dir = resolve_subject_dir(raw_spec)
         if active_mig_dirs and subj_dir and not is_dir_migrated_in_commit(subj_dir):
             msg_text = (
@@ -917,21 +1018,22 @@ if head and base_rev and head != base_rev:
                 severity="error",
             )
             return
-        if ":" in raw_spec:
+        if ":" in raw_spec or has_targets_suffix:
             return
         unmig_all, unmig_non_test, new_bz_lbls = inspect_dir_migration(subj_dir)
-        if unmig_non_test and new_bz_lbls and len(f"[bazel_migration] {new_bz_lbls[0]}") <= 65:
+        if unmig_non_test and new_bz_lbls:
             sample = ", ".join(f"`{t}`" for t in unmig_non_test[:3])
-            ex_lbl = new_bz_lbls[0]
-            msg_text = (
-                f"Commit subject `{subj_str}` names the bare directory `//{subj_dir}`, "
-                f"but `{subj_dir}/BUILD.gn` still defines unmigrated targets ({sample})."
-            )
-            rem_text = (
-                f"Be specific about which target is migrated (e.g. `{ex_lbl}`) instead "
-                f"of implying that the entire `//{subj_dir}` directory is migrated."
-            )
-            add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
+            ex_lbl = f"//{subj_dir} targets" if len(new_bz_lbls) > 1 else new_bz_lbls[0]
+            if len(f"[bazel_migration] {ex_lbl}") <= 65:
+                msg_text = (
+                    f"Commit subject `{subj_str}` names the bare directory `//{subj_dir}`, "
+                    f"but `{subj_dir}/BUILD.gn` still defines unmigrated targets ({sample})."
+                )
+                rem_text = (
+                    f"Be specific about what is migrated (e.g. `{ex_lbl}`) instead "
+                    f"of implying that the entire `//{subj_dir}` directory is migrated."
+                )
+                add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
 
     # Check that any file-local GN template("<name>") unrolled during migration is noted in the commit body.
     def check_unrolled_gn_template_explanation():

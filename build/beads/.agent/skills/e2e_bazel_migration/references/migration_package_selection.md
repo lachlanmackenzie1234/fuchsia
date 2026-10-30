@@ -43,7 +43,7 @@ Select packages under the **migration directory** as the **migration packages**.
    * If no **migration package** has been selected, fail the Migration Package Selection step with the reason: "No migration package is found under `<migration directory>`."
    * Otherwise, continue to [Check the Buganizer Tickets](#6-check-the-buganizer-tickets).
 
-In Directory Selection, all candidate packages under the **migration directory** (up to the requested count, if specified) are batched together: if there are 5 or fewer **migration packages**, they are kept in a single **migration group** and migrated in ONE CL. If there are more than 5 **migration packages**, they are split into **migration groups** of up to 5 cohesive packages in step 8.
+In Directory Selection, all candidate packages under the **migration directory** (up to the requested count, if specified) are partitioned into **migration groups** in step 8 according to the [Grouping Rules](#grouping-rules) (`<= 5` cohesive packages of the same area and target type and `<= ~500` new lines per group, forming a single **migration group** / CL whenever all selected packages satisfy the [Grouping Rules](#grouping-rules) together).
 
 ## Grouping Rules
 
@@ -149,8 +149,7 @@ Use the "gsheets" skill: In the **control table**, change "Migration Status" of 
 
 Each **migration group** is migrated by one Planter task and uploaded as one CL. Every **migration package** is in exactly one **migration group**.
 
-* If there are 5 or fewer **migration packages**, all the **migration packages** form **one migration group** (migrated together in a single CL).
-* Otherwise, split the **migration packages** according to the [Grouping Rules](#grouping-rules) into as few migration groups as possible:
+Split the **migration packages** according to the [Grouping Rules](#grouping-rules) into as few **migration groups** as possible (if there are 5 or fewer **migration packages** and they all satisfy the [Grouping Rules](#grouping-rules) together, they form **one migration group**):
   1. Start a new **migration group** with the first **migration package**, in the order they were selected, that is not in a **migration group** yet. Add the [packages that have to be migrated together](#packages-that-have-to-be-migrated-together) with it that are **migration packages**, transitively.
-  2. In the order they were selected, add each **migration package** that is not in a **migration group** yet and can be grouped with the packages of this **migration group** according to the [Grouping Rules](#grouping-rules), together with the **migration packages** that have to be migrated together with it, while the **migration group** has fewer than 5 packages.
+  2. In the order they were selected, add each **migration package** that is not in a **migration group** yet and can be grouped with the packages of this **migration group** according to the [Grouping Rules](#grouping-rules), together with the **migration packages** that have to be migrated together with it, while the **migration group** has fewer than 5 packages and stays within roughly 500 new lines of code.
   3. Repeat from 1 until every **migration package** is in a **migration group**. A **migration package** that cannot be grouped with any other package forms a **migration group** by itself.
