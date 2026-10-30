@@ -521,6 +521,10 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	if shards == nil {
+		shards = []*testsharder.Shard{}
+	}
+
 	encoder := json.NewEncoder(f)
 	// Use 4-space indents so golden files are compatible with `fx format-code`.
 	encoder.SetIndent("", "    ")
