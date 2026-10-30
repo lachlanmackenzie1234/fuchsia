@@ -356,7 +356,7 @@ _NORMAL_DEPENDENCIES = {
             "cfg-if": Label("//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if"),
             "chacha20": Label("//third_party/rust_crates/vendor/chacha20-0.10.2:chacha20"),
             "chrono": Label("//third_party/rust_crates/vendor/chrono-0.4.45:chrono"),
-            "chrono-english": Label("//third_party/rust_crates/vendor/chrono-english-0.1.8:chrono_english"),
+            "chrono-english": Label("//third_party/rust_crates/vendor/chrono-english-0.2.1:chrono_english"),
             "ciborium": Label("//third_party/rust_crates/vendor/ciborium-0.2.2:ciborium"),
             "cipher": Label("//third_party/rust_crates/vendor/cipher-0.5.2:cipher"),
             "clap": Label("//third_party/rust_crates/vendor/clap-4.6.7:clap"),

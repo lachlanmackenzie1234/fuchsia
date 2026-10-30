@@ -83,7 +83,7 @@ chacha20 = { version = "0.10.2", features = ["rng"] }
 # hatch, all we can do is document and shed a silent tear while we wait for the
 # ecosystem to migrate away from time 0.1.
 chrono = { version = "0.4.45", default-features = false }
-chrono-english = "0.1.8"
+chrono-english = "0.2.1"
 ciborium = { version = "0.2.2", features = ["std"] }
 cipher = "0.5.2"
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }

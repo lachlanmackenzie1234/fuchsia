@@ -376,11 +376,11 @@ group("chrono-0.4.45") {
 }
 
 group("chrono-english") {
-  public_deps = [ ":chrono-english-v0_1_8" ]
+  public_deps = [ ":chrono-english-v0_2_1" ]
 }
 
-group("chrono-english-0.1.8") {
-  public_deps = [ ":chrono-english-v0_1_8" ]
+group("chrono-english-0.2.1") {
+  public_deps = [ ":chrono-english-v0_2_1" ]
 }
 
 group("ciborium") {
@@ -5894,37 +5894,37 @@ rustc_library("chrono-v0_4_45") {
   applicable_licenses = [ ":chrono-v0_4_45.license" ]
 }
 
-license("chrono-english-v0_1_8.license") {
+license("chrono-english-v0_2_1.license") {
   public_package_name = "chrono_english"
   license_files =
-      [ "//third_party/rust_crates/vendor/chrono-english-0.1.8/LICENSE.txt" ]
+      [ "//third_party/rust_crates/vendor/chrono-english-0.2.1/LICENSE.txt" ]
 }
 
-rustc_library("chrono-english-v0_1_8") {
+rustc_library("chrono-english-v0_2_1") {
   crate_name = "chrono_english"
   source_root =
-      "//third_party/rust_crates/vendor/chrono-english-0.1.8/src/lib.rs"
-  output_name = "chrono_english-9785d73afff01bf8"
-  edition = "2015"
+      "//third_party/rust_crates/vendor/chrono-english-0.2.1/src/lib.rs"
+  output_name = "chrono_english-ca441a690661353c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":chrono-v0_4_45" ]
-  deps += [ ":scanlex-v0_1_4" ]
+  deps += [ ":scanlex-v0_2_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9785d73afff01bf8",
-    "-Cextra-filename=-9785d73afff01bf8",
+    "-Cmetadata=ca441a690661353c",
+    "-Cextra-filename=-ca441a690661353c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chrono-english-v0_1_8.license" ]
+  applicable_licenses = [ ":chrono-english-v0_2_1.license" ]
 }
 
 license("ciborium-v0_2_2.license") {
@@ -20238,17 +20238,17 @@ rustc_test("sapphire-sync-v0_1_0.test") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("scanlex-v0_1_4.license") {
+license("scanlex-v0_2_0.license") {
   public_package_name = "scanlex"
   license_files =
-      [ "//third_party/rust_crates/vendor/scanlex-0.1.4/LICENSE.txt" ]
+      [ "//third_party/rust_crates/vendor/scanlex-0.2.0/LICENSE.txt" ]
 }
 
-rustc_library("scanlex-v0_1_4") {
+rustc_library("scanlex-v0_2_0") {
   crate_name = "scanlex"
-  source_root = "//third_party/rust_crates/vendor/scanlex-0.1.4/src/lib.rs"
-  output_name = "scanlex-d586196f33c095ac"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/scanlex-0.2.0/src/lib.rs"
+  output_name = "scanlex-ef0de803bba4a649"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -20259,13 +20259,13 @@ rustc_library("scanlex-v0_1_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d586196f33c095ac",
-    "-Cextra-filename=-d586196f33c095ac",
+    "-Cmetadata=ef0de803bba4a649",
+    "-Cextra-filename=-ef0de803bba4a649",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":scanlex-v0_1_4.license" ]
+  applicable_licenses = [ ":scanlex-v0_2_0.license" ]
 }
 
 license("schannel-v0_1_29.license") {
