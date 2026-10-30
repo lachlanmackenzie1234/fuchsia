@@ -79,6 +79,19 @@ struct MemoryAllocationStateStorage {
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 
 struct PreemptionStateLayout {
+  static constexpr uint32_t kMaxCountValue = PreemptionState::kMaxCountValue;
+  static constexpr uint32_t kPreemptDisableMask = PreemptionState::kPreemptDisableMask;
+  static constexpr uint32_t kEagerReschedDisableShift = PreemptionState::kEagerReschedDisableShift;
+  static constexpr uint32_t kEagerReschedDisableMask = PreemptionState::kEagerReschedDisableMask;
+  static constexpr uint32_t kTimesliceExtensionFlagsShift =
+      PreemptionState::kTimesliceExtensionFlagsShift;
+  static constexpr uint32_t kTimesliceExtensionFlagsMask =
+      PreemptionState::kTimesliceExtensionFlagsMask;
+  static constexpr uint32_t kTimesliceExtensionPresent =
+      PreemptionState::TimesliceExtensionFlags::Present;
+  static constexpr uint32_t kTimesliceExtensionActive =
+      PreemptionState::TimesliceExtensionFlags::Active;
+
   static constexpr size_t kStateOffset = offsetof(PreemptionState, state_);
   static constexpr size_t kPreemptsPendingOffset = offsetof(PreemptionState, preempts_pending_);
   static constexpr size_t kTimesliceExtensionOffset =

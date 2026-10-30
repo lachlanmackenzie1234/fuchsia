@@ -128,16 +128,15 @@ typedef void (*thread_trampoline_routine)() __NO_RETURN;
 
 class PreemptionState;
 
-// Rust implementations of PreemptionState's methods (see kernel/thread.rs); the C++ methods of the
-// same name below are thin forwarders to these. The Rust mirror holds only relaxed atomics, so
-// every entry point takes a shared reference.
+// Rust implementations of PreemptionState's slow paths and cold methods (see kernel/thread.rs).
+// The Rust mirror holds only relaxed atomics, so every entry point takes a shared reference.
 extern "C" {
-void rust_preemption_state_preempt_disable(const PreemptionState& preemption_state);
-void rust_preemption_state_preempt_reenable(const PreemptionState& preemption_state);
-[[nodiscard]] bool rust_preemption_state_preempt_reenable_delay_flush(
-    const PreemptionState& preemption_state);
-void rust_preemption_state_eager_resched_disable(const PreemptionState& preemption_state);
-void rust_preemption_state_eager_resched_reenable(const PreemptionState& preemption_state);
+[[gnu::cold]] void rust_preemption_state_preempt_reenable_slow(
+    const PreemptionState& preemption_state, uint32_t old_state);
+[[nodiscard, gnu::cold]] bool rust_preemption_state_preempt_reenable_delay_flush_slow(
+    const PreemptionState& preemption_state, uint32_t old_state);
+[[gnu::cold]] void rust_preemption_state_eager_resched_reenable_slow(
+    const PreemptionState& preemption_state, uint32_t old_state);
 bool rust_preemption_state_set_timeslice_extension(const PreemptionState& preemption_state,
                                                    zx_duration_mono_t extension_duration);
 void rust_preemption_state_clear_timeslice_extension(const PreemptionState& preemption_state);
@@ -156,8 +155,16 @@ class PreemptionState {
   // The eager resched disable count is in the next highest 15 bits.
   static constexpr uint32_t kEagerReschedDisableShift = 15;
   static constexpr uint32_t kEagerReschedDisableMask = kMaxCountValue << kEagerReschedDisableShift;
-  // Finally, the timeslice extension flags (Present and Active) are the highest 2 bits; they are
-  // only interpreted by the Rust implementation (kernel/thread.rs).
+  // Finally, the timeslice extension flags are the highest 2 bits.
+  static constexpr uint32_t kTimesliceExtensionFlagsShift = 30;
+  static constexpr uint32_t kTimesliceExtensionFlagsMask =
+      ~(kPreemptDisableMask | kEagerReschedDisableMask);
+  enum TimesliceExtensionFlags : uint32_t {
+    // Thread has a timeslice extension that may or may not be Active.
+    Present = 0b01u << kTimesliceExtensionFlagsShift,
+    // Thread has an Active (in use) timeslice extension.
+    Active = 0b10u << kTimesliceExtensionFlagsShift,
+  };
 
   cpu_mask_t preempts_pending() const { return preempts_pending_.load(); }
   void preempts_pending_clear() { preempts_pending_.store(0); }
@@ -172,6 +179,13 @@ class PreemptionState {
   uint32_t PreemptDisableCount() const { return PreemptDisableCount(state_.load()); }
   uint32_t EagerReschedDisableCount() const { return EagerReschedDisableCount(state_.load()); }
 
+  // TODO(https://fxbug.dev/537458631): PreemptDisable, PreemptReenable,
+  // PreemptReenableDelayFlush, EagerReschedDisable, and EagerReschedReenable
+  // duplicate the Rust fast path on purpose because release kernels do not use
+  // cross-language LTO; they can be removed once kernel LTO is on by default or
+  // the C++ callers are gone.
+  // LINT.IfChange(PreemptionStateFastPaths)
+
   // PreemptDisable() increments the preempt disable counter for the current
   // thread. While preempt disable is non-zero, preemption of the thread is
   // disabled, including preemption from interrupt handlers. During this time,
@@ -184,13 +198,36 @@ class PreemptionState {
   //
   // A call to PreemptDisable() must be matched by a later call to
   // PreemptReenable() to decrement the preempt disable counter.
-  void PreemptDisable() { rust_preemption_state_preempt_disable(*this); }
+  void PreemptDisable() {
+    const uint32_t old_state = state_.fetch_add(1);
+    ASSERT(PreemptDisableCount(old_state) < kMaxCountValue);
+  }
 
   // PreemptReenable() decrements the preempt disable counter and flushes any
   // pending local preemption operation.  Callers must ensure that they are
   // calling from a context where blocking is allowed, as the call may result in
   // the immediate preemption of the calling thread.
-  void PreemptReenable() { rust_preemption_state_preempt_reenable(*this); }
+  void PreemptReenable() {
+    const uint32_t old_state = state_.fetch_sub(1);
+    // Fast path: count drops to zero, no eager resched count, no extension, nothing pending.
+    if (likely(old_state == 1)) {
+      // Order the state_ RMW before the preempts_pending_ load for same-CPU interrupts.
+      ktl::atomic_signal_fence(ktl::memory_order_seq_cst);
+      if (unlikely(preempts_pending_.load() != 0)) {
+        rust_preemption_state_preempt_reenable_slow(*this, old_state);
+      }
+      return;
+    }
+    // Are either of the counters non-zero?  Only take the early return when the preempt
+    // disable count was at least one: the underflow case (count already zero) must fall
+    // through to the slow path, which asserts on it.
+    if (PreemptDisableCount(old_state) != 0 &&
+        (old_state & (kPreemptDisableMask | kEagerReschedDisableMask)) > 1) {
+      // We've got a non-zero count in one of the counters.
+      return;
+    }
+    rust_preemption_state_preempt_reenable_slow(*this, old_state);
+  }
 
   void PreemptDisableAnnotated() TA_ACQ(preempt_disabled_token) {
     preempt_disabled_token.Acquire();
@@ -227,7 +264,27 @@ class PreemptionState {
   // happen, either by having the user call a method on the object to manually
   // force the preemption event, or when the object destructs.
   [[nodiscard]] bool PreemptReenableDelayFlush() {
-    return rust_preemption_state_preempt_reenable_delay_flush(*this);
+    DEBUG_ASSERT(arch_ints_disabled());
+    DEBUG_ASSERT(arch_blocking_disallowed());
+
+    const uint32_t old_state = state_.fetch_sub(1);
+
+    // First, check for the expected situation of dropping the preempt count to zero
+    // with a zero eager resched disable count and no timeslice extension.
+    if (likely(old_state == 1)) {
+      const cpu_mask_t local_mask = cpu_num_to_mask(arch_curr_cpu_num());
+      const cpu_mask_t prev_mask = preempts_pending_.fetch_and(~local_mask);
+      return (local_mask & prev_mask) != 0;
+    }
+    // Are either of the counters non-zero?  Only take the early return when the preempt
+    // disable count was at least one: the underflow case (count already zero) must fall
+    // through to the slow path, which asserts on it.
+    if (PreemptDisableCount(old_state) != 0 &&
+        (old_state & (kPreemptDisableMask | kEagerReschedDisableMask)) > 1) {
+      // We've got a non-zero count in one of the counters.
+      return false;
+    }
+    return rust_preemption_state_preempt_reenable_delay_flush_slow(*this, old_state);
   }
 
   // EagerReschedDisable() increments the eager resched disable counter for the
@@ -242,11 +299,32 @@ class PreemptionState {
   //
   // A call to EagerReschedDisable() must be matched by a later call to
   // EagerReschedReenable() to decrement the eager resched disable counter.
-  void EagerReschedDisable() { rust_preemption_state_eager_resched_disable(*this); }
+  void EagerReschedDisable() {
+    const uint32_t old_state = state_.fetch_add(1u << kEagerReschedDisableShift);
+    ASSERT_MSG(EagerReschedDisableCount(old_state) < kMaxCountValue, "old_state: %#" PRIx32,
+               old_state);
+  }
 
   // EagerReschedReenable() decrements the eager resched disable counter and
   // flushes pending local and/or remote preemptions if enabled, respectively.
-  void EagerReschedReenable() { rust_preemption_state_eager_resched_reenable(*this); }
+  void EagerReschedReenable() {
+    const uint32_t old_state = state_.fetch_sub(1u << kEagerReschedDisableShift);
+    // Fast path: count drops to zero, no preempt disable count, no extension, nothing pending.
+    if (likely(old_state == (1u << kEagerReschedDisableShift))) {
+      // Order the state_ RMW before the preempts_pending_ load for same-CPU interrupts.
+      ktl::atomic_signal_fence(ktl::memory_order_seq_cst);
+      if (unlikely(preempts_pending_.load() != 0)) {
+        rust_preemption_state_eager_resched_reenable_slow(*this, old_state);
+      }
+      return;
+    }
+    if (EagerReschedDisableCount(old_state) > 1) {
+      // Nothing to do since eager resched disable implies preempt disable.
+      return;
+    }
+    rust_preemption_state_eager_resched_reenable_slow(*this, old_state);
+  }
+  // LINT.ThenChange(//zircon/kernel/kernel/thread.rs:PreemptionStateFastPaths)
 
   void EagerReschedDisableAnnotated() TA_ACQ(preempt_disabled_token) {
     preempt_disabled_token.Acquire();

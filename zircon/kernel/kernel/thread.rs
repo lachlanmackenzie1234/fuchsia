@@ -423,23 +423,23 @@ crate::counters::define_kcounter!(THREAD_TIMESLICE_EXTENDED, "thread.timeslice_e
 
 impl PreemptionState {
     /// Counters contained in state_ are limited to 15 bits.
-    pub const MAX_COUNT_VALUE: u32 = 0x7fff;
+    const MAX_COUNT_VALUE: u32 = 0x7fff;
     /// The preempt disable count is in the lowest 15 bits.
-    pub const PREEMPT_DISABLE_MASK: u32 = Self::MAX_COUNT_VALUE;
+    const PREEMPT_DISABLE_MASK: u32 = Self::MAX_COUNT_VALUE;
     /// The eager resched disable count is in the next highest 15 bits.
-    pub const EAGER_RESCHED_DISABLE_SHIFT: u32 = 15;
+    const EAGER_RESCHED_DISABLE_SHIFT: u32 = 15;
     /// Mask selecting the eager resched disable count.
-    pub const EAGER_RESCHED_DISABLE_MASK: u32 =
+    const EAGER_RESCHED_DISABLE_MASK: u32 =
         Self::MAX_COUNT_VALUE << Self::EAGER_RESCHED_DISABLE_SHIFT;
     /// Finally, the timeslice extension flags are the highest 2 bits.
-    pub const TIMESLICE_EXTENSION_FLAGS_SHIFT: u32 = 30;
+    const TIMESLICE_EXTENSION_FLAGS_SHIFT: u32 = 30;
     /// Mask selecting the timeslice extension flags.
-    pub const TIMESLICE_EXTENSION_FLAGS_MASK: u32 =
+    const TIMESLICE_EXTENSION_FLAGS_MASK: u32 =
         !(Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK);
     /// Thread has a timeslice extension that may or may not be Active.
-    pub const TIMESLICE_EXTENSION_PRESENT: u32 = 0b01 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
+    const TIMESLICE_EXTENSION_PRESENT: u32 = 0b01 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
     /// Thread has an Active (in use) timeslice extension.
-    pub const TIMESLICE_EXTENSION_ACTIVE: u32 = 0b10 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
+    const TIMESLICE_EXTENSION_ACTIVE: u32 = 0b10 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
 
     /// Returns true if preemption is enabled for this thread: both counts are zero and there is
     /// no runtime extension.
@@ -479,6 +479,8 @@ impl PreemptionState {
         self.preempts_pending.fetch_or(mask);
     }
 
+    // `<kernel/thread.h>` duplicates these inline fast paths for C++ callers; keep them in sync.
+    // LINT.IfChange(PreemptionStateFastPaths)
     /// PreemptDisable() increments the preempt disable counter for the current
     /// thread. While preempt disable is non-zero, preemption of the thread is
     /// disabled, including preemption from interrupt handlers. During this time,
@@ -500,8 +502,7 @@ impl PreemptionState {
     }
 
     /// Panics for a saturated disable counter. Kept out of line and cold so that the message
-    /// formatting does not bloat the hot `*_disable` entry points (which are inlined, including
-    /// across the C++ FFI boundary).
+    /// formatting does not bloat the hot `*_disable` entry points (which are inlined).
     #[cold]
     #[inline(never)]
     #[track_caller]
@@ -539,31 +540,42 @@ impl PreemptionState {
     pub unsafe fn preempt_reenable(&self) {
         let old_state = self.state.fetch_sub(1);
         // Fast path: count drops to zero, no eager resched count, no extension, nothing pending.
-        if old_state == 1 && self.preempts_pending.load() == 0 {
+        if old_state == 1 {
+            // Order the state RMW before the preempts_pending load for same-CPU interrupts.
+            core::sync::atomic::compiler_fence(Ordering::SeqCst);
+            if self.preempts_pending.load() != 0 {
+                // SAFETY: The `self`, pairing, and token obligations are forwarded from the
+                // caller, and `old_state == 1` satisfies the slow-path counter preconditions.
+                unsafe { self.preempt_reenable_slow(old_state) };
+            }
             return;
         }
         // Are either of the counters non-zero?  Only take the early return when the preempt
         // disable count was at least one: the underflow case (count already zero) must fall
-        // through to the slow path, which asserts on it like the C++ `ASSERT_MSG` did.
+        // through to the slow path, which asserts on it.
         if Self::preempt_disable_count_of(old_state) != 0
             && (old_state & (Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK)) > 1
         {
             // We've got a non-zero count in one of the counters.
             return;
         }
-        // SAFETY: Forwarded from the caller.
+        // SAFETY: The `self`, pairing, and token obligations are forwarded from the caller, and
+        // `old_state` was produced by the `fetch_sub(1)` above with the non-zero counter cases
+        // already returned early.
         unsafe { self.preempt_reenable_slow(old_state) }
     }
 
     /// The uncommon remainder of [`Self::preempt_reenable`], after the inline fast-path checks;
     /// `old_state` is the `state` value before the decrement. Kept out of line so that the hot
-    /// entry point stays small enough to inline (including across the C++ FFI boundary).
+    /// entry point stays small enough to inline.
     ///
     /// # Safety
     ///
     /// As [`Self::preempt_reenable`], and the caller has already decremented the preempt disable
-    /// count once, observing `old_state`, and returned early unless the eager resched disable
-    /// count of `old_state` is zero and its preempt disable count is at most one.
+    /// count once, observing `old_state` with
+    /// `Self::eager_resched_disable_count_of(old_state) == 0 &&
+    /// Self::preempt_disable_count_of(old_state) == 1` (or an underflow with
+    /// `Self::preempt_disable_count_of(old_state) == 0`, which panics).
     #[cold]
     #[inline(never)]
     unsafe fn preempt_reenable_slow(&self, old_state: u32) {
@@ -622,9 +634,11 @@ impl PreemptionState {
     ///
     /// # Safety
     ///
-    /// The call must pair with a prior, still unmatched [`Self::preempt_disable`] on the current
-    /// thread, and it must not drop preemption back to enabled while any [`PreemptDisabledToken`]
-    /// is live.
+    /// - `self` must be the *current* thread's preemption state, with interrupts disabled and
+    ///   blocking disallowed.
+    /// - The call must pair with a prior, still unmatched [`Self::preempt_disable`] on the current
+    ///   thread, and it must not drop preemption back to enabled while any [`PreemptDisabledToken`]
+    ///   is live.
     #[must_use]
     #[inline]
     pub unsafe fn preempt_reenable_delay_flush(&self) -> bool {
@@ -642,7 +656,7 @@ impl PreemptionState {
         }
         // Are either of the counters non-zero?  Only take the early return when the preempt
         // disable count was at least one: the underflow case (count already zero) must fall
-        // through to the slow path, which asserts on it like the C++ `ASSERT` did.
+        // through to the slow path, which asserts on it.
         if Self::preempt_disable_count_of(old_state) != 0
             && (old_state & (Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK)) > 1
         {
@@ -654,9 +668,10 @@ impl PreemptionState {
 
     /// The uncommon remainder of [`Self::preempt_reenable_delay_flush`], after the inline
     /// fast-path checks; `old_state` is the `state` value before the decrement. Kept out of line
-    /// so that the hot entry point stays small enough to inline (including across the C++ FFI
-    /// boundary). Only reached when the eager resched disable count of `old_state` is zero and
-    /// its preempt disable count is at most one.
+    /// so that the hot entry point stays small enough to inline. Only reached when
+    /// `Self::eager_resched_disable_count_of(old_state) == 0 &&
+    /// Self::preempt_disable_count_of(old_state) == 1` and `old_state != 1` (or on underflow with
+    /// `Self::preempt_disable_count_of(old_state) == 0`, which panics).
     #[must_use]
     #[cold]
     #[inline(never)]
@@ -664,6 +679,7 @@ impl PreemptionState {
         if Self::preempt_disable_count_of(old_state) == 0 {
             Self::count_underflow("preempt disable", old_state);
         }
+        debug_assert!(Self::has_timeslice_extension(old_state));
 
         // The inline wrapper already returned when either counter was still non-zero, so the
         // counters are both zero.  At this point, we must have a timeslice
@@ -722,27 +738,36 @@ impl PreemptionState {
     pub unsafe fn eager_resched_reenable(&self) {
         let old_state = self.state.fetch_sub(1 << Self::EAGER_RESCHED_DISABLE_SHIFT);
         // Fast path: count drops to zero, no preempt disable count, no extension, nothing pending.
-        if old_state == 1 << Self::EAGER_RESCHED_DISABLE_SHIFT && self.preempts_pending.load() == 0
-        {
+        if old_state == 1 << Self::EAGER_RESCHED_DISABLE_SHIFT {
+            // Order the state RMW before the preempts_pending load for same-CPU interrupts.
+            core::sync::atomic::compiler_fence(Ordering::SeqCst);
+            if self.preempts_pending.load() != 0 {
+                // SAFETY: The `self`, pairing, and token obligations are forwarded from the
+                // caller, and `old_state` has eager resched disable count 1.
+                unsafe { self.eager_resched_reenable_slow(old_state) };
+            }
             return;
         }
         if Self::eager_resched_disable_count_of(old_state) > 1 {
             // Nothing to do since eager resched disable implies preempt disable.
             return;
         }
-        // SAFETY: Forwarded from the caller.
+        // SAFETY: The `self`, pairing, and token obligations are forwarded from the caller, and
+        // `old_state` was produced by the `fetch_sub` above with the
+        // `eager_resched_disable_count_of(old_state) > 1` case already returned early.
         unsafe { self.eager_resched_reenable_slow(old_state) }
     }
 
     /// The uncommon remainder of [`Self::eager_resched_reenable`], after the inline fast-path
     /// checks; `old_state` is the `state` value before the decrement. Kept out of line so that
-    /// the hot entry point stays small enough to inline (including across the C++ FFI boundary).
+    /// the hot entry point stays small enough to inline.
     ///
     /// # Safety
     ///
     /// As [`Self::eager_resched_reenable`], and the caller has already decremented the eager
-    /// resched disable count once, observing `old_state`, and returned early unless the eager
-    /// resched disable count of `old_state` is at most one.
+    /// resched disable count once, observing `old_state` with
+    /// `Self::eager_resched_disable_count_of(old_state) == 1` (or an underflow with
+    /// `Self::eager_resched_disable_count_of(old_state) == 0`, which panics).
     #[cold]
     #[inline(never)]
     unsafe fn eager_resched_reenable_slow(&self, old_state: u32) {
@@ -791,6 +816,7 @@ impl PreemptionState {
         // SAFETY: Forwarded from the caller.
         unsafe { self.flush_pending(Flush::REMOTE) };
     }
+    // LINT.ThenChange(//zircon/kernel/include/kernel/thread.h:PreemptionStateFastPaths)
 
     /// Sets a timeslice extension if one is not already set.
     ///
@@ -888,7 +914,7 @@ impl PreemptionState {
 
     /// The uncommon remainder of [`Self::evaluate_timeslice_extension`], after the inline
     /// fast-path check; `old_state` is the `state` value just loaded. Kept out of line so that the
-    /// hot entry point stays small enough to inline (including across the C++ FFI boundary).
+    /// hot entry point stays small enough to inline.
     #[cold]
     #[inline(never)]
     fn evaluate_timeslice_extension_slow(&self, old_state: u32) -> bool {
@@ -1074,7 +1100,7 @@ impl PreemptionState {
     }
 }
 
-// Compile-time layout assertions against <kernel/thread_layout.h>.
+// Compile-time layout and constant assertions against <kernel/thread_layout.h>.
 static_assert!(size_of::<PreemptionState>() == size_of::<layout::PreemptionStateStorage>());
 static_assert!(align_of::<PreemptionState>() == align_of::<layout::PreemptionStateStorage>());
 static_assert!(offset_of!(PreemptionState, state) == layout::PreemptionStateLayout_kStateOffset);
@@ -1089,6 +1115,34 @@ static_assert!(
 static_assert!(
     offset_of!(PreemptionState, timeslice_extension_deadline)
         == layout::PreemptionStateLayout_kTimesliceExtensionDeadlineOffset
+);
+static_assert!(PreemptionState::MAX_COUNT_VALUE == layout::PreemptionStateLayout_kMaxCountValue);
+static_assert!(
+    PreemptionState::PREEMPT_DISABLE_MASK == layout::PreemptionStateLayout_kPreemptDisableMask
+);
+static_assert!(
+    PreemptionState::EAGER_RESCHED_DISABLE_SHIFT
+        == layout::PreemptionStateLayout_kEagerReschedDisableShift
+);
+static_assert!(
+    PreemptionState::EAGER_RESCHED_DISABLE_MASK
+        == layout::PreemptionStateLayout_kEagerReschedDisableMask
+);
+static_assert!(
+    PreemptionState::TIMESLICE_EXTENSION_FLAGS_SHIFT
+        == layout::PreemptionStateLayout_kTimesliceExtensionFlagsShift
+);
+static_assert!(
+    PreemptionState::TIMESLICE_EXTENSION_FLAGS_MASK
+        == layout::PreemptionStateLayout_kTimesliceExtensionFlagsMask
+);
+static_assert!(
+    PreemptionState::TIMESLICE_EXTENSION_PRESENT
+        == layout::PreemptionStateLayout_kTimesliceExtensionPresent
+);
+static_assert!(
+    PreemptionState::TIMESLICE_EXTENSION_ACTIVE
+        == layout::PreemptionStateLayout_kTimesliceExtensionActive
 );
 
 /// TaskState is responsible for running the task defined by
@@ -3997,67 +4051,67 @@ pub unsafe extern "C" fn rust_thread_trampoline() -> ! {
     current_exit(ret)
 }
 
-/// Forwards C++ `PreemptionState::PreemptDisable`.
-///
-/// Every call must be matched by a later `PreemptReenable`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_preemption_state_preempt_disable(preemption_state: &PreemptionState) {
-    preemption_state.preempt_disable();
-}
-
-/// Forwards C++ `PreemptionState::PreemptReenable`.
+/// Slow path for C++ `PreemptionState::PreemptReenable`.
 ///
 /// # Safety
-/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
-/// unmatched `PreemptDisable` on the current thread, and it does not drop preemption back to
-/// enabled while any `PreemptDisabledToken` is live.
+/// `preemption_state` is the current thread's `PreemptionState` on a running thread
+/// (`ThreadState::Running`) in a context where blocking is allowed (`!blocking_disallowed()`), the
+/// call pairs with a prior unmatched `PreemptDisable` on the current thread, the caller has
+/// already decremented the preempt disable count once (observing `old_state` with
+/// `PreemptionState::eager_resched_disable_count_of(old_state) == 0 &&
+/// PreemptionState::preempt_disable_count_of(old_state) == 1`, or an underflow with
+/// `PreemptionState::preempt_disable_count_of(old_state) == 0`), and the call does not drop
+/// preemption back to enabled while any `PreemptDisabledToken` is live.
+#[cold]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_preemption_state_preempt_reenable(
+pub unsafe extern "C" fn rust_preemption_state_preempt_reenable_slow(
     preemption_state: &PreemptionState,
+    old_state: u32,
 ) {
-    // SAFETY: The caller guarantees this is the current thread's state and the pairing and token
-    // obligations.
-    unsafe { preemption_state.preempt_reenable() };
+    // SAFETY: The caller guarantees this is the current thread's state and the slow-path
+    // preconditions of `preempt_reenable_slow`.
+    unsafe { preemption_state.preempt_reenable_slow(old_state) };
 }
 
-/// Forwards C++ `PreemptionState::PreemptReenableDelayFlush`.
-///
-/// Interrupts must be disabled and blocking disallowed, as `debug_assert!`ed by
-/// [`PreemptionState::preempt_reenable_delay_flush`].
+/// Slow path for C++ `PreemptionState::PreemptReenableDelayFlush`.
 ///
 /// # Safety
-/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
-/// unmatched `PreemptDisable` on the current thread, and it does not drop preemption back to
-/// enabled while any `PreemptDisabledToken` is live.
+/// `preemption_state` is the current thread's `PreemptionState`, interrupts are disabled and
+/// blocking is disallowed, the call pairs with a prior unmatched `PreemptDisable` on the current
+/// thread, the caller has already decremented the preempt disable count once (observing
+/// `old_state` with `PreemptionState::eager_resched_disable_count_of(old_state) == 0 &&
+/// PreemptionState::preempt_disable_count_of(old_state) == 1` and `old_state != 1`, or an
+/// underflow with `PreemptionState::preempt_disable_count_of(old_state) == 0`), and the call does
+/// not drop preemption back to enabled while any `PreemptDisabledToken` is live.
+#[cold]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_preemption_state_preempt_reenable_delay_flush(
+pub unsafe extern "C" fn rust_preemption_state_preempt_reenable_delay_flush_slow(
     preemption_state: &PreemptionState,
+    old_state: u32,
 ) -> bool {
-    // SAFETY: The caller guarantees the pairing and token obligations.
-    unsafe { preemption_state.preempt_reenable_delay_flush() }
+    preemption_state.preempt_reenable_delay_flush_slow(old_state)
 }
 
-/// Forwards C++ `PreemptionState::EagerReschedDisable`.
-///
-/// Every call must be matched by a later `EagerReschedReenable`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_preemption_state_eager_resched_disable(preemption_state: &PreemptionState) {
-    preemption_state.eager_resched_disable();
-}
-
-/// Forwards C++ `PreemptionState::EagerReschedReenable`.
+/// Slow path for C++ `PreemptionState::EagerReschedReenable`.
 ///
 /// # Safety
-/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
-/// unmatched `EagerReschedDisable` on the current thread, and it does not drop preemption back to
-/// enabled while any `PreemptDisabledToken` is live.
+/// `preemption_state` is the current thread's `PreemptionState`, when
+/// `PreemptionState::preempt_disable_count_of(old_state) == 0` the current thread is in
+/// `ThreadState::Running` in a context where blocking is allowed (`!blocking_disallowed()`), the
+/// call pairs with a prior unmatched `EagerReschedDisable` on the current thread, the caller has
+/// already decremented the eager resched disable count once (observing `old_state` with
+/// `PreemptionState::eager_resched_disable_count_of(old_state) == 1`, or an underflow with
+/// `PreemptionState::eager_resched_disable_count_of(old_state) == 0`), and the call does not drop
+/// preemption back to enabled while any `PreemptDisabledToken` is live.
+#[cold]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_preemption_state_eager_resched_reenable(
+pub unsafe extern "C" fn rust_preemption_state_eager_resched_reenable_slow(
     preemption_state: &PreemptionState,
+    old_state: u32,
 ) {
-    // SAFETY: The caller guarantees this is the current thread's state and the pairing and token
-    // obligations.
-    unsafe { preemption_state.eager_resched_reenable() };
+    // SAFETY: The caller guarantees this is the current thread's state and the slow-path
+    // preconditions of `eager_resched_reenable_slow`.
+    unsafe { preemption_state.eager_resched_reenable_slow(old_state) };
 }
 
 /// Forwards C++ `PreemptionState::SetTimesliceExtension`.
@@ -6200,8 +6254,9 @@ mod preempt_disable_tests {
                 let _cleanup = zr::defer(|| crate::arch_rs::set_blocking_disallowed(false));
                 preemption_state.preempt_disable();
                 preemption_state.preempts_pending_add(curr_mask);
-                // SAFETY: This pairs with the `preempt_disable()` just above, and no
-                // `PreemptDisabledToken` exists in this test.
+                // SAFETY: `preemption_state` is the current thread's state, interrupts are
+                // disabled and blocking is disallowed, this pairs with the `preempt_disable()`
+                // just above, and no `PreemptDisabledToken` exists in this test.
                 unsafe { preemption_state.preempt_reenable_delay_flush() }
             };
             expect_false!(preemption_state.preempt_is_enabled());
