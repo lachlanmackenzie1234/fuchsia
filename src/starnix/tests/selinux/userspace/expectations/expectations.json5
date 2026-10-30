@@ -17,10 +17,6 @@
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/RootContext",
 
-                // TODO: https://fxbug.dev/575528146 - Clear `pdeath_signal` on SELinux domain
-                // transitions during `execve` even when `noatsecure` is allowed.
-                "InheritTest.NoAtSecureAllowed",
-
                 // TODO: https://fxbug.dev/532921178 - io_uring memory accounting is not implemented
                 // in Starnix.
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",

@@ -33,7 +33,8 @@ use starnix_uapi::{
 /// If the task SID is changing during `exec`, enforces permissions that relate to inheritance of
 /// the calling task's file descriptor access and resource limits by the callee:
 /// 1. Revoke access to any file descriptors that `current_task` is not permitted to access.
-/// 2. Reset resource limits if `current_task` is not permitted to inherit rlimits.
+/// 2. Reset the parent death signal.
+/// 3. Reset resource limits if `current_task` is not permitted to inherit rlimits.
 ///
 /// Corresponds to the `bprm_committing_creds()` LSM hook.
 pub(in crate::security) fn bprm_committing_creds(
@@ -48,6 +49,7 @@ pub(in crate::security) fn bprm_committing_creds(
         return;
     }
     close_inaccessible_file_descriptors(security_server, current_task, new_sid);
+    current_task.thread_group().write().set_parent_death_signal(None);
     maybe_reset_rlimits(security_server, current_task, previous_sid, new_sid);
 }
 
