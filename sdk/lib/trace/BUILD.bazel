@@ -16,6 +16,7 @@ exports_files(
         "//bundles/assembly:__subpackages__",
         "//sdk/lib/vulkan:__pkg__",
         "//src/connectivity/policy/http-client:__pkg__",
+        "//src/starnix/modules/usbfs:__pkg__",
     ],
 )
 
