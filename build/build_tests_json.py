@@ -280,7 +280,7 @@ def set_environments_for_test(
         test["build_only"] = True
         test["environments"] = []
     else:
-        test["environments"] = [e.to_dict() for e in sorted_envs]
+        test["environments"] = sorted_envs
         if "build_only" in test:
             test["build_only"] = False
 
@@ -435,11 +435,6 @@ class ResolvedTestGroup:
         return self.label or self.product_bundle_name
 
 
-def _environment_key(env: dict[str, Any]) -> str:
-    """Return a hashable, canonical form of a resolved environment."""
-    return json.dumps(env, sort_keys=True)
-
-
 def dedupe_test_groups(groups: list[ResolvedTestGroup]) -> None:
     """Remove environments from tests that another group already runs them in.
 
@@ -476,13 +471,13 @@ def dedupe_test_groups(groups: list[ResolvedTestGroup]) -> None:
                 )
 
     # For each processed group (by id), the environments that each of its
-    # tests will run in, in canonical form.
-    runnable_envs_by_group: dict[int, dict[TestEntryKey, set[str]]] = {}
+    # tests will run in.
+    runnable_envs_by_group: dict[int, dict[TestEntryKey, set[Environment]]] = {}
     in_progress: set[int] = set()
 
     def dedupe_group(
         group: ResolvedTestGroup, path: list[str]
-    ) -> dict[TestEntryKey, set[str]]:
+    ) -> dict[TestEntryKey, set[Environment]]:
         group_id = id(group)
         if group_id in runnable_envs_by_group:
             return runnable_envs_by_group[group_id]
@@ -495,33 +490,28 @@ def dedupe_test_groups(groups: list[ResolvedTestGroup]) -> None:
         in_progress.add(group_id)
 
         # The environments that each test is already run in by other groups.
-        excluded_envs: dict[TestEntryKey, set[str]] = {}
+        excluded_envs: dict[TestEntryKey, set[Environment]] = {}
         for label in group.dedupe_against:
             other_envs = dedupe_group(groups_by_label[label], path)
             for key, other_test_envs in other_envs.items():
                 excluded_envs.setdefault(key, set()).update(other_test_envs)
 
-        runnable_envs: dict[TestEntryKey, set[str]] = {}
+        runnable_envs: dict[TestEntryKey, set[Environment]] = {}
         for test in group.tests:
             # Pure host tests aren't product-bundle specific, and are already
             # deduplicated when merged.
             if is_pure_host_test(test) or test_is_build_only(test):
                 continue
             key = TestEntryKey.from_test(test)
-            envs: list[dict[str, Any]] = test["environments"]
+            envs: list[Environment] = test["environments"]
             if key in excluded_envs:
-                envs = [
-                    e
-                    for e in envs
-                    if _environment_key(e) not in excluded_envs[key]
-                ]
+                excluded = excluded_envs[key]
+                envs = [e for e in envs if e not in excluded]
                 if not envs:
                     test["build_only"] = True
                 test["environments"] = envs
             if envs:
-                runnable_envs.setdefault(key, set()).update(
-                    _environment_key(e) for e in envs
-                )
+                runnable_envs.setdefault(key, set()).update(envs)
 
         in_progress.remove(group_id)
         runnable_envs_by_group[group_id] = runnable_envs
@@ -862,6 +852,9 @@ def build_tests_json(
             raise ValueError(
                 "Test has no runnable entries and no build-only entry."
             )
+
+    for test in all_tests:
+        test["environments"] = [e.to_dict() for e in test["environments"]]
 
     # Write the final list of tests to tests.json if the contents changed.
     contents_changed = True

@@ -2093,7 +2093,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
         self.assertEqual(
             test_basic["environments"],
-            [{"dimensions": {"device_type": "AEMU"}}],
+            [aemu_env],
         )
 
         # 2. Product bundle test group mode with mandatory environments
@@ -2107,7 +2107,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
         self.assertEqual(
             test_pb_override["environments"],
-            [{"dimensions": {"device_type": "Vim3"}}],
+            [vim3_env],
         )
 
         # 3. Product bundle test group mode with allowed_envs and default_envs
@@ -2127,7 +2127,7 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
         self.assertEqual(
             test_pb_no_override["environments"],
-            [{"dimensions": {"device_type": "Vim3"}}],
+            [vim3_env],
         )
 
         # Invalid test environment raises ValueError immediately
