@@ -21,6 +21,7 @@ rustc_library("input") {
   with_unit_tests = true
 
   sources = [
+    "direct_input.rs",
     "input_device.rs",
     "input_event_relay.rs",
     "input_file.rs",
@@ -43,6 +44,7 @@ rustc_library("input") {
     "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
+    "//sdk/fidl/fuchsia.ui.input.internal:fuchsia.ui.input.internal_rust",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
     "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",

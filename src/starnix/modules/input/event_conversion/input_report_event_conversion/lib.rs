@@ -56,6 +56,7 @@ pub struct InputReportConverter {
     pub mouse: MouseReportConverter,
     pub keyboard: KeyboardReportConverter,
     pub consumer_control: ConsumerControlReportConverter,
+    pub paused: bool,
 }
 
 impl InputReportConverter {
