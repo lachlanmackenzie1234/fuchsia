@@ -417,7 +417,7 @@ class DriverLab:
         recovery: RecoveryController | None = None,
         proxy_transport: ProxyTransport | None = None,
         direct_transport: DirectTransport | None = None,
-    ) -> "DriverLab":
+    ) -> DriverLab:
         """Connects to a target device or directly to a live driver moniker (Phase 2)."""
         endpoint_moniker = driver_moniker or node_id or target
         active_transport: ProxyTransport | DirectTransport

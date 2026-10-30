@@ -155,7 +155,7 @@ class HostProperties:
     cpu: str
 
     @classmethod
-    def detect(cls) -> "HostProperties":
+    def detect(cls) -> HostProperties:
         """Auto-detects the host system's OS and CPU architecture."""
         host_os = platform.system().lower()
         if host_os == "darwin":
@@ -204,7 +204,7 @@ class HostProperties:
             / "ninja"
         )
 
-    def matches_tool(self, tool: "ToolPathSpec") -> bool:
+    def matches_tool(self, tool: ToolPathSpec) -> bool:
         """Returns True if the tool's OS and CPU match this host."""
         return tool.os == self.os and tool.cpu == self.cpu
 
@@ -426,7 +426,7 @@ class NinjaFailure:
     output: str
 
     @classmethod
-    def from_dict(cls, data: JSONObject) -> "NinjaFailure":
+    def from_dict(cls, data: JSONObject) -> NinjaFailure:
         """Constructs a NinjaFailure from a JSONObject."""
         artifacts = data.get("artifacts")
         exit_code = data.get("exit_code")
@@ -487,7 +487,7 @@ class TestSpec:
     source_label: str = ""
 
     @classmethod
-    def from_dict(cls, data: JSONObject) -> "TestSpec":
+    def from_dict(cls, data: JSONObject) -> TestSpec:
         """Constructs a TestSpec safely from a JSONObject."""
         test_dict = data.get("test")
         if not isinstance(test_dict, dict):
@@ -580,7 +580,7 @@ class ToolPathSpec:
     cpu: str
 
     @classmethod
-    def from_dict(cls, data: JSONObject) -> "ToolPathSpec":
+    def from_dict(cls, data: JSONObject) -> ToolPathSpec:
         """Constructs a ToolPathSpec safely from a JSONObject."""
         name = data.get("name")
         path_val = data.get("path")
@@ -609,7 +609,7 @@ class ClippyTargetSpec:
     disable_clippy: bool
 
     @classmethod
-    def from_dict(cls, data: JSONObject) -> "ClippyTargetSpec":
+    def from_dict(cls, data: JSONObject) -> ClippyTargetSpec:
         """Constructs a ClippyTargetSpec safely from a JSONObject."""
         output_val = data.get("clippy_output")
         sources_val = data.get("src", data.get("sources", []))
