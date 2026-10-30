@@ -170,6 +170,9 @@ zx_status_t EventRing::AddSegment(bool initialization) {
   if (is_32bit_ && (buffer->phys() >= UINT32_MAX)) {
     return ZX_ERR_NO_MEMORY;
   }
+  if (!hci_->HasCoherentState()) {
+    zx_cache_flush(buffer->virt(), page_size_, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+  }
   zx_status_t status = segments_.AddSegment(buffer->phys());
   if (status != ZX_OK) {
     return status;
@@ -214,8 +217,14 @@ fpromise::promise<void, zx_status_t> EventRing::HandlePortStatusChangeEvent(uint
       if (!hci_->GetPortState(port_id).is_connected) {
         // USB 2.0 requires a port reset to advance to U0
         Usb2DeviceAttach(port_id);
+        sc.set_CSC(false);
         needs_enum = true;
         fdf::debug("Port {} is a USB 2 device and will be enumerated.", port_id);
+      } else if (!hci_->GetPortState(port_id).link_active && sc.PR()) {
+        // Port reset is still in progress (for example, an initial CSC=1 event TRB arrived
+        // before PR transitioned to 0). Keep waiting for reset completion. Once PR=0, fall
+        // through so that a failed reset (PED=0) does not keep the enumeration queue waiting.
+        needs_enum = true;
       }
     } else {
       // USB 3.0 port connect, since we got a connect status bit set,
@@ -237,7 +246,8 @@ fpromise::promise<void, zx_status_t> EventRing::HandlePortStatusChangeEvent(uint
     // Link could be active from connect status change above.
     // To prevent enumerating a device twice, we ensure that the link wasn't previously active
     // before enumerating.
-    if ((sc.PLS() == PORTSC::U0) && sc.CCS() && !hci_->GetPortState(port_id).link_active) {
+    if ((sc.PLS() == PORTSC::U0) && sc.CCS() && sc.PED() && !sc.PR() &&
+        !hci_->GetPortState(port_id).link_active) {
       if (!hci_->GetPortState(port_id).is_connected) {
         // Spontaneous initialization of USB 3.0 port without going through
         // CSC event. We know this is USB 3.0 since this cannot possibly happen
@@ -338,8 +348,47 @@ fpromise::promise<void, zx_status_t> EventRing::WaitForPortStatusChange(uint8_t 
   fpromise::bridge<TRB*, zx_status_t> bridge;
   auto context = hci_->GetCommandRing()->AllocateContext();
   context->completer = std::move(bridge.completer);
-  hci_->GetPortState(port_id).wait_for_port_status_change_ = std::move(context);
+  PortState& port_state = hci_->GetPortState(port_id);
+  port_state.wait_for_port_status_change_ = std::move(context);
+  SchedulePortStatusChangePoll(port_id, ++port_state.port_status_change_wait_generation, 0);
   return bridge.consumer.promise().discard_value();
+}
+
+void EventRing::SchedulePortStatusChangePoll(uint8_t port_id, uint64_t wait_generation,
+                                             uint32_t attempt) {
+  // Synopsys controllers do not emit a Port Status Change Event TRB for every PORTSC transition
+  // (for example, reset completion after a polled Ring0Bringup() port reset), so poll PORTSC for
+  // a bounded amount of time. After that, keep waiting for a Port Status Change Event TRB.
+  constexpr uint32_t kMaxPortStatusChangePolls = 100;
+  constexpr zx::duration kPortStatusChangePollInterval = zx::msec(10);
+  if (attempt >= kMaxPortStatusChangePolls) {
+    return;
+  }
+
+  ScheduleTask(hci_->Timeout(interrupter_, zx::deadline_after(kPortStatusChangePollInterval))
+                   .and_then([this, port_id, wait_generation,
+                              attempt]() -> fpromise::result<void, zx_status_t> {
+                     PortState& port_state = hci_->GetPortState(port_id);
+                     if (!hci_->Running() || !port_state.wait_for_port_status_change_ ||
+                         port_state.port_status_change_wait_generation != wait_generation) {
+                       // The wait was completed, replaced or aborted.
+                       return fpromise::ok();
+                     }
+
+                     auto sc = PORTSC::Get(cap_length_, port_id).ReadFrom(mmio_);
+                     if (!sc.CCS() || sc.PRC() || sc.WRC() || sc.PEC() || sc.OCC() ||
+                         (!sc.PR() && sc.PED() && (sc.PLS() == PORTSC::U0))) {
+                       auto wait = std::move(port_state.wait_for_port_status_change_);
+                       if (wait->completer.has_value()) {
+                         wait->completer->complete_ok(nullptr);
+                       }
+                       return fpromise::ok();
+                     }
+
+                     SchedulePortStatusChangePoll(port_id, wait_generation, attempt + 1);
+                     return fpromise::ok();
+                   })
+                   .box());
 }
 
 void EventRing::CallPortStatusChanged(fbl::RefPtr<PortStatusChangeState> state) {
@@ -513,6 +562,12 @@ void EventRing::AdvanceErdp() {
       action = WRAP_AROUND;
       buffers_it_->new_segment = false;
     } else if (unlikely(next_buffer->new_segment)) {
+      if (!hci_->HasCoherentState()) {
+        InvalidatePageCache(next_buffer->buf->virt(),
+                            ZX_CACHE_FLUSH_INVALIDATE | ZX_CACHE_FLUSH_DATA);
+        InvalidatePageCache(buffers_.front().buf->virt(),
+                            ZX_CACHE_FLUSH_INVALIDATE | ZX_CACHE_FLUSH_DATA);
+      }
       // New segment. Check for valid Completion Code to see if HW is using the new segment yet.
       if (static_cast<CommandCompletionEvent*>(next_buffer->buf->virt())->CompletionCode() ==
           CommandCompletionEvent::Invalid) {
@@ -573,6 +628,10 @@ void EventRing::AdvanceErdp() {
 std::optional<Control> EventRing::CurrentErdp() {
   if (reevaluate_) {
     return std::nullopt;
+  }
+  if (!hci_->HasCoherentState()) {
+    // Only the TRB at the dequeue pointer is about to be read.
+    zx_cache_flush(erdp_virt_, sizeof(TRB), ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
   }
 
   {
@@ -1000,10 +1059,12 @@ void EventRing::Usb2DeviceAttach(uint16_t port_id) {
   PORTSC::Get(cap_length_, port_id)
       .FromValue(0)
       .set_CCS(sc.CCS())
+      .set_PLC(sc.PLC())
       .set_PortSpeed(sc.PortSpeed())
       .set_PIC(sc.PIC())
       .set_PLS(sc.PLS())
       .set_PP(sc.PP())
+      .set_CSC(sc.CSC())
       .set_PR(1)
       .WriteTo(mmio_);
 }
