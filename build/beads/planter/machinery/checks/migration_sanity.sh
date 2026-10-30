@@ -6127,60 +6127,40 @@ for pkg_dir in sorted(candidate_dirs):
             })
 
 
-# Discover candidate planter executables, prioritizing ancestor and non-`diff`
-# planter daemon processes in /proc/<pid>/exe (resolving to their stable on-disk
-# readlink path unless unlinked after a rebuild) before PATH fallbacks so
-# transient sibling `planter diff` subprocesses cannot shadow the daemon or
-# cause FileNotFoundError races.
-def discover_planter_bins():
+# Locate the active planter executable on disk without scanning unrelated /proc
+# processes or world-writable directories.
+def find_planter_bin():
     import shutil
 
-    bins = []
-    seen_inodes = set()
+    def valid_exe(path):
+        return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
 
-    def is_transient_diff_proc(pid_val):
-        try:
-            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
-                parts = cf.read().split(b"\x00")
-                return len(parts) > 1 and parts[1] == b"diff"
-        except OSError:
-            return True
-
-    def add_bin(path):
-        if not path:
-            return
-        resolved = path
-        if path.startswith("/proc/"):
-            try:
-                target = os.readlink(path)
-            except OSError:
-                return
-            if (
-                not target.endswith(" (deleted)")
-                and os.path.isfile(target)
-                and os.access(target, os.X_OK)
-            ):
-                resolved = target
-        if not os.access(resolved, os.X_OK):
-            return
-        try:
-            st = os.stat(resolved)
-        except OSError:
-            return
-        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
-        if key not in seen_inodes:
-            seen_inodes.add(key)
-            bins.append(resolved)
+    env_bin = os.environ.get("PLANTER_BIN", "").strip()
+    if env_bin:
+        resolved = env_bin if "/" in env_bin else (shutil.which(env_bin) or "")
+        if valid_exe(resolved):
+            return os.path.abspath(resolved)
 
     pid = os.getppid()
-    visited_pids = set()
-    while pid > 1 and pid not in visited_pids:
-        visited_pids.add(pid)
+    visited = set()
+    while pid > 1 and pid not in visited:
+        visited.add(pid)
         next_pid = 0
         try:
             with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
-                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
-                    add_bin(f"/proc/{pid}/exe")
+                is_planter = cf.read().strip() == "planter"
+            if is_planter:
+                try:
+                    with open(f"/proc/{pid}/cmdline", "rb") as cmdf:
+                        parts = [p for p in cmdf.read().split(b"\x00") if p]
+                    if b"diff" not in parts[1:]:
+                        target = os.readlink(f"/proc/{pid}/exe")
+                        if target.endswith(" (deleted)"):
+                            target = target[: -len(" (deleted)")]
+                        if valid_exe(target):
+                            return target
+                except OSError:
+                    pass
             with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
                 for line in sf:
                     if line.startswith("PPid:"):
@@ -6190,34 +6170,17 @@ def discover_planter_bins():
             break
         pid = next_pid
 
-    try:
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit() or int(entry) in visited_pids:
-                continue
-            try:
-                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
-                    if cf.read().strip() != "planter":
-                        continue
-            except OSError:
-                continue
-            if is_transient_diff_proc(entry):
-                continue
-            add_bin(f"/proc/{entry}/exe")
-    except OSError:
-        pass
+    which_bin = shutil.which("planter")
+    if valid_exe(which_bin):
+        return os.path.abspath(which_bin)
 
-    add_bin(shutil.which("planter"))
-    add_bin(os.path.expanduser("~/.local/bin/planter"))
-    return bins
-
-
-def find_planter_bins():
-    return discover_planter_bins()
-
-
-def find_planter_bin():
-    bins = discover_planter_bins()
-    return bins[0] if bins else None
+    for cand in (
+        os.path.expanduser("~/.local/bin/planter"),
+        os.path.expanduser("~/go/bin/planter"),
+    ):
+        if valid_exe(cand):
+            return cand
+    return None
 
 
 # Emit INFO compatibility entries for excluded global/umbrella BUILD.bazel directories
@@ -6276,9 +6239,11 @@ def record_excluded_dir_gn_unmodified_info(extra_dirs):
                 "remediation": rem,
             })
     if existing_extra_dirs and os.environ.get("PLANTER_SKIP_DIFF_COVERAGE") != "1":
-        diff_env = dict(os.environ)
-        diff_env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
-        for planter_bin in discover_planter_bins():
+        planter_bin = find_planter_bin()
+        if planter_bin:
+            diff_env = dict(os.environ)
+            diff_env["PLANTER_BIN"] = planter_bin
+            diff_env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
             try:
                 res = subprocess.run(
                     [
@@ -6297,7 +6262,9 @@ def record_excluded_dir_gn_unmodified_info(extra_dirs):
                     text=True,
                     timeout=30,
                 )
-                diff_items = json.loads(res.stdout) if res.stdout.strip().startswith("[") else []
+                raw_out = res.stdout
+                start, end = raw_out.find("["), raw_out.rfind("]")
+                diff_items = json.loads(raw_out[start : end + 1]) if (start >= 0 and end > start) else []
                 for df in diff_items:
                     if not isinstance(df, dict):
                         continue
@@ -7162,30 +7129,31 @@ def record_preexisting_collateral_diff_info():
                     "Collateral package touched only for test_suite/visibility; BUILD.gn is not migrated in this CL.",
                 )
 
-    planter_bins = discover_planter_bins()
-    if not planter_bins:
+    planter_bin = find_planter_bin()
+    if not planter_bin:
         return
     env = dict(os.environ)
+    env["PLANTER_BIN"] = planter_bin
     env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
     diff_list = []
-    for planter_bin in planter_bins:
-        try:
-            out = subprocess.run(
-                [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-                cwd=workdir,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=15,
-            ).stdout.strip()
-            if out.startswith("["):
-                parsed = json.loads(out)
-                if isinstance(parsed, list):
-                    diff_list.extend(parsed)
-        except Exception:
-            continue
+    try:
+        out = subprocess.run(
+            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+            cwd=workdir,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=15,
+        ).stdout
+        start, end = out.find("["), out.rfind("]")
+        if start >= 0 and end > start:
+            parsed = json.loads(out[start : end + 1])
+            if isinstance(parsed, list):
+                diff_list = parsed
+    except Exception:
+        return
 
     by_file = {}
     for info in pkg_infos.values():
@@ -7917,6 +7885,337 @@ def check_helper_components_and_dead_selects(dirs):
 
 
 check_helper_components_and_dead_selects(candidate_dirs)
+
+
+# Collect local target references and external shard package dependencies in a BUILD.bazel AST.
+def _collect_bazel_component_graph(tree, pkg_dir):
+    top_vars = {}
+    calls = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    top_vars[tgt.id] = node.value
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+            call = node.value
+            if not isinstance(call.func, ast.Name):
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            name_node = kws.get("name")
+            if isinstance(name_node, ast.Constant) and isinstance(name_node.value, str):
+                calls.append((call.func.id, name_node.value, node.lineno, kws))
+
+    def _expr_strings(expr, seen=()):
+        vals = []
+        if expr is None:
+            return vals
+        for sub in ast.walk(expr):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                vals.append(sub.value)
+            elif isinstance(sub, ast.Name) and sub.id in top_vars and sub.id not in seen:
+                vals.extend(_expr_strings(top_vars[sub.id], seen + (sub.id,)))
+        return vals
+
+    def _local_target(raw):
+        lbl = raw.strip()
+        if lbl.startswith(":"):
+            return lbl[1:] or None
+        if pkg_dir and lbl.startswith(f"//{pkg_dir}:"):
+            return lbl.split(":", 1)[1] or None
+        if pkg_dir and lbl == f"//{pkg_dir}":
+            return os.path.basename(pkg_dir) or None
+        return None
+
+    referrers_of = {}
+    direct_deps_of = {}
+    includes_pkgs_of = {}
+    for _, tname, _, kws in calls:
+        local_refs = set()
+        for arg_name, expr in kws.items():
+            if arg_name == "name":
+                continue
+            for val in _expr_strings(expr):
+                loc = _local_target(val)
+                if loc and loc != tname:
+                    local_refs.add(loc)
+                    referrers_of.setdefault(loc, set()).add(tname)
+                if arg_name == "includes" and val.startswith("//"):
+                    inc_pkg = val[2:].split(":", 1)[0].strip("/")
+                    if inc_pkg and inc_pkg != pkg_dir:
+                        includes_pkgs_of.setdefault(tname, set()).add(inc_pkg)
+        direct_deps_of[tname] = local_refs
+    return calls, referrers_of, direct_deps_of, includes_pkgs_of
+
+
+# Trace local targets consumed by pre-sentinel GN test packages vs non-test packages.
+def _collect_pre_sentinel_pkg_consumers(gn_pre_targets, pkg_dir):
+    test_pkg_tmpls = {
+        "fuchsia_test_package",
+        "fuchsia_unittest_package",
+        "fuchsia_test",
+        "ctf_fuchsia_package",
+        "bootfs_test",
+    }
+    non_test_pkg_tmpls = {
+        "fuchsia_package",
+        "fuchsia_package_with_single_component",
+    }
+
+    def _gn_body_local_refs(raw_body):
+        cleaned = re.sub(r"#[^\n]*", "", raw_body)
+        refs = set()
+        for match in re.finditer(r'"([^"$\s(]+)"', cleaned):
+            tok = match.group(1)
+            if tok.startswith(":"):
+                refs.add(tok[1:])
+            elif pkg_dir and tok.startswith(f"//{pkg_dir}:"):
+                refs.add(tok.split(":", 1)[1])
+            elif pkg_dir and tok == f"//{pkg_dir}":
+                refs.add(os.path.basename(pkg_dir))
+        return refs
+
+    edges = {name: _gn_body_local_refs(body) for name, (_, body) in gn_pre_targets.items()}
+    test_pkg_by_ref = {}
+    non_test_refs = set()
+    for pname, (ptmpl, pbody) in sorted(gn_pre_targets.items()):
+        pclean = re.sub(r"#[^\n]*", "", pbody)
+        is_test_pkg = ptmpl in test_pkg_tmpls or (
+            ptmpl in non_test_pkg_tmpls and bool(re.search(r"\btestonly\s*=\s*true\b", pclean))
+        )
+        is_non_test_pkg = ptmpl in non_test_pkg_tmpls and not is_test_pkg
+        if not (is_test_pkg or is_non_test_pkg):
+            continue
+        queue = list(edges.get(pname, ()))
+        visited = {pname}
+        while queue:
+            cur = queue.pop(0)
+            if not cur or cur in visited:
+                continue
+            visited.add(cur)
+            if is_test_pkg:
+                if pname not in test_pkg_by_ref.setdefault(cur, []):
+                    test_pkg_by_ref[cur].append(pname)
+            else:
+                non_test_refs.add(cur)
+            if cur in edges:
+                queue.extend(edges[cur])
+    return test_pkg_by_ref, non_test_refs
+
+
+# Check whether any build file outside `pkg_dir` (tracked or in `all_dirs`) references `tname`.
+def _has_external_component_callers(pkg_dir, tname, all_dirs):
+    if not pkg_dir:
+        return False
+    needles = [
+        f'"//{pkg_dir}:{tname}"',
+        f'"//{pkg_dir}:{tname}(',
+        f"'//{pkg_dir}:{tname}'",
+    ]
+    if tname == os.path.basename(pkg_dir):
+        needles.extend([f'"//{pkg_dir}"', f'"//{pkg_dir}(', f"'//{pkg_dir}'"])
+    ext_args = []
+    for needle in needles:
+        ext_args.extend(["-e", needle])
+    hits = git_lines(
+        ["grep", "-l", "--fixed-strings"]
+        + ext_args
+        + ["--", "*BUILD.gn", "*.gni", "*BUILD.bazel", "*BUILD"]
+    )
+    if any(os.path.dirname(path) != pkg_dir for path in hits):
+        return True
+    for other_dir in all_dirs:
+        if not other_dir or other_dir == pkg_dir:
+            continue
+        for fname in ("BUILD.bazel", "BUILD", "BUILD.gn"):
+            cand = os.path.join(workdir, other_dir, fname)
+            if not os.path.isfile(cand):
+                continue
+            try:
+                content = open(cand, encoding="utf-8").read()
+            except Exception:
+                continue
+            if any(needle in content for needle in needles):
+                return True
+    return False
+
+
+# Identify modified out-of-directory BUILD.bazel files touched for `.shard.cml` visibility.
+def _modified_external_shard_files(shard_pkgs):
+    if not shard_pkgs:
+        return []
+    changed = set(git_lines(["diff", "--name-only", change_base]))
+    changed.update(git_lines(["diff", "--name-only", "--cached"]))
+    return sorted(
+        f"{sp}/BUILD.bazel" for sp in shard_pkgs if f"{sp}/BUILD.bazel" in changed
+    )
+
+
+# Reject migrating package-private fx_component wrappers whose sole consumer is a
+# GN-blocked test package kept above ## BAZEL2GN SENTINEL in the same BUILD.gn.
+def check_premature_gn_test_package_components(dirs):
+    target_re = re.compile(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
+    for pkg_dir in sorted(dirs):
+        bazel_rel = os.path.join(pkg_dir, "BUILD.bazel")
+        gn_rel = os.path.join(pkg_dir, "BUILD.gn")
+        bazel_abs = os.path.join(workdir, bazel_rel)
+        gn_abs = os.path.join(workdir, gn_rel)
+        if not (os.path.isfile(bazel_abs) and os.path.isfile(gn_abs)):
+            continue
+        # Skip if the GN test package itself has no blockers and is already flagged for migration.
+        if any(
+            f.get("category") == "gn_test_package_not_migrated" and f.get("file") == gn_rel
+            for f in findings
+        ):
+            continue
+        try:
+            bazel_text = open(bazel_abs, encoding="utf-8").read()
+            gn_full = open(gn_abs, encoding="utf-8").read()
+            tree = ast.parse(bazel_text, filename=bazel_rel)
+        except Exception:
+            continue
+        if "## BAZEL2GN SENTINEL" not in gn_full:
+            continue
+        lines = bazel_text.splitlines()
+        try:
+            base_bz = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{change_base}:{bazel_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            base_bz = ""
+        base_names = set(re.findall(r'^\s*name\s*=\s*"([^"]+)"', base_bz, re.M))
+        try:
+            base_gn = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{change_base}:{gn_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            base_gn = ""
+        base_gn_tmpls = {m.group(2): m.group(1) for m in target_re.finditer(base_gn)}
+
+        gn_pre = gn_hand_written_text(gn_full)
+        gn_pre_targets = {}
+        for match in target_re.finditer(gn_pre):
+            body_end = find_closing_brace(gn_pre, match.end() - 1)
+            gn_pre_targets[match.group(2)] = (match.group(1), gn_pre[match.end() : body_end])
+        if not gn_pre_targets:
+            continue
+
+        test_pkg_by_ref, non_test_refs = _collect_pre_sentinel_pkg_consumers(
+            gn_pre_targets, pkg_dir
+        )
+        if not test_pkg_by_ref:
+            continue
+
+        calls, referrers_of, direct_deps_of, includes_pkgs_of = _collect_bazel_component_graph(
+            tree, pkg_dir
+        )
+        rules_by_name = {tname: rule for rule, tname, _, _ in calls}
+        covered = set()
+
+        for rule, name, lineno, _ in calls:
+            if (
+                rule != "fx_component"
+                or name in base_names
+                or has_skip_comment(lines, lineno)
+                or referrers_of.get(name)
+                or name in non_test_refs
+                or name not in test_pkg_by_ref
+                or _has_external_component_callers(pkg_dir, name, dirs)
+            ):
+                continue
+            companions = sorted(
+                dep
+                for dep in direct_deps_of.get(name, set())
+                if referrers_of.get(dep) == {name}
+                and rules_by_name.get(dep) in ("fx_component_manifest", "fx_packaged_binary")
+            )
+            covered.add(name)
+            covered.update(companions)
+            shard_pkgs = set(includes_pkgs_of.get(name, set()))
+            for comp_dep in companions:
+                shard_pkgs.update(includes_pkgs_of.get(comp_dep, set()))
+            ext_shard_files = _modified_external_shard_files(shard_pkgs)
+            gn_pkgs = ", ".join(f"`{p}`" for p in test_pkg_by_ref[name])
+            orig_tmpl = base_gn_tmpls.get(name, "fuchsia_test_component")
+            drop_list = ", ".join(f"`:{t}`" for t in [name] + companions)
+            shard_note = (
+                " Revert out-of-directory shard visibility edits ("
+                + ", ".join(f"'{p}'" for p in ext_shard_files)
+                + ") if nothing else in this change needs them, keeping the CL self-contained."
+                if ext_shard_files
+                else ""
+            )
+            msg = (
+                f"Package-private `fx_component(name = \"{name}\")` in '{bazel_rel}' has no "
+                "Bazel consumers and no external callers; its sole consumer is the GN-only test "
+                f"package {gn_pkgs} kept above `## BAZEL2GN SENTINEL` in '{gn_rel}'. Migrating "
+                "unused Bazel component/manifest wrappers for a GN-blocked test package adds "
+                "unreferenced Bazel targets and unnecessary cross-package `.shard.cml` "
+                "visibility dependencies."
+            )
+            rem = (
+                f"Keep `{orig_tmpl}(\"{name}\")` hand-written above `## BAZEL2GN SENTINEL` in "
+                f"'{gn_rel}' alongside {gn_pkgs} (depending on the `bazel2gn`-generated test "
+                f"binary below the sentinel), remove {drop_list} from '{bazel_rel}' while "
+                "keeping convertible binary/library/test-binary targets (such as `rustc_test`) "
+                f"in '{bazel_rel}', and re-run `fx bazel2gn -d {pkg_dir}`."
+                + shard_note
+            )
+            findings.append({
+                "source": "migration_sanity",
+                "category": "premature_gn_test_package_component",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": lineno,
+                "message": msg,
+                "remediation": rem,
+            })
+
+        for rule, name, lineno, _ in calls:
+            if (
+                rule not in ("fx_component_manifest", "fx_packaged_binary")
+                or name in covered
+                or name in base_names
+                or has_skip_comment(lines, lineno)
+                or referrers_of.get(name)
+                or name in non_test_refs
+                or _has_external_component_callers(pkg_dir, name, dirs)
+            ):
+                continue
+            ext_shard_files = _modified_external_shard_files(includes_pkgs_of.get(name, set()))
+            shard_note = (
+                " Revert out-of-directory shard visibility edits ("
+                + ", ".join(f"'{p}'" for p in ext_shard_files)
+                + ") if nothing else in this change needs them."
+                if ext_shard_files
+                else ""
+            )
+            msg = (
+                f"Unreferenced `{rule}(name = \"{name}\")` in '{bazel_rel}' has no Bazel "
+                f"consumers and no external callers while '{gn_rel}' keeps its test package "
+                "hand-written above `## BAZEL2GN SENTINEL`."
+            )
+            rem = (
+                f"Remove `{rule}(name = \"{name}\")` from '{bazel_rel}' (keep the component "
+                f"manifest on the pre-sentinel GN test component in '{gn_rel}') and re-run "
+                f"`fx bazel2gn -d {pkg_dir}`."
+                + shard_note
+            )
+            findings.append({
+                "source": "migration_sanity",
+                "category": "premature_gn_test_package_component",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": lineno,
+                "message": msg,
+                "remediation": rem,
+            })
+
+
+check_premature_gn_test_package_components(candidate_dirs)
 
 
 # Blank GN `#` comments outside double-quoted strings while preserving offsets and newlines.

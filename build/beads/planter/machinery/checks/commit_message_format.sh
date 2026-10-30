@@ -983,6 +983,8 @@ if head and base_rev and head != base_rev:
         for idx, raw in enumerate(msg_lines[2:], start=3):
             if len(raw) <= 72:
                 continue
+            if raw.strip() == "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings":
+                continue
             if re.search(r"https?://[^\s]+", raw):
                 continue
             if exempt_footer_re.match(raw.strip()) or footer_line_re.match(raw.strip()):

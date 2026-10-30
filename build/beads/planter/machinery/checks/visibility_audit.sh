@@ -1965,58 +1965,40 @@ def record_intentional_visibility_narrowing(
     })
 
 
-# Discover candidate planter executables for diffengine alignment queries.
-# Prioritizes ancestor and non-`diff` planter daemon processes in /proc/<pid>/exe
-# (resolving to their stable on-disk readlink path unless unlinked after a rebuild)
-# before PATH fallbacks so transient sibling `planter diff` subprocesses cannot
-# shadow the daemon or cause FileNotFoundError races.
-def find_planter_bins():
-    bins = []
-    seen = set()
+# Locate the active planter executable on disk without scanning unrelated /proc
+# processes or world-writable directories.
+def find_planter_bin():
+    import shutil
 
-    def is_transient_diff_proc(pid_val):
-        try:
-            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
-                parts = cf.read().split(b"\x00")
-                return len(parts) > 1 and parts[1] == b"diff"
-        except OSError:
-            return True
+    def valid_exe(path):
+        return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
 
-    def add_candidate(path):
-        if not path:
-            return
-        resolved = path
-        if path.startswith("/proc/"):
-            try:
-                target = os.readlink(path)
-            except OSError:
-                return
-            if (
-                not target.endswith(" (deleted)")
-                and os.path.isfile(target)
-                and os.access(target, os.X_OK)
-            ):
-                resolved = target
-        if not os.access(resolved, os.X_OK):
-            return
-        try:
-            st = os.stat(resolved)
-        except OSError:
-            return
-        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
-        if key not in seen:
-            seen.add(key)
-            bins.append(resolved)
+    env_bin = os.environ.get("PLANTER_BIN", "").strip()
+    if env_bin:
+        resolved = env_bin if "/" in env_bin else (shutil.which(env_bin) or "")
+        if valid_exe(resolved):
+            return os.path.abspath(resolved)
 
     pid = os.getppid()
-    visited_pids = set()
-    while pid > 1 and pid not in visited_pids:
-        visited_pids.add(pid)
+    visited = set()
+    while pid > 1 and pid not in visited:
+        visited.add(pid)
         next_pid = 0
         try:
             with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
-                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
-                    add_candidate(f"/proc/{pid}/exe")
+                is_planter = cf.read().strip() == "planter"
+            if is_planter:
+                try:
+                    with open(f"/proc/{pid}/cmdline", "rb") as cmdf:
+                        parts = [p for p in cmdf.read().split(b"\x00") if p]
+                    if b"diff" not in parts[1:]:
+                        target = os.readlink(f"/proc/{pid}/exe")
+                        if target.endswith(" (deleted)"):
+                            target = target[: -len(" (deleted)")]
+                        if valid_exe(target):
+                            return target
+                except OSError:
+                    pass
             with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
                 for line in sf:
                     if line.startswith("PPid:"):
@@ -2026,32 +2008,17 @@ def find_planter_bins():
             break
         pid = next_pid
 
-    try:
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit() or int(entry) in visited_pids:
-                continue
-            try:
-                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
-                    if cf.read().strip() != "planter":
-                        continue
-            except OSError:
-                continue
-            if is_transient_diff_proc(entry):
-                continue
-            add_candidate(f"/proc/{entry}/exe")
-    except OSError:
-        pass
+    which_bin = shutil.which("planter")
+    if valid_exe(which_bin):
+        return os.path.abspath(which_bin)
 
-    add_candidate(shutil.which("planter"))
-    cand = os.path.expanduser("~/.local/bin/planter")
-    if os.path.isfile(cand):
-        add_candidate(cand)
-    return bins
-
-
-def find_planter_bin():
-    bins = find_planter_bins()
-    return bins[0] if bins else None
+    for cand in (
+        os.path.expanduser("~/.local/bin/planter"),
+        os.path.expanduser("~/go/bin/planter"),
+    ):
+        if valid_exe(cand):
+            return cand
+    return None
 
 
 # Query planter diff for any additional visibility_narrowed findings on targets that
@@ -2059,30 +2026,31 @@ def find_planter_bin():
 def record_diff_visibility_narrowed_info(clean_targets):
     if not clean_targets or os.environ.get("PLANTER_SKIP_DIFF_COVERAGE") == "1":
         return
-    planter_bins = find_planter_bins()
-    if not planter_bins:
+    planter_bin = find_planter_bin()
+    if not planter_bin:
         return
     env = dict(os.environ)
+    env["PLANTER_BIN"] = planter_bin
     env["PLANTER_SKIP_DIFF_COVERAGE"] = "1"
     diff_list = []
-    for planter_bin in planter_bins:
-        try:
-            out = subprocess.run(
-                [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-                cwd=workdir,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=15,
-            ).stdout.strip()
-            if out.startswith("["):
-                parsed = json.loads(out)
-                if isinstance(parsed, list):
-                    diff_list.extend(parsed)
-        except Exception:
-            continue
+    try:
+        out = subprocess.run(
+            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+            cwd=workdir,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=15,
+        ).stdout
+        start, end = out.find("["), out.rfind("]")
+        if start >= 0 and end > start:
+            parsed = json.loads(out[start : end + 1])
+            if isinstance(parsed, list):
+                diff_list = parsed
+    except Exception:
+        return
 
     seen_keys = {
         (f.get("category"), f.get("file"), f.get("line"), f.get("message"))

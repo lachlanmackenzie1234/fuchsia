@@ -81,10 +81,12 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `tools = [":<n>_packaged_bin"]` to `fx_package` (including `testonly = True` packages bridged in
      `//bundles/assembly/bazel_inputs/<dir>`). Preserve the relative order of targets kept above
      `## BAZEL2GN SENTINEL` in `BUILD.gn`.
-   - **Helper components packaged next to a test** (mocks, fakes, test servers in a test package's
-     `deps`, not `test_components`) are `fx_component(testonly = True)` with `visibility` from
-     `find_rdeps`, never `fx_test_component` (which marks a test root that only
-     `fx_package(test_components)` accepts and bazel2gn never translates). A GN
+   - **Helper components packaged next to a test** (mocks, fakes, test servers in the `deps`, not
+     `test_components`, of a migrated `fx_package`, or shared with external packages) are
+     `fx_component(testonly = True)` with `visibility` from `find_rdeps`, never `fx_test_component`
+     (which marks a test root that only `fx_package(test_components)` accepts and bazel2gn never
+     translates). Keep package-private components of a GN-only test package above
+     `## BAZEL2GN SENTINEL` alongside that GN test package. A GN
      `fuchsia_test_component` without `test_type` is only a `testonly` `fuchsia_component`, so let
      bazel2gn generate it without `# @bazel2gn:skip` or a hand-written copy above the sentinel.
 3. **`fx_package`, `BUILD.gn`, `bazel2gn`, and `//bundles/assembly` bridge cleanup**:

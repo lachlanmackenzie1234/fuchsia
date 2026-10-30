@@ -189,6 +189,8 @@ if commit_msg and head_rev and base_rev and head_rev != base_rev:
             stripped = line.strip()
             if not stripped or trailer_re.match(stripped) or "://" in stripped:
                 continue
+            if stripped == "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings":
+                continue
             if len(line) > 72:
                 findings.append({
                     "source": "confidentiality_check",

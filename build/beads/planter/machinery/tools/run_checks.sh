@@ -851,50 +851,19 @@ def commit_msg_only_since_upload():
         return False
 
 
-# Discover candidate planter executables, prioritizing ancestor and non-`diff`
-# planter daemon processes in /proc/<pid>/exe (resolving to their stable on-disk
-# readlink path unless unlinked after a rebuild) before PATH fallbacks so
-# standalone review_diff runs match the in-memory daemon binary without racing
-# short-lived sibling `planter diff` processes.
-def find_planter_bins():
+# Locate the active planter executable on disk without scanning unrelated /proc
+# processes or world-writable directories.
+def find_planter_bin():
     import shutil
 
-    bins = []
-    seen = set()
+    def valid_exe(path):
+        return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
 
-    def is_transient_diff_proc(pid_val):
-        try:
-            with open(f"/proc/{pid_val}/cmdline", "rb") as cf:
-                parts = cf.read().split(b"\x00")
-                return len(parts) > 1 and parts[1] == b"diff"
-        except OSError:
-            return True
-
-    def add_candidate(exe):
-        if not exe:
-            return
-        resolved = exe
-        if exe.startswith("/proc/"):
-            try:
-                target = os.readlink(exe)
-            except OSError:
-                return
-            if (
-                not target.endswith(" (deleted)")
-                and os.path.isfile(target)
-                and os.access(target, os.X_OK)
-            ):
-                resolved = target
-        if not os.access(resolved, os.X_OK):
-            return
-        try:
-            st = os.stat(resolved)
-        except OSError:
-            return
-        key = (resolved.startswith("/proc/"), st.st_dev, st.st_ino)
-        if key not in seen:
-            seen.add(key)
-            bins.append(resolved)
+    env_bin = os.environ.get("PLANTER_BIN", "").strip()
+    if env_bin:
+        resolved = env_bin if "/" in env_bin else (shutil.which(env_bin) or "")
+        if valid_exe(resolved):
+            return os.path.abspath(resolved)
 
     pid = os.getppid()
     visited = set()
@@ -903,8 +872,19 @@ def find_planter_bins():
         next_pid = 0
         try:
             with open(f"/proc/{pid}/comm", encoding="utf-8") as cf:
-                if cf.read().strip() == "planter" and not is_transient_diff_proc(pid):
-                    add_candidate(f"/proc/{pid}/exe")
+                is_planter = cf.read().strip() == "planter"
+            if is_planter:
+                try:
+                    with open(f"/proc/{pid}/cmdline", "rb") as cmdf:
+                        parts = [p for p in cmdf.read().split(b"\x00") if p]
+                    if b"diff" not in parts[1:]:
+                        target = os.readlink(f"/proc/{pid}/exe")
+                        if target.endswith(" (deleted)"):
+                            target = target[: -len(" (deleted)")]
+                        if valid_exe(target):
+                            return target
+                except OSError:
+                    pass
             with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
                 for line in sf:
                     if line.startswith("PPid:"):
@@ -914,32 +894,17 @@ def find_planter_bins():
             break
         pid = next_pid
 
-    try:
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit() or int(entry) in visited:
-                continue
-            try:
-                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
-                    if cf.read().strip() != "planter":
-                        continue
-            except OSError:
-                continue
-            if is_transient_diff_proc(entry):
-                continue
-            add_candidate(f"/proc/{entry}/exe")
-    except OSError:
-        pass
+    which_bin = shutil.which("planter")
+    if valid_exe(which_bin):
+        return os.path.abspath(which_bin)
 
-    add_candidate(shutil.which("planter"))
-    cand = os.path.expanduser("~/.local/bin/planter")
-    if os.path.isfile(cand):
-        add_candidate(cand)
-    return bins
-
-
-def find_planter_bin():
-    bins = find_planter_bins()
-    return bins[0] if bins else None
+    for cand in (
+        os.path.expanduser("~/.local/bin/planter"),
+        os.path.expanduser("~/go/bin/planter"),
+    ):
+        if valid_exe(cand):
+            return cand
+    return None
 
 
 # Fallback filter for standalone `--only review_diff` runs or mixed missing
@@ -1844,28 +1809,26 @@ def is_benign_review_diff_finding(f):
 
 
 def run_review_diff(existing_findings):
-    planter_bins = find_planter_bins()
-    if not planter_bins or not workdir:
+    planter_bin = find_planter_bin()
+    if not planter_bin or not workdir:
         return None
     env = dict(os.environ)
     env.update(
         {
+            "PLANTER_BIN": planter_bin,
             "PLANTER_WORKDIR": workdir,
             "PLANTER_TARGET_DIRS": " ".join(target_dirs),
             "PLANTER_CHANGE_BASE": change_base,
+            "PLANTER_SKIP_DIFF_COVERAGE": "1",
         }
     )
-    findings, parsed_ok = [], False
-    for planter_bin in planter_bins:
-        out, _, err_text = execute(
-            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
-            workdir,
-            env,
-            "review_diff",
-        )
-        findings, parsed_ok = parse_findings(out.strip())
-        if parsed_ok or err_text is None:
-            break
+    out, _, _ = execute(
+        [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+        workdir,
+        env,
+        "review_diff",
+    )
+    findings, parsed_ok = parse_findings(out.strip())
     if not parsed_ok:
         return []
     downgrade_check_cfg_diff_findings(findings)
