@@ -30,8 +30,8 @@ use netstack3_base::{
 };
 use netstack3_filter::{DynTransportSerializer, DynamicTransportSerializer, FilterIpExt};
 use packet::{
-    BufferMut, InnerPacketBuilder as _, NestablePacketBuilder as _, ParsablePacket as _,
-    ParseBuffer, TruncateDirection, TruncatingSerializer,
+    Buf, BufferMut, InnerPacketBuilder as _, NestablePacketBuilder as _, ParsablePacket as _,
+    ParseBuffer, ShrinkBuffer as _, TruncateDirection, TruncatingSerializer,
 };
 use packet_formats::icmp::ndp::options::{NdpOption, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{
@@ -675,7 +675,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv4, BC> + CounterContext<Icm
         frame_dst: Option<LocalFrameDestination>,
         src_ip: SocketIpAddr<Ipv4Addr>,
         dst_ip: SocketIpAddr<Ipv4Addr>,
-        original_packet: B,
+        mut original_packet: B,
         icmp_error: Icmpv4Error,
         header_len: usize,
         proto: Ipv4Proto,
@@ -697,7 +697,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv4, BC> + CounterContext<Icm
             src_ip,
             dst_ip,
             icmp_error.create_message(),
-            original_packet,
+            Buf::new(original_packet.as_mut(), ..),
             header_len,
             marks,
         );
@@ -714,7 +714,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv6, BC> + CounterContext<Icm
         frame_dst: Option<LocalFrameDestination>,
         src_ip: SocketIpAddr<Ipv6Addr>,
         dst_ip: SocketIpAddr<Ipv6Addr>,
-        original_packet: B,
+        mut original_packet: B,
         error: Icmpv6Error,
         header_len: usize,
         proto: Ipv6Proto,
@@ -736,7 +736,7 @@ impl<BC: IcmpBindingsContext, CC: IcmpSendContext<Ipv6, BC> + CounterContext<Icm
             src_ip,
             dst_ip,
             error.create_message(),
-            original_packet,
+            Buf::new(original_packet.as_mut(), ..),
             error.allow_dst_multicast(),
             marks,
         )
@@ -2333,7 +2333,10 @@ fn receive_icmpv6_error<
     })
 }
 
-fn send_icmpv4_error_message<B, BC, CC>(
+// NB: Use a concrete `Buf<&mut [u8]>` instead of being generic over `B:
+// BufferMut` to avoid extra monomorphization. Care must be taken to avoid
+// monomorphization explosion if we're to move away from the slice form.
+fn send_icmpv4_error_message<BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
@@ -2341,11 +2344,10 @@ fn send_icmpv4_error_message<B, BC, CC>(
     original_src_ip: SocketIpAddr<Ipv4Addr>,
     original_dst_ip: SocketIpAddr<Ipv4Addr>,
     message: Icmpv4ErrorMessage,
-    mut original_packet: B,
+    mut original_packet: Buf<&mut [u8]>,
     header_len: usize,
     marks: &Marks,
 ) where
-    B: BufferMut,
     BC: IcmpBindingsContext,
     CC: IcmpSendContext<Ipv4, BC> + CounterContext<IcmpTxCounters<Ipv4>>,
 {
@@ -2400,7 +2402,10 @@ fn send_icmpv4_error_message<B, BC, CC>(
     }
 }
 
-fn send_icmpv6_error_message<B, BC, CC>(
+// NB: Use a concrete `Buf<&mut [u8]>` instead of being generic over `B:
+// BufferMut` to avoid extra monomorphization. Care must be taken to avoid
+// monomorphization explosion if we're to move away from the slice form.
+fn send_icmpv6_error_message<BC, CC>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device: Option<&CC::DeviceId>,
@@ -2408,11 +2413,10 @@ fn send_icmpv6_error_message<B, BC, CC>(
     original_src_ip: SocketIpAddr<Ipv6Addr>,
     original_dst_ip: SocketIpAddr<Ipv6Addr>,
     message: Icmpv6ErrorMessage,
-    original_packet: B,
+    original_packet: Buf<&mut [u8]>,
     allow_dst_multicast: bool,
     marks: &Marks,
 ) where
-    B: BufferMut,
     BC: IcmpBindingsContext,
     CC: IcmpSendContext<Ipv6, BC> + CounterContext<IcmpTxCounters<Ipv6>>,
 {
