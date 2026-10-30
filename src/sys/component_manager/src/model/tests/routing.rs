@@ -975,6 +975,113 @@ async fn create_child_with_dict() {
     .await;
 }
 
+/// POC: parent-injected event-stream dictionary bypasses scope enforcement.
+///
+///        root
+///       /    \
+///      p     sibling
+///      |
+///   [coll:victim]
+///
+/// - root does NOT offer any event_stream to `p`
+/// - `p` does NOT offer any event_stream to its collection
+/// - `victim` declares `use event_stream "started" from parent`
+/// - `p` satisfies that use by injecting a forged Dictionary via
+///   CreateChildArgs.dictionary whose `event_stream_route_metadata` has
+///   scope_moniker = None (-> ExtendedMoniker::ComponentManager)
+/// - `victim` then receives Started events for `sibling`, a component
+///   completely outside `p`'s realm, with its full moniker and component_url.
+#[fuchsia::test]
+async fn create_child_with_forged_event_stream_dict_bypasses_scope() {
+    use fidl_fuchsia_component_internal as finternal;
+    use runtime_capabilities::{Capability, Data, Dictionary};
+
+    let components = vec![
+        ("root", ComponentDeclBuilder::new().child_default("p").child_default("sibling").build()),
+        (
+            "p",
+            ComponentDeclBuilder::new()
+                .use_(
+                    UseBuilder::protocol()
+                        .source(UseSource::Framework)
+                        .name("fuchsia.component.Realm"),
+                )
+                .collection_default("coll")
+                .build(),
+        ),
+        (
+            "victim",
+            ComponentDeclBuilder::new()
+                .use_(
+                    UseBuilder::event_stream()
+                        .source(UseSource::Parent)
+                        .name("started")
+                        .path("/events/started"),
+                )
+                .build(),
+        ),
+        ("sibling", ComponentDeclBuilder::new().build()),
+    ];
+
+    let test = RoutingTestBuilder::new("root", components).build().await;
+
+    // ---- Forge the event-stream route dictionary (D2) ----
+    // This is exactly what an attacker-controlled `p` could mint via
+    // fuchsia.component.sandbox.CapabilityStore: a Dictionary holding two Data
+    // entries. EventStreamRouteMetadata::default() leaves scope_moniker and
+    // scope unset, which set_up_hooks() interprets as "scope = whole topology".
+    let forged_metadata = finternal::EventStreamRouteMetadata::default();
+    let metadata_bytes = fidl::persist(&forged_metadata).expect("persist metadata");
+
+    let d2 = Dictionary::new();
+    d2.insert(
+        "event_stream_route_metadata".parse().unwrap(),
+        Capability::Data(Data::Bytes(metadata_bytes.into())),
+    );
+    d2.insert(
+        "event_stream_name".parse().unwrap(),
+        Capability::Data(Data::String("started".into())),
+    );
+
+    // ---- Outer dictionary (D1) keyed by victim's use-decl source_name ----
+    // add_dynamic_child wraps Dictionary entries as Router::<Dictionary>::new_ok,
+    // so component_input.capabilities()["started"] becomes an OkRouter(D2).
+    let d1 = Dictionary::new();
+    d1.insert("started".parse().unwrap(), Capability::Dictionary(d2));
+
+    // ---- p creates victim with the forged dictionary ----
+    let (e1, e2) = zx::EventPair::create();
+    test.model.context().remote_capabilities().store(e1, d1).unwrap();
+    test.create_dynamic_child_with_args(
+        &["p"].try_into().unwrap(),
+        "coll",
+        ChildBuilder::new().name("victim"),
+        fcomponent::CreateChildArgs { additional_inputs: Some(e2), ..Default::default() },
+    )
+    .await;
+
+    // ---- Open victim's event stream; this triggers set_up_hooks() ----
+    let namespace_victim =
+        test.bind_and_get_namespace(["p", "coll:victim"].try_into().unwrap()).await;
+    let event_stream =
+        capability_util::connect_to_svc_in_namespace::<fcomponent::EventStreamMarker>(
+            &namespace_victim,
+            &"/events/started".parse().unwrap(),
+        )
+        .await;
+    event_stream.wait_for_ready().await.expect("wait_for_ready");
+
+    // ---- Start `sibling`, which lives at /sibling, OUTSIDE p's realm ----
+    test.start_instance_and_wait_start(&["sibling"].try_into().unwrap())
+        .await
+        .expect("start sibling");
+
+    // victim is unable to receive any events, as the event stream connection is refused by
+    // component manager due to the forged dictionary.
+    let res = event_stream.get_next().await;
+    assert_matches!(res, Err(_));
+}
+
 #[fuchsia::test]
 async fn destroying_instance_kills_framework_service_task() {
     let components = vec![
