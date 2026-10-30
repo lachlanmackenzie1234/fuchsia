@@ -33,7 +33,7 @@ use ::page as kernel_page;
 #[guarded]
 #[repr(C)]
 pub struct VmObjectPhysicalState {
-    #[mutex]
+    #[mutex(flags = ksync::LOCK_FLAGS_NESTABLE)]
     lock: KMutex<RawCriticalMutex>,
 
     // size and base are immutable after initialization.

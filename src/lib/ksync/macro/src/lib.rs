@@ -937,24 +937,35 @@ fn generate_lock_class_registration(
     class_impl_generics: &proc_macro2::TokenStream,
     class_ty_generics: &proc_macro2::TokenStream,
     where_clause: Option<&syn::WhereClause>,
-    reg_init: proc_macro2::TokenStream,
+    flags_expr: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let struct_upper = struct_ident.to_string().to_ascii_uppercase();
     let mu_upper = mu_camel.to_ascii_uppercase();
     let reg_ident = format_ident!("{}_{}_REGISTRATION", struct_upper, mu_upper);
     let string_reg_ident = format_ident!("{}_{}_STRING_REG", struct_upper, mu_upper);
+    let flags_ident = format_ident!("{}_{}_FLAGS", struct_upper, mu_upper);
     let path_name = format!("{}::{}", struct_ident, lock_ident);
 
+    // `flags_expr` never references the struct's generics, so a single scoped `const` can serve
+    // as the source of truth for both the registration and `LockClass::FLAGS`.
     quote! {
-        ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
+        const _: () = {
+            ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
 
-        #[unsafe(link_section = "rust_lock_classes")]
-        #[used]
-        static #reg_ident: ::ksync::LockClassRegistration = #reg_init;
+            const #flags_ident: ::ksync::LockFlags = #flags_expr;
 
-        impl #class_impl_generics ::ksync::LockClass for #class_ident #class_ty_generics #where_clause {
-            const ID: *mut ::core::ffi::c_void = #reg_ident.get();
-        }
+            #[unsafe(link_section = "rust_lock_classes")]
+            #[used]
+            static #reg_ident: ::ksync::LockClassRegistration =
+                ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_ident);
+
+            impl #class_impl_generics ::ksync::LockClass
+                for #class_ident #class_ty_generics #where_clause
+            {
+                const ID: *mut ::core::ffi::c_void = #reg_ident.get();
+                const FLAGS: ::ksync::LockFlags = #flags_ident;
+            }
+        };
     }
 }
 
@@ -1171,7 +1182,14 @@ fn generate_pinned_guard_struct(
 ///
 /// - `#[mutex]` / `#[mutex(flags = ...)]` / `#[mutex(CustomClass)]`: Marks a `KMutex`,
 ///   `KSpinlock`, or `KMonitoredSpinlock` field and generates `lock_<name>()` / `guard_<name>()`
-///   methods. Without `CustomClass`, a lock class is generated and registered with the raw lock's
+///   methods, plus `lock_<name>_policy[_with]()`, `lock_<name>_aliased[_policy[_with]]()`, and
+///   `lock_<name>_multiple[_policy]()` variants for custom lock policies (e.g.
+///   `RawCriticalMutexOrderedPolicy`), aliased locks, and address-ordered multi-lock acquisition
+///   (there is no `lock_<name>_multiple_policy_with()`; see `KMutex::lock_multiple_policy_with`).
+///   (`KMonitoredSpinlock` fields have no `*_with` variants: their `lock_<name>_policy(args)` and
+///   `lock_<name>_aliased_policy(alias, args)` take the policy's arguments directly; `PhantomMutex`
+///   fields only get `lock_<name>()`.)
+///   Without `CustomClass`, a lock class is generated and registered with the raw lock's
 ///   flags plus `flags`; with `CustomClass`, the field uses that existing lock class (whose flags
 ///   are fixed where it is registered, so `flags` cannot be combined with it).
 /// - `#[mutex(untracked)]`: Marks a `KMutex` field whose generated lock class is not registered
@@ -1729,6 +1747,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 quote! {
                     impl #class_impl_generics ::ksync::LockClass for #class_ident #class_ty_generics #where_clause {
                         const ID: *mut ::core::ffi::c_void = ::core::ptr::null_mut();
+                        const FLAGS: ::ksync::LockFlags = ::ksync::LOCK_FLAGS_NONE;
                     }
                 }
             } else {
@@ -1738,11 +1757,6 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     }
                     None => quote! { <#mutex_type>::LOCK_FLAGS },
                 };
-                let string_reg_ident = format_ident!(
-                    "{}_{}_STRING_REG",
-                    struct_ident.to_string().to_ascii_uppercase(),
-                    mu_camel.to_ascii_uppercase()
-                );
                 generate_lock_class_registration(
                     struct_ident,
                     mu_ident,
@@ -1751,7 +1765,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     &class_impl_generics,
                     &class_ty_generics,
                     where_clause,
-                    quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
+                    flags_expr,
                 )
             }
         } else {
@@ -1912,6 +1926,10 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 }
             }
         } else {
+            let lock_policy_with_method_ident =
+                format_ident!("lock_{mu_ident}_policy_with", span = mu_ident.span());
+            let lock_aliased_policy_with_method_ident =
+                format_ident!("lock_{mu_ident}_aliased_policy_with", span = mu_ident.span());
             let return_ty_generics = quote! { <'_, #(#ty_params),*> };
             let mut policy_args = ty_params.clone();
             policy_args.push(quote! { P });
@@ -1930,6 +1948,21 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     pin_init::pin_init!(#guard_ident {
                         parent: self,
                         inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
+                    })
+                }
+                #[inline]
+                #struct_vis fn #lock_policy_with_method_ident<
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
+                >(
+                    &self,
+                    args: P::AcquireArgs,
+                ) -> impl pin_init::PinInit<
+                    #guard_ident #policy_return_ty_generics,
+                    ::core::convert::Infallible,
+                > {
+                    pin_init::pin_init!(#guard_ident {
+                        parent: self,
+                        inner <- ::ksync::KMutexGuard::new_with_args(&self.#mu_ident, args),
                     })
                 }
                 #[inline]
@@ -1960,6 +1993,22 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     ::core::convert::Infallible,
                 > {
                     ::ksync::KMutexAliasedGuard::new(&self.#mu_ident, alias)
+                }
+                #[inline]
+                #struct_vis fn #lock_aliased_policy_with_method_ident<
+                    'a,
+                    AliasClass: ::ksync::LockClass,
+                    M2: ::ksync::RawLock,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
+                >(
+                    &'a self,
+                    alias: &'a ::ksync::KMutex<AliasClass, M2>,
+                    args: P::AcquireArgs,
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexAliasedGuard<'a, #class_type, AliasClass, #mutex_type, M2, P>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexAliasedGuard::new_with_args(&self.#mu_ident, alias, args)
                 }
                 #[inline]
                 #struct_vis fn #lock_multiple_method_ident<'a, const __KSYNC_N: usize>(
@@ -2312,11 +2361,6 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         );
 
         let class_registration_code = if brwlock.custom_class.is_none() {
-            let string_reg_ident = format_ident!(
-                "{}_{}_STRING_REG",
-                struct_ident.to_string().to_ascii_uppercase(),
-                mu_camel.to_ascii_uppercase()
-            );
             let flags_expr = match brwlock.custom_flags.as_ref() {
                 Some(flags) => quote! { (::ksync::RawBrwLockPi::LOCK_FLAGS | (#flags)) },
                 None => quote! { ::ksync::RawBrwLockPi::LOCK_FLAGS },
@@ -2329,7 +2373,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 &class_impl_generics,
                 &class_ty_generics,
                 where_clause,
-                quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
+                flags_expr,
             )
         } else {
             quote! {}
@@ -2942,12 +2986,14 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
             static #reg_ident: ::ksync::LockClassRegistration =
                 ::ksync::LockClassRegistration::with_flags(
                     &#string_reg_ident,
-                    <#raw_lock>::LOCK_FLAGS
-                        | ::ksync::LOCK_FLAGS_SINGLETON_LOCK,
+                    <#name as ::ksync::LockClass>::FLAGS,
                 );
 
             impl ::ksync::LockClass for #name {
                 const ID: *mut ::core::ffi::c_void = #reg_ident.get();
+                const FLAGS: ::ksync::LockFlags =
+                    <#raw_lock>::LOCK_FLAGS
+                        | ::ksync::LOCK_FLAGS_SINGLETON_LOCK;
             }
         };
 
@@ -3159,6 +3205,33 @@ mod tests {
         assert!(!out_explicit.contains("compile_error"), "unexpected error: {out_explicit}");
         assert!(!out_explicit.contains("rust_lock_classes"), "unexpected section: {out_explicit}");
         assert!(out_explicit.contains("null_mut"), "expected null_mut ID: {out_explicit}");
+
+        // Untracked classes report `LOCK_FLAGS_NONE`; tracked classes share one `const` between
+        // the registration and `LockClass::FLAGS`.
+        for out in [&out_storage, &out_explicit] {
+            assert!(out.contains("const FLAGS"), "expected LockClass::FLAGS: {out}");
+            assert!(out.contains("LOCK_FLAGS_NONE"), "expected LOCK_FLAGS_NONE: {out}");
+        }
+        let out_tracked = guarded_impl(quote! {
+            struct TrackedObj {
+                #[mutex(flags = lockdep::LOCK_FLAGS_NESTABLE)]
+                mu: KMutex,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!out_tracked.contains("compile_error"), "unexpected error: {out_tracked}");
+        assert!(out_tracked.contains("rust_lock_classes"), "expected section: {out_tracked}");
+        assert!(
+            out_tracked.contains("const TRACKEDOBJ_MU_FLAGS")
+                && out_tracked.contains("LOCK_FLAGS_NESTABLE")
+                && out_tracked
+                    .contains("const FLAGS : :: ksync :: LockFlags = TRACKEDOBJ_MU_FLAGS")
+                && out_tracked.contains("TRACKEDOBJ_MU_STRING_REG , TRACKEDOBJ_MU_FLAGS")
+                && !out_tracked.contains("LOCK_FLAGS_NONE"),
+            "unexpected output: {out_tracked}"
+        );
     }
 
     #[test]

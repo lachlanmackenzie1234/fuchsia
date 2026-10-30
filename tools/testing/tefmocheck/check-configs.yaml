@@ -352,6 +352,9 @@ failure_mode_checks:
     end_string: "Finished executing 'test_driver_host_restart'"
   - start_string: " lock_dep_dynamic_analysis_tests "
     end_string: " lock_dep_static_analysis_tests "
+  # Intentionally triggers non-fatal lockdep violations.
+  - start_string: "[===KSYNC LOCKDEP EXCEPT BLOCK START===]"
+    end_string: "[===KSYNC LOCKDEP EXCEPT BLOCK END===]"
   - start_string: "RUN   TestKillCriticalProcess"
     end_string: ": TestKillCriticalProcess"
   - start_string: "RUN   TestKernelLockupDetectorCriticalSection"
@@ -382,6 +385,9 @@ failure_mode_checks:
     end_string: "Finished executing 'test_driver_host_restart'"
   - start_string: " lock_dep_dynamic_analysis_tests "
     end_string: " lock_dep_static_analysis_tests "
+  # Intentionally triggers non-fatal lockdep violations.
+  - start_string: "[===KSYNC LOCKDEP EXCEPT BLOCK START===]"
+    end_string: "[===KSYNC LOCKDEP EXCEPT BLOCK END===]"
   - start_string: "RUN   TestKillCriticalProcess"
     end_string: ": TestKillCriticalProcess"
   - start_string: "RUN   TestKernelLockupDetectorCriticalSection"
@@ -412,6 +418,9 @@ failure_mode_checks:
     end_string: "Finished executing 'test_driver_host_restart'"
   - start_string: " lock_dep_dynamic_analysis_tests "
     end_string: " lock_dep_static_analysis_tests "
+  # Intentionally triggers non-fatal lockdep violations.
+  - start_string: "[===KSYNC LOCKDEP EXCEPT BLOCK START===]"
+    end_string: "[===KSYNC LOCKDEP EXCEPT BLOCK END===]"
   - start_string: "RUN   TestKillCriticalProcess"
     end_string: ": TestKillCriticalProcess"
   - start_string: "RUN   TestKernelLockupDetectorCriticalSection"

@@ -356,10 +356,14 @@ ksync::declare_interned_string!(TRAP_MAP_LOCK_STRING_REG, "TrapMap::lock");
 #[unsafe(link_section = "rust_lock_classes")]
 #[used]
 static TRAP_MAP_LOCK_REGISTRATION: ksync::LockClassRegistration =
-    ksync::LockClassRegistration::with_flags(TRAP_MAP_LOCK_STRING_REG, RawSpinlock::LOCK_FLAGS);
+    ksync::LockClassRegistration::with_flags(
+        TRAP_MAP_LOCK_STRING_REG,
+        <TrapMapLockClass as LockClass>::FLAGS,
+    );
 
 impl LockClass for TrapMapLockClass {
     const ID: *mut c_void = TRAP_MAP_LOCK_REGISTRATION.get();
+    const FLAGS: ksync::LockFlags = RawSpinlock::LOCK_FLAGS;
 }
 
 /// Contains all the traps within a guest.

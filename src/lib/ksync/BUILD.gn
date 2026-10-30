@@ -95,6 +95,7 @@ if (is_kernel) {
     sources = [ "tests/kernel.rs" ]
     test_deps = [
       ":ksync",
+      "//src/lib/kprint",
       "//third_party/rust_crates:pin-init",
       "//zircon/kernel/lib/unittest:unittest-rs",
       "//zircon/system/ulib/fbl/rust:fbl",

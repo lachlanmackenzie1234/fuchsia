@@ -28,6 +28,21 @@ pub unsafe trait LockPolicy<L: RawLock> {
     /// State stored in the pinned guard across lock acquisition and release.
     type GuardState: Default;
 
+    /// Whether this policy acquires the lock with an explicit, caller-supplied lockdep order.
+    ///
+    /// # Lockdep validity
+    ///
+    /// This is a lockdep-validity requirement, not a soundness one: violating it degrades lock
+    /// validation (or trips a debug assertion) but cannot cause memory unsafety.
+    ///
+    /// - Such policies require a [`lockdep::LOCK_FLAGS_NESTABLE`] lock class. The `ksync` guards
+    ///   check this at compile time against [`LockClass::FLAGS`](lockdep::LockClass::FLAGS), and
+    ///   `LockdepTracked` additionally has lockdep debug-assert it against the registered class
+    ///   at runtime.
+    /// - They cannot be used with `KMutexGuardMultiple`, which sorts its locks by address but
+    ///   currently acquires each with lockdep order 0 (see its documentation).
+    const EXTERNAL_ORDER: bool = false;
+
     /// Performs any pre-validation setup (such as disabling and saving interrupts) before
     /// lockdep validation runs.
     ///
@@ -56,6 +71,9 @@ pub unsafe trait LockPolicy<L: RawLock> {
     ///    with `Self::GuardState::default()`.
     /// 2. The caller must ensure that `state` remains pinned on the stack and is not dropped or
     ///    moved until the matching [`release`](Self::release) call completes.
+    ///
+    /// See [`EXTERNAL_ORDER`](Self::EXTERNAL_ORDER) for the (non-safety) lockdep requirements of
+    /// externally ordered policies.
     unsafe fn acquire(lock: &L, state: &mut Self::GuardState, args: Self::AcquireArgs);
 
     /// Acquires the raw synchronization lock after [`pre_validate`](Self::pre_validate) and
@@ -82,7 +100,11 @@ pub unsafe trait LockPolicy<L: RawLock> {
     ///
     /// # Safety
     ///
-    /// Same safety requirements as [`acquire`](Self::acquire).
+    /// 1. `state` must reference the exact same pinned stack slot that was initialized by a prior
+    ///    [`acquire`](Self::acquire) call and subsequently released by a matching
+    ///    [`release`](Self::release) call.
+    /// 2. The caller must ensure that `state` remains pinned on the stack and is not dropped or
+    ///    moved until the matching [`release`](Self::release) call completes.
     unsafe fn reacquire(lock: &L, state: &mut Self::GuardState);
 
     /// Re-acquires the raw synchronization lock after [`pre_reacquire`](Self::pre_reacquire) and

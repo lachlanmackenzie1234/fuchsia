@@ -435,6 +435,7 @@ pub struct VmCowPagesLockClass;
 
 impl LockClass for VmCowPagesLockClass {
     const ID: *mut c_void = core::ptr::null_mut();
+    const FLAGS: ksync::LockFlags = RawCriticalMutex::LOCK_FLAGS | ksync::LOCK_FLAGS_NESTABLE;
 }
 
 pub type VmCowPagesLock = KMutex<VmCowPagesLockClass, RawCriticalMutex>;

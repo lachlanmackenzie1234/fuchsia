@@ -76,6 +76,9 @@ pub struct BrwLockPiReadGuard<'a, Class: LockClass> {
 impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
     /// Creates a new stack-pinned validation guard initialization block.
     pub fn new(lock: &'a BrwLockPi<Class>) -> impl PinInit<Self, core::convert::Infallible> {
+        const {
+            lockdep::validate_lock_flags(Class::FLAGS);
+        }
         // SAFETY: The closure correctly initializes all fields of the allocated
         // `BrwLockPiReadGuard` and satisfies all safety requirements of `pin_init_from_closure`.
         unsafe {
@@ -169,6 +172,13 @@ impl<'a, Class: LockClass, P: ExclusiveLockPolicy<RawBrwLockPi>> BrwLockPiWriteG
     where
         P: ExclusiveLockPolicy<RawBrwLockPi, AcquireArgs = ()>,
     {
+        const {
+            lockdep::validate_lock_flags(Class::FLAGS);
+            assert!(
+                !P::EXTERNAL_ORDER || (Class::FLAGS & lockdep::LOCK_FLAGS_NESTABLE) != 0,
+                "Externally ordered lock policies require a nestable lock class"
+            );
+        }
         // SAFETY: The closure correctly initializes all fields of the allocated
         // `BrwLockPiWriteGuard` and satisfies all safety requirements of `pin_init_from_closure`.
         unsafe {
@@ -415,6 +425,7 @@ mod tests {
     struct CustomBrwLockClass;
     impl lockdep::LockClass for CustomBrwLockClass {
         const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+        const FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_NONE;
     }
 
     #[guarded]

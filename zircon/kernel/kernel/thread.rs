@@ -1626,6 +1626,7 @@ pub enum ThreadListLockClass {}
 
 impl ksync::LockClass for ThreadListLockClass {
     const ID: *mut c_void = core::ptr::null_mut();
+    const FLAGS: ksync::LockFlags = ksync::RawSpinlock::LOCK_FLAGS;
 }
 
 impl Thread {

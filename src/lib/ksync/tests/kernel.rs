@@ -22,6 +22,7 @@
 #[unittest::suite]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
+    use kprint::kprintln;
     use pin_init::{pin_data, pin_init, stack_pin_init};
     use unittest::{assert_true, expect_true};
 
@@ -64,6 +65,22 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedCriticalMutexObj {
         #[mutex]
+        mu: ksync::KMutex<ksync::RawCriticalMutex>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
+    struct GuardedNestableCriticalMutexObj {
+        #[mutex(flags = ksync::LOCK_FLAGS_NESTABLE | lockdep::LOCK_FLAGS_RE_ACQUIRE_FATAL)]
+        mu: ksync::KMutex<ksync::RawCriticalMutex>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
+    struct GuardedNonFatalNestableCriticalMutexObj {
+        #[mutex(flags = ksync::LOCK_FLAGS_NESTABLE)]
         mu: ksync::KMutex<ksync::RawCriticalMutex>,
         #[guarded_by(mu)]
         value: u32,
@@ -174,7 +191,72 @@ mod ksync_tests {
         fn cpp_get_test_singleton_critical_mutex_size() -> usize;
         fn cpp_get_test_singleton_critical_mutex_raw_lock_ptr() -> *const core::ffi::c_void;
         fn cpp_get_test_singleton_critical_mutex_raw_lock_size() -> usize;
+
+        fn cpp_ksync_test_lock_validation_enabled() -> bool;
+        fn cpp_ksync_test_lockdep_last_result() -> u8;
     }
+
+    // LINT.IfChange
+    const LOCKDEP_RESULT_SUCCESS: u8 = 0;
+    const LOCKDEP_RESULT_INVALID_NESTING: u8 = 3;
+    // LINT.ThenChange(//zircon/kernel/tests/ksync_tests.cc)
+
+    /// Simulates losing the order across `call_unlocked` by reacquiring at order 0.
+    #[derive(Debug, Default, Clone, Copy)]
+    struct LostOrderPolicy;
+
+    // SAFETY: Every operation delegates to `RawCriticalMutexOrderedPolicy`, which provides mutual
+    // exclusion; only the lockdep order passed on reacquire differs.
+    unsafe impl ksync::LockPolicy<ksync::RawCriticalMutex> for LostOrderPolicy {
+        type AcquireArgs = usize;
+        type GuardState = <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<
+            ksync::RawCriticalMutex,
+        >>::GuardState;
+        const EXTERNAL_ORDER: bool = true;
+
+        unsafe fn acquire(
+            lock: &ksync::RawCriticalMutex,
+            state: &mut Self::GuardState,
+            order: usize,
+        ) {
+            // SAFETY: The caller upholds `LockPolicy::acquire`'s contract, which is identical for
+            // `RawCriticalMutexOrderedPolicy`.
+            unsafe {
+                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(
+                    lock, state, order,
+                );
+            }
+        }
+
+        unsafe fn reacquire(lock: &ksync::RawCriticalMutex, state: &mut Self::GuardState) {
+            // Reset `state` after the preceding `release` so that it satisfies `acquire`'s
+            // precondition of a freshly `Default`-initialized `GuardState` on the same pinned
+            // slot. Deliberately reacquiring at order 0 instead of `state.order` is what this
+            // policy tests; it only affects lockdep validation, not mutual exclusion.
+            *state = Self::GuardState::default();
+            // SAFETY: `state` is freshly `Default`-initialized and remains pinned on the stack
+            // until the matching `release` call per `LockPolicy::reacquire`'s contract.
+            unsafe {
+                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(
+                    lock, state, 0,
+                );
+            }
+        }
+
+        unsafe fn release(lock: &ksync::RawCriticalMutex, state: &mut Self::GuardState) {
+            // SAFETY: The caller upholds `LockPolicy::release`'s contract; `state` came from this
+            // policy's `acquire`/`reacquire`, which produce `RawCriticalMutexOrderedPolicy` state.
+            unsafe {
+                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::release(
+                    lock, state,
+                );
+            }
+        }
+    }
+
+    // SAFETY: `LostOrderPolicy` delegates lock acquisition and release to
+    // `RawCriticalMutexOrderedPolicy`, which guarantees exclusive mutual exclusion.
+    unsafe impl ksync::ExclusiveLockPolicy<ksync::RawCriticalMutex> for LostOrderPolicy {}
 
     /// test Rust KMutex ID
     #[test]
@@ -206,6 +288,165 @@ mod ksync_tests {
                 &obj.mu as *const _ as *const core::ffi::c_void,
                 <GuardedCriticalMutexObjMuClass as ksync::LockClass>::ID,
             ));
+        }
+    }
+
+    /// test ordered RawCriticalMutex acquisition and call_unlocked reacquire
+    #[test]
+    fn critical_mutex_ordered() {
+        stack_pin_init!(let a = pin_init!(GuardedNestableCriticalMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 1.into(),
+        }));
+        stack_pin_init!(let b = pin_init!(GuardedNestableCriticalMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 2.into(),
+        }));
+
+        // Acquire `a` (order 0) then `b` (order 1), and test `call_unlocked` on `b` while holding
+        // `a`.
+        {
+            ksync::lock!(
+                let mut ga = a.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+            );
+            ksync::lock!(
+                let mut gb = b.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+            );
+            let sum = gb.as_mut().call_unlocked(|| *ga.value() + 10);
+            *gb.as_mut().value_mut() = sum;
+            *ga.as_mut().value_mut() = 3;
+        }
+
+        // Acquire in reverse instance order (`b` at order 0, then `a` at order 1).
+        {
+            ksync::lock!(
+                let gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+            );
+            ksync::lock!(
+                let ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+            );
+            expect_true!(*b.guard_mu_from_guard(&gb).value() == 11);
+            expect_true!(*a.guard_mu_from_guard(&ga).value() == 3);
+        }
+
+        // Exercise `lock_<mu>_aliased_policy_with` with `RawCriticalMutexOrderedPolicy`.
+        {
+            type Ordered = ksync::RawCriticalMutexOrderedPolicy;
+            ksync::lock!(let ga = a.lock_mu_aliased_policy_with::<_, _, Ordered>(&a.mu, 0));
+            ksync::lock!(let gb = b.lock_mu_policy_with::<Ordered>(1));
+            let (t1, _t2) = ga.tokens();
+            // SAFETY: `t1` was acquired from `a.mu`.
+            let guarded_a = unsafe { a.guard_mu(t1) };
+            expect_true!(*guarded_a.value() == 3);
+            expect_true!(*gb.value() == 11);
+        }
+    }
+
+    /// test that ordered reacquire in call_unlocked and retrack in call_untracked pass lockdep
+    #[test]
+    fn critical_mutex_ordered_call_unlocked() {
+        // SAFETY: No preconditions.
+        if unsafe { cpp_ksync_test_lock_validation_enabled() } {
+            let last = || {
+                // SAFETY: Runs on a valid kernel thread; reads only the current thread's
+                // `ThreadLockState`.
+                unsafe { cpp_ksync_test_lockdep_last_result() }
+            };
+
+            stack_pin_init!(let a = pin_init!(GuardedNonFatalNestableCriticalMutexObj {
+                mu <- ksync::KMutex::init(),
+                value: 0.into(),
+            }));
+            stack_pin_init!(let b = pin_init!(GuardedNonFatalNestableCriticalMutexObj {
+                mu <- ksync::KMutex::init(),
+                value: 7.into(),
+            }));
+
+            {
+                ksync::lock!(
+                    let ga = a.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                );
+                ksync::lock!(
+                    let mut gb = b.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                );
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+                gb.as_mut().call_unlocked(|| ());
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+                // The lockdep entry (and its order) survives `call_untracked`, so retracking `b`
+                // at order 1 while holding `a` at order 0 validates successfully.
+                let value = gb.as_mut().call_untracked(|token| {
+                    // SAFETY: `token` was acquired from `b.mu`.
+                    *unsafe { b.guard_mu(token) }.value()
+                });
+                expect_true!(value == 7);
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+                expect_true!(*ga.value() == 0);
+            }
+        }
+    }
+
+    /// test that lockdep detects invalid nesting and a lost order on ordered reacquire
+    #[test]
+    fn critical_mutex_ordered_lost_order_detected() {
+        // SAFETY: No preconditions.
+        if unsafe { cpp_ksync_test_lock_validation_enabled() } {
+            struct LockdepExceptBlockGuard;
+            impl Drop for LockdepExceptBlockGuard {
+                fn drop(&mut self) {
+                    kprintln!("[===KSYNC LOCKDEP EXCEPT BLOCK END===]");
+                }
+            }
+            kprintln!("[===KSYNC LOCKDEP EXCEPT BLOCK START===]");
+            let _except_block = LockdepExceptBlockGuard;
+
+            let last = || {
+                // SAFETY: Runs on a valid kernel thread; reads only the current thread's
+                // `ThreadLockState`.
+                unsafe { cpp_ksync_test_lockdep_last_result() }
+            };
+
+            stack_pin_init!(let a = pin_init!(GuardedNonFatalNestableCriticalMutexObj {
+                mu <- ksync::KMutex::init(),
+                value: 0.into(),
+            }));
+            stack_pin_init!(let b = pin_init!(GuardedNonFatalNestableCriticalMutexObj {
+                mu <- ksync::KMutex::init(),
+                value: 0.into(),
+            }));
+
+            // Equal orders: the second acquisition is not strictly above the first.
+            {
+                ksync::lock!(
+                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                );
+                ksync::lock!(
+                    let _gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                );
+                expect_true!(last() == LOCKDEP_RESULT_INVALID_NESTING);
+            }
+
+            // Descending orders (`a` at 1, then `b` at 0), as in the C++ lockdep tests.
+            {
+                ksync::lock!(
+                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                );
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+                ksync::lock!(
+                    let _gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                );
+                expect_true!(last() == LOCKDEP_RESULT_INVALID_NESTING);
+            }
+
+            // Reacquiring at order 0 instead of the saved order 1 inside `call_unlocked`.
+            {
+                ksync::lock!(
+                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                );
+                ksync::lock!(let mut gb = b.mu.lock_policy_with::<LostOrderPolicy>(1));
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+                gb.as_mut().call_unlocked(|| ());
+                expect_true!(last() == LOCKDEP_RESULT_INVALID_NESTING);
+            }
         }
     }
 

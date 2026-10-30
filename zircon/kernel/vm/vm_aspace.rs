@@ -76,6 +76,7 @@ pub struct VmAspaceLockClass;
 
 impl LockClass for VmAspaceLockClass {
     const ID: *mut c_void = core::ptr::null_mut();
+    const FLAGS: ksync::LockFlags = RawCriticalMutex::LOCK_FLAGS;
 }
 
 /// Conceptually the `region_lock` represents the authority to manipulate the portions of the
@@ -90,6 +91,7 @@ pub struct VmAspaceRegionLockClass;
 
 impl LockClass for VmAspaceRegionLockClass {
     const ID: *mut c_void = core::ptr::null_mut();
+    const FLAGS: ksync::LockFlags = RawCriticalMutex::LOCK_FLAGS;
 }
 
 pub type VmAspaceMutex = KMutex<VmAspaceLockClass, RawCriticalMutex>;

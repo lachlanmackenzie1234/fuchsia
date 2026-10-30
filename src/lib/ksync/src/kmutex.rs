@@ -226,6 +226,13 @@ impl<'a, Class: LockClass, M: RawLock, P: ExclusiveLockPolicy<M>> KMutexGuard<'a
         mutex: &'a KMutex<Class, M>,
         args: P::AcquireArgs,
     ) -> impl PinInit<Self, core::convert::Infallible> {
+        const {
+            lockdep::validate_lock_flags(Class::FLAGS);
+            assert!(
+                !P::EXTERNAL_ORDER || (Class::FLAGS & lockdep::LOCK_FLAGS_NESTABLE) != 0,
+                "Externally ordered lock policies require a nestable lock class"
+            );
+        }
         // SAFETY: The closure correctly initializes all fields of the allocated `KMutexGuard`
         // and satisfies all safety requirements of `pin_init_from_closure`.
         unsafe {
@@ -358,6 +365,19 @@ impl<'a, Class: LockClass, M: RawLock, P: ExclusiveLockPolicy<M>> Drop
 /// Locks are automatically sorted in-place by ascending memory address before acquisition to
 /// preserve the intra-class ordering invariant and prevent AB/BA deadlocks, matching C++
 /// `lockdep::GuardMultiple`.
+///
+/// Unlike `GuardMultiple`, which passes each lock's address to lockdep as its order, every lock
+/// is currently acquired with lockdep order 0, so lockdep does not validate the address ordering
+/// itself and, for `N > 1`, a tracked lock class must be `LOCK_FLAGS_MULTI_ACQUIRE` for the
+/// second acquisition not to be reported as an invalid re-acquisition. This is not checked at
+/// compile time because untracked classes (and `N <= 1`) are unaffected.
+///
+/// TODO: Pass the physical lock address as the lockdep order like C++ `GuardMultiple`, which
+/// removes the `LOCK_FLAGS_MULTI_ACQUIRE` requirement and lets lockdep validate the ordering.
+///
+/// Nestable lock classes and externally ordered policies are rejected at compile time. The check
+/// is against [`LockClass::FLAGS`], i.e. the member's flags as well as the raw lock type's, where
+/// C++ `GuardMultiple` only inspects the lock type's flags.
 #[repr(C)]
 #[pin_data(PinnedDrop)]
 pub struct KMutexGuardMultiple<
@@ -410,6 +430,16 @@ impl<'a, const N: usize, Class: LockClass, M: RawLock, P: ExclusiveLockPolicy<M>
         mut locks: [&'a KMutex<Class, M>; N],
         args: P::AcquireArgs,
     ) -> impl PinInit<Self, core::convert::Infallible> {
+        const {
+            lockdep::validate_lock_flags(Class::FLAGS);
+            // Prevent passing nestable locks to `KMutexGuardMultiple` to avoid inconsistency
+            // due to mixing external ordering and address ordering.
+            assert!(
+                (Class::FLAGS & lockdep::LOCK_FLAGS_NESTABLE) == 0 && !P::EXTERNAL_ORDER,
+                "Nestable lock classes and externally ordered policies cannot be used with \
+                 KMutexGuardMultiple"
+            );
+        }
         Self::insertion_sort_locks(&mut locks);
         assert!(
             N <= 1 || core::mem::size_of::<M>() > 0,
@@ -654,6 +684,17 @@ impl<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock, P: Excl
         _lock2: &'a KMutex<Class2, M2>,
         args: P::AcquireArgs,
     ) -> impl PinInit<Self, core::convert::Infallible> {
+        const {
+            // `Class1` is checked by the inner `KMutexGuard`. `Class2` aliases the same physical
+            // lock and must mirror its flags, so it is held to the same requirements (stricter
+            // than C++ `Guard(AssertOrderedAliasedLock, ...)`, which only asserts the physical
+            // lock's class).
+            lockdep::validate_lock_flags(Class2::FLAGS);
+            assert!(
+                !P::EXTERNAL_ORDER || (Class2::FLAGS & lockdep::LOCK_FLAGS_NESTABLE) != 0,
+                "Externally ordered lock policies require a nestable lock class"
+            );
+        }
         assert!(
             core::mem::size_of::<M1>() > 0 && core::mem::size_of::<M2>() > 0,
             "AliasedLock requires physical locks with non-zero size"
@@ -753,6 +794,7 @@ mod tests {
     struct MyClass;
     impl LockClass for MyClass {
         const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+        const FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_NONE;
     }
 
     #[pin_init::pin_data]
@@ -1103,6 +1145,61 @@ mod tests {
         assert_eq!(*guard.seek(), 0);
         *guard.as_mut().seek_mut() = 1024;
         assert_eq!(*guard.seek(), 1024);
+    }
+
+    #[guarded]
+    struct NestableGuardedStruct {
+        #[mutex(flags = lockdep::LOCK_FLAGS_NESTABLE)]
+        mu: KMutex,
+        #[guarded_by(mu)]
+        data: u32,
+    }
+
+    /// `OrderedLockPolicy` over the host `RawMutexPolicy`, through the generated
+    /// `lock_<mu>_policy_with` / `lock_<mu>_aliased_policy_with` helpers and
+    /// `KMutex::lock_policy_with`, including `call_unlocked` and `call_untracked`.
+    #[test]
+    fn test_ordered_lock_policy() {
+        type Ordered = crate::OrderedLockPolicy<crate::raw_userspace_mutex::RawMutexPolicy>;
+
+        stack_pin_init!(let a = pin_init!(NestableGuardedStruct {
+            mu <- KMutex::init(),
+            data: 1.into(),
+        }));
+        stack_pin_init!(let b = pin_init!(NestableGuardedStruct {
+            mu <- KMutex::init(),
+            data: 2.into(),
+        }));
+
+        {
+            lock!(let mut ga = a.lock_mu_policy_with::<Ordered>(0));
+            lock!(let mut gb = b.lock_mu_policy_with::<Ordered>(1));
+            assert_eq!(*ga.data(), 1);
+            assert_eq!(*gb.data(), 2);
+
+            let sum = gb.as_mut().call_unlocked(|| *ga.data() + 10);
+            *gb.as_mut().data_mut() = sum;
+
+            let data = gb.as_mut().call_untracked(|token| {
+                // SAFETY: `token` was acquired from `b.mu`.
+                *unsafe { b.guard_mu(token) }.data()
+            });
+            assert_eq!(data, 11);
+            *ga.as_mut().data_mut() = 3;
+        }
+
+        {
+            lock!(let gb = b.mu.lock_policy_with::<Ordered>(0));
+            lock!(let ga = a.lock_mu_aliased_policy_with::<_, _, Ordered>(&a.mu, 1));
+            let (t1, _t2) = ga.tokens();
+            // SAFETY: `t1` was acquired from `a.mu`.
+            let guarded_a = unsafe { a.guard_mu(t1) };
+            assert_eq!(*guarded_a.data(), 3);
+            assert_eq!(*b.guard_mu_from_guard(&gb).data(), 11);
+        }
+
+        lock!(let guard = a.lock_mu());
+        assert_eq!(*guard.data(), 3);
     }
 
     #[test]

@@ -152,10 +152,12 @@ pub use kmutex::{
 };
 pub use lock_token::{ExclusiveLockToken, LockToken, LockTokenRead, LockTokenWrite};
 pub use lockdep::{
-    LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration,
-    LockFlags,
+    LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_NESTABLE, LOCK_FLAGS_NONE, LOCK_FLAGS_SINGLETON_LOCK,
+    LockClass, LockClassRegistration, LockFlags,
 };
-pub use lockdep_tracked::{LockdepTracked, LockdepTrackedGuardState};
+pub use lockdep_tracked::{
+    LockdepTracked, LockdepTrackedGuardState, OrderedGuardState, OrderedLockPolicy,
+};
 pub use phantom_mutex::PhantomMutex;
 pub use raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 pub use singleton::SingletonMutex;
@@ -179,7 +181,10 @@ pub use raw_kernel_brwlock::{
     RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,
 };
 #[cfg(feature = "kernel")]
-pub use raw_kernel_mutex::{RawCriticalMutex, RawCriticalMutexPolicy, RawMutex, RawMutexStorage};
+pub use raw_kernel_mutex::{
+    RawCriticalMutex, RawCriticalMutexOrderedPolicy, RawCriticalMutexPolicy, RawMutex,
+    RawMutexStorage,
+};
 #[cfg(all(not(feature = "kernel"), test))]
 pub use raw_userspace_brwlock::{
     RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,

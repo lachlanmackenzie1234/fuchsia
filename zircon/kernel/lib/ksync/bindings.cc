@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 #include <stddef.h>
+#include <stdint.h>
+#include <zircon/assert.h>
 
 #include <new>
 
@@ -129,7 +131,7 @@ void cpp_brwlock_pi_release_read(BrwLockPi* lock);
 void cpp_brwlock_pi_acquire_write(BrwLockPi* lock);
 void cpp_brwlock_pi_release_write(BrwLockPi* lock);
 void cpp_lock_dep_acquire(void* lock, const void* class_id, void* entry_storage,
-                          lockdep::LockFlags flags);
+                          lockdep::LockFlags flags, uintptr_t order, bool assert_nestable);
 void cpp_lock_dep_release(void* entry_storage, lockdep::LockFlags flags);
 void cpp_lock_validate_release(void* entry_storage, lockdep::LockFlags flags);
 void cpp_lock_validate_acquire(void* entry_storage, lockdep::LockFlags flags);
@@ -248,14 +250,22 @@ FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_write(BrwLockPi* lock) TA_NO_THREA
 }
 
 FFI_ALWAYS_INLINE void cpp_lock_dep_acquire(void* lock, const void* class_id, void* entry_storage,
-                                            lockdep::LockFlags flags) {
+                                            lockdep::LockFlags flags, uintptr_t order,
+                                            bool assert_nestable) {
 #if WITH_LOCK_DEP
   if constexpr (lockdep::kLockValidationEnabled) {
     if (entry_storage != nullptr) {
       LockValidationGuard guard;
       auto* entry = new (entry_storage)
-          lockdep::AcquiredLockEntry(lock, reinterpret_cast<lockdep::LockClassId>(class_id), 0);
+          lockdep::AcquiredLockEntry(lock, reinterpret_cast<lockdep::LockClassId>(class_id), order);
       if (class_id != nullptr) {
+        // `assert_nestable` is set by an ordered acquisition (Rust `OrderedLockPolicy`) and
+        // mirrors the C++ `Guard(AssertOrderedLock, ...)` constructor. It is deliberately
+        // independent of `order` so that a non-nestable class may still be acquired with a
+        // nonzero order (e.g. an address-ordered multi-acquisition, see the TODO on Rust
+        // `KMutexGuardMultiple`).
+        ZX_DEBUG_ASSERT(!assert_nestable ||
+                        lockdep::ValidatorLockClassState::IsNestable(entry->id()));
         lockdep::ThreadLockState::Get(flags)->Acquire(entry);
       }
     }

@@ -540,6 +540,7 @@ pub enum SchedulerQueueLockClass {}
 
 impl ksync::LockClass for SchedulerQueueLockClass {
     const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    const FLAGS: ksync::LockFlags = ksync::RawMonitoredSpinlock::LOCK_FLAGS;
 }
 
 #[allow(improper_ctypes)]

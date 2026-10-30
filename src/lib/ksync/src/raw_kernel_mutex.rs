@@ -238,6 +238,22 @@ pub type RawMutex = LockdepTracked<RawMutexStorage>;
 /// Lockdep-tracked kernel critical mutex matching the Zircon C++ `Lock<CriticalMutex>` layout.
 pub type RawCriticalMutex = LockdepTracked<RawMutexStorage, RawCriticalMutexPolicy>;
 
+/// Lock acquisition policy for [`RawCriticalMutex`] with an explicit external lockdep order.
+///
+/// The mutex's lock class must be registered with
+/// [`LOCK_FLAGS_NESTABLE`](crate::LOCK_FLAGS_NESTABLE), which is checked at compile time. The
+/// order is preserved across `call_unlocked` so that the re-acquisition is validated at the same
+/// position in the nesting.
+///
+/// Unlike the C++ `lockdep::Guard`, which only allows unordered acquisition of a nestable lock
+/// through a type-erased `Lock<CriticalMutex>*`, a `KMutex` with a nestable lock class may also be
+/// acquired without an order through its default policy, which records order `0`. See
+/// [`LOCK_FLAGS_NESTABLE`](crate::LOCK_FLAGS_NESTABLE) for the validation consequences of mixing
+/// unordered and ordered acquisitions of one class: do not hold an unordered guard across a
+/// nonzero ordered acquisition of the same lock class unless that instance genuinely occupies
+/// order `0` in the class's ordering.
+pub type RawCriticalMutexOrderedPolicy = crate::OrderedLockPolicy<RawCriticalMutexPolicy>;
+
 const _: () = {
     const HAS_NAME_STORAGE: bool =
         cfg!(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"));
