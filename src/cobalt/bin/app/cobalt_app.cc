@@ -197,20 +197,17 @@ std::unique_ptr<KeyFetcher> CobaltApp::ConfigureKeyRotation(
     return nullptr;
   }
 
-  // TODO(https://fxbug.dev/539564173): Remove static_cast<TargetPipeline*> after
-  // https://fxrev.dev/1887274 rolls into //third_party/cobalt.
-  auto* pipeline = static_cast<TargetPipeline*>(target_pipeline);
   std::unique_ptr<util::DynamicEncryptedMessageMaker> shuffler_maker =
-      CreateInitialDynamicMaker(pipeline->shuffler_encryption_key(),
+      CreateInitialDynamicMaker(target_pipeline->shuffler_encryption_key(),
                                 &util::EncryptedMessageMaker::MakeForEnvelopes, encryption_clock);
   std::unique_ptr<util::DynamicEncryptedMessageMaker> analyzer_maker = CreateInitialDynamicMaker(
-      pipeline->analyzer_encryption_key(), &util::EncryptedMessageMaker::MakeForObservations,
+      target_pipeline->analyzer_encryption_key(), &util::EncryptedMessageMaker::MakeForObservations,
       encryption_clock);
 
   auto* shuffler_maker_ptr = shuffler_maker.get();
   auto* analyzer_maker_ptr = analyzer_maker.get();
-  pipeline->SetShufflerEncryptedMessageMaker(std::move(shuffler_maker));
-  pipeline->SetAnalyzerEncryptedMessageMaker(std::move(analyzer_maker));
+  target_pipeline->SetShufflerEncryptedMessageMaker(std::move(shuffler_maker));
+  target_pipeline->SetAnalyzerEncryptedMessageMaker(std::move(analyzer_maker));
 
   auto update_inspect = [diagnostics, shuffler_maker_ptr, analyzer_maker_ptr](
                             KeyFetchStatus status, uint32_t consecutive_failures,
