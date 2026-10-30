@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "realm_proxy",
+    testonly = True,
+    srcs = [
+        "src/error.rs",
+        "src/lib.rs",
+        "src/service.rs",
+    ],
+    edition = "2024",
+    # TODO(https://fxbug.dev/543568916): rustc_library.bzl defaults lint_config to
+    # clippy_warn_production even when testonly = True, whereas GN skips it.
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
