@@ -2525,11 +2525,11 @@ group("toml-1.1.8+spec-1.1.0") {
 }
 
 group("toml_edit") {
-  public_deps = [ ":toml_edit-v0_24_0+spec-1_1_0" ]
+  public_deps = [ ":toml_edit-v0_25_17+spec-1_1_0" ]
 }
 
-group("toml_edit-0.24.0+spec-1.1.0") {
-  public_deps = [ ":toml_edit-v0_24_0+spec-1_1_0" ]
+group("toml_edit-0.25.17+spec-1.1.0") {
+  public_deps = [ ":toml_edit-v0_25_17+spec-1_1_0" ]
 }
 
 group("tower-service") {
@@ -23468,42 +23468,6 @@ rustc_library("toml-v1_1_8+spec-1_1_0") {
   applicable_licenses = [ ":toml-v1_1_8+spec-1_1_0.license" ]
 }
 
-license("toml_datetime-v0_7_5+spec-1_1_0.license") {
-  public_package_name = "toml_datetime"
-  license_files = [
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/LICENSE-MIT",
-  ]
-}
-
-rustc_library("toml_datetime-v0_7_5+spec-1_1_0") {
-  crate_name = "toml_datetime"
-  source_root = "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0/src/lib.rs"
-  output_name = "toml_datetime-e9f113904943c48"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":serde_core-v1_0_229" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=e9f113904943c48",
-    "-Cextra-filename=-e9f113904943c48",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":toml_datetime-v0_7_5+spec-1_1_0.license" ]
-}
-
 license("toml_datetime-v1_1_2+spec-1_1_0.license") {
   public_package_name = "toml_datetime"
   license_files = [
@@ -23531,6 +23495,7 @@ rustc_library("toml_datetime-v1_1_2+spec-1_1_0") {
     "-Cmetadata=afa0318e23941242",
     "-Cextra-filename=-afa0318e23941242",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
   ]
@@ -23540,37 +23505,37 @@ rustc_library("toml_datetime-v1_1_2+spec-1_1_0") {
   applicable_licenses = [ ":toml_datetime-v1_1_2+spec-1_1_0.license" ]
 }
 
-license("toml_edit-v0_24_0+spec-1_1_0.license") {
+license("toml_edit-v0_25_17+spec-1_1_0.license") {
   public_package_name = "toml_edit"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_edit-0.25.17-spec-1.1.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_edit-0.25.17-spec-1.1.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_edit-v0_24_0+spec-1_1_0") {
+rustc_library("toml_edit-v0_25_17+spec-1_1_0") {
   crate_name = "toml_edit"
   source_root =
-      "//third_party/rust_crates/vendor/toml_edit-0.24.0-spec-1.1.0/src/lib.rs"
-  output_name = "toml_edit-6b4c7a47d2295c16"
-  edition = "2021"
+      "//third_party/rust_crates/vendor/toml_edit-0.25.17-spec-1.1.0/src/lib.rs"
+  output_name = "toml_edit-c268a0e36421795c"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":indexmap-v2_14_2" ]
-  deps += [ ":toml_datetime-v0_7_5+spec-1_1_0" ]
+  deps += [ ":toml_datetime-v1_1_2+spec-1_1_0" ]
   deps += [ ":toml_parser-v1_1_5+spec-1_1_0" ]
   deps += [ ":toml_writer-v1_1_3+spec-1_1_0" ]
-  deps += [ ":winnow-v0_7_15" ]
+  deps += [ ":winnow-v1_0_4" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6b4c7a47d2295c16",
-    "-Cextra-filename=-6b4c7a47d2295c16",
+    "-Cmetadata=c268a0e36421795c",
+    "-Cextra-filename=-c268a0e36421795c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"display\"",
     "--cfg=feature=\"parse\"",
@@ -23578,7 +23543,7 @@ rustc_library("toml_edit-v0_24_0+spec-1_1_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_edit-v0_24_0+spec-1_1_0.license" ]
+  applicable_licenses = [ ":toml_edit-v0_25_17+spec-1_1_0.license" ]
 }
 
 license("toml_parser-v1_1_5+spec-1_1_0.license") {
@@ -25884,40 +25849,6 @@ rustc_library("windows-sys-v0_61_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-license("winnow-v0_7_15.license") {
-  public_package_name = "winnow"
-  license_files =
-      [ "//third_party/rust_crates/vendor/winnow-0.7.15/LICENSE-MIT" ]
-}
-
-rustc_library("winnow-v0_7_15") {
-  crate_name = "winnow"
-  source_root = "//third_party/rust_crates/vendor/winnow-0.7.15/src/lib.rs"
-  output_name = "winnow-8f644637d0545950"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":memchr-v2_8_3" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=8f644637d0545950",
-    "-Cextra-filename=-8f644637d0545950",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":winnow-v0_7_15.license" ]
 }
 
 license("winnow-v1_0_4.license") {

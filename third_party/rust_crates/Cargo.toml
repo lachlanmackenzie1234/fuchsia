@@ -257,7 +257,7 @@ textwrap = { version = "0.16.4", default-features = false }
 thiserror = "2.0.21"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 toml = "1.1.8"
-toml_edit = "0.24.0"
+toml_edit = "0.25.17+spec-1.1.0"
 tower-service = "0.3"
 tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes", "log"] }
 tracing-mutex = { version = "0.3.3", features = ["experimental", "lockapi", "parkinglot"] }
