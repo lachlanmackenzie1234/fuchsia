@@ -1031,7 +1031,9 @@ TEST_F(UsbAudioTest, LargeTransferSizeOob) {
 
   while (!done.load()) {
     driver_test_.RunInEnvironmentTypeContext([](TestEnvironment<FakeDevice>& env) {
-      env.fake_dev.fake_endpoint(1).RequestComplete(ZX_OK, 100000);
+      if (env.fake_dev.fake_endpoint(1).pending_request_count() > 0) {
+        env.fake_dev.fake_endpoint(1).RequestComplete(ZX_OK, 100000);
+      }
     });
     zx::nanosleep(zx::deadline_after(zx::msec(10)));
   }
