@@ -72,7 +72,7 @@
 //!
 //! # Formatting macros
 //!
-//! The indoc crate exports five additional macros to substitute conveniently
+//! The indoc crate exports six additional macros to substitute conveniently
 //! for the standard library's formatting macros:
 //!
 //! - `formatdoc!($fmt, ...)`&ensp;&mdash;&ensp;equivalent to `format!(indoc!($fmt), ...)`
@@ -80,6 +80,7 @@
 //! - `eprintdoc!($fmt, ...)`&ensp;&mdash;&ensp;equivalent to `eprint!(indoc!($fmt), ...)`
 //! - `writedoc!($dest, $fmt, ...)`&ensp;&mdash;&ensp;equivalent to `write!($dest, indoc!($fmt), ...)`
 //! - `concatdoc!(...)`&ensp;&mdash;&ensp;equivalent to `concat!(...)` with each string literal wrapped in `indoc!`
+//! - `panicdoc!($fmt, ...)`&ensp;&mdash;&ensp;equivalent to `panic!(indoc!($fmt), ...)`
 //!
 //! ```
 //! # macro_rules! env {
@@ -121,10 +122,9 @@
 //!    the first line.
 //! 4. Remove the computed number of spaces from the beginning of each line.
 
-#![doc(html_root_url = "https://docs.rs/indoc/2.0.7")]
+#![doc(html_root_url = "https://docs.rs/indoc/2.0.8")]
 #![allow(
     clippy::derive_partial_eq_without_eq,
-    clippy::from_iter_instead_of_collect,
     clippy::module_name_repetitions,
     clippy::needless_doctest_main,
     clippy::needless_pass_by_value,
@@ -152,6 +152,7 @@ enum Macro {
     Eprint,
     Write,
     Concat,
+    Panic,
 }
 
 /// Unindent and produce `&'static str` or `&'static [u8]`.
@@ -332,6 +333,30 @@ pub fn concatdoc(input: TokenStream) -> TokenStream {
     expand(input, Macro::Concat)
 }
 
+/// Unindent and call `panic!`.
+///
+/// Accepts a string literal followed by formatting arguments, as in [`std::panic!`].
+///
+/// # Example
+///
+/// ```should_panic
+/// # use indoc::panicdoc;
+/// #
+/// panicdoc! {"
+///     Unexpected output from `{command}`:
+///     ```
+///     {output}
+///     ```
+///     ",
+///     command = "rustfmt",
+///     output = "formatting failed",
+/// }
+/// ```
+#[proc_macro]
+pub fn panicdoc(input: TokenStream) -> TokenStream {
+    expand(input, Macro::Panic)
+}
+
 fn expand(input: TokenStream, mode: Macro) -> TokenStream {
     match try_expand(input, mode) {
         Ok(tokens) => tokens,
@@ -343,7 +368,7 @@ fn try_expand(input: TokenStream, mode: Macro) -> Result<TokenStream> {
     let mut input = input.into_iter().peekable();
 
     let prefix = match mode {
-        Macro::Indoc | Macro::Format | Macro::Print | Macro::Eprint => None,
+        Macro::Indoc | Macro::Format | Macro::Print | Macro::Eprint | Macro::Panic => None,
         Macro::Write => {
             let require_comma = true;
             let mut expr = expr::parse(&mut input, require_comma)?;
@@ -373,6 +398,7 @@ fn try_expand(input: TokenStream, mode: Macro) -> Result<TokenStream> {
         Macro::Eprint => "eprint",
         Macro::Write => "write",
         Macro::Concat => unreachable!(),
+        Macro::Panic => "panic",
     };
 
     // #macro_name! { #unindented_lit #args }
@@ -459,7 +485,7 @@ fn lit_indoc(token: TokenTree, mode: Macro, preserve_empty_first_line: bool) -> 
     } {
         match mode {
             Macro::Indoc => {}
-            Macro::Format | Macro::Print | Macro::Eprint | Macro::Write => {
+            Macro::Format | Macro::Print | Macro::Eprint | Macro::Write | Macro::Panic => {
                 return Err(Error::new(
                     span,
                     format!("{restricted_kind} are not supported in formatting macros"),

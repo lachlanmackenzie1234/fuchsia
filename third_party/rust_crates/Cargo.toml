@@ -353,7 +353,7 @@ crossterm = { version = "0.29.0", default-features = false, features = ["events"
 fuse3 = { version = "0.9.0", features = ["tokio-runtime", "unprivileged"] }
 home = "0.5.12"
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "rustls-native-certs", "ring", "tls12"] }
-indoc = "2.0.7"
+indoc = "2.0.8"
 loom = { version = "0.7.2", features = ["checkpoint", "futures"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit mio dependency when it can be
 # pulled in automatically by tokio

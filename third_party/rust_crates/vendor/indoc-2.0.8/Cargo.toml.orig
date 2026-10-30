@@ -1,6 +1,6 @@
 [package]
 name = "indoc"
-version = "2.0.7"
+version = "2.0.8"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 categories = ["rust-patterns", "text-processing", "no-std", "no-std::no-alloc"]
 description = "Indented document literals"
@@ -10,7 +10,7 @@ exclude = ["build.rs"]
 keywords = ["heredoc", "nowdoc", "multiline", "string", "literal"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dtolnay/indoc"
-rust-version = "1.60"
+rust-version = "1.71"
 
 [lib]
 proc-macro = true

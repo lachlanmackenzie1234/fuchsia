@@ -1039,13 +1039,13 @@ group("indexmap-2.14.2") {
 
 if (!(current_os == "fuchsia")) {
   group("indoc") {
-    public_deps = [ ":indoc-v2_0_7($host_toolchain)" ]
+    public_deps = [ ":indoc-v2_0_8($host_toolchain)" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("indoc-2.0.7") {
-    public_deps = [ ":indoc-v2_0_7" ]
+  group("indoc-2.0.8") {
+    public_deps = [ ":indoc-v2_0_8" ]
   }
 }
 
@@ -12255,18 +12255,18 @@ rustc_library("indexmap-v2_14_2") {
   applicable_licenses = [ ":indexmap-v2_14_2.license" ]
 }
 
-license("indoc-v2_0_7.license") {
+license("indoc-v2_0_8.license") {
   public_package_name = "indoc"
   license_files = [
-    "//third_party/rust_crates/vendor/indoc-2.0.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/indoc-2.0.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/indoc-2.0.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/indoc-2.0.8/LICENSE-MIT",
   ]
 }
 
-rustc_macro("indoc-v2_0_7") {
+rustc_macro("indoc-v2_0_8") {
   crate_name = "indoc"
-  source_root = "//third_party/rust_crates/vendor/indoc-2.0.7/src/lib.rs"
-  output_name = "indoc-e217b73406b2077d"
+  source_root = "//third_party/rust_crates/vendor/indoc-2.0.8/src/lib.rs"
+  output_name = "indoc-3a7fc34785bebe70"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -12278,13 +12278,13 @@ rustc_macro("indoc-v2_0_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e217b73406b2077d",
-    "-Cextra-filename=-e217b73406b2077d",
+    "-Cmetadata=3a7fc34785bebe70",
+    "-Cextra-filename=-3a7fc34785bebe70",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":indoc-v2_0_7.license" ]
+  applicable_licenses = [ ":indoc-v2_0_8.license" ]
 }
 
 license("inotify-v0_11_5.license") {

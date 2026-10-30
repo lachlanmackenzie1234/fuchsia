@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.71"
 name = "indoc"
-version = "2.0.7"
+version = "2.0.8"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 build = false
 exclude = ["build.rs"]
@@ -72,6 +72,10 @@ path = "tests/test_formatdoc.rs"
 [[test]]
 name = "test_indoc"
 path = "tests/test_indoc.rs"
+
+[[test]]
+name = "test_panicdoc"
+path = "tests/test_panicdoc.rs"
 
 [[test]]
 name = "test_unindent"
