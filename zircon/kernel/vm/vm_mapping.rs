@@ -1289,10 +1289,36 @@ impl VmMapping {
         token: &LockToken<'_, VmAspaceLockClass>,
         va: usize,
     ) -> FlagsRange {
-        let rest_protection_ranges = self.rest_protection_ranges_locked(token);
+        self.flags_range_at_addr(
+            self.rest_protection_ranges_locked(token),
+            || self.first_region_arch_mmu_flags_locked(token),
+            va,
+        )
+    }
+
+    #[inline]
+    fn flags_range_at_addr_locked_object(
+        &self,
+        token: &LockToken<'_, VmObjectLockClass>,
+        va: usize,
+    ) -> FlagsRange {
+        self.flags_range_at_addr(
+            self.rest_protection_ranges_locked_object(token),
+            || self.first_region_arch_mmu_flags_locked_object(token),
+            va,
+        )
+    }
+
+    #[inline(always)]
+    fn flags_range_at_addr(
+        &self,
+        rest_protection_ranges: &ProtectionRanges,
+        first_region_arch_mmu_flags: impl Fn() -> ArchMmuFlags,
+        va: usize,
+    ) -> FlagsRange {
         if rest_protection_ranges.is_empty() {
             return FlagsRange {
-                mmu_flags: self.first_region_arch_mmu_flags_locked(token),
+                mmu_flags: first_region_arch_mmu_flags(),
                 region_top: self.base().0.wrapping_add(self.size()) as u64,
             };
         }
@@ -1310,7 +1336,7 @@ impl VmMapping {
         unsafe { it.prev() };
         let flags = match it.get() {
             Some((_, flags)) => flags,
-            None => self.first_region_arch_mmu_flags_locked(token),
+            None => first_region_arch_mmu_flags(),
         };
         FlagsRange { mmu_flags: flags, region_top: top as u64 }
     }
