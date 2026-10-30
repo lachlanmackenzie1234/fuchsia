@@ -292,7 +292,7 @@ class Context:
 
     def connect_device_proxy(
         self, moniker: str, capability_name: str
-    ) -> "Channel":
+    ) -> Channel:
         """Connects to a device proxy.
 
         Args:
@@ -313,7 +313,7 @@ class Context:
             )
         )
 
-    def connect_remote_control_proxy(self) -> "Channel":
+    def connect_remote_control_proxy(self) -> Channel:
         """Connects to the remote control proxy.
 
         Returns:
@@ -328,7 +328,7 @@ class Context:
             )
         )
 
-    def channel_create(self) -> tuple["Channel", "Channel"]:
+    def channel_create(self) -> tuple[Channel, Channel]:
         """Method for creating a pair of channels.
 
         The returned channels are connected bidirectionally.
@@ -344,7 +344,7 @@ class Context:
         )
         return (Channel(left), Channel(right))
 
-    def event_create_pair(self) -> tuple["Event", "Event"]:
+    def event_create_pair(self) -> tuple[Event, Event]:
         """Method for creating a pair of events.
 
         The returned event objects are connected bidirectionally.
@@ -359,7 +359,7 @@ class Context:
         )
         return (Event(left), Event(right))
 
-    def event_create(self) -> "Event":
+    def event_create(self) -> Event:
         """Method for creating a single event.
 
         Returns:
@@ -375,7 +375,7 @@ class Context:
 
     def socket_create(
         self, options: int | None = None
-    ) -> tuple["Socket", "Socket"]:
+    ) -> tuple[Socket, Socket]:
         """Method for creating a pair of sockets.
 
         The returned sockets are connected bidirectionally.
