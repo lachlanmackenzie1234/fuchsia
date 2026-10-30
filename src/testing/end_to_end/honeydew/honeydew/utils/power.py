@@ -40,7 +40,7 @@ class SagSuspendStats:
     fail_count: int
     total_time_in_suspend: timedelta
 
-    def __sub__(self, other: "SagSuspendStats") -> SagSuspendStats:
+    def __sub__(self, other: SagSuspendStats) -> SagSuspendStats:
         return SagSuspendStats(
             success_count=self.success_count - other.success_count,
             fail_count=self.fail_count - other.fail_count,

@@ -152,7 +152,7 @@ class TestCases:
         """Called after each test case."""
 
     @classmethod
-    def inject_test_cases(cls, mobly_test: "AsyncBaseTestClass") -> None:
+    def inject_test_cases(cls, mobly_test: AsyncBaseTestClass) -> None:
         tc_instance = cls()
         tc_instance._mobly_test = mobly_test
         for attr_name, method in inspect.getmembers(cls, callable):

@@ -566,7 +566,7 @@ class AccessPointConfig:
     @classmethod
     def generate(
         cls,
-        radios: list["RadioConfig"] | None = None,
+        radios: list[RadioConfig] | None = None,
     ) -> AccessPointConfig:
         """Creates an AccessPointConfig containing the specified radio configurations.
 

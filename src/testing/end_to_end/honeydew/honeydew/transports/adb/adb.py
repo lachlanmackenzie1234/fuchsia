@@ -281,7 +281,7 @@ class _AdbRootContextManager(
 
     def __init__(
         self,
-        adb_transport: "Adb",
+        adb_transport: Adb,
         timeout: float | None = None,
         attempts: int | None = None,
     ) -> None:
