@@ -3588,6 +3588,58 @@ Node::HealthCheckRecord Node::HealthCheckRecord::FromError(
   return record;
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+const char* Node::HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level) {
+  // NOLINTNEXTLINE(readability-trivial-switch)
+  switch (level) {
+    case fuchsia_driver_framework::HealthCheckRequest::kPing:
+      return "PING";
+    case fuchsia_driver_framework::HealthCheckRequest::kFast:
+      return "FAST";
+    case fuchsia_driver_framework::HealthCheckRequest::kDeep:
+      return "DEEP";
+  }
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+const char* Node::HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError error) {
+  // NOLINTNEXTLINE(readability-trivial-switch)
+  switch (error) {
+    case fuchsia_driver_framework::HealthCheckError::kTimeout:
+      return "TIMEOUT";
+    case fuchsia_driver_framework::HealthCheckError::kInternalError:
+      return "INTERNAL_ERROR";
+    case fuchsia_driver_framework::HealthCheckError::kNotSupported:
+      return "NOT_SUPPORTED";
+    case fuchsia_driver_framework::HealthCheckError::kInvalidState:
+      return "INVALID_STATE";
+    case fuchsia_driver_framework::HealthCheckError::kUnavailable:
+      return "UNAVAILABLE";
+    case fuchsia_driver_framework::HealthCheckError::kCommunicationError:
+      return "COMMUNICATION_ERROR";
+    case fuchsia_driver_framework::HealthCheckError::kNotFound:
+      return "NOT_FOUND";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+const char* Node::HealthStatusString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
+  if (!status.has_value()) {
+    return "UNKNOWN";
+  }
+  // NOLINTNEXTLINE(readability-trivial-switch)
+  switch (*status) {
+    case fuchsia_driver_framework::HealthStatus::kOk:
+      return "OK";
+    case fuchsia_driver_framework::HealthStatus::kDegraded:
+      return "DEGRADED";
+    case fuchsia_driver_framework::HealthStatus::kUnhealthy:
+      return "UNHEALTHY";
+  }
+}
+
 void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
   // (a) A result that carries no health information never hides one that does.
   if (!record.is_informative()) {

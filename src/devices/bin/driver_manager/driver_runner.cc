@@ -280,54 +280,6 @@ zx_koid_t GetKoid(const zx::event& handle) {
   return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
 }
 
-// Returns the Inspect "level" string for the check that produced a record.
-const char* HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level) {
-  switch (level) {
-    case fuchsia_driver_framework::HealthCheckRequest::kPing:
-      return "PING";
-    case fuchsia_driver_framework::HealthCheckRequest::kFast:
-      return "FAST";
-    case fuchsia_driver_framework::HealthCheckRequest::kDeep:
-      return "DEEP";
-  }
-}
-
-// Returns the Inspect "error" string for a failed health check record.
-const char* HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError error) {
-  switch (error) {
-    case fuchsia_driver_framework::HealthCheckError::kTimeout:
-      return "TIMEOUT";
-    case fuchsia_driver_framework::HealthCheckError::kInternalError:
-      return "INTERNAL_ERROR";
-    case fuchsia_driver_framework::HealthCheckError::kNotSupported:
-      return "NOT_SUPPORTED";
-    case fuchsia_driver_framework::HealthCheckError::kInvalidState:
-      return "INVALID_STATE";
-    case fuchsia_driver_framework::HealthCheckError::kUnavailable:
-      return "UNAVAILABLE";
-    case fuchsia_driver_framework::HealthCheckError::kCommunicationError:
-      return "COMMUNICATION_ERROR";
-    case fuchsia_driver_framework::HealthCheckError::kNotFound:
-      return "NOT_FOUND";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-const char* HealthStatusString(std::optional<fuchsia_driver_framework::HealthStatus> status) {
-  if (!status.has_value()) {
-    return "UNKNOWN";
-  }
-  switch (*status) {
-    case fuchsia_driver_framework::HealthStatus::kOk:
-      return "OK";
-    case fuchsia_driver_framework::HealthStatus::kDegraded:
-      return "DEGRADED";
-    case fuchsia_driver_framework::HealthStatus::kUnhealthy:
-      return "UNHEALTHY";
-  }
-}
-
 // Records |items| as properties of a new "diagnostics" child of |parent|. The schema matches the
 // driver-side mirrors in the C++ and Rust driver component SDKs.
 void RecordHealthDiagnostics(
@@ -1674,12 +1626,12 @@ fpromise::promise<inspect::Inspector> DriverRunner::InspectHealthChecks() const 
     // check publishes status "ERROR" and names the error separately.
     if (hc.error.has_value()) {
       hc_node.RecordString("status", "ERROR");
-      hc_node.RecordString("error", HealthCheckErrorString(*hc.error));
+      hc_node.RecordString("error", Node::HealthCheckErrorString(*hc.error));
     } else {
-      hc_node.RecordString("status", HealthStatusString(hc.status));
+      hc_node.RecordString("status", Node::HealthStatusString(hc.status));
     }
     if (hc.level.has_value()) {
-      hc_node.RecordString("level", HealthCheckLevelString(*hc.level));
+      hc_node.RecordString("level", Node::HealthCheckLevelString(*hc.level));
     }
     hc_node.RecordInt("last_check_monotonic_ns", hc.timestamp.get());
     hc_node.RecordString("driver_url", node->driver_url());
@@ -1691,7 +1643,7 @@ fpromise::promise<inspect::Inspector> DriverRunner::InspectHealthChecks() const 
       for (const auto& condition : hc.conditions) {
         inspect::Node condition_node =
             conditions_node.CreateChild(condition.reason_code().value_or("UNKNOWN"));
-        condition_node.RecordString("status", HealthStatusString(condition.status()));
+        condition_node.RecordString("status", Node::HealthStatusString(condition.status()));
         if (condition.message().has_value()) {
           condition_node.RecordString("message", condition.message().value());
         }

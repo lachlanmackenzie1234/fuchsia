@@ -656,6 +656,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     std::vector<fuchsia_driver_framework::HealthCondition> conditions;
   };
 
+  // Returns the Inspect / log string for the check level ("PING", "FAST", "DEEP"),
+  // error, or health status.
+  static const char* HealthCheckLevelString(fuchsia_driver_framework::HealthCheckRequest level);
+  static const char* HealthCheckErrorString(fuchsia_driver_framework::HealthCheckError error);
+  static const char* HealthStatusString(
+      std::optional<fuchsia_driver_framework::HealthStatus> status);
+
   // Minimum interval between health probes that driver_manager sends to a node in response to
   // health alerts. Enforced per probe target, not per reporter.
   static constexpr zx::duration kNeighborAlertCooldown = zx::sec(5);
