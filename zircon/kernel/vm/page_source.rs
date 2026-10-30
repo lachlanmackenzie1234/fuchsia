@@ -10,7 +10,7 @@ use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use page_source_bindings as bindings;
 use pin_init::pin_data;
-use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
+use zr::{Opaque, pin_init_ffi, static_assert, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 
 /// The different types of page requests that can exist.
@@ -30,6 +30,7 @@ pub type PageSourceProperties = bindings::PageSourceProperties;
 /// and callers are expected to use the correct method.
 /// TODO(adanis): Implement an enforcement strategy.
 #[pin_data(PinnedDrop)]
+#[repr(transparent)]
 pub struct MultiPageRequest {
     /// The optional inner `PageRequest` can appear in intrusive containers, so this object must be
     /// pinned.
@@ -39,18 +40,13 @@ pub struct MultiPageRequest {
 
 unsafe_pinned_drop_ffi!(MultiPageRequest, bindings::cpp_multi_page_request_destroy);
 
+static_assert!(size_of::<MultiPageRequest>() == size_of::<bindings::MultiPageRequest>());
+static_assert!(align_of::<MultiPageRequest>() == align_of::<bindings::MultiPageRequest>());
+
 impl MultiPageRequest {
     /// Returns an in-place initializer for stack-pinning a `MultiPageRequest`.
     pub fn new() -> impl pin_init::PinInit<Self> {
-        /// # Safety
-        /// `ptr` must point to uninitialized `MultiPageRequest` storage.
-        unsafe fn init_shim(ptr: *mut core::ffi::c_void) {
-            let req_ptr: *mut bindings::MultiPageRequest = ptr.cast();
-            // SAFETY: `ptr` is guaranteed by `pin_init_ffi!` to point to valid `MultiPageRequest`
-            // storage.
-            unsafe { bindings::cpp_multi_page_request_construct(req_ptr) }
-        }
-        pin_init_ffi!(init_shim)
+        pin_init_ffi!(bindings::cpp_multi_page_request_construct)
     }
 
     /// Waits on the currently active page request.
@@ -69,8 +65,7 @@ impl MultiPageRequest {
     ///
     /// Callers must not use the returned raw pointer to move the object in memory.
     pub fn as_raw(self: Pin<&mut Self>) -> *mut bindings::MultiPageRequest {
-        // SAFETY: Obtaining a raw pointer to `opaque` does not move the pinned object.
-        unsafe { self.get_unchecked_mut().opaque.get() }
+        self.opaque.get()
     }
 }
 
@@ -158,13 +153,11 @@ impl PageRequest {
 pub struct PageProviderTag;
 
 // Mirrors the C++ `PageProviderNodeState` layout assertions in `page_source_ffi.cc`.
-zr::static_assert!(
-    core::mem::size_of::<fbl::DoublyLinkedListNode<PageRequest>>()
-        == 2 * core::mem::size_of::<*mut PageRequest>()
+static_assert!(
+    size_of::<fbl::DoublyLinkedListNode<PageRequest>>() == 2 * size_of::<*mut PageRequest>()
 );
-zr::static_assert!(
-    core::mem::align_of::<fbl::DoublyLinkedListNode<PageRequest>>()
-        == core::mem::align_of::<*mut PageRequest>()
+static_assert!(
+    align_of::<fbl::DoublyLinkedListNode<PageRequest>>() == align_of::<*mut PageRequest>()
 );
 
 impl fbl::DoublyLinkedListContainable<PageRequest, PageProviderTag> for PageRequest {
