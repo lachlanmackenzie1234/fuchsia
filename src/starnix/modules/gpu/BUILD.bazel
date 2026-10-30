@@ -9,7 +9,7 @@ package(default_applicable_licenses = ["//:license"])
 cc_library(
     name = "gfxstream_stubs",
     srcs = ["gfxstream_stubs.cc"],
-    # @bazel2gn:skip
-    tags = ["no-sandbox"],
+    # GN finds the header through the source root include directory.
+    deps = ["//third_party/gfxstream:virtio_gpu_renderer_headers"],  # @bazel2gn:skip
     alwayslink = True,
 )
