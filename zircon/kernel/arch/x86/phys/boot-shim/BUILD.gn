@@ -32,36 +32,6 @@ group("boot-shim") {
   }
 }
 
-source_set("legacy-mem-config") {
-  visibility = [ ":*" ]
-  sources = [ "legacy-mem-config.cc" ]
-  public_deps = [
-    # legacy-mem-config.h has #include <lib/zbi-format/zbi.h>
-    "//sdk/lib/zbi-format",
-
-    # legacy-mem-config.h has #include <efi/boot-services.h>
-    "//zircon/kernel/lib/efi",
-
-    # legacy-mem-config.h has #include <lib/zbitl/storage-traits.h>
-    "//src/lib/zbitl",
-
-    # legacy-mem-config.h has #include <lib/fit/result.h>
-    "//zircon/system/ulib/zx",
-
-    # mem-config.h has #include <lib/zircon-internal/e820.h>
-    "//zircon/system/ulib/zircon-internal",
-  ]
-
-  deps = [ "//zircon/kernel/phys/efi:page-size" ]
-  if (is_kernel) {
-    deps += [
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/libc",
-    ]
-    public_deps += [ "//zircon/kernel/lib/ktl:headers" ]
-  }
-}
-
 if (toolchain_environment == "kernel.phys") {
   source_set("legacy-boot-shim") {
     public = [ "legacy-boot-shim.h" ]
@@ -136,23 +106,9 @@ test("legacy-boot-shim-tests") {
   ]
 }
 
-test("legacy-mem-config-tests") {
-  sources = [ "legacy-mem-config-tests.cc" ]
-  deps = [
-    ":legacy-mem-config",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/zbitl",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 group("tests") {
   testonly = true
-  deps = [
-    ":legacy-boot-shim-tests($host_toolchain)",
-    ":legacy-mem-config-tests($host_toolchain)",
-  ]
+  deps = [ ":legacy-boot-shim-tests($host_toolchain)" ]
 }
 
 if (current_toolchain != host_toolchain) {

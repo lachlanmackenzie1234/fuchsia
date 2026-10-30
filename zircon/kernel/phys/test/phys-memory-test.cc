@@ -64,11 +64,7 @@ size_t AllocateAndOverwriteFreeMemory() {
   return bytes_allocated;
 }
 
-void LogMemory() {
-#if !EFI
-  Allocation::GetPool().PrintMemoryRanges(ProgramName());
-#endif
-}
+void LogMemory() { Allocation::GetPool().PrintMemoryRanges(ProgramName()); }
 
 }  // namespace
 

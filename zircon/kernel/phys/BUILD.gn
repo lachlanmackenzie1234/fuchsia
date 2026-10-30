@@ -758,10 +758,7 @@ config("includes") {
 
 group("tests") {
   testonly = true
-  deps = [
-    "boot-shim:tests",
-    "efi:tests",
-  ]
+  deps = [ "boot-shim:tests" ]
   if (build_info_product != "bringup") {
     # The following target includes tests that cannot be run on the bringup
     # product.
@@ -775,15 +772,9 @@ group("boot_tests") {
     "boot-shim:boot_tests",
     "test",
   ]
-  if (target_cpu != "riscv64") {  # TODO(mcgrathr): EFI not there yet
-    deps += [ "efi:boot_tests" ]
-  }
   if (all_cpu_phys_boot_tests) {
     foreach(cpu, standard_fuchsia_cpus) {
       deps += [ "test:$cpu" ]
-      if (cpu != "riscv64") {  # TODO(mcgrathr): EFI not there yet
-        deps += [ "efi:boot_tests(//zircon/kernel/phys/efi:kernel.efi_$cpu)" ]
-      }
     }
   }
 }
