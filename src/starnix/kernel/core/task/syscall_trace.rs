@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Tracks the `CATEGORY_STARNIX` duration of the syscall running on the current thread, so that
-//! code inside the syscall can end that duration early.
+//! Tracks the `CATEGORY_STARNIX_SYSCALLS` duration of the syscall running on the current thread,
+//! so that code inside the syscall can end that duration early.
 //!
 //! `TraceMarkerFile::write` uses this to end the syscall's slice before it records an
 //! `ftrace/print` (`atrace`) event. Otherwise the syscall slice ends after the `atrace` event on
@@ -12,7 +12,7 @@
 //! `SyscallTracker::MaybeTruncateOngoingWriteSlice`.
 
 use fuchsia_trace::{TraceCategoryContext, trace_site_t};
-use starnix_logging::CATEGORY_STARNIX;
+use starnix_logging::CATEGORY_STARNIX_SYSCALLS;
 use std::cell::Cell;
 
 thread_local! {
@@ -35,7 +35,8 @@ impl Drop for SyscallTraceScope {
     }
 }
 
-/// Starts a `CATEGORY_STARNIX` duration for the syscall about to run on the current thread.
+/// Starts a `CATEGORY_STARNIX_SYSCALLS` duration for the syscall about to run on the current
+/// thread.
 ///
 /// Returns `None`, without calling `name`, if the category is disabled. Otherwise the duration
 /// ends when the returned scope is dropped, or earlier at a call to [`complete_syscall_trace`].
@@ -44,7 +45,7 @@ pub fn begin_syscall_trace(name: impl FnOnce() -> &'static str) -> Option<Syscal
     static CACHE: trace_site_t = trace_site_t::new(0);
     // The context is dropped right away. `complete_syscall_trace` acquires it again, so the trace
     // buffers can be flushed while the syscall runs, as with `fuchsia_trace::duration!`.
-    TraceCategoryContext::acquire_cached(CATEGORY_STARNIX, &CACHE)?;
+    TraceCategoryContext::acquire_cached(CATEGORY_STARNIX_SYSCALLS, &CACHE)?;
     SYSCALL_TRACE.set(Some((name(), zx::BootTicks::get())));
     Some(SyscallTraceScope(()))
 }
@@ -57,12 +58,12 @@ pub fn begin_syscall_trace(name: impl FnOnce() -> &'static str) -> Option<Syscal
 #[inline]
 pub fn complete_syscall_trace() {
     if let Some((name, start_time)) = SYSCALL_TRACE.take() {
-        fuchsia_trace::complete_duration(CATEGORY_STARNIX, name, start_time, &[]);
+        fuchsia_trace::complete_duration(CATEGORY_STARNIX_SYSCALLS, name, start_time, &[]);
     }
 }
 
-/// Opens a syscall duration on the current thread even if `CATEGORY_STARNIX` is disabled, so
-/// tests can check that code ends it. Drop the returned scope to clear it.
+/// Opens a syscall duration on the current thread even if `CATEGORY_STARNIX_SYSCALLS` is
+/// disabled, so tests can check that code ends it. Drop the returned scope to clear it.
 pub fn begin_syscall_trace_for_testing(name: &'static str) -> SyscallTraceScope {
     SYSCALL_TRACE.set(Some((name, zx::BootTicks::get())));
     SyscallTraceScope(())

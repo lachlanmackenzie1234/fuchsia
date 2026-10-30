@@ -87,9 +87,10 @@ impl FileOps for TraceMarkerFile {
             current_task.get_tid(),
             bytes.len(),
         );
-        // End the syscall's `CATEGORY_STARNIX` duration (e.g. `sys_write`) before reserving the
-        // `ftrace/print` event in the ring buffer, so the syscall slice ends at or before the
-        // `atrace` event's timestamp on the thread track instead of truncating the `atrace` slice.
+        // End the syscall's `CATEGORY_STARNIX_SYSCALLS` duration (e.g. `sys_write`) before
+        // reserving the `ftrace/print` event in the ring buffer, so the syscall slice ends at or
+        // before the `atrace` event's timestamp on the thread track instead of truncating the
+        // `atrace` slice.
         // Perfetto does the same for Linux `ftrace` traces
         // (`SyscallTracker::MaybeTruncateOngoingWriteSlice`).
         complete_syscall_trace();
