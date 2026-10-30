@@ -134,6 +134,7 @@ impl UseTracker {
         self.generics.make_where_clause().predicates.extend(
             self.where_types.iter().cloned().map(|ty| {
                 syn::WherePredicate::Type(syn::PredicateType {
+                    attrs: vec![],
                     lifetimes: None,
                     bounded_ty: ty,
                     colon_token: <Token![:]>::default(),
@@ -169,7 +170,7 @@ impl UseMarkable for syn::Type {
 
             fn visit_type_path(&mut self, tpath: &syn::TypePath) {
                 if matches_prj_tyvar(self.0, tpath) {
-                    self.0.use_type(adjust_simple_prj(tpath).into());
+                    self.0.use_type(syn::Type::Path(adjust_simple_prj(tpath)));
                     return;
                 }
                 visit::visit_type_path(self, tpath);
@@ -233,6 +234,7 @@ fn adjust_simple_prj(tpath: &syn::TypePath) -> syn::TypePath {
         segments.push_punct(<Token![::]>::default());
         segments.extend(tpath.path.segments.into_pairs());
         syn::TypePath {
+            attrs: tpath.attrs.clone(),
             qself: None,
             path: syn::Path {
                 leading_colon: None,

@@ -102,7 +102,7 @@ pub fn is_phantom_data(path: &syn::Path) -> bool {
     }
 
     let mut path = path.clone();
-    let lseg = path.segments.pop().unwrap().into_value();
+    let lseg = path.segments.pop().unwrap();
 
     &lseg.ident == "PhantomData"
         && pseg_has_single_tyvar(&lseg)

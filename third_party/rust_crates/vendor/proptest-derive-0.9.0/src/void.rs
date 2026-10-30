@@ -152,7 +152,7 @@ impl<'ast> visit::Visit<'ast> for Uninhabited {
     //------------------------------------------------------------------
 
     // An fn(I) -> O is never uninhabited even if I or O are:
-    fn visit_type_bare_fn(&mut self, _: &'ast syn::TypeBareFn) {}
+    fn visit_type_fn_ptr(&mut self, _: &'ast syn::TypeFnPtr) {}
 
     // A macro may transform the inner type in ways we can't predict:
     fn visit_macro(&mut self, _: &'ast syn::Macro) {}
