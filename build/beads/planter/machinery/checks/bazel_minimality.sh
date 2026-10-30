@@ -2785,6 +2785,10 @@ def check_cml_shard_targets(starlark_files):
                                 if m_sh and not m_sh.group(1).startswith(exempt_prefixes):
                                     by_pkg.setdefault(m_sh.group(1), []).append(elt.value)
                 for spkg, slabels in sorted(by_pkg.items()):
+                    # Pre-existing raw shard includes (all already in the file at the change
+                    # base) belong to code owners; only flag includes the change adds.
+                    if all(f'"{lbl}"' in base_txt for lbl in slabels):
+                        continue
                     if len(slabels) >= 2:
                         findings.append({
                             "source": "bazel_minimality",

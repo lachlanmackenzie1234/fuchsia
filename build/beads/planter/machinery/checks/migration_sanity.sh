@@ -876,7 +876,15 @@ def is_packaged_testonly_gn_binary(gname, gtmpl, gbody, pre_targets, bazel_names
                 if pname in visited_c or not (c_short_re.search(pbody) or c_ref_re.search(pbody)):
                     continue
                 visited_c.add(pname)
-                if ptmpl in ("fuchsia_package", "fuchsia_package_with_single_component"):
+                # A testonly fuchsia_package kept above the sentinel (e.g. a subpackage of a GN
+                # test package) is a test consumer: bazel2gn never translates a non-test
+                # fx_package, so its components stay hand-written next to it.
+                if ptmpl in (
+                    "fuchsia_package",
+                    "fuchsia_package_with_single_component",
+                ) and re.search(r"\btestonly\s*=\s*true\b", pbody):
+                    saw_test_or_blocked_consumer = True
+                elif ptmpl in ("fuchsia_package", "fuchsia_package_with_single_component"):
                     saw_non_test_consumer = True
                 elif (
                     ptmpl in only_test_pkg_tmpls
@@ -3191,6 +3199,67 @@ for pkg_dir in sorted(candidate_dirs):
         )
         is_ancillary_pkg = bool(target_dirs and pkg_dir not in target_dirs)
 
+        # Pre-existing code-owner skips (target packages included): a BUILD.bazel target that
+        # was already `# @bazel2gn:skip` at the change base, whose BUILD.bazel call and
+        # hand-written GN definition are both unchanged since then, stays as the owners wrote it.
+        # Reviewers ask to keep such targets untouched; flagging them makes the coder either
+        # rewrite owner code or dispute the finding.
+        def bazel_call_text(text, name):
+            try:
+                tree = ast.parse(text)
+            except Exception:
+                return None
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and any(
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value == name
+                    for kw in node.keywords
+                ):
+                    return ast.get_source_segment(text, node)
+            return None
+
+        def find_owner_kept_skips():
+            base_gn_all = (
+                base_gn_info_for_sentinel.get("pre_targets", {})
+                if base_gn_info_for_sentinel
+                else {}
+            )
+            try:
+                with open(os.path.join(workdir, bazel_rel), encoding="utf-8") as cur_f:
+                    cur_bazel_text = cur_f.read()
+            except Exception:
+                return set()
+            kept = set()
+            for bname, was_skipped in base_target_skips.items():
+                cur_t = targets_by_name.get(bname)
+                base_g = base_gn_all.get(bname)
+                cur_g = gn_info["pre_targets"].get(bname)
+                if not (was_skipped and cur_t and cur_t["skip_line"] and base_g and cur_g):
+                    continue
+                if base_g[0] != cur_g[0] or base_g[2].strip() != cur_g[2].strip():
+                    continue
+                base_call = bazel_call_text(base_bazel_text, bname)
+                if base_call and base_call == bazel_call_text(cur_bazel_text, bname):
+                    kept.add(bname)
+            return kept
+
+        owner_kept_skips = find_owner_kept_skips() if base_bazel_text else set()
+        for okname in sorted(owner_kept_skips):
+            findings.append({
+                "source": "migration_sanity",
+                "category": "preexisting_owner_skip_kept",
+                "severity": "INFO",
+                "file": bazel_rel,
+                "line": targets_by_name[okname]["line"],
+                "message": (
+                    f"Target '{okname}' was already `# @bazel2gn:skip` at the change base and "
+                    f"its BUILD.bazel and hand-written BUILD.gn definitions are unchanged. "
+                    "Code owners keep it hand-written; this is allowed."
+                ),
+                "remediation": "None needed. Do not modify or convert it unless asked.",
+            })
+
         # Check whether a GN `source_set` above the sentinel only groups non-code
         # `inputs` files (paired with a `# @bazel2gn:skip` `filegroup` in BUILD.bazel
         # because `bazel2gn` does not translate `filegroup`).
@@ -3396,6 +3465,8 @@ for pkg_dir in sorted(candidate_dirs):
                 continue
             if is_ancillary_pkg and base_had_sentinel and base_target_skips.get(tname):
                 continue
+            if tname in owner_kept_skips:
+                continue
             if is_bazel_only_private_test_dep(
                 t, bazel_targets, gn_info, pkg_dir, packaged_binaries
             ):
@@ -3533,7 +3604,7 @@ for pkg_dir in sorted(candidate_dirs):
                 if bt.get("skip_line") is None or bt["rule"] not in helper_skip_rules:
                     continue
                 bname = bt["name"]
-                if bname not in pre_map:
+                if bname not in pre_map or bname in owner_kept_skips:
                     continue
                 if (bt["rule"] in FX_MANIFEST_RULE_TO_GN or bt["rule"] == "fx_component") and not is_gn_component_target_blocked(
                     bname, pre_map[bname][0], pre_map[bname][2], pre_map, btargets, pdir
@@ -3963,6 +4034,8 @@ for pkg_dir in sorted(candidate_dirs):
                             "Pre-existing pre-sentinel target in ancillary package outside "
                             "the primary migrated directories; out of scope for this CL.",
                         )
+                    continue
+                if gname in owner_kept_skips:
                     continue
                 if is_packaged_testonly_gn_binary(
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names

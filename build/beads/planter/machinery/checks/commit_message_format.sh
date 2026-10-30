@@ -518,7 +518,20 @@ if head and base_rev and head != base_rev:
             "invent one: say in the summary that the developer must choose or define the `test_suite()` (possibly "
             "consulting the Build team).", severity="info")
     # Body: changes not specific to the migrated targets must be described.
-    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|Skip-Readme-Check|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
+    planter_banner = (
+        "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings"
+    )
+    body = "\n".join(
+        l
+        for l in lines[1:]
+        if l.strip() != planter_banner
+        and not re.match(
+            r"^(Test|Bug|Fixed|Bazel-Migration-Target|Build-Only|Deleted-Tests|"
+            r"Renamed-Tests|Skipped-Dual-Tests|Skip-Readme-Check|TAG|CONV|"
+            r"Change-Id|Multiply|Cq-[\w-]+):",
+            l,
+        )
+    )
     # Check that the commit body does not restate the [bazel_migration] //<dir> subject line,
     # including when wrapped across multiple lines or when the subject abbreviates with //.../
     footer_line_re = re.compile(
@@ -956,6 +969,82 @@ if head and base_rev and head != base_rev:
     check_subject_partial_directory(subject)
     check_unrolled_gn_template_explanation()
 
+    # Check that planter's automatic [DO NOT SUBMIT/REVIEW] banner is never wrapped
+    # across multiple lines, altered, or duplicated in the commit body.
+    planter_banner_re = re.compile(
+        r"^\[DO NOT SUBMIT/REVIEW\]\s+waiting\s+on\s+uploader\s+acknowledgement\s+"
+        r"of\s+planter\s+findings\.?$",
+        re.I,
+    )
+
+    def check_planter_do_not_submit_banner(msg_lines):
+        seen_exact = False
+        for start_ln, end_ln, para in body_paragraphs(msg_lines):
+            is_banner_para = bool(planter_banner_re.match(para)) or (
+                para.startswith("[DO NOT SUBMIT/REVIEW]")
+                and "planter" in para.lower()
+            )
+            if not is_banner_para:
+                continue
+            if end_ln > start_ln:
+                msg_text = (
+                    f"Commit message lines {start_ln}-{end_ln} contain a wrapped "
+                    f"multi-line copy of the `{planter_banner}` banner. Planter "
+                    "adds and strips that banner itself only when it is a single "
+                    "unwrapped line; a wrapped copy will not be stripped and would "
+                    "ship in the ready-for-review CL."
+                )
+                rem_text = (
+                    f"Delete the wrapped multi-line copy of `{planter_banner}` "
+                    "(and the blank line after it). Do not wrap or otherwise edit "
+                    "planter's single-line banner."
+                )
+                add(
+                    "commit_body_wrapped_planter_banner",
+                    start_ln,
+                    msg_text,
+                    rem_text,
+                    severity="error",
+                )
+            elif msg_lines[start_ln - 1] != planter_banner:
+                msg_text = (
+                    f"Commit message line {start_ln} alters planter's "
+                    f"`{planter_banner}` banner (`{msg_lines[start_ln - 1]}`), "
+                    "which prevents planter from stripping it automatically."
+                )
+                rem_text = (
+                    f"Leave `{planter_banner}` on a single unmodified line with no "
+                    "leading/trailing spaces or punctuation, or delete the altered "
+                    "copy if the exact single-line banner is already present."
+                )
+                add(
+                    "commit_body_wrapped_planter_banner",
+                    start_ln,
+                    msg_text,
+                    rem_text,
+                    severity="error",
+                )
+            elif seen_exact:
+                msg_text = (
+                    f"Commit message line {start_ln} duplicates the "
+                    f"`{planter_banner}` banner."
+                )
+                rem_text = (
+                    f"Delete the duplicate `{planter_banner}` line (and the blank "
+                    "line after it) so the banner appears at most once."
+                )
+                add(
+                    "commit_body_wrapped_planter_banner",
+                    start_ln,
+                    msg_text,
+                    rem_text,
+                    severity="error",
+                )
+            else:
+                seen_exact = True
+
+    check_planter_do_not_submit_banner(lines)
+
     # Check subject and body line lengths (mirroring scripts/shac/commit_msg_checker.py).
     exempt_subject_re = re.compile(r"^(?:Revert(?:\^\d+)?|Reland|fixup!|squash!|amend!) ")
     exempt_footer_re = re.compile(
@@ -983,7 +1072,7 @@ if head and base_rev and head != base_rev:
         for idx, raw in enumerate(msg_lines[2:], start=3):
             if len(raw) <= 72:
                 continue
-            if raw.strip() == "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings":
+            if raw.strip() == planter_banner:
                 continue
             if re.search(r"https?://[^\s]+", raw):
                 continue
@@ -999,8 +1088,9 @@ if head and base_rev and head != base_rev:
             )
             rem_text = (
                 "Wrap commit message body lines at 72 characters or fewer "
-                "(only URL lines, indented code blocks, and single-line footers "
-                "such as `Test:` and `Bazel-Migration-Target:` may exceed 72 characters)."
+                "(only URL lines, indented code blocks, planter's single-line "
+                "`[DO NOT SUBMIT/REVIEW]` banner, and single-line footers such as "
+                "`Test:` and `Bazel-Migration-Target:` may exceed 72 characters)."
             )
             add("commit_body_line_too_long", idx, msg_text, rem_text, severity="error")
 
@@ -1247,6 +1337,42 @@ if head and base_rev and head != base_rev:
                 excluded_bmt[lbl] = "already existed in `BUILD.bazel` before this commit"
     if not migrated_targets:
         migrated_targets.extend(fallback_dir_targets)
+
+    # Detect a blocked change that migrates nothing: no Bazel build file is added or edited
+    # (e.g. only a BUILD.gn comment naming the blocker), or an existing BUILD.bazel is only
+    # cleaned up (e.g. comments/load paths) without migrating any new target from GN.
+    # Neither a Bazel-Migration-Target footer nor a Test: footer building a newly migrated
+    # Bazel target can exist, so don't demand them.
+    bazel_file_re = re.compile(r"(?:^|/)(?:BUILD\.bazel|BUILD|MODULE\.bazel|[^/]+\.bzl)$")
+    pending = [
+        l[3:].strip()
+        for l in git("status", "--porcelain", "--ignore-submodules=all").splitlines()
+        if len(l) > 3
+    ]
+    has_new_bazel_file = any(
+        os.path.basename(f) in ("BUILD.bazel", "BUILD")
+        and not git("show", f"{base_rev}:{f}")
+        for f in list(changed) + pending
+    )
+    nothing_migrated = (
+        not is_empty
+        and not migrated_targets
+        and (
+            not any(bazel_file_re.search(f) for f in list(changed) + pending)
+            or (not active_mig_dirs and not has_new_bazel_file)
+        )
+    )
+    if nothing_migrated:
+        add(
+            "commit_nothing_migrated",
+            1,
+            "The change migrates no new Bazel target, so "
+            "`Bazel-Migration-Target:` and `fx bazel build` `Test:` footers are not required.",
+            "Describe the blocker in the body and summary, drop `Bazel-Migration-Target:` footers, "
+            "and keep only `Test:` footers for what was actually verified "
+            "(e.g. `Test: fx host-tool shac check`).",
+            severity="info",
+        )
     if not is_empty:
         migrated_targets = list(dict.fromkeys(migrated_targets))
         required_bmt_targets = list(dict.fromkeys(required_bmt_targets))
@@ -1258,7 +1384,7 @@ if head and base_rev and head != base_rev:
         requires_bmt_footer = bool(
             dirs or migrated_targets or required_bmt_targets or m_tag or m_none
         )
-        if not bmt_lines and requires_bmt_footer:
+        if not bmt_lines and requires_bmt_footer and not nothing_migrated:
             add(
                 "missing_bazel_migration_target_footer",
                 footer_ln,
@@ -1308,6 +1434,17 @@ if head and base_rev and head != base_rev:
                     "Write one unwrapped line per migrated target (may exceed "
                     f"72 characters), e.g. {example_bmt}.",
                 )
+            elif nothing_migrated:
+                # Verify no footer claims a migration in a change without Bazel build files
+                add(
+                    "bazel_migration_target_not_migrated",
+                    ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` names `{val}`, but the change "
+                    "adds or edits no Bazel build file, so nothing was migrated.",
+                    "Remove the `Bazel-Migration-Target:` footer(s) and the `fx bazel build` "
+                    "`Test:` footers for targets that do not exist in Bazel.",
+                    severity="error",
+                )
             elif canon_val in excluded_bmt:
                 add(
                     "bazel_migration_target_not_migrated",
@@ -1340,7 +1477,7 @@ if head and base_rev and head != base_rev:
                 )
         # While a migrated target's only users are still in GN, presubmit compiles just its
         # bazel2gn copy, so the Test: footers are the only record that the Bazel target builds.
-        if bmt_lines and test_lines:
+        if bmt_lines and test_lines and not nothing_migrated:
             test_text = "\n".join(l for _, l in test_lines)
 
             def footer_covers(label):
