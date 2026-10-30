@@ -1,6 +1,6 @@
 Name: Pigweed
 URL: https://pigweed.googlesource.com/pigweed/pigweed/
-Revision: a1060ec7e68be9652e9501616d9ea4ce09d263b2
+Revision: ae01bd7fe068c0b04910d585f53327732e72f01b
 License: Apache 2.0
 License File: src/LICENSE
 Description: Pigweed is an open source collection of embedded-targeted libraries.
