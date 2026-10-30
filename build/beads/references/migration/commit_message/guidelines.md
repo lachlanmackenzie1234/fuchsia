@@ -102,7 +102,7 @@ Follow the line length limits from the [Fuchsia commit message style guide](/doc
 - **Subject line (Line 1):** Aim for **50 characters or fewer** when possible, and keep it **65 characters or fewer** (or at most 72 characters). Omitting redundant verbs like `"Migrate "` helps keep full `//...` labels within this limit. However, if necessary, **clarity and accuracy are more important than line length** for the subject line.
 - **Blank line (Line 2):** Always leave a single blank line between the subject line and the body.
 - **Body lines:** Wrap all prose body lines at **72 characters or fewer**.
-- **Footer line length exceptions:** `Test:` and `Bazel-Migration-Target:` footer lines may exceed the 72-character limit to fit the entire command or target label. These lines **MUST NOT** be broken into multiple lines.
+- **Line length exceptions:** `Test:` and `Bazel-Migration-Target:` footer lines, as well as preserved human-added `NO_IFTTT=<reason>` lines placed in their own paragraph above the footer block, may exceed the 72-character limit to fit the entire command, target label, or justification. These lines **MUST NOT** be broken into multiple lines.
 
 ---
 
@@ -141,6 +141,10 @@ The commit body must clearly explain the scope and details of the migration so h
 - **Single Contiguous Block:** All footers **MUST** be grouped in a single contiguous block at the very bottom of the commit message, separated from the body by a single blank line, with **no blank lines between any footers**. Any footer separated from the final block by an empty line may not be parsed as a footer by Gerrit (for example, Gerrit searches such as `hasfooter:Bazel-Migration-Target` will fail to match footers placed above a blank line).
 - **No Line Wrapping on `Test:` or `Bazel-Migration-Target:`:** Both `Test:` and `Bazel-Migration-Target:` lines may exceed the 72-character line limit to fit the entire command or label, and **MUST NOT** be broken across multiple lines.
 - **Do NOT Use `No-Try: true`:** Do **not** include the `No-Try: true` footer. The one exception is when uploading Planter learnings in CLs that **only** contain files in `//build/beads/planter`.
+- **Never Add `NO_IFTTT` Lines Automatically; Preserve Human-Added `NO_IFTTT` Lines Above the Footer Block:**
+  - Planter and AI agents **MUST NEVER** add `NO_IFTTT=...` (or `NO_IFTTT:`) lines to commit messages. Humans must review any `LINT.IfChange`/`LINT.ThenChange` (IFTTT) warnings or errors, evaluate whether the paired file needs updating, and add their own `NO_IFTTT=<reason>` message as appropriate.
+  - Because `NO_IFTTT=<reason>` uses `=` rather than `:`, Git (`git interpret-trailers`) and Gerrit do not recognize it as a `Key: value` trailer; placing `NO_IFTTT=...` inside the contiguous footer block splits the trailer block and causes Gerrit to stop indexing any footers above it (such as `Bazel-Migration-Target:`).
+  - When amending an existing commit where a human has already added a `NO_IFTTT=<reason>` line, preserve that line verbatim on a single unwrapped line (it may exceed 72 characters) in its own paragraph at the end of the commit body, separated from the contiguous footer block (`Bug:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, `Change-Id:`) by a single blank line.
 
 ### Footer Order and Definitions
 

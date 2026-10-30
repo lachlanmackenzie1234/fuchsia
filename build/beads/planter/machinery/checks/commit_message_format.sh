@@ -580,6 +580,7 @@ if head and base_rev and head != base_rev:
     planter_banner = (
         "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings"
     )
+    no_ifttt_re = re.compile(r"^NO_IFTTT\s*[:=]", re.I)
     body = "\n".join(
         l
         for l in lines[1:]
@@ -590,6 +591,7 @@ if head and base_rev and head != base_rev:
             r"Change-Id|Multiply|Cq-[\w-]+):",
             l,
         )
+        and not no_ifttt_re.match(l.strip())
     )
     # Check that the commit body does not restate the [bazel_migration] //<dir> subject line,
     # including when wrapped across multiple lines or when the subject abbreviates with //.../
@@ -618,7 +620,7 @@ if head and base_rev and head != base_rev:
             if footer_line_re.match(raw):
                 break
             stripped = raw.strip()
-            if not stripped:
+            if not stripped or no_ifttt_re.match(stripped):
                 if cur_parts:
                     paragraphs.append((cur_start, cur_end, " ".join(cur_parts)))
                     cur_start, cur_end, cur_parts = None, None, []
@@ -1152,8 +1154,9 @@ if head and base_rev and head != base_rev:
     exempt_footer_re = re.compile(
         r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Skip-Readme-Check|Change-Id|"
         r"Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|"
-        r"Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV|Reviewed-on|Reviewed-by|"
-        r"Commit-Queue|Presubmit-Verified|API-Review)[:=]"
+        r"Exempt|No-Tree-Checks|No-Presubmit|No-Try|NO_IFTTT|TAG|CONV|Reviewed-on|Reviewed-by|"
+        r"Commit-Queue|Presubmit-Verified|API-Review)[:=]",
+        re.I,
     )
 
     def check_line_lengths(msg_lines):
@@ -1171,6 +1174,18 @@ if head and base_rev and head != base_rev:
                     "in `Bazel-Migration-Target:`)."
                 )
                 add("commit_subject_too_long", 1, msg_text, rem_text, severity="error")
+        nonempty = [i for i, l in enumerate(msg_lines) if l.strip()]
+        trailer_start = len(msg_lines)
+        if nonempty:
+            s = nonempty[-1]
+            while s > 0 and msg_lines[s - 1].strip():
+                s -= 1
+            if any(
+                exempt_footer_re.match(msg_lines[i].strip())
+                or footer_line_re.match(msg_lines[i].strip())
+                for i in range(s, nonempty[-1] + 1)
+            ):
+                trailer_start = s
         for idx, raw in enumerate(msg_lines[2:], start=3):
             if len(raw) <= 72:
                 continue
@@ -1178,7 +1193,14 @@ if head and base_rev and head != base_rev:
                 continue
             if re.search(r"https?://[^\s]+", raw):
                 continue
-            if exempt_footer_re.match(raw.strip()) or footer_line_re.match(raw.strip()):
+            stripped = raw.strip()
+            if no_ifttt_re.match(stripped):
+                continue
+            if idx - 1 >= trailer_start and (
+                exempt_footer_re.match(stripped)
+                or footer_line_re.match(stripped)
+                or re.match(r"^[A-Za-z0-9\-]+\s*:\s*\S", stripped)
+            ):
                 continue
             if raw.startswith(("    ", "\t", ">", "#", "```")):
                 continue
@@ -1191,8 +1213,9 @@ if head and base_rev and head != base_rev:
             rem_text = (
                 "Wrap commit message body lines at 72 characters or fewer "
                 "(only URL lines, indented code blocks, planter's single-line "
-                "`[DO NOT SUBMIT/REVIEW]` banner, and single-line footers such as "
-                "`Test:` and `Bazel-Migration-Target:` may exceed 72 characters)."
+                "`[DO NOT SUBMIT/REVIEW]` banner, preserved `NO_IFTTT=` "
+                "lines, and single-line footers in the final footer block such "
+                "as `Test:` and `Bazel-Migration-Target:` may exceed 72 characters)."
             )
             add("commit_body_line_too_long", idx, msg_text, rem_text, severity="error")
 
@@ -1799,5 +1822,89 @@ if head and base_rev and head != base_rev:
                         "`Change-Id:`) into a single contiguous block at the very bottom of the commit message with "
                         "no blank lines between them.")
                     break
+            # Check NO_IFTTT lines: Planter and AI agents must never add NO_IFTTT lines;
+            # human-added NO_IFTTT=<reason> lines from an existing uploaded commit must be
+            # preserved verbatim on their own unwrapped line above a blank line before the
+            # contiguous footer block.
+            no_ifttt_lines = [
+                (i + 1, l.strip())
+                for i, l in enumerate(lines[1:], start=1)
+                if no_ifttt_re.match(l.strip())
+            ]
+            uploaded_no_ifttt = (
+                [
+                    l.strip()
+                    for l in git("log", "-1", "--format=%B", uploaded_rev).splitlines()[1:]
+                    if no_ifttt_re.match(l.strip())
+                ]
+                if uploaded_rev
+                else []
+            )
+            is_planter_run = bool(
+                os.environ.get("PLANTER_AGENT_ROLE", "").strip()
+                or os.environ.get("PLANTER_CHECK_NAME", "").strip()
+            )
+            has_final_trailers = any(
+                footer_line_re.match(lines[i].strip())
+                for i in range(final_start, nonempty_idxs[-1] + 1)
+            )
+            for ln, raw_no_ifttt in no_ifttt_lines:
+                if (uploaded_rev and raw_no_ifttt not in uploaded_no_ifttt) or (
+                    not uploaded_rev and is_planter_run
+                ):
+                    add(
+                        "agent_added_no_ifttt",
+                        ln,
+                        f"Commit message includes `{raw_no_ifttt}`, which was added by the "
+                        "agent rather than a human reviewer.",
+                        f"Remove `{raw_no_ifttt}` from the commit message (and "
+                        "`CoderReport.summary`). Planter and AI agents must never add "
+                        "`NO_IFTTT=...` lines; humans must review any "
+                        "`LINT.IfChange`/`LINT.ThenChange` (IFTTT) warnings or errors, "
+                        "evaluate them, and add their own `NO_IFTTT=...` message as "
+                        "appropriate.",
+                        severity="error",
+                    )
+                elif not re.match(r"^NO_IFTTT=\S", raw_no_ifttt):
+                    add(
+                        "no_ifttt_format",
+                        ln,
+                        f"`NO_IFTTT` line `{raw_no_ifttt}` must use `NO_IFTTT=<reason>` "
+                        "syntax with `=` and a non-empty reason.",
+                        "Preserve the human-added `NO_IFTTT=<reason>` line on a single "
+                        "unwrapped line in its own paragraph above a blank line before "
+                        "the footer block.",
+                        severity="error",
+                    )
+                elif (has_final_trailers and ln - 1 >= final_start) or (
+                    (ln - 2 >= 1 and lines[ln - 2].strip() and not no_ifttt_re.match(lines[ln - 2].strip()))
+                    or (ln < len(lines) and lines[ln].strip() and not no_ifttt_re.match(lines[ln].strip()))
+                ):
+                    add(
+                        "no_ifttt_in_footer_block",
+                        ln,
+                        f"`NO_IFTTT` line `{raw_no_ifttt}` is not in its own paragraph "
+                        "separated by a blank line above the contiguous footer block "
+                        "(placing `NO_IFTTT=...` inside the footer block causes Gerrit "
+                        "to stop indexing footers above it).",
+                        f"Keep the human-added `{raw_no_ifttt}` line verbatim on a single "
+                        "unwrapped line in its own paragraph at the end of the commit body, "
+                        "separated from the contiguous footer block (`Bug:`, `Test:`, "
+                        "`Bazel-Migration-Target:`, `TAG:`, `Change-Id:`) by a blank line.",
+                        severity="error",
+                    )
+            current_no_ifttt = {l for _, l in no_ifttt_lines}
+            for req_no_ifttt in uploaded_no_ifttt:
+                if req_no_ifttt not in current_no_ifttt:
+                    add(
+                        "dropped_human_no_ifttt",
+                        footer_ln,
+                        f"Commit message dropped or modified the human-added `{req_no_ifttt}` "
+                        "line from the previous patchset.",
+                        f"Restore `{req_no_ifttt}` verbatim on a single unwrapped line in its "
+                        "own paragraph separated by a blank line above the contiguous footer "
+                        "block.",
+                        severity="error",
+                    )
 print(json.dumps(findings, indent=2))
 PYEOF

@@ -590,7 +590,9 @@ From `$PLANTER_WORKDIR`:
    in `modified_files` with paths relative to `$PLANTER_WORKDIR` (`<dir>/BUILD.bazel`, never
    `.jiri_root/worktrees/<name>/...` or host paths). Keep commit messages and `summary` ASCII-only
    with no internal paths/domains/emails/names, body/summary lines `<= 72` chars, and subject
-   `<= 65` chars. Include the final `run_checks.sh` result in `summary`.
+   `<= 65` chars. Never add `NO_IFTTT=...` lines (only humans evaluate IFTTT warnings and add them);
+   when amending, preserve any existing human `NO_IFTTT=...` line unwrapped above a blank line
+   before the footers. Include the final `run_checks.sh` result in `summary`.
 
 Always output a final JSON block matching CoderReport:
 {"summary": "...", "modified_files": ["..."], "migration_case": "case1_full_removal|case2_dual_build", "test_footers": ["..."], "disputed_findings": []}

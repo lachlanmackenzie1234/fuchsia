@@ -201,6 +201,17 @@ re-uploading).
       fix the commit message, rebase and re-upload) with an out-of-date Planter.
       Relay the **Planter warnings** while doing so.
 
+4.  **Never add `NO_IFTTT` lines. Preserve human-added `NO_IFTTT` lines.**
+    * Never add a `NO_IFTTT=...` (or `NO_IFTTT:`) line to a commit message
+      yourself. Humans must review any `LINT.IfChange`/`LINT.ThenChange` (IFTTT)
+      warnings or errors, evaluate them, and add their own `NO_IFTTT=<reason>`
+      message as appropriate.
+    * When amending an existing migration CL where a human has already added a
+      `NO_IFTTT=<reason>` line, preserve that line verbatim on a single
+      unwrapped line in its own paragraph above a blank line before the
+      contiguous footer block (`Bug:`, `Test:`, `Bazel-Migration-Target:`,
+      `TAG:`, `Change-Id:`).
+
 ## End-to-End Bazel Migration
 
 If any step fails, refer to [Error Handling](#error-handling) to handle the
