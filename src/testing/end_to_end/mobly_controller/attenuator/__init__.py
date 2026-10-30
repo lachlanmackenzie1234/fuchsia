@@ -4,9 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Blanket ignores to enable mypy in Antlion
-# mypy: disable-error-code="no-untyped-def"
-
 import enum
 import logging
 from typing import Protocol, runtime_checkable

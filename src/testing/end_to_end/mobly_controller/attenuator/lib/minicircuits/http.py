@@ -14,8 +14,6 @@ interchangeable HW to be used.
 See http://www.minicircuits.com/softwaredownload/Prog_Manual-6-Programmable_Attenuator.pdf
 """
 
-# Blanket ignores to enable mypy in Antlion
-# mypy: disable-error-code="no-untyped-def"
 import urllib.request
 
 import attenuator
