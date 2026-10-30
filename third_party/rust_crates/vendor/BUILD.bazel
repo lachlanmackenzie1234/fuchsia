@@ -272,14 +272,14 @@ alias(
 )
 
 alias(
-    name = "base64-0.22.1",
-    actual = "//third_party/rust_crates/vendor/base64-0.22.1:base64",
+    name = "base64-0.23.1",
+    actual = "//third_party/rust_crates/vendor/base64-0.23.1:base64",
     tags = ["manual"],
 )
 
 alias(
     name = "base64",
-    actual = "//third_party/rust_crates/vendor/base64-0.22.1:base64",
+    actual = "//third_party/rust_crates/vendor/base64-0.23.1:base64",
     tags = ["manual"],
 )
 

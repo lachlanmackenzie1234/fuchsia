@@ -334,7 +334,7 @@ _NORMAL_DEPENDENCIES = {
             "async-lock": Label("//third_party/rust_crates/vendor/async-lock-3.4.2:async_lock"),
             "async-ringbuf": Label("//third_party/rust_crates/vendor/async-ringbuf-0.3.10:async_ringbuf"),
             "async-stream": Label("//third_party/rust_crates/vendor/async-stream-0.3.6:async_stream"),
-            "base64": Label("//third_party/rust_crates/vendor/base64-0.22.1:base64"),
+            "base64": Label("//third_party/rust_crates/vendor/base64-0.23.1:base64"),
             "bincode": Label("//third_party/rust_crates/vendor/bincode-1.3.3:bincode"),
             "bit-set": Label("//third_party/rust_crates/vendor/bit-set-0.11.1:bit_set"),
             "bit-vec": Label("//third_party/rust_crates/vendor/bit-vec-0.10.1:bit_vec"),

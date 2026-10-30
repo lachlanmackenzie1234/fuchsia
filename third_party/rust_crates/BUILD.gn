@@ -182,11 +182,11 @@ group("async-trait-0.1.92") {
 }
 
 group("base64") {
-  public_deps = [ ":base64-v0_22_1" ]
+  public_deps = [ ":base64-v0_23_1" ]
 }
 
-group("base64-0.22.1") {
-  public_deps = [ ":base64-v0_22_1" ]
+group("base64-0.23.1") {
+  public_deps = [ ":base64-v0_23_1" ]
 }
 
 import("//third_party/rust_crates/visibility.gni")
@@ -4404,41 +4404,6 @@ rustc_library("base64-v0_21_7") {
   applicable_licenses = [ ":base64-v0_21_7.license" ]
 }
 
-license("base64-v0_22_1.license") {
-  public_package_name = "base64"
-  license_files = [
-    "//third_party/rust_crates/vendor/base64-0.22.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/base64-0.22.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("base64-v0_22_1") {
-  crate_name = "base64"
-  source_root = "//third_party/rust_crates/vendor/base64-0.22.1/src/lib.rs"
-  output_name = "base64-65c4905ddc1596a5"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=65c4905ddc1596a5",
-    "-Cextra-filename=-65c4905ddc1596a5",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":base64-v0_22_1.license" ]
-}
-
 license("base64-v0_23_1.license") {
   public_package_name = "base64"
   license_files = [
@@ -4465,6 +4430,8 @@ rustc_library("base64-v0_23_1") {
     "-Cmetadata=d817a52f823e3ba2",
     "-Cextra-filename=-d817a52f823e3ba2",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"simd-unsafe\"",
     "--cfg=feature=\"std\"",
   ]
 
