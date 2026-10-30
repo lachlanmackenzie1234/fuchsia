@@ -31,9 +31,7 @@ use netstack3_core::ip::{DeviceIpLayerMetadata, Marks};
 use packet::Buf;
 use packet_formats::ethernet::EtherType;
 
-use crate::bindings::bpf::{
-    SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, ValidVerifiedProgram,
-};
+use crate::bindings::bpf::{SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff};
 use crate::bindings::devices::BindingId;
 use crate::bindings::errno::ErrnoError;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
@@ -784,10 +782,7 @@ impl<'a> RequestHandler<'a> {
             }
             fppacket::SocketRequest::AttachBpfFilterUnsafe { code, responder } => {
                 info!("AttachBpfFilterUnsafe is called on a packet socket.");
-                let program =
-                    ValidVerifiedProgram { code, struct_access_instructions: vec![], maps: vec![] };
-                let maps_cache = self.ctx.bindings_ctx().ebpf_manager.maps_cache();
-                let result = SocketFilterProgram::new(program, maps_cache)
+                let result = SocketFilterProgram::new_from_bytecode(code)
                     .map(|program| {
                         *self.data.id.socket_state().bpf_filter.write() = Some(program);
                         ()

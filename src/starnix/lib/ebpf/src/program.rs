@@ -5,9 +5,9 @@
 use crate::executor::execute;
 use crate::verifier::VerifiedEbpfProgram;
 use crate::{
-    BPF_CALL, BPF_DW, BPF_JMP, BPF_LDDW, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE,
-    BPF_SIZE_MASK, CbpfConfig, DataWidth, EbpfError, EbpfInstruction, EbpfPtr, MapSchema, MemoryId,
-    StructAccess, Type,
+    BPF_ABS, BPF_CALL, BPF_CLS_MASK, BPF_DW, BPF_IND, BPF_JMP, BPF_LD, BPF_LDDW,
+    BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_SIZE_MASK, CbpfConfig, DataWidth, EbpfError,
+    EbpfInstruction, EbpfPtr, LinkError, MapSchema, MemoryId, StructAccess, Type,
 };
 use derivative::Derivative;
 use std::collections::HashMap;
@@ -251,6 +251,7 @@ impl<T: BpfProgramContext> EbpfProgramContext for T {
     type Map = T::Map;
 }
 
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct BpfValue(u64);
 
@@ -424,6 +425,12 @@ pub struct EbpfHelperImpl<C: EbpfProgramContext>(
     ) -> BpfValue,
 );
 
+impl<C: EbpfProgramContext> EbpfHelperImpl<C> {
+    pub fn fn_addr(&self) -> u64 {
+        self.0 as *const () as usize as u64
+    }
+}
+
 /// Stores set of helpers for an eBPF program. The helpers are stored packed
 /// in a vector for fast access in the interpreter.
 #[derive(Derivative)]
@@ -464,6 +471,11 @@ impl<C: EbpfProgramContext> HelperSet<C> {
     /// Returns the helper with the specified index.
     pub fn get_by_index(&self, index: u32) -> Option<&EbpfHelperImpl<C>> {
         self.helpers.get(index as usize)
+    }
+
+    /// Returns an iterator over all registered helpers and their IDs.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &EbpfHelperImpl<C>)> {
+        self.indices.iter().map(|(&id, &idx)| (id, &self.helpers[idx as usize]))
     }
 }
 
@@ -583,6 +595,116 @@ impl<C: EbpfProgramContext> ArgumentTypeChecker<C> for DynamicTypeChecker {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct StructFieldMapping {
+    pub memory_id: MemoryId,
+    pub source_offset: usize,
+    pub target_offset: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct HelperLinkage {
+    pub id: u32,
+    pub fn_addr: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct MapLinkage {
+    pub map_addr: u64,
+    pub data_addr: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ProgramLinkageInfo {
+    pub struct_mappings: Vec<StructFieldMapping>,
+    pub helpers: Vec<HelperLinkage>,
+    pub maps: Vec<MapLinkage>,
+    pub packet_load_fn_addr: Option<u64>,
+}
+
+/// Trampoline invoked by JIT-compiled legacy packet load instructions (`BPF_LD | BPF_ABS` and
+/// `BPF_LD | BPF_IND`).
+///
+/// # Safety
+/// `run_context` must be a valid pointer to `C::RunContext<'_>`, `skb_r6` must be a valid
+/// packet value in `R6` as verified by the eBPF verifier, and `out_value` must be a valid pointer
+/// to an 8-byte output slot on the JIT stack.
+pub unsafe extern "C" fn packet_load_trampoline<C: EbpfProgramContext>(
+    run_context: *mut (),
+    skb_r6: u64,
+    reg_offset: i32,
+    imm_offset: i32,
+    width_bytes: u32,
+    out_value: *mut u64,
+) -> u64 {
+    // SAFETY: `run_context` is a valid pointer to `C::RunContext<'_>` passed by the JIT
+    // caller, and `skb_r6` holds the verified packet value in `R6`.
+    let packet = unsafe {
+        let ctx = &mut *(run_context as *mut C::RunContext<'_>);
+        C::Packet::from_bpf_value(ctx, BpfValue::from(skb_r6))
+    };
+    let load_packet = || -> Option<u64> {
+        let width = match width_bytes {
+            1 => DataWidth::U8,
+            2 => DataWidth::U16,
+            4 => DataWidth::U32,
+            8 => DataWidth::U64,
+            _ => return None,
+        };
+        let offset = reg_offset.checked_add(imm_offset)?;
+        Some(packet.load(offset, width)?.as_u64())
+    };
+
+    let result = load_packet();
+    // SAFETY: `out_value` points to a valid, aligned 8-byte output slot on the JIT stack.
+    unsafe {
+        *out_value = result.unwrap_or(0);
+    }
+    u64::from(result.is_some())
+}
+
+/// Collects process-local linkage metadata (`struct_mappings`, `helpers`, `maps`, and
+/// `packet_load_fn_addr`) required to link an eBPF program for execution with context `C` in the
+/// current address space.
+pub fn collect_program_linkage<C: EbpfProgramContext + StaticHelperSet>(
+    maps: &[C::Map],
+) -> ProgramLinkageInfo {
+    let mut struct_mappings = Vec::new();
+    for mapping in C::struct_mappings() {
+        for field in mapping.fields {
+            struct_mappings.push(StructFieldMapping {
+                memory_id: mapping.memory_id.clone(),
+                source_offset: field.source_offset,
+                target_offset: field.target_offset,
+            });
+        }
+    }
+    let helpers = C::helpers()
+        .iter()
+        .map(|(id, helper)| HelperLinkage { id, fn_addr: helper.fn_addr() })
+        .collect();
+    let maps = maps
+        .iter()
+        .map(|map| {
+            let schema = map.schema();
+            let data_addr = if schema.map_type == linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY
+                && schema.max_entries > 0
+            {
+                map.get_data_ptr().map(|v| v.as_u64())
+            } else {
+                None
+            };
+            MapLinkage { map_addr: map.as_bpf_value().as_u64(), data_addr }
+        })
+        .collect();
+    ProgramLinkageInfo {
+        struct_mappings,
+        helpers,
+        maps,
+        packet_load_fn_addr: Some(packet_load_trampoline::<C> as *const () as usize as u64),
+    }
+}
+
 /// An abstraction over an eBPF program and its registered helper functions.
 pub struct EbpfProgram<C: EbpfProgramContext, T: ArgumentTypeChecker<C> = StaticTypeChecker> {
     pub(crate) code: Vec<EbpfInstruction>,
@@ -681,44 +803,49 @@ where
     }
 }
 
-/// Rewrites the code to ensure mapped fields are correctly handled. Returns
-/// runnable `EbpfProgram<C>`.
-pub fn link_program_internal<C, T>(
+fn link_instructions_internal(
     program: &VerifiedEbpfProgram,
-    maps: Vec<C::Map>,
-) -> Result<EbpfProgram<C, T>, EbpfError>
-where
-    C: EbpfProgramContext + StaticHelperSet,
-    T: ArgumentTypeChecker<C>,
-{
-    let type_checker = T::link(program)?;
-
+    get_struct_field_offset: impl Fn(&MemoryId, usize) -> Option<usize>,
+    resolve_map_ptr: impl Fn(usize, u8) -> Result<u64, LinkError>,
+    has_helper: impl Fn(u32) -> bool,
+    has_packet_load_fn: bool,
+) -> Result<Vec<EbpfInstruction>, LinkError> {
     let mut code = program.code.clone();
-    let struct_mappings = C::struct_mappings();
 
     // Update offsets in the instructions that access structs.
     for StructAccess { pc, memory_id, field_offset, is_32_bit_ptr_load } in
         program.struct_access_instructions.iter()
     {
-        let field_mapping =
-            struct_mappings.iter().find(|m| m.memory_id == *memory_id).and_then(|struct_map| {
-                struct_map.fields.iter().find(|m| m.source_offset == *field_offset)
-            });
-
-        if let Some(field_mapping) = field_mapping {
+        if let Some(target_offset) = get_struct_field_offset(memory_id, *field_offset) {
             let instruction = &mut code[*pc];
 
-            // Note that `instruction.off` may be different from `field.source_offset`. It's adjuststed
-            // by the difference between `target_offset` and `source_offset` to ensure the instructions
-            // will access the right field.
-            let offset_diff = i16::try_from(
-                i64::try_from(field_mapping.target_offset).unwrap()
-                    - i64::try_from(field_mapping.source_offset).unwrap(),
-            )
-            .unwrap();
+            // Note that `instruction.off` may be different from `field_offset`. It's adjusted
+            // by the difference between `target_offset` and `field_offset` to ensure the
+            // instruction accesses the right field.
+            let target_offset_i64 = i64::try_from(target_offset).map_err(|_| {
+                LinkError::InvalidStructMapping(format!(
+                    "Target struct field offset {target_offset} out of range at PC {pc}"
+                ))
+            })?;
+            let field_offset_i64 = i64::try_from(*field_offset).map_err(|_| {
+                LinkError::InvalidStructMapping(format!(
+                    "Source struct field offset {field_offset} out of range at PC {pc}"
+                ))
+            })?;
+            let offset_diff = target_offset_i64
+                .checked_sub(field_offset_i64)
+                .and_then(|diff| i16::try_from(diff).ok())
+                .ok_or_else(|| {
+                    LinkError::InvalidStructMapping(format!(
+                        "Struct field offset difference overflow at PC {pc}"
+                    ))
+                })?;
 
             let new_offset = instruction.offset().checked_add(offset_diff).ok_or_else(|| {
-                EbpfError::ProgramLinkError(format!("Struct field offset overflow at PC {}", *pc))
+                LinkError::InvalidStructMapping(format!(
+                    "Struct field offset overflow at PC {}",
+                    *pc
+                ))
             })?;
             instruction.set_offset(new_offset);
 
@@ -726,46 +853,46 @@ where
             if *is_32_bit_ptr_load {
                 instruction.set_code((instruction.code() & !BPF_SIZE_MASK) | BPF_DW);
             }
-        } else {
-            if *is_32_bit_ptr_load {
-                return Err(EbpfError::ProgramLinkError(format!(
-                    "32-bit field isn't mapped at pc  {}",
-                    *pc,
-                )));
-            }
+        } else if *is_32_bit_ptr_load {
+            return Err(LinkError::InvalidStructMapping(format!(
+                "32-bit field isn't mapped at pc  {}",
+                *pc,
+            )));
         }
     }
 
-    let helpers = C::helpers();
-
     let mut pc = 0;
     while pc < code.len() {
-        // Replace helper IDs with helper indices in call instructions.
-        if code[pc].code() == (BPF_JMP | BPF_CALL) {
+        let opcode = code[pc].code();
+
+        // Check that we have implementations for all helper calls.
+        if opcode == (BPF_JMP | BPF_CALL) {
             let instruction = &mut code[pc];
             if instruction.src_reg() != 0 {
-                return Err(EbpfError::ProgramLinkError(format!(
+                return Err(LinkError::InvalidProgram(format!(
                     "Unsupported src_reg={} in call instruction at pc {}",
                     instruction.src_reg(),
                     pc,
                 )));
             }
             let helper_id = instruction.imm() as u32;
-            let Some(index) = helpers.get_index_by_id(helper_id) else {
-                return Err(EbpfError::ProgramLinkError(format!(
-                    "Missing implementation for helper with id={}",
-                    helper_id,
-                )));
-            };
-            instruction.set_imm(index as i32);
+            if !has_helper(helper_id) {
+                return Err(LinkError::MissingHelper(helper_id));
+            }
             pc += 1;
             continue;
         }
 
-        // Link maps.
-        if code[pc].code() == BPF_LDDW {
+        if (opcode & BPF_CLS_MASK) == BPF_LD
+            && ((opcode & 0xe0) == BPF_ABS || (opcode & 0xe0) == BPF_IND)
+            && !has_packet_load_fn
+        {
+            return Err(LinkError::MissingPacketLoadFn);
+        }
+
+        if opcode == BPF_LDDW {
             if pc + 1 >= code.len() {
-                return Err(EbpfError::ProgramLinkError(format!(
+                return Err(LinkError::InvalidProgram(format!(
                     "Incomplete lddw instruction at pc {}",
                     pc,
                 )));
@@ -779,7 +906,7 @@ where
                 || next_instruction.src_reg() != 0
                 || next_instruction.dst_reg() != 0
             {
-                return Err(EbpfError::ProgramLinkError(format!(
+                return Err(LinkError::InvalidProgram(format!(
                     "Malformed lddw instruction at pc {}",
                     pc,
                 )));
@@ -788,34 +915,27 @@ where
             // If the instruction references BPF_PSEUDO_MAP_IDX or BPF_PSEUDO_MAP_IDX_VALUE, then
             // look up the map and rewrite the 64-bit immediate in place.
             match instruction.src_reg() {
-                0 => {}
-                BPF_PSEUDO_MAP_IDX | BPF_PSEUDO_MAP_IDX_VALUE => {
+                0 => (),
+                src_reg @ (BPF_PSEUDO_MAP_IDX | BPF_PSEUDO_MAP_IDX_VALUE) => {
                     let map_index = usize::try_from(instruction.imm()).map_err(|_| {
-                        EbpfError::ProgramLinkError(format!(
+                        LinkError::InvalidMapLinkage(format!(
                             "Negative map_index={} at pc {}",
                             instruction.imm(),
                             pc,
                         ))
                     })?;
-                    let map = maps.get(map_index).ok_or_else(|| {
-                        EbpfError::ProgramLinkError(format!("Invalid map_index: {}", map_index))
+                    let schema = program.maps.get(map_index).ok_or_else(|| {
+                        LinkError::InvalidMapLinkage(format!("Invalid map_index: {map_index}"))
                     })?;
-                    let schema = map.schema();
-                    if program.maps.get(map_index) != Some(schema) {
-                        return Err(EbpfError::ProgramLinkError(format!(
-                            "Map schema mismatch for map_index: {}",
-                            map_index,
-                        )));
-                    }
 
-                    let value = if instruction.src_reg() == BPF_PSEUDO_MAP_IDX {
-                        map.as_bpf_value().as_u64()
+                    let value = if src_reg == BPF_PSEUDO_MAP_IDX {
+                        resolve_map_ptr(map_index, src_reg)?
                     } else {
                         // BPF_PSEUDO_MAP_IDX_VALUE
                         if schema.map_type != linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY
                             || schema.max_entries == 0
                         {
-                            return Err(EbpfError::ProgramLinkError(format!(
+                            return Err(LinkError::InvalidMapLinkage(format!(
                                 "BPF_PSEUDO_MAP_IDX_VALUE requires non-empty array map at index {map_index}"
                             )));
                         }
@@ -823,23 +943,16 @@ where
                             .ok()
                             .filter(|&off| off < schema.value_size)
                             .ok_or_else(|| {
-                                EbpfError::ProgramLinkError(format!(
+                                LinkError::InvalidMapLinkage(format!(
                                     "Invalid map value offset {} for map at index {map_index}",
                                     next_instruction.imm(),
                                 ))
                             })?;
-                        let map_value = map
-                            .get_data_ptr()
-                            .ok_or_else(|| {
-                                EbpfError::ProgramLinkError(format!(
-                                    "Unable to get value at 0 for map at index {map_index}"
-                                ))
-                            })?
-                            .as_u64();
-                        map_value.checked_add(u64::from(offset)).ok_or_else(|| {
-                            EbpfError::ProgramLinkError(format!(
-                                "Unable to use offset for map access"
-                            ))
+                        let base_ptr = resolve_map_ptr(map_index, src_reg)?;
+                        base_ptr.checked_add(u64::from(offset)).ok_or_else(|| {
+                            LinkError::InvalidMapLinkage(
+                                "Unable to use offset for map access".to_string(),
+                            )
                         })?
                     };
 
@@ -849,19 +962,167 @@ where
                     next_instruction.set_imm(high);
                 }
                 value => {
-                    return Err(EbpfError::ProgramLinkError(format!(
+                    return Err(LinkError::InvalidProgram(format!(
                         "Unsupported value for src_reg in lddw: {}",
                         value,
                     )));
                 }
             }
             pc += 2;
-            continue;
+        } else {
+            pc += 1;
         }
-
-        pc += 1;
     }
 
+    Ok(code)
+}
+
+/// Links a verified eBPF program's instructions for a target process using `linkage` by
+/// updating struct access offsets/widths and resolving `BPF_LDDW` map pointers.
+pub fn link_instructions(
+    program: &VerifiedEbpfProgram,
+    linkage: &ProgramLinkageInfo,
+) -> Result<Vec<EbpfInstruction>, LinkError> {
+    if linkage.maps.len() != program.maps.len() {
+        return Err(LinkError::InvalidMapLinkage(format!(
+            "Map count mismatch: expected {}, got {}",
+            program.maps.len(),
+            linkage.maps.len()
+        )));
+    }
+    link_instructions_internal(
+        program,
+        |memory_id, field_offset| {
+            linkage
+                .struct_mappings
+                .iter()
+                .find(|m| m.memory_id == *memory_id && m.source_offset == field_offset)
+                .map(|m| m.target_offset)
+        },
+        |map_index, src_reg| {
+            let map = linkage.maps.get(map_index).ok_or_else(|| {
+                LinkError::InvalidMapLinkage(format!("Invalid map_index: {map_index}"))
+            })?;
+            if src_reg == BPF_PSEUDO_MAP_IDX {
+                Ok(map.map_addr)
+            } else {
+                map.data_addr.ok_or_else(|| {
+                    LinkError::InvalidMapLinkage(format!(
+                        "Unable to get value at 0 for map at index {map_index}"
+                    ))
+                })
+            }
+        },
+        |helper_id| linkage.helpers.iter().any(|h| h.id == helper_id && h.fn_addr != 0),
+        linkage.packet_load_fn_addr.is_some_and(|addr| addr != 0),
+    )
+}
+
+impl<C: EbpfProgramContext> EbpfProgram<C> {
+    /// Prepares linked eBPF instructions for execution in the interpreter by updating function
+    /// call instructions (`BPF_JMP | BPF_CALL`) to reference helpers by their indices in the
+    /// context's helper table instead of their IDs.
+    ///
+    /// # Safety
+    /// `code` must have been verified and linked for context `C` and `maps`.
+    pub unsafe fn from_linked_instructions(
+        mut code: Vec<EbpfInstruction>,
+        maps: Vec<C::Map>,
+    ) -> Result<Self, EbpfError>
+    where
+        C: StaticHelperSet,
+    {
+        let helpers = C::helpers();
+
+        for (pc, instruction) in code.iter_mut().enumerate() {
+            // Replace helper IDs with helper indices in call instructions.
+            if instruction.code() == (BPF_JMP | BPF_CALL) {
+                if instruction.src_reg() != 0 {
+                    return Err(EbpfError::ProgramLinkError(format!(
+                        "Unsupported src_reg={} in call instruction at pc {}",
+                        instruction.src_reg(),
+                        pc,
+                    )));
+                }
+                let helper_id = instruction.imm() as u32;
+                let Some(index) = helpers.get_index_by_id(helper_id) else {
+                    return Err(EbpfError::ProgramLinkError(format!(
+                        "Missing implementation for helper with id={}",
+                        helper_id,
+                    )));
+                };
+                instruction.set_imm(index as i32);
+            }
+        }
+
+        Ok(Self { code, maps, type_checker: StaticTypeChecker() })
+    }
+}
+
+/// Rewrites the code to ensure mapped fields are correctly handled. Returns
+/// runnable `EbpfProgram<C>`.
+fn link_program_internal<C, T>(
+    program: &VerifiedEbpfProgram,
+    maps: Vec<C::Map>,
+) -> Result<EbpfProgram<C, T>, EbpfError>
+where
+    C: EbpfProgramContext + StaticHelperSet,
+    T: ArgumentTypeChecker<C>,
+{
+    let type_checker = T::link(program)?;
+    if maps.len() != program.maps.len() {
+        return Err(EbpfError::ProgramLinkError(format!(
+            "Map count mismatch: expected {}, got {}",
+            program.maps.len(),
+            maps.len()
+        )));
+    }
+    for (i, map) in maps.iter().enumerate() {
+        if *map.schema() != program.maps[i] {
+            return Err(EbpfError::ProgramLinkError(format!(
+                "Map schema mismatch at index {i}: expected {:?}, got {:?}",
+                program.maps[i],
+                map.schema()
+            )));
+        }
+    }
+
+    let struct_mappings = C::struct_mappings();
+    let helpers = C::helpers();
+
+    let code = link_instructions_internal(
+        program,
+        |memory_id, field_offset| {
+            struct_mappings.iter().find(|m| m.memory_id == *memory_id).and_then(|struct_map| {
+                struct_map
+                    .fields
+                    .iter()
+                    .find(|m| m.source_offset == field_offset)
+                    .map(|m| m.target_offset)
+            })
+        },
+        |map_index, src_reg| {
+            let map = maps.get(map_index).ok_or_else(|| {
+                LinkError::InvalidMapLinkage(format!("Invalid map_index: {map_index}"))
+            })?;
+            assert!(*map.schema() == program.maps[map_index]);
+            if src_reg == BPF_PSEUDO_MAP_IDX {
+                Ok(map.as_bpf_value().as_u64())
+            } else {
+                map.get_data_ptr().map(|v| v.as_u64()).ok_or_else(|| {
+                    LinkError::InvalidMapLinkage(format!(
+                        "Unable to get value at 0 for map at index {map_index}"
+                    ))
+                })
+            }
+        },
+        |helper_id| helpers.get_index_by_id(helper_id).is_some(),
+        true,
+    )?;
+
+    // SAFETY: `code` was verified and linked for context `C` and `maps`.
+    let EbpfProgram { code, maps, type_checker: _ } =
+        unsafe { EbpfProgram::<C>::from_linked_instructions(code, maps)? };
     Ok(EbpfProgram { code, maps, type_checker })
 }
 
@@ -1619,5 +1880,190 @@ mod test {
         let linked = initialize_test_program(dead_helper_code)
             .expect("dead-branch unknown helper should verify and link");
         assert_eq!(linked.run_with_1_argument(&mut (), &mut arg), 7);
+    }
+
+    #[repr(C)]
+    struct TestPacket([u8; 10]);
+
+    static TEST_PACKET_TYPE: LazyLock<Type> = LazyLock::new(|| Type::PtrToMemory {
+        id: MemoryId::new(),
+        offset: 0.into(),
+        buffer_size: 10,
+        origin: PointerOrigin::KernelReadOnly,
+    });
+
+    struct PacketTestContext {}
+
+    impl EbpfProgramContext for PacketTestContext {
+        type RunContext<'a> = ();
+        type Packet<'a> = &'a TestPacket;
+        type Arg1<'a> = &'a TestPacket;
+        type Arg2<'a> = usize;
+        type Arg3<'a> = ();
+        type Arg4<'a> = ();
+        type Arg5<'a> = ();
+        type Map = NoMap;
+    }
+
+    empty_static_helper_set!(PacketTestContext);
+
+    impl ProgramArgument for &'_ TestPacket {
+        fn get_type() -> &'static Type {
+            &*TEST_PACKET_TYPE
+        }
+    }
+
+    impl Packet for &'_ TestPacket {
+        fn load(&self, offset: i32, width: DataWidth) -> Option<BpfValue> {
+            if offset < 0 {
+                return None;
+            }
+            let offset = offset as usize;
+            let bytes = self.0.get(offset..offset + width.bytes())?;
+            let val = match width {
+                DataWidth::U8 => u64::from(bytes[0]),
+                DataWidth::U16 => u64::from(u16::from_be_bytes([bytes[0], bytes[1]])),
+                DataWidth::U32 => {
+                    u64::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                }
+                DataWidth::U64 => u64::from_be_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                ]),
+            };
+            Some(BpfValue::from(val))
+        }
+    }
+
+    #[test]
+    fn test_packet_load_trampoline() {
+        type TrampolineFn = unsafe extern "C" fn(
+            run_context: *mut (),
+            skb_r6: u64,
+            reg_offset: i32,
+            imm_offset: i32,
+            width_bytes: u32,
+            out_value: *mut u64,
+        ) -> u64;
+
+        let linkage = collect_program_linkage::<PacketTestContext>(&[]);
+        let fn_ptr = linkage.packet_load_fn_addr.expect("packet_load_fn_addr should be set");
+        // SAFETY: `collect_program_linkage` populates `packet_load_fn_addr` with
+        // `packet_load_trampoline::<PacketTestContext>`, which has the `TrampolineFn` ABI.
+        let trampoline: TrampolineFn =
+            unsafe { std::mem::transmute::<usize, TrampolineFn>(fn_ptr as usize) };
+
+        let packet = TestPacket([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA]);
+        let skb_r6 = BpfValue::from(&packet).as_u64();
+        let mut ctx = ();
+        let ctx_ptr = &mut ctx as *mut () as *mut ();
+
+        let call = |reg_offset: i32, imm_offset: i32, width_bytes: u32| -> (u64, u64) {
+            let mut out = 0xDEAD_BEEF_CAFE_BABEu64;
+            // SAFETY: `ctx_ptr` points to a valid `PacketTestContext::RunContext` (`()`),
+            // `skb_r6` holds the `BpfValue` for `&packet`, and `out` is a valid `u64` slot.
+            let ok = unsafe {
+                trampoline(ctx_ptr, skb_r6, reg_offset, imm_offset, width_bytes, &mut out)
+            };
+            (ok, out)
+        };
+
+        // 1-, 2-, 4-, and 8-byte in-bounds loads via `reg_offset + imm_offset`.
+        assert_eq!(call(0, 0, 1), (1, 0x11));
+        assert_eq!(call(1, 2, 2), (1, 0x4455));
+        assert_eq!(call(5, -3, 4), (1, 0x33445566));
+        assert_eq!(call(0, 2, 8), (1, 0x33445566778899AA));
+
+        // Out-of-bounds, negative offset, and signed addition overflow return 0 and clear `out`.
+        assert_eq!(call(0, -1, 1), (0, 0));
+        assert_eq!(call(0, 10, 1), (0, 0));
+        assert_eq!(call(2, 3, 8), (0, 0));
+        assert_eq!(call(i32::MAX, 1, 1), (0, 0));
+
+        // Invalid widths return 0 and clear `out`.
+        assert_eq!(call(0, 0, 0), (0, 0));
+        assert_eq!(call(0, 0, 3), (0, 0));
+    }
+
+    #[test]
+    fn test_link_instructions_errors() {
+        let mem_id = MemoryId::new();
+        let program = VerifiedEbpfProgram::from_verified_code(
+            vec![
+                EbpfInstruction::new(BPF_LDX | BPF_MEM | BPF_W, 0, 1, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ],
+            vec![],
+            vec![StructAccess {
+                pc: 0,
+                memory_id: mem_id.clone(),
+                field_offset: 0,
+                is_32_bit_ptr_load: false,
+            }],
+            vec![MapSchema {
+                map_type: linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY,
+                key_size: 4,
+                value_size: 8,
+                max_entries: 1,
+                flags: crate::MapFlags::empty(),
+            }],
+        );
+
+        // Map count mismatch must return an error.
+        let empty_maps_linkage = ProgramLinkageInfo {
+            struct_mappings: vec![],
+            helpers: vec![],
+            maps: vec![],
+            packet_load_fn_addr: None,
+        };
+        assert!(matches!(
+            link_instructions(&program, &empty_maps_linkage),
+            Err(LinkError::InvalidMapLinkage(_))
+        ));
+
+        // Out-of-range target_offset must return an error instead of panicking.
+        let overflow_offset_linkage = ProgramLinkageInfo {
+            struct_mappings: vec![StructFieldMapping {
+                memory_id: mem_id,
+                source_offset: 0,
+                target_offset: usize::MAX,
+            }],
+            helpers: vec![],
+            maps: vec![MapLinkage { map_addr: 0x1000, data_addr: Some(0x2000) }],
+            packet_load_fn_addr: None,
+        };
+        assert!(matches!(
+            link_instructions(&program, &overflow_offset_linkage),
+            Err(LinkError::InvalidStructMapping(_))
+        ));
+
+        // Missing helper must return LinkError::MissingHelper.
+        let helper_prog = VerifiedEbpfProgram::from_verified_code(
+            vec![
+                EbpfInstruction::new(BPF_JMP | BPF_CALL, 0, 0, 0, 42),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        );
+        assert_eq!(
+            link_instructions(&helper_prog, &ProgramLinkageInfo::default()),
+            Err(LinkError::MissingHelper(42))
+        );
+
+        // Packet load instruction without packet_load_fn_addr must return LinkError::MissingPacketLoadFn.
+        let pkt_prog = VerifiedEbpfProgram::from_verified_code(
+            vec![
+                EbpfInstruction::new(BPF_LD | BPF_ABS | BPF_W, 0, 0, 0, 0),
+                EbpfInstruction::new(BPF_JMP | BPF_EXIT, 0, 0, 0, 0),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        );
+        assert_eq!(
+            link_instructions(&pkt_prog, &ProgramLinkageInfo::default()),
+            Err(LinkError::MissingPacketLoadFn)
+        );
     }
 }

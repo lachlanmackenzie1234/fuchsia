@@ -278,6 +278,26 @@ impl VerifierErrorKind {
     }
 }
 
+/// Specific error kinds reported when linking a verified eBPF program against
+/// target-process linkage metadata.
+#[derive(thiserror::Error, Debug, PartialEq, Eq, Clone)]
+pub enum LinkError {
+    #[error("Invalid struct field mapping: {0}")]
+    InvalidStructMapping(String),
+
+    #[error("Invalid map linkage: {0}")]
+    InvalidMapLinkage(String),
+
+    #[error("Missing implementation for helper with id={0}")]
+    MissingHelper(u32),
+
+    #[error("Missing packet_load_fn_addr for packet load instruction")]
+    MissingPacketLoadFn,
+
+    #[error("Invalid program instruction: {0}")]
+    InvalidProgram(String),
+}
+
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum EbpfError {
     #[error("Verification error loading program: {0}")]
@@ -297,6 +317,12 @@ pub enum EbpfError {
 
     #[error("Invalid cBPF jump offset: 0x{0:x}")]
     InvalidCbpfJumpOffset(u32),
+}
+
+impl From<LinkError> for EbpfError {
+    fn from(err: LinkError) -> Self {
+        Self::ProgramLinkError(err.to_string())
+    }
 }
 
 #[cfg(test)]

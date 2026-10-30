@@ -860,19 +860,110 @@ impl TryFrom<&MemoryId> for StructId {
     }
 }
 
-impl From<febpf::StructId> for StructId {
-    fn from(value: febpf::StructId) -> Self {
+impl TryFrom<febpf::StructId> for StructId {
+    type Error = ();
+
+    fn try_from(value: febpf::StructId) -> Result<Self, Self::Error> {
         match value {
-            febpf::StructId::SkBuff => StructId::SkBuff,
-            febpf::StructId::XdpMd => StructId::XdpMd,
-            febpf::StructId::BpfUserPtRegs => StructId::BpfUserPtRegs,
-            febpf::StructId::BpfSock => StructId::BpfSock,
-            febpf::StructId::BpfSockOpt => StructId::BpfSockOpt,
-            febpf::StructId::BpfSockAddr => StructId::BpfSockAddr,
-            febpf::StructId::__SourceBreaking { unknown_ordinal } => {
-                panic!("Invalid struct id: {}", unknown_ordinal)
-            }
+            febpf::StructId::SkBuff => Ok(StructId::SkBuff),
+            febpf::StructId::XdpMd => Ok(StructId::XdpMd),
+            febpf::StructId::BpfUserPtRegs => Ok(StructId::BpfUserPtRegs),
+            febpf::StructId::BpfSock => Ok(StructId::BpfSock),
+            febpf::StructId::BpfSockOpt => Ok(StructId::BpfSockOpt),
+            febpf::StructId::BpfSockAddr => Ok(StructId::BpfSockAddr),
+            febpf::StructId::__SourceBreaking { unknown_ordinal: _ } => Err(()),
         }
+    }
+}
+
+pub fn link_error_to_fidl(err: ebpf::LinkError) -> febpf::LinkError {
+    match err {
+        ebpf::LinkError::InvalidStructMapping(_) => febpf::LinkError::InvalidStructMapping,
+        ebpf::LinkError::InvalidMapLinkage(_) => febpf::LinkError::InvalidMapLinkage,
+        ebpf::LinkError::MissingHelper(_) => febpf::LinkError::MissingHelper,
+        ebpf::LinkError::MissingPacketLoadFn => febpf::LinkError::MissingPacketLoadFn,
+        ebpf::LinkError::InvalidProgram(_) => febpf::LinkError::InvalidProgram,
+    }
+}
+
+pub fn program_linkage_from_fidl(
+    payload: febpf::ProgramLinkageInfo,
+) -> Result<ebpf::ProgramLinkageInfo, febpf::LinkError> {
+    let struct_mappings = payload
+        .struct_mappings
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| {
+            let struct_id = StructId::try_from(m.struct_id)
+                .map_err(|()| febpf::LinkError::InvalidStructMapping)?;
+            let source_offset = usize::try_from(m.source_offset)
+                .map_err(|_| febpf::LinkError::InvalidStructMapping)?;
+            let target_offset = usize::try_from(m.target_offset)
+                .map_err(|_| febpf::LinkError::InvalidStructMapping)?;
+            Ok(ebpf::StructFieldMapping {
+                memory_id: struct_id.as_memory_id(),
+                source_offset,
+                target_offset,
+            })
+        })
+        .collect::<Result<Vec<_>, febpf::LinkError>>()?;
+    let helpers = payload
+        .helpers
+        .unwrap_or_default()
+        .into_iter()
+        .map(|h| ebpf::HelperLinkage { id: h.id, fn_addr: h.fn_addr })
+        .collect();
+    let maps = payload
+        .maps
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| ebpf::MapLinkage {
+            map_addr: m.map_addr,
+            data_addr: (m.data_addr != 0).then_some(m.data_addr),
+        })
+        .collect();
+    Ok(ebpf::ProgramLinkageInfo {
+        struct_mappings,
+        helpers,
+        maps,
+        packet_load_fn_addr: payload.packet_load_fn_addr.filter(|&addr| addr != 0),
+    })
+}
+
+pub fn program_linkage_to_fidl(linkage: ebpf::ProgramLinkageInfo) -> febpf::ProgramLinkageInfo {
+    febpf::ProgramLinkageInfo {
+        struct_mappings: Some(
+            linkage
+                .struct_mappings
+                .into_iter()
+                .map(|m| febpf::StructFieldMapping {
+                    struct_id: StructId::try_from(&m.memory_id)
+                        .expect("unknown StructId in struct_mappings")
+                        .into(),
+                    source_offset: m.source_offset as u64,
+                    target_offset: m.target_offset as u64,
+                })
+                .collect(),
+        ),
+        helpers: Some(
+            linkage
+                .helpers
+                .into_iter()
+                .map(|h| febpf::HelperLinkage { id: h.id, fn_addr: h.fn_addr })
+                .collect(),
+        ),
+        maps: Some(
+            linkage
+                .maps
+                .into_iter()
+                .map(|m| febpf::MapLinkage {
+                    map_addr: m.map_addr,
+                    data_addr: m.data_addr.unwrap_or(0),
+                })
+                .collect(),
+        ),
+        packet_load_fn_addr: linkage.packet_load_fn_addr,
+        ..Default::default()
     }
 }
 
@@ -1852,5 +1943,19 @@ mod tests {
         assert_eq!(StructId::try_from(&MemoryId::from_raw(0)), Err(()));
         assert_eq!(StructId::try_from(&MemoryId::from_raw(7)), Err(()));
         assert_eq!(StructId::try_from(&MemoryId::from_raw(u64::MAX)), Err(()));
+        assert_eq!(StructId::try_from(febpf::StructId::from_primitive_allow_unknown(0)), Err(()));
+        assert_eq!(StructId::try_from(febpf::StructId::from_primitive_allow_unknown(999)), Err(()));
+        assert_eq!(
+            program_linkage_from_fidl(febpf::ProgramLinkageInfo {
+                struct_mappings: Some(vec![febpf::StructFieldMapping {
+                    struct_id: febpf::StructId::from_primitive_allow_unknown(999),
+                    source_offset: 0,
+                    target_offset: 0,
+                }]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+            febpf::LinkError::InvalidStructMapping
+        );
     }
 }

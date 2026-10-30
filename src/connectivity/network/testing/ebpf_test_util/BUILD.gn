@@ -20,9 +20,12 @@ rustc_library("ebpf_test_util") {
     ":ebpf_test_progs",
     "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
     "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
     "//src/starnix/lib/ebpf",
     "//src/starnix/lib/ebpf_api",
     "//src/starnix/lib/ebpf_loader",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:zerocopy",
   ]
 

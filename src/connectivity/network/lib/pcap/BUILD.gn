@@ -109,9 +109,12 @@ rustc_library("pcap-compile") {
   deps = _COMMON_DEPS + [
            "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
            "//sdk/fidl/fuchsia.net.debug:fuchsia.net.debug_rust",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia-async",
            "//src/starnix/lib/ebpf",
            "//src/starnix/lib/ebpf_api",
            "//src/starnix/lib/linux_uapi",
+           "//third_party/rust_crates:futures",
          ]
 }
 
