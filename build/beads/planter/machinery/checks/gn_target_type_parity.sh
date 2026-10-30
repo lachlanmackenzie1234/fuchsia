@@ -1176,7 +1176,7 @@ for pkg in sorted(candidate_dirs):
                     "file": bazel_rel,
                     "line": 1,
                     "message": (
-                        f"`{label}` (GN `{was}`) existed in `{gn_rel}` at `{change_base}` but is missing from both "
+                        f"`{label}` (GN `{was}`) existed in `{gn_rel}` in base GN but is missing from both "
                         f"`{bazel_rel}` and `{gn_rel}`. Every convertible non-test GN target must have a "
                         f"corresponding target in `{bazel_rel}` (or remain in `{gn_rel}` above the BAZEL2GN SENTINEL "
                         "if blocked by a GN-only attribute)."

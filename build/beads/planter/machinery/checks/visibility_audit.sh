@@ -3066,7 +3066,7 @@ for rel_path in sorted(candidate_files):
                             "line": lineno,
                             "message": (
                                 f"Target '{target_name}' widens visibility with '{val}' beyond the explicit "
-                                f"visibility bounds in `{pkg_path}/BUILD.gn` at `{change_base}` ({', '.join(gn_bounds_desc)}), "
+                                f"visibility bounds in `{pkg_path}/BUILD.gn` in base GN ({', '.join(gn_bounds_desc)}), "
                                 f"even though all actual reverse dependencies are within the original GN scope."
                             ),
                             "remediation": (

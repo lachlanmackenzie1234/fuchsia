@@ -2512,7 +2512,7 @@ for td in target_dirs:
                 else f"wire the migrated Bazel test targets into `bazel_test_suite(\"bazel_tests\")` in '{gn_rel}'"
             )
             msg_text = (
-                f"'{gn_rel}' defined `group(\"tests\")` at `{change_base}`, "
+                f"'{gn_rel}' defined `group(\"tests\")` in base GN, "
                 "but `group(\"tests\")` was removed during migration while callers or "
                 "package tests still depend on it, dropping CI build and test verification."
             )
@@ -2545,9 +2545,8 @@ for td in target_dirs:
             if not test_targets:
                 msg_text = (
                     f"`{m_ut.group(1)}(\"{lib_name}\")` in '{gn_rel}' had "
-                    f"`with_unit_tests = true` (`:{ut_name}` wired into tests at "
-                    f"`{change_base}`), but '{bazel_rel}' defines no unit test "
-                    "target for it."
+                    f"`with_unit_tests = true` (`:{ut_name}` wired into tests in base GN), "
+                    f"but '{bazel_rel}' defines no unit test target for it."
                 )
                 rem_text = (
                     f"Migrate `:{ut_name}` to '{bazel_rel}' (`rustc_test(name = "
@@ -2570,7 +2569,7 @@ for td in target_dirs:
             ) and not re.search(r"\b(?:wrap_host_rust_test|host_rustc_test)\s*\(", bazel_src):
                 msg_text = (
                     f"'{gn_rel}' ran `:{ut_name}($host_toolchain)` on host in CI "
-                    f"at `{change_base}`, but '{bazel_rel}' does not declare "
+                    f"in base GN, but '{bazel_rel}' does not declare "
                     f"`wrap_host_rust_test(name = \"{lib_name}_host_test\", "
                     f"binary_name = \"{ut_name}\")` (or `host_rustc_test`)."
                 )

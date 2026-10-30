@@ -681,7 +681,7 @@ for t in dropped[:MAX_DROPPED_FINDINGS]:
     file = next((f"{pkg[2:]}/{b}" for b in order if pkg and os.path.isfile(os.path.join(workdir, pkg[2:], b))), None)
     msg = (
         f"Test `{t['name']}` ({t['os']}/{t['cpu']}, `{t['source_label'] or t['label']}`) is in "
-        f"<build dir>/tests.json at {change_base} but not after the change, so neither `fx test` nor infra "
+        "<build dir>/tests.json before the change but not after the change, so neither `fx test` nor infra "
         "runs it anymore."
     )
     same_pkg = [a for a in added if a["os"] == t["os"] and pkg and package_of(a["source_label"] or a["label"]) == pkg]
@@ -696,7 +696,7 @@ if len(dropped) > MAX_DROPPED_FINDINGS:
     add(
         "test_dropped_from_tests_json",
         "ERROR",
-        f"{len(rest)} more tests from <build dir>/tests.json at {change_base} are missing after the change: "
+        f"{len(rest)} more tests from <build dir>/tests.json before the change are missing after the change: "
         + ", ".join(f"`{t['name']}`" for t in rest[:50])
         + ("" if len(rest) <= 50 else ", ..."),
         remediation=REMEDIATION,
@@ -706,7 +706,7 @@ if not dropped:
     add(
         "tests_json_parity",
         "INFO",
-        f"All {len(before)} tests of <build dir>/tests.json at {change_base} (with the changed packages' "
+        f"All {len(before)} tests of <build dir>/tests.json before the change (with the changed packages' "
         f":tests groups as roots) are still in it after the change ({len(added)} added).",
     )
 
