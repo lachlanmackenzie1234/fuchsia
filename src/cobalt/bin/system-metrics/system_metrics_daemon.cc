@@ -434,10 +434,11 @@ void SystemMetricsDaemon::StoreCpuData(double cpu_percentage) {
   cpu_data_stored_++;
   if (cpu_data_stored_ >= 10 * 60) {  // Flush every 10 minutes.
     if (LogCpuToCobalt()) {
-      // If failed, attempt to log agin next time.
       activity_state_to_cpu_map_.clear();
-      cpu_data_stored_ = 0;
     }
+    // Reset the sample counter even when logging fails so we retry on the next 10-minute flush
+    // boundary (retaining accumulated histogram counts) instead of retrying at 1 Hz forever.
+    cpu_data_stored_ = 0;
   }
 
   cpu_usage_accumulator_ += cpu_percentage;

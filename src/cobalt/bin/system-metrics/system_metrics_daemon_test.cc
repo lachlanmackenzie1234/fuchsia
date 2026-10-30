@@ -743,6 +743,36 @@ TEST_F(SystemMetricsDaemonTest, LogCpuUsage) {
               fuchsia_system_metrics::kCpuPercentageMigratedMetricId, {DeviceState::Active}, 1);
 }
 
+TEST_F(SystemMetricsDaemonTest, LogCpuUsageBacksOffRetryOnCobaltError) {
+  stub_logger_.reset();
+  PrepareForLogCpuUsage();
+  UpdateState(fuchsia::ui::activity::State::ACTIVE);
+  stub_logger_.set_error_to_return(fuchsia::metrics::Error::INTERNAL_ERROR);
+
+  // Sample #600 triggers a flush attempt that fails with INTERNAL_ERROR.
+  EXPECT_EQ(zx::sec(1), LogCpuUsage());
+  EXPECT_EQ(1u, stub_logger_.call_count());
+
+  // Subsequent 1 Hz samples must NOT re-invoke LogMetricEvents until the next 10-minute (600s)
+  // flush boundary, while preserving the accumulated histogram buckets.
+  for (int i = 0; i < 599; ++i) {
+    EXPECT_EQ(zx::sec(1), LogCpuUsage());
+    ASSERT_EQ(1u, stub_logger_.call_count()) << "Unexpected retry at sample offset " << i;
+  }
+
+  // Once Cobalt recovers on the next 10-minute flush boundary, all 1200 accumulated samples
+  // (599 initial + 1 failed-flush sample + 599 intermediate + 1 flush sample) are delivered.
+  stub_logger_.set_error_to_return(std::nullopt);
+  EXPECT_EQ(zx::sec(1), LogCpuUsage());
+  EXPECT_EQ(2u, stub_logger_.call_count());
+  ASSERT_EQ(1u, stub_logger_.logged_events().size());
+  uint64_t total_bucket_samples = 0;
+  for (const auto& bucket : stub_logger_.logged_events()[0].payload.histogram()) {
+    total_bucket_samples += bucket.count;
+  }
+  EXPECT_EQ(1200u, total_bucket_samples);
+}
+
 class MockLogger : public ::fuchsia::metrics::testing::MetricEventLogger_TestBase {
  public:
   void LogMetricEvents(std::vector<fuchsia::metrics::MetricEvent> events,
