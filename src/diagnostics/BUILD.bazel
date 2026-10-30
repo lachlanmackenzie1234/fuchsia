@@ -4,6 +4,16 @@
 
 package(default_applicable_licenses = ["//:license"])
 
+# Diagnostics host tests defined in Bazel. These are exported to `fx test`
+# and infra builders through the `bazel_tests` target in
+# //src/diagnostics/BUILD.gn.
+test_suite(
+    name = "host_tests",
+    tests = [
+        "//src/diagnostics/lib/sampler-config:sampler-config_host_test",
+    ],
+)
+
 # Diagnostics device tests defined in Bazel. These are exported to `fx test`
 # and infra builders through the `bazel_tests` target in
 # //src/diagnostics/BUILD.gn.
@@ -12,5 +22,6 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/diagnostics/lib/ring-buffer:ring-buffer-tests",
+        "//src/diagnostics/lib/sampler-config:sampler-config-tests",
     ],
 )

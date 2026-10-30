@@ -52,8 +52,9 @@ group("tests") {
   ]
 }
 
-# Diagnostics device tests defined in Bazel. See //src/diagnostics/BUILD.bazel.
+# Diagnostics tests defined in Bazel. See //src/diagnostics/BUILD.bazel.
 bazel_test_suite("bazel_tests") {
+  host_tests = [ "//src/diagnostics:host_tests" ]
   target_tests = [ "//src/diagnostics:target_tests" ]
 }
 
