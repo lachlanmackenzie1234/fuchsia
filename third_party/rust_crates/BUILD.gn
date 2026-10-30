@@ -7805,19 +7805,19 @@ rustc_macro("der_derive-v0_8_0") {
   applicable_licenses = [ ":der_derive-v0_8_0.license" ]
 }
 
-license("deranged-v0_5_8.license") {
+license("deranged-v0_5_9.license") {
   public_package_name = "deranged"
   license_files = [
-    "//third_party/rust_crates/vendor/deranged-0.5.8/LICENSE-Apache",
-    "//third_party/rust_crates/vendor/deranged-0.5.8/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/deranged-0.5.9/LICENSE-Apache",
+    "//third_party/rust_crates/vendor/deranged-0.5.9/LICENSE-MIT",
   ]
 }
 
-rustc_library("deranged-v0_5_8") {
+rustc_library("deranged-v0_5_9") {
   crate_name = "deranged"
-  source_root = "//third_party/rust_crates/vendor/deranged-0.5.8/src/lib.rs"
-  output_name = "deranged-dc2217b7ad6706bb"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/vendor/deranged-0.5.9/src/lib.rs"
+  output_name = "deranged-248d9e52eae7a7ac"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -7828,14 +7828,14 @@ rustc_library("deranged-v0_5_8") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dc2217b7ad6706bb",
-    "-Cextra-filename=-dc2217b7ad6706bb",
+    "-Cmetadata=248d9e52eae7a7ac",
+    "-Cextra-filename=-248d9e52eae7a7ac",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":deranged-v0_5_8.license" ]
+  applicable_licenses = [ ":deranged-v0_5_9.license" ]
 }
 
 license("derivative-v2_2_0.license") {
@@ -22956,7 +22956,7 @@ rustc_library("time-v0_3_55") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":deranged-v0_5_8" ]
+  deps += [ ":deranged-v0_5_9" ]
   deps += [ ":num-conv-v0_2_2" ]
   deps += [ ":powerfmt-v0_2_1" ]
   deps += [ ":serde_core-v1_0_229" ]

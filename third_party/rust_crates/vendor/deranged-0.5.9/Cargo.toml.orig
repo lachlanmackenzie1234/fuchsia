@@ -1,8 +1,8 @@
 [package]
 name = "deranged"
-version = "0.5.8"
+version = "0.5.9"
 authors = ["Jacob Pratt <jacob@jhpratt.dev>"]
-edition = "2021"
+edition = "2024"
 rust-version = "1.85.0"
 repository = "https://github.com/jhpratt/deranged"
 keywords = ["integer", "int", "range"]
@@ -47,3 +47,4 @@ rand08 = { package = "rand", version = "0.8.4" }
 rand09 = { package = "rand", version = "0.9.0" }
 rand010 = { package = "rand", version = "0.10.0" }
 serde_json = "1.0.86"
+serde_test2 = "2.0.0"
