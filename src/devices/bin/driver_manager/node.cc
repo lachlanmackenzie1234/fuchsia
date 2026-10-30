@@ -3640,6 +3640,25 @@ const char* Node::HealthStatusString(std::optional<fuchsia_driver_framework::Hea
   }
 }
 
+namespace {
+
+bool IsRecordUnhealthyOrError(const Node::HealthCheckRecord& record) {
+  return record.error.has_value() ||
+         record.status == fuchsia_driver_framework::HealthStatus::kUnhealthy;
+}
+
+int RecordSeverityRank(const Node::HealthCheckRecord& record) {
+  if (IsRecordUnhealthyOrError(record)) {
+    return 2;
+  }
+  if (record.status == fuchsia_driver_framework::HealthStatus::kDegraded) {
+    return 1;
+  }
+  return 0;
+}
+
+}  // namespace
+
 void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
   // (a) A result that carries no health information never hides one that does.
   if (!record.is_informative()) {
@@ -3649,17 +3668,26 @@ void Node::MaybeStoreHealthCheckRecord(HealthCheckRecord record) {
     return;
   }
   if (!record.is_ping()) {
-    last_non_ping_health_check_ = record;
+    // Only cache non-PING records that produced a status (FAST/DEEP response, SELF_FAULT alert, or
+    // DRIVER_HOST_PEER_CLOSED) in last_non_ping_health_check_. A status-less TIMEOUT or
+    // INTERNAL_ERROR from a FAST/DEEP check carries no hardware verdict (the dispatcher may have
+    // stalled, or an asynchronous wait may simply have exceeded the budget), so it is published
+    // but not retained as the hardware baseline: a later OK PING replaces it rather than
+    // republishing it forever. The event stays visible in the transition history and the [DHC]
+    // log, and the next non-PING check re-establishes the hardware status.
+    if (record.status.has_value()) {
+      last_non_ping_health_check_ = record;
+    }
     last_health_check_ = std::move(record);
     return;
   }
-  // (b) A liveness ping says nothing about the hardware, so an OK PING does not hide a non-OK
+  // (b) A liveness ping says nothing about the hardware, so a lower-severity PING response (e.g.
+  // OK, or DEGRADED when the retained non-PING status is UNHEALTHY) does not hide a higher-severity
   // result from a FAST or DEEP check or a self_fault alert. The non-PING record is kept separately
   // so that a failed PING in between (which does replace the published record, since a wedged
   // dispatcher or crashed host is the more urgent news) cannot launder the hardware fault away.
-  if (record.status == fuchsia_driver_framework::HealthStatus::kOk &&
-      last_non_ping_health_check_.has_value() &&
-      last_non_ping_health_check_->status != fuchsia_driver_framework::HealthStatus::kOk) {
+  if (record.status.has_value() && last_non_ping_health_check_.has_value() &&
+      RecordSeverityRank(record) < RecordSeverityRank(*last_non_ping_health_check_)) {
     last_health_check_ = last_non_ping_health_check_;
     return;
   }

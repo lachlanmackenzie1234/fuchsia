@@ -2069,6 +2069,12 @@ TEST_F(Dfv2NodeTest, RunHealthCheckBackstopTimesOutWedgedDriverHost) {
                        });
   RunLoopUntilIdle();
   EXPECT_EQ(1, ping_calls);
+  // The status-less DRIVER_HOST_TIMEOUT record is not retained as the hardware baseline, so the
+  // recovered OK PING is published as-is.
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_FALSE(node->last_health_check()->error.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
   RunLoopFor(
       Node::HealthCheckBackstopDeadline(fuchsia_driver_framework::HealthCheckRequest::kDeep));
   EXPECT_EQ(1, ping_calls);
@@ -2185,21 +2191,39 @@ TEST_F(Dfv2NodeTest, RunHealthCheckPingFailureDoesNotLaunderHardwareFault) {
   run(fuchsia_driver_framework::HealthCheckRequest::kFast);
   ASSERT_TRUE(node->last_health_check().has_value());
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
+  const zx::time fast_timestamp = node->last_health_check()->timestamp;
 
   // A PING timeout is the more urgent news, so it is published...
+  RunLoopFor(zx::sec(1));
   run(fuchsia_driver_framework::HealthCheckRequest::kPing);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+  EXPECT_NE(fast_timestamp, node->last_health_check()->timestamp);
 
   // ...but once the dispatcher answers again, the hardware fault from the FAST check is published
-  // again rather than being replaced by the OK liveness ping.
+  // again (with its original timestamp) rather than being replaced by the OK liveness ping.
+  RunLoopFor(zx::sec(1));
   ping_result = fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
+  EXPECT_EQ(fast_timestamp, node->last_health_check()->timestamp);
+  ASSERT_EQ(1u, node->last_health_check()->conditions.size());
+  EXPECT_EQ("PHY_UNLOCKED", node->last_health_check()->conditions[0].reason_code());
+
+  // A DEGRADED PING also does not hide the higher-severity UNHEALTHY FAST record.
+  ping_result = fit::ok(fuchsia_driver_framework::HealthCheckResponse().conditions(
+      {{fuchsia_driver_framework::HealthCondition()
+            .status(fuchsia_driver_framework::HealthStatus::kDegraded)
+            .reason_code("PING_DEGRADED")}}));
   run(fuchsia_driver_framework::HealthCheckRequest::kPing);
   ASSERT_TRUE(node->last_health_check().has_value());
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kUnhealthy, node->last_health_check()->status);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, node->last_health_check()->level);
   ASSERT_EQ(1u, node->last_health_check()->conditions.size());
   EXPECT_EQ("PHY_UNLOCKED", node->last_health_check()->conditions[0].reason_code());
+  ping_result = fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
 
   // A later OK FAST check clears it, after which an OK PING is published as-is.
   fake_driver.SetHealthCheckCallback(
@@ -2215,6 +2239,98 @@ TEST_F(Dfv2NodeTest, RunHealthCheckPingFailureDoesNotLaunderHardwareFault) {
   EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
 }
+
+namespace {
+
+TEST_F(Dfv2NodeTest, RunHealthCheckFastTimeoutDoesNotPoisonSubsequentOkPing) {
+  auto node = CreateNode("test-hc-fast-timeout");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-fast-timeout");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+
+  // Initially the driver dispatcher stalls on a FAST check (e.g. during a neighbor sweep).
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::error(fuchsia_driver_framework::HealthCheckError::kTimeout);
+      });
+
+  auto run = [&](fuchsia_driver_framework::HealthCheckRequest level) {
+    bool done = false;
+    node->RunHealthCheck(level, [&done](const auto&) { done = true; });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(done);
+  };
+
+  run(fuchsia_driver_framework::HealthCheckRequest::kFast);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kTimeout, node->last_health_check()->error);
+
+  // Once the dispatcher unblocks and answers a liveness PING with OK, the stale FAST TIMEOUT must
+  // not overwrite the recovered OK PING.
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+
+  RunLoopFor(zx::sec(1));
+  auto before_ping = Now();
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
+  EXPECT_FALSE(node->last_health_check()->error.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+  EXPECT_GE(node->last_health_check()->timestamp, before_ping);
+}
+
+TEST_F(Dfv2NodeTest, RunHealthCheckFastInternalErrorDoesNotPoisonSubsequentOkPing) {
+  auto node = CreateNode("test-hc-fast-internal-error");
+  StartTestDriver(node);
+  auto [driver_server_end, node_client_end] =
+      node_manager->driver_host().TakeDriver("test-hc-fast-internal-error");
+  FakeDriver fake_driver(dispatcher(), std::move(driver_server_end), std::move(node_client_end));
+
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::error(fuchsia_driver_framework::HealthCheckError::kInternalError);
+      });
+
+  auto run = [&](fuchsia_driver_framework::HealthCheckRequest level) {
+    bool done = false;
+    node->RunHealthCheck(level, [&done](const auto&) { done = true; });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(done);
+  };
+
+  run(fuchsia_driver_framework::HealthCheckRequest::kFast);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckError::kInternalError,
+            node->last_health_check()->error);
+
+  fake_driver.SetHealthCheckCallback(
+      [](const fuchsia_driver_framework::HealthCheckRequest& req)
+          -> fit::result<fuchsia_driver_framework::HealthCheckError,
+                         fuchsia_driver_framework::HealthCheckResponse> {
+        return fit::ok(fuchsia_driver_framework::HealthCheckResponse{});
+      });
+
+  RunLoopFor(zx::sec(1));
+  auto before_ping = Now();
+  run(fuchsia_driver_framework::HealthCheckRequest::kPing);
+  ASSERT_TRUE(node->last_health_check().has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthStatus::kOk, node->last_health_check()->status);
+  EXPECT_FALSE(node->last_health_check()->error.has_value());
+  EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kPing, node->last_health_check()->level);
+  EXPECT_GE(node->last_health_check()->timestamp, before_ping);
+}
+
+}  // namespace
 
 TEST_F(Dfv2NodeTest, OnHealthAlertSelfFaultRecordsDetails) {
   auto child = CreateNode("child-sf-details");

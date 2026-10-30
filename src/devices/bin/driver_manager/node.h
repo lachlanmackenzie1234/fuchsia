@@ -606,11 +606,12 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   //      COMMUNICATION_ERROR, INVALID_STATE, NOT_FOUND) never replaces a record that does carry
   //      some (a status, or a synthetic TIMEOUT / host-closed / transport-failure condition). It is
   //      only cached while there is no informative record yet.
-  //  (b) An OK PING result does not hide a non-OK record from a FAST or DEEP check or a
+  //  (b) A lower-severity PING result (e.g. OK, or DEGRADED when the retained non-PING status is
+  //      UNHEALTHY) does not hide a higher-severity record from a FAST or DEEP check or a
   //      self_fault alert: a liveness ping says nothing about the hardware. The most recent
-  //      informative non-PING record is retained separately for this purpose, so a PING failure
-  //      (TIMEOUT, crashed host) in between does not launder the hardware fault away: once the
-  //      PING succeeds again the retained non-PING record is published again.
+  //      informative non-PING record with a status is retained separately for this purpose, so a
+  //      PING failure (TIMEOUT, crashed host) in between does not launder the hardware fault away:
+  //      once the PING succeeds again the retained non-PING record is published again.
   //  All other results replace the existing record.
   struct HealthCheckRecord {
     // Builds a record from a response returned by (or synthesized for) the driver. |level| is the
@@ -1041,8 +1042,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::optional<bool> is_bound_override_;
   std::optional<bool> has_power_element_override_;
   std::optional<HealthCheckRecord> last_health_check_;
-  // The most recent informative record that did not come from a PING (FAST, DEEP or a self_fault
-  // alert). See replacement policy (b) on HealthCheckRecord.
+  // The most recent informative record with a status that did not come from a PING (FAST, DEEP or a
+  // self_fault alert). See replacement policy (b) on HealthCheckRecord.
   std::optional<HealthCheckRecord> last_non_ping_health_check_;
   // When and at what level this node was last probed in response to a health alert.
   std::optional<zx::time> last_alert_probe_time_;
