@@ -72,7 +72,6 @@ cc_test_executable("log_buffer_unittest_exe") {
   deps = [
     "//src/developer/forensics/feedback_data:log_buffer",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
-    "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
   ]
 }

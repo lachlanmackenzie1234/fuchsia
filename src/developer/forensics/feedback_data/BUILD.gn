@@ -84,8 +84,8 @@ source_set("log_buffer") {
   ]
 
   public_deps = [
-    ":log_source",
-    "//sdk/lib/fit",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
+    "//sdk/lib/fit-promise",
     "//src/developer/forensics/utils:storage_size",
     "//src/developer/forensics/utils/redact",
     "//zircon/system/ulib/zx",
@@ -93,7 +93,7 @@ source_set("log_buffer") {
 
   deps = [
     ":constants",
-    "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
+    "//sdk/lib/fit",
     "//src/developer/forensics/utils:logs",
     "//src/lib/fxl",
   ]
