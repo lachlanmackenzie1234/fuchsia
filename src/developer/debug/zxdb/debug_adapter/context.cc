@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -915,16 +916,23 @@ void DebugAdapterContext::WillDestroyTracepoint(Tracepoint* tracepoint) {
 }
 
 void DebugAdapterContext::OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) {
-  int64_t client_id = hit.tracepoint_id;
+  if (!tracepoint) {
+    return;
+  }
+
+  std::optional<int64_t> client_id;
   for (const auto& [cid, tp_ptr] : dap_tracepoints_) {
-    if (tracepoint && tp_ptr && tp_ptr.get() == tracepoint) {
+    if (tp_ptr.get() == tracepoint) {
       client_id = cid;
       break;
     }
   }
+  if (!client_id.has_value()) {
+    return;
+  }
 
   dap::ZxdbTracepointEvent event;
-  event.tracepoint_id = client_id;
+  event.tracepoint_id = *client_id;
   event.location = hit.location;
   event.hit_count = hit.hit_count;
   event.max_hits = hit.max_hits;

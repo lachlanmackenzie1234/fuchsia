@@ -132,8 +132,18 @@ TEST_F(RequestTracepointTest, WatchpointResolution) {
   EXPECT_EQ(tp->spec().watch->access_type, debug_ipc::BreakpointType::kReadWrite);
 }
 
-TEST_F(RequestTracepointTest, TracepointEventEmission) {
+TEST_F(RequestTracepointTest, TracepointEventEmissionAndNonDapFiltering) {
   InitializeDebugging();
+
+  dap::ZxdbTracepointSpec spec;
+  spec.id = 42;
+  spec.function = "MyFunction";
+  auto set_got = SendSetTracepoints({spec});
+  ASSERT_FALSE(set_got.error);
+  auto dap_it = context().dap_tracepoints().find(42);
+  ASSERT_NE(dap_it, context().dap_tracepoints().end());
+  Tracepoint* dap_tp = dap_it->second.get();
+  ASSERT_NE(dap_tp, nullptr);
 
   bool event_received = false;
   dap::ZxdbTracepointEvent received_event;
@@ -142,26 +152,31 @@ TEST_F(RequestTracepointTest, TracepointEventEmission) {
     received_event = evt;
   });
 
+  // Console-owned tracepoints absent from dap_tracepoints_ must not emit DAP events.
+  Tracepoint* console_tp = session().system().CreateNewTracepoint();
+  TracepointHitRecord console_hit;
+  console_hit.tracepoint_id = console_tp->id();
+  context().OnTracepointHit(console_tp, console_hit);
+  context().OnTracepointHit(nullptr, console_hit);
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+  EXPECT_FALSE(event_received);
+
   TracepointHitRecord hit;
-  hit.tracepoint_id = 42;
+  hit.tracepoint_id = dap_tp->id();
   hit.location = "src/foo.cc:123";
   hit.hit_count = 3;
   hit.max_hits = 10;
-  hit.auto_disabled = false;
   hit.thread_koid = 9999;
   hit.dwell_ms = 1.25;
   hit.truncated = true;
-
-  TracepointFrameSummary summary;
-  summary.name = "MyFunction";
-  summary.file = "src/foo.cc";
-  summary.line = 123;
-  summary.ip = 0x12345;
-  summary.sp = 0x54321;
-  hit.capture.frame = summary;
+  hit.capture.frame = TracepointFrameSummary{
+      .name = "MyFunction", .file = "src/foo.cc", .line = 123, .ip = 0x12345, .sp = 0x54321};
   hit.capture.registers = std::map<std::string, std::string>{{"rax", "0x1"}};
+  hit.capture.locals =
+      std::map<std::string, TracepointValue>{{"count", {.value = "7", .type = "int"}}};
 
-  context().OnTracepointHit(nullptr, hit);
+  context().OnTracepointHit(dap_tp, hit);
   loop().RunUntilNoTasks();
   RunPendingClientCalls();
 
@@ -170,43 +185,18 @@ TEST_F(RequestTracepointTest, TracepointEventEmission) {
   EXPECT_EQ(received_event.location, "src/foo.cc:123");
   EXPECT_EQ(received_event.hit_count, 3);
   EXPECT_EQ(received_event.max_hits, 10);
-  EXPECT_FALSE(received_event.auto_disabled);
-  EXPECT_TRUE(received_event.truncated);
   EXPECT_EQ(received_event.thread_koid, 9999);
   EXPECT_DOUBLE_EQ(received_event.dwell_ms, 1.25);
-  EXPECT_TRUE(received_event.capture.matched);
+  EXPECT_TRUE(received_event.truncated);
   ASSERT_TRUE(received_event.capture.frame.has_value());
   EXPECT_EQ(received_event.capture.frame->name, "MyFunction");
-  EXPECT_EQ(received_event.capture.frame->ip, 0x12345);
   ASSERT_TRUE(received_event.capture.registers.has_value());
   EXPECT_NE(received_event.capture.registers->find("rax"), received_event.capture.registers->end());
-
-  // Error hits with matched = false and diagnostic errors serialize cleanly.
-  event_received = false;
-  TracepointHitRecord error_hit;
-  error_hit.tracepoint_id = 42;
-  error_hit.location = "src/foo.cc:123";
-  error_hit.hit_count = 4;
-  error_hit.max_hits = 4;
-  error_hit.auto_disabled = true;
-  error_hit.thread_koid = 9999;
-  error_hit.capture.matched = false;
-  error_hit.capture.errors = {"Condition error: bad_ident"};
-
-  context().OnTracepointHit(nullptr, error_hit);
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  EXPECT_TRUE(event_received);
-  EXPECT_TRUE(received_event.auto_disabled);
-  EXPECT_FALSE(received_event.truncated);
-  EXPECT_FALSE(received_event.capture.matched);
-  EXPECT_FALSE(received_event.capture.frame.has_value());
-  ASSERT_EQ(received_event.capture.errors.size(), 1u);
-  EXPECT_EQ(received_event.capture.errors[0], "Condition error: bad_ident");
+  ASSERT_TRUE(received_event.capture.locals.has_value());
+  EXPECT_NE(received_event.capture.locals->find("count"), received_event.capture.locals->end());
 }
 
-TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
+TEST_F(RequestTracepointTest, TracepointBacktraceElisionAndErrorEventEmission) {
   InitializeDebugging();
 
   dap::ZxdbTracepointSpec spec;
@@ -214,7 +204,9 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   spec.function = "MyFunction";
   auto got_set = SendSetTracepoints({spec});
   ASSERT_FALSE(got_set.error);
-  Tracepoint* tp = context().dap_tracepoints().at(77).get();
+  auto tp_it = context().dap_tracepoints().find(77);
+  ASSERT_NE(tp_it, context().dap_tracepoints().end());
+  Tracepoint* tp = tp_it->second.get();
   ASSERT_NE(tp, nullptr);
 
   bool event_received = false;
@@ -234,14 +226,14 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   rec.frame_index = 0;
   rec.ip = 0x2000;
   rec.sp = 0x3000;
-  rec.name = "MyFunction";
-  rec.trust = debug_ipc::StackFrame::Trust::kContext;
-  rec.file = "test.cc";
-  rec.line = 10;
-  rec.elided = false;
+  rec.name = "AsyncExecutor";
+  rec.elided = true;
+  rec.elide_description = "2 async executor frames";
   hit.capture.backtrace = std::vector<TracepointFrameRecord>{rec};
   hit.capture.evaluations["x + 1"] = TracepointEvaluation{.result = "42", .type = "int"};
-  hit.capture.errors = {"Minor capture warning"};
+  hit.capture.errors = {"Condition error: bad_ident"};
+  hit.capture.matched = false;
+  hit.auto_disabled = true;
 
   context().OnTracepointHit(tp, hit);
   loop().RunUntilNoTasks();
@@ -250,14 +242,20 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   EXPECT_TRUE(event_received);
   EXPECT_EQ(received_event.tracepoint_id, 77);
   EXPECT_EQ(received_event.location, "MyFunction");
+  EXPECT_EQ(received_event.hit_count, 1);
+  EXPECT_EQ(received_event.max_hits, 15);
+  EXPECT_EQ(received_event.thread_koid, 8888);
+  EXPECT_TRUE(received_event.auto_disabled);
+  EXPECT_FALSE(received_event.capture.matched);
   ASSERT_TRUE(received_event.capture.backtrace.has_value());
   ASSERT_EQ(received_event.capture.backtrace->size(), 1u);
-  EXPECT_EQ((*received_event.capture.backtrace)[0].ip, 0x2000);
-  EXPECT_EQ((*received_event.capture.backtrace)[0].name, "MyFunction");
+  EXPECT_TRUE((*received_event.capture.backtrace)[0].elided);
+  EXPECT_EQ((*received_event.capture.backtrace)[0].elide_description.value(),
+            "2 async executor frames");
   ASSERT_TRUE(received_event.capture.evaluations.has_value());
   EXPECT_TRUE(received_event.capture.evaluations->count("x + 1"));
-  EXPECT_EQ(received_event.capture.errors.size(), 1u);
-  EXPECT_EQ(received_event.capture.errors[0], "Minor capture warning");
+  ASSERT_EQ(received_event.capture.errors.size(), 1u);
+  EXPECT_EQ(received_event.capture.errors[0], "Condition error: bad_ident");
 
   context().WillDestroyTracepoint(tp);
   EXPECT_EQ(context().dap_tracepoints().find(77), context().dap_tracepoints().end());
