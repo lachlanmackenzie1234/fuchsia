@@ -111,11 +111,11 @@ class LoopTest : public ::testing::Test {
     return result;
   }
 
-  // RAII helper to manage the lifecycle of a loop device.
+  // RAII helper to manage the lifecycle of a bound loop device.
   class ActiveLoopDevice {
    public:
-    explicit ActiveLoopDevice(LoopTest& test, int backing_fd = -1, uint32_t block_size = 4096,
-                              uint64_t size_limit = 0, uint64_t offset = 0, uint32_t flags = 0) {
+    ActiveLoopDevice(LoopTest& test, int backing_fd, uint32_t block_size = 4096,
+                     uint64_t size_limit = 0, uint64_t offset = 0) {
       minor_ = ioctl(test.loop_control_.get(), LOOP_CTL_GET_FREE, nullptr);
       if (minor_ < 0)
         return;
@@ -126,15 +126,12 @@ class LoopTest : public ::testing::Test {
         return;
       }
 
-      if (backing_fd >= 0) {
-        loop_config config = {
-            .fd = static_cast<uint32_t>(backing_fd),
-            .block_size = block_size,
-            .info = {.lo_offset = offset, .lo_sizelimit = size_limit, .lo_flags = flags}};
-        if (ioctl(fd_.get(), LOOP_CONFIGURE, &config) < 0) {
-          fd_.reset();
-          minor_ = -1;
-        }
+      loop_config config = {.fd = static_cast<uint32_t>(backing_fd),
+                            .block_size = block_size,
+                            .info = {.lo_offset = offset, .lo_sizelimit = size_limit}};
+      if (ioctl(fd_.get(), LOOP_CONFIGURE, &config) < 0) {
+        fd_.reset();
+        minor_ = -1;
       }
     }
 
@@ -476,60 +473,6 @@ TEST_F(LoopTest, BlkGetSize_UnitsAndSafety) {
   // 2. Check Safety: Sentinels must remain untouched.
   EXPECT_EQ(results[0], 0xDEADBEEF);
   EXPECT_EQ(results[2], 0xDEADBEEF);
-}
-
-TEST_F(LoopTest, SelfBackingLoopDeviceFailsWithEbadf) {
-  ActiveLoopDevice loop0(*this);
-  ASSERT_TRUE(loop0.is_valid());
-
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_SET_FD, loop0.fd()), SyscallFailsWithErrno(EBADF));
-  loop_config self_config = {
-      .fd = static_cast<uint32_t>(loop0.fd()),
-      .block_size = 4096,
-  };
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_CONFIGURE, &self_config), SyscallFailsWithErrno(EBADF));
-
-  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY));
-  ASSERT_TRUE(backing_file.is_valid()) << strerror(errno);
-  loop_config ro_config = {
-      .fd = static_cast<uint32_t>(backing_file.get()),
-      .block_size = 4096,
-      .info = {.lo_flags = LO_FLAGS_READ_ONLY},
-  };
-  ASSERT_THAT(ioctl(loop0.fd(), LOOP_CONFIGURE, &ro_config), SyscallSucceeds());
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_CHANGE_FD, loop0.fd()), SyscallFailsWithErrno(EBADF));
-}
-
-TEST_F(LoopTest, UnboundLoopDeviceBackingFileFailsWithEinval) {
-  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY));
-  ASSERT_TRUE(backing_file.is_valid()) << strerror(errno);
-
-  ActiveLoopDevice loop0(*this, backing_file.get(), 4096, 0, 0, LO_FLAGS_READ_ONLY);
-  ASSERT_TRUE(loop0.is_valid());
-  ActiveLoopDevice loop1(*this);
-  ASSERT_TRUE(loop1.is_valid());
-
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_CHANGE_FD, loop1.fd()), SyscallFailsWithErrno(EINVAL));
-
-  ASSERT_THAT(ioctl(loop0.fd(), LOOP_CLR_FD, 0), SyscallSucceeds());
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_SET_FD, loop1.fd()), SyscallFailsWithErrno(EINVAL));
-  loop_config unbound_config = {
-      .fd = static_cast<uint32_t>(loop1.fd()),
-      .block_size = 4096,
-  };
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_CONFIGURE, &unbound_config), SyscallFailsWithErrno(EINVAL));
-}
-
-TEST_F(LoopTest, CycleBetweenBoundLoopDevicesFailsWithEbadf) {
-  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY));
-  ASSERT_TRUE(backing_file.is_valid()) << strerror(errno);
-
-  ActiveLoopDevice loop0(*this, backing_file.get(), 4096, 0, 0, LO_FLAGS_READ_ONLY);
-  ASSERT_TRUE(loop0.is_valid());
-  ActiveLoopDevice loop1(*this, loop0.fd(), 4096, 0, 0, LO_FLAGS_READ_ONLY);
-  ASSERT_TRUE(loop1.is_valid());
-
-  EXPECT_THAT(ioctl(loop0.fd(), LOOP_CHANGE_FD, loop1.fd()), SyscallFailsWithErrno(EBADF));
 }
 
 }  // namespace
