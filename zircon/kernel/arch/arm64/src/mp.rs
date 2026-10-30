@@ -299,6 +299,14 @@ pub(super) fn arch_set_restricted_flag(restricted: bool) {
     unsafe { write_percpu_field!(in_restricted_mode, u32::from(restricted)) };
 }
 
+/// Returns the calling CPU's flag that tracks whether it is in restricted mode.
+///
+/// x20 points at the calling CPU's `arm64_percpu`, as for [`arch_set_restricted_flag`].
+#[inline(always)]
+pub(super) fn arch_get_restricted_flag() -> bool {
+    read_percpu_field!(in_restricted_mode) != 0
+}
+
 /// Mask the MPIDR register to only leave the AFFx ids.
 const MPID_AFF_MASK: u64 = ARM64_MPIDR_MASK;
 

@@ -27,8 +27,8 @@ use super::registers::arm64_write_hw_debug_regs;
 use super::uarch::arm64_uarch_do_spectre_v2_mitigation;
 use super::{GeneralRegsSource, device_memory_barrier};
 use crate::kernel::thread::{
-    Thread, active_aspace, get_arch, get_shadow_call_base, get_stack_top, in_restricted,
-    is_running, is_user_state_saved_locked,
+    Thread, ThreadLockGuard, active_aspace, get_arch, get_shadow_call_base, get_stack_top,
+    in_restricted, is_running, is_user_state_saved_locked,
 };
 
 const LOCAL_TRACE: u32 = 0;
@@ -89,6 +89,19 @@ pub(super) unsafe fn thread_arch(thread: *mut Thread) -> *mut ArchThread {
 pub(super) unsafe fn thread_arch_const(thread: *const Thread) -> *const ArchThread {
     // SAFETY: As for `thread_arch`, which only offsets the pointer: nothing is written through it.
     unsafe { thread_arch(thread.cast_mut()) }.cast_const()
+}
+
+/// Returns the architectural state of the thread whose lock `guard` holds, live while `guard` is.
+///
+/// Access it a field at a time: the thread's CPU may read other fields, such as `stack_guard` and
+/// `current_percpu_ptr` through TPIDR_EL1, while the guard lives. Other code writes a thread's
+/// `arch_thread` only under its lock, except for the thread's own lock-free writes on user mode
+/// entry and return, in user copies, and to its EL0 thread pointers, which it makes only while it
+/// runs user code or is about to.
+pub(super) fn locked_thread_arch(guard: &ThreadLockGuard) -> *mut ArchThread {
+    // SAFETY: `ThreadLockGuard::lock`'s contract keeps the thread live while `guard` lives, and
+    // `thread_arch` only offsets the pointer.
+    unsafe { thread_arch(guard.thread()) }
 }
 
 /// Register state layout used by `arm64_context_switch()`.

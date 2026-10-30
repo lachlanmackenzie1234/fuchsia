@@ -9,7 +9,6 @@
 #include <lib/crashlog.h>
 
 #include <arch/arm64/arm64_ffi.h>
-#include <arch/debugger.h>
 #include <arch/ops.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
@@ -41,17 +40,6 @@ FFI_ALWAYS_INLINE void cpp_arm64_enter_restricted_tpidr(uint64_t tpidr_el0, bool
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uint64_t cpp_arm64_get_tpidr_el0() { return __arm_rsr64("tpidr_el0"); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_arm64_get_general_regs(zx_thread_state_general_regs_t* regs) {
-  return arch_get_general_regs(Thread::Current::Get(), regs);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t
-cpp_arm64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
-  return arch_set_general_regs(Thread::Current::Get(), regs);
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_arm64_print_frame(const iframe_t* frame) { PrintFrame(*frame); }

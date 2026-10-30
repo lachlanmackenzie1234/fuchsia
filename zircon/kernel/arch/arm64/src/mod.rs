@@ -8,6 +8,7 @@ mod arch;
 mod asid_allocator;
 pub mod cache;
 pub mod crashlog;
+mod debugger;
 mod exceptions;
 mod feature;
 mod fpu;
@@ -50,6 +51,8 @@ pub use user_copy::{
 pub const ARM_NCZV_FLAGS: u32 = 0xf000_0000;
 // [arm/v8]: FEAT_BTI (Branch Target Identification) branch type flags.
 pub const ARM64_BTYPE_FLAGS: u32 = 0x0000_0c00;
+/// The flags a normal mode aarch64 thread may set: NCZV and BTYPE.
+const ARM64_USER_VISIBLE_FLAGS: u32 = ARM_NCZV_FLAGS | ARM64_BTYPE_FLAGS;
 // [arm/v8]: C5.2.19 CPSR M[4] / nRW bit indicating AArch32 execution state.
 pub const ARM32_BIT_MODE: u32 = 1 << 4; // 0x10
 // [arm/v8]: C5.2.19 CPSR T bit indicating AArch32 Thumb execution state.
@@ -62,6 +65,9 @@ pub const ARM32_IT_BITS: u32 = 0x0600_fc00;
 pub const ARM64_USER_RESTRICTED_VISIBLE_FLAGS: u32 = ARM_NCZV_FLAGS | ARM64_BTYPE_FLAGS; // 0xf000_0c00
 pub const ARM32_USER_RESTRICTED_VISIBLE_FLAGS: u32 =
     ARM_NCZV_FLAGS | ARM32_BIT_MODE | ARM32_BIT_THUMB_MODE | ARM32_GE_Q_BITS | ARM32_IT_BITS; // 0xfe0f_fc30
+/// These bits are user restricted bits for any thread, 32 or 64 bit.
+const ARM_USER_RESTRICTED_VISIBLE_FLAGS: u32 =
+    ARM64_USER_RESTRICTED_VISIBLE_FLAGS | ARM32_USER_RESTRICTED_VISIBLE_FLAGS;
 pub const ARM32_BIT_MODE_REGISTER_COUNT: usize = 15;
 
 #[inline]
