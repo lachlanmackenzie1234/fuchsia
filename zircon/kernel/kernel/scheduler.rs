@@ -8333,53 +8333,6 @@ fn split_node_from_pi_graph_impl<U: PiNodeState, T: PiNodeState>(
     }
 }
 
-/// Updates a target PI node's dynamic scheduling parameters when a base profile
-/// change causes its effective profile to become or remain deadline.
-fn update_base_profile_changed_dynamic_params<T: PiNodeState>(
-    target: &mut T,
-    target_old_ep: &EffectiveProfile,
-    target_new_ep: &EffectiveProfile,
-    mono_now: impl FnOnce() -> SchedTime,
-) {
-    // Make sure the start, finish, and time slice parameters are consistent with
-    // the bandwidth parameters of the deadline profile. Consistency in fair
-    // profiles is handled by `Scheduler::adjust_fair_bandwidth`.
-    if target_new_ep.is_deadline() {
-        let mono_now = mono_now();
-        let deadline = target_new_ep.deadline();
-        let target_relative_start_time = target.finish_time() - deadline.deadline_ns;
-        // If either the original profile is fair, or the original profile is deadline and the
-        // start_time calculated relative to the target's finish time is in the future, anchor
-        // start_time to now to avoid a delay.
-        if !target_old_ep.is_fair()
-            && target.finish_time() != SchedTime::from_raw(0)
-            && target_relative_start_time <= mono_now
-        {
-            target.set_start_time(target_relative_start_time);
-        } else {
-            // Carry over the consumed time-slice fraction so that a client cannot force its
-            // capacity budget to be reset by transitioning to deadline mid-slice.
-            // TODO(https://fxbug.dev/579947706): Extend the debt carryover to inter-slice transitions.
-            let zero = SchedDuration::from_raw(0);
-            let old_slice = target.time_slice_ns();
-            let used_fraction = if old_slice > zero {
-                let used = target.time_slice_used_ns().clamp(zero, old_slice);
-                SchedUtilization::from(used / old_slice)
-            } else {
-                SchedUtilization::from_raw(0)
-            };
-            let used_ns = core::cmp::min(
-                deadline.capacity_ns,
-                SchedDuration::from(deadline.capacity_ns * used_fraction),
-            );
-            target.set_start_time(mono_now);
-            target.set_finish_time(mono_now + deadline.deadline_ns);
-            target.set_time_slice_ns(deadline.capacity_ns);
-            target.set_time_slice_used_ns(used_ns);
-        }
-    }
-}
-
 /// Updates a thread's effective profile and position in its container at the
 /// start of a base profile update operation, regardless of whether or not the
 /// target thread is currently blocked or currently assigned to a scheduler.
@@ -8405,13 +8358,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_thread_base_profile_changed(th
         (*cpp_thread_get_scheduler_state(thread))
             .effective_profile
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_BASE_DIRTY);
-        pi_common_thread(thread, |target_state, target_old_ep, target_new_ep, mono_now| {
-            update_base_profile_changed_dynamic_params(
-                target_state,
-                target_old_ep,
-                target_new_ep,
-                || mono_now,
-            );
+        pi_common_thread(thread, |target_state, _target_old_ep, target_new_ep, _mono_now| {
+            // Make sure the start and finish times are consistent with the bandwidth
+            // parameters of the deadline profile. Consistency in fair profiles is
+            // handled by `Scheduler::adjust_fair_bandwidth`.
+            if target_new_ep.is_deadline() {
+                target_state.start_time =
+                    target_state.finish_time - target_new_ep.deadline().deadline_ns;
+            }
         });
     }
 }
@@ -8449,13 +8403,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_upstream_thread_base_profile_c
         (*cpp_thread_get_scheduler_state(_upstream.cast_mut()))
             .effective_profile
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
-        pi_common_thread(target, |target_state, target_old_ep, target_new_ep, mono_now| {
-            update_base_profile_changed_dynamic_params(
-                target_state,
-                target_old_ep,
-                target_new_ep,
-                || mono_now,
-            );
+        pi_common_thread(target, |target_state, _target_old_ep, target_new_ep, _mono_now| {
+            // Make sure the start and finish times are consistent with the bandwidth
+            // parameters of the deadline profile. Consistency in fair profiles is
+            // handled by `Scheduler::adjust_fair_bandwidth`.
+            if target_new_ep.is_deadline() {
+                target_state.start_time =
+                    target_state.finish_time - target_new_ep.deadline().deadline_ns;
+            }
         });
     }
 }
@@ -8482,13 +8437,14 @@ pub unsafe extern "C" fn rust_kernel_scheduler_pi_upstream_thread_base_profile_c
             .assert_dirty_state(EffectiveProfile::DIRTY_FLAG_CLEAN);
         pi_common_owq(
             target,
-            |target_iss, target_old_ep, target_new_ep| {
-                update_base_profile_changed_dynamic_params(
-                    target_iss,
-                    target_old_ep,
-                    target_new_ep,
-                    current_sched_time,
-                );
+            |target_iss, _target_old_ep, target_new_ep| {
+                // Make sure the start and finish times are consistent with the bandwidth
+                // parameters of the deadline profile. Consistency in fair profiles is
+                // handled by `Scheduler::adjust_fair_bandwidth`.
+                if target_new_ep.is_deadline() {
+                    target_iss.start_time =
+                        target_iss.finish_time - target_new_ep.deadline().deadline_ns;
+                }
             },
             None,
         );

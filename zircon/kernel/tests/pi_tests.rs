@@ -45,8 +45,8 @@ use pin_init::{
     InPlaceWrite as _, PinInit, pin_data, pin_init, pin_init_array_from_fn, stack_pin_init,
 };
 use unittest::{
-    assert_eq, assert_false, assert_le, assert_lt, assert_true, expect_eq, expect_false, expect_ge,
-    expect_gt, expect_le, expect_lt, expect_ne, expect_true, subtest,
+    assert_eq, assert_false, assert_le, assert_lt, assert_true, expect_eq, expect_false, expect_gt,
+    expect_lt, expect_ne, expect_true, subtest,
 };
 use zx_status::Status;
 use zx_types::{zx_duration_mono_t, zx_instant_mono_t};
@@ -3125,109 +3125,5 @@ mod pi_tests {
             retry_duration,
             verify_fn,
         ));
-    }
-
-    /// fair to deadline or deadline to deadline base profile transition (b/579442184)
-    #[test]
-    fn pi_test_base_profile_transition_to_deadline_with_future_start_time() {
-        // Verifies that transitioning a fair or deadline thread (and a downstream
-        // target inheriting from it) to a shorter-period deadline base profile
-        // accomplishes the following:
-        //
-        // - Re-anchors dynamic deadline parameters (`start_time`, `finish_time`,
-        //   `time_slice_ns`) at the current monotonic time rather than leaving
-        //   `start_time = finish_time - period` in the future
-        // - Carries over the consumed time-slice fraction, i.e. budget accounting
-        //   is not reset to 0 despite changing profiles
-        //
-        // This is a regression test for b/579442184.
-
-        let _pboost = AutoProfileBooster::new();
-        stack_pin_init!(let owq = LockedOwnedWaitQueue::init());
-        let owq: &LockedOwnedWaitQueue = owq.into_ref().get_ref();
-        let pressure_thread = TestThread::default();
-        let blocking_thread = TestThread::default();
-
-        let _cleanup = zr::defer(|| {
-            TestThread::clear_shutdown_barrier();
-            owq.release_all_threads();
-            let _ = pressure_thread.reset(false);
-            let _ = blocking_thread.reset(false);
-        });
-
-        let long_capacity: zx_duration_mono_t = zx_msec(2);
-        let long_period: zx_duration_mono_t = zx_msec(8);
-        let short_capacity: zx_duration_mono_t = zx_msec(1);
-        let short_period: zx_duration_mono_t = zx_msec(2);
-        let fair_profile = FairProfile::create(TEST_DEFAULT_WEIGHT, InheritableProfile::Yes);
-        let long_deadline_profile = DeadlineProfile::create(long_capacity, long_period);
-        let short_deadline_profile = DeadlineProfile::create(short_capacity, short_period);
-
-        assert_true!(fair_profile.is_some());
-        assert_true!(long_deadline_profile.is_some());
-        assert_true!(short_deadline_profile.is_some());
-        let fair_profile = fair_profile.unwrap();
-        let long_deadline_profile = long_deadline_profile.unwrap();
-        let short_deadline_profile = short_deadline_profile.unwrap();
-
-        TestThread::reset_shutdown_barrier();
-
-        assert_true!(blocking_thread.create(fair_profile.clone()));
-        assert_true!(pressure_thread.create(fair_profile));
-
-        // Have each fair thread spin for `long_capacity` (2ms, or 20% of the 10ms
-        // default fair period) before blocking so that proportional time-slice
-        // carryover is distinguishable from both resetting `time_slice_used_ns` to
-        // zero and leaving it unscaled.
-        let spin = || {
-            let _eager_resched_disabler = AnnotatedAutoEagerReschedDisabler::new();
-            let spin_until = current_mono_time().0 + long_capacity;
-            while current_mono_time().0 < spin_until {}
-        };
-
-        // SAFETY: `spin` captures only `long_capacity` by value.
-        assert_true!(unsafe { blocking_thread.run_op(spin) });
-        assert_true!(blocking_thread.wait_for(TestThreadCondition::Blocked));
-
-        // SAFETY: `owq`, `blocking_thread`, and `spin` outlive `pressure_thread`,
-        // which is joined in `_cleanup` before any local is dropped, and preemption
-        // is disabled by `_eager_resched_disabler` before `block_and_assign_owner`.
-        assert_true!(unsafe {
-            pressure_thread.run_op(|| {
-                spin();
-                let _eager_resched_disabler = AnnotatedAutoEagerReschedDisabler::new();
-                let preempt_disabled = PreemptDisabledToken::new();
-                let _ = owq.block_and_assign_owner(
-                    &Deadline::infinite(),
-                    Some(blocking_thread.thread()),
-                    ResourceOwnership::Normal,
-                    Interruptible::Yes,
-                    &preempt_disabled,
-                );
-            })
-        });
-        assert_true!(pressure_thread.wait_for(TestThreadCondition::Blocked));
-
-        // 1. Fair -> Deadline (8ms period) transition, and
-        // 2. Deadline (8ms period) -> Deadline (2ms period) transition where
-        //    `finish_time - 2ms > mono_now`.
-        for (profile, capacity, period) in [
-            (&long_deadline_profile, long_capacity, long_period),
-            (&short_deadline_profile, short_capacity, short_period),
-        ] {
-            let before_apply: zx_instant_mono_t = current_mono_time().0;
-            profile.apply(pressure_thread.thread());
-            let after_apply: zx_instant_mono_t = current_mono_time().0;
-
-            for t in [&pressure_thread, &blocking_thread] {
-                let snap = t.snapshot();
-                expect_ge!(snap.start_time.raw_value(), before_apply);
-                expect_le!(snap.start_time.raw_value(), after_apply);
-                expect_eq!(snap.finish_time.raw_value() - snap.start_time.raw_value(), period);
-                expect_eq!(snap.time_slice_ns.raw_value(), capacity);
-                expect_gt!(snap.remaining_time_slice_ns.raw_value(), 0);
-                expect_le!(snap.remaining_time_slice_ns.raw_value(), capacity * 4 / 5);
-            }
-        }
     }
 }
