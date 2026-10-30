@@ -1109,3 +1109,300 @@ decode_success("EmptyFlexibleUnionDecodesUnknownLargeValue") {
         ],
     },
 }
+
+decode_failure("StrictUnionUnknownValueInline") {
+    type = TestStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1234):8, // unknown ordinal
+            num(100):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = STRICT_UNION_UNKNOWN_FIELD,
+}
+
+decode_failure("OptionalStrictUnionUnknownValueOutOfLine") {
+    // TODO(https://fxbug.dev/579582163): Reject unknown ordinals in optional strict unions in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestOptionalStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1234):8, // unknown ordinal
+            num(24):4, num(0):2, num(0):2, // envelope
+            repeat(0xab):20, padding:4, // unknown bytes
+        ],
+    },
+    err = STRICT_UNION_UNKNOWN_FIELD,
+}
+
+decode_failure("OptionalStrictUnionUnknownValueInline") {
+    // TODO(https://fxbug.dev/579582163): Reject unknown ordinals in optional strict unions in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestOptionalStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1234):8, // unknown ordinal
+            num(100):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = STRICT_UNION_UNKNOWN_FIELD,
+}
+
+decode_failure("RequiredStrictValueUnionZeroOrdinalWithInlinePayload") {
+    // TODO(https://fxbug.dev/579582163): Return UNION_FIELD_NOT_SET for zero ordinal in strict unions in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(0):8, // zero ordinal
+            num(42):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = UNION_FIELD_NOT_SET,
+}
+
+decode_failure("RequiredFlexibleValueUnionZeroOrdinalWithInlinePayload") {
+    // TODO(https://fxbug.dev/579582163): Reject ordinal 0 with payload in required flexible unions in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(0):8, // zero ordinal
+            num(42):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = UNION_FIELD_NOT_SET,
+}
+
+decode_failure("OptionalStrictValueUnionZeroOrdinalWithInlinePayload") {
+    type = TestOptionalStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(0):8, // zero ordinal
+            num(42):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = UNION_FIELD_NOT_SET,
+}
+
+decode_failure("OptionalFlexibleValueUnionZeroOrdinalWithInlinePayload") {
+    type = TestOptionalFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(0):8, // zero ordinal
+            num(42):4, num(0):2, num(1):2, // inlined envelope
+        ],
+    },
+    err = UNION_FIELD_NOT_SET,
+}
+
+decode_failure("RequiredStrictUnionKnownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1):8, // known ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("OptionalStrictUnionKnownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579581713): Reject absent envelope with non-zero ordinal in rust_codec.
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [rust_codec, rust_next],
+    type = TestOptionalStrictXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1):8, // known ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("RequiredFlexibleUnionKnownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [rust_next],
+    type = TestFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1):8, // known ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("OptionalFlexibleUnionKnownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579581713): Reject absent envelope with non-zero ordinal in rust_codec.
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [rust_codec, rust_next],
+    type = TestOptionalFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1):8, // known ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("RequiredFlexibleUnionUnknownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579581622): Reject absent envelope on unknown union ordinal in llcpp.
+    // TODO(https://fxbug.dev/579581713): Reject absent envelope with non-zero ordinal in rust_codec.
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [llcpp, rust_codec, rust_next],
+    type = TestFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1234):8, // unknown ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("OptionalFlexibleUnionUnknownOrdinalAbsentEnvelope") {
+    // TODO(https://fxbug.dev/579581622): Reject absent envelope on unknown union ordinal in llcpp.
+    // TODO(https://fxbug.dev/579581713): Reject absent envelope with non-zero ordinal in rust_codec.
+    // TODO(https://fxbug.dev/579582163): Reject absent envelope with non-zero ordinal in rust_next.
+    bindings_denylist = [llcpp, rust_codec, rust_next],
+    type = TestOptionalFlexibleXUnionInStruct,
+    bytes = {
+        v2 = [
+            num(1234):8, // unknown ordinal
+            num(0):4, num(0):2, num(0):2, // absent envelope
+        ],
+    },
+    err = NON_NULLABLE_TYPE_WITH_NULL_VALUE,
+}
+
+decode_failure("UnionKnownOutOfLineMemberWrongEnvelopeByteCount") {
+    // TODO(https://fxbug.dev/579582163): Validate envelope byte count in rust_next.
+    bindings_denylist = [rust_next],
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(2):8, // ordinal 2 (large uint64, 8 bytes)
+            num(16):4, num(0):2, num(0):2, // envelope claims 16 bytes instead of 8
+            num(100):8,
+            num(0):8,
+        ],
+    },
+    err = INVALID_NUM_BYTES_IN_ENVELOPE,
+}
+
+decode_failure("UnionKnownInlineHandleZeroHandlesInEnvelope") {
+    handle_defs = {
+        #0 = event(),
+    },
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(3):8, // ordinal 3 (handle)
+            repeat(0xff):4, num(0):2, num(1):2, // inlined envelope claims 0 handles
+        ],
+    },
+    handles = {
+        v2 = [#0],
+    },
+    err = INVALID_NUM_HANDLES_IN_ENVELOPE,
+}
+
+decode_failure("UnionUnknownInlineEnvelopeMoreThanOneHandle") {
+    // TODO(https://fxbug.dev/579637828): Validate unknown envelope byte/handle count in cpp, hlcpp, and llcpp.
+    // TODO(https://fxbug.dev/579582741): Validate unknown envelope byte/handle count in rust and rust_codec.
+    // TODO(https://fxbug.dev/579582163): Validate unknown envelope byte/handle count in rust_next.
+    bindings_denylist = [cpp, hlcpp, llcpp, rust, rust_codec, rust_next],
+    handle_defs = {
+        #0 = event(),
+        #1 = event(),
+    },
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(10):8, // unknown ordinal
+            repeat(0xff):4, num(2):2, num(1):2, // inlined envelope with 2 handles (max 1 fits in 4 bytes)
+        ],
+    },
+    handles = {
+        v2 = [#0, #1],
+    },
+    err = INVALID_NUM_HANDLES_IN_ENVELOPE,
+}
+
+decode_failure("UnionUnknownOutOfLineEnvelopeZeroBytesWithHandle") {
+    // TODO(https://fxbug.dev/579637828): Validate unknown envelope byte/handle count in cpp, hlcpp, and llcpp.
+    // TODO(https://fxbug.dev/579582741): Validate unknown envelope byte/handle count in rust and rust_codec.
+    // TODO(https://fxbug.dev/579582163): Validate unknown envelope byte/handle count in rust_next.
+    bindings_denylist = [cpp, hlcpp, llcpp, rust, rust_codec, rust_next],
+    handle_defs = {
+        #0 = event(),
+    },
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(10):8, // unknown ordinal
+            num(0):4, num(1):2, num(0):2, // out-of-line envelope with 0 bytes and 1 handle
+        ],
+    },
+    handles = {
+        v2 = [#0],
+    },
+    err = INVALID_NUM_HANDLES_IN_ENVELOPE,
+}
+
+decode_failure("UnionUnknownOutOfLineEnvelopeMoreHandlesThanFitInBytes") {
+    // TODO(https://fxbug.dev/579637828): Validate unknown envelope byte/handle count in cpp, hlcpp, and llcpp.
+    // TODO(https://fxbug.dev/579582741): Validate unknown envelope byte/handle count in rust and rust_codec.
+    // TODO(https://fxbug.dev/579582163): Validate unknown envelope byte/handle count in rust_next.
+    bindings_denylist = [cpp, hlcpp, llcpp, rust, rust_codec, rust_next],
+    handle_defs = {
+        #0 = event(),
+        #1 = event(),
+        #2 = event(),
+    },
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(10):8, // unknown ordinal
+            num(8):4, num(3):2, num(0):2, // 8 bytes can hold at most 2 handles
+            repeat(0xff):8,
+        ],
+    },
+    handles = {
+        v2 = [#0, #1, #2],
+    },
+    err = INVALID_NUM_HANDLES_IN_ENVELOPE,
+}
+
+decode_failure("UnionUnknownEnvelopeBadInlineMarker") {
+    type = EnvelopeInliningTestUnionStruct,
+    bytes = {
+        v2 = [
+            num(10):8, // unknown ordinal
+            num(100):4, num(0):2, 0x01, 0xee, // bad inline marker
+        ],
+    },
+    err = INVALID_INLINE_MARKER_IN_ENVELOPE,
+}
+
+decode_success("FlexibleUnionUnknown64BitOrdinal") {
+    // TODO(https://fxbug.dev/42166276): Support unknown union variants in remaining GIDL backends.
+    bindings_allowlist = [cpp, rust, rust_codec, rust_next],
+    value = TestFlexibleXUnionInStruct{
+        xu: SampleXUnion{
+            0x100000001: null,
+        },
+    },
+    bytes = {
+        v2 = [
+            num(0x100000001):8, // 64-bit unknown ordinal (> u32::MAX)
+            num(8):4, num(0):2, num(0):2, // envelope
+            repeat(0xab):8, // unknown bytes
+        ],
+    },
+}
