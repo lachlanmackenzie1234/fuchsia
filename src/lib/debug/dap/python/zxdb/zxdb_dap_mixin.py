@@ -47,7 +47,7 @@ class ZxdbDetachArguments(DapBaseModel):
     detach_all: bool | None = Field(alias="all", default=None)
 
     @model_validator(mode="after")
-    def validate_exclusive_args(self) -> "ZxdbDetachArguments":
+    def validate_exclusive_args(self) -> ZxdbDetachArguments:
         if self.detach_all and self.pid is not None:
             raise ValueError("Cannot specify pid when detach_all is True")
         if not self.detach_all and self.pid is None:

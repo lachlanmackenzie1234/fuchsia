@@ -12,7 +12,7 @@ class Thread:
     id: int
     name: str = field(default="", compare=False)
     is_stopped: bool = field(default=False, compare=False)
-    process: "Process | None" = field(default=None, repr=False, compare=False)
+    process: Process | None = field(default=None, repr=False, compare=False)
 
     def resume(self) -> None:
         """Marks this thread as not stopped."""

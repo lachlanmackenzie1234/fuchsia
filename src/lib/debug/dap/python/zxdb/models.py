@@ -113,7 +113,7 @@ class AsyncTaskNode(DapBaseModel):
     name: str | None = None
     file: str | None = None
     line: int | None = None
-    children: list["AsyncTaskNode"] = Field(default_factory=list)
+    children: list[AsyncTaskNode] = Field(default_factory=list)
 
 
 class AsyncBacktraceUpdateBody(DapBaseModel):
