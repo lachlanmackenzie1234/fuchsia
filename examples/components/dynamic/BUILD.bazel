@@ -49,6 +49,7 @@ fx_component(
     deps = [":bin_packaged"],
 )
 
+# test-parity-allow-manual: Inner test binary wrapped by :tests_test.
 rustc_test(
     name = "test_bin",
     srcs = ["src/test.rs"],
