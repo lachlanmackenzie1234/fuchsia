@@ -6,9 +6,14 @@
 
 #include <lib/fit/defer.h>
 
+#include <atomic>
+#include <thread>
+#include <vector>
+
 #include "src/ui/lib/escher/impl/command_buffer_pool.h"
 #include "src/ui/lib/escher/renderer/buffer_cache.h"
 #include "src/ui/lib/escher/renderer/frame.h"
+#include "src/ui/lib/escher/resources/resource.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/vk/vulkan_tester.h"
 
@@ -805,6 +810,110 @@ VK_TEST_F(CommandBufferTest, FrameEndFrameFailedSubmitSkipsCallbackAndCleansUpFr
   EXPECT_TRUE(escher->Cleanup());
   EXPECT_FALSE(frame_retired_callback_ran);
   EXPECT_EQ(buffer_cache.free_buffer_count(), 1u);
+}
+
+class SequenceNumberTestResource : public Resource {
+ public:
+  static const ResourceTypeInfo kTypeInfo;
+  const ResourceTypeInfo& type_info() const override { return kTypeInfo; }
+
+  explicit SequenceNumberTestResource(ResourceManager* owner = nullptr) : Resource(owner) {}
+
+  void UpdateSequenceNumber(uint64_t seq_num) const { KeepAlive(seq_num); }
+};
+
+const ResourceTypeInfo SequenceNumberTestResource::kTypeInfo("SequenceNumberTestResource",
+                                                             ResourceType::kResource);
+
+VK_TEST_F(CommandBufferTest, KeepAliveMonotonicallyAdvancesSequenceNumber) {
+  auto escher = test::GetEscher();
+  auto resource = fxl::MakeRefCounted<SequenceNumberTestResource>();
+  EXPECT_EQ(0u, resource->sequence_number());
+
+  resource->UpdateSequenceNumber(5);
+  EXPECT_EQ(5u, resource->sequence_number());
+
+  // Equal or lower sequence numbers must not regress `sequence_number()`.
+  resource->UpdateSequenceNumber(5);
+  EXPECT_EQ(5u, resource->sequence_number());
+  resource->UpdateSequenceNumber(3);
+  EXPECT_EQ(5u, resource->sequence_number());
+
+  auto cb = CommandBuffer::NewForGraphics(escher, false);
+  const uint64_t cb_seq = cb->sequence_number();
+  auto cb_resource = fxl::MakeRefCounted<SequenceNumberTestResource>();
+  cb->KeepAlive(cb_resource);
+  EXPECT_EQ(cb_seq, cb_resource->sequence_number());
+
+  cb_resource->UpdateSequenceNumber(cb_seq + 10);
+  cb->KeepAlive(cb_resource);
+  EXPECT_EQ(cb_seq + 10, cb_resource->sequence_number());
+
+  EXPECT_TRUE(cb->Submit(nullptr));
+}
+
+TEST(ResourceSequenceNumberTest, ConcurrentKeepAliveAndSequenceNumberReads) {
+  auto resource = fxl::MakeRefCounted<SequenceNumberTestResource>();
+  constexpr uint64_t kMaxSeq = 10000;
+  constexpr size_t kNumWriters = 4;
+  constexpr size_t kNumReaders = 4;
+  constexpr size_t kTotalThreads = kNumWriters + kNumReaders;
+
+  std::atomic<size_t> ready_threads{0};
+  std::atomic<bool> start{false};
+  std::atomic<size_t> finished_writers{0};
+  std::vector<std::thread> writers;
+  std::vector<std::thread> readers;
+  writers.reserve(kNumWriters);
+  readers.reserve(kNumReaders);
+
+  for (size_t w = 0; w < kNumWriters; ++w) {
+    writers.emplace_back([&]() {
+      ready_threads.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      for (uint64_t seq = 1; seq <= kMaxSeq; ++seq) {
+        resource->UpdateSequenceNumber(seq);
+        // Interleave a lower sequence number to verify it never regresses under concurrent
+        // updates and reads.
+        resource->UpdateSequenceNumber(seq - 1);
+      }
+      finished_writers.fetch_add(1, std::memory_order_release);
+    });
+  }
+
+  for (size_t i = 0; i < kNumReaders; ++i) {
+    readers.emplace_back([&]() {
+      ready_threads.fetch_add(1, std::memory_order_release);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      uint64_t prev = 0;
+      while (finished_writers.load(std::memory_order_acquire) < kNumWriters) {
+        uint64_t curr = resource->sequence_number();
+        EXPECT_GE(curr, prev);
+        EXPECT_LE(curr, kMaxSeq);
+        prev = curr;
+      }
+      uint64_t final_seq = resource->sequence_number();
+      EXPECT_GE(final_seq, prev);
+      EXPECT_EQ(kMaxSeq, final_seq);
+    });
+  }
+
+  while (ready_threads.load(std::memory_order_acquire) < kTotalThreads) {
+    std::this_thread::yield();
+  }
+  start.store(true, std::memory_order_release);
+
+  for (auto& writer : writers) {
+    writer.join();
+  }
+  for (auto& reader : readers) {
+    reader.join();
+  }
+  EXPECT_EQ(kMaxSeq, resource->sequence_number());
 }
 
 }  // namespace
