@@ -7,6 +7,7 @@ package(default_applicable_licenses = ["//:license"])
 test_suite(
     name = "target_tests",
     tests = [
+        "//src/paravirtualization/vsock:tests",
         "//src/paravirtualization/vsock-loopback:vsock-loopback-unittests",
     ],
 )
