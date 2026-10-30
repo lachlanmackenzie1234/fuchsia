@@ -10182,18 +10182,18 @@ rustc_library("futures-util-v0_3_34") {
   applicable_licenses = [ ":futures-util-v0_3_34.license" ]
 }
 
-license("generator-v0_8_10.license") {
+license("generator-v0_8_11.license") {
   public_package_name = "generator"
   license_files = [
-    "//third_party/rust_crates/vendor/generator-0.8.10/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/generator-0.8.10/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/generator-0.8.11/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/generator-0.8.11/LICENSE-MIT",
   ]
 }
 
-rustc_library("generator-v0_8_10") {
+rustc_library("generator-v0_8_11") {
   crate_name = "generator"
-  source_root = "//third_party/rust_crates/vendor/generator-0.8.10/src/lib.rs"
-  output_name = "generator-9187dffe2db4e66d"
+  source_root = "//third_party/rust_crates/vendor/generator-0.8.11/src/lib.rs"
+  output_name = "generator-109ec9d6358ed408"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10215,8 +10215,8 @@ rustc_library("generator-v0_8_10") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9187dffe2db4e66d",
-    "-Cextra-filename=-9187dffe2db4e66d",
+    "-Cmetadata=109ec9d6358ed408",
+    "-Cextra-filename=-109ec9d6358ed408",
   ]
 
   visibility = []
@@ -10227,7 +10227,7 @@ rustc_library("generator-v0_8_10") {
   visibility += [ ":loom-v0_7_2.aux.deps.transdeps" ]
   visibility += [ ":loom-v0_7_2.actual.rust_compilation_deps" ]
   testonly = true
-  applicable_licenses = [ ":generator-v0_8_10.license" ]
+  applicable_licenses = [ ":generator-v0_8_11.license" ]
 }
 
 license("generic-array-v0_14_9.license") {
@@ -13066,7 +13066,7 @@ rustc_library("loom-v0_7_2") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_5" ]
-  deps += [ ":generator-v0_8_10" ]
+  deps += [ ":generator-v0_8_11" ]
   deps += [ ":pin-utils-v0_1_1" ]
   deps += [ ":scoped-tls-v1_0_1" ]
   deps += [ ":serde-v1_0_229" ]

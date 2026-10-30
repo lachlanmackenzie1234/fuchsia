@@ -721,7 +721,7 @@ rustflags = []
 
 # generator has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
-[gn.package.generator."0.8.10"]
+[gn.package.generator."0.8.11"]
 visibility = [
   "//third_party/rust_crates/compat/icu:*",
   ":loom-v0_7_2.actual",
