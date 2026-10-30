@@ -274,6 +274,37 @@ class OdpmPowerTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             # Restart for teardown
             (await wifi_proxy.start()).unwrap()
 
+    async def test_connected_no_traffic_power(self) -> None:
+        """Measure power impact when Wi-Fi is connected but idle (no traffic moving across the
+        connection)."""
+        ap = self.access_point
+        if not ap:
+            raise signals.TestSkip(
+                "No Access Point available in environment. Skipping Connected idle test."
+            )
+
+        # Connect to the AP using the wlanix Supplicant interface
+        ssid, password = self._setup_ap_and_get_credentials()
+        await self._connect_via_wlanix(ssid, password)
+
+        await odpm_utils.start_trace(self.dut.tracing)
+        _LOGGER.info(
+            "ODPM trace started, waiting for steady state power measurement..."
+        )
+
+        # Spend enough time connected and idle to gather data.
+        await asyncio.sleep(DURATION_ACTIVE_IDLE_SEC)
+
+        # Stop ODPM trace and process metrics
+        results = await odpm_utils.stop_trace_and_save_metrics(
+            tracing=self.dut.tracing,
+            test_case_path=self.log_path,
+            test_name=self.current_test_info.name,
+            rail=odpm_utils.ODPM_WLAN_RAIL,
+        )
+
+        self._assert_power_budget(results, BUDGET_ACTIVE_IDLE_W)
+
 
 if __name__ == "__main__":
     test_runner.main()
