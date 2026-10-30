@@ -13,6 +13,7 @@ test_suite(
         "//examples/components/dictionaries:dictionary-examples_test",
         "//examples/components/dynamic:tests_test",
         "//examples/diagnostics/inspect/rust-ergonomic:ergonomic-inspect-tests",
+        "//examples/rust:rust-examples_test",
         "//examples/rust/rust_static_linking:static_linking_tests",
     ],
 )
