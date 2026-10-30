@@ -1789,6 +1789,283 @@ class BuildTestsJsonTest(unittest.TestCase):
         ]
         self.assertEqual(expected_x64_tests, x64_tests)
 
+    def _write_dedupe_test_inputs(
+        self,
+    ) -> tuple[dict[str, T.Any], dict[str, T.Any], Path, Path]:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        nuc_env = {"dimensions": {"device_type": "Intel NUC Kit NUC11TNHv5"}}
+
+        minimal_tests = [
+            # Run on core and minimal, with default environments.
+            {"test": {"name": "shared", "cpu": "x64"}},
+            # Run on core and minimal, but only on AEMU.
+            {
+                "test": {"name": "shared_aemu_only", "cpu": "x64"},
+                "environments": [aemu_env],
+            },
+            # Only on minimal.
+            {"test": {"name": "minimal_only", "cpu": "x64"}},
+        ]
+        minimal_tests_path = self.build_dir / "minimal_tests.json"
+        minimal_tests_path.write_text(json.dumps(minimal_tests))
+
+        core_tests = [
+            {"test": {"name": "shared", "cpu": "x64"}},
+            {
+                "test": {"name": "shared_aemu_only", "cpu": "x64"},
+                "environments": [aemu_env],
+            },
+            # Only on core.
+            {"test": {"name": "core_only", "cpu": "x64"}},
+        ]
+        core_tests_path = self.build_dir / "core_tests.json"
+        core_tests_path.write_text(json.dumps(core_tests))
+
+        return aemu_env, nuc_env, minimal_tests_path, core_tests_path
+
+    def test_product_bundle_test_group_dedupe_against(self) -> None:
+        (
+            aemu_env,
+            nuc_env,
+            minimal_tests_path,
+            core_tests_path,
+        ) = self._write_dedupe_test_inputs()
+
+        minimal_group = {
+            "label": "//bundles:minimal.x64",
+            "product_bundle_name": "minimal.x64",
+            "allowed_environments": [aemu_env],
+            "tests_json": str(minimal_tests_path),
+        }
+        core_group = {
+            "label": "//bundles:core.x64",
+            "product_bundle_name": "core.x64",
+            "allowed_environments": [aemu_env, nuc_env],
+            "default_environments": [aemu_env, nuc_env],
+            "dedupe_against": ["//bundles:minimal.x64"],
+            "tests_json": str(core_tests_path),
+        }
+        product_bundles = [{"name": "minimal.x64"}, {"name": "core.x64"}]
+
+        expected_tests = [
+            {
+                "test": {"name": "shared-minimal.x64", "cpu": "x64"},
+                "environments": [aemu_env],
+                "product_bundle": "minimal.x64",
+            },
+            # Only the environment that minimal doesn't also run it in remains.
+            {
+                "test": {"name": "shared-core.x64", "cpu": "x64"},
+                "environments": [nuc_env],
+                "product_bundle": "core.x64",
+            },
+            # The core copy has no environments left, so it's only built, and
+            # the build-only entry is dropped in favor of the runnable one.
+            {
+                "test": {"name": "shared_aemu_only-minimal.x64", "cpu": "x64"},
+                "environments": [aemu_env],
+                "product_bundle": "minimal.x64",
+            },
+            {
+                "test": {"name": "minimal_only-minimal.x64", "cpu": "x64"},
+                "environments": [aemu_env],
+                "product_bundle": "minimal.x64",
+            },
+            {
+                "test": {"name": "core_only-core.x64", "cpu": "x64"},
+                "environments": [aemu_env, nuc_env],
+                "product_bundle": "core.x64",
+            },
+        ]
+
+        (_, tests) = self._test(
+            [], [minimal_group, core_group], product_bundles
+        )
+        self.assertEqual(expected_tests, tests)
+
+    def test_product_bundle_test_group_dedupe_against_order_independent(
+        self,
+    ) -> None:
+        (
+            aemu_env,
+            nuc_env,
+            minimal_tests_path,
+            core_tests_path,
+        ) = self._write_dedupe_test_inputs()
+
+        minimal_group = {
+            "label": "//bundles:minimal.x64",
+            "product_bundle_name": "minimal.x64",
+            "allowed_environments": [aemu_env],
+            "tests_json": str(minimal_tests_path),
+        }
+        core_group = {
+            "label": "//bundles:core.x64",
+            "product_bundle_name": "core.x64",
+            "allowed_environments": [aemu_env, nuc_env],
+            "default_environments": [aemu_env, nuc_env],
+            "dedupe_against": ["//bundles:minimal.x64"],
+            "tests_json": str(core_tests_path),
+        }
+        product_bundles = [{"name": "minimal.x64"}, {"name": "core.x64"}]
+
+        # The core group is listed first, before the group it dedupes against.
+        (_, tests) = self._test(
+            [], [core_group, minimal_group], product_bundles
+        )
+
+        tests_by_name = {t["test"]["name"]: t for t in tests}
+        self.assertEqual(
+            sorted(tests_by_name.keys()),
+            [
+                "core_only-core.x64",
+                "minimal_only-minimal.x64",
+                "shared-core.x64",
+                "shared-minimal.x64",
+                "shared_aemu_only-minimal.x64",
+            ],
+        )
+        self.assertEqual(
+            tests_by_name["shared-core.x64"]["environments"], [nuc_env]
+        )
+        self.assertEqual(
+            tests_by_name["shared-minimal.x64"]["environments"], [aemu_env]
+        )
+
+    def test_product_bundle_test_group_dedupe_against_build_only_group(
+        self,
+    ) -> None:
+        (
+            aemu_env,
+            nuc_env,
+            minimal_tests_path,
+            core_tests_path,
+        ) = self._write_dedupe_test_inputs()
+
+        # minimal is build-only (e.g. in presubmit), so nothing should be
+        # removed from core.
+        minimal_group = {
+            "label": "//bundles:minimal.x64",
+            "product_bundle_name": "minimal.x64",
+            "build_only": True,
+            "tests_json": str(minimal_tests_path),
+        }
+        core_group = {
+            "label": "//bundles:core.x64",
+            "product_bundle_name": "core.x64",
+            "allowed_environments": [aemu_env, nuc_env],
+            "default_environments": [aemu_env, nuc_env],
+            "dedupe_against": ["//bundles:minimal.x64"],
+            "tests_json": str(core_tests_path),
+        }
+        product_bundles = [{"name": "minimal.x64"}, {"name": "core.x64"}]
+
+        (_, tests) = self._test(
+            [], [minimal_group, core_group], product_bundles
+        )
+
+        expected_tests = [
+            {
+                "test": {"name": "shared-core.x64", "cpu": "x64"},
+                "environments": [aemu_env, nuc_env],
+                "product_bundle": "core.x64",
+            },
+            {
+                "test": {"name": "shared_aemu_only-core.x64", "cpu": "x64"},
+                "environments": [aemu_env],
+                "product_bundle": "core.x64",
+            },
+            {
+                "test": {"name": "minimal_only", "cpu": "x64"},
+                "build_only": True,
+                "environments": [],
+            },
+            {
+                "test": {"name": "core_only-core.x64", "cpu": "x64"},
+                "environments": [aemu_env, nuc_env],
+                "product_bundle": "core.x64",
+            },
+        ]
+        self.assertEqual(expected_tests, tests)
+
+    def test_product_bundle_test_group_dedupe_against_chain(self) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        tests_path = self.build_dir / "pb_tests.json"
+        tests_path.write_text(
+            json.dumps([{"test": {"name": "test1", "cpu": "x64"}}])
+        )
+
+        # c dedupes against b, which dedupes against a.  b doesn't run test1,
+        # because a does.  c is deduplicated against what b actually runs, so
+        # c still runs test1 (dedupe isn't transitive).
+        def group(name: str, dedupe_against: list[str]) -> dict[str, T.Any]:
+            return {
+                "label": f"//:{name}",
+                "product_bundle_name": name,
+                "allowed_environments": [aemu_env],
+                "dedupe_against": dedupe_against,
+                "tests_json": str(tests_path),
+            }
+
+        test_groups = [
+            group("c", ["//:b"]),
+            group("b", ["//:a"]),
+            group("a", []),
+        ]
+        product_bundles = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+        (_, tests) = self._test([], test_groups, product_bundles)
+
+        self.assertEqual(
+            [t["test"]["name"] for t in tests], ["test1-c", "test1-a"]
+        )
+
+    def test_product_bundle_test_group_dedupe_against_missing_group(
+        self,
+    ) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        tests_path = self.build_dir / "pb_tests.json"
+        tests_path.write_text(
+            json.dumps([{"test": {"name": "test1", "cpu": "x64"}}])
+        )
+        test_groups = [
+            {
+                "label": "//bundles:core.x64",
+                "product_bundle_name": "core.x64",
+                "allowed_environments": [aemu_env],
+                "dedupe_against": ["//bundles:minimal.x64"],
+                "tests_json": str(tests_path),
+            }
+        ]
+        with self.assertRaisesRegex(
+            ValueError, "//bundles:minimal.x64 is not included in the build"
+        ):
+            self._test([], test_groups, [{"name": "core.x64"}])
+
+    def test_product_bundle_test_group_dedupe_against_cycle(self) -> None:
+        aemu_env = {"dimensions": {"device_type": "AEMU"}}
+        tests_path = self.build_dir / "pb_tests.json"
+        tests_path.write_text(
+            json.dumps([{"test": {"name": "test1", "cpu": "x64"}}])
+        )
+        test_groups = [
+            {
+                "label": "//:a",
+                "product_bundle_name": "a",
+                "allowed_environments": [aemu_env],
+                "dedupe_against": ["//:b"],
+                "tests_json": str(tests_path),
+            },
+            {
+                "label": "//:b",
+                "product_bundle_name": "b",
+                "allowed_environments": [aemu_env],
+                "dedupe_against": ["//:a"],
+                "tests_json": str(tests_path),
+            },
+        ]
+        with self.assertRaisesRegex(ValueError, "Cycle found"):
+            self._test([], test_groups, [{"name": "a"}, {"name": "b"}])
+
     def test_resolve_test_environments_helper(self) -> None:
         target_p, other_p = build_tests_json.partition_platforms(
             [

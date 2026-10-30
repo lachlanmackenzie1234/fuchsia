@@ -167,6 +167,13 @@ if (target_cpu == "arm64") {
       build_only = true
     }
     target_tests = core_target_tests
+
+    # Don't re-run tests on core that are already run on minimal in the same
+    # environment.
+    dedupe_against = [
+      ":minimal.arm64",
+      ":minimal.arm64-hermetic_examples",
+    ]
   }
 }
 
@@ -195,6 +202,13 @@ if (target_cpu == "x64") {
     }
 
     target_tests = core_target_tests
+
+    # Don't re-run tests on core that are already run on minimal in the same
+    # environment.
+    dedupe_against = [
+      ":minimal.x64",
+      ":minimal.x64-ui_tests",
+    ]
   }
 }
 
