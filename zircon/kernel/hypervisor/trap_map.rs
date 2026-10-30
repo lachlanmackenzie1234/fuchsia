@@ -234,7 +234,7 @@ unsafe impl Sync for Trap {}
 impl WavlTreeKeyable<zx_gpaddr_t> for Trap {
     type Key<'a> = zx_gpaddr_t;
 
-    fn get_key(&self) -> zx_gpaddr_t {
+    unsafe fn get_key(&self) -> zx_gpaddr_t {
         self.addr
     }
 }

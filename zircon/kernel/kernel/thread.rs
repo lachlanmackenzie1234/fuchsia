@@ -4588,11 +4588,13 @@ mod tests {
                 let mut guard = OwnerGuard::new(current, token);
                 ChainLockTransaction::finalize(token);
                 let _proof = guard.proof();
-                // The current thread is not in any wait queue and we hold its lock, which
+                // SAFETY: The current thread is not in any wait queue and we hold its lock, which
                 // satisfies the synchronization preconditions of the WAVL tree trait hooks.
-                key = <Thread as WavlTreeKeyable<(InstantMono, usize)>>::get_key(current);
-                node_deadline = MinRelativeDeadlineTraits::get_node_value(current);
-                subtree_deadline = MinRelativeDeadlineTraits::get_subtree_value(current);
+                unsafe {
+                    key = <Thread as WavlTreeKeyable<(InstantMono, usize)>>::get_key(current);
+                    node_deadline = MinRelativeDeadlineTraits::get_node_value(current);
+                    subtree_deadline = MinRelativeDeadlineTraits::get_subtree_value(current);
+                }
                 guard.release();
                 DONE
             },

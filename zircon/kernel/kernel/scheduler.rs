@@ -1259,6 +1259,26 @@ impl EffectiveProfile {
         if self.is_fair() { self.weight } else { alternative }
     }
 
+    /// Like [`Self::weight_or`], for the effective profile at `this`, without forming a
+    /// reference to it, for use when only the owning scheduler's `queue_lock_` is held and other
+    /// fields (such as the dirty flags) may be concurrently written by a CPU holding the thread's
+    /// lock.
+    ///
+    /// # Safety
+    /// `this` must point to a valid `EffectiveProfile` whose `weight` is stable for the duration
+    /// of the call.
+    pub unsafe fn weight_or_raw(this: *const Self, alternative: SchedWeight) -> SchedWeight {
+        // SAFETY: Reading the `weight` field through the raw pointer per the caller's contract
+        // does not create a reference to the whole profile.
+        unsafe {
+            if Self::discipline_raw(this) == SchedDiscipline::Fair {
+                (*this).weight
+            } else {
+                alternative
+            }
+        }
+    }
+
     pub fn deadline(&self) -> SchedDeadlineParams {
         debug_assert!(self.is_deadline());
         let cap_fixed = Fixed::<i64, 0>::from_fixed(self.capacity_ns.into_fixed());
@@ -6976,9 +6996,14 @@ impl Scheduler {
 //     and `effective_profile` (`cpp_thread_get_scheduler_state`)
 // Any PI or affinity operation that mutates these fields on an enqueued thread
 // must first acquire `queue_lock_` and remove the thread from the `RunQueue`
-// before modifying them. Therefore, no concurrent mutation or conflicting
-// `&mut SchedulerState` reference can exist while the `WavlTree` trait methods
-// below borrow `run_queue_node` or `scheduler_state`.
+// before modifying them. Therefore, no concurrent mutation of these fields can
+// occur while the `WavlTree` trait methods below read or write them.
+//
+// `queue_lock_` does not guard every field, though. Thread-locked fields such
+// as `EffectiveProfile::dirty_flags` can be written under the thread's own lock
+// while the thread is enqueued. A `&SchedulerState` or `&EffectiveProfile`
+// would alias that write, so the hooks below read the fields they need through
+// raw pointers instead of borrowing `scheduler_state` or `effective_profile`.
 impl WavlTreeContainable<Thread> for Thread {
     type Rank = bool;
     fn get_node(&self) -> &WavlTreeNode<Thread, Self::Rank> {
@@ -6991,12 +7016,15 @@ impl WavlTreeContainable<Thread> for Thread {
 impl WavlTreeKeyable<(SchedTime, usize)> for Thread {
     type Key<'a> = (SchedTime, usize);
 
-    fn get_key(&self) -> (SchedTime, usize) {
-        // SAFETY: `self` is a valid `Thread` accessed under `queue_lock_`, and no
-        // mutable reference to its `SchedulerState` exists during tree key comparisons.
-        let state =
-            unsafe { &*cpp_thread_get_scheduler_state(core::ptr::from_ref(self).cast_mut()) };
-        (state.start_time, state as *const SchedulerState as usize)
+    unsafe fn get_key(&self) -> (SchedTime, usize) {
+        // SAFETY: Per `get_key`'s contract the caller holds the owning Scheduler's `queue_lock_`,
+        // which guards `start_time` while `self` is in (or being inserted into) the RunQueue.
+        // Project through the raw pointer so no `&SchedulerState` is formed while thread-locked
+        // fields may be mutated concurrently under `self.lock()`.
+        unsafe {
+            let state = cpp_thread_get_scheduler_state(core::ptr::from_ref(self).cast_mut());
+            ((*state).start_time, state.addr())
+        }
     }
 }
 
@@ -7008,21 +7036,32 @@ impl WavlTreeAugmentedInvariantObserverTraits for SubtreeInvariantTraits {
     type Target = Thread;
     type Value = SubtreeInvariants;
 
-    fn get_node_value(node: &Self::Target) -> Self::Value {
-        // SAFETY: `node` is a valid `Thread` in the `RunQueue` accessed under
-        // `queue_lock_`, with no concurrent mutable access to `SchedulerState`.
-        let state =
-            unsafe { &*cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut()) };
-        let min_weight = state.effective_profile.weight_or(SchedWeight::max());
-        SubtreeInvariants { min_finish_time: state.finish_time, min_weight }
+    unsafe fn get_node_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: Per `get_node_value`'s contract the caller holds the owning Scheduler's
+        // `queue_lock_`, which guards `finish_time` and keeps the `effective_profile` parameters
+        // stable while `node` is in (or being inserted into) the RunQueue. Project through the
+        // raw pointer so no `&SchedulerState` or `&EffectiveProfile` is formed while
+        // thread-locked fields (such as the dirty flags) may be mutated concurrently under
+        // `node.lock()`.
+        unsafe {
+            let state = cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut());
+            let min_weight = EffectiveProfile::weight_or_raw(
+                &raw const (*state).effective_profile,
+                SchedWeight::max(),
+            );
+            SubtreeInvariants { min_finish_time: (*state).finish_time, min_weight }
+        }
     }
 
-    fn get_subtree_value(node: &Self::Target) -> Self::Value {
-        // SAFETY: `node` is a valid `Thread` in the `RunQueue` accessed under
-        // `queue_lock_`, with no concurrent mutable access to `SchedulerState`.
-        let state =
-            unsafe { &*cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut()) };
-        state.subtree_invariants
+    unsafe fn get_subtree_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: Per `get_subtree_value`'s contract the caller holds the owning Scheduler's
+        // `queue_lock_`, which guards `subtree_invariants` while `node` is in (or being inserted
+        // into) the RunQueue. Project through the raw pointer so no `&SchedulerState` is formed
+        // while thread-locked fields may be mutated concurrently under `node.lock()`.
+        unsafe {
+            let state = cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut());
+            (*state).subtree_invariants
+        }
     }
 
     fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
@@ -7032,15 +7071,19 @@ impl WavlTreeAugmentedInvariantObserverTraits for SubtreeInvariantTraits {
         }
     }
 
-    fn set_subtree_value(node: &Self::Target, val: Self::Value) {
-        // SAFETY: `node` is a valid `Thread` in the `RunQueue` mutated exclusively
-        // under `queue_lock_`, and no other reference to its `SchedulerState` is live.
-        let state =
-            unsafe { &mut *cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut()) };
-        state.subtree_invariants = val;
+    unsafe fn set_subtree_value(node: &Self::Target, val: Self::Value) {
+        // SAFETY: Per `set_subtree_value`'s contract the caller has exclusive access to the
+        // RunQueue `node` is linked into (or being inserted into), i.e. holds the owning
+        // Scheduler's `queue_lock_`, which is the sole guard of `subtree_invariants`. Write
+        // through the raw pointer so no `&mut SchedulerState` is formed while thread-locked
+        // fields may be mutated concurrently under `node.lock()`.
+        unsafe {
+            let state = cpp_thread_get_scheduler_state(core::ptr::from_ref(node).cast_mut());
+            (*state).subtree_invariants = val;
+        }
     }
 
-    fn reset_subtree_value(_node: &Self::Target) {
+    unsafe fn reset_subtree_value(_node: &Self::Target) {
         // No-op, matches C++
     }
 }

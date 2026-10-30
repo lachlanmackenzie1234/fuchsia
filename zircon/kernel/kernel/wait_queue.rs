@@ -173,27 +173,18 @@ impl fbl::WavlTreeContainable<Thread, BlockedThreadTreeTag> for Thread {
     }
 }
 
-// TODO(https://fxbug.dev/545331534): `WavlTreeKeyable::get_key` is a safe trait method, so it
-// cannot require a lock token or be marked `unsafe`. Consider either adding a lock-token or
-// `unsafe` variant to `fbl`, or reading `blocked_threads_tree_sort_key` with an atomic relaxed
-// load so arbitrary safe callers cannot trigger a data race.
-//
-// Safety invariant: `WavlTreeKeyable::get_key` on `Thread` must only be called while holding the
-// containing `WaitQueue`'s `ChainLock` (when the thread is in `WaitQueueCollection::threads`) or
-// the thread's own `ChainLock` (when the thread is not in any wait queue collection).
 impl fbl::WavlTreeKeyable<Key> for Thread {
     type Key<'a> = Key;
 
-    fn get_key(&self) -> Self::Key<'_> {
+    unsafe fn get_key(&self) -> Self::Key<'_> {
         // TODO: consider extending FBL to support a "MultiWAVLTree"
         // implementation which would allow for nodes with identical keys, breaking
         // ties (under the hood) using pointer value.  This way, we would not need to
         // manifest our own pointer in GetKey or in our key type.
         //
-        // SAFETY: By the safety invariant on this `impl`, the caller holds either the containing
-        // `WaitQueue`'s `ChainLock` or `self`'s `ChainLock`, which serializes all reads of
-        // `blocked_threads_tree_sort_key` with the writes made under the thread's lock before
-        // insertion.
+        // SAFETY: Per `get_key`'s contract, the caller holds the containing `WaitQueue`'s
+        // `ChainLock` (or `self`'s `ChainLock` when inserting), which serializes this read with
+        // the writes made under the thread's lock before insertion.
         let sort_key = unsafe { *self.wait_queue_state.blocked_threads_tree_sort_key.get() };
         (sort_key, core::ptr::from_ref(self).addr())
     }
@@ -203,21 +194,18 @@ impl fbl::WavlTreeKeyable<Key> for Thread {
 /// [`WaitQueueCollection`]'s [`BlockedThreadTree`].
 pub(crate) struct MinRelativeDeadlineTraits;
 
-// TODO(https://fxbug.dev/545331534): `WavlTreeAugmentedInvariantObserverTraits` methods are safe
-// trait methods, so they cannot require a lock token or be marked `unsafe`.
-//
-// Safety invariant: Every hook on `MinRelativeDeadlineTraits` must only be called from tree
-// operations on `WaitQueueCollection::threads` while holding the containing `WaitQueue`'s
-// `ChainLock` (or, for `get_node_value` and `get_subtree_value`, on an unqueued thread while
-// holding that thread's `ChainLock`).
+// These hooks run only from tree operations on `WaitQueueCollection::threads`, under the owning
+// `WaitQueue`'s `ChainLock`, which is the sole guard of `subtree_min_deadline` while a thread is
+// in the tree (`get_node_value`/`get_subtree_value` may also be called on an unqueued thread under
+// that thread's own lock, which equally excludes concurrent writers).
 impl fbl::WavlTreeAugmentedInvariantObserverTraits for MinRelativeDeadlineTraits {
     type Target = Thread;
     type Value = DurationMono;
 
-    fn get_node_value(node: &Self::Target) -> Self::Value {
-        // SAFETY: By the safety invariant on this `impl`, `node` is either blocked in the queue
-        // being operated on (whose lock is held) or its own thread lock is held; either excludes
-        // concurrent mutation of its scheduler state.
+    unsafe fn get_node_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: Per this hook's contract, `node` is either blocked in the queue being operated
+        // on (whose lock is held) or its own thread lock is held; either excludes concurrent
+        // mutation of its scheduler state.
         let scheduler_state = unsafe { node.scheduler_state_unchecked() };
         if scheduler_state.effective_profile_is_deadline() {
             return scheduler_state.effective_profile_deadline_ns();
@@ -225,8 +213,8 @@ impl fbl::WavlTreeAugmentedInvariantObserverTraits for MinRelativeDeadlineTraits
         DurationMono::INFINITE
     }
 
-    fn get_subtree_value(node: &Self::Target) -> Self::Value {
-        // SAFETY: See the comment on this `impl`.
+    unsafe fn get_subtree_value(node: &Self::Target) -> Self::Value {
+        // SAFETY: See the comment on this `impl` block.
         unsafe { *node.wait_queue_state.subtree_min_deadline.get() }
     }
 
@@ -234,18 +222,18 @@ impl fbl::WavlTreeAugmentedInvariantObserverTraits for MinRelativeDeadlineTraits
         if a < b { a } else { b }
     }
 
-    fn set_subtree_value(node: &Self::Target, val: Self::Value) {
-        // SAFETY: See the comment on this `impl`.
+    unsafe fn set_subtree_value(node: &Self::Target, val: Self::Value) {
+        // SAFETY: See the comment on this `impl` block.
         unsafe { *node.wait_queue_state.subtree_min_deadline.get() = val };
     }
 
-    fn reset_subtree_value(node: &Self::Target) {
+    unsafe fn reset_subtree_value(node: &Self::Target) {
         // In a debug build, reset the subtree best as we leave the collection.
         // This can help to find bugs by allowing us to assert that the value is zero/max
         // during insertion, however it is not strictly needed in a production build
         // and can be skipped.
         if cfg!(debug_assertions) {
-            // SAFETY: See the comment on this `impl`.
+            // SAFETY: See the comment on this `impl` block.
             unsafe {
                 *node.wait_queue_state.subtree_min_deadline.get() = DurationMono::INFINITE;
             }
