@@ -9,7 +9,10 @@ package(default_applicable_licenses = ["//:license"])
 
 test_suite(
     name = "host_tests",
-    tests = [":shac_test"],
+    tests = [
+        ":shac_test",
+        "//build/assembly/tools/generate_assembly_scrutiny_configs:host_tests",
+    ],
 )
 
 host_shac_test(
