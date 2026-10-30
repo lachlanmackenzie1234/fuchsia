@@ -28,7 +28,7 @@ rustc_library(
     visibility = ["//src/starnix/modules:__subpackages__"],
     deps = [
         "//src/starnix/kernel/core",
-        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
         "//src/starnix/lib/starnix_uapi",
     ],
 )

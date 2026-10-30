@@ -58,7 +58,7 @@ rustc_library("battery_manager") {
   ]
   deps = [
     "//src/starnix/kernel/core",
-    "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
   ]
 }
@@ -69,7 +69,7 @@ rustc_test("battery_manager_test") {
   edition = "2024"
   deps = [
            "//src/starnix/kernel/core",
-           "//src/starnix/lib/starnix_logging",
+           "//src/starnix/lib/starnix_sync",
            "//src/starnix/lib/starnix_uapi",
          ] + [ "//src/lib/fuchsia" ]
   output_name = "starnix_modules_battery_manager_lib_test"

@@ -373,6 +373,7 @@ lock_ordering! {
     Terminal(PortWaiterCallbacksLock),
     Terminal(PortWaiterWaitQueuesLock),
     Terminal(PowerMessageCountersLock),
+    Terminal(PowerSupplyStateLock),
     Terminal(PrefetchQueueStateLock),
     Terminal(PrefetchWorkerReceiversLock),
     Terminal(ProfileHandleCacheLock),
