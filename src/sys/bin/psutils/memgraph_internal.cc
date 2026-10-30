@@ -65,7 +65,6 @@ std::string EscapeJsonString(std::string_view raw) {
 
 // Prints info about VMOs and their relationship to a process.
 // Assumes we're in the middle of dumping a process.
-// TODO(https://fxbug.dev/575725855): Insert some special entry if count < avail?
 void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
   if (count == 0) {
     // Should never happen, but don't print anything in this case.
@@ -88,7 +87,6 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
                  "\"num_children\": {}, "
                  "\"num_mappings\": {}, "
                  "\"share_count\": {}, "
-                 // TODO(https://fxbug.dev/575725855): copy-on-write? phys/paged?
                  "\"committed_bytes\": {}, "
                  "\"committed_scaled_bytes\": {}}}{}",
                  vmo->koid, EscapeJsonString(vmo->name), vmo->size_bytes, vmo->parent_koid,
