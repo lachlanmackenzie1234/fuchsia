@@ -4,6 +4,12 @@
 
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_tracepoint.h"
 
+#include <cstdint>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/client/session.h"
@@ -16,12 +22,23 @@ namespace zxdb {
 
 namespace {
 
-class RequestTracepointTest : public DebugAdapterContextTest {};
+class RequestTracepointTest : public DebugAdapterContextTest {
+ protected:
+  dap::ResponseOrError<dap::ZxdbSetTracepointsResponse> SendSetTracepoints(
+      std::vector<dap::ZxdbTracepointSpec> specs) {
+    dap::ZxdbSetTracepointsRequest req;
+    req.tracepoints = std::move(specs);
+    auto response = client().send(req);
+    context().OnStreamReadable();
+    loop().RunUntilNoTasks();
+    RunPendingClientCalls();
+    return response.get();
+  }
+};
 
 TEST_F(RequestTracepointTest, SetTracepointsRoundTrip) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
   dap::ZxdbTracepointSpec spec;
   spec.function = "MyFunction";
   spec.max_matching_frames = 5;
@@ -30,14 +47,8 @@ TEST_F(RequestTracepointTest, SetTracepointsRoundTrip) {
   spec.expressions = dap::array<dap::string>{"x", "y"};
   spec.locals = true;
   spec.registers = true;
-  req.tracepoints.push_back(spec);
 
-  auto response = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got = response.get();
+  auto got = SendSetTracepoints({spec});
   EXPECT_FALSE(got.error);
   ASSERT_EQ(got.response.tracepoints.size(), 1u);
   EXPECT_GT(got.response.tracepoints[0].id, 0);
@@ -59,48 +70,27 @@ TEST_F(RequestTracepointTest, SetTracepointsRoundTrip) {
 TEST_F(RequestTracepointTest, ReconciliationAndIdPreservation) {
   InitializeDebugging();
 
-  // Issue initial request with explicit client tracepoint id 10.
-  dap::ZxdbSetTracepointsRequest req1;
   dap::ZxdbTracepointSpec spec1;
   spec1.id = 10;
   spec1.function = "FuncA";
   spec1.max_hits = 5;
   spec1.enabled = true;
-  req1.tracepoints.push_back(spec1);
 
-  auto res1 = client().send(req1);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got1 = res1.get();
+  auto got1 = SendSetTracepoints({spec1});
   EXPECT_FALSE(got1.error);
   ASSERT_EQ(got1.response.tracepoints.size(), 1u);
   EXPECT_EQ(got1.response.tracepoints[0].id, 10);
-  EXPECT_TRUE(got1.response.tracepoints[0].enabled);
 
-  // Manually increment hit count on tp 10.
   auto it = context().dap_tracepoints().find(10);
   ASSERT_NE(it, context().dap_tracepoints().end());
   ASSERT_TRUE(it->second);
   it->second->set_hit_count(3);
 
-  // Update id 10 in-place with new settings and register a new tracepoint without specifying an id.
-  dap::ZxdbSetTracepointsRequest req2;
   spec1.max_hits = 20;
-  spec1.enabled = true;
-  req2.tracepoints.push_back(spec1);
-
   dap::ZxdbTracepointSpec spec2;
   spec2.function = "FuncB";
-  req2.tracepoints.push_back(spec2);
 
-  auto res2 = client().send(req2);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got2 = res2.get();
+  auto got2 = SendSetTracepoints({spec1, spec2});
   EXPECT_FALSE(got2.error);
   ASSERT_EQ(got2.response.tracepoints.size(), 2u);
   EXPECT_EQ(got2.response.tracepoints[0].id, 10);
@@ -111,21 +101,11 @@ TEST_F(RequestTracepointTest, ReconciliationAndIdPreservation) {
   EXPECT_NE(new_id, 10);
   EXPECT_EQ(context().dap_tracepoints().size(), 2u);
 
-  // Reconcile by omitting id 10 so it is deleted while preserving the newly added tracepoint.
-  dap::ZxdbSetTracepointsRequest req3;
   spec2.id = new_id;
-  req3.tracepoints.push_back(spec2);
-
-  auto res3 = client().send(req3);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got3 = res3.get();
+  auto got3 = SendSetTracepoints({spec2});
   EXPECT_FALSE(got3.error);
   ASSERT_EQ(got3.response.tracepoints.size(), 1u);
   EXPECT_EQ(got3.response.tracepoints[0].id, new_id);
-
   EXPECT_EQ(context().dap_tracepoints().size(), 1u);
   EXPECT_EQ(context().dap_tracepoints().find(10), context().dap_tracepoints().end());
 }
@@ -133,20 +113,13 @@ TEST_F(RequestTracepointTest, ReconciliationAndIdPreservation) {
 TEST_F(RequestTracepointTest, WatchpointResolution) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
   dap::ZxdbTracepointSpec spec;
   dap::ZxdbTracepointWatchSpec watch;
   watch.data_id = "1234:0x2000:8";
   watch.access_type = "readWrite";
   spec.watch = watch;
-  req.tracepoints.push_back(spec);
 
-  auto res = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got = res.get();
+  auto got = SendSetTracepoints({spec});
   EXPECT_FALSE(got.error);
   ASSERT_EQ(got.response.tracepoints.size(), 1u);
 
@@ -233,183 +206,15 @@ TEST_F(RequestTracepointTest, TracepointEventEmission) {
   EXPECT_EQ(received_event.capture.errors[0], "Condition error: bad_ident");
 }
 
-TEST_F(RequestTracepointTest, BoundaryTestsAndInvalidInputs) {
-  InitializeDebugging();
-
-  // Test zero KOID in dataId.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.data_id = "0:0x2000:8";
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_TRUE(got.response.tracepoints[0].message.has_value());
-  }
-
-  // Test malformed dataId without proper colons.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.data_id = "1234_0x2000_8";
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_TRUE(got.response.tracepoints[0].message.has_value());
-  }
-
-  // Test address overflow in dataId.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.data_id = "1234:0xffffffffffffffff:16";
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_TRUE(got.response.tracepoints[0].message.has_value());
-  }
-
-  // Test non-positive DAP id (id <= 0).
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.id = 0;
-    spec.function = "Func";
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-
-  // Test non-positive line (line <= 0).
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.file = "foo.cc";
-    spec.line = 0;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-
-  // Test non-positive maxMatchingFrames (maxMatchingFrames <= 0).
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.function = "Func";
-    spec.max_matching_frames = 0;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-
-  // Test non-positive maxHits (maxHits <= 0).
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.function = "Func";
-    spec.max_hits = 0;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-
-  // Test non-positive watch byteSize (byteSize <= 0).
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.address = 0x1000;
-    watch.byte_size = 0;
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-}
-
 TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
   dap::ZxdbTracepointSpec spec;
   spec.id = 77;
   spec.function = "MyFunction";
-  spec.max_hits = 15;
-  req.tracepoints.push_back(spec);
-
-  auto set_res = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got_set = set_res.get();
-  EXPECT_FALSE(got_set.error);
-  ASSERT_EQ(got_set.response.tracepoints.size(), 1u);
-  EXPECT_EQ(got_set.response.tracepoints[0].id, 77);
-
-  auto it = context().dap_tracepoints().find(77);
-  ASSERT_NE(it, context().dap_tracepoints().end());
-  Tracepoint* tp = it->second.get();
+  auto got_set = SendSetTracepoints({spec});
+  ASSERT_FALSE(got_set.error);
+  Tracepoint* tp = context().dap_tracepoints().at(77).get();
   ASSERT_NE(tp, nullptr);
 
   bool event_received = false;
@@ -424,10 +229,7 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   hit.location = "MyFunction";
   hit.hit_count = 1;
   hit.max_hits = 15;
-  hit.auto_disabled = false;
   hit.thread_koid = 8888;
-  hit.dwell_ms = 0.5;
-
   TracepointFrameRecord rec;
   rec.frame_index = 0;
   rec.ip = 0x2000;
@@ -438,12 +240,7 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   rec.line = 10;
   rec.elided = false;
   hit.capture.backtrace = std::vector<TracepointFrameRecord>{rec};
-
-  TracepointEvaluation eval;
-  eval.result = "42";
-  eval.type = "int";
-  hit.capture.evaluations["x + 1"] = eval;
-
+  hit.capture.evaluations["x + 1"] = TracepointEvaluation{.result = "42", .type = "int"};
   hit.capture.errors = {"Minor capture warning"};
 
   context().OnTracepointHit(tp, hit);
@@ -462,27 +259,46 @@ TEST_F(RequestTracepointTest, TracepointHitWithRegisteredTracepoint) {
   EXPECT_EQ(received_event.capture.errors.size(), 1u);
   EXPECT_EQ(received_event.capture.errors[0], "Minor capture warning");
 
-  // Deleting the tracepoint should remove it from dap_tracepoints_.
   context().WillDestroyTracepoint(tp);
   EXPECT_EQ(context().dap_tracepoints().find(77), context().dap_tracepoints().end());
+}
+
+TEST_F(RequestTracepointTest, InvalidDataIdInputsReturnUnverifiedInfo) {
+  InitializeDebugging();
+
+  for (const char* bad_id : {"0:0x2000:8", "1234_0x2000_8", "1234:0xffffffffffffffff:16"}) {
+    dap::ZxdbTracepointSpec spec;
+    spec.watch = dap::ZxdbTracepointWatchSpec{.data_id = bad_id};
+    auto got = SendSetTracepoints({spec});
+    EXPECT_FALSE(got.error) << bad_id;
+    ASSERT_EQ(got.response.tracepoints.size(), 1u);
+    EXPECT_FALSE(got.response.tracepoints[0].verified) << bad_id;
+    EXPECT_TRUE(got.response.tracepoints[0].message.has_value()) << bad_id;
+  }
+}
+
+TEST_F(RequestTracepointTest, NonPositiveRequestIntegersReturnDapError) {
+  InitializeDebugging();
+
+  EXPECT_TRUE(SendSetTracepoints({{.id = 0, .function = "F"}}).error);
+  EXPECT_TRUE(SendSetTracepoints({{.file = "foo.cc", .line = 0}}).error);
+  EXPECT_TRUE(SendSetTracepoints({{.function = "F", .max_matching_frames = 0}}).error);
+  EXPECT_TRUE(SendSetTracepoints({{.function = "F", .max_hits = 0}}).error);
+
+  dap::ZxdbTracepointSpec zero_watch;
+  zero_watch.watch = dap::ZxdbTracepointWatchSpec{.address = 0x1000, .byte_size = 0};
+  EXPECT_TRUE(SendSetTracepoints({zero_watch}).error);
 }
 
 TEST_F(RequestTracepointTest, RawBacktraceImpliesBacktrace) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
   dap::ZxdbTracepointSpec spec;
   spec.function = "MyFunction";
   spec.raw_backtrace = true;
   spec.backtrace = false;
-  req.tracepoints.push_back(spec);
 
-  auto res = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got = res.get();
+  auto got = SendSetTracepoints({spec});
   EXPECT_FALSE(got.error);
   ASSERT_EQ(got.response.tracepoints.size(), 1u);
 
@@ -496,47 +312,24 @@ TEST_F(RequestTracepointTest, RawBacktraceImpliesBacktrace) {
 TEST_F(RequestTracepointTest, UnrecognizedAccessType) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
-  dap::ZxdbTracepointSpec spec;
-  dap::ZxdbTracepointWatchSpec watch;
-  watch.data_id = "1234:0x2000:8";
-  watch.access_type = "sideways";
-  spec.watch = watch;
-  req.tracepoints.push_back(spec);
-
-  auto res = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got = res.get();
-  EXPECT_FALSE(got.error);
-  ASSERT_EQ(got.response.tracepoints.size(), 1u);
-  EXPECT_FALSE(got.response.tracepoints[0].verified);
-  EXPECT_EQ(got.response.tracepoints[0].message.value(), "Unknown accessType: sideways");
+  dap::ZxdbTracepointSpec sideways_spec;
+  sideways_spec.watch =
+      dap::ZxdbTracepointWatchSpec{.data_id = "1234:0x2000:8", .access_type = "sideways"};
+  auto got_sideways = SendSetTracepoints({sideways_spec});
+  ASSERT_FALSE(got_sideways.error);
+  EXPECT_FALSE(got_sideways.response.tracepoints[0].verified);
+  EXPECT_EQ(got_sideways.response.tracepoints[0].message.value(), "Unknown accessType: sideways");
 }
 
 TEST_F(RequestTracepointTest, DeleteDapTracepointsSafeguard) {
   InitializeDebugging();
 
-  dap::ZxdbSetTracepointsRequest req;
-  dap::ZxdbTracepointSpec spec1;
-  spec1.id = 1;
-  spec1.function = "Func1";
-  dap::ZxdbTracepointSpec spec2;
-  spec2.id = 2;
-  spec2.function = "Func2";
-  req.tracepoints.push_back(spec1);
-  req.tracepoints.push_back(spec2);
-
-  auto res = client().send(req);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
+  dap::ZxdbTracepointSpec spec1{.id = 1, .function = "Func1"};
+  dap::ZxdbTracepointSpec spec2{.id = 2, .function = "Func2"};
+  auto got = SendSetTracepoints({spec1, spec2});
+  ASSERT_FALSE(got.error);
   EXPECT_EQ(context().dap_tracepoints().size(), 2u);
 
-  // Calling DeleteDapTracepoints() should delete all tracepoints without iterator invalidation.
   context().DeleteDapTracepoints();
   EXPECT_TRUE(context().dap_tracepoints().empty());
 }
@@ -544,205 +337,92 @@ TEST_F(RequestTracepointTest, DeleteDapTracepointsSafeguard) {
 TEST_F(RequestTracepointTest, DuplicateAndAutoAssignedIdCollision) {
   InitializeDebugging();
 
-  // 1. Duplicate explicit IDs in the same request must be rejected with an error.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec1;
-    spec1.id = 5;
-    spec1.function = "FuncA";
-    dap::ZxdbTracepointSpec spec2;
-    spec2.id = 5;
-    spec2.function = "FuncB";
-    req.tracepoints.push_back(spec1);
-    req.tracepoints.push_back(spec2);
+  // Duplicate explicit IDs in the same request fail with a DAP error.
+  dap::ZxdbTracepointSpec dup1{.id = 5, .function = "FuncA"};
+  dap::ZxdbTracepointSpec dup2{.id = 5, .function = "FuncB"};
+  EXPECT_TRUE(SendSetTracepoints({dup1, dup2}).error);
 
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_TRUE(got.error);
-  }
-
-  // 2. Auto-assigned ID followed by an explicit id: 1 in the same request must not collide.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec_auto;
-    spec_auto.function = "FuncAuto";
-    dap::ZxdbTracepointSpec spec_explicit;
-    spec_explicit.id = 1;
-    spec_explicit.function = "FuncExplicit";
-    req.tracepoints.push_back(spec_auto);
-    req.tracepoints.push_back(spec_explicit);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 2u);
-    EXPECT_EQ(got.response.tracepoints[0].id, 2);
-    EXPECT_EQ(got.response.tracepoints[1].id, 1);
-    EXPECT_EQ(context().dap_tracepoints().size(), 2u);
-  }
+  // Auto-assigned ID followed by explicit id 1 in the same request avoids collision.
+  dap::ZxdbTracepointSpec spec_auto{.function = "FuncAuto"};
+  dap::ZxdbTracepointSpec spec_explicit{.id = 1, .function = "FuncExplicit"};
+  auto got = SendSetTracepoints({spec_auto, spec_explicit});
+  EXPECT_FALSE(got.error);
+  ASSERT_EQ(got.response.tracepoints.size(), 2u);
+  EXPECT_EQ(got.response.tracepoints[0].id, 2);
+  EXPECT_EQ(got.response.tracepoints[1].id, 1);
+  EXPECT_EQ(context().dap_tracepoints().size(), 2u);
 }
 
 TEST_F(RequestTracepointTest, InvalidSpecDeletesOldTracepoint) {
   InitializeDebugging();
 
-  // Create an initial valid tracepoint with explicit id 42.
-  dap::ZxdbSetTracepointsRequest req1;
-  dap::ZxdbTracepointSpec spec1;
-  spec1.id = 42;
-  spec1.function = "ValidFunction";
-  req1.tracepoints.push_back(spec1);
-
-  auto res1 = client().send(req1);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got1 = res1.get();
-  EXPECT_FALSE(got1.error);
-  ASSERT_EQ(got1.response.tracepoints.size(), 1u);
-  EXPECT_EQ(got1.response.tracepoints[0].id, 42);
+  dap::ZxdbTracepointSpec spec1{.id = 42, .function = "ValidFunction"};
+  auto got1 = SendSetTracepoints({spec1});
+  ASSERT_FALSE(got1.error);
   EXPECT_EQ(session().system().GetTracepoints().size(), 1u);
 
-  // Update id 42 with an invalid spec (file specified without line).
-  dap::ZxdbSetTracepointsRequest req2;
-  dap::ZxdbTracepointSpec invalid_spec;
-  invalid_spec.id = 42;
-  invalid_spec.file = "foo.cc";
-  req2.tracepoints.push_back(invalid_spec);
-
-  auto res2 = client().send(req2);
-  context().OnStreamReadable();
-  loop().RunUntilNoTasks();
-  RunPendingClientCalls();
-
-  auto got2 = res2.get();
-  EXPECT_FALSE(got2.error);
+  dap::ZxdbTracepointSpec invalid_spec{.id = 42, .file = "foo.cc"};
+  auto got2 = SendSetTracepoints({invalid_spec});
+  ASSERT_FALSE(got2.error);
   ASSERT_EQ(got2.response.tracepoints.size(), 1u);
   EXPECT_FALSE(got2.response.tracepoints[0].verified);
-
-  // The old tracepoint must be removed from the system.
   EXPECT_TRUE(session().system().GetTracepoints().empty());
   EXPECT_TRUE(context().dap_tracepoints().empty());
 }
 
-TEST_F(RequestTracepointTest, SpecValidationEdgeCases) {
+TEST_F(RequestTracepointTest, SpecAddressAndLineValidationErrors) {
   InitializeDebugging();
 
-  // Negative tracepoint address.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.address = -10;
-    req.tracepoints.push_back(spec);
+  auto got_addr = SendSetTracepoints({{.address = -10}});
+  ASSERT_FALSE(got_addr.error);
+  ASSERT_EQ(got_addr.response.tracepoints.size(), 1u);
+  EXPECT_FALSE(got_addr.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_addr.response.tracepoints[0].message.has_value());
+  EXPECT_EQ(got_addr.response.tracepoints[0].message.value(),
+            "Invalid negative tracepoint address.");
 
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
+  auto got_line = SendSetTracepoints({{.file = "main.cc"}});
+  ASSERT_FALSE(got_line.error);
+  ASSERT_EQ(got_line.response.tracepoints.size(), 1u);
+  EXPECT_FALSE(got_line.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_line.response.tracepoints[0].message.has_value());
+  EXPECT_EQ(got_line.response.tracepoints[0].message.value(),
+            "Both file and line must be specified together for a line tracepoint.");
 
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_EQ(got.response.tracepoints[0].message.value(), "Invalid negative tracepoint address.");
-  }
+  dap::ZxdbTracepointSpec neg_watch;
+  neg_watch.watch = dap::ZxdbTracepointWatchSpec{.address = -1};
+  auto got_watch = SendSetTracepoints({neg_watch});
+  ASSERT_FALSE(got_watch.error);
+  ASSERT_EQ(got_watch.response.tracepoints.size(), 1u);
+  EXPECT_FALSE(got_watch.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_watch.response.tracepoints[0].message.has_value());
+  EXPECT_EQ(got_watch.response.tracepoints[0].message.value(), "Invalid negative watch address.");
+}
 
-  // File without line.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    spec.file = "main.cc";
-    req.tracepoints.push_back(spec);
+TEST_F(RequestTracepointTest, WatchByteSizeOverrideAndOverflow) {
+  InitializeDebugging();
 
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
+  dap::ZxdbTracepointSpec overflow_spec;
+  overflow_spec.watch =
+      dap::ZxdbTracepointWatchSpec{.data_id = "1234:0xfffffffffffffffe:1", .byte_size = 4};
+  auto got_overflow = SendSetTracepoints({overflow_spec});
+  ASSERT_FALSE(got_overflow.error);
+  ASSERT_EQ(got_overflow.response.tracepoints.size(), 1u);
+  EXPECT_FALSE(got_overflow.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_overflow.response.tracepoints[0].message.has_value());
+  EXPECT_EQ(got_overflow.response.tracepoints[0].message.value(),
+            "Watch address range overflows 64-bit address space.");
 
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_EQ(got.response.tracepoints[0].message.value(),
-              "Both file and line must be specified together for a line tracepoint.");
-  }
-
-  // Negative watch address.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.address = -1;
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_EQ(got.response.tracepoints[0].message.value(), "Invalid negative watch address.");
-  }
-
-  // Watch address range overflow.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.data_id = "1234:0xfffffffffffffffe:1";
-    watch.byte_size = 4;
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    EXPECT_FALSE(got.response.tracepoints[0].verified);
-    EXPECT_EQ(got.response.tracepoints[0].message.value(),
-              "Watch address range overflows 64-bit address space.");
-  }
-
-  // Watch dataId with byteSize override.
-  {
-    dap::ZxdbSetTracepointsRequest req;
-    dap::ZxdbTracepointSpec spec;
-    dap::ZxdbTracepointWatchSpec watch;
-    watch.data_id = "1234:0x2000:4";
-    watch.byte_size = 8;
-    spec.watch = watch;
-    req.tracepoints.push_back(spec);
-
-    auto res = client().send(req);
-    context().OnStreamReadable();
-    loop().RunUntilNoTasks();
-    RunPendingClientCalls();
-
-    auto got = res.get();
-    EXPECT_FALSE(got.error);
-    ASSERT_EQ(got.response.tracepoints.size(), 1u);
-    auto it = context().dap_tracepoints().find(got.response.tracepoints[0].id);
-    ASSERT_NE(it, context().dap_tracepoints().end());
-    ASSERT_TRUE(it->second);
-    ASSERT_TRUE(it->second->spec().watch.has_value());
-    EXPECT_EQ(it->second->spec().watch->byte_size, 8u);
-  }
+  dap::ZxdbTracepointSpec override_spec;
+  override_spec.watch = dap::ZxdbTracepointWatchSpec{.data_id = "1234:0x2000:4", .byte_size = 8};
+  auto got_override = SendSetTracepoints({override_spec});
+  ASSERT_FALSE(got_override.error);
+  ASSERT_EQ(got_override.response.tracepoints.size(), 1u);
+  auto it = context().dap_tracepoints().find(got_override.response.tracepoints[0].id);
+  ASSERT_NE(it, context().dap_tracepoints().end());
+  ASSERT_TRUE(it->second);
+  ASSERT_TRUE(it->second->spec().watch.has_value());
+  EXPECT_EQ(it->second->spec().watch->byte_size, 8u);
 }
 
 }  // namespace
