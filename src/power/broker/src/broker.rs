@@ -18,7 +18,7 @@ use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::borrow::Cow;
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
@@ -190,74 +190,77 @@ impl Broker {
             })
     }
 
-    // Deactivate claims that are now broken due to a disorderly level transition.
-    // TODO(b/356400605): Consider simplifying this function with reverse dependency traversal
-    // (Topology::dependencies_for_required_element), so that we do not have to scan all leases.
-    // Note that narrowing the scan to leases claiming the disorderly element is not sufficient on
-    // its own: a lease that is powering down may have already dropped that claim while still
-    // enforcing claims that this function must break.
-    fn deactivate_broken_claims(&mut self, element_id: ElementID, prev_level: IndexedPowerLevel) {
-        let element_level = ElementLevel { element_id: element_id, level: prev_level.clone() };
-        // For each lease, find the dependencies that are parents of the broken element.
-        let mut affected_elements = HashSet::new();
-        let mut affected_leases = HashSet::new();
-        let dependencies_safe: HashSet<Dependency> = self
-            .catalog
-            .topology
-            .all_direct_and_indirect_dependencies(&element_level)
-            .into_iter()
-            .collect();
-        let leases: Vec<(LeaseID, Vec<ElementLevel>)> = self
-            .catalog
-            .leases
-            .iter()
-            .map(|(lease_id, lease)| (*lease_id, lease.targets.clone()))
-            .collect();
-        for (lease_id, targets) in leases {
-            log::debug!("deactivate_broken_claims({lease_id}, {element_id}@{prev_level})");
-            let mut dependencies_lease = HashSet::new();
-            for target in &targets {
-                dependencies_lease.insert(Dependency::new_root(target.clone()));
-                dependencies_lease
-                    .extend(self.catalog.topology.all_direct_and_indirect_dependencies(target));
+    /// Deactivates the claims that a disorderly drop of `element_id` to `new_level` broke.
+    ///
+    /// A claim is broken if it requires `element_id` at a level that `new_level` does not satisfy,
+    /// or if its dependent element level relies, directly or transitively, on a broken claim.
+    /// Claims on branches that don't depend on `element_id` are left alone.
+    ///
+    /// Broken dependencies are found by walking upward from `element_id` through the topology and
+    /// lease root dependencies. Walking the topology rather than the claims matters: a lease that
+    /// is powering down may already have dropped its claim on `element_id` while still enforcing
+    /// claims above it, and those claims must be broken too.
+    ///
+    /// Broken claims on `element_id` itself stay enforced. Other broken claims are moved back to
+    /// pending, or dropped if their lease is powering down.
+    fn deactivate_broken_claims(&mut self, element_id: ElementID, new_level: IndexedPowerLevel) {
+        log::debug!("deactivate_broken_claims({element_id}@{new_level})");
+
+        // Each entry in `unsupported_levels` is an element level that lost support. A level also
+        // needs the dependencies of every lower level, so all higher levels of that element lost
+        // support too. `lowest_unsupported` records the lowest such level found for each element.
+        let mut broken_deps: BTreeSet<Dependency> = BTreeSet::new();
+        let mut unsupported_levels: Vec<ElementLevel> = Vec::new();
+        for dep in self.catalog.all_dependencies_for_required_element(element_id) {
+            if !new_level.satisfies(dep.requires.level) && broken_deps.insert(dep.clone()) {
+                unsupported_levels.extend(dep.dependent.clone());
             }
-            if !dependencies_lease.iter().any(|d| {
-                d.requires.element_id == element_id && d.requires.level.satisfies(prev_level)
-            }) {
-                log::debug!(
-                    "There was no dependency in this lease that required this element to be at that level."
-                );
+        }
+        let mut lowest_unsupported: HashMap<ElementID, IndexedPowerLevel> = HashMap::new();
+        while let Some(unsupported) = unsupported_levels.pop() {
+            if lowest_unsupported
+                .get(&unsupported.element_id)
+                .is_some_and(|lowest| *lowest <= unsupported.level)
+            {
                 continue;
             }
-            // Find the set difference between the dependencies of this lease and
-            // the dependencies of the disorderly element. The element's dependencies
-            // are 'safe' as none of their dependencies are broken. The difference
-            // constitutes the dependencies of this lease that broke.
-            let broken_dependencies = dependencies_lease
-                .difference(&dependencies_safe)
-                .cloned()
-                .collect::<HashSet<Dependency>>();
-
-            for dependency in broken_dependencies {
-                if self.catalog.is_claim_enforced(&dependency, lease_id) {
-                    affected_elements.insert(dependency.requires.element_id);
-                    affected_leases.insert(lease_id);
-                    if dependency.requires.element_id != element_id {
-                        if self.catalog.is_lease_dropped(lease_id) {
-                            self.catalog.drop_claim(&dependency, lease_id);
-                        } else {
-                            self.catalog.deactivate_claim(&dependency, lease_id);
-                        }
-                    }
+            lowest_unsupported.insert(unsupported.element_id, unsupported.level);
+            for dep in self.catalog.all_dependencies_for_required_element(unsupported.element_id) {
+                if dep.requires.level.satisfies(unsupported.level)
+                    && broken_deps.insert(dep.clone())
+                {
+                    unsupported_levels.extend(dep.dependent.clone());
                 }
             }
         }
-        affected_elements.remove(&element_id);
-        let should_update_this_element = affected_elements.len() > 1;
-        self.update_required_levels(affected_elements.into_iter(), &mut EagerInspectWriter);
-        if should_update_this_element {
-            self.update_required_level(element_id, prev_level.clone(), &mut EagerInspectWriter);
+
+        let mut affected_elements = HashSet::new();
+        let mut affected_leases = BTreeSet::new();
+        for dependency in &broken_deps {
+            let Some(claims) = self.catalog.claims.get(dependency) else {
+                continue;
+            };
+            let enforced_leases: Vec<LeaseID> =
+                claims.active.iter().chain(claims.deactivating.iter()).copied().sorted().collect();
+            for lease_id in enforced_leases {
+                affected_leases.insert(lease_id);
+                // Claims on the disorderly element stay enforced, so its required level doesn't
+                // change here.
+                if dependency.requires.element_id == element_id {
+                    continue;
+                }
+                affected_elements.insert(dependency.requires.element_id);
+                if self.catalog.is_lease_dropped(lease_id) {
+                    self.catalog.drop_claim(dependency, lease_id);
+                } else {
+                    self.catalog.deactivate_claim(dependency, lease_id);
+                }
+            }
         }
+        self.update_required_levels(
+            affected_elements.into_iter().sorted(),
+            &mut EagerInspectWriter,
+        );
         for lease in affected_leases {
             self.update_lease_status(lease);
             self.vacate_lease_if_all_claims_dropped(lease);
@@ -354,7 +357,7 @@ impl Broker {
             // enforced claims that are no longer valid and immediately
             // deactivate them.
             if is_disorderly_update {
-                self.deactivate_broken_claims(element_id, prev_level.unwrap().clone());
+                self.deactivate_broken_claims(element_id, level);
             }
         }
     }
@@ -6526,5 +6529,279 @@ mod tests {
         assert!(!broker.catalog.leases.contains_key(&lease1.id));
 
         assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
+    }
+
+    /// Adds an element with the given levels and dependencies (dependent level, required element's
+    /// token, required level), registers a dependency token for it, and returns both.
+    fn add_test_element_with_token(
+        broker: &mut Broker,
+        name: &str,
+        levels: &[fpb::PowerLevel],
+        deps: &[(fpb::PowerLevel, &DependencyToken, fpb::PowerLevel)],
+    ) -> (ElementID, DependencyToken) {
+        let level_deps = deps
+            .iter()
+            .map(|(dependent_level, token, requires_level)| fpb::LevelDependency {
+                dependent_level: Some(*dependent_level),
+                requires_token: Some(
+                    token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                ),
+                requires_level_by_preference: Some(vec![*requires_level]),
+                ..Default::default()
+            })
+            .collect();
+        let id = broker
+            .add_element(name, levels[0], levels.to_vec(), level_deps)
+            .expect("add_element failed");
+        let token = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                id,
+                token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
+            )
+            .expect("register_dependency_token failed");
+        (id, token)
+    }
+
+    /// Makes each element in `elements` report its required level until nothing changes, as
+    /// well-behaved elements would.
+    #[track_caller]
+    fn settle_levels(broker: &mut Broker, elements: &[ElementID]) {
+        // Only a safety bound, so that a test that never settles fails instead of hanging.
+        const MAX_SETTLE_ROUNDS: usize = 32;
+        for _ in 0..MAX_SETTLE_ROUNDS {
+            let mut changed = false;
+            for id in elements {
+                let required =
+                    broker.get_required_level(id).expect("element has no required level");
+                if broker.get_current_level(id) != Some(required) {
+                    broker.update_current_level(*id, required);
+                    changed = true;
+                }
+            }
+            if !changed {
+                return;
+            }
+        }
+        panic!("levels did not settle");
+    }
+
+    #[fuchsia::test]
+    fn test_disorderly_drop_spares_unrelated_branch() {
+        // A disorderly drop of E must not break the lease's claims on F and G, which don't depend
+        // on E, and the lease must recover once E comes back.
+        //
+        // A -> E
+        //   -> F -> G
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let levels = BINARY_POWER_LEVELS.to_vec();
+        let (e, e_token) = add_test_element_with_token(&mut broker, "E", &levels, &[]);
+        let (g, g_token) = add_test_element_with_token(&mut broker, "G", &levels, &[]);
+        let (f, f_token) = add_test_element_with_token(
+            &mut broker,
+            "F",
+            &levels,
+            &[(ON.level, &g_token, ON.level)],
+        );
+        let (a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &levels,
+            &[(ON.level, &e_token, ON.level), (ON.level, &f_token, ON.level)],
+        );
+        let all = [a, e, f, g];
+
+        let lease = broker.acquire_lease(a, ON, zx::Koid::from_raw(1)).unwrap();
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+
+        // E drops without being asked to. Only A, which depends on E, loses its required level.
+        broker.update_current_level(e, OFF);
+        assert_eq!(broker.get_required_level(&a), Some(OFF));
+        assert_eq!(broker.get_required_level(&e), Some(ON));
+        assert_eq!(broker.get_required_level(&f), Some(ON));
+        assert_eq!(broker.get_required_level(&g), Some(ON));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
+        broker.catalog.assert_claims_consistent();
+
+        settle_levels(&mut broker, &[a, f, g]);
+        assert_eq!(broker.get_current_level(&f), Some(ON));
+        assert_eq!(broker.get_current_level(&g), Some(ON));
+
+        // E comes back, and the lease recovers.
+        broker.update_current_level(e, ON);
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_current_level(&a), Some(ON));
+        broker.catalog.assert_claims_consistent();
+    }
+
+    #[fuchsia::test]
+    fn test_disorderly_drop_keeps_lower_level_claims_in_same_lease() {
+        // M@2 needs E, but M@1 doesn't. When E drops without being asked to, only claims that need
+        // M@2 break. P's claim on M@1, held by the same lease, stays enforced.
+        //
+        // Q@1 -> M@2 -> E@ON
+        // Q@1 -> P@1 -> M@1
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let binary = BINARY_POWER_LEVELS.to_vec();
+        let three = vec![0, 1, 2];
+        let (e, e_token) = add_test_element_with_token(&mut broker, "E", &binary, &[]);
+        let (m, m_token) =
+            add_test_element_with_token(&mut broker, "M", &three, &[(2, &e_token, ON.level)]);
+        let (p, p_token) =
+            add_test_element_with_token(&mut broker, "P", &binary, &[(1, &m_token, 1)]);
+        let (q, _) = add_test_element_with_token(
+            &mut broker,
+            "Q",
+            &binary,
+            &[(1, &m_token, 2), (1, &p_token, 1)],
+        );
+        let all = [e, m, p, q];
+
+        let lease = broker.acquire_lease(q, ON, zx::Koid::from_raw(1)).unwrap();
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_current_level(&m), Some(TWO));
+
+        broker.update_current_level(e, OFF);
+        assert_eq!(broker.get_required_level(&e), Some(ON));
+        assert_eq!(broker.get_required_level(&m), Some(ONE));
+        assert_eq!(broker.get_required_level(&p), Some(ON));
+        assert_eq!(broker.get_required_level(&q), Some(OFF));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
+        broker.catalog.assert_claims_consistent();
+
+        settle_levels(&mut broker, &[m, p, q]);
+        broker.update_current_level(e, ON);
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+        broker.catalog.assert_claims_consistent();
+    }
+
+    #[fuchsia::test]
+    fn test_disorderly_drop_breaks_claims_between_new_and_previous_level() {
+        // E drops from 3 to 1 without being asked to. Y needs E@2, which is between E's new and
+        // previous levels, so Y loses its required level.
+        //
+        // Y@ON -> E@2
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let three_step = vec![0, 1, 2, 3];
+        let (e, e_token) = add_test_element_with_token(&mut broker, "E", &three_step, &[]);
+        let (y, _) = add_test_element_with_token(
+            &mut broker,
+            "Y",
+            &BINARY_POWER_LEVELS.to_vec(),
+            &[(ON.level, &e_token, 2)],
+        );
+        let all = [e, y];
+        let level_3 = IndexedPowerLevel::from_same_level_and_index(3);
+
+        let lease_e = broker.acquire_lease(e, level_3, zx::Koid::from_raw(1)).unwrap();
+        let lease_y = broker.acquire_lease(y, ON, zx::Koid::from_raw(2)).unwrap();
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease_e.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_lease_status(lease_y.id), Some(LeaseStatus::Satisfied));
+
+        broker.update_current_level(e, ONE);
+        assert_eq!(broker.get_required_level(&e), Some(level_3));
+        assert_eq!(broker.get_required_level(&y), Some(OFF));
+        assert_eq!(broker.get_lease_status(lease_e.id), Some(LeaseStatus::Pending));
+        assert_eq!(broker.get_lease_status(lease_y.id), Some(LeaseStatus::Pending));
+        broker.catalog.assert_claims_consistent();
+    }
+
+    #[fuchsia::test]
+    fn test_disorderly_drop_drops_powering_down_lease_claims_above_element() {
+        // L1 on R is powering down and has already dropped its own claim on A -> E, because L2
+        // holds the same claim. When E drops without being asked to, L1's remaining claim on
+        // R -> A must still be found and dropped, so that A can follow E down and L1 vacates.
+        //
+        // R -> A -> E
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let levels = BINARY_POWER_LEVELS.to_vec();
+        let (e, e_token) = add_test_element_with_token(&mut broker, "E", &levels, &[]);
+        let (a, a_token) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &levels,
+            &[(ON.level, &e_token, ON.level)],
+        );
+        let (r, _) = add_test_element_with_token(
+            &mut broker,
+            "R",
+            &levels,
+            &[(ON.level, &a_token, ON.level)],
+        );
+        let all = [e, a, r];
+
+        let lease2 = broker.acquire_lease(a, ON, zx::Koid::from_raw(2)).unwrap();
+        let lease1 = broker.acquire_lease(r, ON, zx::Koid::from_raw(1)).unwrap();
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
+
+        // R stays ON, so L1 keeps its claim on R -> A while powering down.
+        broker.drop_lease(lease1.id).unwrap();
+        assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::PoweringDown));
+        assert!(
+            !broker
+                .catalog
+                .is_claim_enforced(&create_test_dependency(a, ON.level, e, ON.level), lease1.id)
+        );
+        assert!(
+            broker
+                .catalog
+                .is_claim_enforced(&create_test_dependency(r, ON.level, a, ON.level), lease1.id)
+        );
+
+        broker.update_current_level(e, OFF);
+        assert_lease_cleaned_up(&broker.catalog, lease1.id);
+        assert_eq!(broker.get_required_level(&a), Some(OFF));
+        assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Pending));
+        broker.catalog.assert_claims_consistent();
+    }
+
+    #[fuchsia::test]
+    fn test_disorderly_drop_leaves_element_required_level_alone() {
+        // E drops from 2 to 1 and then to 0 without being asked to. A's claim on E@2 stays
+        // enforced throughout, so E must still be required at 2.
+        //
+        // A@ON -> E@2
+        // X@ON -> Y@ON -> E@1
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let binary = BINARY_POWER_LEVELS.to_vec();
+        let (e, e_token) = add_test_element_with_token(&mut broker, "E", &[0, 1, 2], &[]);
+        let (a, _) =
+            add_test_element_with_token(&mut broker, "A", &binary, &[(ON.level, &e_token, 2)]);
+        let (y, y_token) =
+            add_test_element_with_token(&mut broker, "Y", &binary, &[(ON.level, &e_token, 1)]);
+        let (x, _) = add_test_element_with_token(
+            &mut broker,
+            "X",
+            &binary,
+            &[(ON.level, &y_token, ON.level)],
+        );
+        let all = [e, a, x, y];
+
+        let _lease_a = broker.acquire_lease(a, ON, zx::Koid::from_raw(1)).unwrap();
+        let _lease_x = broker.acquire_lease(x, ON, zx::Koid::from_raw(2)).unwrap();
+        settle_levels(&mut broker, &all);
+        assert_eq!(broker.get_current_level(&e), Some(TWO));
+
+        broker.update_current_level(e, ONE);
+        assert_eq!(broker.get_required_level(&e), Some(TWO));
+        assert_eq!(broker.get_required_level(&a), Some(OFF));
+        assert_eq!(broker.get_required_level(&y), Some(ON));
+
+        broker.update_current_level(e, ZERO);
+        assert_eq!(broker.get_required_level(&e), Some(TWO));
+        assert_eq!(broker.get_required_level(&x), Some(OFF));
+        assert_eq!(broker.get_required_level(&y), Some(OFF));
+        broker.catalog.assert_claims_consistent();
     }
 }
