@@ -10,9 +10,10 @@ import fuchsia_base_test
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.utils import common
 from mobly import signals
 
-from . import linux_virtual_usb_hub
+from . import dmc_virtual_usb_hub, linux_virtual_usb_hub
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -49,14 +50,16 @@ class UsbPowerHubBaseTest(fuchsia_base_test.FuchsiaBaseTest):
           1. The hub described by `usb_power_hub_hw` + `usb_power_hub_impl`
              in the testbed config, when both are present.
           2. The host side virtual hub, when the `use_virtual_usb_hub` param
-             is set. It needs no testbed config nor physical hub. Intended
-             for at-desk runs; see
-             //src/tests/end_to_end/usb/lib/disconnect/udev.sh for the host
-             permissions it requires. The `virtual_usb_hub_mode` param picks
-             how it virtually disconnects the device:
+             is set. It needs no testbed config nor physical hub. The
+             `virtual_usb_hub_mode` param picks how it virtually disconnects
+             the device:
                - "authorize" (default): toggles the device USB `authorized`
-                 attribute.
+                 attribute. At desk, the host toggles it directly; see
+                 //src/tests/end_to_end/usb/lib/disconnect/udev.sh for the
+                 host permissions it requires. In infra, DMC toggles it on the
+                 host the device is attached to.
                - "reset": resets the device USB port with USBDEVFS_RESET.
+                 Intended for at-desk runs; see udev.sh above.
           3. DMC, for devices power cycled in infra.
 
         Returns:
@@ -75,6 +78,13 @@ class UsbPowerHubBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             and device_config.get("usb_power_hub_impl")
         ) and self.user_params.get("use_virtual_usb_hub"):
             mode = self.user_params.get("virtual_usb_hub_mode", "authorize")
+            if mode == "authorize" and common.is_infra():
+                return (
+                    dmc_virtual_usb_hub.DmcVirtualUsbPowerHub(
+                        device_name=fx_device.device_name
+                    ),
+                    None,
+                )
             virtual_hub_cls: type[
                 linux_virtual_usb_hub.LinuxVirtualUsbAuthorizePowerHub
                 | linux_virtual_usb_hub.LinuxVirtualUsbResetPowerHub

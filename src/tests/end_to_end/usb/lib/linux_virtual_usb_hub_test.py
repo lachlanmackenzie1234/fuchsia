@@ -332,11 +332,12 @@ class LinuxVirtualUsbAuthorizePowerHubTests(unittest.TestCase):
                 target_serial="NON_EXISTENT_SERIAL"
             )
 
+    @mock.patch.object(common, "is_infra", return_value=False)
     @mock.patch.object(
         linux_virtual_usb_hub, "LinuxVirtualUsbAuthorizePowerHub", autospec=True
     )
     def test_usb_power_hub_base_test_lookup_virtual_hub(
-        self, mock_virtual_hub_cls: mock.Mock
+        self, mock_virtual_hub_cls: mock.Mock, mock_is_infra: mock.Mock
     ) -> None:
         """Test UsbPowerHubBaseTest._lookup_usb_power_hub creates LinuxVirtualUsbAuthorizePowerHub."""
         test_obj = object.__new__(usb_power_hub_base_test.UsbPowerHubBaseTest)

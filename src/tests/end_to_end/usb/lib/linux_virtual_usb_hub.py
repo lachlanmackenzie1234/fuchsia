@@ -217,7 +217,7 @@ class LinuxVirtualUsbAuthorizePowerHub(_LinuxVirtualUsbPowerHubBase):
 
     `power_off()` and `power_on()` toggle the sysfs
     `/sys/bus/usb/devices/<bus_id>/authorized` attribute of the device on a
-    Linux host.
+    Linux host. In Fuchsia infra, `DmcVirtualUsbPowerHub` is used instead.
 
     Args:
         target_serial: See `_LinuxVirtualUsbPowerHubBase`.

@@ -4,6 +4,7 @@
 
 """Fuchsia USB End-to-End Test Common Library."""
 
+from .dmc_virtual_usb_hub import DmcVirtualUsbPowerHub
 from .dwc3_irq_metrics import (
     Dwc3IrqSnapshot,
     assert_no_dwc3_unhandled_irq_storm,
@@ -52,6 +53,7 @@ __all__ = [
     "DEFAULT_BUS_ID_LOOKUP_ATTEMPTS",
     "DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC",
     "DispatcherSnapshot",
+    "DmcVirtualUsbPowerHub",
     "Dwc3IrqSnapshot",
     "FUNCTION_INTERFACES",
     "FUNCTION_PIDS",

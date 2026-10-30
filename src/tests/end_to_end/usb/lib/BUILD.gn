@@ -10,6 +10,7 @@ python_library("usb_lib") {
   library_name = "usb_lib"
   sources = [
     "__init__.py",
+    "dmc_virtual_usb_hub.py",
     "dwc3_irq_metrics.py",
     "fastboot_utils.py",
     "irq_storm.py",
@@ -38,6 +39,16 @@ python_library("usb_lib") {
 }
 
 if (is_host) {
+  python_host_test("dmc_virtual_usb_hub_test") {
+    main_source = "dmc_virtual_usb_hub_test.py"
+    libraries = [
+      ":usb_lib",
+      "//src/testing/end_to_end/honeydew",
+    ]
+    main_callable = "unittest.main"
+    extra_args = [ "-v" ]
+  }
+
   python_host_test("dwc3_irq_metrics_test") {
     main_source = "dwc3_irq_metrics_test.py"
     libraries = [
@@ -74,6 +85,7 @@ if (is_host) {
 group("tests") {
   testonly = true
   public_deps = [
+    ":dmc_virtual_usb_hub_test($host_toolchain)",
     ":dwc3_irq_metrics_test($host_toolchain)",
     ":irq_storm_test($host_toolchain)",
     ":linux_virtual_usb_hub_test($host_toolchain)",
