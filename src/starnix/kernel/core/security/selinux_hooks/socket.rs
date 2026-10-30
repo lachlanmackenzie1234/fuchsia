@@ -3,24 +3,23 @@
 // found in the LICENSE file.
 
 use super::audit::Auditable;
-use super::fs_node::compute_new_fs_node_sid;
 use super::{
-    NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, build_permission_check,
-    check_permission, current_task_state, fs_node_effective_sid_and_class,
+    FsNodeLabel, FsNodeSidAndClass, NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile,
+    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
 };
-use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
     NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketPeer, SocketProtocol,
-    SocketShutdownFlags, SocketType, socket_fs,
+    SocketShutdownFlags, SocketType,
 };
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
-    KernelPermission, PolicyCap, SecurityId, SecurityServer, SocketClass,
+    KernelPermission, PolicyCap, SecurityId, SecurityServer, SocketClass, TaskAttrs,
     UnixStreamSocketPermission,
 };
 use starnix_logging::track_stub;
+use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 
 /// Checks that `current_task` has the specified `permission` for the `socket_node`.
@@ -135,6 +134,26 @@ fn compute_socket_security_class(
     }
 }
 
+/// Returns the SID to apply to a new socket of `new_socket_class` created by `current_task`.
+/// Panics if called before any policy has been loaded.
+pub(super) fn compute_new_socket_sid(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    new_socket_class: SocketClass,
+) -> Result<SecurityId, Errno> {
+    let TaskAttrs { current_sid, sockcreate_sid, .. } = *current_task_state(current_task);
+    if let Some(sid) = sockcreate_sid {
+        return Ok(sid);
+    }
+
+    // `compute_create_sid` fails if the computed security context is invalid under the policy
+    // (for example, an unauthorized role/type combination or a non-overlapping `glblub` range).
+    let permission_check = build_permission_check(current_task, security_server);
+    permission_check
+        .compute_create_sid(current_sid, current_sid, new_socket_class.into(), b"")
+        .map_err(|_| errno!(EPERM))
+}
+
 /// Checks that `current_task` has permission to create a socket with `domain`, `socket_type` and
 /// `protocol`.
 pub(in crate::security) fn check_socket_create_access(
@@ -144,26 +163,10 @@ pub(in crate::security) fn check_socket_create_access(
     socket_type: SocketType,
     protocol: SocketProtocol,
 ) -> Result<(), Errno> {
-    let sockfs = socket_fs(current_task.kernel());
-    // Ensure sockfs gets labeled, in case it was mounted after the SELinux policy has been loaded.
-    superblock::file_system_resolve_security(security_server, &current_task, &sockfs)
-        .expect("resolve fs security");
     let current_sid = current_task_state(current_task).current_sid;
     let new_socket_class =
         compute_socket_security_class(security_server, domain, socket_type, protocol);
-    let new_socket_sid = if let Some(fs_label) = sockfs.security_state.state.label() {
-        compute_new_fs_node_sid(
-            security_server,
-            current_task,
-            fs_label,
-            None,
-            new_socket_class.into(),
-            "".into(),
-        )?
-    } else {
-        // TODO: https://fxbug.dev/409951346 - default to socket-related initial SIDs.
-        InitialSid::Unlabeled.into()
-    };
+    let new_socket_sid = compute_new_socket_sid(security_server, current_task, new_socket_class)?;
 
     check_permission(
         &build_permission_check(current_task, security_server),
@@ -187,21 +190,27 @@ pub(in crate::security) fn socket_socketpair(
     Ok(())
 }
 
-/// Computes and sets the security class for `socket`.
+/// Computes and sets the security class and label for `socket`.
 pub(in crate::security) fn socket_post_create(
     security_server: &SecurityServer,
+    current_task: &CurrentTask,
     socket: NonPrivateSocket<'_>,
 ) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
-    socket_node.selinux_state().update_class(
-        compute_socket_security_class(
-            security_server,
-            socket.domain,
-            socket.socket_type,
-            socket.protocol,
-        )
-        .into(),
+    let socket_class = compute_socket_security_class(
+        security_server,
+        socket.domain,
+        socket.socket_type,
+        socket.protocol,
     );
+    let sid = if security_server.has_policy() {
+        compute_new_socket_sid(security_server, current_task, socket_class)
+            .unwrap_or_else(|_| InitialSid::Unlabeled.into())
+    } else {
+        // Sockets created before policy load receive the `kernel` initial SID.
+        InitialSid::Kernel.into()
+    };
+    socket_node.selinux_state().update(FsNodeLabel::SecurityId { sid }, socket_class.into());
 }
 
 /// Checks that `current_task` has the right permissions to perform a bind operation on

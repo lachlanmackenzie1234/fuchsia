@@ -612,13 +612,6 @@ impl FsNodeState {
         self.label.update(FsNodeLabelAndClass { label: new_label, class });
     }
 
-    pub(super) fn update_class(&self, new_class: FsNodeClass) {
-        let _lock = self.update_lock.lock();
-        let mut new_label_class = (*self.label.read()).clone();
-        new_label_class.class = Some(new_class);
-        self.label.update(new_label_class);
-    }
-
     #[cfg(test)]
     pub(super) fn clear_label_for_test(&self) {
         let _lock = self.update_lock.lock();

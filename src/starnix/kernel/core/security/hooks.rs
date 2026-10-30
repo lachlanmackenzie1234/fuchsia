@@ -1279,7 +1279,7 @@ pub fn socket_socketpair(
     })
 }
 
-/// Computes and updates the socket security class associated with a new socket.
+/// Computes and updates the socket security class and label associated with a new socket.
 /// Corresponds to the `socket_post_create()` LSM hook.
 pub fn socket_post_create(current_task: &CurrentTask, socket: &Socket) {
     track_hook_duration!("security.hooks.socket_post_create");
@@ -1287,7 +1287,7 @@ pub fn socket_post_create(current_task: &CurrentTask, socket: &Socket) {
         return;
     };
     if let Some(state) = &current_task.kernel().security_state.state {
-        selinux_hooks::socket::socket_post_create(&state.server, socket);
+        selinux_hooks::socket::socket_post_create(&state.server, current_task, socket);
     }
 }
 

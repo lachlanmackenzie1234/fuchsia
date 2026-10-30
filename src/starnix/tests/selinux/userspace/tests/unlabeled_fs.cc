@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <lib/stdcompat/string_view.h>
 #include <sys/mount.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
 
@@ -22,6 +23,7 @@ namespace {
 
 constexpr char kPrePolicyMountDir[] = "/tmp/pre_policy_ramfs";
 constexpr char kPrePolicyFilePath[] = "/tmp/pre_policy_ramfs/pre_existing_file";
+fbl::unique_fd g_pre_policy_socket;
 
 }  // namespace
 
@@ -30,6 +32,10 @@ extern std::string DoPrePolicyLoadWork() {
   EXPECT_THAT(mount("none", kPrePolicyMountDir, "ramfs", 0, ""), SyscallSucceeds());
   fbl::unique_fd fd(open(kPrePolicyFilePath, O_CREAT | O_RDWR, 0644));
   EXPECT_TRUE(fd.is_valid()) << strerror(errno);
+
+  g_pre_policy_socket = fbl::unique_fd(socket(AF_UNIX, SOCK_STREAM, 0));
+  EXPECT_THAT(g_pre_policy_socket.get(), SyscallSucceeds());
+
   return "file_transition_policy";
 }
 
@@ -38,6 +44,10 @@ namespace {
 TEST(UnlabeledFsTest, PreExistingFileInUnlabeledFs) {
   EXPECT_EQ(GetLabel(kPrePolicyMountDir), kUnlabeledInitialSid);
   EXPECT_EQ(GetLabel(kPrePolicyFilePath), kUnlabeledInitialSid);
+}
+
+TEST(UnlabeledFsTest, PreExistingSocketInUnlabeledSockfs) {
+  EXPECT_EQ(GetLabel(g_pre_policy_socket.get()), kKernelInitialSid);
 }
 
 TEST(UnlabeledFsTest, CreateFileInUnlabeledFs) {
@@ -93,7 +103,7 @@ TEST(UnlabeledFsTest, MountWithFsContextAndRootContext) {
     test_helper::ScopedTempDir temp_dir;
     auto mount = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMount::Mount(
         "none", temp_dir.path(), "ramfs", 0,
-        "fscontext=unconfined_u:object_r:tmpfs_t:s0,rootcontext=unconfined_u:object_r:unconfined_t:s0"));
+        "fscontext=unconfined_u:object_r:file_t:s0,rootcontext=unconfined_u:object_r:unconfined_t:s0"));
     EXPECT_EQ(GetLabel(temp_dir.path()), "unconfined_u:object_r:unconfined_t:s0");
   }
 }
@@ -106,6 +116,14 @@ TEST(UnlabeledFsTest, DoesNotSupportRelabeling) {
   EXPECT_FALSE(cpp23::contains(MountOptionsFor(temp_dir.path()), "seclabel"));
   EXPECT_THAT(SetLabel(temp_dir.path(), "unconfined_u:object_r:unconfined_t:s0"),
               SyscallResultIsErrno(ENOTSUP));
+}
+
+TEST(UnlabeledFsTest, CreateSocketInUnlabeledSockfs) {
+  ASSERT_TRUE(RunSubprocessAs("unconfined_u:unconfined_r:unconfined_t:s0", [&] {
+    fbl::unique_fd fd(socket(AF_UNIX, SOCK_STREAM, 0));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+    EXPECT_EQ(GetLabel(fd.get()), "unconfined_u:unconfined_r:unconfined_t:s0");
+  }));
 }
 
 }  // namespace

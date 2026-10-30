@@ -20,7 +20,7 @@ use selinux::policy::{AccessVector, FsUseType};
 use selinux::{
     ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass,
     FileSystemLabel, FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass,
-    InitialSid, PolicyCap, SecurityId, SecurityServer, SocketClass, TaskAttrs,
+    InitialSid, PolicyCap, SecurityId, SecurityServer, TaskAttrs,
 };
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, track_stub};
 use starnix_uapi::arc_key::WeakKey;
@@ -281,27 +281,6 @@ fn file_class_from_file_mode(mode: FileMode) -> Result<FileClass, Errno> {
     }
 }
 
-/// Returns the SID to apply to an `FsNode` of socket-like `new_socket_class`.
-/// Panics if called before any policy has been loaded.
-fn compute_new_socket_sid(
-    security_server: &SecurityServer,
-    current_task: &CurrentTask,
-    new_socket_class: SocketClass,
-    name: &FsStr,
-) -> Result<SecurityId, Errno> {
-    let TaskAttrs { current_sid, sockcreate_sid, .. } = *current_task_state(current_task);
-    if let Some(sid) = sockcreate_sid {
-        return Ok(sid);
-    }
-
-    // `compute_create_sid` fails if the computed security context is invalid under the policy
-    // (for example, an unauthorized role/type combination or a non-overlapping `glblub` range).
-    let permission_check = build_permission_check(current_task, security_server);
-    permission_check
-        .compute_create_sid(current_sid, current_sid, new_socket_class.into(), name.as_ref())
-        .map_err(|_| errno!(EPERM))
-}
-
 /// Returns the SID to apply to an `FsNode` of file-like `new_file_class`.
 /// Panics if called before any policy has been loaded.
 fn compute_new_file_sid(
@@ -393,7 +372,7 @@ pub(in crate::security) fn compute_new_fs_node_sid(
 ) -> Result<SecurityId, Errno> {
     Ok(match new_node_class {
         FsNodeClass::Socket(new_socket_class) => {
-            compute_new_socket_sid(security_server, current_task, new_socket_class, name)?
+            super::socket::compute_new_socket_sid(security_server, current_task, new_socket_class)?
         }
         FsNodeClass::File(new_file_class) => compute_new_file_sid(
             security_server,
