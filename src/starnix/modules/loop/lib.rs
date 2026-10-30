@@ -224,6 +224,23 @@ impl LoopDevice {
     fn offset_for_backing_file(&self, offset: usize) -> usize {
         self.state.lock().offset.saturating_add(offset as u64) as usize
     }
+
+    /// Validates that if `backing_file` is a loop device, its backing chain is bound and does not
+    /// cycle through `self`.
+    ///
+    /// Must be called without holding `self.state` so that inspecting `LoopDevice::state` along
+    /// the backing chain does not violate lock ordering or self-deadlock.
+    fn validate_backing_file(self: &Arc<Self>, backing_file: &FileHandle) -> Result<(), Errno> {
+        let mut current_file = Cow::Borrowed(backing_file);
+        while let Some(loop_file) = current_file.downcast_file::<LoopDeviceFile>() {
+            if Arc::ptr_eq(&loop_file.device, self) {
+                return error!(EBADF);
+            }
+            let next_backing = loop_file.device.backing_file().ok_or_else(|| errno!(EINVAL))?;
+            current_file = Cow::Owned(next_backing);
+        }
+        Ok(())
+    }
 }
 
 fn check_block_size(block_size: u32) -> Result<(), Errno> {
@@ -487,6 +504,7 @@ impl FileOps for LoopDeviceFile {
             LOOP_SET_FD => {
                 let fd = arg.into();
                 let backing_file = current_task.files().get(fd)?;
+                self.device.validate_backing_file(&backing_file)?;
                 let mut state = self.device.state.lock();
                 state.set_backing_file(current_task, &self.device, backing_file)?;
                 Ok(SUCCESS)
@@ -538,6 +556,9 @@ impl FileOps for LoopDeviceFile {
             LOOP_CHANGE_FD => {
                 let fd = arg.into();
                 let backing_file = current_task.files().get(fd)?;
+                let registry = current_task.kernel().expando.get::<LoopDeviceRegistry>();
+                let _devices_lock = registry.devices.lock();
+                self.device.validate_backing_file(&backing_file)?;
                 let mut state = self.device.state.lock();
                 if let Some(_existing_file) = &state.backing_file {
                     // https://man7.org/linux/man-pages/man4/loop.4.html says:
@@ -580,8 +601,14 @@ impl FileOps for LoopDeviceFile {
                 let config = current_task.read_object(user_config)?;
                 let fd = FdNumber::from_raw(config.fd as i32);
                 check_block_size(config.block_size)?;
+                let backing_file = if let Ok(backing_file) = current_task.files().get(fd) {
+                    self.device.validate_backing_file(&backing_file)?;
+                    Some(backing_file)
+                } else {
+                    None
+                };
                 let mut state = self.device.state.lock();
-                if let Ok(backing_file) = current_task.files().get(fd) {
+                if let Some(backing_file) = backing_file {
                     state.set_backing_file(current_task, &self.device, backing_file)?;
                 }
                 state.block_size = config.block_size;
