@@ -90,6 +90,26 @@ impl std::fmt::Display for Scheme {
     }
 }
 
+impl Scheme {
+    /// Validates that `scheme` complies with the canonical (lowercase) RFC 3986 scheme
+    /// specification (`^[a-z][a-z0-9+.-]*$`) and is not a WHATWG special scheme (`ftp`, `file`,
+    /// `http`, `https`, `ws`, `wss`).
+    fn validate(scheme: &str) -> Result<(), ParseError> {
+        let Some((&first, rest)) = scheme.as_bytes().split_first() else {
+            return Err(ParseError::InvalidScheme);
+        };
+        if !first.is_ascii_lowercase()
+            || !rest.iter().all(|&b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'+' || b == b'-' || b == b'.'
+            })
+            || matches!(scheme, "ftp" | "file" | "http" | "https" | "ws" | "wss")
+        {
+            return Err(ParseError::InvalidScheme);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct UrlParts {
     scheme: Option<Scheme>,
@@ -110,21 +130,19 @@ impl UrlParts {
             Some((before_fragment, fragment)) => (before_fragment, Some(fragment)),
             None => (input, None),
         };
-        let query = before_fragment.split_once('?').map(|(_, query)| query);
-        match url::Url::parse(input) {
-            Ok(url) => {
-                let scheme = match url.scheme() {
-                    builtin_url::SCHEME => Scheme::Builtin,
-                    repository_url::SCHEME => Scheme::FuchsiaPkg,
-                    boot::SCHEME_STR => Scheme::FuchsiaBoot,
-                    _ => return Err(ParseError::InvalidScheme),
-                };
-                Self::from_scheme_and_url(Some(scheme), &url, query, fragment)
+        let (before_query, query) = match before_fragment.split_once('?') {
+            Some((before_query, query)) => (before_query, Some(query)),
+            None => (before_fragment, None),
+        };
+        // Likewise, parse and validate the raw scheme of `input`, since the `url` crate lowercases
+        // schemes, strips leading C0 control and space characters and ASCII tab and newline
+        // characters, and accepts `<scheme>:/<path>` and `<scheme>:<path>` as well as
+        // `<scheme>://`.
+        match split_scheme_prefix(before_query)? {
+            Some((scheme, _)) => {
+                Self::from_scheme_and_url(Some(scheme), &url::Url::parse(input)?, query, fragment)
             }
-            Err(url::ParseError::RelativeUrlWithoutBase) => {
-                Self::from_scheme_and_url(None, &RELATIVE_BASE.join(input)?, query, fragment)
-            }
-            Err(e) => Err(e)?,
+            None => Self::from_scheme_and_url(None, &RELATIVE_BASE.join(input)?, query, fragment),
         }
     }
     /// `query` and `fragment` are the raw (not yet percent-decoded) `?<query>` and `#<fragment>`
@@ -209,6 +227,30 @@ impl UrlParts {
 
         Ok(Self { scheme, host, path, hash, resource })
     }
+}
+
+/// Parses and validates the raw (not yet lowercased) scheme of a URL, given `before_query`, the
+/// part of the URL before any `?<query>` or `#<fragment>`, and returns the [`Scheme`] and the rest
+/// of `before_query` after `<scheme>://`, or `None` if the URL has no scheme.
+///
+/// A URL has a scheme if a `:` comes before any `/`, in which case the scheme must be valid (see
+/// [`Scheme::validate`]), followed by `://`, and a known [`Scheme`].
+fn split_scheme_prefix(before_query: &str) -> Result<Option<(Scheme, &str)>, ParseError> {
+    let Some((scheme, after_scheme)) = before_query.split_once(':') else {
+        return Ok(None);
+    };
+    if scheme.contains('/') {
+        return Ok(None);
+    }
+    let () = Scheme::validate(scheme)?;
+    let after_slashes = after_scheme.strip_prefix("//").ok_or(ParseError::InvalidScheme)?;
+    let scheme = match scheme {
+        builtin_url::SCHEME => Scheme::Builtin,
+        repository_url::SCHEME => Scheme::FuchsiaPkg,
+        boot::SCHEME_STR => Scheme::FuchsiaBoot,
+        _ => return Err(ParseError::InvalidScheme),
+    };
+    Ok(Some((scheme, after_slashes)))
 }
 
 /// Returns the first character of the raw (not yet percent-decoded) `fragment` that must be
@@ -427,6 +469,42 @@ mod test_url_parts {
     test_parse_err! {
         err_invalid_scheme => {
             url = "bad-scheme://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_invalid_scheme_malformed_authority => {
+            url = "bad-scheme://[::1",
+            err = ParseError::InvalidScheme,
+        }
+        err_uppercase_scheme => {
+            url = "FUCHSIA-PKG://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_scheme_without_authority => {
+            url = "fuchsia-pkg:/name",
+            err = ParseError::InvalidScheme,
+        }
+        err_scheme_without_slashes => {
+            url = "fuchsia-boot:name#resource",
+            err = ParseError::InvalidScheme,
+        }
+        err_empty_scheme => {
+            url = "://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_scheme_leading_space => {
+            url = " fuchsia-pkg://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_scheme_tab => {
+            url = "fuchsia-\tpkg://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_special_scheme => {
+            url = "http://example.org",
+            err = ParseError::InvalidScheme,
+        }
+        err_special_scheme_malformed_authority => {
+            url = "http://[::1",
             err = ParseError::InvalidScheme,
         }
         err_port => {
@@ -798,6 +876,156 @@ mod test_url_parts {
             ),
             resource = Some("resource".parse().unwrap()),
         }
+    }
+}
+
+#[cfg(test)]
+mod test_scheme {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn validate() {
+        for scheme in ["a1+-.b", "fuchsia-pkg", "fuchsia-boot", "fuchsia-builtin"] {
+            assert_matches!(Scheme::validate(scheme), Ok(()), "scheme {scheme:?}");
+        }
+        for scheme in
+            ["", "1abc", "Fuchsia-pkg", "foo_bar", "ftp", "file", "http", "https", "ws", "wss"]
+        {
+            assert_matches!(
+                Scheme::validate(scheme),
+                Err(ParseError::InvalidScheme),
+                "scheme {scheme:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn split_prefix() {
+        assert_matches!(
+            split_scheme_prefix("fuchsia-pkg://example.org/name"),
+            Ok(Some((Scheme::FuchsiaPkg, "example.org/name")))
+        );
+        assert_matches!(
+            split_scheme_prefix("fuchsia-boot:///pkg"),
+            Ok(Some((Scheme::FuchsiaBoot, "/pkg")))
+        );
+        assert_matches!(split_scheme_prefix("fuchsia-builtin://"), Ok(Some((Scheme::Builtin, ""))));
+        for scheme_less in ["", "name", "pkg/name:tag", "/name:tag", "//example.org:1"] {
+            assert_matches!(split_scheme_prefix(scheme_less), Ok(None), "input: {scheme_less:?}");
+        }
+        for invalid in [
+            "bad-scheme://example.org",
+            "FUCHSIA-PKG://example.org",
+            "fuchsia-pkg:/name",
+            "fuchsia-pkg:name",
+            "http://example.org",
+            "name:tag",
+        ] {
+            assert_matches!(
+                split_scheme_prefix(invalid),
+                Err(ParseError::InvalidScheme),
+                "input: {invalid:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_uppercase_and_non_canonical_schemes() {
+        assert_matches!(
+            FuchsiaPkgAbsolutePackageUrl::parse("FUCHSIA-PKG://example.org/name"),
+            Err(ParseError::InvalidScheme)
+        );
+        assert_matches!(
+            AbsolutePackageUrl::parse("FUCHSIA-PKG://example.org/name"),
+            Err(ParseError::InvalidScheme)
+        );
+        assert_matches!(
+            boot::AbsoluteComponentUrl::parse("FUCHSIA-BOOT:///pkg#meta/a.cm"),
+            Err(ParseError::InvalidScheme)
+        );
+
+        for bad_scheme in ["fuchsia-pkg:/name", "fuchsia-boot:/x#r", "fuchsia-builtin:#r"] {
+            assert_matches!(
+                UrlParts::parse(bad_scheme),
+                Err(ParseError::InvalidScheme),
+                "input: {bad_scheme:?}"
+            );
+        }
+        for bad_boot_url in ["fuchsia-boot:/pkg#meta/a.cm", "fuchsia-boot:pkg#meta/a.cm"] {
+            assert_matches!(
+                boot::AbsoluteComponentUrl::parse(bad_boot_url),
+                Err(ParseError::InvalidScheme),
+                "input: {bad_boot_url:?}"
+            );
+        }
+        assert_matches!(
+            FuchsiaPkgAbsolutePackageUrl::parse(" fuchsia-pkg://example.org/name"),
+            Err(ParseError::InvalidScheme)
+        );
+
+        // Colon in a scheme-less input is rejected as an invalid scheme.
+        assert_matches!(FuchsiaPkgPackageUrl::parse("name:tag"), Err(ParseError::InvalidScheme));
+        assert_matches!(RelativePackageUrl::parse("name:tag"), Err(ParseError::InvalidScheme));
+        assert_matches!(PackageUrl::parse("name:tag").map(|_| ()), Err(ParseError::InvalidScheme));
+        assert_matches!(RelativePackageUrl::parse("1name:tag"), Err(ParseError::InvalidScheme));
+
+        // A colon after a `/` or inside `?<query>` or `#<fragment>` is not parsed as a scheme.
+        assert_matches!(
+            FuchsiaPkgPackageUrl::parse("pkg/name:tag"),
+            Err(ParseError::InvalidPathSegment(
+                errors::PackagePathSegmentError::InvalidCharacter { character: ':' }
+            ))
+        );
+        assert_matches!(
+            RelativePackageUrl::parse("/name:tag"),
+            Err(ParseError::InvalidPathSegment(
+                errors::PackagePathSegmentError::InvalidCharacter { character: ':' }
+            ))
+        );
+        assert_matches!(
+            RelativePackageUrl::parse("//example.org:1"),
+            Err(ParseError::CannotContainPort)
+        );
+        assert_eq!(
+            RelativeComponentUrl::parse("name#meta:a.cm").unwrap().to_string(),
+            "name#meta:a.cm"
+        );
+        assert_matches!(
+            RelativePackageUrl::parse("name?foo:bar"),
+            Err(ParseError::ExtraQueryParameters)
+        );
+
+        // WHATWG special schemes are rejected, and hosts for non-special schemes are validated as
+        // opaque `[a-z0-9.-]+` strings without IDNA/punycode or IPv4 address parsing/normalization.
+        for special_url in [
+            "ftp://example.org/name",
+            "file:///name",
+            "http://example.org/name",
+            "https://example.org/name",
+            "ws://example.org/name",
+            "wss://example.org/name",
+        ] {
+            assert_matches!(
+                AbsolutePackageUrl::parse(special_url),
+                Err(ParseError::InvalidScheme),
+                "input: {special_url:?}"
+            );
+        }
+        for opaque_host_url in [
+            "fuchsia-pkg://1/name",
+            "fuchsia-pkg://127.1/name",
+            "fuchsia-pkg://256.0.0.1/name",
+            "fuchsia-pkg://example.123/name",
+            "fuchsia-pkg://xn--99999/name",
+        ] {
+            let parsed = FuchsiaPkgAbsolutePackageUrl::parse(opaque_host_url).unwrap();
+            assert_eq!(parsed.to_string(), opaque_host_url, "input: {opaque_host_url:?}");
+        }
+        assert_matches!(
+            FuchsiaPkgAbsolutePackageUrl::parse("fuchsia-pkg://xn--/name"),
+            Err(ParseError::InvalidHost)
+        );
     }
 }
 

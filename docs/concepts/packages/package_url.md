@@ -31,10 +31,10 @@ resource, depending on which parts are included.
 {{ '<strong>' }}fuchsia-pkg://{{ '</strong>' }}<repository>[/<package-name>[?hash=<package-hash>][#<resource-path>]]
 ```
 
-The scheme of a Fuchsia package are the case-insensitive characters, `fuchsia-pkg://`.
+The scheme of a Fuchsia package URL is `fuchsia-pkg://`.
 
-Although the canonical form is lower-case, URL scheme encoding is case-insensitive therefore
-the system handles all cases.
+The scheme must be lowercase; the Fuchsia URL parser (`//src/lib/fuchsia-url`)
+rejects uppercase characters.
 
 ## Repository {#repository}
 
