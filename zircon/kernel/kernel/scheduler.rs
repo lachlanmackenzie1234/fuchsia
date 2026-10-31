@@ -731,15 +731,42 @@ impl EvaluateResult {
     /// May be called unconditionally and more than once, whether or not there
     /// are pending updates.
     ///
+    /// If the thread transitioned from fair to deadline while `queue_lock_` was
+    /// temporarily dropped to acquire the thread's lock, its start/finish times
+    /// were already updated to monotonic deadline parameters and must not be
+    /// overwritten with stale fair times.
+    ///
     /// # Safety
     ///
-    /// The caller must ensure `self.thread` is a valid `Thread` pointer and its lock is held.
+    /// When `self.is_updated_pending()` is true, the caller must ensure that:
+    ///
+    /// - `self.thread` points to a valid, initialized `Thread` whose lock is
+    ///   held exclusively.
+    /// - Either `self.thread` is not associated with any scheduler or is
+    ///   in-transition `ThreadState::Ready` (neither `ThreadState::Running` nor
+    ///   enqueued in any `RunQueue`), or its owning scheduler's `queue_lock_` is
+    ///   also held alongside `self.thread`'s lock.
+    /// - No live Rust reference (`&` or `&mut`) aliases `self.thread`'s
+    ///   `SchedulerState` or its `effective_profile`, `start_time`, or
+    ///   `finish_time` fields for the duration of the call.
     pub unsafe fn update_thread_timeline(&mut self) {
         if self.is_updated_pending() {
-            // SAFETY: `self.thread` is valid and its lock is held exclusively by the caller.
-            let state = unsafe { &mut *cpp_thread_get_scheduler_state(self.thread) };
-            state.start_time = self.mono_start_time_ns;
-            state.finish_time = self.mono_finish_time_ns;
+            // SAFETY: When `is_updated_pending()` is true, the caller guarantees
+            // `self.thread` is valid, its lock is held exclusively, concurrent
+            // `queue_lock_` readers of `effective_profile`, `start_time`, and
+            // `finish_time` are excluded (either because `self.thread` is not
+            // associated with any scheduler or is in-transition `ThreadState::Ready`
+            // (neither `Running` nor in a `RunQueue`), or because its owning
+            // scheduler's `queue_lock_` is also held), and no live references alias
+            // `SchedulerState` or those fields.
+            unsafe {
+                let state_ptr = cpp_thread_get_scheduler_state(self.thread);
+                SchedulerState::apply_pending_fair_timeline_update(
+                    state_ptr,
+                    self.mono_start_time_ns,
+                    self.mono_finish_time_ns,
+                );
+            }
             self.mono_start_time_ns = SchedTime::from_raw(0);
             self.mono_finish_time_ns = SchedTime::from_raw(0);
         }
@@ -816,15 +843,42 @@ impl DequeueResult {
     /// May be called unconditionally and more than once, whether or not there
     /// are pending updates.
     ///
+    /// If the thread transitioned from fair to deadline while `queue_lock_` was
+    /// temporarily dropped to acquire the thread's lock, its start/finish times
+    /// were already updated to monotonic deadline parameters and must not be
+    /// overwritten with stale fair times.
+    ///
     /// # Safety
     ///
-    /// The caller must ensure `self.thread` is a valid `Thread` pointer and its lock is held.
+    /// When `self.is_updated_pending()` is true, the caller must ensure that:
+    ///
+    /// - `self.thread` points to a valid, initialized `Thread` whose lock is
+    ///   held exclusively.
+    /// - Either `self.thread` is not associated with any scheduler or is
+    ///   in-transition `ThreadState::Ready` (neither `ThreadState::Running` nor
+    ///   enqueued in any `RunQueue`), or its owning scheduler's `queue_lock_` is
+    ///   also held alongside `self.thread`'s lock.
+    /// - No live Rust reference (`&` or `&mut`) aliases `self.thread`'s
+    ///   `SchedulerState` or its `effective_profile`, `start_time`, or
+    ///   `finish_time` fields for the duration of the call.
     pub unsafe fn update_thread_timeline(&mut self) {
         if self.is_updated_pending() {
-            // SAFETY: `self.thread` is valid and its lock is held exclusively by the caller.
-            let state = unsafe { &mut *cpp_thread_get_scheduler_state(self.thread) };
-            state.start_time = self.mono_start_time_ns;
-            state.finish_time = self.mono_finish_time_ns;
+            // SAFETY: When `is_updated_pending()` is true, the caller guarantees
+            // `self.thread` is valid, its lock is held exclusively, concurrent
+            // `queue_lock_` readers of `effective_profile`, `start_time`, and
+            // `finish_time` are excluded (either because `self.thread` is not
+            // associated with any scheduler or is in-transition `ThreadState::Ready`
+            // (neither `Running` nor in a `RunQueue`), or because its owning
+            // scheduler's `queue_lock_` is also held), and no live references alias
+            // `SchedulerState` or those fields.
+            unsafe {
+                let state_ptr = cpp_thread_get_scheduler_state(self.thread);
+                SchedulerState::apply_pending_fair_timeline_update(
+                    state_ptr,
+                    self.mono_start_time_ns,
+                    self.mono_finish_time_ns,
+                );
+            }
             self.mono_start_time_ns = SchedTime::from_raw(0);
             self.mono_finish_time_ns = SchedTime::from_raw(0);
         }
@@ -1692,6 +1746,42 @@ impl SchedulerState {
         // Return the mask honoring soft affinity if it is viable, otherwise ignore
         // soft affinity and honor only hard affinity.
         if available_mask != 0 { available_mask } else { hard_affinity & active_mask }
+    }
+
+    /// Applies a pending fair variable-to-monotonic timeline update to the state
+    /// at `state_ptr` without forming a whole-struct `&mut SchedulerState`,
+    /// unless `state_ptr` has since transitioned to a deadline effective profile
+    /// (for example, via priority inheritance or a base-profile update while
+    /// `queue_lock_` was dropped).
+    ///
+    /// # Safety
+    ///
+    /// - `state_ptr` must point to a valid, initialized `SchedulerState` whose
+    ///   `effective_profile` weight is stable for reading and whose `start_time`
+    ///   and `finish_time` fields are exclusively writable for the duration of
+    ///   the call.
+    /// - No live Rust reference (`&` or `&mut`) may alias `state_ptr` or its
+    ///   `effective_profile`, `start_time`, or `finish_time` fields for the
+    ///   duration of the call.
+    #[inline]
+    unsafe fn apply_pending_fair_timeline_update(
+        state_ptr: *mut Self,
+        mono_start_time_ns: SchedTime,
+        mono_finish_time_ns: SchedTime,
+    ) {
+        // SAFETY: Projecting `effective_profile`, `start_time`, and `finish_time`
+        // through `state_ptr` per the caller's contract avoids forming a
+        // whole-struct `&mut SchedulerState` on a live `Thread`.
+        unsafe {
+            if EffectiveProfile::discipline_raw(&raw const (*state_ptr).effective_profile)
+                == SchedDiscipline::Fair
+            {
+                (*state_ptr).start_time = mono_start_time_ns;
+                (*state_ptr).finish_time = mono_finish_time_ns;
+            } else {
+                core::hint::cold_path();
+            }
+        }
     }
 
     /// Returns the candidate target CPU mask for `find_target_cpu` and
@@ -11120,27 +11210,22 @@ impl Scheduler {
         // currently migrating. `save_state_list_` is drained afterward in the same
         // critical section that clears `cpu_deactivating`.
         let current_cpu_mask = cpu_num_to_mask(current_cpu);
-        let mut migrating_deadline_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
-        let migrating_deadline_threads_ptr = migrating_deadline_threads.as_mut_ptr();
-        let mut migrating_fair_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
-        let migrating_fair_threads_ptr = migrating_fair_threads.as_mut_ptr();
+        let mut migrating_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
+        let migrating_threads_ptr = migrating_threads.as_mut_ptr();
 
         // SAFETY: `this` is valid, interrupts are disabled, and `queue_lock_` is not
         // already held. `_queue_guard` holds `this`'s `queue_lock_`, placement-initializing
-        // the stack `UnblockList`s via `cpp_unblock_list_init`. While iterating each
+        // the stack `UnblockList` via `cpp_unblock_list_init`. While iterating each
         // `RunQueue`, `next` advances before any list operation without mutating
         // `run_queue`, and `hard_affinity` is stable under `queue_lock_` because
         // `set_affinity` requires both `thread_lock` and the container `queue_lock_`
         // for `Ready` threads.
-        let affine_transform = unsafe {
+        unsafe {
             let _queue_guard = QueueLockGuard::acquire(this);
 
-            cpp_unblock_list_init(migrating_deadline_threads_ptr);
-            cpp_unblock_list_init(migrating_fair_threads_ptr);
+            cpp_unblock_list_init(migrating_threads_ptr);
 
-            // Save the current affine transform to update fair threads as they are migrated.
             let state = (*this).state.get();
-            let affine = (*state).fair_affine_transform;
 
             let collect_migrating_threads =
                 |run_queue: *const RunQueue, thread_list: *mut UnblockList| {
@@ -11172,30 +11257,19 @@ impl Scheduler {
                     }
                 };
 
-            collect_migrating_threads(
-                &raw const (*state).fair_run_queue,
-                migrating_fair_threads_ptr,
-            );
+            collect_migrating_threads(&raw const (*state).fair_run_queue, migrating_threads_ptr);
             collect_migrating_threads(
                 &raw const (*state).critical_deadline_run_queue,
-                migrating_deadline_threads_ptr,
+                migrating_threads_ptr,
             );
             collect_migrating_threads(
                 &raw const (*state).deadline_run_queue,
-                migrating_deadline_threads_ptr,
+                migrating_threads_ptr,
             );
-
-            affine
-        };
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum RemoveFromRunQueue {
-            Yes,
-            No,
         }
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum UpdateTimeline {
+        enum RemoveFromRunQueue {
             Yes,
             No,
         }
@@ -11204,12 +11278,12 @@ impl Scheduler {
         // threads and finish the migration process. Don't make any assumptions about
         // the fair/deadline nature of the threads as we migrate. Since we dropped
         // the scheduler's queue lock, it is possible that these threads have changed
-        // effective priority since being removed from their old scheduler, but before
-        // arriving at a new one.
+        // effective priority since being examined above, before being removed from
+        // their old scheduler and arriving at a new one. `erase_from_queue` converts
+        // fair threads' start/finish times from variable to monotonic time under
+        // both locks when the thread is still fair at removal time.
         let migrate_thread = |thread: *mut Thread,
-                              remove_from_run_queue: RemoveFromRunQueue,
-                              update_timeline: UpdateTimeline,
-                              trace_tag: &'static ktrace_rs::InternedString|
+                              remove_from_run_queue: RemoveFromRunQueue|
          -> CpuNum {
             // SAFETY: `thread` is a valid `Thread` popped from a local migration list.
             let thread_lock = unsafe { &*thread_get_lock(thread) };
@@ -11230,6 +11304,8 @@ impl Scheduler {
                     // move and did not hold `thread`'s lock prior to `_guard`, `thread` must
                     // still be associated with `this` because `this` was marked inactive
                     // above, preventing other CPUs from stealing work from `this`.
+                    // `erase_from_queue` converts fair timeline values to monotonic time once
+                    // under both locks before `remove_thread_locked` disassociates `thread`.
                     // SAFETY: `this` and `thread` are valid, `thread` remains enqueued on
                     // `this`, and both `_guard` (`thread`'s lock) and `_queue_guard`
                     // (`this`'s `queue_lock_`) are held exclusively.
@@ -11244,29 +11320,31 @@ impl Scheduler {
                     }
                 }
 
-                // Emit the dequeue trace event after any run-queue removal so `arg1`
-                // records the post-dequeue runnable task count (matching other dequeue
-                // paths), while `_queue_guard` is still held (including for
-                // `SaveStateList` threads when `SCHEDULER_QUEUE_TRACING_ENABLED` is set).
-                // SAFETY: `this` and `thread` are valid, `_queue_guard` holds `this`'s
-                // `queue_lock_` (guarding `active_thread` and run-queue lengths), and
-                // `_guard` holds `thread`'s lock exclusively (guarding `thread`'s
-                // scheduler state even after `remove_thread_locked` or `SaveStateList`
-                // disassociation).
-                unsafe {
-                    (*this).trace_thread_queue_event(trace_tag, thread);
+                if SCHEDULER_QUEUE_TRACING_ENABLED {
+                    // Emit the dequeue trace event after any run-queue removal so `arg1`
+                    // records the post-dequeue runnable task count (matching other dequeue
+                    // paths), while `_queue_guard` is still held (including for
+                    // `SaveStateList` threads when `SCHEDULER_QUEUE_TRACING_ENABLED` is set).
+                    // SAFETY: `this` and `thread` are valid, `_queue_guard` holds `this`'s
+                    // `queue_lock_` (guarding `active_thread` and run-queue lengths), and
+                    // `_guard` holds `thread`'s lock exclusively (guarding `thread`'s
+                    // scheduler state even after `remove_thread_locked` or `SaveStateList`
+                    // disassociation).
+                    unsafe {
+                        let trace_tag = if remove_from_run_queue == RemoveFromRunQueue::Yes {
+                            let ep_ptr = &raw const (*cpp_thread_get_scheduler_state(thread))
+                                .effective_profile;
+                            if EffectiveProfile::discipline_raw(ep_ptr) == SchedDiscipline::Fair {
+                                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_fair")
+                            } else {
+                                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline")
+                            }
+                        } else {
+                            ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_save_state")
+                        };
+                        (*this).trace_thread_queue_event(trace_tag, thread);
+                    }
                 }
-            }
-
-            // Threads removed from the fair run queue must be transformed to the monotonic
-            // timeline before migrating.
-            if update_timeline == UpdateTimeline::Yes {
-                // SAFETY: `thread` is valid, removed from `this`'s run queue, and its
-                // lock is held exclusively by `_guard` with no aliasing references.
-                let thread_state = unsafe { &mut *cpp_thread_get_scheduler_state(thread) };
-                debug_assert!(thread_state.effective_profile.is_fair());
-                affine_transform.variable_to_monotonic_in_place(&mut thread_state.start_time);
-                affine_transform.variable_to_monotonic_in_place(&mut thread_state.finish_time);
             }
 
             // Call the Save stage of the thread's migration function if it last ran on
@@ -11297,29 +11375,11 @@ impl Scheduler {
             }
         };
 
-        // SAFETY: `migrating_fair_threads_ptr` was initialized by `cpp_unblock_list_init`.
-        while unsafe { !cpp_unblock_list_is_empty(migrating_fair_threads_ptr) } {
-            // SAFETY: `migrating_fair_threads_ptr` is initialized and non-empty.
-            let thread = unsafe { cpp_unblock_list_pop_front(migrating_fair_threads_ptr) };
-            let target_cpu = migrate_thread(
-                thread,
-                RemoveFromRunQueue::Yes,
-                UpdateTimeline::Yes,
-                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_fair"),
-            );
-            cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
-        }
-
-        // SAFETY: `migrating_deadline_threads_ptr` was initialized by `cpp_unblock_list_init`.
-        while unsafe { !cpp_unblock_list_is_empty(migrating_deadline_threads_ptr) } {
-            // SAFETY: `migrating_deadline_threads_ptr` is initialized and non-empty.
-            let thread = unsafe { cpp_unblock_list_pop_front(migrating_deadline_threads_ptr) };
-            let target_cpu = migrate_thread(
-                thread,
-                RemoveFromRunQueue::Yes,
-                UpdateTimeline::No,
-                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline"),
-            );
+        // SAFETY: `migrating_threads_ptr` was initialized by `cpp_unblock_list_init`.
+        while unsafe { !cpp_unblock_list_is_empty(migrating_threads_ptr) } {
+            // SAFETY: `migrating_threads_ptr` is initialized and non-empty.
+            let thread = unsafe { cpp_unblock_list_pop_front(migrating_threads_ptr) };
+            let target_cpu = migrate_thread(thread, RemoveFromRunQueue::Yes);
             cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
         }
 
@@ -11350,23 +11410,17 @@ impl Scheduler {
                 if thread.is_null() {
                     break;
                 }
-                let target_cpu = migrate_thread(
-                    thread,
-                    RemoveFromRunQueue::No,
-                    UpdateTimeline::No,
-                    ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_save_state"),
-                );
+                let target_cpu = migrate_thread(thread, RemoveFromRunQueue::No);
                 cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
             }
             // SAFETY: `local_save_state_list_ptr` was initialized and is now empty.
             unsafe { cpp_save_state_list_destroy(local_save_state_list_ptr) };
         }
 
-        // SAFETY: Both `UnblockList`s were initialized by `cpp_unblock_list_init` and
+        // SAFETY: `migrating_threads_ptr` was initialized by `cpp_unblock_list_init` and
         // drained above.
         unsafe {
-            cpp_unblock_list_destroy(migrating_fair_threads_ptr);
-            cpp_unblock_list_destroy(migrating_deadline_threads_ptr);
+            cpp_unblock_list_destroy(migrating_threads_ptr);
         }
 
         drop(_trace);
@@ -13571,5 +13625,48 @@ mod tests {
         unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 4), 0);
         state.hard_affinity = 1 << 31;
         unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 32), 1 << 31);
+    }
+
+    /// Verifies `apply_pending_fair_timeline_update` skips deadline profiles.
+    #[test]
+    fn test_apply_pending_fair_timeline_update_skips_deadline() {
+        let mut state = SchedulerState::new(BaseProfile::new_fair(0));
+        state.start_time = SchedTime::from_raw(100);
+        state.finish_time = SchedTime::from_raw(200);
+
+        // Fair effective profile receives the pending variable-to-monotonic update.
+        // SAFETY: `state` is an unshared local `SchedulerState` with no live references.
+        unsafe {
+            SchedulerState::apply_pending_fair_timeline_update(
+                &raw mut state,
+                SchedTime::from_raw(1_000),
+                SchedTime::from_raw(2_000),
+            );
+        }
+        unittest::expect_eq!(state.start_time.raw_value(), 1_000);
+        unittest::expect_eq!(state.finish_time.raw_value(), 2_000);
+
+        // If promoted to deadline before `update_thread_timeline` runs, its monotonic
+        // deadline parameters must not be overwritten with stale fair times.
+        state.effective_profile.set_deadline(
+            SchedDeadlineParams {
+                capacity_ns: sched_ms(1),
+                deadline_ns: sched_ms(10),
+                utilization: SchedUtilization::from_raw(0),
+            },
+            false,
+        );
+        state.start_time = SchedTime::from_raw(5_000);
+        state.finish_time = SchedTime::from_raw(15_000);
+        // SAFETY: `state` is an unshared local `SchedulerState` with no live references.
+        unsafe {
+            SchedulerState::apply_pending_fair_timeline_update(
+                &raw mut state,
+                SchedTime::from_raw(1_000),
+                SchedTime::from_raw(2_000),
+            );
+        }
+        unittest::expect_eq!(state.start_time.raw_value(), 5_000);
+        unittest::expect_eq!(state.finish_time.raw_value(), 15_000);
     }
 }

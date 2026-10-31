@@ -885,6 +885,103 @@ static void wait_for_thread_state(const Thread& thread, thread_state expected_st
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/578020457 and https://fxbug.dev/448121736:
+// Repeatedly unplug and hotplug a secondary CPU while unpinned fair threads of widely differing
+// weights (driving fair_affine_transform.slope < 1.0) actively run on and migrate off that CPU.
+// Verifies that Scheduler::MigrateUnpinnedThreads converts fair start/finish times from variable to
+// monotonic time only once rather than corrupting the fair timeline across unplug cycles.
+[[maybe_unused]] static bool mp_hotplug_migrate_fair_timeline_test() {
+  BEGIN_TEST;
+
+// TODO(https://fxbug.dev/42086046): Re-enable test on RISC-V.
+#if defined(__riscv)
+  printf(
+      "skipping test mp_hotplug_migrate_fair_timeline, hotplug only supported on x64 and arm64\n");
+  END_TEST;
+#endif
+
+  const cpu_mask_t online_secondaries = mp_get_online_mask() & ~cpu_num_to_mask(BOOT_CPU_ID);
+  if (online_secondaries == 0) {
+    printf("skipping test mp_hotplug_migrate_fair_timeline, not enough online cpus\n");
+    END_TEST;
+  }
+  const cpu_num_t target_cpu = highest_cpu_set(online_secondaries);
+
+  auto restore_affinity = fit::defer(
+      [previous_affinity = Thread::Current::SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID))] {
+        Thread::Current::SetCpuAffinity(previous_affinity);
+      });
+
+  // |stop| is a monotonic cancellation flag and |iterations| is read after Thread::Join().
+  struct State {
+    ktl::atomic<bool> stop{false};
+    ktl::atomic<uint64_t> iterations{0};
+  } state;
+
+  // Combining LOWEST_PRIORITY and HIGHEST_PRIORITY fair threads with soft affinity preferring
+  // |target_cpu| guarantees min_weight < weight_total * kMinFairUtilization on |target_cpu|,
+  // forcing fair_affine_transform.slope well below 1.0 while keeping hard_affinity unpinned so
+  // MigrateUnpinnedThreads migrates them on each unplug cycle.
+  constexpr int kPriorities[] = {
+      LOWEST_PRIORITY, LOWEST_PRIORITY, DEFAULT_PRIORITY, HIGHEST_PRIORITY, HIGHEST_PRIORITY,
+  };
+  Thread* workers[ktl::size(kPriorities)] = {};
+
+  auto stop_workers = fit::defer([&] {
+    state.stop.store(true, ktl::memory_order_relaxed);
+    for (Thread*& worker : workers) {
+      if (worker != nullptr) {
+        worker->Join(nullptr, ZX_TIME_INFINITE);
+        worker = nullptr;
+      }
+    }
+  });
+
+  auto restore_target_cpu = fit::defer([target_cpu] {
+    if (!mp_is_cpu_online(target_cpu)) {
+      const zx_status_t status = hotplug_core(target_cpu);
+      ASSERT_MSG(status == ZX_OK, "hotplugging core %u failed: %d", target_cpu, status);
+      wait_for_cpu_active(target_cpu);
+      const zx_status_t dpc_status = wait_for_cpu_dpc_runner(target_cpu);
+      ASSERT_MSG(dpc_status == ZX_OK, "waiting for core %u's dpc runner failed: %d", target_cpu,
+                 dpc_status);
+    }
+  });
+
+  for (size_t i = 0; i < ktl::size(kPriorities); ++i) {
+    workers[i] = Thread::Create(
+        "mp-hotplug-fair-timeline-worker",
+        [](void* arg) -> int {
+          auto* s = static_cast<State*>(arg);
+          while (!s->stop.load(ktl::memory_order_relaxed)) {
+            s->iterations.fetch_add(1, ktl::memory_order_relaxed);
+            Thread::Current::Yield();
+          }
+          return 0;
+        },
+        &state, kPriorities[i]);
+    ASSERT_NONNULL(workers[i], "worker create failed");
+    workers[i]->SetSoftCpuAffinity(cpu_num_to_mask(target_cpu));
+    workers[i]->Resume();
+  }
+
+  constexpr int kUnplugCycles = 25;
+  for (int i = 0; i < kUnplugCycles; ++i) {
+    Thread::Current::SleepRelative(ZX_MSEC(1));
+    ASSERT_OK(mp_unplug_cpu_mask(cpu_num_to_mask(target_cpu), ZX_TIME_INFINITE),
+              "unplugging core failed");
+    ASSERT_OK(wait_for_cpu_offline(target_cpu), "waiting for core to go offline failed");
+    ASSERT_OK(hotplug_core(target_cpu), "hotplugging core failed");
+    wait_for_cpu_active(target_cpu);
+    ASSERT_OK(wait_for_cpu_dpc_runner(target_cpu), "waiting for core's dpc runner failed");
+  }
+
+  stop_workers.call();
+  EXPECT_GT(state.iterations.load(ktl::memory_order_relaxed), 0u);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(mp_hotplug_tests)
 UNITTEST("test unplug and hotplug cores one by one", mp_hotplug_test)
 UNITTEST("test mp_sync_exec while unplugging and hotplugging a core", mp_hotplug_sync_exec_test)
@@ -892,4 +989,6 @@ UNITTEST("test unblocking pinned threads while their core is offline",
          mp_hotplug_unblock_pinned_while_offline_test)
 UNITTEST("test unblocking unpinned migrating threads while their last core is offline",
          mp_hotplug_unblock_unpinned_migrate_while_offline_test)
+UNITTEST("test fair timeline integrity across repeated core unplug migrations",
+         mp_hotplug_migrate_fair_timeline_test)
 UNITTEST_END_TESTCASE(mp_hotplug_tests, "hotplug", "Tests for unplugging and hotplugging cores")
