@@ -209,6 +209,12 @@ cpp_vm_cow_pages_supply_pages_locked(VmCowPages* cow, VmCowRange range, VmPageSp
   return cow->SupplyPagesLocked(range, pages, options, *deferred, page_request);
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_range_change_update_locked(
+    VmCowPages* cow, VmCowRange range, VmObject::RangeChangeOp op,
+    VmCowPages::DeferredOps* deferred) TA_NO_THREAD_SAFETY_ANALYSIS {
+  cow->RangeChangeUpdateLocked(range, op, deferred);
+}
+
 FFI_ALWAYS_INLINE uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow) {
   return cow->DebugGetPopulatedSlotsCount();
 }

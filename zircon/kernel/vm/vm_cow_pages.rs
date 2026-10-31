@@ -9,6 +9,7 @@ use super::continuous_attribution_tracker::AttributionTracker;
 use super::page::{VmPageDoublyLinkedList, VmPagePtr};
 use super::page_queues::PageQueues;
 use super::page_state::VmPageState;
+pub use super::vm_object::RangeChangeOp;
 use super::vm_page_list::{VmPageList, VmPageSpliceList};
 use crate::kernel::types::PAddr;
 use crate::vm::compressor::VmCompressor;
@@ -1343,6 +1344,39 @@ impl VmCowPages {
         unsafe { bindings::cpp_vm_cow_pages_is_discardable(self.as_raw()) }
     }
 
+    /// Returns whether the root of the cow pages hierarchy has non-null `page_source`.
+    #[inline]
+    pub fn root_has_page_source(&self) -> bool {
+        self.options().contains(VmCowPagesOptions::PAGE_SOURCE_ROOT)
+    }
+
+    /// If true this node, and all nodes in this hierarchy, are using parent content markers to
+    /// indicate when a leaf node may need to walk up the tree to find content.
+    ///
+    /// When parent content markers are in use an empty page list slot in a leaf node means that
+    /// there is *no* visible parent content above, and the parent hierarchy does not have to be
+    /// searched.
+    ///
+    /// For memory efficiency, and because it would be redundant, parent content markers are never
+    /// placed in the hidden nodes, only leaf nodes.
+    ///
+    /// The presence of a parent content marker in a leaf node indicates that there *might* be
+    /// content in a parent node and that a tree walk *must* be performed to search for it. The
+    /// reason for spurious parent content markers is that zero page deduplication could happen on
+    /// hidden nodes, which could remove the content, but leave the parent content markers in the
+    /// leaf nodes. Spurious parent content markers can persist in VMOs when they lose their parent.
+    /// Spurious parent content markers are redundant and could be cleaned up.
+    ///
+    /// Use of parent content markers is just the inverse of having a page source, since if there is
+    /// a page source we always have to go to it for content as the zero page cannot be assumed.
+    /// Although some page sources do supply zero content (physical page provider for contiguous
+    /// VMOs), optimizing this check for that is redundant since such page sources do not support
+    /// copy-on-write, and so never have children to begin with.
+    #[inline]
+    pub fn tree_has_parent_content_markers(&self) -> bool {
+        !self.root_has_page_source()
+    }
+
     /// Replaces a page at offset with a loaned page.
     pub fn replace_page_with_loaned(
         &self,
@@ -1443,6 +1477,24 @@ impl VmCowPages {
     pub fn debug_is_parent_content(&self, offset: u64) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_debug_is_parent_content(self.as_raw(), offset) }
+    }
+
+    /// Returns whether the slot at `offset` holds a zero marker.
+    pub fn debug_is_marker(&self, offset: u64) -> bool {
+        self.assert_canary();
+        debug_assert!(::page::is_page_rounded(offset as usize));
+        ksync::lock!(let guard = self.lock());
+        self.page_list_locked(guard.token()).lookup(offset).is_some_and(|p| p.is_marker())
+    }
+
+    /// Returns the share count of the zero marker at `offset`.
+    pub fn debug_get_marker_share_count(&self, offset: u64) -> u32 {
+        self.assert_canary();
+        debug_assert!(::page::is_page_rounded(offset as usize));
+        ksync::lock!(let guard = self.lock());
+        let p = self.page_list_locked(guard.token()).lookup(offset);
+        debug_assert!(p.is_some_and(|p| p.is_marker()));
+        p.expect("slot at offset holds a zero marker").marker_share_count()
     }
 
     /// Returns whether this node has no page at `offset`.
@@ -1598,6 +1650,8 @@ impl VmCowPages {
         let state_ptr: *mut LookupState<'_, T> = &mut state;
         // Erase the Rust type so we can pass our context pointer through C++'s void* argument.
         let ctx_ptr: *mut core::ffi::c_void = state_ptr.cast();
+        // SAFETY: `self.as_raw()` is a live `VmCowPages`, and `ctx_ptr` points to `state` on the
+        // stack for the duration of this synchronous call.
         let status = unsafe {
             bindings::cpp_vm_cow_pages_debug_lookup_readable(
                 self.as_raw(),
@@ -1736,6 +1790,35 @@ impl VmCowPages {
             )
         };
         Status::ok(status)
+    }
+
+    /// Applies the specific operation to all mappings in the given range. The mappings for the
+    /// current object are operated on immediately, with any children being operated on using
+    /// `deferred`. If the caller knows that no `DeferredOps` is needed (e.g. the VMO has no
+    /// children and is not pager backed) then `None` can be provided.
+    ///
+    /// The caller must hold *this* object's lock. `token` proves only that some lock of the
+    /// `VmCowPagesLockClass` class is held, and the C++ side runs with thread safety analysis
+    /// disabled, so neither side can check this.
+    #[inline]
+    pub fn range_change_update_locked(
+        &self,
+        _token: &LockToken<'_, VmCowPagesLockClass>,
+        range: VmCowRange,
+        op: RangeChangeOp,
+        deferred: Option<Pin<&mut DeferredOps<'_>>>,
+    ) {
+        let deferred_ptr = deferred.map_or(ptr::null_mut(), DeferredOps::as_raw);
+        // SAFETY: `self.as_raw()` is a live `VmCowPages` and the caller holds its lock (see the doc
+        // comment above); `deferred_ptr` is either null or points to a live, pinned `DeferredOps`.
+        unsafe {
+            bindings::cpp_vm_cow_pages_range_change_update_locked(
+                self.as_raw(),
+                range.into(),
+                op,
+                deferred_ptr,
+            );
+        }
     }
 
     /// Test-only interface to get the current populated slots count.

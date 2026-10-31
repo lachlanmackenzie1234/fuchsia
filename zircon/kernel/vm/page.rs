@@ -571,6 +571,21 @@ impl VmPage {
         unsafe { (*(*self.state_union.get()).object).set_pin_count(count) };
     }
 
+    /// Returns the share count.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `object` is the currently active union variant, and that the
+    /// owning `VmCowPages` lock is held (or the caller otherwise has exclusive access) so reading
+    /// this subfield does not race with concurrent writes.
+    #[inline]
+    pub unsafe fn get_share_count(&self) -> u32 {
+        // SAFETY: Dereferencing UnsafeCell to read the share count from the active union variant.
+        // The caller guarantees `object` is active and that reading it does not race with
+        // concurrent writes.
+        unsafe { (*(*self.state_union.get()).object).share_count }
+    }
+
     /// Returns whether the page is marked as always needed.
     ///
     /// # Safety
@@ -903,6 +918,19 @@ impl VmPagePtr {
     pub unsafe fn set_pin_count(self, count: u8) {
         // SAFETY: Safety deferred to caller per function safety preconditions.
         unsafe { self.as_ref().set_pin_count(count) }
+    }
+
+    /// Returns the share count of the page when attached to a VM object.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page is attached to a VM object (`state_union` is in
+    /// `object` variant) and that the owning `VmCowPages` lock is held (or the caller otherwise
+    /// has exclusive access) so reading this subfield does not race with concurrent writes.
+    #[inline]
+    pub unsafe fn get_share_count(self) -> u32 {
+        // SAFETY: Safety deferred to caller per function safety preconditions.
+        unsafe { self.as_ref().get_share_count() }
     }
 
     /// Returns whether the page is marked as always needed.

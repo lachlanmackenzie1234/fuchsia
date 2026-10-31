@@ -1505,6 +1505,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_add_new_pages_locked",
     "cpp_vm_cow_pages_zero_pages_locked",
     "cpp_vm_cow_pages_supply_pages_locked",
+    "cpp_vm_cow_pages_range_change_update_locked",
     "cpp_vm_cow_pages_debug_get_populated_slots_count",
     "cpp_vm_cow_pages_debug_is_parent_content",
     "cpp_vm_cow_pages_can_borrow",
@@ -1563,6 +1564,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages_PageLookup",
     "VmCowPages_ParentAndRange",
     "VmCowPages_RangeChangeOp",
+    "VmObject_RangeChangeOp",
   ]
   var_allowlist = [ "VmCowPagesOptions_.*" ]
   opaque_types = [
@@ -1613,7 +1615,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "use page_bindings::vm_page_t;",
     "use page_source_bindings::MultiPageRequest;",
     "pub use pmm_bindings::{PmmOptDelayReuse, VmPageDoublyLinkedList};",
-    "pub use vm_object_bindings::SupplyOptions;",
+    "pub use vm_object_bindings::{SupplyOptions, VmObject_RangeChangeOp};",
     "use vm_page_list_bindings::VmPageSpliceList;",
     "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::zx_status_t;",

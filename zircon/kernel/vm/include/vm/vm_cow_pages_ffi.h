@@ -98,6 +98,10 @@ zx_status_t cpp_vm_cow_pages_supply_pages_locked(VmCowPages* cow, VmCowRange ran
                                                  VmPageSpliceList* pages, SupplyOptions options,
                                                  VmCowPages::DeferredOps* deferred,
                                                  MultiPageRequest* page_request);
+// TODO(https://fxbug.dev/531878739): Remove once RangeChangeUpdateLocked is ported to Rust.
+void cpp_vm_cow_pages_range_change_update_locked(VmCowPages* cow, VmCowRange range,
+                                                 VmObject::RangeChangeOp op,
+                                                 VmCowPages::DeferredOps* deferred);
 uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow);
 bool cpp_vm_cow_pages_debug_is_parent_content(const VmCowPages* cow, uint64_t offset);
 bool cpp_vm_cow_pages_can_borrow(const VmCowPages* cow);
