@@ -319,7 +319,7 @@ configs: {
   skills: "zircon/skills/fbl-intrusive-porting"
   include_filters: {
     project: "fuchsia"
-    path_regex: "zircon/.*\\.(rs|cc|h)"
+    path_regex: "zircon/.*\\.rs"
   }
 }
 
