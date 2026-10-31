@@ -70,7 +70,7 @@ rustc_library("util") {
   ]
 }
 
-rustc_test("util_test") {
+rustc_test("cm_util_lib_test") {
   sources = [
     "src/abortable_scope.rs",
     "src/channel.rs",
@@ -87,11 +87,10 @@ rustc_test("util_test") {
            "//third_party/rust_crates:futures",
            "//third_party/rust_crates:pin-project",
          ] + [ "//src/lib/fuchsia-async" ]
-  output_name = "cm_util_lib_test"
 }
 
 fuchsia_unittest_package("component_manager_util_test") {
   package_name = "component_manager_util_test-gn"
   component_name = "component_manager_util_test"
-  deps = [ ":util_test" ]
+  deps = [ ":cm_util_lib_test" ]
 }

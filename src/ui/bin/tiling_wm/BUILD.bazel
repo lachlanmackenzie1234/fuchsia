@@ -44,9 +44,8 @@ rustc_binary(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "tiling_wm_bin_test"
 rustc_test(
-    name = "bin_test",
+    name = "tiling_wm_bin_test",
     crate = ":bin",
     edition = "2024",
 )
@@ -75,5 +74,5 @@ fx_component(
 
 fx_unittest_package(
     name = "tiling_wm_tests",
-    unit_tests = [":bin_test"],
+    unit_tests = [":tiling_wm_bin_test"],
 )

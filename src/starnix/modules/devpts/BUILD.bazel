@@ -38,9 +38,8 @@ rustc_library(
 
 # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
 # @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "asan", "hwasan" ]
-# @bazel2gn:raw_attribute:output_name = "starnix_modules_devpts_lib_test"
 rustc_test(
-    name = "devpts_test",
+    name = "starnix_modules_devpts_lib_test",
     crate = ":devpts",
     edition = "2024",
     lint_config = "//src/starnix/config:starnix_clippy_lints_test",
@@ -53,7 +52,7 @@ rustc_test(
 fx_packaged_binary(
     name = "devpts_test_packaged_bin",
     testonly = True,
-    binary = ":devpts_test",
+    binary = ":starnix_modules_devpts_lib_test",
     binary_name = "starnix_modules_devpts_lib_test",
 )
 

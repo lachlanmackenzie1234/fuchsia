@@ -66,9 +66,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "builtins_lib_test"
 rustc_test(
-    name = "builtins_test",
+    name = "builtins_lib_test",
     crate = ":builtins",
     edition = "2024",
     deps = [
@@ -83,7 +82,7 @@ rustc_test(
 fx_packaged_binary(
     name = "builtins_test_packaged_bin",
     testonly = True,
-    binary = ":builtins_test",
+    binary = ":builtins_lib_test",
     binary_name = "builtins_lib_test",
 )
 

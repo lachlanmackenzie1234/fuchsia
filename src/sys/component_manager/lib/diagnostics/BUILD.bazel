@@ -50,9 +50,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "diagnostics_lib_test"
 rustc_test(
-    name = "diagnostics_test",
+    name = "diagnostics_lib_test",
     crate = ":diagnostics",
     edition = "2024",
     deps = [
@@ -66,7 +65,7 @@ rustc_test(
 
 fx_unittest_component(
     name = "test_component",
-    binary = ":diagnostics_test",
+    binary = ":diagnostics_lib_test",
 )
 
 fx_package(

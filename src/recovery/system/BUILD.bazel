@@ -101,9 +101,8 @@ rustc_binary(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "system_recovery_fdr_bin_test"
 rustc_test(
-    name = "bin_fdr_test",
+    name = "system_recovery_fdr_bin_test",
     crate = ":bin_fdr",
     edition = "2024",
     deps = [
@@ -113,7 +112,7 @@ rustc_test(
 
 fx_unittest_package(
     name = "system_recovery_fdr_unittests",
-    unit_tests = [":bin_fdr_test"],
+    unit_tests = [":system_recovery_fdr_bin_test"],
 )
 
 fx_packaged_binary(

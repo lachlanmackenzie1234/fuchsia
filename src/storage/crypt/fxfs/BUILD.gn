@@ -70,7 +70,7 @@ rustc_library("lib") {
   ]
 }
 
-rustc_test("lib_test") {
+rustc_test("fxfs_crypt_lib_test") {
   sources = [
     "src/lib.rs",
     "src/log.rs",
@@ -87,11 +87,10 @@ rustc_test("lib_test") {
            "//third_party/rust_crates:futures",
            "//third_party/rust_crates:log",
          ] + [ "//src/lib/fuchsia" ]
-  output_name = "fxfs_crypt_lib_test"
 }
 
 fuchsia_unittest_component("fxfs-crypt-test") {
-  deps = [ ":lib_test" ]
+  deps = [ ":fxfs_crypt_lib_test" ]
 }
 
 fuchsia_test_package("fxfs-crypt-tests-package") {

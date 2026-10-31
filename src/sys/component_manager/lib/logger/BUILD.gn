@@ -61,7 +61,7 @@ rustc_library("logger") {
   ]
 }
 
-rustc_test("logger_test") {
+rustc_test("cm_logger_lib_test") {
   sources = [
     "src/klog.rs",
     "src/lib.rs",
@@ -78,7 +78,6 @@ rustc_test("logger_test") {
            "//third_party/rust_crates:anyhow",
            "//third_party/rust_crates:rand",
          ]
-  output_name = "cm_logger_lib_test"
 }
 
 fuchsia_component_manifest("component_manager_logger_test-manifest") {
@@ -90,7 +89,7 @@ fuchsia_component_manifest("component_manager_logger_test-manifest") {
 fuchsia_test_component("component_manager_logger_test-component") {
   cm_label = ":component_manager_logger_test-manifest"
   component_name = "component_manager_logger_test"
-  deps = [ ":logger_test" ]
+  deps = [ ":cm_logger_lib_test" ]
   test_type = "system"
 }
 

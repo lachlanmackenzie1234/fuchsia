@@ -108,9 +108,8 @@ fx_component(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "system_update_committer_lib_test"
 rustc_test(
-    name = "lib_test",
+    name = "system_update_committer_lib_test",
     crate = ":lib",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
@@ -126,7 +125,7 @@ rustc_test(
 fx_packaged_binary(
     name = "lib_test_packaged_bin",
     testonly = True,
-    binary = ":lib_test",
+    binary = ":system_update_committer_lib_test",
     binary_name = "system_update_committer_lib_test",
 )
 

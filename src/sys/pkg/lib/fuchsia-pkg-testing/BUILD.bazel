@@ -99,10 +99,10 @@ rustc_library(
 # fuchsia-pkg-testing-tests packages //src/connectivity/network/dns:component,
 # //src/connectivity/network/netstack3:component-for-tests, and
 # //src/storage/tools/blobfs-compression.
-# @bazel2gn:raw_attribute:output_name = "fuchsia_pkg_testing_lib_test"
 rustc_test(
     name = "fuchsia-pkg-testing_test",
     crate = ":fuchsia-pkg-testing",
+    crate_name = "fuchsia_pkg_testing_lib_test",
     disable_clippy = True,  # @bazel2gn:skip
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",

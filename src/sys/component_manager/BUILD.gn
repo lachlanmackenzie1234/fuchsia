@@ -748,6 +748,7 @@ rustc_test("bin_test") {
     "//build/config/rust:bootfs",
     ":optimize-for-size",
   ]
+  output_name = "component_manager_bin_test"
   non_rust_deps = [
     ":dispatcher_cm($default_toolchain)",
     ":elf_runner_cm($default_toolchain)",
@@ -757,7 +758,6 @@ rustc_test("bin_test") {
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")
   exclude_toolchain_tags = [ "heapdump" ]
-  output_name = "component_manager_bin_test"
 }
 
 rustc_test("src_model_tests") {

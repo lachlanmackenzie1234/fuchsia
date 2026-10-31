@@ -58,7 +58,7 @@ rustc_library("socket_parsing") {
   ]
 }
 
-rustc_test("socket_parsing_test") {
+rustc_test("socket_parsing_lib_test") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   deps = [
@@ -67,11 +67,10 @@ rustc_test("socket_parsing_test") {
            "//third_party/rust_crates:futures",
            "//third_party/rust_crates:thiserror",
          ] + [ "//src/lib/fuchsia" ]
-  output_name = "socket_parsing_lib_test"
 }
 
 fuchsia_unittest_component("socket_parsing_tests_component") {
-  deps = [ ":socket_parsing_test" ]
+  deps = [ ":socket_parsing_lib_test" ]
   component_name = "socket_parsing_tests"
 }
 

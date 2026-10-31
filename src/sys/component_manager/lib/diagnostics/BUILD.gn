@@ -82,7 +82,7 @@ rustc_library("diagnostics") {
   ]
 }
 
-rustc_test("diagnostics_test") {
+rustc_test("diagnostics_lib_test") {
   sources = [
     "src/escrow.rs",
     "src/lib.rs",
@@ -122,11 +122,10 @@ rustc_test("diagnostics_test") {
            "//third_party/rust_crates:assert_matches",
            "//third_party/rust_crates:itertools",
          ]
-  output_name = "diagnostics_lib_test"
 }
 
 fuchsia_unittest_component("test_component") {
-  deps = [ ":diagnostics_test" ]
+  deps = [ ":diagnostics_lib_test" ]
 }
 
 fuchsia_test_package("diagnostics_tests_package") {

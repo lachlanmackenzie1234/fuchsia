@@ -39,9 +39,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "fxfs_crypt_lib_test"
 rustc_test(
-    name = "lib_test",
+    name = "fxfs_crypt_lib_test",
     crate = ":lib",
     edition = "2024",
     deps = ["//src/lib/fuchsia"],
@@ -49,7 +48,7 @@ rustc_test(
 
 fx_unittest_component(
     name = "fxfs-crypt-test",
-    binary = ":lib_test",
+    binary = ":fxfs_crypt_lib_test",
 )
 
 fx_package(

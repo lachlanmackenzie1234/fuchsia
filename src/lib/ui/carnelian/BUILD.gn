@@ -639,7 +639,7 @@ rustc_binary("textgrid") {
   ]
 }
 
-rustc_test("carnelian_test") {
+rustc_test("carnelian_lib_test") {
   sources = [
     "src/app.rs",
     "src/app/strategies.rs",
@@ -724,7 +724,6 @@ rustc_test("carnelian_test") {
          ] + [ "//third_party/rust_crates:itertools" ]
   inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
   configs += [ ":carnelian-performance" ]
-  output_name = "carnelian_lib_test"
 }
 
 fuchsia_component_manifest("carnelian-render-tests-manifest") {
@@ -736,7 +735,7 @@ fuchsia_component_manifest("carnelian-render-tests-manifest") {
 fuchsia_test_component("carnelian-render-tests-component") {
   cm_label = ":carnelian-render-tests-manifest"
   component_name = "carnelian-render-tests"
-  deps = [ ":carnelian_test" ]
+  deps = [ ":carnelian_lib_test" ]
   test_type = "system"
 }
 
@@ -754,7 +753,7 @@ fuchsia_component_manifest("carnelian-tests-manifest") {
 fuchsia_test_component("carnelian-tests-component") {
   cm_label = ":carnelian-tests-manifest"
   component_name = "carnelian-tests"
-  deps = [ ":carnelian_test" ]
+  deps = [ ":carnelian_lib_test" ]
   test_type = "system"
 }
 

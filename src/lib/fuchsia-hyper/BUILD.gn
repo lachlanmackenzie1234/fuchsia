@@ -9,7 +9,7 @@ import("//build/components.gni")
 # skipped by `bazel2gn` (see below), so its test component isn't generated.
 fuchsia_test_component("fuchsia-hyper-lib-test") {
   manifest = "meta/fuchsia_hyper_lib_test.cml"
-  deps = [ ":fuchsia-hyper_test" ]
+  deps = [ ":fuchsia_hyper_lib_test" ]
   test_type = "system"
 }
 
@@ -34,7 +34,7 @@ group("tests") {
   deps = [
     ":bazel_tests",
     ":fuchsia-hyper-tests",
-    ":fuchsia-hyper_test($host_toolchain)",
+    ":fuchsia_hyper_lib_test($host_toolchain)",
   ]
 }
 
@@ -132,7 +132,7 @@ rustc_library("fuchsia-hyper") {
   }
 }
 
-rustc_test("fuchsia-hyper_test") {
+rustc_test("fuchsia_hyper_lib_test") {
   sources = []
   sources += [ "src/lib.rs" ]
   if (is_fuchsia) {
@@ -188,5 +188,4 @@ rustc_test("fuchsia-hyper_test") {
   } else {
     deps += [ "//third_party/rust_crates:anyhow" ]
   }
-  output_name = "fuchsia_hyper_lib_test"
 }

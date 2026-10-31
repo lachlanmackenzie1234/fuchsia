@@ -294,8 +294,8 @@ rustc_test("bin_test") {
          ]
   source_root = "src/main.rs"
   configs += [ "//build/config/rust:bootfs" ]
-  lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "pkg_cache_bin_test"
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
   _concurrent_jobs = concurrent_jobs.link_highmem
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")

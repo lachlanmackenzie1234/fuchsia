@@ -65,7 +65,7 @@ rustc_library("devpts") {
   ]
 }
 
-rustc_test("devpts_test") {
+rustc_test("starnix_modules_devpts_lib_test") {
   sources = [ "lib.rs" ]
   source_root = "lib.rs"
   edition = "2024"
@@ -86,7 +86,6 @@ rustc_test("devpts_test") {
     "asan",
     "hwasan",
   ]
-  output_name = "starnix_modules_devpts_lib_test"
 }
 
 fuchsia_component_manifest("starnix-devpts-tests-manifest") {
@@ -100,7 +99,7 @@ fuchsia_test_component("starnix-devpts-tests-component") {
   component_name = "starnix-devpts-tests"
   test_type = "starnix"
   deps = [
-    ":devpts_test",
+    ":starnix_modules_devpts_lib_test",
     "//src/starnix/kernel/vdso",
   ]
 }

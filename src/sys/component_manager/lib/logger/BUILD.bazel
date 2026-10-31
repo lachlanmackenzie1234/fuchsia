@@ -31,9 +31,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "cm_logger_lib_test"
 rustc_test(
-    name = "logger_test",
+    name = "cm_logger_lib_test",
     crate = ":logger",
     edition = "2024",
     deps = [
@@ -47,7 +46,7 @@ rustc_test(
 fx_packaged_binary(
     name = "logger_test_packaged_bin",
     testonly = True,
-    binary = ":logger_test",
+    binary = ":cm_logger_lib_test",
     binary_name = "cm_logger_lib_test",
 )
 

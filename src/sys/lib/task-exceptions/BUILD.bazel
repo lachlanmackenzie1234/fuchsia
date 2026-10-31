@@ -31,10 +31,10 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "task_exceptions_lib_test"
 rustc_test(
     name = "task-exceptions_test",
     crate = ":task-exceptions",
+    crate_name = "task_exceptions_lib_test",
     edition = "2024",
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

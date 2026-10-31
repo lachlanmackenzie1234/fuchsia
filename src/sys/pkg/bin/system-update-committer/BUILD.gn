@@ -120,7 +120,7 @@ fuchsia_component("component") {
   deps = [ ":bin" ]
 }
 
-rustc_test("lib_test") {
+rustc_test("system_update_committer_lib_test") {
   sources = [
     "src/fidl.rs",
     "src/main.rs",
@@ -166,7 +166,6 @@ rustc_test("lib_test") {
            "//third_party/rust_crates:assert_matches",
          ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
-  output_name = "system_update_committer_lib_test"
 }
 
 fuchsia_component_manifest("unittest_manifest") {
@@ -178,7 +177,7 @@ fuchsia_component_manifest("unittest_manifest") {
 fuchsia_test_component("unittest_component") {
   cm_label = ":unittest_manifest"
   component_name = "unittest_component"
-  deps = [ ":lib_test" ]
+  deps = [ ":system_update_committer_lib_test" ]
 }
 
 fuchsia_test_package("system-update-committer-tests-package") {

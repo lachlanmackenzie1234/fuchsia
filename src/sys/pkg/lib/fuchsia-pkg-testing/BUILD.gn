@@ -198,6 +198,6 @@ rustc_test("fuchsia-pkg-testing_test") {
            "//src/lib/fuchsia",
            "//third_party/rust_crates:assert_matches",
          ]
-  lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "fuchsia_pkg_testing_lib_test"
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
 }

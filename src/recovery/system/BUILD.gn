@@ -161,7 +161,7 @@ rustc_binary("bin_fdr") {
   ]
 }
 
-rustc_test("bin_fdr_test") {
+rustc_test("system_recovery_fdr_bin_test") {
   sources = [ "src/main.rs" ]
   edition = "2024"
   deps = [
@@ -181,13 +181,12 @@ rustc_test("bin_fdr_test") {
            "//third_party/rust_crates:futures",
          ] + [ "//src/lib/fuchsia" ]
   source_root = "src/main.rs"
-  output_name = "system_recovery_fdr_bin_test"
 }
 
 fuchsia_unittest_package("system_recovery_fdr_unittests") {
   package_name = "system_recovery_fdr_unittests-gn"
   component_name = "system_recovery_fdr_unittests"
-  deps = [ ":bin_fdr_test" ]
+  deps = [ ":system_recovery_fdr_bin_test" ]
 }
 
 fuchsia_component_manifest("manifest_fdr") {

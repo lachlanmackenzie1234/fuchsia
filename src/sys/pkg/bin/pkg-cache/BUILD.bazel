@@ -145,7 +145,6 @@ rustc_binary(
 # `with_unit_tests` on `rustc_binary()` is not allowed in Bazel, so this is
 # a standalone `rustc_test()` keeping the output name that
 # `meta/pkg-cache-bin-test.cml` expects.
-# @bazel2gn:raw_attribute:output_name = "pkg_cache_bin_test"
 # @bazel2gn:raw_attribute:_concurrent_jobs = concurrent_jobs.link_highmem
 # @bazel2gn:raw_attribute:configs += _concurrent_jobs.configs
 # @bazel2gn:raw_attribute:forward_variables_from(_concurrent_jobs.vars, "*")
@@ -153,6 +152,7 @@ rustc_test(
     name = "bin_test",
     build_flags = ["//build/config/rust:bootfs"],
     crate = ":bin",
+    crate_name = "pkg_cache_bin_test",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     deps = [

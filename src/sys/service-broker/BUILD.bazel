@@ -34,9 +34,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "service_broker_lib_test"
 rustc_test(
-    name = "lib_test",
+    name = "service_broker_lib_test",
     crate = ":lib",
     edition = "2024",
     deps = ["//src/lib/fuchsia"],
@@ -44,7 +43,7 @@ rustc_test(
 
 fx_unittest_component(
     name = "service-broker-unittests-component",
-    binary = ":lib_test",
+    binary = ":service_broker_lib_test",
     component_name = "service-broker-unittests",
 )
 

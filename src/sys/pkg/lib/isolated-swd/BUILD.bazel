@@ -53,10 +53,10 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "isolated_swd_lib_test"
 rustc_test(
     name = "isolated-swd_test",
     crate = ":isolated-swd",
+    crate_name = "isolated_swd_lib_test",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
     deps = [

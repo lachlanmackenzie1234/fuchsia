@@ -35,9 +35,8 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:raw_attribute:output_name = "fake_log_sink_lib_test"
 rustc_test(
-    name = "rust_test",
+    name = "fake_log_sink_lib_test",
     crate = ":rust",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
@@ -52,7 +51,7 @@ rustc_test(
 fx_packaged_binary(
     name = "rust_test_packaged_bin",
     testonly = True,
-    binary = ":rust_test",
+    binary = ":fake_log_sink_lib_test",
     binary_name = "fake_log_sink_lib_test",
 )
 

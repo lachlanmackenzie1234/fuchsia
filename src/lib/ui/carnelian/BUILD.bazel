@@ -318,9 +318,8 @@ rustc_binary(
 # `srcs` into `bazel-out/.../bin/` and breaks relative `include_bytes!("../../../../../...")`
 # paths in `#[cfg(test)]` modules (https://fxbug.dev/516778625).
 # @bazel2gn:raw_attribute:configs += [ ":carnelian-performance" ]
-# @bazel2gn:raw_attribute:output_name = "carnelian_lib_test"
 rustc_test(
-    name = "carnelian_test",
+    name = "carnelian_lib_test",
     compile_data = [
         "//:prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf",
     ],
@@ -336,7 +335,7 @@ rustc_test(
 fx_packaged_binary(
     name = "carnelian_test_packaged_bin",
     testonly = True,
-    binary = ":carnelian_test",
+    binary = ":carnelian_lib_test",
     binary_name = "carnelian_lib_test",
 )
 

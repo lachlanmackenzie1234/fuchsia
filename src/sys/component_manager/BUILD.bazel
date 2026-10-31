@@ -307,7 +307,6 @@ rustc_binary(
     deps = _COMPONENT_MANAGER_DEPS,
 )
 
-# @bazel2gn:raw_attribute:output_name = "component_manager_bin_test"
 rustc_test(
     name = "bin_test",
     build_flags = [
@@ -315,6 +314,7 @@ rustc_test(
         ":optimize-for-size",
     ],
     crate = ":bin",
+    crate_name = "component_manager_bin_test",
     data = [
         ":dispatcher_cm",  # @bazel2gn:path_overwrite::dispatcher_cm($default_toolchain)
         ":elf_runner_cm",  # @bazel2gn:path_overwrite::elf_runner_cm($default_toolchain)

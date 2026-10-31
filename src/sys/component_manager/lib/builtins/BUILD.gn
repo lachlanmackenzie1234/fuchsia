@@ -91,7 +91,7 @@ rustc_library("builtins") {
   ]
 }
 
-rustc_test("builtins_test") {
+rustc_test("builtins_lib_test") {
   sources = [
     "src/arguments.rs",
     "src/cpu_resource.rs",
@@ -142,7 +142,6 @@ rustc_test("builtins_test") {
            "//third_party/rust_crates:tempfile",
            "//third_party/rust_crates:zerocopy",
          ]
-  output_name = "builtins_lib_test"
 }
 
 fuchsia_component_manifest("test_component_manifest") {
@@ -155,7 +154,7 @@ fuchsia_test_component("test_component") {
   cm_label = ":test_component_manifest"
   component_name = "builtins_tests"
   test_type = "system"
-  deps = [ ":builtins_test" ]
+  deps = [ ":builtins_lib_test" ]
 }
 
 fuchsia_test_package("builtins_tests_package") {
