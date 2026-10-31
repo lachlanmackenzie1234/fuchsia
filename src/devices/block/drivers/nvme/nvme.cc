@@ -62,14 +62,6 @@ int Nvme::IrqLoop() {
       // Unmask the interrupt.
       InterruptReg::MaskClear().FromValue(1).WriteTo(&*mmio_);
     }
-
-    if (irq_mode_ == fuchsia_hardware_pci::InterruptMode::kLegacy) {
-      status = pci_.AckInterrupt();
-      if (status != ZX_OK) {
-        fdf::error("Failed to ack interrupt: {}", zx_status_get_string(status));
-        break;
-      }
-    }
   }
   return thrd_success;
 }
