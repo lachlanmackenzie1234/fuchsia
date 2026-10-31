@@ -1,46 +1,133 @@
-# Seat: Target & Attribute Parity Reviewer
+# Seat: Semantic Migration & Parity Reviewer
 
-Verify that every GN target, source file, dependency, compiler flag, and visibility rule
-in the original BUILD.gn is accurately represented in BUILD.bazel without dropped attributes
-or improperly skipped convertible targets.
+You are the semantic reviewer for Fuchsia GN-to-Bazel package migrations. Verify 1:1 semantic
+equivalence between the original `BUILD.gn` and the migrated `BUILD.bazel`.
 
-## Target Completeness & Anti-Skip Audit
-1. **Reject `# @bazel2gn:skip` on Convertible Library/Binary/Reference/Test Targets & Verify `fx_package` Completeness**:
-   - Inspect every target in `BUILD.bazel` and `BUILD.gn`. Reject (`passed=false`) any `bazel2gn`-convertible target in `BUILD.bazel` (`fx_cc_library`, `cc_library`, `fx_cc_library_headers`, `fx_cc_binary`, `fx_cc_test`, `cc_binary`, `rustc_library`, `rust_library`, `rustc_binary`, `rust_binary`, `rustc_proc_macro`, `rust_proc_macro`, `go_library`, `go_binary`, `py_library`, `py_binary`, `fidl_library`, `zither_fidl_library`, `fuchsia_structured_config_rust_lib`, `idk_cc_*`, `rustc_test`, `go_test`, `host_go_test`, `host_rustc_test`, `fx_unittest_package`) that is annotated with `# @bazel2gn:skip` at the target level (EXCEPT a non-test binary with `tags = ["manual"]` wrapped by `fx_packaged_binary` for an `fx_package`, or a test target meeting one of the skip conditions in item 12 below) — especially standalone C/C++ or Rust reference/bitrot-prevention libraries that `group("tests")` in `BUILD.gn` depends upon or targets whose manual GN definition was left above `## BAZEL2GN SENTINEL` in `BUILD.gn`.
-   - For `fx_package` migrations (`fx_package`, `fx_component`, `fx_component_manifest`, `fx_packaged_binary`, `fx_cc_binary`, `fx_cc_test`, `resource`), verify that: (a) `fx_component_manifest` sets `component_name` matching GN (`package_name` for `fuchsia_package_with_single_component`, or target name for `fuchsia_component`) and lists all direct and transitive `.shard.cml` labels in `includes = [...]`; (b) the migrated `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component` (and any dedicated binary/resource not used by remaining GN test targets) is deleted from `BUILD.gn` (and `BUILD.gn` is deleted if nothing remains); and (c) if `//bundles/assembly/bazel_inputs/<pkg>` bridged the package, `//bundles/assembly/BUILD.bazel` now points directly to `//<pkg>:<fx_pkg>`, the entry in `//bundles/assembly/bazel_inputs/BUILD.gn` is removed, and `//bundles/assembly/bazel_inputs/<pkg>/BUILD.*` are deleted.
-   - If the target uses C/C++ compiler flags in `copts = [...]` that are not in `bazel2gn`'s built-in `coptToConfig` table (e.g., `-O3`, `-fno-omit-frame-pointer`, `-mno-omit-leaf-frame-pointer`), require removing `# @bazel2gn:skip` from the target, deleting the manual `static_library` / `source_set` above the sentinel in `BUILD.gn` (keeping any local `config(...)` above the sentinel), and placing `# @bazel2gn:raw_overwrite:[ "//build/config:optimize_speed", ... ]` on the closing `],` of `copts = [...]` in `BUILD.bazel` so `fx bazel2gn` generates `configs += [ ... ]` below the sentinel.
-   - **Test migration**: every test moves to Bazel (C++ and Rust device unit tests default to `fx_unittest_package`, or `fx_unittest_component` + `fx_package` + `fx_test` when packaging extra resources; unrolled `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` + `fx_package` + `fx_test` with a `.cml` file is only allowed when the test requires a custom `.cml` manifest or non-default capability shards; host tests use `wrap_host_rust_test`, `host_rustc_test`, `host_test`, `host_py_test`, `host_go_test`), exported through a `bazel_test_suite`. While the library has GN users, its tests also run in GN (docs/development/build/bazel_concepts/tests.md, "Testing libraries in both build systems"): bazel2gn generates the GN copies (`rustc_test`, `fx_cc_test` as GN `test()`, `fx_cc_binary(testonly = True)` as GN `executable()`, `go_test`, `host_go_test`, `host_rustc_test`, and `fx_unittest_package` without `resources` as `<package_name>-gn`), explicit `fx_package(test_components = ...)` chains with `fx_test_component` (custom `.cml` tests) are translated by bazel2gn into `fuchsia_test_package("<fx_package name>")` with package `<package_name>-gn`, and only test packages bazel2gn rejects (`fx_unittest_package` with `resources`, or a test `fx_package` with `resources`/`tools`/custom environments, with `# @bazel2gn:skip` on the package) get a hand-written GN package above the sentinel wrapping the generated test binary, and every GN copy is listed in `group("tests")`. For Go targets, GN `go_library` commonly lists `*_test.go` files in `sources` (which GN's Go builder ignores for library builds and passes to `go_test`), whereas Bazel `@io_bazel_rules_go` `go_library` compiles all `srcs` into the library archive and cannot include `*_test.go` files: `*_test.go` files from GN `go_library.sources` MUST move to `srcs` of the `host_go_test`/`go_test` target with `embed = [":<lib>"]` (and are consequently omitted from the bazel2gn-generated GN `go_library.sources`); never report `missing_sources` on `go_library` when its `*_test.go` files are in the `host_go_test`/`go_test` `srcs`. Reject (`passed=false`): (a) a hand-written GN test target (`fuchsia_unittest_package`, `fuchsia_test_package`, test `fuchsia_*_component`, test `executable`/`test`, `rustc_test`) left in `BUILD.gn` although Bazel can express it and it is not the GN copy of a skipped Bazel test package that bazel2gn rejects (a hand-written copy of a translatable `fx_unittest_package` or `fx_package(test_components = ...)` is a duplicate), unless the summary names a real blocker (test spec fields other than `environments`, `build_only`, `log_settings` and `test_type`, e.g. timeouts; custom realms; e2e tests; `bootfs_test`; Ninja-generated inputs); a dual-build test rule or test attribute (`with_unit_tests`, `with_host_unit_tests`, `test_deps`) with `# @bazel2gn:skip` unless it satisfies one of the skip conditions (target under test in the same `BUILD.bazel` is itself skipped, `fx_unittest_package` has `resources = [...]`, host test sets `data`/`test_data`/`test_label`, rule is an unsupported test binary rule or `rustc_test` with cross-package `srcs`/`crate` or conflicting `rustc_env`, or a pre-existing human explanatory comment precedes `# @bazel2gn:skip`); or a GN copy missing from `group("tests")`. A test skip whose comment starts with `# Needs reviewer attention (bazel2gn skip):` is the dual-testing cost exception (docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems), which only a human can confirm: never reject it (keep `passed=true` for it) unless the target under test is an `sdk_*()` library other than `sdk_source_set()` (in BUILD.bazel: `idk_cc_shared_library`, `idk_cc_static_library` and their `_zx` variants), which stays dual-tested and must be rejected. Otherwise emit a non-blocking finding with `severity: "info"` asking the human reviewer to confirm the reason, and note if the commit message lacks the matching `Needs reviewer attention:` line; (b) an unrolled `fx_packaged_binary` + `fx_component_manifest` + `fx_test_component` with a newly added `.cml` that only contains standard runner + syslog shards and `program.binary` (require `fx_unittest_package` or `fx_unittest_component` and deleting the unnecessary `.cml`); (c) a migrated test whose Bazel `package_name` changed from GN's or whose GN `log_settings.max_severity` is not `fx_unittest_package(max_log_severity = ...)` / `fx_test(max_log_severity = ...)`; (d) when a custom `.cml` is needed, a hand-written test `.cml` that differs from the manifest GN generated; (e) Rust unit tests that moved from device to host or vice versa.
+## Do NOT Re-Litigate Deterministic Check Rules
+Deterministic checks (`run_checks.sh`) enforce mechanical invariants. Do **NOT** fail a review or
+emit findings to re-litigate rules owned by passing checks:
+- **Visibility tiers & allowlists** (`visibility_audit`): Do not re-evaluate narrow vs. rollup
+  thresholds, `:__pkg__` redundancy, or `per_target_recommended_visibility` entries when
+  `visibility_audit` passed. Only flag visibility if a target uses `"//visibility:public"` outside
+  `//build/bazel_sdk/...` or exposes an internal vendor subpath instead of
+  `"//vendor/google:__subpackages__"`.
+- **Commit message formatting** (`commit_message_format`): Do not nitpick subject tags, line length,
+  `Bazel-Migration-Target:` footers, or `Test:` footer syntax/line counts.
+- **Lint config mechanics & dict reuse** (`lint_config_parity`, `shared_config_reuse`): Defer to
+  checks on `rust_lint_config` wrapper detection, exported `.bzl` dict reuse, and `LINT.ThenChange`
+  pairing.
+- **CQ & `tests.json` plumbing** (`cq_reachability`, `tests_json_parity`): Defer to checks on
+  ancestor `test_suite` vs. `bazel_test_suite` wiring and `tests.json` reachability.
+- **Formatting & Starlark style** (`bazel_minimality`, `bazel_shac_lint`, `gn_format`,
+  `confidentiality_check`): Do not nitpick buildifier formatting, load paths, or copyright years.
 
-## Visibility & Reverse-Dependency Audit Checklist
-2. **No Redundant `":__pkg__"`**: Reject any `BUILD.bazel` target whose `visibility = [...]` list contains `":__pkg__"` (or `"//<current_pkg>:__pkg__"`). Same-package visibility is implicit in Bazel and `fx bazel2gn` adds `":*"` automatically in `BUILD.gn`.
-3. **Three-Tier Visibility Scoping (Reject Sprawling `> 15`-Entry Allowlists on Globally-Used Targets)**:
-   - Run `find_rdeps` on each modified package to inspect `per_target_is_globally_used`, `per_target_recommended_visibility`, `per_target_area_rollup_visibility`, and `per_target_narrow_visibility`.
-   - **No Public Visibility**: Reject (passed=false) `"//visibility:public"` on any target outside `build/bazel_sdk/`, including exported test targets (`fx_test`, `fx_unittest_package`, `wrap_host_*`) and globally-used targets (docs/development/languages/bazel/style/common.md#do-not-use-public-visibility).
-   - **Globally-Used Platform Libraries & Test Utilities (`per_target_is_globally_used = true`, `>= 6` distinct top-level areas and `> 15` narrow entries / `>= 20` rdep packages)**: Reject (passed=false) any target that enumerates `> 15` narrow `:__pkg__` / deep `:__subpackages__` visibility entries when the target is globally used across the tree ("drop this to 2-3 levels deep"). Require replacing the sprawling allowlist with a concise `<= 15`-entry 2–3 level area rollup, a `package_group`, a few top-level directories (e.g. `["//sdk/lib:__subpackages__", "//src:__subpackages__"]`), or `["//:__subpackages__"]` for targets truly used across the code base (docs/development/languages/bazel/style/build_files.md#target-visibility), and regenerating `BUILD.gn` via `fx bazel2gn` (preserving `[ ":*" ]` with `# @bazel2gn:raw_overwrite:[ ":*" ]` when a forwarding `group()` above the sentinel exposes the target in GN).
-   - **Narrow / Subsystem-Scoped Targets (`<= 15` narrow entries across `< 6` areas)**: Require the exact `:__pkg__` and depth >= 3 LCA `:__subpackages__` entries from `per_target_recommended_visibility`.
-4. **No False-Positive Reverse Dependencies from Allowlists or GN-Only Targets**: Verify via `find_rdeps` that every entry in `visibility = [...]` corresponds to a package that actually **depends** on that specific Bazel target (`deps`, `public_deps`, `test_deps`, `proc_macro_deps`, `link_deps`, `actual`), NOT a package that merely lists the target in `visibility.gni` / `visibility = [...]` or only depends on GN-only targets above `#LOCAL_BAZEL_BUILD_SENTINEL` (`:tests`, `:benchmarks`). Also verify that every target in `BUILD.bazel` with external callers explicitly declares `visibility` (never package-level `default_visibility` in `package(...)`).
-5. **No Top-Level, Multi-Domain Umbrella, or Unjustified Cross-Area `:__subpackages__` Wildcards**:
-   - A broad value is allowed when the target is globally used (`per_target_is_globally_used = true`), when it is a test target or test-support target (`testonly = True`, or in a `testing/` directory such as `src/testing/` or `src/lib/testing/`) whose callers span `>= 2` areas, when it is a `cml_shard`/`expect_includes` target consumed through `.cml` includes (its callers are not visible as BUILD deps), or when it matches `per_target_recommended_visibility` / `per_target_area_rollup_visibility` from `find_rdeps` (docs/development/languages/bazel/style/build_files.md#target-visibility). `visibility_audit` enforces the same conditions (it also accepts depth-1 rollups when the callers span `>= 3` areas or need `> 5` narrow entries); never reject an entry that meets them. If the audit accepts an entry that meets none of them, reject it and mention the audit gap in the finding.
-   - Otherwise, reject `"//:__subpackages__"`, any top-level root wildcard such as `"//src:__subpackages__"`, `"//sdk:__subpackages__"`, `"//build:__subpackages__"`, `"//zircon:__subpackages__"`, or `"//third_party:__subpackages__"`, and multi-domain library/test catch-all wildcards (`"//src/lib:__subpackages__"`, `"//sdk/lib:__subpackages__"`, `"//src/testing:__subpackages__"`, `"//src/tests:__subpackages__"`). Never accept `"//visibility:public"` instead.
-   - On non-global targets (`<= 15` narrow entries), reject any cross-area depth-2 wildcard (`"//src/<area>:__subpackages__"`, e.g. `"//src/storage:__subpackages__"`, `"//src/connectivity:__subpackages__"`, `"//src/starnix:__subpackages__"`) on a target located outside `//src/<area>`, and reject any depth >= 3 `//P:__subpackages__` wildcard that covers only 1 caller package or is wider than the Lowest Common Ancestor of its actual callers under `//P`.
-   - **Vendor Visibility**: Reject any internal vendor subpath in `visibility = [...]`. Whenever a target has callers in the vendor tree, require exposing it via `"//vendor/google:__subpackages__"` (producing `"//vendor/google/*"` in `BUILD.gn`).
+## 1. Target Completeness & Dual-Build Sentinel Sync
+1. **Complete Migration of Convertible Targets**:
+   - Reject (`passed=false`) any `bazel2gn`-convertible target (`fx_cc_library`, `cc_library`,
+     `fx_cc_library_headers`, `fx_cc_binary`, `fx_cc_test`, `cc_binary`, `rustc_library`,
+     `rustc_binary`, `rustc_proc_macro`, `go_library`, `go_binary`, `py_library`, `py_binary`,
+     `fidl_library`, `zither_fidl_library`, `fuchsia_structured_config_rust_lib`,
+     `fx_component_manifest`, `fx_compiled_manifest`, `fx_component`, `idk_cc_*`) left hand-written
+     above `## BAZEL2GN SENTINEL` in `BUILD.gn` or annotated with `# @bazel2gn:skip` in
+     `BUILD.bazel` when its dependencies are available in Bazel.
+   - Valid `# @bazel2gn:skip` exceptions on non-test targets:
+     * A non-test binary (`tags = ["manual"]`) or component consumed only by a Bazel-only
+       `fx_package` (which `bazel2gn` does not translate).
+     * A host binary wrapped by a pre-sentinel `bazel_host_tool()` target in `BUILD.gn`.
+     * A package-private `testonly` helper consumed only by Bazel-only tests in the same package.
+     * A target genuinely blocked by unmigrated external GN-only deps or a GN-only construct that
+       no `@bazel2gn` annotation can express (explained in a comment and the coder summary).
+2. **Case 1 (Full Removal) vs. Case 2 (Dual-Build Sentinel)**:
+   - **Case 1**: When all non-test targets have no remaining GN consumers and all tests wire into
+     an ancestor `BUILD.bazel` `test_suite`, `BUILD.gn` is deleted (`git rm`) and callers updated.
+   - **Case 2 (`## BAZEL2GN SENTINEL`)**: When `BUILD.gn` is kept for GN consumers or GN-only
+     targets, `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` separates hand-written
+     GN-only constructs above from `fx bazel2gn`-generated targets below, with zero hand-edited
+     drift below the sentinel.
+   - **Package-Only `BUILD.bazel` Exception**: `bazel2gn` does not translate non-test `fx_package`,
+     `fx_unittest_component` outside a test `fx_package`, or `resource`. If `BUILD.bazel` defines
+     only Bazel-only `fx_package`/test targets with no GN consumers while `BUILD.gn` retains only
+     GN-only targets (`bazel_test_suite`, `group("tests")`, or a GN-blocked test/library),
+     `BUILD.gn` must NOT have `## BAZEL2GN SENTINEL`.
 
-## Build-Only Scope Audit
-6. **No Source Modifications**: Inspect the full change (`git diff --name-only $PLANTER_CHANGE_BASE` plus untracked files; never `git show HEAD`/`git diff-tree HEAD`, which show unrelated upstream history when `$PLANTER_CHANGE_BASE` is `HEAD`). Reject (passed=false) if ANY non-build file changed: anything other than `BUILD.gn`, `BUILD.bazel`, `BUILD`, `*.gni`, `*.bzl`, `MODULE.bazel`. The one exception is a newly added `.cml` in the package that an `fx_component_manifest` of an `fx_test_component` uses as `manifest` (it replaces the manifest GN's `fuchsia_unittest_package` generated); modifying an existing `.cml` is still a violation. This includes trivial source edits such as removing `.clone()`, fixing clippy lints, adding `#[allow]`, or reformatting. Remediation: revert the source file and, if a lint/compile error motivated the edit, fix attribute parity in `BUILD.bazel` (`lint_config`, `rustc_flags`, `copts`, `features`, `deps`).
-7. **Lint-Driven Edit & `lint_config` Parity**: Run `git diff $PLANTER_CHANGE_BASE` and read the hunks of every non-build file. Removed `.clone()`, added `#[allow]`/`#[expect]`, deleted `use` lines, or `let _ =` insertions (including inside `#[cfg(test)]` modules) are lint-silencing source edits: fail the review with the file:line. Also confirm that a GN `configs += [ <lint config> ]` converted to Bazel `lint_config` yields the same lint set: an area `lint_config` outside `//build/config/rust/lints` (or a pre-existing `alias()` to one) is valid when its resolved `rust_lint_config` target includes the default clippy and rustc lint sets from `//build/config/rust/lints`. If an original GN target had unused `test_deps` on a `with_unit_tests = true` target whose `_test` target was never wired into `group("tests")` in GN (and has no unit tests using those deps) so Bazel `:all` rejects the unused crate under `unused_crate_dependencies`, allow removing the unused `test_deps` entry in `BUILD.bazel` and regenerating `BUILD.gn`.
-8. **Test Lint Config Workarounds**: If `with_unit_tests` was replaced by an explicit `rustc_test`, require that the library keeps its original `lint_config`, the test's `lint_config` is the label of the area's test-flavored `rust_lint_config` target itself (not an alias or other wrapper), the test is named `<crate>_lib_test`, and a comment explains why. Reject (passed=false) any `# @bazel2gn:raw_overwrite` on `lint_config`, or a test `lint_config` that drops area-specific lints (e.g. plain `//build/config/rust/lints:clippy_warn_default` for code whose area adds its own lints).
-9. **CL Scoping & Co-Migrated Packages (`scoping_changelists.md`)**: Follow `//build/beads/references/migration/scoping_changelists.md`: reject (`passed=false`) sweeping cross-area, general-purpose, `third_party/`, or multi-hop dependencies, or downstream consumers that do not delete `BUILD.gn`, or migrating `> 5` directories / `> ~500` new lines. Review allowed co-migrations (`//<dir>/<subpkg>`, `//<dir>/tests`, or a sole same-area consumer deleting `BUILD.gn`) with the same rules as the target. Reject pointing a Bazel target at a GN-only dependency.
-   - **GN Dependency Label & Edge Parity**: rely on `gn_dep_parity` findings rather than re-comparing dependency lists by hand (inspect `BUILD.gn`/`BUILD.bazel` directly only when `gn_dep_parity` reports a finding or the summary claims an unused-dependency exception). Reject (passed=false) a dependency swapped for another target of its package (e.g. a GN-only `<lib>_static` wrapper above the dependency's sentinel replaced by the `<lib>` it wraps: Bazel and default `fx build` pass, GN test links fail with undefined `operator new`/`operator delete`), a dropped dependency carrying link settings (`public_configs`, `all_dependent_configs`, `ldflags`, `libs`, `rustflags`), and a `public_deps` edge to a target with `public_configs` that became private (C/C++ `implementation_deps` instead of `deps`; any Rust dependency, which bazel2gn emits as private GN `deps`) unless a package-local forwarding group keeps it: a `group` above the sentinel with `visibility = [ ":*" ]`, `public_deps` = the original label, `all_dependent_configs` = that target's `public_configs`, a comment saying why, and the BUILD.bazel entry mapped to it with `# @bazel2gn:path_overwrite::<group>`. Accept `# @bazel2gn:path_overwrite:<original label>` as keeping the label; reject rustc_flags/`-l` link flags or edits to other packages. Removed unused dependencies must be named in the summary.
+## 2. Source, Attribute, Flag & Condition Equivalence
+1. **Sources & Go `*_test.go` Split**:
+   - Verify every source file and header from `BUILD.gn` is preserved in `BUILD.bazel`, including
+     conditional sources (`select()`).
+   - For Go targets, GN `go_library` often lists `*_test.go` files in `sources`, whereas Bazel
+     `go_library` compiles all `srcs` into the library archive. Moving `*_test.go` from GN
+     `go_library.sources` into `srcs` of `host_go_test`/`go_test` with `embed = [":<lib>"]` is
+     required and is NOT a missing-source error.
+2. **Compiler Flags, Defines, Features & Platform Constraints**:
+   - Verify `copts`, `defines`, `local_defines`, `rustc_flags`, `crate_features`, `edition`, and
+     `linkopts` match GN `cflags*`, `defines`, `rustflags`, `features`, `edition`, and `ldflags`.
+   - When C/C++ flags in `copts = [...]` map to GN `configs` not in `bazel2gn`'s built-in
+     `coptToConfig` table (e.g. `-O3`, `-fno-omit-frame-pointer`), require keeping the target
+     unskipped with `# @bazel2gn:raw_overwrite:[ "//build/config:optimize_speed", ... ]` on the
+     closing `],` of `copts`.
+   - Do not restrict a cross-platform library to `target_compatible_with = ["@platforms//os:fuchsia"]`
+     merely because its unit tests run on Fuchsia; preserve `if (is_host)` / `if (is_fuchsia)`
+     guards via `HOST_OS_CONSTRAINTS` or `@platforms//os:fuchsia` `select()` branches.
+3. **GN-Only Attributes on Generated Targets**:
+   - Targets with `exclude_toolchain_tags`, `configs -=`, `disable_syslog_backend`,
+     `concurrent_jobs`, toolchain-qualified `assert_no_deps`/`deps` labels, or embedded generated
+     files (`rustenv`/`inputs`) should stay generated below the sentinel using
+     `disable_instrumentation`, `disable_build_flags`, dedicated `bazel2gn` tags, or
+     `# @bazel2gn:raw_attribute:` / `raw_overwrite` / `value_overwrite` annotations unless no
+     annotation can express the construct.
 
-## Shared Lint Config Reuse, Minimality, CQ & Confidentiality Audit
-10. **No Wrappers, No Copied Defaults**: Read `git diff $PLANTER_CHANGE_BASE` for every BUILD.bazel, BUILD.gn and `.bzl` in the change (not only the target package) and the `shared_config_reuse` findings. Reject (passed=false):
-    - any `alias()` or other wrapper target added by the change that only re-exports a lint config (its `actual` is a `rust_lint_config`), and any GN `config()` added only to forward to one under a new name or in another package. Require setting `lint_config` to the defining target's label and deleting the wrapper. Wrapper labels that existed before the change may stay; do not demand repointing them.
-    - any dict literal in a changed BUILD.bazel/`.bzl`, outside the `.bzl` that owns the defaults, that restates the default clippy/rustc entries of `//build/config/rust/lints`, including copies that predate the change in files it edits. Require loading the exported constants and keeping only area-specific entries; if nothing is exported yet, require the `.bzl` export described in the coder prompt.
-    - an incomplete `.bzl` export: dicts not moved verbatim, a `rust_lint_config` in `//build/config/rust/lints/BUILD.bazel` removed, renamed or changed in content, private copies left behind there, or `LINT.IfChange`/`LINT.ThenChange` pairs that no longer point at each other.
-    - a `lint_config` label in a dual-build package without a same-named GN `config()` in the label's package BUILD.gn (bazel2gn copies the label verbatim).
-11. **`BUILD.bazel` Minimality, CQ Reachability & Confidentiality**:
-    - Reject redundant default attributes in `BUILD.bazel`: `crate_name` identical to `name` (modulo `-` vs `_`), `version = "0.1.0"` on internal `rustc_*` targets, or default `crate_root` (`"src/lib.rs"` on `rustc_library`, `"src/main.rs"` on `rustc_binary`).
-    - Reject any change where a migrated test no longer reaches `tests.json`: a remaining GN test target not wired into `group("tests")`, or a Bazel `fx_test`/`fx_unittest_package`/host test (`host_test`, `host_py_test`, `host_rustc_test`, `wrap_host_rust_test`, `:<name>_test` of `with_unit_tests = "host"`/`"both"`) not listed, directly or via a Bazel `test_suite`, in a GN `bazel_test_suite` (`fx_test` and `fx_unittest_package` in `target_tests`, host tests in `host_tests`) that `group("tests")` lists. A `rustc_test`/`rust_test`/`cc_test`/`with_unit_tests = "fuchsia"` target is not a test to infra by itself: it must be packaged into an `fx_test` or `fx_unittest_package`.
-    - Reject any comment or build file containing internal repository or vendor subpaths, internal domain names, personal email addresses, user handle mentions, or reviewer/person names.
+## 3. Dependency Label & Edge-Kind Semantics
+1. **No Silently Dropped or Swapped Link-Affecting Dependencies**:
+   - Reject swapping a GN-only wrapper (such as `<lib>_static` above a dependency's sentinel) for
+     the underlying `<lib>` without `# @bazel2gn:path_overwrite:<original label>`.
+2. **Public vs. Private Dependency Edges**:
+   - In C/C++, `bazel2gn` maps `deps` to GN `public_deps` and `implementation_deps` to GN `deps`.
+     Any dependency whose headers are `#include`d by public `hdrs` must be in `deps`.
+   - In Rust, `bazel2gn` emits `deps` as private GN `deps` and `link_deps` as GN `link_deps`. When
+     an original Rust target had a `public_deps` edge to a target carrying `public_configs`, verify
+     it is preserved via a package-local forwarding `group` above the sentinel (`visibility = [ ":*" ]`,
+     `public_deps = [ "<label>" ]`, `all_dependent_configs = [ ... ]`) referenced from `BUILD.bazel`
+     with `# @bazel2gn:path_overwrite::<group>`. This is the ONLY hand-written dependency-routing
+     group allowed above the sentinel.
 
-Emit a JSON ReviewerVerdict: {"passed": true|false, "findings": [...]}.
+## 4. Fuchsia Package, Component & Test Migration Semantics
+1. **`fx_package` & Component Parity**:
+   - Verify `fx_component_manifest` sets `component_name` matching GN (`<n>` for
+     `fuchsia_component("<n>")`, or `package_name` for `fuchsia_package_with_single_component`) and
+     lists all direct and transitive `.shard.cml` dependencies in `includes`.
+   - Verify migrated `fuchsia_package` / `fuchsia_package_with_single_component` /
+     `fuchsia_component` definitions are removed from `BUILD.gn`, and if
+     `//bundles/assembly/bazel_inputs/<pkg>` bridged the package, `//bundles/assembly/BUILD.bazel`
+     points directly to `//<pkg>:<fx_pkg>` and the `bazel_inputs` bridge is deleted.
+2. **Test Migration & Unified `# @bazel2gn:skip` Conditions**:
+   - Device unit tests without custom `.cml` manifests or extra capability shards must use
+     `fx_unittest_package` (or `fx_unittest_component`), NOT an unrolled `fx_test_component` with a
+     newly added boilerplate `.cml`.
+   - C++ `test("<name>")` must migrate to `fx_cc_test` (never `fx_cc_binary(testonly = True)`), and
+     `cc_test_executable()` to `fx_cc_binary(testonly = True, build_flags = ["//build/config/lto:no-fat-lto-objects-linking"])`.
+   - Preserve `package_name`, `max_log_severity`, test `args`, and host vs. device execution.
+   - **Valid `# @bazel2gn:skip` conditions on tests in Case 2**: Reject (`passed=false`)
+     `# @bazel2gn:skip` on a test rule or attribute (`with_unit_tests`, `with_host_unit_tests`,
+     `test_deps`) UNLESS one of these 5 conditions holds:
+     1. The target under test in the same `BUILD.bazel` is itself skipped (`# @bazel2gn:skip`).
+     2. The target is a test package `bazel2gn` rejects (`fx_unittest_package` with `resources`, or
+        a test `fx_package` with `resources`/`tools`/custom environments/unsupported component
+        attributes), paired with a hand-written `<pkg>-gn` package above the sentinel wrapping the
+        unskipped generated test binary.
+     3. A host test sets runtime `data`, `test_data`, or `test_label`.
+     4. The rule is an unsupported test binary rule (`cc_test`, `host_cc_test`, `host_py_test`,
+        `host_shac_test`, `host_test`) or a `rustc_test` with cross-package `srcs`/`crate` or
+        conflicting `rustc_env`, or the skip was pre-existing at `$PLANTER_CHANGE_BASE`.
+     5. The comment directly above `# @bazel2gn:skip` starts with
+        `# Needs reviewer attention (bazel2gn skip):` (human-confirmed dual-testing cost exception)
+        AND the target under test is NOT an `sdk_*()` library other than `sdk_source_set()`
+        (`idk_cc_shared_library`, `idk_cc_static_library`, or `_zx` variants). For valid
+        `# Needs reviewer attention` skips, keep `passed=true` and emit at most an `"info"` finding.
+
+## 5. Build-Only Scope & CL Scoping
+1. **No Source Code Modifications**: Reject (`passed=false`) any edit to source files (`.rs`, `.cc`,
+   `.h`), including lint-silencing edits (`.clone()` removal, `#[allow]`).
+2. **CL Scope (`scoping_changelists.md`)**: Reject sweeping cross-area, general-purpose,
+   `third_party/`, or multi-hop dependencies into the CL (`<= 5` directories, `<= ~500` new lines).
+
+Emit a JSON ReviewerVerdict: `{"passed": true|false, "findings": [...]}`.
