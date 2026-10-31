@@ -731,7 +731,11 @@ RAW = { "-- raw" ~ EOL ~
                                 },
                                 Type::ScalarValueParameter,
                             ],
-                            return_value: Type::AliasParameter { parameter_index: 0 },
+                            return_value: Type::MemoryParameter {
+                                size: MemoryParameterSize::Reference { index: 1 },
+                                input: true,
+                                output: true,
+                            },
                             invalidate_array_bounds: false,
                         },
                     },

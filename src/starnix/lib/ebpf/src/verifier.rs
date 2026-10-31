@@ -390,11 +390,6 @@ pub enum Type {
         /// Whether this memory is written by the function.
         output: bool,
     },
-    /// A function return value that is the same type as a parameter.
-    AliasParameter {
-        /// The index in the argument list of the parameter that has the type of this return value.
-        parameter_index: u8,
-    },
     /// A function return value that is either null, or the given type.
     NullOrParameter(Box<Type>),
     /// A function parameter that must be a pointer to memory with the given id.
@@ -2168,7 +2163,6 @@ impl ComputationContext {
         next: &mut ComputationContext,
     ) -> Result<Type, VerifierErrorKind> {
         match return_value {
-            Type::AliasParameter { parameter_index } => self.reg(parameter_index + 1),
             Type::ReleasableParameter { id, inner } => {
                 let id = verification_context.next_id().prepended(id.clone());
                 next.resources.insert(id.clone());
@@ -5169,7 +5163,7 @@ mod tests {
     fn test_type_ordering() {
         let t0 = Type::from(0);
         let t1 = Type::from(1);
-        let random = Type::AliasParameter { parameter_index: 8 };
+        let random = Type::AnyParameter;
         let unknown_written = Type::UNKNOWN_SCALAR;
         let unwritten = Type::default();
 
