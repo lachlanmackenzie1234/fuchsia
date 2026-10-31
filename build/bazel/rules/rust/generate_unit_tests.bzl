@@ -261,6 +261,7 @@ def generate_unit_tests(
         deps,
         test_deps,
         visibility,
+        crate = None,
         **kwargs):
     """Generate test targets for rustc_xxx() macros.
 
@@ -280,6 +281,7 @@ def generate_unit_tests(
             to deps to form the full dependency list for the test target. Note that
             Bazel will complain if the same label appears in both deps and test_deps.
         visibility: Visibility of the test target.
+        crate: Optional label of the crate under test. Defaults to ":<name>".
         **kwargs: Additional arguments to pass to the test target rule.
           This is expected to contain the Fuchsia-specific changes performed
           by the rustc_xxx() caller.
@@ -317,7 +319,7 @@ def generate_unit_tests(
         define_and_wrap_host_rust_test(
             name = "{}_test".format(name),
             rust_test_rule = rust_test,
-            crate = ":{}".format(name),
+            crate = crate or ":{}".format(name),
             visibility = visibility,
             **kwargs
         )
@@ -326,7 +328,7 @@ def generate_unit_tests(
         kwargs["aspect_hints"] = with_fuchsia_rust_test_aspect_hints(kwargs.get("aspect_hints"))
         rust_test(
             name = "{}_test".format(name),
-            crate = ":{}".format(name),
+            crate = crate or ":{}".format(name),
             visibility = visibility,
             **kwargs
         )

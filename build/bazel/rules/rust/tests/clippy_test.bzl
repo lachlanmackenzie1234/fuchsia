@@ -81,7 +81,11 @@ _clippy_analysis_test = analysistest.make(
 )
 
 def clippy_test_suite(name):
-    """Defines fixtures and analysis tests for disable_clippy."""
+    """Defines fixtures and analysis tests for disable_clippy.
+
+    Args:
+      name: Name of the test_suite target.
+    """
     tests = []
 
     rust_lint_config(
@@ -193,9 +197,9 @@ def clippy_test_suite(name):
         ("lib_disabled_unit_test", ":lib_disabled_test", False, "--deny=deref_nullptr", []),
         ("lib_custom_lints_disabled", ":lib_custom_lints_disabled", False, "--deny=unused_results", ["custom_tag", "noclippy"]),
         ("lib_custom_lints_disabled_unit_test", ":lib_custom_lints_disabled_test", False, "--deny=unused_results", ["custom_tag", "noclippy"]),
-        ("dylib_default", ":dylib_default", True, "--deny=deref_nullptr", []),
+        ("dylib_default", ":dylib_default.dylib", True, "--deny=deref_nullptr", []),
         ("dylib_default_unit_test", ":dylib_default_test", True, "--deny=deref_nullptr", []),
-        ("dylib_disabled", ":dylib_disabled", False, "--deny=deref_nullptr", []),
+        ("dylib_disabled", ":dylib_disabled.dylib", False, "--deny=deref_nullptr", []),
         ("dylib_disabled_unit_test", ":dylib_disabled_test", False, "--deny=deref_nullptr", []),
         ("bin_default", ":bin_default", True, "--deny=deref_nullptr", []),
         ("bin_default_unit_test", ":bin_default_test", True, "--deny=deref_nullptr", []),
