@@ -1339,10 +1339,6 @@
                 // TODO(https://fxbug.dev/379127911): Investigate and re-enable
                 "TimerTest.RlimitCpuInheritedAcrossFork",
 
-                // TODO(https://fxbug.dev/379165488): deflake
-                "StatTimesTest.DirCreateFile",
-                "StatTimesTest.DirList",
-
                 // TODO(https://fxbug.dev/397205797): Fix and re-enable
                 "ExecTest.Setpgid",
 
