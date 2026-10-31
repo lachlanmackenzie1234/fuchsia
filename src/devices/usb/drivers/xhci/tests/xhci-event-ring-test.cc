@@ -877,6 +877,47 @@ TEST_F(EventRingHarness, Ring0BringupContinuesScanAfterIoNotPresent) {
   ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
 }
 
+TEST_F(EventRingHarness, Ring0BringupStopsScanWhenControllerNotRunning) {
+  // Two SuperSpeed devices already have their links up when Ring0Bringup() runs.
+  port_sc().set_CCS(true).set_PED(true).set_PR(false).set_PLS(PORTSC::U0).set_PortSpeed(4);
+  second_port_sc().set_CCS(true).set_PED(true).set_PR(false).set_PLS(PORTSC::U0).set_PortSpeed(4);
+  driver_test().driver()->SignalBringupForTesting();
+  ASSERT_OK(Ring0Bringup());
+  ASSERT_TRUE(HasCommand());
+  auto cmd = GetCommand();
+  ASSERT_EQ(cmd->port, kPortNo);
+  ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
+  ASSERT_FALSE(HasCommand());
+
+  // Controller teardown starts while the first port's enumeration is in flight and aborts the
+  // pending command with ZX_ERR_IO_NOT_PRESENT. The scan must stop instead of starting enumeration
+  // on later ports.
+  driver_test().driver()->SetRunningForTesting(false);
+  cmd->completer.complete_error(ZX_ERR_IO_NOT_PRESENT);
+  event_ring()->RunUntilIdle();
+  EXPECT_FALSE(HasCommand());
+}
+
+TEST_F(EventRingHarness, Ring0BringupStopsScanAfterSuccessWhenControllerNotRunning) {
+  // Two SuperSpeed devices already have their links up when Ring0Bringup() runs.
+  port_sc().set_CCS(true).set_PED(true).set_PR(false).set_PLS(PORTSC::U0).set_PortSpeed(4);
+  second_port_sc().set_CCS(true).set_PED(true).set_PR(false).set_PLS(PORTSC::U0).set_PortSpeed(4);
+  driver_test().driver()->SignalBringupForTesting();
+  ASSERT_OK(Ring0Bringup());
+  ASSERT_TRUE(HasCommand());
+  auto cmd = GetCommand();
+  ASSERT_EQ(cmd->port, kPortNo);
+  ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
+  ASSERT_FALSE(HasCommand());
+
+  // Even if the in-flight port operation completes with ZX_OK just as the controller stops, the
+  // scan must halt instead of advancing to later ports.
+  driver_test().driver()->SetRunningForTesting(false);
+  cmd->completer.complete_ok(nullptr);
+  event_ring()->RunUntilIdle();
+  EXPECT_FALSE(HasCommand());
+}
+
 }  // namespace
 
 }  // namespace usb_xhci

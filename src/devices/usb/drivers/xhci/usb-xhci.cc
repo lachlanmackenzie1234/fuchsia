@@ -592,6 +592,7 @@ void UsbXhci::Stop(fdf::StopCompleter completer) {
   for (auto& it : interrupters_) {
     it.Stop();
   }
+  AbortPendingCommands();
   for (auto& it : interrupters_) {
     it.ring().ClearPendingPortStatusChanges();
   }
@@ -601,6 +602,9 @@ void UsbXhci::Stop(fdf::StopCompleter completer) {
     ddk_interaction_dispatcher_ = fdf::SynchronizedDispatcher{};
   }
   AbortPendingCommands();
+  for (auto& it : interrupters_) {
+    it.ring().RunUntilIdle();
+  }
   fdf::info("xhci: Stop() completed cleanly");
   completer(zx::ok());
 }
@@ -653,18 +657,16 @@ UsbXhci::~UsbXhci() {
     auto trbs = command_ring_.TakePendingTRBs();
     for (auto& trb : trbs) {
       pending = true;
-      CommandCompletionEvent evt;
-      evt.ptr = 0;
-      evt.set_Type(Control::CommandCompletionEvent);
-      evt.set_CompletionCode(CommandCompletionEvent::CommandRingStopped);
       if (trb.completer.has_value()) {
-        trb.completer.value().complete_ok(trb.trb);
+        trb.completer.value().complete_error(ZX_ERR_IO_NOT_PRESENT);
       }
     }
     // Ensure that we've actually invoked the completions above
     // before moving to the next step.
     // TODO(https://fxbug.dev/42120782): Migrate to joins
-    RunUntilIdle();
+    for (auto& it : interrupters_) {
+      it.ring().RunUntilIdle();
+    }
     for (size_t i = 0; i < max_slots_; i++) {
       auto state = device_state_[i];
       if (!state) {
@@ -701,7 +703,9 @@ UsbXhci::~UsbXhci() {
     }
     // Flush any outstanding async I/O
     // TODO(https://fxbug.dev/42120782): Migrate to joins
-    RunUntilIdle();
+    for (auto& it : interrupters_) {
+      it.ring().RunUntilIdle();
+    }
   } while (pending);
 
   for (auto& it : device_state_) {

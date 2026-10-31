@@ -479,7 +479,14 @@ class XhciMmioHarness : public XhciHarness {
     driver_test().driver()->UsbHciSetBusInterface(bus_.proto());
   }
 
-  void TearDown() override { ASSERT_TRUE(driver_test().StopDriver().is_ok()); }
+  void TearDown() override {
+    if (!stopped_) {
+      ASSERT_TRUE(driver_test().StopDriver().is_ok());
+    }
+  }
+
+ protected:
+  bool stopped_ = false;
 };
 
 fbl::DoublyLinkedList<std::unique_ptr<TRBContext>> TransferRing::TakePendingTRBs() {
@@ -1950,6 +1957,87 @@ TEST_F(XhciMmioHarness, CancelAllBoundsAndEP0) {
   zx_status_t status = driver_test().driver()->UsbHciCancelAll(0, 0);
   EXPECT_TRUE(got_stop_endpoint);
   EXPECT_OK(status);
+}
+
+TEST_F(XhciMmioHarness, DestructorCompletesPendingCommandWithIoNotPresent) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+  auto cr = crcr_next();
+  ASSERT_NE(cr, nullptr);
+  ASSERT_OK(CompleteCommand(cr, &success_event));
+
+  UsbXhci* xhci = driver_test().driver();
+  auto context = xhci->GetCommandRing()->AllocateContext();
+  ASSERT_TRUE(context);
+  fpromise::bridge<TRB*, zx_status_t> bridge;
+  context->completer = std::move(bridge.completer);
+
+  bool completed = false;
+  zx_status_t completion_error = ZX_OK;
+  xhci->ScheduleTask(0, bridge.consumer.promise()
+                            .then([&](fpromise::result<TRB*, zx_status_t>& result)
+                                      -> fpromise::result<void, zx_status_t> {
+                              completed = true;
+                              if (result.is_error()) {
+                                completion_error = result.error();
+                              }
+                              return fpromise::ok();
+                            })
+                            .box());
+
+  TRB cmd{};
+  ASSERT_OK(xhci->GetCommandRing()->AddTRB(cmd, std::move(context)));
+
+  // Also queue an EP0 transfer request whose completion wakes an interrupter task that queues a
+  // follow-up command (modeling EnumerateDevice's GetDeviceDescriptor failure scheduling
+  // DisableSlotCommand during teardown).
+  fpromise::bridge<void, void> ep0_bridge;
+  bool followup_cmd_completed = false;
+  zx_status_t followup_cmd_error = ZX_OK;
+  xhci->ScheduleTask(
+      0, ep0_bridge.consumer.promise()
+             .then([&](fpromise::result<void, void>&) -> fpromise::result<void, zx_status_t> {
+               auto followup_ctx = xhci->GetCommandRing()->AllocateContext();
+               EXPECT_TRUE(followup_ctx);
+               fpromise::bridge<TRB*, zx_status_t> followup_bridge;
+               followup_ctx->completer = std::move(followup_bridge.completer);
+               xhci->ScheduleTask(0, followup_bridge.consumer.promise()
+                                         .then([&](fpromise::result<TRB*, zx_status_t>& res)
+                                                   -> fpromise::result<void, zx_status_t> {
+                                           followup_cmd_completed = true;
+                                           if (res.is_error()) {
+                                             followup_cmd_error = res.error();
+                                           }
+                                           return fpromise::ok();
+                                         })
+                                         .box());
+               TRB followup_trb{};
+               EXPECT_OK(xhci->GetCommandRing()->AddTRB(followup_trb, std::move(followup_ctx)));
+               return fpromise::ok();
+             })
+             .box());
+
+  bool ep0_req_completed = false;
+  std::optional<TestRequest> ep0_req;
+  ASSERT_OK(AllocateRequest(&ep0_req, 0, 8, 0, [&](TestRequest req) {
+    ep0_req_completed = true;
+    EXPECT_EQ(req.request()->response.status, ZX_ERR_IO_NOT_PRESENT);
+    ep0_bridge.completer.complete_ok();
+  }));
+  RequestQueue(std::move(*ep0_req));
+
+  // Verify that StopDriver() and ShutdownAndDestroyDriver() drain the pending command with
+  // ZX_ERR_IO_NOT_PRESENT and run the stopped interrupter's executor after both command ring and
+  // transfer ring drains so follow-up commands scheduled by transfer completions also drain.
+  stopped_ = true;
+  ASSERT_TRUE(driver_test().StopDriver().is_ok());
+  driver_test().ShutdownAndDestroyDriver();
+  EXPECT_TRUE(completed);
+  EXPECT_EQ(completion_error, ZX_ERR_IO_NOT_PRESENT);
+  EXPECT_TRUE(ep0_req_completed);
+  EXPECT_TRUE(followup_cmd_completed);
+  EXPECT_EQ(followup_cmd_error, ZX_ERR_IO_NOT_PRESENT);
 }
 
 }  // namespace

@@ -392,6 +392,10 @@ void EventRing::SchedulePortStatusChangePoll(uint8_t port_id, uint64_t wait_gene
 }
 
 void EventRing::CallPortStatusChanged(fbl::RefPtr<PortStatusChangeState> state) {
+  if (!hci_->Running()) {
+    enumerating_ = false;
+    return;
+  }
   if (state->port_index < state->port_count) {
     ScheduleTask(HandlePortStatusChangeEvent(static_cast<uint8_t>(state->port_index))
                      .then([=, this](fpromise::result<void, zx_status_t>& result)
