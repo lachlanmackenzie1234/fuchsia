@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//build/bazel/rules/idk:idk_cc_prebuilt_library.bzl", "idk_cc_shared_library_zx")
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 
 package(default_applicable_licenses = ["//:license"])
 
-cc_library(
+idk_cc_shared_library_zx(
     name = "trace-engine",
     srcs = [
         "buffer.cc",
@@ -28,7 +29,14 @@ cc_library(
         "include/lib/trace-engine/instrumentation.h",
         "include/lib/trace-engine/types.h",
     ],
-    includes = ["include"],
+    api_area = "Diagnostics",
+    api_file_path = "//sdk/lib/trace-engine:trace-engine.api",
+    category = "partner",
+    idk_name = "trace-engine",
+    implementation_deps = [
+        "//sdk/lib/async:async-cpp",
+        "//zircon/system/ulib/zx",
+    ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/lib/trace/rust:__pkg__",
@@ -37,8 +45,32 @@ cc_library(
         "//zircon/system/ulib/trace-provider:__pkg__",
     ],
     deps = [
+        ":trace-engine-headersonly",
+
+        # <trace-engine/handler.h> has #include <lib/async/dispatcher.h>.
         "//sdk/lib/async",
-        "//sdk/lib/async:async-cpp",
-        "//zircon/system/ulib/zx",
+    ],
+)
+
+# Header-only source package for use by trace-provider:handler,
+# which is engine-agnostic.
+idk_cc_source_library(
+    name = "trace-engine-headersonly",
+    srcs = ["include/lib/trace-engine/buffer_internal.h"],
+    hdrs = [
+        "include/lib/trace-engine/context.h",
+        "include/lib/trace-engine/fields.h",
+        "include/lib/trace-engine/handler.h",
+        "include/lib/trace-engine/instrumentation.h",
+        "include/lib/trace-engine/types.h",
+    ],
+    api_area = "Diagnostics",
+    category = "partner",
+    idk_name = "trace-engine-headersonly",
+    stable = True,
+    visibility = ["//visibility:private"],
+    deps = [
+        # <trace-engine/handler.h> has #include <lib/async/dispatcher.h>.
+        "//sdk/lib/async",
     ],
 )

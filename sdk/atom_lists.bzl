@@ -55,6 +55,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/virtgralloc:virtgralloc_headers_idk",
     "//zircon/system/ulib/inspect:inspect_idk",
     "//zircon/system/ulib/sync:sync-cpp_idk",
+    "//zircon/system/ulib/trace-engine:trace-engine-headersonly_idk",
     "//zircon/system/ulib/zx:zx_idk",
 ]
 
@@ -72,6 +73,7 @@ CC_PREBUILT_SHARED_LIBRARY_ATOMS = [
     "//sdk/lib/svc:svc_idk",
     "//sdk/lib/syslog/cpp:backend_fuchsia_globals_idk",
     "//sdk/lib/vfs/internal:vfs_internal_idk",
+    "//zircon/system/ulib/trace-engine:trace-engine_idk",
 ]
 
 CC_PREBUILT_STATIC_LIBRARY_ATOMS = [
