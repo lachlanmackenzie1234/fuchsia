@@ -1183,13 +1183,12 @@ void Thread::CallMigrateFnLocked(MigrateStage stage) {
   }
 }
 
-// Go over every thread which has a migrate function assigned to it, and which
-// last ran on the current CPU, but is not in the ready state.  The current CPU
-// is becoming unavailable, and the currently running thread is the last change
-// anything is going to have to run on this CPU for a while.  If there are
-// threads out there which are blocked, but which need to record some per-cpu
-// state (eg; VCPU threads), this will be their last chance to do so.  The next
-// time they become scheduled to run, they are going to run on a different CPU.
+// Go over every non-running thread which has a migrate function assigned to it
+// and last ran on |cpu|. |cpu| is becoming unavailable, and the currently
+// running unplug thread is the last thing going to run on |cpu| before it goes
+// offline. Any blocked threads or pinned READY threads remaining queued on
+// |cpu| that need to record per-CPU state (e.g., VCPU threads) must run their
+// Save stage now before |cpu| powers down.
 void Thread::CallMigrateFnForCpu(cpu_num_t cpu) {
   DEBUG_ASSERT(arch_ints_disabled());
   Guard<SpinLock, NoIrqSave> list_guard{&list_lock_};
@@ -1197,7 +1196,7 @@ void Thread::CallMigrateFnForCpu(cpu_num_t cpu) {
   for (auto& thread : migrate_list_) {
     SingleChainLockGuard thread_guard{NoIrqSaveOption, thread.get_lock(),
                                       CLT_TAG("Thread::CallMigrateFnForCpu")};
-    if (thread.state() != THREAD_READY && thread.scheduler_state().last_cpu_ == cpu) {
+    if (thread.state() != THREAD_RUNNING && thread.scheduler_state().last_cpu_ == cpu) {
       thread.CallMigrateFnLocked(Thread::MigrateStage::Save);
     }
   }

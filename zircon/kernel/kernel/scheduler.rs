@@ -504,9 +504,11 @@ const K_PRIORITY_TO_WEIGHT_TABLE: [SchedWeight; 32] = [
 ];
 
 /// A mask of all of the currently active schedulers in the system. An
-/// "active" scheduler is one that will accept threads to be executed. An
-/// "inactive" scheduler will not, and is typically the scheduler for a CPU
-/// which is in the process of being taken offline.
+/// "active" scheduler is one that will accept general threads to be executed.
+/// An "inactive" scheduler belongs to a CPU that is offline or being taken
+/// offline and accepts only threads hard-pinned exclusively to that CPU (which
+/// remain queued until the CPU returns online) or threads queued onto
+/// `save_state_list_` while `cpu_deactivating` is set.
 ///
 /// Note that to change the active state of a scheduler for CPU X (e.g., to
 /// toggle the state of bit X in the `ACTIVE_SCHEDULERS` mask) that scheduler's
@@ -1690,6 +1692,31 @@ impl SchedulerState {
         // Return the mask honoring soft affinity if it is viable, otherwise ignore
         // soft affinity and honor only hard affinity.
         if available_mask != 0 { available_mask } else { hard_affinity & active_mask }
+    }
+
+    /// Returns the candidate target CPU mask for `find_target_cpu` and
+    /// `set_cpu_affinity`.
+    ///
+    /// Prefers active CPUs in `active_mask`. If no active CPU satisfies hard
+    /// affinity and the thread is hard-pinned to a single CPU
+    /// (`hard_affinity.is_power_of_two()`), falls back to initialized CPUs in
+    /// `0..processor_count` so per-CPU pinned threads can be queued on their
+    /// inactive CPU until it returns online.
+    fn get_target_cpu_mask(&self, active_mask: CpuMask, processor_count: usize) -> CpuMask {
+        let available_mask = self.get_effective_cpu_mask(active_mask);
+        if available_mask != 0 {
+            return available_mask;
+        }
+        core::hint::cold_path();
+        if !self.hard_affinity.is_power_of_two() {
+            return 0;
+        }
+        let valid_mask: CpuMask = if processor_count >= CpuMask::BITS as usize {
+            CPU_MASK_ALL
+        } else {
+            (1 << processor_count) - 1
+        };
+        self.hard_affinity & valid_mask
     }
 }
 
@@ -3008,8 +3035,8 @@ impl Scheduler {
     /// taking CPU affinity into account.
     ///
     /// # Safety
-    /// `thread` must point to a valid `Thread` associated with this scheduler, and
-    /// the caller must hold `queue_lock_`.
+    /// `thread` must point to a valid `Thread` associated with `self` or locked by
+    /// the caller, and the caller must hold `queue_lock_`.
     unsafe fn trace_thread_queue_event(
         &self,
         name: &'static ktrace_rs::InternedString,
@@ -3028,10 +3055,10 @@ impl Scheduler {
         // arg1[30..30] : 1 == idle thread, 0 == normal thread
         //
         if SCHEDULER_QUEUE_TRACING_ENABLED {
-            // SAFETY: `thread` is associated with this scheduler and `queue_lock_` is held.
-            // We project fields through raw pointers rather than forming `&SchedulerState` or
-            // `&EffectiveProfile` because `steal_work` calls this under `queue_lock_` alone
-            // while `dirty_flags` may be modified under `thread`'s lock alone.
+            // SAFETY: `thread` is associated with `self` or locked by the caller, and
+            // `queue_lock_` is held. We project fields through raw pointers rather than forming
+            // `&SchedulerState` or `&EffectiveProfile` because `steal_work` calls this under
+            // `queue_lock_` alone while `dirty_flags` may be modified under `thread`'s lock alone.
             unsafe {
                 // TODO(johngro): plumb this in from above
                 let now = crate::platform_rs::timer::current_mono_time().0;
@@ -3940,7 +3967,10 @@ impl Scheduler {
 
             debug_assert_eq!((*state_ptr).state, ThreadState::Ready);
             debug_assert!(!Thread::is_idle_ptr(thread));
-            debug_assert!(self.is_scheduler_active_locked());
+            debug_assert!(
+                self.is_scheduler_active_locked()
+                    || (*state_ptr).hard_affinity == cpu_num_to_mask(self.this_cpu())
+            );
 
             // Ensure insertion happens only once, even if unblock is called multiple times.
             if queue_state.on_insert() {
@@ -4028,8 +4058,11 @@ impl Scheduler {
                 }
 
                 // Increase the processing rate when the required utilization increases
-                // beyond the current rate, accounting for current limits.
-                self.power_level_control_update_rate();
+                // beyond the current rate, accounting for current limits, provided this
+                // scheduler is currently active.
+                if self.is_scheduler_active_locked() {
+                    self.power_level_control_update_rate();
+                }
 
                 let runnable_task_count = self.runnable_task_count() + 1;
                 debug_assert!(runnable_task_count > 0);
@@ -9579,8 +9612,17 @@ impl RescheduleTargets {
 /// Common logic for unblock API.
 ///
 /// # Safety
-/// The caller must ensure `thread` points to a valid initialized `Thread` whose
-/// lock is held exclusively, and that interrupts are disabled.
+///
+/// The caller must ensure that:
+///
+/// - `thread` points to a valid, initialized non-idle `Thread` that is not
+///   currently in any scheduler `RunQueue` or `SaveStateList`, and no Rust
+///   references exist to `thread`, its `SchedulerState`, or its
+///   `SchedulerQueueState`.
+/// - `thread`'s lock is held exclusively (`TA_REQ(thread.get_lock())`).
+/// - Interrupts are disabled, no scheduler's `queue_lock_` is held
+///   (`TA_EXCL(queue_lock_)`), and the current CPU has a valid current
+///   `Thread` and initialized per-CPU `Scheduler`s.
 pub unsafe fn unblock_common(
     thread: *mut Thread,
     now: SchedTime,
@@ -9593,17 +9635,21 @@ pub unsafe fn unblock_common(
 
     let mut target_cpu;
     let mut cpus_to_reschedule = 0;
+    let mut skip_migration_save = false;
     loop {
         // TODO(rudymathu): This target_cpu should be stashed in the thread prior to
         // adding it to the save_state_list_, as that would allow us to bypass CPU
         // selection when processing the list so long as the CPU is still online.
-        // SAFETY: `thread` is valid, its lock is held, and interrupts are disabled.
+        // SAFETY: `thread` is valid, not enqueued, and locked without aliasing
+        // references, interrupts are disabled, no `queue_lock_` is held, and the
+        // current CPU's scheduler is initialized.
         target_cpu = unsafe { Scheduler::find_target_cpu(thread, unblock_type) };
         // SAFETY: `thread` is valid and its lock is held, guarding `last_cpu` and the
         // migration function and pending flags.
         let (last_cpu, needs_migration) = unsafe {
             let last_cpu = (*state_ptr).last_cpu;
-            let needs_migration = last_cpu != INVALID_CPU
+            let needs_migration = !skip_migration_save
+                && last_cpu != INVALID_CPU
                 && target_cpu != last_cpu
                 && cpp_thread_has_migrate_fn(thread)
                 && !cpp_thread_migrate_pending(thread);
@@ -9613,18 +9659,53 @@ pub unsafe fn unblock_common(
         if needs_migration {
             target_cpu = last_cpu;
         }
-        // SAFETY: `target_cpu` is a valid CPU number, interrupts are disabled, and
-        // `target`'s `queue_lock_` is not already held.
+        // SAFETY: `target_cpu` is an initialized CPU index (either returned by
+        // `find_target_cpu` or from a valid `last_cpu != INVALID_CPU`), interrupts
+        // are disabled, and no `queue_lock_` is currently held.
         let (target, _target_queue_guard) = unsafe {
             let target = cpp_scheduler_get(target_cpu);
             (target, QueueLockGuard::acquire(target))
         };
 
-        // SAFETY: `target` is valid and `_target_queue_guard` holds its `queue_lock_`,
-        // while the caller holds `thread`'s lock exclusively.
-        if unsafe { (*target).is_scheduler_active_locked() } {
-            // SAFETY: `thread` is valid with its lock held exclusively, `target` is valid
-            // with `queue_lock_` held by `_target_queue_guard`, and `target` is active.
+        // SAFETY: `target` is an initialized per-CPU `Scheduler` and
+        // `_target_queue_guard` holds its `queue_lock_`.
+        let is_active = unsafe { (*target).is_scheduler_active_locked() };
+        let can_queue_while_inactive = !is_active && {
+            core::hint::cold_path();
+            if needs_migration {
+                // If `last_cpu` is currently deactivating in
+                // `migrate_unpinned_threads`, queue onto its `save_state_list_` so
+                // `migrate_unpinned_threads` runs `MigrateStage::Save` on `last_cpu`
+                // and forwards `thread` to an active CPU without spinning on
+                // `thread`'s lock here. Otherwise `last_cpu` is already offline and
+                // `CallMigrateFnForCpu` already ran prior to halting (so a migration
+                // function installed while `last_cpu` was offline has no per-CPU
+                // state to save there); skip `last_cpu` on retry and place `thread`
+                // directly onto an active CPU.
+                // SAFETY: `target` is initialized and `_target_queue_guard` holds its
+                // `queue_lock_`.
+                let is_deactivating = unsafe { (*target).is_cpu_deactivating_locked() };
+                if !is_deactivating {
+                    skip_migration_save = true;
+                }
+                is_deactivating
+            } else {
+                // SAFETY: `thread` is valid and its lock is held exclusively by the caller.
+                unsafe { (*state_ptr).hard_affinity == cpu_num_to_mask(target_cpu) }
+            }
+        };
+        if is_active || can_queue_while_inactive {
+            // SAFETY: `thread` is valid, non-idle, and not in any `RunQueue` or
+            // `SaveStateList`, with its lock held exclusively and no aliasing
+            // references; `target` is an initialized `Scheduler` whose `queue_lock_`
+            // is held by `_target_queue_guard` (and no other `queue_lock_` is held,
+            // allowing `send_pending_power_level_request` to temporarily drop and
+            // re-acquire `target`'s `queue_lock_`). Either `target` is active,
+            // `needs_migration` is true while `target` is deactivating (so
+            // `migrate_unpinned_threads` will drain `save_state_list_`), or `thread`
+            // is hard-pinned exclusively to `target_cpu` while offline (in which case
+            // `needs_migration` is false and `Scheduler::insert` queues it until
+            // `target_cpu` returns online).
             unsafe {
                 sched_trace_wakeup(thread, target_cpu);
                 cpp_thread_set_ready(thread);
@@ -9636,12 +9717,17 @@ pub unsafe fn unblock_common(
                     (*target).assert_in_scheduler(thread);
                     (*target).insert(now, thread, Placement::Insertion);
 
-                    // If a power level change was requested during insertion, attempt to
-                    // handle it immediately with the fast path and update any affected
-                    // CPUs. If the fast path is not supported, the request will be left
-                    // pending on the target CPU and flushed during its reschedule.
-                    cpus_to_reschedule = (*target).send_pending_power_level_request();
+                    if is_active {
+                        // If a power level change was requested during insertion, attempt to
+                        // handle it immediately with the fast path and update any affected
+                        // CPUs. If the fast path is not supported, the request will be left
+                        // pending on the target CPU and flushed during its reschedule.
+                        cpus_to_reschedule = (*target).send_pending_power_level_request();
+                    }
                 }
+            }
+            if !is_active {
+                target_cpu = INVALID_CPU;
             }
             break;
         }
@@ -10337,34 +10423,48 @@ impl Scheduler {
         unsafe { preempt_locked(current_thread, PreemptType::Reschedule) };
     }
 
-    /// A helper function used by `find_active_scheduler_for_thread`. Returns a CPU to
-    /// run the given thread on, but does not lock that scheduler, meaning that the
-    /// selected scheduler can become deactivated before the caller can lock it.
+    /// A helper function used by `find_active_scheduler_for_thread` and
+    /// `unblock_common`. Returns a target CPU to place the given thread on, but does
+    /// not lock that scheduler, meaning that an active scheduler can become
+    /// deactivated before the caller locks it.
     ///
     /// Typically, users will want to use `find_active_scheduler_for_thread` instead,
-    /// which will supply a locked scheduler which is guaranteed to be active.
+    /// which locks the selected scheduler and confirms it is still active (or is the
+    /// thread's sole hard-pinned CPU while offline).
     ///
     /// # Safety
-    /// The caller must ensure `thread` points to a valid initialized `Thread` whose
-    /// lock is held at least shared, that interrupts are disabled, and that no
-    /// scheduler's `queue_lock_` is held.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - `thread` points to a valid, initialized `Thread` that is not currently
+    ///   enqueued in any `RunQueue`, with no live `&mut` references to `thread` or
+    ///   its `SchedulerState`.
+    /// - `thread`'s lock is held at least shared.
+    /// - Interrupts are disabled, no scheduler's `queue_lock_` is held
+    ///   (`TA_EXCL(queue_lock_)`), and per-CPU `Scheduler`s are initialized (and for
+    ///   `UnblockType::Synchronous`, the current CPU has a valid current `Thread`).
+    ///
+    /// Guarantees that the returned `CpuNum` is an initialized CPU index in
+    /// `0..PerCpu::processor_count()` (never `INVALID_CPU`, panicking if no valid
+    /// target CPU exists).
     pub unsafe fn find_target_cpu(thread: *mut Thread, unblock_type: UnblockType) -> CpuNum {
         let trace = local_ktrace_begin_scope!(COMMON, "find_target");
 
         // Determine the set of CPUs the thread is allowed to run on.
         let current_cpu = crate::arch_rs::curr_cpu_num();
         let active_mask = peek_active_mask();
+        let processor_count = PerCpu::processor_count();
         // SAFETY: `thread` is valid and its lock is held by the caller.
         let (available_mask, hard_affinity, soft_affinity) = unsafe {
             let thread_state = &*cpp_thread_get_scheduler_state(thread);
             (
-                thread_state.get_effective_cpu_mask(active_mask),
+                thread_state.get_target_cpu_mask(active_mask, processor_count),
                 thread_state.hard_affinity,
                 thread_state.soft_affinity,
             )
         };
 
-        if cfg!(debug_assertions) && available_mask == 0 {
+        if available_mask == 0 {
             // SAFETY: `thread` is valid.
             unsafe { panic_no_available_cpu(thread, hard_affinity, soft_affinity, active_mask) };
         }
@@ -10449,7 +10549,10 @@ impl Scheduler {
 
         drop(guard);
 
-        debug_assert!(target_queue.cpu != INVALID_CPU);
+        if target_queue.cpu == INVALID_CPU {
+            // SAFETY: `thread` is valid.
+            unsafe { panic_no_available_cpu(thread, hard_affinity, soft_affinity, active_mask) };
+        }
 
         let is_local = if unblock_type == UnblockType::Normal {
             last_cpu == target_queue.cpu
@@ -10726,6 +10829,19 @@ impl Scheduler {
         peek_is_active(unsafe { self.this_cpu() })
     }
 
+    /// Returns whether `self`'s CPU is currently deactivating in
+    /// `migrate_unpinned_threads` while holding `self`'s `queue_lock_`.
+    ///
+    /// # Safety
+    /// `self` must be an initialized `Scheduler` and the caller must hold
+    /// `self`'s `queue_lock_`.
+    #[inline]
+    unsafe fn is_cpu_deactivating_locked(&self) -> bool {
+        // SAFETY: `self` is initialized and holding `queue_lock_` synchronizes all
+        // reads and writes of `cpu_deactivating` alongside `ACTIVE_SCHEDULERS`.
+        unsafe { (*self.state.get()).cpu_deactivating.load(core::sync::atomic::Ordering::Relaxed) }
+    }
+
     /// Dumps the state of the run queue to stdout.
     #[inline]
     pub fn dump(&self, queue_state_only: bool) {
@@ -10751,34 +10867,62 @@ impl Scheduler {
         callable(scheduler)
     }
 
-    /// Finds an appropriate CPU for a thread to run on, then locks that scheduler,
-    /// confirms that it is still active, and invokes the user-supplied callback with
-    /// the scheduler's `queue_lock` held.
+    /// Finds an appropriate CPU for `thread`, locks that scheduler, confirms that it
+    /// is either active or is `thread`'s sole hard-pinned CPU while offline, and
+    /// invokes `action(thread, target)` with `target`'s `queue_lock_` held.
     ///
-    /// This method may need to search for a target CPU for the thread more than
-    /// once if the initially chosen scheduler becomes deactivated after it was
-    /// selected, but before it was locked.
+    /// This method may search for a target CPU more than once if an unpinned
+    /// thread's initially chosen scheduler becomes deactivated before it is locked.
+    /// Returns `target`'s `CpuNum` if `target` is active, or `INVALID_CPU` if
+    /// `target` is inactive (so callers do not send a reschedule IPI to an offline
+    /// CPU).
     ///
     /// # Safety
-    /// The caller must ensure `thread` points to a valid initialized `Thread` whose
-    /// lock is held at least shared, that interrupts are disabled, and that no
-    /// scheduler's `queue_lock_` is held.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - `thread` points to a valid, initialized `Thread` that is not currently
+    ///   enqueued in any `RunQueue`, with no live `&mut` references to `thread` or
+    ///   its `SchedulerState`.
+    /// - `thread`'s lock is held at least shared.
+    /// - Interrupts are disabled, no scheduler's `queue_lock_` is held
+    ///   (`TA_EXCL(queue_lock_)`), and per-CPU `Scheduler`s are initialized.
+    /// - `action` does not release `target`'s `queue_lock_` or invoke functions that
+    ///   require `TA_EXCL(queue_lock_)`.
+    ///
+    /// Guarantees that `action` is invoked with the same `thread` pointer and a
+    /// valid initialized `&Scheduler` whose `queue_lock_` is held with interrupts
+    /// disabled and for which either `target.is_scheduler_active_locked()` holds or
+    /// `thread`'s `hard_affinity` equals `cpu_num_to_mask(target.this_cpu())`, and
+    /// that the returned `CpuNum` is `target.this_cpu()` when active or
+    /// `INVALID_CPU` when inactive.
     pub unsafe fn find_active_scheduler_for_thread<F>(thread: *mut Thread, mut action: F) -> CpuNum
     where
         F: FnMut(*mut Thread, &Scheduler),
     {
         loop {
-            // SAFETY: `thread` is valid and locked per caller contract. `target_ptr` points to
-            // a valid per-CPU `Scheduler` whose `queue_lock_` is held by `_target_queue_guard`
-            // while `target` is borrowed and passed to `action`.
+            // SAFETY: On entry and across retries (after `_target_queue_guard` drops
+            // at the end of the block), `thread` is valid, not enqueued, and locked
+            // without `&mut` aliases, interrupts remain disabled, no `queue_lock_` is
+            // held, and per-CPU `Scheduler`s are initialized. `find_target_cpu`
+            // returns an initialized CPU index `< PerCpu::processor_count()`, so
+            // `cpp_scheduler_get(target_cpu)` yields a valid initialized `Scheduler`
+            // whose `queue_lock_` is held by `_target_queue_guard` while `target` is
+            // borrowed and `hard_affinity` is read under `thread`'s lock.
             unsafe {
                 let target_cpu = Self::find_target_cpu(thread, UnblockType::Normal);
                 let target_ptr = cpp_scheduler_get(target_cpu);
                 let _target_queue_guard = QueueLockGuard::acquire(target_ptr);
                 let target = &*target_ptr;
-                if target.is_scheduler_active_locked() {
+                let is_active = target.is_scheduler_active_locked();
+                let is_pinned_to_target = !is_active && {
+                    core::hint::cold_path();
+                    (*cpp_thread_get_scheduler_state(thread)).hard_affinity
+                        == cpu_num_to_mask(target_cpu)
+                };
+                if is_active || is_pinned_to_target {
                     action(thread, target);
-                    return target_cpu;
+                    return if is_active { target_cpu } else { INVALID_CPU };
                 }
             }
             COUNTER_FIND_TARGET_CPU_RETRIES.add(1);
@@ -10920,109 +11064,83 @@ impl Scheduler {
     /// Migrates any threads that can run on other CPUs off of the current CPU.
     ///
     /// # Safety
+    ///
     /// The caller must ensure that:
-    /// - `self` is the current CPU's initialized `Scheduler` (`self.this_cpu() == curr_cpu_num()`).
+    ///
+    /// - `this` points to the current CPU's initialized `Scheduler`
+    ///   (`(*this).this_cpu() == curr_cpu_num()`).
     /// - Interrupts are disabled.
     /// - No `ChainLockTransaction`, `queue_lock_`, or `Thread::list_lock_` is held
     ///   (`TA_EXCL(chainlock_transaction_token, queue_lock_)`).
-    pub unsafe fn migrate_unpinned_threads(&self) {
+    unsafe fn migrate_unpinned_threads(this: *mut Self) {
         let _trace = local_ktrace_begin_scope!(COMMON, "sched_migrate_unpinned");
         let current_cpu = crate::arch_rs::curr_cpu_num();
-        // SAFETY: `self` is an initialized `Scheduler`.
-        debug_assert_eq!(unsafe { self.this_cpu() }, current_cpu);
-        let current_cpu_mask = cpu_num_to_mask(current_cpu);
+        // SAFETY: `this` points to an initialized `Scheduler`.
+        debug_assert_eq!(unsafe { (*this).this_cpu() }, current_cpu);
         let mut cpus_to_reschedule_mask: CpuMask = 0;
 
-        // Flag this scheduler as being in the process de-activating. If a thread
-        // with a migration function unblocks and needs to become READY while we are
-        // in the middle of `migrate_unpinned_threads`, we will allow it to join this
-        // CPU's ready-queue knowing that we are going to immediately call the
-        // thread's migration function (on this CPU, as required) before reassigning
-        // the thread to a different CPU.
-        //
-        // Note: Because of the nature of the global thread-lock, this race is not
-        // currently possible (Threads who are blocked cannot unblock while we hold
-        // the global thread lock, which we currently do). Once the thread lock has
-        // been removed, however, this race will become an important edge case to
-        // handle.
+        // Flag this scheduler as deactivating and inactive under `queue_lock_` so any
+        // thread whose `last_cpu` is `current_cpu` that unblocks (or updates its CPU
+        // affinity) with an unexecuted migration function during deactivation queues
+        // onto `this`'s `save_state_list_` without spinning on `thread_lock`, and has
+        // its `Save` stage run on `current_cpu` before `save_state_list_` is drained
+        // and `cpu_deactivating` is cleared below.
         let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
 
-        // SAFETY: `self` is the current CPU's initialized `Scheduler`, interrupts
+        // SAFETY: `this` is the current CPU's initialized `Scheduler`, interrupts
         // are disabled, and neither `queue_lock_` nor `Thread::list_lock_` is held.
+        // All reads and writes of `cpu_deactivating` and `ACTIVE_SCHEDULERS` for
+        // `this` occur under `this`'s `queue_lock_`, so `Ordering::Relaxed` is
+        // synchronized by `queue_lock_`.
         unsafe {
-            (*self.state.get()).cpu_deactivating.store(true, core::sync::atomic::Ordering::Release);
+            {
+                let _queue_guard = QueueLockGuard::acquire(this);
+                (*(*this).state.get())
+                    .cpu_deactivating
+                    .store(true, core::sync::atomic::Ordering::Relaxed);
 
-            // Flag this CPU as being inactive. This will prevent new threads from being
-            // added to this CPU's scheduler's run queues while we migrate the existing
-            // threads off this scheduler.
-            //
-            // Note that this does _not_ prevent `find_target_cpu` from _selecting_ a given
-            // scheduler as potential target for thread placement, but it _does_ guarantee
-            // that by the time we attempt to actually add the thread to the chosen
-            // scheduler's queue, we will have had a chance to check the flag once again,
-            // this time safely from within the chosen scheduler's queue lock.
-            Self::set_curr_cpu_active(false);
+                // Flag this CPU as inactive under `queue_lock_` so new unpinned threads
+                // are not placed onto its run queues while existing unpinned threads are
+                // migrated off (threads hard-pinned exclusively to this CPU remain queued
+                // here until it returns online).
+                (*this).set_is_active(false);
+            }
 
-            // Call all migrate functions for threads last run on the current CPU who are
-            // not currently READY. The next time these threads unblock or wake up, they
-            // will be assigned to a different CPU, and we will have already called their
-            // migrate function for them. When we are finished with this pass, the only
-            // threads who have a migrate function still to be called should only exist in
-            // this scheduler's READY queue, because:
-            //
-            // 1)  New threads or threads who have not recently run on this CPU cannot be
-            //     assigned to this CPU (because we cleared our active flag)
-            // 2a) Threads who were not ready but needed to have their migration function
-            //     called were found and had their migration function called during
-            //     `cpp_thread_call_migrate_fn_for_cpu` --- OR ---
-            // 2b) The non-ready thread with a migration function unblocked and joined the
-            //     ready queue of this scheduler while it was being deactivated. We will
-            //     call their migration functions next as we move all of the READY threads
-            //     off of this scheduler and over to a different one.
+            // Call all migrate functions for non-running threads last run on the
+            // current CPU (both blocked threads and any pinned READY threads that
+            // will remain queued on this CPU while offline). Unpinned READY threads
+            // and any threads pushed onto `save_state_list_` while `cpu_deactivating`
+            // is true will also have their Save stage invoked (idempotently via
+            // `migrate_pending_`) as they are moved off this scheduler below.
             cpp_thread_call_migrate_fn_for_cpu(current_cpu);
-
-            // There should no longer be any non-ready threads who need to run a
-            // migration function on this CPU, and there should not be any new one until
-            // we set this CPU back to being active. We can clear the transitory
-            // `cpu_deactivating` flag now.
-            debug_assert!(
-                (*self.state.get()).cpu_deactivating.load(core::sync::atomic::Ordering::Relaxed)
-            );
-            (*self.state.get())
-                .cpu_deactivating
-                .store(false, core::sync::atomic::Ordering::Release);
         }
 
-        // Now move any READY threads who can be moved over to a temporary list,
-        // flagging them as in the process of currently migrating. Also move all
-        // of the threads in the `save_state_list` into a temporary list, as they
-        // need to be migrated as well.
+        // Now move any READY threads that are not hard-pinned exclusively to this
+        // CPU over to a temporary list, flagging them as in the process of
+        // currently migrating. `save_state_list_` is drained afterward in the same
+        // critical section that clears `cpu_deactivating`.
+        let current_cpu_mask = cpu_num_to_mask(current_cpu);
         let mut migrating_deadline_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
         let migrating_deadline_threads_ptr = migrating_deadline_threads.as_mut_ptr();
         let mut migrating_fair_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
         let migrating_fair_threads_ptr = migrating_fair_threads.as_mut_ptr();
-        let mut local_save_state_list = core::mem::MaybeUninit::<SaveStateList>::uninit();
-        let local_save_state_list_ptr = local_save_state_list.as_mut_ptr();
 
-        let mut has_save_state = false;
-        // SAFETY: `self` is valid, interrupts are disabled, and `queue_lock_` is not
-        // already held. `_queue_guard` holds `self`'s `queue_lock_` while inspecting
-        // the run queues and moving `save_state_list_`.
+        // SAFETY: `this` is valid, interrupts are disabled, and `queue_lock_` is not
+        // already held. `_queue_guard` holds `this`'s `queue_lock_`, placement-initializing
+        // the stack `UnblockList`s via `cpp_unblock_list_init`. While iterating each
+        // `RunQueue`, `next` advances before any list operation without mutating
+        // `run_queue`, and `hard_affinity` is stable under `queue_lock_` because
+        // `set_affinity` requires both `thread_lock` and the container `queue_lock_`
+        // for `Ready` threads.
         let affine_transform = unsafe {
-            let sched_ptr = self as *const Scheduler as *mut Scheduler;
-            let _queue_guard = QueueLockGuard::acquire(sched_ptr);
+            let _queue_guard = QueueLockGuard::acquire(this);
 
             cpp_unblock_list_init(migrating_deadline_threads_ptr);
             cpp_unblock_list_init(migrating_fair_threads_ptr);
 
             // Save the current affine transform to update fair threads as they are migrated.
-            let state = (*sched_ptr).state.get();
+            let state = (*this).state.get();
             let affine = (*state).fair_affine_transform;
-
-            if !cpp_scheduler_save_state_list_is_empty(sched_ptr) {
-                cpp_scheduler_save_state_list_move(sched_ptr, local_save_state_list_ptr);
-                has_save_state = true;
-            }
 
             let collect_migrating_threads =
                 |run_queue: *const RunQueue, thread_list: *mut UnblockList| {
@@ -11044,8 +11162,8 @@ impl Scheduler {
                         // clearly owned by this scheduler right now. We project `hard_affinity`
                         // via raw pointer to avoid forming `&SchedulerState` without holding
                         // `consider`'s thread lock.
-                        // If the thread can run on any other CPU, add it to our list of threads
-                        // to migrate.
+                        // Leave threads hard-pinned exclusively to `current_cpu` queued here
+                        // until `current_cpu` returns online; migrate all other threads.
                         if (*cpp_thread_get_scheduler_state(consider)).hard_affinity
                             != current_cpu_mask
                         {
@@ -11070,11 +11188,17 @@ impl Scheduler {
             affine
         };
 
-        let is_fair_thread = |thread: *mut Thread| -> bool {
-            // SAFETY: Called only when `thread`'s lock is held exclusively.
-            let state = unsafe { &*cpp_thread_get_scheduler_state(thread) };
-            state.effective_profile.is_fair()
-        };
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum RemoveFromRunQueue {
+            Yes,
+            No,
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum UpdateTimeline {
+            Yes,
+            No,
+        }
 
         // OK, now that we have dropped our queue lock, go over our list of migrating
         // threads and finish the migration process. Don't make any assumptions about
@@ -11083,7 +11207,8 @@ impl Scheduler {
         // effective priority since being removed from their old scheduler, but before
         // arriving at a new one.
         let migrate_thread = |thread: *mut Thread,
-                              update_timeline: bool,
+                              remove_from_run_queue: RemoveFromRunQueue,
+                              update_timeline: UpdateTimeline,
                               trace_tag: &'static ktrace_rs::InternedString|
          -> CpuNum {
             // SAFETY: `thread` is a valid `Thread` popped from a local migration list.
@@ -11095,53 +11220,78 @@ impl Scheduler {
                 clt_tag!("Scheduler::MigrateUnpinnedThreads")
             );
 
-            // SAFETY: `self` is valid, interrupts are disabled, `thread`'s lock is held
-            // by `_guard`, and `_queue_guard` acquires and releases `self`'s `queue_lock_`.
-            unsafe {
-                // Removing a thread from a scheduler requires `queue_lock` acquisition.
-                let sched_ptr = self as *const Scheduler as *mut Scheduler;
-                let _queue_guard = QueueLockGuard::acquire(sched_ptr);
+            if remove_from_run_queue == RemoveFromRunQueue::Yes || SCHEDULER_QUEUE_TRACING_ENABLED {
+                // SAFETY: `this` is valid, interrupts are disabled, and `this`'s
+                // `queue_lock_` is not currently held.
+                let _queue_guard = unsafe { QueueLockGuard::acquire(this) };
 
-                // Even though we dropped the queue lock between when we accumulated the list
-                // of threads to move, and did not hold the thread lock prior to this point,
-                // this thread should still be associated with this scheduler because the
-                // scheduler was marked inactive above. This means that any attempt to steal
-                // work from this scheduler should fail.
-                debug_assert_eq!(
-                    (*cpp_thread_get_scheduler_state(thread)).curr_cpu,
-                    self.this_cpu()
-                );
-                self.trace_thread_queue_event(trace_tag, thread);
-                self.erase_from_queue(thread);
-                self.remove_thread_locked(now, thread);
+                if remove_from_run_queue == RemoveFromRunQueue::Yes {
+                    // Even though we dropped `queue_lock_` after collecting the threads to
+                    // move and did not hold `thread`'s lock prior to `_guard`, `thread` must
+                    // still be associated with `this` because `this` was marked inactive
+                    // above, preventing other CPUs from stealing work from `this`.
+                    // SAFETY: `this` and `thread` are valid, `thread` remains enqueued on
+                    // `this`, and both `_guard` (`thread`'s lock) and `_queue_guard`
+                    // (`this`'s `queue_lock_`) are held exclusively.
+                    unsafe {
+                        let scheduler = &*this;
+                        debug_assert_eq!(
+                            (*cpp_thread_get_scheduler_state(thread)).curr_cpu,
+                            scheduler.this_cpu()
+                        );
+                        scheduler.erase_from_queue(thread);
+                        scheduler.remove_thread_locked(now, thread);
+                    }
+                }
+
+                // Emit the dequeue trace event after any run-queue removal so `arg1`
+                // records the post-dequeue runnable task count (matching other dequeue
+                // paths), while `_queue_guard` is still held (including for
+                // `SaveStateList` threads when `SCHEDULER_QUEUE_TRACING_ENABLED` is set).
+                // SAFETY: `this` and `thread` are valid, `_queue_guard` holds `this`'s
+                // `queue_lock_` (guarding `active_thread` and run-queue lengths), and
+                // `_guard` holds `thread`'s lock exclusively (guarding `thread`'s
+                // scheduler state even after `remove_thread_locked` or `SaveStateList`
+                // disassociation).
+                unsafe {
+                    (*this).trace_thread_queue_event(trace_tag, thread);
+                }
             }
 
             // Threads removed from the fair run queue must be transformed to the monotonic
             // timeline before migrating.
-            if update_timeline {
-                debug_assert!(is_fair_thread(thread));
-                // SAFETY: `thread` is valid, removed from `self`'s run queue, and its
-                // lock is held exclusively by `_guard`.
+            if update_timeline == UpdateTimeline::Yes {
+                // SAFETY: `thread` is valid, removed from `this`'s run queue, and its
+                // lock is held exclusively by `_guard` with no aliasing references.
                 let thread_state = unsafe { &mut *cpp_thread_get_scheduler_state(thread) };
+                debug_assert!(thread_state.effective_profile.is_fair());
                 affine_transform.variable_to_monotonic_in_place(&mut thread_state.start_time);
                 affine_transform.variable_to_monotonic_in_place(&mut thread_state.finish_time);
             }
 
-            // Call the Save stage of the thread's migration function as it leaves
-            // this CPU.
+            // Call the Save stage of the thread's migration function if it last ran on
+            // this CPU (`last_cpu` may be `INVALID_CPU` if `thread` has never run or
+            // another CPU if a previous migration is already pending).
             // SAFETY: `thread` is valid and its lock is held by `_guard`.
             unsafe {
-                cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
+                if (*cpp_thread_get_scheduler_state(thread)).last_cpu == current_cpu {
+                    cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
+                }
             }
 
-            // SAFETY: `thread` is valid and its lock is held by `_guard` with interrupts
-            // disabled. Inside the callback, `target`'s `queue_lock_` is held.
+            // SAFETY: `thread` is valid, `ThreadState::Ready`, non-idle, and not
+            // enqueued in any `RunQueue`, with its lock held by `_guard`, no aliasing
+            // references, interrupts disabled, and no `queue_lock_` held. Inside the
+            // callback, `target`'s `queue_lock_` is held.
             unsafe {
                 Self::find_active_scheduler_for_thread(thread, |thread, target| {
                     // Finish the transition and add the thread to the new target queue. The
                     // Restore stage of the migration function will be called on the new CPU the
                     // next time the thread becomes scheduled.
-                    debug_assert!(!core::ptr::eq(target, self));
+                    debug_assert!(
+                        !core::ptr::eq(core::ptr::from_ref(target), this.cast_const())
+                            || !target.is_scheduler_active_locked()
+                    );
                     target.insert(now, thread, Placement::Migration);
                 })
             }
@@ -11153,7 +11303,8 @@ impl Scheduler {
             let thread = unsafe { cpp_unblock_list_pop_front(migrating_fair_threads_ptr) };
             let target_cpu = migrate_thread(
                 thread,
-                true,
+                RemoveFromRunQueue::Yes,
+                UpdateTimeline::Yes,
                 ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_fair"),
             );
             cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
@@ -11165,11 +11316,31 @@ impl Scheduler {
             let thread = unsafe { cpp_unblock_list_pop_front(migrating_deadline_threads_ptr) };
             let target_cpu = migrate_thread(
                 thread,
-                false,
+                RemoveFromRunQueue::Yes,
+                UpdateTimeline::No,
                 ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline"),
             );
             cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
         }
+
+        let mut local_save_state_list = core::mem::MaybeUninit::<SaveStateList>::uninit();
+        let local_save_state_list_ptr = local_save_state_list.as_mut_ptr();
+        // SAFETY: `this` is valid, interrupts are disabled, and `queue_lock_` is not
+        // currently held. Under `_queue_guard`, clearing `cpu_deactivating` while
+        // moving any non-empty `save_state_list_` into `local_save_state_list_ptr`
+        // guarantees that no subsequent `unblock_common` or `set_cpu_affinity` can
+        // push onto `this`'s `save_state_list_` while `this` remains inactive.
+        let has_save_state = unsafe {
+            let _queue_guard = QueueLockGuard::acquire(this);
+            let state = (*this).state.get();
+            debug_assert!((*state).cpu_deactivating.load(core::sync::atomic::Ordering::Relaxed));
+            (*state).cpu_deactivating.store(false, core::sync::atomic::Ordering::Relaxed);
+            let non_empty = !cpp_scheduler_save_state_list_is_empty(this);
+            if non_empty {
+                cpp_scheduler_save_state_list_move(this, local_save_state_list_ptr);
+            }
+            non_empty
+        };
 
         if has_save_state {
             loop {
@@ -11181,7 +11352,8 @@ impl Scheduler {
                 }
                 let target_cpu = migrate_thread(
                     thread,
-                    false,
+                    RemoveFromRunQueue::No,
+                    UpdateTimeline::No,
                     ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_save_state"),
                 );
                 cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
@@ -11284,14 +11456,21 @@ impl Scheduler {
                         };
 
                         // Set the affinity before determining if the thread needs to move.
+                        // Evaluate staleness against `get_target_cpu_mask` so that a thread
+                        // running or enqueued on a disallowed active CPU still migrates if its
+                        // newly hard-pinned target CPU is currently offline, while a thread
+                        // already queued on its sole offline pinned CPU stays put.
+                        let processor_count = PerCpu::processor_count();
                         // SAFETY: Both `thread_lock` and `scheduler`'s `queue_lock_` are held.
-                        let (prev_aff, effective_cpu_mask) = unsafe {
+                        let (prev_aff, target_cpu_mask) = unsafe {
                             let prev = set_affinity(&mut *state_ptr, affinity, affinity_type);
-                            let eff = (*state_ptr).get_effective_cpu_mask(peek_active_mask());
-                            (prev, eff)
+                            let target_mask = (*state_ptr)
+                                .get_target_cpu_mask(peek_active_mask(), processor_count);
+                            (prev, target_mask)
                         };
                         previous_affinity = prev_aff;
-                        let stale_curr_cpu = (thread_cpu_mask & effective_cpu_mask) == 0;
+                        let stale_curr_cpu =
+                            target_cpu_mask != 0 && (thread_cpu_mask & target_cpu_mask) == 0;
 
                         if thread_state == ThreadState::Running {
                             debug_assert_eq!(disposition, QueueDisposition::Associated);
@@ -11314,8 +11493,8 @@ impl Scheduler {
                                 COUNTER_UPDATE_IN_TRANSITION.add(1);
                                 debug_assert_ne!(stolen_by, INVALID_CPU);
                                 let stealing_cpu_mask = cpu_num_to_mask(stolen_by);
-                                let stale_stealing_cpu =
-                                    (stealing_cpu_mask & effective_cpu_mask) == 0;
+                                let stale_stealing_cpu = target_cpu_mask != 0
+                                    && (stealing_cpu_mask & target_cpu_mask) == 0;
                                 if stale_stealing_cpu {
                                     cpus_to_reschedule_mask |= stealing_cpu_mask;
                                 }
@@ -11335,24 +11514,28 @@ impl Scheduler {
                                     }
 
                                     // Execute the migrate function inline if the thread is on the
-                                    // local CPU. Otherwise, add it to the save state list of the
-                                    // last CPU it ran on and reschedule that CPU to process the
-                                    // list.
+                                    // local CPU. Otherwise, if the last CPU it ran on is active or
+                                    // deactivating, add it to that scheduler's save state list and
+                                    // reschedule if active to process the list.
                                     let current_cpu = crate::arch_rs::curr_cpu_num();
                                     // SAFETY: `thread_lock` and `scheduler`'s `queue_lock_` are
                                     // held.
                                     unsafe {
                                         let last_cpu = (*state_ptr).last_cpu;
+                                        let is_active = scheduler.is_scheduler_active_locked();
                                         if cpp_thread_has_migrate_fn(thread)
                                             && !cpp_thread_migrate_pending(thread)
-                                            && last_cpu != INVALID_CPU
+                                            && last_cpu == curr_cpu
                                             && last_cpu != current_cpu
+                                            && (is_active || scheduler.is_cpu_deactivating_locked())
                                         {
                                             cpp_scheduler_save_state_list_push_front(
                                                 scheduler_ptr,
                                                 thread,
                                             );
-                                            cpus_to_reschedule_mask |= thread_cpu_mask;
+                                            if is_active {
+                                                cpus_to_reschedule_mask |= thread_cpu_mask;
+                                            }
                                         } else {
                                             find_new_target_cpu = true;
                                         }
@@ -12182,7 +12365,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_remove_first_thread(thread: *mut 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_kernel_scheduler_migrate_unpinned_threads(sched: *mut Scheduler) {
     // SAFETY: Forwarded from the caller.
-    unsafe { (*sched).migrate_unpinned_threads() };
+    unsafe { Scheduler::migrate_unpinned_threads(sched) };
 }
 
 impl Scheduler {
@@ -13050,8 +13233,9 @@ pub unsafe fn split_node_from_pi_graph<U: PiNode, T: PiNode>(
 #[unittest::suite(name = "scheduler_rust")]
 mod tests {
     use super::{
-        Affine, BandwidthReservationCache, BaseProfile, EffectiveProfile, SchedDeadlineParams,
-        SchedDuration, SchedTime, SchedUtilization, SchedWeight, Slope, sched_ms, sched_ns,
+        Affine, BandwidthReservationCache, BaseProfile, CPU_MASK_ALL, EffectiveProfile,
+        SchedDeadlineParams, SchedDuration, SchedTime, SchedUtilization, SchedWeight,
+        SchedulerState, Slope, sched_ms, sched_ns,
     };
 
     // The kernel-side counterpart of `//zircon/kernel/lib/sched/affine-tests.cc`.
@@ -13353,5 +13537,39 @@ mod tests {
         // Removing an existing entry should return the reservation that was removed.
         unittest::expect_eq!(cache.remove(3).raw_value(), 3);
         unittest::expect_eq!(cache.total_deferred_utilization().raw_value(), 0);
+    }
+
+    /// Verifies `get_target_cpu_mask` active preference and single-CPU offline fallback.
+    #[test]
+    fn test_get_target_cpu_mask_offline_fallback() {
+        let mut state = SchedulerState::new(BaseProfile::new_fair(0));
+
+        // Unpinned thread uses only active CPUs.
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0011, 4), 0b0011);
+
+        // Soft affinity pointing to an offline CPU is ignored in favor of active CPUs.
+        state.soft_affinity = 0b1000;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0011, 4), 0b0011);
+
+        // Single-CPU hard affinity pinned to an offline initialized CPU falls back
+        // to that CPU so the thread can be queued until the CPU returns online.
+        state.hard_affinity = 0b1000;
+        state.soft_affinity = CPU_MASK_ALL;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 4), 0b1000);
+
+        // Multi-CPU hard affinity uses active CPUs when at least one allowed CPU is
+        // active, and does not fall back to offline CPUs when all allowed CPUs are
+        // offline.
+        state.hard_affinity = 0b0110;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0011, 4), 0b0010);
+        state.hard_affinity = !0b0001;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 4), 0);
+
+        // Single-CPU hard affinity restricted to an uninitialized CPU returns 0,
+        // while `processor_count == CpuMask::BITS` handles bit 31 without overflow.
+        state.hard_affinity = 1 << 7;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 4), 0);
+        state.hard_affinity = 1 << 31;
+        unittest::expect_eq!(state.get_target_cpu_mask(0b0001, 32), 1 << 31);
     }
 }
