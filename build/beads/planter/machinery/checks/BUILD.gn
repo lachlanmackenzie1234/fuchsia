@@ -15,6 +15,7 @@ if (is_host) {
     sources = [
       "planter_check_lib.py",
       "planter_check_lib_test.py",
+      "planter_version_test.py",
       "rdeps_lib.py",
     ]
   }
