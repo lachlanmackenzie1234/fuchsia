@@ -1147,10 +1147,6 @@
                 "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/*",
                 "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/*",
 
-                // These tests hang.
-                "AllInetTests/UdpSocketTest.ReconnectDoesNotClearReadShutdown/*",
-                "AllInetTests/UdpSocketTest.ReconnectDoesNotClearWriteShutdown/*",
-
                 // This hangs on debug builds.
                 //
                 // See https://fxbug.dev/42084731.
@@ -1234,11 +1230,6 @@
                 "AllUnixDomainSockets/AllSocketPairTest.SendmsgRecvmsgMsgCtruncNoop/*",
                 "AllUnixDomainSockets/AllSocketPairTest.SetAndGetBooleanSocketOptions/*",
                 "AllUnixDomainSockets/AllSocketPairTest.GetSocketOutOfBandInlineOption/*",
-
-                // socket_udp_test - hanging tests.
-                "AllInetTests/UdpSocketTest.ReadShutdown/*",
-                "AllInetTests/UdpSocketTest.ReadShutdownDifferentThread/*",
-                "AllInetTests/UdpSocketTest.ErrorQueue/*",
 
                 // These tests cause fatal signals that crash the test suite.
                 "Processes.ExecSwapThreadGroupLeader",
