@@ -9515,13 +9515,21 @@ impl Scheduler {
 
                 // Finish the migration of the current thread, if pending.
                 if result.current_is_migrating {
-                    cpp_thread_call_migrate_fn_locked(current_thread, MIGRATE_STAGE_SAVE);
                     let target_cpu =
                         Self::find_active_scheduler_for_thread(current_thread, |thread, target| {
-                            debug_assert!(!core::ptr::eq(target, self));
                             target.insert(now, thread, Placement::Migration);
                         });
-                    super::mp::reschedule(cpu_num_to_mask(target_cpu), 0);
+                    if target_cpu == current_cpu {
+                        // Soft-affinity target CPU(s) deactivated after `needs_migration_local`,
+                        // causing `find_active_scheduler_for_thread` to fall back to hard
+                        // affinity and re-select `self`. Skip `MIGRATE_STAGE_SAVE` since the
+                        // thread stayed on `current_cpu`, and send a self-IPI (`mp::reschedule`
+                        // masks out the local CPU) so `current_cpu` re-evaluates its run queue.
+                        super::mp::reschedule_self();
+                    } else {
+                        cpp_thread_call_migrate_fn_locked(current_thread, MIGRATE_STAGE_SAVE);
+                        super::mp::reschedule(cpu_num_to_mask(target_cpu), 0);
+                    }
                 }
 
                 self.context_switch(
@@ -11080,6 +11088,7 @@ impl Scheduler {
         ChainLockTransaction::active_ref(&token)
             .restart(clt_tag!("Scheduler::ProcessSaveStateList (restart)"), &token);
 
+        let current_cpu = crate::arch_rs::curr_cpu_num();
         let mut cpus_to_reschedule_mask: CpuMask = 0;
         loop {
             // SAFETY: `local_save_state_list_ptr` is initialized per the caller's
@@ -11117,10 +11126,6 @@ impl Scheduler {
                 }
             }
 
-            // We now have the thread's lock, so run the migrate function.
-            // SAFETY: `to_migrate` is valid and its lock is held.
-            unsafe { cpp_thread_call_migrate_fn_locked(to_migrate, MIGRATE_STAGE_SAVE) };
-
             // TODO(rudymathu): Threads placed in the `save_state_list` via an `unblock`
             // operation already performed a `find_target_cpu` call. In a future
             // optimization, we should be able to reuse that value here and avoid
@@ -11134,6 +11139,14 @@ impl Scheduler {
                     target.insert(now, thread, Placement::Migration);
                 })
             };
+
+            // Only invoke the Save stage if the thread actually moved off `current_cpu`
+            // (`find_active_scheduler_for_thread` can re-select `current_cpu` if
+            // soft-affinity or unblocking target CPUs deactivated in the interim).
+            if target_cpu != current_cpu {
+                // SAFETY: `to_migrate` is valid and its lock is still held exclusively.
+                unsafe { cpp_thread_call_migrate_fn_locked(to_migrate, MIGRATE_STAGE_SAVE) };
+            }
 
             cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
             // SAFETY: `to_migrate` is valid and its lock was acquired above in this loop
@@ -11603,17 +11616,7 @@ impl Scheduler {
                     if find_new_target_cpu {
                         // SAFETY: `thread_lock` is held exclusively.
                         debug_assert_eq!(unsafe { (*state_ptr).state }, ThreadState::Ready);
-                        // Call the migration function if the thread is migrating away from this
-                        // CPU. This is a no-op if there is no migration function or the Save
-                        // state has already been invoked.
                         let current_cpu = crate::arch_rs::curr_cpu_num();
-                        // SAFETY: `thread_lock` is held exclusively.
-                        if unsafe { (*state_ptr).last_cpu } == current_cpu {
-                            // SAFETY: `thread` is valid and `thread_lock` is held.
-                            unsafe {
-                                cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
-                            }
-                        }
 
                         // Find a new CPU for the thread and add it to the queue.
                         // SAFETY: `thread` is valid with `thread_lock` held and interrupts
@@ -11626,6 +11629,23 @@ impl Scheduler {
                                 target.insert(now, thread, Placement::Migration);
                             })
                         };
+
+                        // Call the migration function if the thread actually migrated away from
+                        // `current_cpu` (`find_active_scheduler_for_thread` can re-select
+                        // `current_cpu` if soft-affinity target CPUs deactivated after
+                        // `queue_lock_` was released). This is a no-op if there is no migration
+                        // function or the Save state has already been invoked.
+                        // SAFETY: `state_ptr` belongs to `thread` and `thread_lock` is held
+                        // exclusively.
+                        if target_cpu != current_cpu
+                            && unsafe { (*state_ptr).last_cpu } == current_cpu
+                        {
+                            // SAFETY: `thread` is valid and `thread_lock` is held exclusively.
+                            unsafe {
+                                cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
+                            }
+                        }
+
                         // Reschedule both CPUs to handle the run queue changes.
                         cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu) | thread_cpu_mask;
                     }

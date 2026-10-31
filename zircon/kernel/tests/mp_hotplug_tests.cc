@@ -982,6 +982,172 @@ static void wait_for_thread_state(const Thread& thread, thread_state expected_st
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/578020457:
+// Repeatedly unplug and hotplug |target_cpu| while worker threads on other active CPUs transition
+// their own soft affinity to |target_cpu| and yield. If |target_cpu| deactivates after
+// Scheduler::NeedsMigrationLocal initiates migration away from the current CPU, target selection
+// falls back to hard affinity and may re-select the current CPU; verifies that RescheduleCommon
+// does not assert, invoke a spurious MigrateStage::Save without leaving the CPU, or lose the local
+// reschedule.
+[[maybe_unused]] static bool mp_hotplug_soft_affinity_migration_fallback_test() {
+  BEGIN_TEST;
+
+// TODO(https://fxbug.dev/42086046): Re-enable test on RISC-V.
+#if defined(__riscv)
+  printf(
+      "skipping test mp_hotplug_soft_affinity_migration_fallback, hotplug only supported on x64 "
+      "and arm64\n");
+  END_TEST;
+#endif
+
+  const cpu_mask_t online_secondaries = mp_get_online_mask() & ~cpu_num_to_mask(BOOT_CPU_ID);
+  if (online_secondaries == 0) {
+    printf("skipping test mp_hotplug_soft_affinity_migration_fallback, not enough online cpus\n");
+    END_TEST;
+  }
+  const cpu_num_t target_cpu = highest_cpu_set(online_secondaries);
+
+  auto restore_affinity = fit::defer(
+      [previous_affinity = Thread::Current::SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID))] {
+        Thread::Current::SetCpuAffinity(previous_affinity);
+      });
+
+  // |stop| is a monotonic cancellation flag, |probe_target| is an advisory toggle carrying no
+  // dependent state, and |iterations|, |migrate_save_calls|, and |migrate_order_ok| are read after
+  // Thread::Join(). Heap-allocate |State| to keep this function's kernel stack frame small.
+  struct State;
+  struct WorkerSlot {
+    Thread* thread{nullptr};
+    State* state{nullptr};
+    cpu_num_t home_cpu{INVALID_CPU};
+    ktl::atomic<uint64_t> migrate_save_calls{0};
+    ktl::atomic<bool> migrate_order_ok{true};
+    bool save_pending{false};
+    bool exited{false};
+  };
+
+  struct State {
+    ktl::atomic<bool> stop{false};
+    ktl::atomic<bool> probe_target{false};
+    ktl::atomic<uint64_t> iterations{0};
+    WorkerSlot workers[SMP_MAX_CPUS]{};
+    cpu_num_t target_cpu{INVALID_CPU};
+  };
+
+  fbl::AllocChecker ac;
+  auto state = ktl::make_unique<State>(&ac);
+  ASSERT_TRUE(ac.check(), "failed to allocate test state");
+  state->target_cpu = target_cpu;
+
+  auto stop_workers = fit::defer([state = state.get()] {
+    state->stop.store(true, ktl::memory_order_relaxed);
+    for (WorkerSlot& slot : state->workers) {
+      if (slot.thread != nullptr) {
+        slot.thread->Join(nullptr, ZX_TIME_INFINITE);
+        slot.thread = nullptr;
+      }
+    }
+  });
+
+  auto restore_target_cpu = fit::defer([target_cpu] {
+    if (!mp_is_cpu_online(target_cpu)) {
+      const zx_status_t status = hotplug_core(target_cpu);
+      ASSERT_MSG(status == ZX_OK, "hotplugging core %u failed: %d", target_cpu, status);
+      wait_for_cpu_active(target_cpu);
+      const zx_status_t dpc_status = wait_for_cpu_dpc_runner(target_cpu);
+      ASSERT_MSG(dpc_status == ZX_OK, "waiting for core %u's dpc runner failed: %d", target_cpu,
+                 dpc_status);
+    }
+  });
+
+  cpu_mask_t remaining_cpus = mp_get_online_mask() & ~cpu_num_to_mask(target_cpu);
+  size_t worker_index = 0;
+  while (remaining_cpus != 0) {
+    const cpu_num_t home_cpu = lowest_cpu_set(remaining_cpus);
+    remaining_cpus &= ~cpu_num_to_mask(home_cpu);
+
+    WorkerSlot& slot = state->workers[worker_index];
+    slot.state = state.get();
+    slot.home_cpu = home_cpu;
+    slot.thread = Thread::Create(
+        "mp-hotplug-soft-affinity-worker",
+        [](void* arg) -> int {
+          auto* w = static_cast<WorkerSlot*>(arg);
+          State* s = w->state;
+          const cpu_mask_t home_mask = cpu_num_to_mask(w->home_cpu);
+          const cpu_mask_t target_mask = cpu_num_to_mask(s->target_cpu);
+          Thread* self = Thread::Current::Get();
+          uint64_t step = 0;
+          while (!s->stop.load(ktl::memory_order_relaxed)) {
+            if (s->probe_target.load(ktl::memory_order_relaxed) && ((++step & 1u) == 0u)) {
+              self->SetSoftCpuAffinity(target_mask);
+            } else {
+              self->SetSoftCpuAffinity(home_mask);
+            }
+            s->iterations.fetch_add(1, ktl::memory_order_relaxed);
+            Thread::Current::Yield();
+          }
+          return 0;
+        },
+        &slot, DEFAULT_PRIORITY);
+    ASSERT_NONNULL(slot.thread, "worker create failed");
+    slot.thread->SetCpuAffinity(cpu_num_to_mask(home_cpu) | cpu_num_to_mask(target_cpu));
+    slot.thread->SetSoftCpuAffinity(cpu_num_to_mask(home_cpu));
+    if ((worker_index % 2) == 0) {
+      slot.thread->SetMigrateFn([&slot](Thread*, Thread::MigrateStage stage) {
+        switch (stage) {
+          case Thread::MigrateStage::Save:
+            if (slot.exited || slot.save_pending) {
+              slot.migrate_order_ok.store(false, ktl::memory_order_relaxed);
+            }
+            slot.save_pending = true;
+            slot.migrate_save_calls.fetch_add(1, ktl::memory_order_relaxed);
+            break;
+          case Thread::MigrateStage::Restore:
+            if (slot.exited || !slot.save_pending) {
+              slot.migrate_order_ok.store(false, ktl::memory_order_relaxed);
+            }
+            slot.save_pending = false;
+            break;
+          case Thread::MigrateStage::Exiting:
+            if (slot.exited) {
+              slot.migrate_order_ok.store(false, ktl::memory_order_relaxed);
+            }
+            slot.exited = true;
+            break;
+        }
+      });
+    }
+    slot.thread->Resume();
+    ++worker_index;
+  }
+
+  constexpr int kUnplugCycles = 30;
+  for (int i = 0; i < kUnplugCycles; ++i) {
+    state->probe_target.store(false, ktl::memory_order_relaxed);
+    Thread::Current::SleepRelative(ZX_USEC(250));
+    state->probe_target.store(true, ktl::memory_order_relaxed);
+    ASSERT_OK(mp_unplug_cpu_mask(cpu_num_to_mask(target_cpu), ZX_TIME_INFINITE),
+              "unplugging core failed");
+    state->probe_target.store(false, ktl::memory_order_relaxed);
+    ASSERT_OK(wait_for_cpu_offline(target_cpu), "waiting for core to go offline failed");
+    ASSERT_OK(hotplug_core(target_cpu), "hotplugging core failed");
+    wait_for_cpu_active(target_cpu);
+    ASSERT_OK(wait_for_cpu_dpc_runner(target_cpu), "waiting for core's dpc runner failed");
+  }
+
+  stop_workers.call();
+  EXPECT_GT(state->iterations.load(ktl::memory_order_relaxed), 0u);
+  uint64_t total_migrate_save_calls = 0;
+  for (const WorkerSlot& slot : state->workers) {
+    total_migrate_save_calls += slot.migrate_save_calls.load(ktl::memory_order_relaxed);
+    EXPECT_TRUE(slot.migrate_order_ok.load(ktl::memory_order_relaxed));
+  }
+  EXPECT_GT(total_migrate_save_calls, 0u);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(mp_hotplug_tests)
 UNITTEST("test unplug and hotplug cores one by one", mp_hotplug_test)
 UNITTEST("test mp_sync_exec while unplugging and hotplugging a core", mp_hotplug_sync_exec_test)
@@ -991,4 +1157,6 @@ UNITTEST("test unblocking unpinned migrating threads while their last core is of
          mp_hotplug_unblock_unpinned_migrate_while_offline_test)
 UNITTEST("test fair timeline integrity across repeated core unplug migrations",
          mp_hotplug_migrate_fair_timeline_test)
+UNITTEST("test soft affinity migration fallback during core unplug",
+         mp_hotplug_soft_affinity_migration_fallback_test)
 UNITTEST_END_TESTCASE(mp_hotplug_tests, "hotplug", "Tests for unplugging and hotplugging cores")
