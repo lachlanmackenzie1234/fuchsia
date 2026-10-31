@@ -262,6 +262,8 @@ pub async fn suspend_container(
 /// cost of closing the suspend tokens (which wakes every thread of the process). These are
 /// independent across processes, so spreading them over a few CPUs reduces the latency of
 /// container suspend and resume.
+// TODO(b/580132563): The workers only add CPU bandwidth to this per-process and per-thread
+// syscall work. Suspending the whole job in the kernel would reduce the work itself.
 const MAX_SUSPEND_WORKERS: usize = 4;
 
 /// The number of items (processes) up to which the suspend and resume work is done on the calling
@@ -279,8 +281,14 @@ const RESUME_CHUNK_SIZE: usize = 4;
 /// Thread name assigned to persistent `SUSPEND_WORKER_POOL` threads.
 const SUSPEND_WORKER_THREAD_NAME: &str = "starnix-suspend-worker";
 
-/// Zircon scheduler role applied to `SUSPEND_WORKER_POOL` threads so freshly thawed deadline
-/// threads cannot preempt the workers mid-close.
+/// Zircon scheduler role applied to `SUSPEND_WORKER_POOL` threads.
+///
+/// Products can map this role to a fair priority above the default and constrain the workers'
+/// CPU affinity (e.g. to keep them off low-performance cores or cores reserved for
+/// latency-sensitive work), so that suspend and resume progress quickly. The role is not
+/// expected to be a deadline profile: deadline threads, such as the wake-path threads the
+/// workers resume, are still expected to preempt the workers. If the product does not define the
+/// role, the workers run with the default fair priority.
 const SUSPEND_WORKER_ROLE_NAME: &str = "fuchsia.starnix.runner.suspend_worker";
 
 /// The signals that indicate that a thread will not run again until it is resumed.
