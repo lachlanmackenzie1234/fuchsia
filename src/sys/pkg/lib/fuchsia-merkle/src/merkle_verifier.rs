@@ -18,7 +18,7 @@ impl MerkleVerifier {
     ///
     /// Returns `IO_DATA_INTEGRITY` if the leaf hashes are inconsistent with the root.
     pub fn new(root: Hash, hashes: Box<[Hash]>) -> Result<Self, Status> {
-        if rebuild_root(&hashes) != root {
+        if hashes.is_empty() || rebuild_root(&hashes) != root {
             Err(Status::IO_DATA_INTEGRITY)
         } else {
             Ok(Self { hashes })
@@ -36,8 +36,21 @@ impl MerkleVerifier {
         if !offset.is_multiple_of(BLOCK_SIZE) {
             return Err(Status::INVALID_ARGS);
         }
+        if data.is_empty() {
+            if offset != 0 || self.hashes.len() != 1 {
+                return Err(Status::INVALID_ARGS);
+            }
+            return if self.hashes[0] == hash_block(&[], 0) {
+                Ok(())
+            } else {
+                Err(Status::IO_DATA_INTEGRITY)
+            };
+        }
         let ending = data.len().checked_add(offset).ok_or(Status::INVALID_ARGS)?;
-        if ending.div_ceil(BLOCK_SIZE) > self.hashes.len() {
+        let hash_end_index = ending.div_ceil(BLOCK_SIZE);
+        if (!ending.is_multiple_of(BLOCK_SIZE) && hash_end_index != self.hashes.len())
+            || hash_end_index > self.hashes.len()
+        {
             return Err(Status::INVALID_ARGS);
         }
 
@@ -183,6 +196,19 @@ impl ReadSizedMerkleVerifier {
             return Err(Status::INVALID_ARGS);
         }
 
+        let hashes_per_hash = self.read_size / BLOCK_SIZE;
+        if data.is_empty() {
+            if offset != 0 || self.hashes.len() != 1 {
+                return Err(Status::INVALID_ARGS);
+            }
+            let expected = hash_hashes(hashes_per_hash, 0, std::iter::once(hash_block(&[], 0)));
+            return if self.hashes[0] == expected {
+                Ok(())
+            } else {
+                Err(Status::IO_DATA_INTEGRITY)
+            };
+        }
+
         let hash_start_index = offset / self.read_size;
         let hash_end_index = end.div_ceil(self.read_size);
 
@@ -194,7 +220,6 @@ impl ReadSizedMerkleVerifier {
             return Err(Status::INVALID_ARGS);
         }
 
-        let hashes_per_hash = self.read_size / BLOCK_SIZE;
         for (i, chunk) in data.chunks(self.read_size).enumerate() {
             let hash = hash_hashes(
                 hashes_per_hash,
@@ -365,20 +390,69 @@ mod tests {
     #[test]
     fn test_verify_empty_data() {
         let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&[]);
+        assert_matches!(MerkleVerifier::new(root, Box::new([])), Err(Status::IO_DATA_INTEGRITY));
         let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
         verifier.verify(0, &[]).unwrap();
         assert_matches!(verifier.verify(1, &[]), Err(Status::INVALID_ARGS));
+        assert_matches!(verifier.verify(BLOCK_SIZE, &[]), Err(Status::INVALID_ARGS));
         assert_matches!(verifier.verify(0, &[0x00]), Err(Status::IO_DATA_INTEGRITY));
         assert_matches!(verifier.verify(0, &[0x01]), Err(Status::IO_DATA_INTEGRITY));
+
+        let read_verifier = ReadSizedMerkleVerifier::new(verifier, 16 * 1024).unwrap();
+        read_verifier.verify(0, &[]).unwrap();
+        assert_matches!(read_verifier.verify(16 * 1024, &[]), Err(Status::INVALID_ARGS));
+        assert_matches!(read_verifier.verify(0, &[0x00]), Err(Status::IO_DATA_INTEGRITY));
+    }
+
+    #[test]
+    fn test_reject_empty_slice_on_non_empty_blobs() {
+        for size in [1, BLOCK_SIZE, 16 * 1024, 16 * 1024 + 20] {
+            let data = create_data(size);
+            let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&data);
+            let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
+            let read_verifier = ReadSizedMerkleVerifier::new(verifier.clone(), 16 * 1024).unwrap();
+
+            let expected_zero_offset_status =
+                if size <= BLOCK_SIZE { Status::IO_DATA_INTEGRITY } else { Status::INVALID_ARGS };
+            assert_eq!(verifier.verify(0, &[]), Err(expected_zero_offset_status), "size={size}");
+            assert_matches!(verifier.verify(BLOCK_SIZE, &[]), Err(Status::INVALID_ARGS));
+
+            let expected_read_zero_offset_status =
+                if size <= 16 * 1024 { Status::IO_DATA_INTEGRITY } else { Status::INVALID_ARGS };
+            assert_eq!(
+                read_verifier.verify(0, &[]),
+                Err(expected_read_zero_offset_status),
+                "read_verifier size={size}"
+            );
+            assert_matches!(read_verifier.verify(16 * 1024, &[]), Err(Status::INVALID_ARGS));
+        }
     }
 
     #[test]
     fn test_verify_with_invalid_args() {
         let data = create_data(16 * 1024 + 20);
         let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&data);
-        let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
+        let verifier = MerkleVerifier::new(root, leaf_hashes.clone().into_boxed_slice()).unwrap();
         // Offset isn't aligned.
         assert_matches!(verifier.verify(1, &data[1..]), Err(Status::INVALID_ARGS));
+        // Non-final unaligned slice lengths must be rejected with INVALID_ARGS, even if the leaf
+        // hash is forged from the short slice.
+        assert_matches!(verifier.verify(0, &data[0..100]), Err(Status::INVALID_ARGS));
+        assert_matches!(verifier.verify(0, &data[0..BLOCK_SIZE + 1]), Err(Status::INVALID_ARGS));
+        assert_matches!(
+            verifier.verify(BLOCK_SIZE, &data[BLOCK_SIZE..BLOCK_SIZE + 100]),
+            Err(Status::INVALID_ARGS)
+        );
+        let mut forged_hashes = leaf_hashes;
+        forged_hashes[0] = hash_block(&data[0..100], 0);
+        let forged_root = rebuild_root(&forged_hashes);
+        let forged_verifier =
+            MerkleVerifier::new(forged_root, forged_hashes.into_boxed_slice()).unwrap();
+        assert_matches!(
+            forged_verifier.verify(BLOCK_SIZE, &data[BLOCK_SIZE..BLOCK_SIZE * 2]),
+            Ok(())
+        );
+        assert_matches!(forged_verifier.verify(0, &data[0..100]), Err(Status::INVALID_ARGS));
         // Too much data.
         assert_matches!(verifier.verify(8192, &data), Err(Status::INVALID_ARGS));
         // Still too much data but it's within the same block as the original data it's detected
