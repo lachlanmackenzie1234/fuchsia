@@ -939,9 +939,21 @@ TEST_P(SocketOptsTest, NegativeTOS) {
   fbl::unique_fd s;
   ASSERT_TRUE(s = NewSocket()) << strerror(errno);
 
+  SockOption t = GetTOSOption();
+  // Sockets default to 0 so setting a non-zero value first ensures setting -1
+  // below updates the option.
+  int initial = 0xC0;
+  ASSERT_EQ(setsockopt(s.get(), t.level, t.option, &initial, sizeof(initial)), 0)
+      << strerror(errno);
+  {
+    int get = 0;
+    socklen_t get_sz = sizeof(get);
+    ASSERT_EQ(getsockopt(s.get(), t.level, t.option, &get, &get_sz), 0) << strerror(errno);
+    ASSERT_EQ(get_sz, sizeof(int));
+    ASSERT_EQ(get, initial);
+  }
   int set = -1;
   socklen_t set_sz = sizeof(set);
-  SockOption t = GetTOSOption();
   EXPECT_EQ(setsockopt(s.get(), t.level, t.option, &set, set_sz), 0) << strerror(errno);
   int expect;
   if (IsIPv6()) {

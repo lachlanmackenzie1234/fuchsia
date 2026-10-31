@@ -538,7 +538,7 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
                     None,
                     conn_addr,
                     seg.into_empty(),
-                    &TcpIpSockOptions { marks: *marks },
+                    &TcpIpSockOptions { marks: *marks, ..Default::default() },
                 );
             }
             None

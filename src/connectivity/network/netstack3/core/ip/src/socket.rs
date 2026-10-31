@@ -2159,7 +2159,7 @@ pub(crate) mod testutil {
                 proto: *proto,
                 ttl: options.hop_limit(remote_ip),
                 mtu: options.mtu(),
-                dscp_and_ecn: DscpAndEcn::default(),
+                dscp_and_ecn: options.dscp_and_ecn(),
             })
         }
     }

@@ -9,7 +9,7 @@ use core::time::Duration;
 
 use derivative::Derivative;
 use net_types::SpecifiedAddr;
-use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Mtu};
+use net_types::ip::{GenericOverIp, Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::{
     ChecksumOffloadResult, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms,
     UnscaledWindowSize, WeakDeviceIdentifier, WindowSize,
@@ -320,11 +320,28 @@ impl<'a, R, S> BuffersRefMut<'a, R, S> {
     }
 }
 
+/// Default traffic class for outgoing TCP segments.
+const DEFAULT_DSCP_AND_ECN: DscpAndEcn = DscpAndEcn::default();
+
 /// The IP sock options used by TCP.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct TcpIpSockOptions {
     /// Socket marks used for routing.
     pub marks: Marks,
+    /// Traffic class used for outgoing IPv4 segments.
+    pub ipv4_dscp_and_ecn: Option<DscpAndEcn>,
+    /// Traffic class used for outgoing IPv6 segments.
+    pub ipv6_dscp_and_ecn: Option<DscpAndEcn>,
+}
+
+impl TcpIpSockOptions {
+    pub(crate) fn dscp_and_ecn_for_version(&self, ip_version: IpVersion) -> DscpAndEcn {
+        let dscp_and_ecn = match ip_version {
+            IpVersion::V4 => self.ipv4_dscp_and_ecn,
+            IpVersion::V6 => self.ipv6_dscp_and_ecn,
+        };
+        dscp_and_ecn.unwrap_or(DEFAULT_DSCP_AND_ECN)
+    }
 }
 
 impl<I: Ip> RouteResolutionOptions<I> for TcpIpSockOptions {
@@ -351,7 +368,7 @@ impl<I: IpExt> SendOptions<I> for TcpIpSockOptions {
     }
 
     fn dscp_and_ecn(&self) -> DscpAndEcn {
-        DscpAndEcn::default()
+        self.dscp_and_ecn_for_version(I::VERSION)
     }
 
     fn mtu(&self) -> Mtu {

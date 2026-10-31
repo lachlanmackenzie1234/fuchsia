@@ -29,6 +29,7 @@ use netstack3_core::tcp::{
     OriginalDestinationError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions,
     TcpBindingsTypes, UnboundInfo,
 };
+use packet_formats::ip::DscpAndEcn;
 use packet_formats::utils::NonZeroDuration;
 use zx::{self as zx, Peered as _};
 
@@ -778,6 +779,36 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
         ctx.api().tcp().reuseaddr(id)
     }
 
+    fn set_dscp_and_ecn(self, ip_version: IpVersion, value: Option<u8>) -> Result<(), ErrnoError> {
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
+        ctx.api()
+            .tcp()
+            .set_dscp_and_ecn(id, value.map(DscpAndEcn::from), ip_version)
+            .map_err(IntoErrno::into_errno_error)
+    }
+
+    fn dscp_and_ecn(self, ip_version: IpVersion) -> Result<u8, ErrnoError> {
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
+        ctx.api()
+            .tcp()
+            .dscp_and_ecn(id, ip_version)
+            .map(DscpAndEcn::raw)
+            .map_err(IntoErrno::into_errno_error)
+            .map_err(|e| {
+                e.map_errno(|e| match e {
+                    // getsockopt fails with EOPNOTSUPP instead of ENOPROTOOPT.
+                    fposix::Errno::Enoprotoopt => fposix::Errno::Eopnotsupp,
+                    e => e,
+                })
+            })
+    }
+
     fn get_original_destination(
         self,
         ip_version: IpVersion,
@@ -1078,13 +1109,16 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                     .send(self.shutdown(mode).await.log_errno_error("stream::Shutdown"))
                     .unwrap_or_log("failed to respond");
             }
-            fposix_socket::StreamSocketRequest::SetIpTypeOfService { value: _, responder } => {
-                warn!("stream::SetIpTypeOfService is not supported, returning Ok(())");
-                responder.send(Ok(())).unwrap_or_log("failed to respond");
+            fposix_socket::StreamSocketRequest::SetIpTypeOfService { value, responder } => {
+                let result = self
+                    .set_dscp_and_ecn(IpVersion::V4, Some(value))
+                    .log_errno_error("stream::SetIpTypeOfService");
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::GetIpTypeOfService { responder } => {
-                warn!("stream::GetIpTypeOfService is not supported, returning Ok(0)");
-                responder.send(Ok(0)).unwrap_or_log("failed to respond");
+                let result =
+                    self.dscp_and_ecn(IpVersion::V4).log_errno_error("stream::GetIpTypeOfService");
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetIpTtl { value: _, responder } => {
                 respond_not_supported!("stream::SetIpTtl", responder);
@@ -1235,24 +1269,16 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
             fposix_socket::StreamSocketRequest::GetIpv6ReceiveTrafficClass { responder } => {
                 respond_not_supported!("stream::GetIpv6ReceiveTrafficClass", responder);
             }
-            fposix_socket::StreamSocketRequest::SetIpv6TrafficClass { value: _, responder } => {
-                let result = match I::VERSION {
-                    IpVersion::V4 => Err(fposix::Errno::Eopnotsupp),
-                    IpVersion::V6 => {
-                        warn!("stream::SetIpv6TrafficClass is not supported, returning Ok(())");
-                        Ok(())
-                    }
-                };
+            fposix_socket::StreamSocketRequest::SetIpv6TrafficClass { value, responder } => {
+                let value: Option<u8> = value.into_core();
+                let result = self
+                    .set_dscp_and_ecn(IpVersion::V6, value)
+                    .log_errno_error("stream::SetIpv6TrafficClass");
                 responder.send(result).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::GetIpv6TrafficClass { responder } => {
-                let result = match I::VERSION {
-                    IpVersion::V4 => Err(fposix::Errno::Eopnotsupp),
-                    IpVersion::V6 => {
-                        warn!("stream::GetIpv6TrafficClass is not supported, returning Ok(0)");
-                        Ok(0)
-                    }
-                };
+                let result =
+                    self.dscp_and_ecn(IpVersion::V6).log_errno_error("stream::GetIpv6TrafficClass");
                 responder.send(result).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetIpv6ReceivePacketInfo {
