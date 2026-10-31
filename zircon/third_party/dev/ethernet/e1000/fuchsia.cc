@@ -265,7 +265,6 @@ zx::result<> Driver::Start(fdf::DriverContext context) {
     fdf::error("failed to configure irqs");
     return zx::error(status);
   }
-  adapter->irq_mode = fuchsia_hardware_pci::InterruptMode(irq_mode);
 
   if (zx_status_t status = e1000_pci_map_interrupt(pci, 0, adapter->irq.reset_and_get_address());
       status != ZX_OK) {
@@ -341,14 +340,7 @@ void Device<RxDescriptor>::HandleIrq(async_dispatcher_t* dispatcher, async::IrqB
     return;
   }
 
-  auto ack_interrupt = fit::defer([&] {
-    adapter_->irq.ack();
-    if (adapter_->irq_mode == fuchsia_hardware_pci::InterruptMode::kLegacy) {
-      if (zx_status_t status = e1000_pci_ack_interrupt(adapter_->osdep.pci); status != ZX_OK) {
-        fdf::error("Failed to ack interrupt: {}", zx_status_get_string(status));
-      }
-    }
-  });
+  auto ack_interrupt = fit::defer([&] { adapter_->irq.ack(); });
 
   fdf::Arena arena('E1KD');
 

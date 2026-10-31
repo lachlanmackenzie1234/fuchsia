@@ -133,10 +133,6 @@ zx_status_t e1000_pci_set_bus_mastering(const struct e1000_pci* pci, bool enable
   return pci->pci->SetBusMastering(enabled);
 }
 
-zx_status_t e1000_pci_ack_interrupt(const struct e1000_pci* pci) {
-  return pci->pci->AckInterrupt();
-}
-
 zx_status_t e1000_pci_read_config16(const struct e1000_pci* pci, uint16_t offset,
                                     uint16_t* out_value) {
   return pci->pci->ReadConfig16(offset, out_value);

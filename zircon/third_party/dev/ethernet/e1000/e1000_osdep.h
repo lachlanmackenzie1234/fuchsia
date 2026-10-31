@@ -133,7 +133,6 @@ typedef struct pci_device_info {
 
 // A set of C wrappers around the C++ PCI methods.
 zx_status_t e1000_pci_set_bus_mastering(const struct e1000_pci* pci, bool enabled);
-zx_status_t e1000_pci_ack_interrupt(const struct e1000_pci* pci);
 zx_status_t e1000_pci_read_config16(const struct e1000_pci* pci, uint16_t offset,
                                     uint16_t* out_value);
 zx_status_t e1000_pci_get_device_info(const struct e1000_pci* pci, pci_device_info_t* out_info);
