@@ -13,6 +13,7 @@ ffx_plugin("ffx_target_discover") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/process:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fuchsia-async",
@@ -20,7 +21,6 @@ ffx_plugin("ffx_target_discover") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:nix",
     "//third_party/rust_crates:notify",
     "//third_party/rust_crates:tokio",
   ]

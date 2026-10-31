@@ -16,6 +16,7 @@ template("ffx_pkg_lib") {
 
     deps = [
       "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/process:lib",
       "//src/developer/ffx/lib/target_net:lib",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/lib/fuchsia-async",

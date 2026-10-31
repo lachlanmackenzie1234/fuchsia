@@ -42,6 +42,7 @@ rustc_library(
         "//src/developer/ffx/lib/fastboot_file_discovery:lib",
         "//src/developer/ffx/lib/manual_targets:lib",
         "//src/developer/ffx/lib/mdns_discovery:lib",
+        "//src/developer/ffx/lib/process:lib",
         "//src/developer/ffx/lib/uart_driver_api:lib",
         "//src/developer/ffx/lib/usb_driver_api:lib",
         "//src/developer/ffx/lib/usb_fastboot_discovery:lib",

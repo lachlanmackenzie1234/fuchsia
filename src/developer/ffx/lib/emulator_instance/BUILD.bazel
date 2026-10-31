@@ -27,10 +27,10 @@ rustc_library(
     with_host_unit_tests = True,
     deps = [
         "//build/sdk/meta:rust",
+        "//src/developer/ffx/lib/process:lib",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:byteorder",
         "//third_party/rust_crates/vendor:log",
-        "//third_party/rust_crates/vendor:nix",
         "//third_party/rust_crates/vendor:schemars",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
