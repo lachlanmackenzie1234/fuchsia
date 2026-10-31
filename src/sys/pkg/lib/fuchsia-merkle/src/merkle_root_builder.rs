@@ -12,10 +12,12 @@ const EMPTY_MERKLE_TREE_ROOT: Hash = Hash::from_array([
     0x38, 0xf9, 0xe3, 0xab, 0x99, 0x4b, 0x00, 0xaf, 0x08, 0xe5, 0xa3, 0xbf, 0xfe, 0x55, 0xfd, 0x8b,
 ]);
 
+const INTERNAL_BYTES_PER_HASH: u32 = (HASHES_PER_BLOCK * HASH_SIZE) as u32;
+
 /// Hashes blocks of hashes.
 struct LevelHasher {
     hasher: Sha256,
-    offset: usize,
+    offset: u64,
 }
 
 /// Calculates the merkle root for a given set of data. The leaf hashes of the merkle tree can
@@ -26,7 +28,7 @@ struct LevelHasher {
 /// [`BufferedMerkleRootBuilder`] should be used instead.
 pub struct MerkleRootBuilder<T> {
     levels: Vec<LevelHasher>,
-    offset: usize,
+    offset: u64,
     leaf_hash_collector: T,
 
     /// Holds the root of the tree when the offset of every level of the tree is a multiple of
@@ -80,14 +82,14 @@ impl<T: LeafHashCollector> MerkleRootBuilder<T> {
         // needs padding so `bubbling_digest` is guaranteed to be set by the end of the loop.
         let mut bubbling_digest: Option<[u8; HASH_SIZE]> = None;
         for mut level_hasher in self.levels {
-            if level_hasher.offset.is_multiple_of(BLOCK_SIZE) && bubbling_digest.is_none() {
+            if level_hasher.offset.is_multiple_of(BLOCK_SIZE as u64) && bubbling_digest.is_none() {
                 continue;
             }
             if let Some(digest) = bubbling_digest.take() {
                 level_hasher.hasher.update(&digest);
-                level_hasher.offset += HASH_SIZE;
+                level_hasher.offset += HASH_SIZE as u64;
             }
-            let rem = level_hasher.offset % BLOCK_SIZE;
+            let rem = (level_hasher.offset % (BLOCK_SIZE as u64)) as usize;
             if rem != 0 {
                 update_with_zeros(&mut level_hasher.hasher, BLOCK_SIZE - rem);
             }
@@ -98,28 +100,33 @@ impl<T: LeafHashCollector> MerkleRootBuilder<T> {
 
     /// Adds a hash of a single block of data to the merkle tree.
     pub(crate) fn push_hash(&mut self, mut digest: Hash) {
-        self.offset += BLOCK_SIZE;
+        self.offset = self
+            .offset
+            .checked_add(BLOCK_SIZE as u64)
+            .expect("Merkle tree data size overflowed u64");
         self.leaf_hash_collector.add_leaf_hash(digest);
 
         if let Some(root) = self.root.take() {
             // The root was set but more data has now been added. Create a new level containing the
             // root.
-            let mut hasher = make_hash_hasher(HASHES_PER_BLOCK, self.levels.len() + 1, 0);
+            let mut hasher =
+                make_hash_hasher(INTERNAL_BYTES_PER_HASH, (self.levels.len() + 1) as u64, 0);
             hasher.update(root.as_bytes());
-            self.levels.push(LevelHasher { hasher, offset: HASH_SIZE });
+            self.levels.push(LevelHasher { hasher, offset: HASH_SIZE as u64 });
         }
 
         for (level, level_hasher) in self.levels.iter_mut().enumerate() {
             level_hasher.hasher.update(digest.as_bytes());
-            level_hasher.offset += HASH_SIZE;
+            level_hasher.offset += HASH_SIZE as u64;
 
             // Only bubble the hash up to the next level when this level completes a block.
-            if !level_hasher.offset.is_multiple_of(BLOCK_SIZE) {
+            if !level_hasher.offset.is_multiple_of(BLOCK_SIZE as u64) {
                 return;
             }
             // Initialize a new hasher for this level and bubble the old hasher up to the next
             // level.
-            let new_hasher = make_hash_hasher(HASHES_PER_BLOCK, level + 1, level_hasher.offset);
+            let new_hasher =
+                make_hash_hasher(INTERNAL_BYTES_PER_HASH, (level + 1) as u64, level_hasher.offset);
             let old_hasher = std::mem::replace(&mut level_hasher.hasher, new_hasher);
             digest = Hash::from_array(old_hasher.digest());
         }
@@ -346,7 +353,7 @@ mod tests {
     #[test_case(8192 * 256 * 2, &[8192 * 2, 64], false; "4194304")]
     #[test_case(8192 * 256 * 255, &[8192 * 255, 8192 - 32], false; "534773760")]
     #[test_case(8192 * 256 * 256, &[8192 * 256, 8192], true; "536870912")]
-    fn test_merkle_tree_structure(size: usize, expected_offsets: &[usize], is_root_set: bool) {
+    fn test_merkle_tree_structure(size: usize, expected_offsets: &[u64], is_root_set: bool) {
         let mut builder = MerkleRootBuilder::default();
         add_blocks(size / BLOCK_SIZE, &mut builder);
         let actual_offsets = builder.levels.iter().map(|level| level.offset).collect::<Vec<_>>();
@@ -445,15 +452,19 @@ mod tests {
         // zero-padded level-1 block containing the remaining `leaf_count - 65280` leaves.
         let mut level_1_hashes = Vec::with_capacity(HASHES_PER_BLOCK);
         for block_idx in 0..(HASHES_PER_BLOCK - 1) {
-            let mut h1 = make_hash_hasher(HASHES_PER_BLOCK, 1, block_idx * BLOCK_SIZE);
+            let mut h1 =
+                make_hash_hasher(INTERNAL_BYTES_PER_HASH, 1, (block_idx * BLOCK_SIZE) as u64);
             for _ in 0..HASHES_PER_BLOCK {
                 h1.update(leaf.as_bytes());
             }
             level_1_hashes.push(Hash::from_array(h1.digest()));
         }
         let tail_leaves = leaf_count - (HASHES_PER_BLOCK - 1) * HASHES_PER_BLOCK;
-        let mut h1_last =
-            make_hash_hasher(HASHES_PER_BLOCK, 1, (HASHES_PER_BLOCK - 1) * BLOCK_SIZE);
+        let mut h1_last = make_hash_hasher(
+            INTERNAL_BYTES_PER_HASH,
+            1,
+            ((HASHES_PER_BLOCK - 1) * BLOCK_SIZE) as u64,
+        );
         for _ in 0..tail_leaves {
             h1_last.update(leaf.as_bytes());
         }
@@ -462,7 +473,7 @@ mod tests {
         assert_eq!(level_1_hashes.len(), HASHES_PER_BLOCK);
 
         // Level 2 has exactly 256 hashes (8,192 bytes) and must NOT receive 8,192 extra zero bytes.
-        let mut h2 = make_hash_hasher(HASHES_PER_BLOCK, 2, 0);
+        let mut h2 = make_hash_hasher(INTERNAL_BYTES_PER_HASH, 2, 0);
         for h in &level_1_hashes {
             h2.update(h.as_bytes());
         }

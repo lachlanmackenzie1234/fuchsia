@@ -16,9 +16,16 @@ pub struct MerkleVerifier {
 impl MerkleVerifier {
     /// Constructs a [`MerkleVerifier`] from the root and leaf hashes of a merkle tree.
     ///
-    /// Returns `IO_DATA_INTEGRITY` if the leaf hashes are inconsistent with the root.
+    /// Returns `INVALID_ARGS` if the leaf hash count would overflow a 64-bit byte offset, or
+    /// `IO_DATA_INTEGRITY` if the leaf hashes are empty or inconsistent with the root.
     pub fn new(root: Hash, hashes: Box<[Hash]>) -> Result<Self, Status> {
-        if hashes.is_empty() || rebuild_root(&hashes) != root {
+        if hashes.is_empty() {
+            return Err(Status::IO_DATA_INTEGRITY);
+        }
+        if (hashes.len() as u64).checked_mul(BLOCK_SIZE as u64).is_none() {
+            return Err(Status::INVALID_ARGS);
+        }
+        if rebuild_root(&hashes) != root {
             Err(Status::IO_DATA_INTEGRITY)
         } else {
             Ok(Self { hashes })
@@ -55,7 +62,7 @@ impl MerkleVerifier {
         }
 
         for (i, chunk) in data.chunks(BLOCK_SIZE).enumerate() {
-            let hash = hash_block(chunk, offset + i * BLOCK_SIZE);
+            let hash = hash_block(chunk, (offset + i * BLOCK_SIZE) as u64);
             if self.hashes[offset / BLOCK_SIZE + i] != hash {
                 return Err(Status::IO_DATA_INTEGRITY);
             }
@@ -97,7 +104,7 @@ impl MerkleVerifier {
             let block_unaligned_len =
                 std::cmp::min(block_buffer_len, unaligned_len.saturating_sub(i * BLOCK_SIZE));
             let hash = hash_block_aligned(
-                offset + i * BLOCK_SIZE,
+                (offset + i * BLOCK_SIZE) as u64,
                 block,
                 block_buffer_len,
                 block_unaligned_len,
@@ -134,10 +141,11 @@ fn rebuild_root(leaf_hashes: &[Hash]) -> Hash {
 
 fn hash_hashes(
     hashes_per_hash: usize,
+    bytes_per_hash: u32,
     index: usize,
     hashes: impl ExactSizeIterator<Item = Hash>,
 ) -> Hash {
-    let mut hasher = make_hash_hasher(hashes_per_hash, 1, index * hashes_per_hash * HASH_SIZE);
+    let mut hasher = make_hash_hasher(bytes_per_hash, 1, (index as u64) * (bytes_per_hash as u64));
     let hash_count = hashes.len();
     for hash in hashes {
         hasher.update(hash.as_bytes());
@@ -161,6 +169,7 @@ fn hash_hashes(
 #[derive(Clone)]
 pub struct ReadSizedMerkleVerifier {
     read_size: usize,
+    bytes_per_hash: u32,
     hashes: Box<[Hash]>,
 }
 
@@ -168,18 +177,32 @@ impl ReadSizedMerkleVerifier {
     /// Constructs a [`ReadSizedMerkleVerifier`] from an existing [`MerkleVerifier`] and a
     /// `read_size`.
     ///
-    /// Returns an error if `read_size` is not a multiple of [`BLOCK_SIZE`].
+    /// Returns an error if `read_size` is zero, not a multiple of [`BLOCK_SIZE`], or so large that
+    /// its level-1 hash block size exceeds `u32::MAX`.
     pub fn new(verifier: MerkleVerifier, read_size: usize) -> Result<Self, Status> {
         if read_size == 0 || !read_size.is_multiple_of(BLOCK_SIZE) {
             return Err(Status::INVALID_ARGS);
         }
         let hashes_per_hash = read_size / BLOCK_SIZE;
+        let bytes_per_hash = hashes_per_hash
+            .checked_mul(HASH_SIZE)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or(Status::INVALID_ARGS)?;
         let mut level_1_hashes =
             Vec::with_capacity(verifier.hashes.len().div_ceil(hashes_per_hash));
         for (i, hashes) in verifier.hashes.chunks(hashes_per_hash).enumerate() {
-            level_1_hashes.push(hash_hashes(hashes_per_hash, i, hashes.iter().copied()));
+            level_1_hashes.push(hash_hashes(
+                hashes_per_hash,
+                bytes_per_hash,
+                i,
+                hashes.iter().copied(),
+            ));
         }
-        Ok(ReadSizedMerkleVerifier { read_size, hashes: level_1_hashes.into_boxed_slice() })
+        Ok(ReadSizedMerkleVerifier {
+            read_size,
+            bytes_per_hash,
+            hashes: level_1_hashes.into_boxed_slice(),
+        })
     }
 
     /// Verifies a `data` slice against the Merkle tree, assuming it corresponds to original data
@@ -201,7 +224,12 @@ impl ReadSizedMerkleVerifier {
             if offset != 0 || self.hashes.len() != 1 {
                 return Err(Status::INVALID_ARGS);
             }
-            let expected = hash_hashes(hashes_per_hash, 0, std::iter::once(hash_block(&[], 0)));
+            let expected = hash_hashes(
+                hashes_per_hash,
+                self.bytes_per_hash,
+                0,
+                std::iter::once(hash_block(&[], 0)),
+            );
             return if self.hashes[0] == expected {
                 Ok(())
             } else {
@@ -223,9 +251,10 @@ impl ReadSizedMerkleVerifier {
         for (i, chunk) in data.chunks(self.read_size).enumerate() {
             let hash = hash_hashes(
                 hashes_per_hash,
+                self.bytes_per_hash,
                 hash_start_index + i,
                 chunk.chunks(BLOCK_SIZE).enumerate().map(|(j, chunk)| {
-                    hash_block(chunk, offset + self.read_size * i + j * BLOCK_SIZE)
+                    hash_block(chunk, (offset + self.read_size * i + j * BLOCK_SIZE) as u64)
                 }),
             );
             if hash != self.hashes[hash_start_index + i] {
@@ -277,6 +306,7 @@ impl ReadSizedMerkleVerifier {
             let block_base_offset = offset + i * self.read_size;
             let hash = hash_hashes(
                 hashes_per_hash,
+                self.bytes_per_hash,
                 hash_start_index + i,
                 chunk.chunks(BLOCK_SIZE).enumerate().map(|(j, block)| {
                     let block_buffer_len = block.len();
@@ -285,7 +315,7 @@ impl ReadSizedMerkleVerifier {
                         unaligned_len.saturating_sub(i * self.read_size + j * BLOCK_SIZE),
                     );
                     hash_block_aligned(
-                        block_base_offset + j * BLOCK_SIZE,
+                        (block_base_offset + j * BLOCK_SIZE) as u64,
                         block,
                         block_buffer_len,
                         block_unaligned_len,
@@ -480,6 +510,60 @@ mod tests {
         );
         assert_matches!(
             ReadSizedMerkleVerifier::new(verifier, 100 * 1024),
+            Err(Status::INVALID_ARGS)
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn test_read_size_overflowing_u32_identity_length_rejected() {
+        const READ_SIZE: usize = BLOCK_SIZE * 2;
+        const MAX_BLOCK_ALIGNED: usize = (usize::MAX / BLOCK_SIZE) * BLOCK_SIZE;
+        const MAX_READ_ALIGNED: usize = (usize::MAX / READ_SIZE) * READ_SIZE;
+        let data = create_data(100);
+        let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&data);
+        let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
+
+        // At `read_size = 1 TiB` (`1 << 40`), `hashes_per_hash = 1 << 27` and
+        // `bytes_per_hash = 1 << 32`, which previously wrapped to `0u32` inside `make_identity`.
+        assert_matches!(
+            ReadSizedMerkleVerifier::new(verifier.clone(), 1usize << 40),
+            Err(Status::INVALID_ARGS)
+        );
+        assert_matches!(
+            ReadSizedMerkleVerifier::new(verifier.clone(), (1usize << 40) + BLOCK_SIZE),
+            Err(Status::INVALID_ARGS)
+        );
+        // Near `usize::MAX`, `hashes_per_hash * HASH_SIZE` overflows `usize`.
+        assert_matches!(
+            ReadSizedMerkleVerifier::new(verifier.clone(), MAX_BLOCK_ALIGNED),
+            Err(Status::INVALID_ARGS)
+        );
+
+        let read_verifier = ReadSizedMerkleVerifier::new(verifier.clone(), READ_SIZE).unwrap();
+        let block_buf = [0u8; BLOCK_SIZE];
+        let read_buf = [0u8; READ_SIZE];
+        // `MAX_BLOCK_ALIGNED` is `usize::MAX - (BLOCK_SIZE - 1)`, so adding `BLOCK_SIZE` overflows
+        // `usize` in `checked_add`.
+        assert_matches!(verifier.verify(MAX_BLOCK_ALIGNED, &block_buf), Err(Status::INVALID_ARGS));
+        assert_matches!(verifier.verify(usize::MAX, &[0xab]), Err(Status::INVALID_ARGS));
+        assert_matches!(
+            verifier.verify_aligned(MAX_BLOCK_ALIGNED, PtrByteSlice::from(&block_buf[..]), 100),
+            Err(Status::INVALID_ARGS)
+        );
+        // `MAX_READ_ALIGNED` is `usize::MAX - (READ_SIZE - 1)`, so adding `READ_SIZE` overflows
+        // `usize` in `checked_add`.
+        assert_matches!(
+            read_verifier.verify(MAX_READ_ALIGNED, &read_buf),
+            Err(Status::INVALID_ARGS)
+        );
+        assert_matches!(read_verifier.verify(usize::MAX, &[0xab]), Err(Status::INVALID_ARGS));
+        assert_matches!(
+            read_verifier.verify_aligned(
+                MAX_READ_ALIGNED,
+                PtrByteSlice::from(&read_buf[..]),
+                BLOCK_SIZE + 100
+            ),
             Err(Status::INVALID_ARGS)
         );
     }
