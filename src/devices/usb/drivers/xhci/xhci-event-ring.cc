@@ -1041,9 +1041,18 @@ void EventRing::HandleTransferInterrupt() {
                  : std::get<usb::FidlRequest>(req_var).length();
   }
 
-  if (!hci_->HasCoherentCache() && std::holds_alternative<Request>(req_var)) {
-    usb_request_t* req = std::get<Request>(req_var).request();
-    usb_request_cache_flush_invalidate(req, 0, req->header.length);
+  if (!hci_->HasCoherentCache()) {
+    if (std::holds_alternative<Request>(req_var)) {
+      usb_request_t* req = std::get<Request>(req_var).request();
+      usb_request_cache_flush_invalidate(req, 0, req->header.length);
+    } else if (length > 0) {
+      zx_status_t status = std::get<usb::FidlRequest>(req_var).CacheFlushInvalidate(
+          [ep](const auto& buffer) { return ep->GetMapped(buffer); });
+      if (status != ZX_OK) {
+        fdf::warn("HandleTransferInterrupt CacheFlushInvalidate failed: {}",
+                  zx_status_get_string(status));
+      }
+    }
   }
 
   ep->RequestComplete(ZX_OK, length, std::move(req_var));

@@ -386,10 +386,22 @@ void Endpoint::ControlRequestSetupPhase(UsbRequestState* state) {
 
 void Endpoint::ControlRequestCommit(UsbRequestState* state) {
   // Start the transaction!
-  if (std::holds_alternative<Request>(*state->context->request) && !hci_->HasCoherentCache()) {
-    usb_request_cache_flush_invalidate(
-        std::get<Request>(*state->context->request).request(), 0,
-        std::get<Request>(*state->context->request).request()->header.length);
+  if (!hci_->HasCoherentCache()) {
+    if (std::holds_alternative<Request>(*state->context->request)) {
+      usb_request_cache_flush_invalidate(
+          std::get<Request>(*state->context->request).request(), 0,
+          std::get<Request>(*state->context->request).request()->header.length);
+    } else {
+      auto& fidl_req = std::get<usb::FidlRequest>(*state->context->request);
+      if (fidl_req.length() > 0) {
+        zx_status_t status =
+            fidl_req.CacheFlushInvalidate([this](const auto& buffer) { return GetMapped(buffer); });
+        if (status != ZX_OK) {
+          fdf::warn("ControlRequestCommit CacheFlushInvalidate failed: {}",
+                    zx_status_get_string(status));
+        }
+      }
+    }
   }
   transfer_ring_.AssignContext(state->status_trb_ptr, std::move(state->context), state->first_trb,
                                state->setup);
@@ -684,12 +696,23 @@ zx_status_t Endpoint::ContinueNormalTransaction(UsbRequestState* state) {
 void Endpoint::CommitNormalTransaction(UsbRequestState* state) {
   hw_mb();
   // Start the transaction!
-  if (std::holds_alternative<Request>(*state->context->request) && !hci_->HasCoherentCache()) {
-    usb_request_cache_flush_invalidate(
-        std::get<Request>(*state->context->request).request(), 0,
-        std::get<Request>(*state->context->request).request()->header.length);
+  if (!hci_->HasCoherentCache()) {
+    if (std::holds_alternative<Request>(*state->context->request)) {
+      usb_request_cache_flush_invalidate(
+          std::get<Request>(*state->context->request).request(), 0,
+          std::get<Request>(*state->context->request).request()->header.length);
+    } else {
+      auto& fidl_req = std::get<usb::FidlRequest>(*state->context->request);
+      if (fidl_req.length() > 0) {
+        zx_status_t status =
+            fidl_req.CacheFlushInvalidate([this](const auto& buffer) { return GetMapped(buffer); });
+        if (status != ZX_OK) {
+          fdf::warn("CommitNormalTransaction CacheFlushInvalidate failed: {}",
+                    zx_status_get_string(status));
+        }
+      }
+    }
   }
-  // In FIDL mode, we expect cache to be flushed already
   transfer_ring_.AssignContext(state->last_trb, std::move(state->context), state->first_trb);
   Control::FromTRB(state->first_trb).set_Cycle(state->first_cycle).ToTrb(state->first_trb);
 

@@ -95,6 +95,42 @@ zx::result<std::vector<dma_buffer::PhysIter>> EndpointServer::get_iter(RequestVa
   return zx::success(std::move(iters));
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+zx::result<std::optional<usb::MappedVmo>> EndpointServer::GetMapped(
+    const fuchsia_hardware_usb_request::Buffer& buffer) const {
+  std::scoped_lock lock(lock_);
+  if (buffer.data().has_value()) {
+    return zx::ok(std::nullopt);
+  }
+  if (buffer.vmo_id().has_value()) {
+    auto it = registered_vmos_.find(buffer.vmo_id().value());
+    if (it != registered_vmos_.end() && it->second->virt_addr != 0) {
+      return zx::ok(usb::MappedVmo{it->second->virt_addr, it->second->size});
+    }
+
+    auto prune_it = unregistered_in_flight_vmos_.begin();
+    while (prune_it != unregistered_in_flight_vmos_.end()) {
+      if (prune_it->second.expired()) {
+        prune_it = unregistered_in_flight_vmos_.erase(prune_it);
+      } else {
+        ++prune_it;
+      }
+    }
+    for (auto rit = unregistered_in_flight_vmos_.rbegin();
+         rit != unregistered_in_flight_vmos_.rend(); ++rit) {
+      if (rit->first == buffer.vmo_id().value()) {
+        if (auto locked = rit->second.lock()) {
+          if (locked->virt_addr != 0) {
+            return zx::ok(usb::MappedVmo{locked->virt_addr, locked->size});
+          }
+        }
+      }
+    }
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
+}
+
 void EndpointServer::Connect(async_dispatcher_t* dispatcher,
                              fidl::ServerEnd<fendpoint::Endpoint> server_end) {
   std::lock_guard<std::mutex> lock(lock_);
@@ -146,6 +182,11 @@ void EndpointServer::OnUnbound(fidl::UnbindInfo info,
   {
     std::lock_guard<std::mutex> lock(lock_);
     completions = std::move(completions_);
+    for (const auto& [id, vmo] : registered_vmos_) {
+      if (vmo.use_count() > 1) {
+        unregistered_in_flight_vmos_.emplace_back(id, vmo);
+      }
+    }
     registered_vmos = std::move(registered_vmos_);
     binding_ref_.reset();
   }
@@ -208,10 +249,23 @@ void EndpointServer::RegisterVmos(RegisterVmosRequest& request,
         continue;
       }
 
+      zx_vaddr_t virt_addr = 0;
+      const size_t map_size = USB_ROUNDUP(size, kPageSize);
+      if (map_size > 0) {
+        status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, map_size,
+                                            &virt_addr);
+        if (status != ZX_OK) {
+          fdf::error("zx::vmar::map(): {}", zx_status_get_string(status));
+          zx_pmt_unpin(pmt);
+          continue;
+        }
+      }
+
       // Save
       vmos.emplace_back(std::move(fendpoint::VmoHandle().id(id).vmo(std::move(vmo))));
       registered_vmos_.emplace(
-          id, std::make_shared<RegisteredVmo>(pmt, std::move(paddrs), num_addrs, size));
+          id, std::make_shared<RegisteredVmo>(pmt, std::move(paddrs), num_addrs, size, virt_addr,
+                                              map_size));
     }
   }
 
@@ -219,6 +273,10 @@ void EndpointServer::RegisterVmos(RegisterVmosRequest& request,
 }
 
 EndpointServer::RegisteredVmo::~RegisteredVmo() {
+  if (virt_addr != 0 && mapped_size != 0) {
+    zx_status_t status = zx::vmar::root_self()->unmap(virt_addr, mapped_size);
+    ZX_DEBUG_ASSERT(status == ZX_OK);
+  }
   if (pmt != ZX_HANDLE_INVALID) {
     zx_status_t status = zx_pmt_unpin(pmt);
     ZX_DEBUG_ASSERT(status == ZX_OK);
@@ -238,6 +296,9 @@ void EndpointServer::UnregisterVmos(UnregisterVmosRequest& request,
         failed_vmo_ids.emplace_back(id);
         errors.emplace_back(ZX_ERR_NOT_FOUND);
         continue;
+      }
+      if (node.mapped().use_count() > 1) {
+        unregistered_in_flight_vmos_.emplace_back(id, node.mapped());
       }
       vmos_to_unmap.push_back(std::move(node.mapped()));
     }
