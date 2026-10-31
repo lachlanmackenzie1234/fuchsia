@@ -460,6 +460,9 @@ void CoordinatorProxy::UpdateDisplayEquivalenceForApplyConfig() {
 
 void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
   TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlApplyConfig");
+  // The display coordinator ends this flow when it receives `CommitConfig()`. Beginning it here,
+  // rather than in `ApplyConfig()`, leaves no flow open when `ApplyConfig()` returns early.
+  TRACE_FLOW_BEGIN("gfx", "Display::CommitConfig", config_stamp.value);
   CP_VERBOSE_LOG << "CoordinatorProxy::FidlApplyConfig(stamp=" << config_stamp.value << ")";
 
   IncrementApplyConfigCallsSent();

@@ -1000,7 +1000,6 @@ zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trac
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyConfig");
   fidl::Arena arena;
 
-  TRACE_FLOW_BEGIN("gfx", "Display::CommitConfig", config_stamp.value);
   auto result = display_coordinator_.ApplyConfig(config_stamp);
   if (result.is_error()) {
     return result;
@@ -1237,6 +1236,8 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
     TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(0));
   }
 
+  TRACE_FLOW_END("gfx", "render_frame_to_vsync", trace_flow_id);
+  TRACE_FLOW_END("gfx", "scenic_frame", frame_number);
   return RenderFrameResult::kFailure;
 }
 
