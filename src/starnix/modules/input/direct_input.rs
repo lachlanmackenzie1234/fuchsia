@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input_device::InputDevice;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_input_report as fir;
 use fidl_fuchsia_ui_input_internal as fuii;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
@@ -18,7 +19,7 @@ use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 /// Maximum unacknowledged reports passed to `InputReportsReaderV2`.
 pub const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
@@ -126,7 +127,7 @@ struct DirectInputState {
 pub struct DirectInputManager {
     kernel: Weak<Kernel>,
     shortcut_handler: Option<Arc<dyn ButtonShortcutProcessor>>,
-    ownership_event: Option<zx::Event>,
+    ownership_event: OnceLock<zx::Event>,
     ownership_active: Arc<AtomicBool>,
     resume_generation: AtomicU64,
     next_device_id: AtomicU32,
@@ -186,20 +187,22 @@ impl DirectInputManager {
             None => false,
         };
 
-        let duplicated_event = ownership_event.as_ref().and_then(|e| {
-            match e.duplicate_handle(zx::Rights::SAME_RIGHTS) {
-                Ok(dup) => Some(dup),
+        let ownership_event_lock = OnceLock::new();
+        if let Some(event) = ownership_event.as_ref() {
+            match event.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                Ok(dup) => {
+                    let _ = ownership_event_lock.set(dup);
+                }
                 Err(status) => {
                     log_warn!("Failed to duplicate ownership event handle: {:?}", status);
-                    None
                 }
             }
-        });
+        }
 
         let manager = Arc::new(Self {
             kernel,
             shortcut_handler,
-            ownership_event: duplicated_event,
+            ownership_event: ownership_event_lock,
             ownership_active: Arc::new(AtomicBool::new(initial_active)),
             resume_generation: AtomicU64::new(if initial_active { 1 } else { 0 }),
             next_device_id: AtomicU32::new(1),
@@ -220,6 +223,103 @@ impl DirectInputManager {
         }
 
         manager
+    }
+
+    /// Creates a new `DirectInputManager` and initializes ownership monitoring using the provided
+    /// `ownership_proxy`.
+    ///
+    /// If `ownership_proxy` is `Some`, calls `GetEvent(InputOwnershipTarget::Platform(Platform {}))`,
+    /// duplicates and stores the event handle for `sync_ownership()`, and spawns an asynchronous
+    /// listener task on the manager's scope. When direct input ownership is acquired, direct reading
+    /// resumes and `ownership_active` is asserted (suppressing app-protocol relays); when ownership
+    /// is lost, direct reading pauses and `ownership_active` is cleared (falling back to the legacy
+    /// app protocol).
+    ///
+    /// If `ownership_proxy` is `None` or fails to retrieve the ownership event, ownership defaults to
+    /// inactive, falling back to the legacy app protocol.
+    pub fn new_with_ownership_proxy(
+        kernel: Weak<Kernel>,
+        shortcut_handler: Option<Arc<dyn ButtonShortcutProcessor>>,
+        ownership_proxy: Option<fuii::InputOwnershipProxy>,
+    ) -> Arc<Self> {
+        let manager = Arc::new(Self {
+            kernel,
+            shortcut_handler,
+            ownership_event: OnceLock::new(),
+            ownership_active: Arc::new(AtomicBool::new(false)),
+            resume_generation: AtomicU64::new(0),
+            next_device_id: AtomicU32::new(1),
+            state: Mutex::new(DirectInputState {
+                is_paused: true,
+                devices: HashMap::new(),
+                abort_handles: HashMap::new(),
+            }),
+            reserved_minors: Mutex::new(HashSet::new()),
+            scope: fasync::Scope::new(),
+        });
+
+        if let Some(proxy) = ownership_proxy {
+            let this = Arc::downgrade(&manager);
+            manager.scope.spawn(async move {
+                match query_ownership_event(
+                    &proxy,
+                    fuii::InputOwnershipTarget::Platform(fuii::Platform {}),
+                )
+                .await
+                {
+                    Ok(event) => {
+                        if let Ok(dup) = event.duplicate_handle(zx::Rights::SAME_RIGHTS) {
+                            if let Some(m) = this.upgrade() {
+                                let _ = m.ownership_event.set(dup);
+                            }
+                        }
+                        let ownership_channel =
+                            proxy.into_channel().ok().map(|c| c.into_zx_channel());
+                        Self::run_ownership_listener(event, ownership_channel, this).await;
+                    }
+                    Err(e) => {
+                        log_debug!(
+                            "Failed to query ownership event from InputOwnership: {:?}; falling back to app protocol",
+                            e
+                        );
+                    }
+                }
+            });
+        }
+
+        manager
+    }
+
+    /// Connects to `fuchsia.ui.input.internal.InputOwnership` from the incoming namespace and creates
+    /// a `DirectInputManager`. Also starts watching driver instances via `start_service_watcher`.
+    ///
+    /// Direct input devices are registered as they are discovered, even while paused, so that
+    /// device nodes are enumerated ahead of time. Their reader loops remain paused until direct
+    /// input ownership is acquired.
+    ///
+    /// If connecting to `InputOwnership` fails or is unavailable, ownership remains inactive, falling
+    /// back to the legacy app protocol.
+    pub fn connect_and_start(
+        kernel: Weak<Kernel>,
+        shortcut_handler: Option<Arc<dyn ButtonShortcutProcessor>>,
+    ) -> Arc<Self> {
+        let ownership_proxy =
+            fuchsia_component::client::connect_to_protocol::<fuii::InputOwnershipMarker>().ok();
+        let manager = Self::new_with_ownership_proxy(kernel, shortcut_handler, ownership_proxy);
+        manager.spawn_service_watcher();
+        manager
+    }
+
+    /// Spawns the driver service watcher on the manager's scope.
+    pub fn spawn_service_watcher(self: &Arc<Self>) {
+        let this = Arc::downgrade(self);
+        self.scope.spawn(async move {
+            if let Some(this) = this.upgrade() {
+                if let Err(e) = this.start_service_watcher().await {
+                    log_debug!("Direct input service watcher stopped: {:?}", e);
+                }
+            }
+        });
     }
 
     /// Background task monitoring `fuchsia.ui.input.internal.InputOwnership` signals.
@@ -402,9 +502,10 @@ impl DirectInputManager {
         }
     }
 
-    /// Synchronizes ownership status with the underlying `ownership_event`.
+    /// Synchronizes ownership status with the underlying `ownership_event` (if available, either
+    /// passed at construction or retrieved via `InputOwnership`).
     pub fn sync_ownership(self: &Arc<Self>) {
-        if let Some(ref event) = self.ownership_event {
+        if let Some(event) = self.ownership_event.get() {
             let active = evaluate_ownership(current_signals(event));
             if active {
                 self.resume();
@@ -447,6 +548,18 @@ impl DirectInputManager {
         instance_name: Option<String>,
         descriptor: fir::DeviceDescriptor,
     ) -> Result<u32, Errno> {
+        if descriptor.touch.is_none()
+            && descriptor.keyboard.is_none()
+            && descriptor.mouse.is_none()
+            && descriptor.consumer_control.is_none()
+        {
+            log_warn!(
+                "Ignoring unsupported direct input device {:?}: descriptor has no touch, keyboard, mouse, or consumer_control capabilities",
+                instance_name
+            );
+            return Err(errno!(ENOTSUP));
+        }
+
         let device_id = self.next_device_id.fetch_add(1, Ordering::Relaxed);
         let name = instance_name.unwrap_or_else(|| format!("direct_input_{device_id}"));
 
@@ -672,11 +785,11 @@ impl DirectInputManager {
     pub async fn start_service_watcher(self: &Arc<Self>) -> Result<(), Errno> {
         let service =
             fuchsia_component::client::Service::open(fir::ServiceMarker).map_err(|e| {
-                log_warn!("Failed to open fuchsia.input.report.Service: {:?}", e);
+                log_debug!("Failed to open fuchsia.input.report.Service: {:?}", e);
                 errno!(ENOENT)
             })?;
         let mut watcher = service.watch().await.map_err(|e| {
-            log_warn!("Failed to watch fuchsia.input.report.Service: {:?}", e);
+            log_debug!("Failed to watch fuchsia.input.report.Service: {:?}", e);
             errno!(EIO)
         })?;
 
@@ -793,6 +906,55 @@ pub async fn query_ownership_event(
 ) -> Result<zx::Event, Errno> {
     let res = ownership_proxy.get_event(target).await.map_err(|_| errno!(EIO))?;
     res.map_err(|_| errno!(EACCES))
+}
+
+/// Helper for testing that asynchronously waits until `manager.is_ownership_active() == expected`.
+#[cfg(test)]
+pub(crate) async fn wait_for_ownership(manager: &DirectInputManager, expected: bool) {
+    while manager.is_ownership_active() != expected {
+        fasync::Timer::new(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_millis(2)))
+            .await;
+    }
+}
+
+/// Spawns a fake `fuchsia.ui.input.internal.InputOwnership` server task for testing.
+#[cfg(test)]
+pub(crate) fn spawn_fake_input_ownership(
+    event: &zx::Event,
+) -> (fuii::InputOwnershipProxy, futures::channel::oneshot::Receiver<()>, fasync::Task<()>) {
+    let (proxy, mut stream) =
+        fidl::endpoints::create_proxy_and_stream::<fuii::InputOwnershipMarker>();
+    let server_event = event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+    let (get_event_tx, get_event_rx) = futures::channel::oneshot::channel();
+    let mut get_event_tx = Some(get_event_tx);
+    let server_task = fasync::Task::local(async move {
+        while let Some(Ok(request)) = stream.next().await {
+            match request {
+                fuii::InputOwnershipRequest::GetEvent { target, responder } => match target {
+                    fuii::InputOwnershipTarget::Platform(_) => {
+                        let ev = server_event
+                            .duplicate_handle(
+                                zx::Rights::TRANSFER
+                                    | zx::Rights::DUPLICATE
+                                    | zx::Rights::WAIT
+                                    | zx::Rights::INSPECT,
+                            )
+                            .expect("duplicate event");
+                        responder.send(Ok(ev)).expect("send GetEvent response");
+                        if let Some(tx) = get_event_tx.take() {
+                            let _ = tx.send(());
+                        }
+                    }
+                    _ => {
+                        responder
+                            .send(Err(fuii::InputOwnershipError::InvalidTarget))
+                            .expect("send error");
+                    }
+                },
+            }
+        }
+    });
+    (proxy, get_event_rx, server_task)
 }
 
 #[cfg(test)]
@@ -2125,6 +2287,306 @@ mod tests {
                 dev.minor,
                 crate::DIRECT_INPUT_MINOR_RANGE
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_direct_input_ownership_transitions_with_fake_server() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+
+            let event = zx::Event::create();
+            // Initially, platform owns input
+            event
+                .signal(
+                    zx::Signals::NONE,
+                    DISPLAY_PLATFORM_OWNED_SIGNAL | INPUT_PLATFORM_OWNED_SIGNAL,
+                )
+                .unwrap();
+
+            let (proxy, get_event_rx, _server_task) = spawn_fake_input_ownership(&event);
+
+            let manager = DirectInputManager::new_with_ownership_proxy(
+                Arc::downgrade(&kernel),
+                None,
+                Some(proxy),
+            );
+
+            // Wait for fake server to handle GetEvent
+            get_event_rx.await.expect("GetEvent handled by fake server");
+
+            // Initially platform owns input, so direct input ownership is inactive
+            assert!(!manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 0);
+
+            let mut _tasks = Vec::new();
+            let (device_client, device_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+            let (reader_sender, mut reader_receiver) =
+                futures::channel::mpsc::unbounded::<ServerEnd<fir::InputReportsReaderV2Marker>>();
+
+            _tasks.push(fasync::Task::local(async move {
+                let mut stream = device_server.into_stream();
+                while let Some(request) = stream.next().await {
+                    match request.unwrap() {
+                        fir::InputDeviceRequest::GetDescriptor { responder } => {
+                            responder.send(&make_test_descriptor()).unwrap();
+                        }
+                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
+                            reader,
+                            responder,
+                            ..
+                        } => {
+                            let _ = reader_sender.unbounded_send(reader);
+                            responder.send(MAX_UNACKNOWLEDGED_REPORTS_LIMIT).unwrap();
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let device_proxy = device_client.into_proxy();
+            let device_id =
+                manager.add_device(device_proxy, Some("touch0".to_string())).await.unwrap();
+            let dev = manager.device(device_id).expect("device added");
+            let file_handle = dev.input_device.open_test(&current_task).expect("open input device");
+            assert_eq!(manager.num_devices(), 1);
+            assert!(reader_receiver.try_recv().is_err());
+
+            // Transition 1: Grant direct input ownership to Starnix client view
+            // Clear INPUT_PLATFORM_OWNED and assert INPUT_CLIENT_OWNED
+            event.signal(INPUT_PLATFORM_OWNED_SIGNAL, INPUT_CLIENT_OWNED_SIGNAL).unwrap();
+
+            wait_for_ownership(&manager, true).await;
+            assert!(manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 1);
+
+            let reader_server = reader_receiver.next().await.unwrap();
+            let (_, reader_control) = reader_server.into_stream_and_control_handle();
+
+            let contact_down = fir::ContactInputReport {
+                contact_id: Some(1),
+                position_x: Some(100),
+                position_y: Some(200),
+                ..Default::default()
+            };
+            let report_down = fir::InputReport {
+                event_time: Some(100_000_000),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![contact_down]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            reader_control.send_on_input_reports(vec![report_down], 1).expect("send report");
+
+            let mut touch_down_events = Vec::new();
+            for _ in 0..100 {
+                touch_down_events = read_uapi_events(&file_handle, &current_task);
+                if !touch_down_events.is_empty() {
+                    break;
+                }
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(5),
+                ))
+                .await;
+            }
+            assert!(!touch_down_events.is_empty());
+            assert!(touch_down_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_KEY as u16
+                    && e.code == starnix_uapi::BTN_TOUCH as u16
+                    && e.value == 1
+            }));
+            assert!(touch_down_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_ABS as u16
+                    && e.code == starnix_uapi::ABS_MT_POSITION_X as u16
+                    && e.value == 100
+            }));
+
+            // Transition 2: Revoke direct input ownership back to platform
+            // Clear INPUT_CLIENT_OWNED and assert INPUT_PLATFORM_OWNED
+            event.signal(INPUT_CLIENT_OWNED_SIGNAL, INPUT_PLATFORM_OWNED_SIGNAL).unwrap();
+
+            wait_for_ownership(&manager, false).await;
+            assert!(!manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 1);
+
+            let mut lift_events = Vec::new();
+            for _ in 0..100 {
+                lift_events = read_uapi_events(&file_handle, &current_task);
+                if !lift_events.is_empty() {
+                    break;
+                }
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(5),
+                ))
+                .await;
+            }
+            assert!(!lift_events.is_empty());
+            assert!(lift_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_ABS as u16
+                    && e.code == starnix_uapi::ABS_MT_TRACKING_ID as u16
+                    && e.value == -1
+            }));
+            assert!(lift_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_KEY as u16
+                    && e.code == starnix_uapi::BTN_TOUCH as u16
+                    && e.value == 0
+            }));
+
+            // Transition 3: Re-grant direct input ownership
+            event.signal(INPUT_PLATFORM_OWNED_SIGNAL, INPUT_CLIENT_OWNED_SIGNAL).unwrap();
+
+            wait_for_ownership(&manager, true).await;
+            assert!(manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 2);
+
+            drop(_server_task);
+            wait_for_ownership(&manager, false).await;
+            assert!(!manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_direct_input_ownership_fallback_when_unavailable() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+
+            // Case 1: ownership_proxy is None
+            let manager1 =
+                DirectInputManager::new_with_ownership_proxy(Arc::downgrade(&kernel), None, None);
+            assert!(!manager1.is_ownership_active());
+
+            // Case 2: ownership_proxy is connected to a closed server endpoint
+            let (proxy, server_end) = endpoints::create_proxy::<fuii::InputOwnershipMarker>();
+            drop(server_end);
+
+            let manager2 = DirectInputManager::new_with_ownership_proxy(
+                Arc::downgrade(&kernel),
+                None,
+                Some(proxy),
+            );
+            manager2.scope.on_no_tasks().await;
+            assert!(!manager2.is_ownership_active());
+
+            // Case 3: ownership_proxy returns an error (e.g. AccessDenied)
+            let (proxy3, mut stream3) =
+                endpoints::create_proxy_and_stream::<fuii::InputOwnershipMarker>();
+            let (case3_tx, case3_rx) = futures::channel::oneshot::channel();
+            let mut case3_tx = Some(case3_tx);
+            let _server_task3 = fasync::Task::local(async move {
+                if let Some(Ok(fuii::InputOwnershipRequest::GetEvent { responder, .. })) =
+                    stream3.next().await
+                {
+                    responder.send(Err(fuii::InputOwnershipError::AccessDenied)).unwrap();
+                    if let Some(tx) = case3_tx.take() {
+                        let _ = tx.send(());
+                    }
+                }
+            });
+
+            let manager3 = DirectInputManager::new_with_ownership_proxy(
+                Arc::downgrade(&kernel),
+                None,
+                Some(proxy3),
+            );
+            case3_rx.await.expect("GetEvent handled by fake server");
+            manager3.scope.on_no_tasks().await;
+            assert!(!manager3.is_ownership_active());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_direct_input_ownership_pre_signalled_active() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+
+            let event = zx::Event::create();
+            // Pre-signal INPUT_CLIENT_OWNED before GetEvent returns
+            event
+                .signal(
+                    zx::Signals::NONE,
+                    DISPLAY_PLATFORM_OWNED_SIGNAL | INPUT_CLIENT_OWNED_SIGNAL,
+                )
+                .unwrap();
+
+            let (proxy, _get_event_rx, _server_task) = spawn_fake_input_ownership(&event);
+
+            let manager = DirectInputManager::new_with_ownership_proxy(
+                Arc::downgrade(&kernel),
+                None,
+                Some(proxy),
+            );
+
+            // Ownership should transition to active because the event was already INPUT_CLIENT_OWNED.
+            wait_for_ownership(&manager, true).await;
+            assert!(manager.is_ownership_active());
+            assert_eq!(manager.resume_generation(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_direct_input_ownership_handle_without_wait_pauses_manager() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+
+            let event = zx::Event::create();
+            event
+                .signal(
+                    zx::Signals::NONE,
+                    DISPLAY_PLATFORM_OWNED_SIGNAL | INPUT_CLIENT_OWNED_SIGNAL,
+                )
+                .unwrap();
+            // Duplicate event handle without ZX_RIGHT_WAIT.
+            let event_without_wait = event
+                .duplicate_handle(
+                    zx::Rights::TRANSFER | zx::Rights::DUPLICATE | zx::Rights::INSPECT,
+                )
+                .expect("duplicate event without wait rights");
+
+            let manager =
+                DirectInputManager::new_with_ownership_proxy(Arc::downgrade(&kernel), None, None);
+
+            // Make ownership active initially
+            manager.set_ownership_active(true);
+            assert!(manager.is_ownership_active());
+
+            // Run the listener directly with an event handle lacking WAIT rights.
+            // On the initial iteration, `current_signals()` cannot inspect signals without
+            // ZX_RIGHT_WAIT, returns `Signals::NONE`, evaluates ownership as inactive,
+            // and pauses the manager.
+            let this = Arc::downgrade(&manager);
+            manager.scope.spawn(async move {
+                DirectInputManager::run_ownership_listener(event_without_wait, None, this).await;
+            });
+
+            wait_for_ownership(&manager, false).await;
+            manager.scope.on_no_tasks().await;
+            assert!(!manager.is_ownership_active());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_add_device_unsupported_descriptor_fails() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            let manager = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+
+            let (device_proxy, _server_end) = endpoints::create_proxy::<fir::InputDeviceMarker>();
+            let descriptor =
+                fir::DeviceDescriptor { sensor: Some(Default::default()), ..Default::default() };
+
+            let result = manager
+                .add_device_with_descriptor(device_proxy, Some("sensor0".to_string()), descriptor)
+                .await;
+            assert_eq!(result.unwrap_err(), errno!(ENOTSUP));
+            assert_eq!(manager.num_devices(), 0);
         })
         .await;
     }
