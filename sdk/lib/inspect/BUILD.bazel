@@ -32,6 +32,7 @@ cml_shard(
         "//src/lib/fuchsia-hyper:__pkg__",
         "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
         "//src/sys/lib/elf_runner/tests/lifecycle:__pkg__",
+        "//src/sys/test_manager/tests/test_data:__pkg__",
     ],
 )
 

@@ -22,6 +22,7 @@ test_suite(
         "//src/sys/fuzzing/registry:fuzz-registry-unittests",
         "//src/sys/run_test_suite/directory:test-output-directory-unit-tests",
         "//src/sys/service-broker:service-broker-unittests",
+        "//src/sys/test_manager/tests/test_data:debug-data-test_test",
         "//src/sys/time/httpsdate_time_source:httpsdate-time-source-tests",
         "//src/sys/time/lib/push-source:push-source-tests",
         "//src/sys/time/timekeeper/persistence:time-persistence-tests",
