@@ -87,8 +87,10 @@ impl<T: LeafHashCollector> MerkleRootBuilder<T> {
                 level_hasher.hasher.update(&digest);
                 level_hasher.offset += HASH_SIZE;
             }
-            let zeros = BLOCK_SIZE - (level_hasher.offset % BLOCK_SIZE);
-            update_with_zeros(&mut level_hasher.hasher, zeros);
+            let rem = level_hasher.offset % BLOCK_SIZE;
+            if rem != 0 {
+                update_with_zeros(&mut level_hasher.hasher, BLOCK_SIZE - rem);
+            }
             bubbling_digest = Some(level_hasher.hasher.digest());
         }
         self.leaf_hash_collector.complete(Hash::from(bubbling_digest.unwrap()))
@@ -426,5 +428,46 @@ mod tests {
         std::io::copy(&mut reader, &mut builder).unwrap();
 
         assert_eq!(builder.complete(), expected_root);
+    }
+
+    #[test_case(HASHES_PER_BLOCK * (HASHES_PER_BLOCK - 1) + 1; "65281_leaves")]
+    #[test_case(HASHES_PER_BLOCK * HASHES_PER_BLOCK - 1; "65535_leaves")]
+    fn test_complete_carry_completes_upper_level_without_extra_padding(leaf_count: usize) {
+        let leaf = hash_block(&AB_BLOCK, 0);
+
+        let mut builder = MerkleRootBuilder::default();
+        for _ in 0..leaf_count {
+            builder.push_hash(leaf);
+        }
+        let actual_root = builder.complete(&[]);
+
+        // Reference level-1 computation: 255 full blocks of 256 `leaf` hashes, plus 1 final
+        // zero-padded level-1 block containing the remaining `leaf_count - 65280` leaves.
+        let mut level_1_hashes = Vec::with_capacity(HASHES_PER_BLOCK);
+        for block_idx in 0..(HASHES_PER_BLOCK - 1) {
+            let mut h1 = make_hash_hasher(HASHES_PER_BLOCK, 1, block_idx * BLOCK_SIZE);
+            for _ in 0..HASHES_PER_BLOCK {
+                h1.update(leaf.as_bytes());
+            }
+            level_1_hashes.push(Hash::from_array(h1.digest()));
+        }
+        let tail_leaves = leaf_count - (HASHES_PER_BLOCK - 1) * HASHES_PER_BLOCK;
+        let mut h1_last =
+            make_hash_hasher(HASHES_PER_BLOCK, 1, (HASHES_PER_BLOCK - 1) * BLOCK_SIZE);
+        for _ in 0..tail_leaves {
+            h1_last.update(leaf.as_bytes());
+        }
+        update_with_zeros(&mut h1_last, (HASHES_PER_BLOCK - tail_leaves) * HASH_SIZE);
+        level_1_hashes.push(Hash::from_array(h1_last.digest()));
+        assert_eq!(level_1_hashes.len(), HASHES_PER_BLOCK);
+
+        // Level 2 has exactly 256 hashes (8,192 bytes) and must NOT receive 8,192 extra zero bytes.
+        let mut h2 = make_hash_hasher(HASHES_PER_BLOCK, 2, 0);
+        for h in &level_1_hashes {
+            h2.update(h.as_bytes());
+        }
+        let expected_root = Hash::from_array(h2.digest());
+
+        assert_eq!(actual_root, expected_root);
     }
 }
