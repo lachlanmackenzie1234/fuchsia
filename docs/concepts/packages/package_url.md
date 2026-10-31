@@ -142,7 +142,9 @@ fuchsia-pkg://<repository>/<package-name>{{ '<strong>' }}?hash=<package-hash>{{ 
 
 Only valid if a package name is specified.
 
-Must begin with the string `?hash=` followed by the [package hash](#package-hash).
+The query must consist solely of `?hash=` followed by the
+[package hash](#package-hash); the Fuchsia URL parser rejects any other query
+parameters or a second `hash=` parameter.
 
 #### Examples
 

@@ -101,11 +101,16 @@ struct UrlParts {
 
 impl UrlParts {
     fn parse(input: &str) -> Result<Self, ParseError> {
-        // Validate the raw `#<fragment>` of `input` rather than the `url` crate's view of it,
-        // since the `url` crate strips trailing C0 control and space characters and ASCII tab and
-        // newline characters from it, and percent-encodes characters that must already be
-        // percent-encoded.
-        let fragment = input.split_once('#').map(|(_, fragment)| fragment);
+        // Validate the raw `#<fragment>` and `?<query>` of `input` rather than the `url` crate's
+        // view of them, since the `url` crate strips trailing C0 control and space characters and
+        // ASCII tab and newline characters from them, and percent-encodes characters that must
+        // already be percent-encoded. `url::Url::query_pairs` would also skip empty query
+        // parameters and percent-decode their keys and values.
+        let (before_fragment, fragment) = match input.split_once('#') {
+            Some((before_fragment, fragment)) => (before_fragment, Some(fragment)),
+            None => (input, None),
+        };
+        let query = before_fragment.split_once('?').map(|(_, query)| query);
         match url::Url::parse(input) {
             Ok(url) => {
                 let scheme = match url.scheme() {
@@ -114,19 +119,20 @@ impl UrlParts {
                     boot::SCHEME_STR => Scheme::FuchsiaBoot,
                     _ => return Err(ParseError::InvalidScheme),
                 };
-                Self::from_scheme_and_url(Some(scheme), &url, fragment)
+                Self::from_scheme_and_url(Some(scheme), &url, query, fragment)
             }
             Err(url::ParseError::RelativeUrlWithoutBase) => {
-                Self::from_scheme_and_url(None, &RELATIVE_BASE.join(input)?, fragment)
+                Self::from_scheme_and_url(None, &RELATIVE_BASE.join(input)?, query, fragment)
             }
             Err(e) => Err(e)?,
         }
     }
-    /// `fragment` is the raw (not yet percent-decoded) `#<fragment>` of the URL that `url` was
-    /// parsed from.
+    /// `query` and `fragment` are the raw (not yet percent-decoded) `?<query>` and `#<fragment>`
+    /// of the URL that `url` was parsed from.
     fn from_scheme_and_url(
         scheme: Option<Scheme>,
         url: &url::Url,
+        query: Option<&str>,
         fragment: Option<&str>,
     ) -> Result<Self, ParseError> {
         if url.port().is_some() {
@@ -197,7 +203,7 @@ impl UrlParts {
             Some(url.path().strip_prefix("/").unwrap_or_else(|| url.path()).parse()?)
         };
 
-        let hash = parse_query_pairs(url.query_pairs())?;
+        let hash = query.map(parse_query).transpose()?;
 
         let resource = fragment.map(parse_fragment).transpose()?;
 
@@ -263,24 +269,31 @@ fn validate_inverse_relative_url(input: &str) -> Result<(), ParseError> {
     }
 }
 
-fn parse_query_pairs(pairs: url::form_urlencoded::Parse<'_>) -> Result<Option<Hash>, ParseError> {
-    let mut query_hash = None;
-    for (key, value) in pairs {
-        if key == "hash" {
-            if query_hash.is_some() {
-                return Err(ParseError::MultipleHashes);
-            }
-            query_hash = Some(value.parse().map_err(ParseError::InvalidHash)?);
-            // fuchsia-pkg URLs require lowercase hex characters, but fuchsia_hash::Hash::parse
-            // accepts uppercase A-F.
-            if !value.bytes().all(|b| (b >= b'0' && b <= b'9') || (b >= b'a' && b <= b'f')) {
-                return Err(ParseError::UpperCaseHash);
-            }
-        } else {
-            return Err(ParseError::ExtraQueryParameters);
-        }
+/// Validates the raw (not yet percent-decoded) `?<query>` of a URL and parses its package hash.
+///
+/// The query must consist of exactly one `hash=<hash>` parameter, where `<hash>` is 64 lowercase
+/// hex digits. Empty queries (a bare `?`), empty parameters, and percent-encoded keys are rejected
+/// as extra query parameters, and percent-encoded hashes are rejected as invalid hashes.
+fn parse_query(query: &str) -> Result<Hash, ParseError> {
+    let (first, rest) = match query.split_once('&') {
+        Some((first, rest)) => (first, Some(rest)),
+        None => (query, None),
+    };
+    let value = first.strip_prefix("hash=").ok_or(ParseError::ExtraQueryParameters)?;
+    let hash = value.parse().map_err(ParseError::InvalidHash)?;
+    // fuchsia-pkg URLs require lowercase hex characters, but fuchsia_hash::Hash::parse
+    // accepts uppercase A-F.
+    if !value.bytes().all(|b| (b >= b'0' && b <= b'9') || (b >= b'a' && b <= b'f')) {
+        return Err(ParseError::UpperCaseHash);
     }
-    Ok(query_hash)
+    if let Some(rest) = rest {
+        return Err(if rest.starts_with("hash=") {
+            ParseError::MultipleHashes
+        } else {
+            ParseError::ExtraQueryParameters
+        });
+    }
+    Ok(hash)
 }
 
 /// A URL locating a Fuchsia component. Can be either absolute or relative.
@@ -466,6 +479,26 @@ mod test_url_parts {
         err_non_hash_query_parameter => {
             url = "fuchsia-pkg://example.org/?invalid-key=invalid-value",
             err = ParseError::ExtraQueryParameters,
+        }
+        err_empty_query => {
+            url = "fuchsia-pkg://example.org/name?",
+            err = ParseError::ExtraQueryParameters,
+        }
+        err_relative_empty_query => {
+            url = "name?",
+            err = ParseError::ExtraQueryParameters,
+        }
+        err_empty_query_parameter => {
+            url = "fuchsia-pkg://example.org/name?hash=0000000000000000000000000000000000000000000000000000000000000000&",
+            err = ParseError::ExtraQueryParameters,
+        }
+        err_percent_encoded_query_key => {
+            url = "fuchsia-pkg://example.org/name?h%61sh=0000000000000000000000000000000000000000000000000000000000000000",
+            err = ParseError::ExtraQueryParameters,
+        }
+        err_percent_encoded_hash => {
+            url = "fuchsia-pkg://example.org/name?hash=%3000000000000000000000000000000000000000000000000000000000000000",
+            err = ParseError::InvalidHash(_),
         }
         err_resource_slash => {
             url = "fuchsia-pkg://example.org/name#/",
@@ -765,6 +798,85 @@ mod test_url_parts {
             ),
             resource = Some("resource".parse().unwrap()),
         }
+    }
+}
+
+#[cfg(test)]
+mod test_query {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn rejects_malformed_queries_and_percent_encoded_query_keys() {
+        let hash_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        assert_matches!(
+            FuchsiaPkgAbsolutePackageUrl::parse("fuchsia-pkg://example.org/name?"),
+            Err(ParseError::ExtraQueryParameters)
+        );
+        assert_matches!(
+            FuchsiaPkgAbsoluteComponentUrl::parse("fuchsia-pkg://example.org/name?#meta/comp.cm"),
+            Err(ParseError::ExtraQueryParameters)
+        );
+        for bad_query in [
+            "fuchsia-pkg://example.org/name?".to_string(),
+            "fuchsia-pkg://example.org/name?hash".to_string(),
+            format!("fuchsia-pkg://example.org/name?hash={hash_hex}&"),
+            format!("fuchsia-pkg://example.org/name?&hash={hash_hex}"),
+            format!("fuchsia-pkg://example.org/name?h%61sh={hash_hex}"),
+            format!("fuchsia-pkg://example.org/name?h\tash={hash_hex}"),
+            format!("fuchsia-pkg://example.org/name?\thash={hash_hex}"),
+        ] {
+            assert_matches!(
+                FuchsiaPkgPinnedAbsolutePackageUrl::parse(&bad_query),
+                Err(ParseError::ExtraQueryParameters),
+                "input: {bad_query:?}"
+            );
+        }
+
+        for bad_hash_query in [
+            "fuchsia-pkg://example.org/name?hash=%3000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            format!("fuchsia-pkg://example.org/name?hash={hash_hex} "),
+            format!("fuchsia-pkg://example.org/name?hash={hash_hex}\r\n"),
+            format!("fuchsia-pkg://example.org/name?hash={hash_hex}\x07"),
+            format!("fuchsia-pkg://example.org/name?hash=\t{hash_hex}"),
+        ] {
+            assert_matches!(
+                FuchsiaPkgPinnedAbsolutePackageUrl::parse(&bad_hash_query),
+                Err(ParseError::InvalidHash(_)),
+                "input: {bad_hash_query:?}"
+            );
+        }
+        assert_matches!(
+            FuchsiaPkgAbsoluteComponentUrl::parse(&format!(
+                "fuchsia-pkg://example.org/name?hash={hash_hex}\t#meta/comp.cm"
+            )),
+            Err(ParseError::InvalidHash(_))
+        );
+    }
+
+    #[test]
+    fn rejects_empty_query_across_url_shapes() {
+        for bad_empty_query in [
+            "fuchsia-pkg://example.org/pkg?",
+            "fuchsia-pkg://example.org/pkg?#my%20res",
+            "fuchsia-pkg://example.org?",
+            "fuchsia-boot:///?#%20",
+            "a?",
+            "a?#b",
+            "?",
+        ] {
+            assert_matches!(
+                UrlParts::parse(bad_empty_query),
+                Err(ParseError::ExtraQueryParameters),
+                "input: {bad_empty_query:?}"
+            );
+        }
+        assert_matches!(
+            RepositoryUrl::parse("fuchsia-pkg://example.org?"),
+            Err(ParseError::ExtraQueryParameters)
+        );
+        assert_matches!(RelativePackageUrl::parse("name?"), Err(ParseError::ExtraQueryParameters));
     }
 }
 
