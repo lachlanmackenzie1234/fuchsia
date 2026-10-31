@@ -120,7 +120,7 @@ zx_status_t IgcDriver::ConfigurePci(fdf::Namespace& incoming) {
   adapter_->btih = bti.release();
 
   // Request 1 interrupt of any mode.
-  if (zx_status_t status = pci.ConfigureInterruptMode(1, &adapter_->irq_mode); status != ZX_OK) {
+  if (zx_status_t status = pci.ConfigureInterruptMode(1, nullptr); status != ZX_OK) {
     fdf::error("failed to configure irqs");
     return status;
   }
@@ -938,12 +938,7 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
     return;
   }
 
-  auto ack_interrupt = fit::defer([&] {
-    zx_interrupt_ack(adapter_->irqh);
-    if (adapter_->irq_mode == fuchsia_hardware_pci::InterruptMode::kLegacy) {
-      adapter_->osdep.pci.AckInterrupt();
-    }
-  });
+  auto ack_interrupt = fit::defer([&] { zx_interrupt_ack(adapter_->irqh); });
 
   const unsigned irq = IGC_READ_REG(&adapter_->hw, IGC_ICR);
   if (irq & IGC_ICR_RXT0) {
