@@ -1148,6 +1148,128 @@ static void wait_for_thread_state(const Thread& thread, thread_state expected_st
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/578020457:
+// Concurrently mutate soft and hard CPU affinity on runnable worker threads queued on |target_cpu|
+// while repeatedly unplugging and hotplugging |target_cpu|. Verifies that
+// Scheduler::MigrateUnpinnedThreads and Scheduler::SetCpuAffinity do not race on run-queue removal,
+// unblock_list_node_, or thread migration state when queue_lock_ is released.
+[[maybe_unused]] static bool mp_hotplug_set_affinity_during_unplug_test() {
+  BEGIN_TEST;
+
+// TODO(https://fxbug.dev/42086046): Re-enable test on RISC-V.
+#if defined(__riscv)
+  printf(
+      "skipping test mp_hotplug_set_affinity_during_unplug, hotplug only supported on x64 and "
+      "arm64\n");
+  END_TEST;
+#endif
+
+  const cpu_mask_t online_secondaries = mp_get_online_mask() & ~cpu_num_to_mask(BOOT_CPU_ID);
+  if (online_secondaries == 0) {
+    printf("skipping test mp_hotplug_set_affinity_during_unplug, not enough online cpus\n");
+    END_TEST;
+  }
+  const cpu_num_t target_cpu = highest_cpu_set(online_secondaries);
+
+  auto restore_affinity = fit::defer(
+      [previous_affinity = Thread::Current::SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID))] {
+        Thread::Current::SetCpuAffinity(previous_affinity);
+      });
+
+  // |stop| is a monotonic cancellation flag; counters are checked after Thread::Join().
+  struct State {
+    ktl::atomic<bool> stop{false};
+    ktl::atomic<uint64_t> worker_iterations{0};
+    ktl::atomic<uint64_t> affinity_updates{0};
+    Thread* workers[4]{};
+    cpu_num_t target_cpu{INVALID_CPU};
+  } state;
+  state.target_cpu = target_cpu;
+
+  Thread* mutator = nullptr;
+  auto cleanup_threads = fit::defer([&] {
+    state.stop.store(true, ktl::memory_order_relaxed);
+    if (mutator != nullptr) {
+      mutator->Join(nullptr, ZX_TIME_INFINITE);
+      mutator = nullptr;
+    }
+    for (Thread*& worker : state.workers) {
+      if (worker != nullptr) {
+        worker->Join(nullptr, ZX_TIME_INFINITE);
+        worker = nullptr;
+      }
+    }
+  });
+
+  auto restore_target_cpu = fit::defer([target_cpu] {
+    if (!mp_is_cpu_online(target_cpu)) {
+      const zx_status_t status = hotplug_core(target_cpu);
+      ASSERT_MSG(status == ZX_OK, "hotplugging core %u failed: %d", target_cpu, status);
+      wait_for_cpu_active(target_cpu);
+      const zx_status_t dpc_status = wait_for_cpu_dpc_runner(target_cpu);
+      ASSERT_MSG(dpc_status == ZX_OK, "waiting for core %u's dpc runner failed: %d", target_cpu,
+                 dpc_status);
+    }
+  });
+
+  for (Thread*& worker : state.workers) {
+    worker = Thread::Create(
+        "mp-hotplug-affinity-worker",
+        [](void* arg) -> int {
+          auto* s = static_cast<State*>(arg);
+          while (!s->stop.load(ktl::memory_order_relaxed)) {
+            s->worker_iterations.fetch_add(1, ktl::memory_order_relaxed);
+            Thread::Current::Yield();
+          }
+          return 0;
+        },
+        &state, DEFAULT_PRIORITY);
+    ASSERT_NONNULL(worker, "worker create failed");
+    worker->SetSoftCpuAffinity(cpu_num_to_mask(target_cpu));
+    worker->Resume();
+  }
+
+  mutator = Thread::Create(
+      "mp-hotplug-affinity-mutator",
+      [](void* arg) -> int {
+        auto* s = static_cast<State*>(arg);
+        const cpu_mask_t target_mask = cpu_num_to_mask(s->target_cpu);
+        const cpu_mask_t boot_or_target = cpu_num_to_mask(BOOT_CPU_ID) | target_mask;
+        uint64_t step = 0;
+        while (!s->stop.load(ktl::memory_order_relaxed)) {
+          for (Thread* worker : s->workers) {
+            worker->SetSoftCpuAffinity((step & 1u) ? target_mask : CPU_MASK_ALL);
+            worker->SetCpuAffinity((step & 2u) ? boot_or_target : CPU_MASK_ALL);
+            s->affinity_updates.fetch_add(1, ktl::memory_order_relaxed);
+          }
+          ++step;
+          Thread::Current::Yield();
+        }
+        return 0;
+      },
+      &state, DEFAULT_PRIORITY);
+  ASSERT_NONNULL(mutator, "mutator create failed");
+  mutator->SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID));
+  mutator->Resume();
+
+  constexpr int kUnplugCycles = 20;
+  for (int i = 0; i < kUnplugCycles; ++i) {
+    Thread::Current::SleepRelative(ZX_MSEC(1));
+    ASSERT_OK(mp_unplug_cpu_mask(cpu_num_to_mask(target_cpu), ZX_TIME_INFINITE),
+              "unplugging core failed");
+    ASSERT_OK(wait_for_cpu_offline(target_cpu), "waiting for core to go offline failed");
+    ASSERT_OK(hotplug_core(target_cpu), "hotplugging core failed");
+    wait_for_cpu_active(target_cpu);
+    ASSERT_OK(wait_for_cpu_dpc_runner(target_cpu), "waiting for core's dpc runner failed");
+  }
+
+  cleanup_threads.call();
+  EXPECT_GT(state.worker_iterations.load(ktl::memory_order_relaxed), 0u);
+  EXPECT_GT(state.affinity_updates.load(ktl::memory_order_relaxed), 0u);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(mp_hotplug_tests)
 UNITTEST("test unplug and hotplug cores one by one", mp_hotplug_test)
 UNITTEST("test mp_sync_exec while unplugging and hotplugging a core", mp_hotplug_sync_exec_test)
@@ -1159,4 +1281,6 @@ UNITTEST("test fair timeline integrity across repeated core unplug migrations",
          mp_hotplug_migrate_fair_timeline_test)
 UNITTEST("test soft affinity migration fallback during core unplug",
          mp_hotplug_soft_affinity_migration_fallback_test)
+UNITTEST("test concurrent SetCpuAffinity during core unplug migrations",
+         mp_hotplug_set_affinity_during_unplug_test)
 UNITTEST_END_TESTCASE(mp_hotplug_tests, "hotplug", "Tests for unplugging and hotplugging cores")

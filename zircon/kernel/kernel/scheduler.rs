@@ -2381,12 +2381,6 @@ unsafe extern "C" {
         sched: *const Scheduler,
     ) -> SchedUtilization;
 
-    fn cpp_unblock_list_init(holder: *mut UnblockList);
-    fn cpp_unblock_list_destroy(holder: *mut UnblockList);
-    fn cpp_unblock_list_push_back(holder: *mut UnblockList, thread: *mut Thread);
-    fn cpp_unblock_list_pop_front(holder: *mut UnblockList) -> *mut Thread;
-    fn cpp_unblock_list_is_empty(holder: *const UnblockList) -> bool;
-
     fn cpp_scheduler_save_state_list_is_empty(sched: *mut Scheduler) -> bool;
     fn cpp_scheduler_save_state_list_move(sched: *mut Scheduler, holder: *mut SaveStateList);
     fn cpp_scheduler_take_save_state_list(
@@ -11188,7 +11182,6 @@ impl Scheduler {
         // onto `this`'s `save_state_list_` without spinning on `thread_lock`, and has
         // its `Save` stage run on `current_cpu` before `save_state_list_` is drained
         // and `cpu_deactivating` is cleared below.
-        let now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
 
         // SAFETY: `this` is the current CPU's initialized `Scheduler`, interrupts
         // are disabled, and neither `queue_lock_` nor `Thread::list_lock_` is held.
@@ -11218,87 +11211,26 @@ impl Scheduler {
             cpp_thread_call_migrate_fn_for_cpu(current_cpu);
         }
 
-        // Now move any READY threads that are not hard-pinned exclusively to this
-        // CPU over to a temporary list, flagging them as in the process of
-        // currently migrating. `save_state_list_` is drained afterward in the same
-        // critical section that clears `cpu_deactivating`.
+        // Dequeue one migratable READY thread at a time under `queue_lock_` into
+        // `QueueDisposition::Stolen` (`stolen_by = current_cpu`), mirroring
+        // `steal_work`, before releasing `queue_lock_` to acquire the thread's
+        // `ChainLock` and place it onto an active scheduler. Transitioning each
+        // thread out of `Enqueued` before dropping `queue_lock_` prevents a
+        // concurrent `Scheduler::set_cpu_affinity` on another CPU from racing to
+        // dequeue, run, or exit the thread while `queue_lock_` is released.
+        // `save_state_list_` is drained afterward in the same critical section
+        // that clears `cpu_deactivating`.
         let current_cpu_mask = cpu_num_to_mask(current_cpu);
-        let mut migrating_threads = core::mem::MaybeUninit::<UnblockList>::uninit();
-        let migrating_threads_ptr = migrating_threads.as_mut_ptr();
 
-        // SAFETY: `this` is valid, interrupts are disabled, and `queue_lock_` is not
-        // already held. `_queue_guard` holds `this`'s `queue_lock_`, placement-initializing
-        // the stack `UnblockList` via `cpp_unblock_list_init`. While iterating each
-        // `RunQueue`, `next` advances before any list operation without mutating
-        // `run_queue`, and `hard_affinity` is stable under `queue_lock_` because
-        // `set_affinity` requires both `thread_lock` and the container `queue_lock_`
-        // for `Ready` threads.
-        unsafe {
-            let _queue_guard = QueueLockGuard::acquire(this);
-
-            cpp_unblock_list_init(migrating_threads_ptr);
-
-            let state = (*this).state.get();
-
-            let collect_migrating_threads =
-                |run_queue: *const RunQueue, thread_list: *mut UnblockList| {
-                    debug_assert!(
-                        core::ptr::eq(run_queue, &raw const (*state).fair_run_queue)
-                            || core::ptr::eq(
-                                run_queue,
-                                &raw const (*state).critical_deadline_run_queue,
-                            )
-                            || core::ptr::eq(run_queue, &raw const (*state).deadline_run_queue)
-                    );
-                    let mut iter = rust_kernel_run_queue_iterator_create(run_queue);
-                    while rust_kernel_run_queue_iterator_is_valid(&iter) {
-                        let consider = rust_kernel_run_queue_iterator_get(&iter);
-                        rust_kernel_run_queue_iterator_next(&mut iter);
-
-                        // We are holding the scheduler's queue lock, and iterating over the
-                        // scheduler's run queues. All of the threads in those queues are
-                        // clearly owned by this scheduler right now. We project `hard_affinity`
-                        // via raw pointer to avoid forming `&SchedulerState` without holding
-                        // `consider`'s thread lock.
-                        // Leave threads hard-pinned exclusively to `current_cpu` queued here
-                        // until `current_cpu` returns online; migrate all other threads.
-                        if (*cpp_thread_get_scheduler_state(consider)).hard_affinity
-                            != current_cpu_mask
-                        {
-                            cpp_unblock_list_push_back(thread_list, consider);
-                        }
-                    }
-                };
-
-            collect_migrating_threads(&raw const (*state).fair_run_queue, migrating_threads_ptr);
-            collect_migrating_threads(
-                &raw const (*state).critical_deadline_run_queue,
-                migrating_threads_ptr,
-            );
-            collect_migrating_threads(
-                &raw const (*state).deadline_run_queue,
-                migrating_threads_ptr,
-            );
-        }
-
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        enum RemoveFromRunQueue {
-            Yes,
-            No,
-        }
-
-        // OK, now that we have dropped our queue lock, go over our list of migrating
-        // threads and finish the migration process. Don't make any assumptions about
-        // the fair/deadline nature of the threads as we migrate. Since we dropped
-        // the scheduler's queue lock, it is possible that these threads have changed
-        // effective priority since being examined above, before being removed from
-        // their old scheduler and arriving at a new one. `erase_from_queue` converts
-        // fair threads' start/finish times from variable to monotonic time under
-        // both locks when the thread is still fair at removal time.
-        let migrate_thread = |thread: *mut Thread,
-                              remove_from_run_queue: RemoveFromRunQueue|
+        let finish_migrating_thread = |mut dequeue_result: DequeueResult,
+                                       trace_save_state: bool|
          -> CpuNum {
-            // SAFETY: `thread` is a valid `Thread` popped from a local migration list.
+            let thread = dequeue_result.thread;
+            debug_assert!(!thread.is_null());
+
+            // SAFETY: `thread` was just dequeued into `QueueDisposition::Stolen` (or
+            // popped from `local_save_state_list_ptr`) and cannot be scheduled or exit
+            // before `target.insert` below, so `thread` remains valid.
             let thread_lock = unsafe { &*thread_get_lock(thread) };
             single_chain_lock_guard!(
                 _guard,
@@ -11307,92 +11239,141 @@ impl Scheduler {
                 clt_tag!("Scheduler::MigrateUnpinnedThreads")
             );
 
-            if remove_from_run_queue == RemoveFromRunQueue::Yes || SCHEDULER_QUEUE_TRACING_ENABLED {
-                // SAFETY: `this` is valid, interrupts are disabled, and `this`'s
-                // `queue_lock_` is not currently held.
-                let _queue_guard = unsafe { QueueLockGuard::acquire(this) };
-
-                if remove_from_run_queue == RemoveFromRunQueue::Yes {
-                    // Even though we dropped `queue_lock_` after collecting the threads to
-                    // move and did not hold `thread`'s lock prior to `_guard`, `thread` must
-                    // still be associated with `this` because `this` was marked inactive
-                    // above, preventing other CPUs from stealing work from `this`.
-                    // `erase_from_queue` converts fair timeline values to monotonic time once
-                    // under both locks before `remove_thread_locked` disassociates `thread`.
-                    // SAFETY: `this` and `thread` are valid, `thread` remains enqueued on
-                    // `this`, and both `_guard` (`thread`'s lock) and `_queue_guard`
-                    // (`this`'s `queue_lock_`) are held exclusively.
-                    unsafe {
-                        let scheduler = &*this;
-                        debug_assert_eq!(
-                            (*cpp_thread_get_scheduler_state(thread)).curr_cpu,
-                            scheduler.this_cpu()
-                        );
-                        scheduler.erase_from_queue(thread);
-                        scheduler.remove_thread_locked(now, thread);
-                    }
-                }
-
-                if SCHEDULER_QUEUE_TRACING_ENABLED {
-                    // Emit the dequeue trace event after any run-queue removal so `arg1`
-                    // records the post-dequeue runnable task count (matching other dequeue
-                    // paths), while `_queue_guard` is still held (including for
-                    // `SaveStateList` threads when `SCHEDULER_QUEUE_TRACING_ENABLED` is set).
-                    // SAFETY: `this` and `thread` are valid, `_queue_guard` holds `this`'s
-                    // `queue_lock_` (guarding `active_thread` and run-queue lengths), and
-                    // `_guard` holds `thread`'s lock exclusively (guarding `thread`'s
-                    // scheduler state even after `remove_thread_locked` or `SaveStateList`
-                    // disassociation).
-                    unsafe {
-                        let trace_tag = if remove_from_run_queue == RemoveFromRunQueue::Yes {
-                            let ep_ptr = &raw const (*cpp_thread_get_scheduler_state(thread))
-                                .effective_profile;
-                            if EffectiveProfile::discipline_raw(ep_ptr) == SchedDiscipline::Fair {
-                                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_fair")
-                            } else {
-                                ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline")
-                            }
-                        } else {
-                            ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_save_state")
-                        };
-                        (*this).trace_thread_queue_event(trace_tag, thread);
-                    }
+            if trace_save_state && SCHEDULER_QUEUE_TRACING_ENABLED {
+                // SAFETY: `this` is valid, interrupts are disabled, `this`'s
+                // `queue_lock_` is not currently held, and holding both `_guard` and
+                // `_queue_guard` synchronizes `trace_thread_queue_event`.
+                unsafe {
+                    let _queue_guard = QueueLockGuard::acquire(this);
+                    (*this).trace_thread_queue_event(
+                        ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_save_state"),
+                        thread,
+                    );
                 }
             }
+
+            // Apply any pending fair variable-to-monotonic timeline conversion now
+            // that `thread`'s lock is held exclusively (skipped automatically if
+            // `thread` transitioned to deadline while `queue_lock_` was dropped).
+            // SAFETY: `thread` is valid, not enqueued in any `RunQueue`, and locked
+            // exclusively by `_guard` with no aliasing references.
+            unsafe { dequeue_result.update_thread_timeline() };
 
             // Call the Save stage of the thread's migration function if it last ran on
             // this CPU (`last_cpu` may be `INVALID_CPU` if `thread` has never run or
             // another CPU if a previous migration is already pending).
-            // SAFETY: `thread` is valid and its lock is held by `_guard`.
+            // SAFETY: `thread` is valid and its lock is held exclusively by `_guard`.
             unsafe {
                 if (*cpp_thread_get_scheduler_state(thread)).last_cpu == current_cpu {
                     cpp_thread_call_migrate_fn_locked(thread, MIGRATE_STAGE_SAVE);
                 }
             }
 
+            let insert_now = SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
             // SAFETY: `thread` is valid, `ThreadState::Ready`, non-idle, and not
             // enqueued in any `RunQueue`, with its lock held by `_guard`, no aliasing
             // references, interrupts disabled, and no `queue_lock_` held. Inside the
             // callback, `target`'s `queue_lock_` is held.
             unsafe {
                 Self::find_active_scheduler_for_thread(thread, |thread, target| {
-                    // Finish the transition and add the thread to the new target queue. The
-                    // Restore stage of the migration function will be called on the new CPU the
-                    // next time the thread becomes scheduled.
+                    // Finish the transition and add the thread to the new target queue.
+                    // The Restore stage of the migration function will be called on the
+                    // new CPU the next time the thread becomes scheduled.
                     debug_assert!(
                         !core::ptr::eq(core::ptr::from_ref(target), this.cast_const())
                             || !target.is_scheduler_active_locked()
                     );
-                    target.insert(now, thread, Placement::Migration);
+                    target.insert(insert_now, thread, Placement::Migration);
                 })
             }
         };
 
-        // SAFETY: `migrating_threads_ptr` was initialized by `cpp_unblock_list_init`.
-        while unsafe { !cpp_unblock_list_is_empty(migrating_threads_ptr) } {
-            // SAFETY: `migrating_threads_ptr` is initialized and non-empty.
-            let thread = unsafe { cpp_unblock_list_pop_front(migrating_threads_ptr) };
-            let target_cpu = migrate_thread(thread, RemoveFromRunQueue::Yes);
+        loop {
+            // SAFETY: `this` is valid, interrupts are disabled, and `queue_lock_` is not
+            // currently held. `_queue_guard` holds `this`'s `queue_lock_` throughout the
+            // scan and `QueueDisposition::Stolen` dequeue; `hard_affinity`, `start_time`,
+            // and `finish_time` are stable under `queue_lock_` for enqueued `Ready`
+            // threads, and projecting them via raw pointers avoids forming
+            // `&SchedulerState` without holding `consider`'s thread lock.
+            let next_to_migrate = unsafe {
+                let _queue_guard = QueueLockGuard::acquire(this);
+                let dequeue_now =
+                    SchedTime::from_raw(crate::platform_rs::timer::current_mono_time().0);
+
+                let dequeue_from_queue = |run_queue: *mut RunQueue,
+                                          is_fair: bool,
+                                          trace_tag: &'static ktrace_rs::InternedString|
+                 -> Option<DequeueResult> {
+                    let mut found: *mut Thread = core::ptr::null_mut();
+                    let mut iter = rust_kernel_run_queue_iterator_create(run_queue);
+                    while rust_kernel_run_queue_iterator_is_valid(&iter) {
+                        let consider = rust_kernel_run_queue_iterator_get(&iter);
+                        rust_kernel_run_queue_iterator_next(&mut iter);
+
+                        // Leave threads hard-pinned exclusively to `current_cpu` queued
+                        // here until `current_cpu` returns online; migrate all others.
+                        if (*cpp_thread_get_scheduler_state(consider)).hard_affinity
+                            != current_cpu_mask
+                        {
+                            found = consider;
+                            break;
+                        }
+                    }
+                    if found.is_null() {
+                        return None;
+                    }
+
+                    debug_assert_eq!(
+                        (*cpp_thread_get_queue_state(found)).disposition(),
+                        QueueDisposition::Enqueued
+                    );
+                    (*run_queue).erase_raw(found);
+                    (*this).remove(dequeue_now, found, current_cpu);
+                    debug_assert_eq!(
+                        (*cpp_thread_get_queue_state(found)).disposition(),
+                        QueueDisposition::Stolen
+                    );
+                    (*this).trace_thread_queue_event(trace_tag, found);
+
+                    if is_fair {
+                        let state_ptr = cpp_thread_get_scheduler_state(found);
+                        let mono_start = (*this).variable_to_monotonic((*state_ptr).start_time);
+                        let mono_finish = (*this).variable_to_monotonic((*state_ptr).finish_time);
+                        Some(DequeueResult {
+                            thread: found,
+                            mono_start_time_ns: mono_start,
+                            mono_finish_time_ns: mono_finish,
+                        })
+                    } else {
+                        Some(DequeueResult::from_thread(found))
+                    }
+                };
+
+                dequeue_from_queue(
+                    (*this).fair_run_queue_mut(),
+                    true,
+                    ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_fair"),
+                )
+                .or_else(|| {
+                    dequeue_from_queue(
+                        (*this).critical_deadline_queue_mut(),
+                        false,
+                        ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline"),
+                    )
+                })
+                .or_else(|| {
+                    dequeue_from_queue(
+                        (*this).deadline_queue_mut(),
+                        false,
+                        ktrace_rs::resolve_string!("tqe_deque_migrate_unpinned_deadline"),
+                    )
+                })
+            };
+
+            let Some(dequeue_result) = next_to_migrate else {
+                break;
+            };
+            let target_cpu = finish_migrating_thread(dequeue_result, false);
             cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
         }
 
@@ -11423,17 +11404,11 @@ impl Scheduler {
                 if thread.is_null() {
                     break;
                 }
-                let target_cpu = migrate_thread(thread, RemoveFromRunQueue::No);
+                let target_cpu = finish_migrating_thread(DequeueResult::from_thread(thread), true);
                 cpus_to_reschedule_mask |= cpu_num_to_mask(target_cpu);
             }
             // SAFETY: `local_save_state_list_ptr` was initialized and is now empty.
             unsafe { cpp_save_state_list_destroy(local_save_state_list_ptr) };
-        }
-
-        // SAFETY: `migrating_threads_ptr` was initialized by `cpp_unblock_list_init` and
-        // drained above.
-        unsafe {
-            cpp_unblock_list_destroy(migrating_threads_ptr);
         }
 
         drop(_trace);

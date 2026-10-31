@@ -228,12 +228,6 @@ int32_t rust_kernel_effective_profile_get_weight_or_packed_deadline_params(
     SchedulerState::EffectiveProfile* ep);
 void rust_kernel_scheduler_get_projected_cpu_stats(cpu_num_t cpu, cpu_stats* stats);
 
-void cpp_unblock_list_init(ffi::Uninitialized<Thread::UnblockList>* holder);
-void cpp_unblock_list_destroy(Thread::UnblockList* holder);
-void cpp_unblock_list_push_back(Thread::UnblockList* holder, Thread* thread);
-Thread* cpp_unblock_list_pop_front(Thread::UnblockList* holder);
-bool cpp_unblock_list_is_empty(const Thread::UnblockList* holder);
-
 bool cpp_scheduler_save_state_list_is_empty(Scheduler* sched);
 void cpp_scheduler_save_state_list_move(Scheduler* sched,
                                         ffi::Uninitialized<Thread::SaveStateList>* holder);
