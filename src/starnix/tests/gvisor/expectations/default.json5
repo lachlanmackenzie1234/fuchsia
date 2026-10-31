@@ -1023,11 +1023,6 @@
                 "AllInetTests/RawPacketTest.SetSocketRecvBufAboveMax/*",
                 "AllInetTests/RawPacketTest.SetSocketRecvBufBelowMin/*",
 
-                // uidgid_test
-                // TODO(https://fxbug.dev/578126238): Support setfsuid/setfsgid and reset fsuid/fsgid on setuid/setgid.
-                "UidGidRootTest.SetgidResetsFsgid",
-                "UidGidRootTest.SetuidResetsFsuid",
-
                 // wait_test - https://fxbug.dev/297461294
                 "Waiters/WaitAnyChildTest.IgnoredChildRusage/*",
                 "Waiters/WaitSpecificChildTest.SiblingChildrenWNOTHREAD/0",

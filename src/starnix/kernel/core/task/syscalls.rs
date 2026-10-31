@@ -421,7 +421,7 @@ pub fn sys_setuid(current_task: &CurrentTask, uid: uid_t) -> Result<(), Errno> {
         creds.saved_uid = uid;
     }
 
-    creds.update_capabilities(&prev);
+    creds.update_capabilities_on_uid_change(&prev);
     std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
@@ -457,10 +457,10 @@ pub fn sys_getegid(current_task: &CurrentTask) -> Result<gid_t, Errno> {
 pub fn sys_setfsuid(current_task: &CurrentTask, fsuid: uid_t) -> Result<uid_t, Errno> {
     let prev = current_task.current_creds();
     let prev_fsuid = prev.fsuid;
-    if fsuid != u32::MAX && new_uid_allowed(&current_task, fsuid) {
+    if fsuid != u32::MAX && fsuid != prev_fsuid && new_uid_allowed(&current_task, fsuid) {
         let mut creds = Credentials::clone(&prev);
         creds.fsuid = fsuid;
-        creds.update_capabilities(&prev);
+        creds.update_capabilities_on_fsuid_change(&prev);
         std::mem::drop(prev);
         current_task.set_creds(creds);
     }
@@ -472,10 +472,9 @@ pub fn sys_setfsgid(current_task: &CurrentTask, fsgid: gid_t) -> Result<gid_t, E
     let prev = current_task.current_creds();
     let prev_fsgid = prev.fsgid;
 
-    if fsgid != u32::MAX && new_gid_allowed(&current_task, fsgid) {
+    if fsgid != u32::MAX && fsgid != prev_fsgid && new_gid_allowed(&current_task, fsgid) {
         let mut creds = Credentials::clone(&prev);
         creds.fsgid = fsgid;
-        creds.update_capabilities(&prev);
         std::mem::drop(prev);
         current_task.set_creds(creds);
     }
@@ -541,7 +540,6 @@ pub fn sys_setreuid(current_task: &CurrentTask, ruid: uid_t, euid: uid_t) -> Res
     let is_euid_set = euid != u32::MAX;
     if is_euid_set {
         creds.euid = euid;
-        creds.fsuid = euid;
     }
 
     // If the real user ID is set (i.e., ruid is not -1) or the effective
@@ -550,8 +548,9 @@ pub fn sys_setreuid(current_task: &CurrentTask, ruid: uid_t, euid: uid_t) -> Res
     if is_ruid_set || (is_euid_set && euid != prev.uid) {
         creds.saved_uid = creds.euid;
     }
+    creds.fsuid = creds.euid;
 
-    creds.update_capabilities(&prev);
+    creds.update_capabilities_on_uid_change(&prev);
     std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
@@ -587,7 +586,6 @@ pub fn sys_setregid(current_task: &CurrentTask, rgid: gid_t, egid: gid_t) -> Res
     let is_egid_set = egid != u32::MAX;
     if is_egid_set {
         creds.egid = egid;
-        creds.fsgid = egid;
     }
 
     // If the real group ID is set (i.e., rgid is not -1) or the effective
@@ -596,6 +594,7 @@ pub fn sys_setregid(current_task: &CurrentTask, rgid: gid_t, egid: gid_t) -> Res
     if is_rgid_set || (is_egid_set && egid != previous_rgid) {
         creds.saved_gid = creds.egid;
     }
+    creds.fsgid = creds.egid;
 
     current_task.set_creds(creds);
     Ok(())
@@ -613,18 +612,25 @@ pub fn sys_setresuid(
     }
 
     let prev = current_task.current_creds();
+    if (ruid == u32::MAX || ruid == prev.uid)
+        && (euid == u32::MAX || (euid == prev.euid && euid == prev.fsuid))
+        && (suid == u32::MAX || suid == prev.saved_uid)
+    {
+        return Ok(());
+    }
+
     let mut creds = Credentials::clone(&prev);
     if ruid != u32::MAX {
         creds.uid = ruid;
     }
     if euid != u32::MAX {
         creds.euid = euid;
-        creds.fsuid = euid;
     }
     if suid != u32::MAX {
         creds.saved_uid = suid;
     }
-    creds.update_capabilities(&prev);
+    creds.fsuid = creds.euid;
+    creds.update_capabilities_on_uid_change(&prev);
     std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
@@ -641,17 +647,26 @@ pub fn sys_setresgid(
         return error!(EPERM);
     }
 
-    let mut creds = Credentials::clone(&current_task.current_creds());
+    let prev = current_task.current_creds();
+    if (rgid == u32::MAX || rgid == prev.gid)
+        && (egid == u32::MAX || (egid == prev.egid && egid == prev.fsgid))
+        && (sgid == u32::MAX || sgid == prev.saved_gid)
+    {
+        return Ok(());
+    }
+
+    let mut creds = Credentials::clone(&prev);
     if rgid != u32::MAX {
         creds.gid = rgid;
     }
     if egid != u32::MAX {
         creds.egid = egid;
-        creds.fsgid = egid;
     }
     if sgid != u32::MAX {
         creds.saved_gid = sgid;
     }
+    creds.fsgid = creds.egid;
+    std::mem::drop(prev);
     current_task.set_creds(creds);
     Ok(())
 }
@@ -2241,7 +2256,7 @@ mod tests {
     use starnix_sync::Mutex;
     use starnix_syscalls::SUCCESS;
     use starnix_task_command::TaskCommand;
-    use starnix_uapi::auth::Credentials;
+    use starnix_uapi::auth::{CAP_DAC_OVERRIDE, Credentials};
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::uapi::{kcmp_type_KCMP_SYSVSEM, kcmp_type_KCMP_TYPES, kcmp_type_KCMP_VM};
     use starnix_uapi::{SCHED_BATCH, SCHED_FIFO, SCHED_FLAG_KEEP_ALL, SCHED_NORMAL};
@@ -3120,6 +3135,103 @@ mod tests {
             assert_eq!(current_task.current_creds().euid, 43);
             assert_eq!(current_task.current_creds().uid, 41);
             assert_eq!(current_task.current_creds().saved_uid, 43);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setxid_resets_fsuid_and_fsgid() {
+        spawn_kernel_and_run(async |current_task| {
+            // 1. setresuid(-1, -1, 1000) after setfsuid(0) resets fsuid and drops capabilities.
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            sys_setresuid(&current_task, 1000, 1000, 0).expect("setresuid");
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            assert_eq!(sys_setfsuid(&current_task, 0).expect("setfsuid"), 1000);
+            assert_eq!(current_task.current_creds().fsuid, 0);
+            assert!(current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            sys_setresuid(&current_task, u32::MAX, u32::MAX, 1000).expect("setresuid");
+            assert_eq!(current_task.current_creds().uid, 1000);
+            assert_eq!(current_task.current_creds().euid, 1000);
+            assert_eq!(current_task.current_creds().saved_uid, 1000);
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+            assert!(!current_task.current_creds().cap_permitted.contains(CAP_DAC_OVERRIDE));
+
+            // 2. With KEEP_CAPS and euid already nonzero, dropping saved_uid resets fsuid while
+            // cap_emulate_setxuid preserves both permitted and effective capabilities.
+            let mut root_creds = Credentials::with_ids(0, 0);
+            root_creds.securebits.insert(SecureBits::KEEP_CAPS);
+            current_task.set_creds(root_creds);
+            sys_setresuid(&current_task, 1000, 1000, 0).expect("setresuid");
+            assert_eq!(sys_setfsuid(&current_task, 0).expect("setfsuid"), 1000);
+            assert!(current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            sys_setresuid(&current_task, u32::MAX, u32::MAX, 1000).expect("setresuid");
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            assert!(current_task.current_creds().cap_permitted.contains(CAP_DAC_OVERRIDE));
+            assert!(current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            // 3. setreuid(1000, -1) and setreuid(-1, -1) unconditionally sync fsuid to euid,
+            // without re-raising LSM_SETID_FS capabilities when euid stays 0.
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            sys_setresuid(&current_task, 1000, 1000, 0).expect("setresuid");
+            assert_eq!(sys_setfsuid(&current_task, 0).expect("setfsuid"), 1000);
+            sys_setreuid(&current_task, 1000, u32::MAX).expect("setreuid");
+            assert_eq!(current_task.current_creds().saved_uid, 1000);
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            assert_eq!(sys_setfsuid(&current_task, 1000).expect("setfsuid"), 0);
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+            sys_setreuid(&current_task, u32::MAX, u32::MAX).expect("setreuid");
+            assert_eq!(current_task.current_creds().fsuid, 0);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            // 4. setresuid no-op keeps fsuid, while explicit euid != fsuid (and setuid(0))
+            // resets fsuid without re-raising filesystem capabilities when euid stays 0.
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            assert_eq!(sys_setfsuid(&current_task, 1000).expect("setfsuid"), 0);
+            sys_setresuid(&current_task, u32::MAX, u32::MAX, u32::MAX).expect("setresuid");
+            assert_eq!(current_task.current_creds().fsuid, 1000);
+            sys_setresuid(&current_task, u32::MAX, 0, u32::MAX).expect("setresuid");
+            assert_eq!(current_task.current_creds().fsuid, 0);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            assert_eq!(sys_setfsuid(&current_task, 1000).expect("setfsuid"), 0);
+            sys_setuid(&current_task, 0).expect("setuid");
+            assert_eq!(current_task.current_creds().fsuid, 0);
+            assert!(!current_task.current_creds().cap_effective.contains(CAP_DAC_OVERRIDE));
+
+            // 5. setresgid and setregid reset fsgid (and setresgid no-op preserves fsgid).
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            sys_setresgid(&current_task, 1000, 1000, 0).expect("setresgid");
+            sys_setresuid(&current_task, 1000, 1000, 1000).expect("setresuid");
+            assert_eq!(sys_setfsgid(&current_task, 0).expect("setfsgid"), 1000);
+            assert_eq!(current_task.current_creds().fsgid, 0);
+            sys_setresgid(&current_task, u32::MAX, u32::MAX, 1000).expect("setresgid");
+            assert_eq!(current_task.current_creds().saved_gid, 1000);
+            assert_eq!(current_task.current_creds().fsgid, 1000);
+
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            sys_setresgid(&current_task, 1000, 1000, 0).expect("setresgid");
+            sys_setresuid(&current_task, 1000, 1000, 1000).expect("setresuid");
+            assert_eq!(sys_setfsgid(&current_task, 0).expect("setfsgid"), 1000);
+            sys_setregid(&current_task, 1000, u32::MAX).expect("setregid");
+            assert_eq!(current_task.current_creds().saved_gid, 1000);
+            assert_eq!(current_task.current_creds().fsgid, 1000);
+
+            current_task.set_creds(Credentials::with_ids(0, 0));
+            assert_eq!(sys_setfsgid(&current_task, 1000).expect("setfsgid"), 0);
+            sys_setresgid(&current_task, u32::MAX, u32::MAX, u32::MAX).expect("setresgid");
+            assert_eq!(current_task.current_creds().fsgid, 1000);
+            sys_setresgid(&current_task, u32::MAX, 0, u32::MAX).expect("setresgid");
+            assert_eq!(current_task.current_creds().fsgid, 0);
         })
         .await;
     }
