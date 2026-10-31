@@ -12,8 +12,12 @@ test_suite(
     tests = [
         "//examples/components/dictionaries:dictionary-examples_test",
         "//examples/components/dynamic:tests_test",
+        "//examples/cpp/synchronization_checker:cpp-examples-synchronization-checker-test",
         "//examples/diagnostics/inspect/rust-ergonomic:ergonomic-inspect-tests",
         "//examples/rust:rust-examples_test",
         "//examples/rust/rust_static_linking:static_linking_tests",
+        "//examples/testing/tools:stdout-test",
+        "//examples/testing/unittests/cpp:reverser_library_unittest",
+        "//examples/testing/unittests/rust:reverser_rust_unittest",
     ],
 )
