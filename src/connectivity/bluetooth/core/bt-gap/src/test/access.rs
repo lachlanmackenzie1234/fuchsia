@@ -243,7 +243,12 @@ async fn multiple_connection_policy_clients() {
     let (client1, server1) = endpoints::create_proxy_and_stream::<AccessMarker>();
     let run_access_task1 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server1));
     let (client2, server2) = endpoints::create_proxy_and_stream::<AccessMarker>();
-    let run_access_task2 = fuchsia_async::Task::spawn(access::run(dispatcher, server2));
+    let mut run_access_fut2 = Box::pin(access::run(dispatcher.clone(), server2));
+    // Poll once to enqueue watch_peers() registration before host_server.next().await runs the
+    // broker task.
+    assert!(futures::poll!(&mut run_access_fut2).is_pending());
+    let (client3, server3) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task3 = fuchsia_async::Task::spawn(access::run(dispatcher, server3));
 
     let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
     let policy1 = AccessSetConnectionPolicyRequest {
@@ -252,43 +257,64 @@ async fn multiple_connection_policy_clients() {
     };
     let fut1 = client1.set_connection_policy(policy1);
 
-    // Host should receive request to disable connectable.
-    match host_server.next().await.expect("valid request") {
-        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
-            responder.send(Ok(())).expect("valid response");
-        }
+    // Host receives request to disable connectable; hold responder so state stays Pending.
+    let responder = match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => responder,
         x => panic!("Expected SetConnectable, got: {x:?}"),
-    }
-    assert_matches!(fut1.await, Ok(Ok(_)));
+    };
 
-    // Second client requests suppression.
+    // Second client requests suppression while the first request is still Pending.
     let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
     let policy2 = AccessSetConnectionPolicyRequest {
         suppress_bredr_connections: Some(server_token2),
         ..Default::default()
     };
-    let fut2 = client2.set_connection_policy(policy2);
-    // Second request resolves successfully without issuing another SetConnectable to host.
-    assert_matches!(fut2.await, Ok(Ok(_)));
+    let mut fut2 = std::pin::pin!(client2.set_connection_policy(policy2));
+    assert!(futures::poll!(&mut fut2).is_pending());
+    assert!(futures::poll!(&mut run_access_fut2).is_pending());
+    assert!(futures::poll!(&mut fut2).is_pending());
+    let run_access_task2 = fuchsia_async::Task::spawn(run_access_fut2);
     assert!(
         host_server.next().now_or_never().is_none(),
-        "Unexpected message received on host_server after second client requested suppression"
+        "Unexpected message received on host_server while first suppression request is Pending"
     );
 
-    // Drop first client's token and ensure Client 1's access task finishes processing.
+    // Responding on host resolves both Pending clients.
+    responder.send(Ok(())).expect("valid response");
+    assert_matches!(fut1.await, Ok(Ok(_)));
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    // Third client requests suppression while already in Suppressed state.
+    let (token3, server_token3) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy3 = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token3),
+        ..Default::default()
+    };
+    let fut3 = client3.set_connection_policy(policy3);
+    // Third request resolves successfully without issuing another SetConnectable to host.
+    assert_matches!(fut3.await, Ok(Ok(_)));
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server after third client requested suppression"
+    );
+
+    // Drop first and second clients' tokens and ensure their access tasks finish processing.
     drop(token1);
     drop(client1);
     assert_matches!(run_access_task1.await, Ok(()));
+    drop(token2);
+    drop(client2);
+    assert_matches!(run_access_task2.await, Ok(()));
 
-    // Verify that dropping the first token did NOT re-enable connectable because second client
+    // Verify that dropping the first two tokens did NOT re-enable connectable because third client
     // is still active.
     assert!(
         host_server.next().now_or_never().is_none(),
-        "Unexpected message received on host_server after first client dropped token"
+        "Unexpected message received on host_server while third client still holds token"
     );
 
-    // Dropping second token should now cause connectable to be re-enabled.
-    drop(token2);
+    // Dropping third token should now cause connectable to be re-enabled.
+    drop(token3);
     match host_server.next().await.expect("valid request") {
         Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
             responder.send(Ok(())).expect("valid response");
@@ -296,8 +322,8 @@ async fn multiple_connection_policy_clients() {
         x => panic!("Expected SetConnectable, got: {x:?}"),
     }
 
-    drop(client2);
-    assert_matches!(run_access_task2.await, Ok(()));
+    drop(client3);
+    assert_matches!(run_access_task3.await, Ok(()));
 }
 
 #[fuchsia::test]
@@ -352,6 +378,12 @@ async fn connection_policy_over_adapter_change() {
 
     rm_task.await;
 
+    // Verify removed host 1 was NOT re-enabled when its suppression session was migrated.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after adapter change"
+    );
+
     // Dropping token should cause Host 2 to receive SetConnectable(true)
     drop(token);
     match host_server_2.next().await.expect("valid request") {
@@ -360,6 +392,12 @@ async fn connection_policy_over_adapter_change() {
         }
         x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
     }
+
+    // Host 1 should still have received no messages.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after token drop"
+    );
 
     drop(client);
     assert_matches!(run_access_task.await, Ok(()));
@@ -491,15 +529,17 @@ async fn connection_policy_immediate_re_suppression_maintains_ordering() {
             .await
             .unwrap();
 
-    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
-    let run_access_task = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server));
+    let (client1, server1) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task1 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server1));
+    let (client2, server2) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task2 = fuchsia_async::Task::spawn(access::run(dispatcher, server2));
 
     let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
     let policy1 = AccessSetConnectionPolicyRequest {
         suppress_bredr_connections: Some(server_token1),
         ..Default::default()
     };
-    let fut1 = client.set_connection_policy(policy1);
+    let fut1 = client1.set_connection_policy(policy1);
 
     match host_server.next().await.expect("valid request") {
         Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
@@ -509,14 +549,18 @@ async fn connection_policy_immediate_re_suppression_maintains_ordering() {
     }
     assert_matches!(fut1.await, Ok(Ok(_)));
 
-    // Client 1 drops token and Client 2 immediately requests suppression.
+    // Client 1 drops token and finishes processing before Client 2 immediately requests
+    // suppression.
     drop(token1);
+    drop(client1);
+    assert_matches!(run_access_task1.await, Ok(()));
+
     let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
     let policy2 = AccessSetConnectionPolicyRequest {
         suppress_bredr_connections: Some(server_token2),
         ..Default::default()
     };
-    let fut2 = client.set_connection_policy(policy2);
+    let fut2 = client2.set_connection_policy(policy2);
 
     // Host should first receive SetConnectable(true) from the drop, followed by
     // SetConnectable(false) from the new request, in strict FIFO order.
@@ -543,8 +587,8 @@ async fn connection_policy_immediate_re_suppression_maintains_ordering() {
         x => panic!("Expected SetConnectable(true), got: {x:?}"),
     }
 
-    drop(client);
-    assert_matches!(run_access_task.await, Ok(()));
+    drop(client2);
+    assert_matches!(run_access_task2.await, Ok(()));
 }
 
 #[fuchsia::test]
@@ -609,6 +653,93 @@ async fn connection_policy_migrates_pending_suppression() {
             responder.send(Ok(())).expect("valid response");
         }
         x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_migrates_suppressed_across_multiple_adapter_changes() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (mut host_server_2, host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Establish Suppressed state on Host 1.
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Remove Host 1 so Host 2 becomes active and transitions Suppressed -> Pending.
+    let host_path_1 = host_1.path().to_string();
+    hd.rm_device(&host_path_1).await;
+
+    // Host 2 receives SetConnectable(false), but does NOT respond yet (keeping state Pending).
+    let responder_2 = match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => responder,
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    };
+
+    // Add Host 3 after Host 1 is removed so that removing Host 1 deterministically selected
+    // Host 2 (the only remaining adapter in the HashMap) and removing Host 2 next will
+    // deterministically select Host 3.
+    let (mut host_server_3, _host_3, _gatt_server_3, _bonding_3) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(3), &hd)
+            .await
+            .unwrap();
+
+    // Remove Host 2 while suppression is still Pending on Host 2 so Host 3 becomes active and
+    // transitions Pending -> Pending.
+    let host_path_2 = host_2.path().to_string();
+    hd.rm_device(&host_path_2).await;
+
+    // Host 3 receives SetConnectable(false) and completes the Pending -> Suppressed transition.
+    match host_server_3.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 3, got: {x:?}"),
+    }
+    drop(responder_2);
+
+    // Allow the suppression task on Host 3 to finish transitioning to Suppressed. Because the
+    // original SuppressConnectionsSession was preserved across Pending -> Pending, suppression must
+    // remain active while the client still holds `token`.
+    fuchsia_async::yield_now().await;
+    assert!(
+        host_server_3.next().now_or_never().is_none(),
+        "Unexpected message received on host 3 while client still holds suppression token"
+    );
+
+    // Dropping the client's original token must now re-enable connectability on Host 3.
+    drop(token);
+    match host_server_3.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 3, got: {x:?}"),
     }
 
     drop(client);

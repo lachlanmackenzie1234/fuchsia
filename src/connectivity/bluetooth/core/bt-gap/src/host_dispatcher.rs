@@ -225,9 +225,10 @@ impl Drop for DiscoverySession {
     }
 }
 
-pub enum SuppressConnectionsState {
+enum SuppressConnectionsState {
     NotSuppressed,
     Pending {
+        session: Weak<SuppressConnectionsSession>,
         // Additional client requests for connection suppression made while suppression is
         // asynchronously starting.
         session_receiver: Shared<oneshot::Receiver<Arc<SuppressConnectionsSession>>>,
@@ -257,23 +258,42 @@ impl SuppressConnectionsState {
         None
     }
 
-    fn set_suppressed(
+    fn clear_pending_if_matching(
         &mut self,
-        host_id: HostId,
-        session: &Arc<SuppressConnectionsSession>,
-    ) -> Option<oneshot::Sender<Arc<SuppressConnectionsSession>>> {
-        if let SuppressConnectionsState::Pending { session_sender, .. } =
-            std::mem::replace(self, SuppressConnectionsState::NotSuppressed)
-        {
-            *self =
-                SuppressConnectionsState::Suppressed { session: Arc::downgrade(session), host_id };
-            Some(session_sender)
+        target_session: &Arc<SuppressConnectionsSession>,
+    ) -> Option<SuppressConnectionsState> {
+        if matches!(
+            self,
+            SuppressConnectionsState::Pending { session, .. }
+                if std::ptr::eq(session.as_ptr(), Arc::as_ptr(target_session))
+        ) {
+            Some(std::mem::replace(self, SuppressConnectionsState::NotSuppressed))
         } else {
             None
         }
     }
 
-    fn get_active_session_future(
+    fn set_suppressed(
+        &mut self,
+        host_id: HostId,
+        target_session: &Arc<SuppressConnectionsSession>,
+    ) -> Option<oneshot::Sender<Arc<SuppressConnectionsSession>>> {
+        if matches!(
+            self,
+            SuppressConnectionsState::Pending { session, .. }
+                if std::ptr::eq(session.as_ptr(), Arc::as_ptr(target_session))
+        ) {
+            if let SuppressConnectionsState::Pending { session, session_sender, .. } =
+                std::mem::replace(self, SuppressConnectionsState::NotSuppressed)
+            {
+                *self = SuppressConnectionsState::Suppressed { session, host_id };
+                return Some(session_sender);
+            }
+        }
+        None
+    }
+
+    fn active_session_future(
         &self,
     ) -> Option<BoxFuture<'static, Result<Arc<SuppressConnectionsSession>, oneshot::Canceled>>>
     {
@@ -307,8 +327,14 @@ impl std::fmt::Debug for SuppressConnectionsState {
 
 /// A dispatcher connection suppression session, which persists as long as at least one client
 /// holds an Arc<> to it.
-pub struct SuppressConnectionsSession {
+pub(crate) struct SuppressConnectionsSession {
     dispatcher_state: Arc<RwLock<HostDispatcherState>>,
+}
+
+impl std::fmt::Debug for SuppressConnectionsSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SuppressConnectionsSession").finish_non_exhaustive()
+    }
 }
 
 impl Drop for SuppressConnectionsSession {
@@ -1026,9 +1052,11 @@ impl HostDispatcher {
         fasync::Task::spawn(async move {
             debug!("suppress_connections_task: waiting for suppress_connections_on_active_host");
             let Ok(host) = hd.suppress_connections_on_active_host().await else {
-                // On failure (host init timeout), revert state to NotSuppressed and drop Pending
-                // state to notify Receivers.
-                hd.state.write().suppress_connections = SuppressConnectionsState::NotSuppressed;
+                // On failure (host init timeout), revert state to NotSuppressed if still in the
+                // Pending state for this session, and drop Pending state outside the write lock to
+                // notify Receivers.
+                let _old_state =
+                    hd.state.write().suppress_connections.clear_pending_if_matching(&session);
                 return;
             };
             debug!("suppress_connections_task: suppressed connections on host successfully");
@@ -1052,8 +1080,10 @@ impl HostDispatcher {
         }
     }
 
-    pub async fn suppress_connections(&self) -> types::Result<Arc<SuppressConnectionsSession>> {
-        let session_fut = self.state.read().suppress_connections.get_active_session_future();
+    pub(crate) async fn suppress_connections(
+        &self,
+    ) -> types::Result<Arc<SuppressConnectionsSession>> {
+        let session_fut = self.state.read().suppress_connections.active_session_future();
         if let Some(session_fut) = session_fut {
             debug!(
                 "suppress_connections: awaiting SuppressConnectionsSession (state: {:?})",
@@ -1065,6 +1095,7 @@ impl HostDispatcher {
         }
 
         let session = Arc::new(SuppressConnectionsSession { dispatcher_state: self.state.clone() });
+        let weak_session = Arc::downgrade(&session);
         let (session_sender, session_receiver) = oneshot::channel();
         let session_receiver = session_receiver.shared();
         let start_suppression_task = self.make_suppress_connections_task(session);
@@ -1072,6 +1103,7 @@ impl HostDispatcher {
         // Immediately mark the state as pending to indicate to other requests to wait on
         // this suppression session initialization
         self.state.write().suppress_connections = SuppressConnectionsState::Pending {
+            session: weak_session,
             session_receiver: session_receiver.clone(),
             session_sender,
             _start_suppression_task: start_suppression_task,
@@ -1574,45 +1606,50 @@ impl HostDispatcher {
     }
 
     fn migrate_suppress_connections_to_active_host(&self) {
-        let mut write = self.state.write();
         let old_state = std::mem::replace(
-            &mut write.suppress_connections,
+            &mut self.state.write().suppress_connections,
             SuppressConnectionsState::NotSuppressed,
         );
         match old_state {
             SuppressConnectionsState::NotSuppressed => {}
             SuppressConnectionsState::Pending {
+                session,
                 session_receiver,
                 session_sender,
                 _start_suppression_task,
             } => {
                 info!("migrating Pending connection suppression to new host");
                 // Stop the old suppression task, and restart suppression on the new host.
+                let session = session.upgrade().unwrap_or_else(|| {
+                    Arc::new(SuppressConnectionsSession { dispatcher_state: self.state.clone() })
+                });
                 drop(_start_suppression_task);
-                let session =
-                    Arc::new(SuppressConnectionsSession { dispatcher_state: self.state.clone() });
+                let weak_session = Arc::downgrade(&session);
                 let start_suppression_task = self.make_suppress_connections_task(session);
-                write.suppress_connections = SuppressConnectionsState::Pending {
+                self.state.write().suppress_connections = SuppressConnectionsState::Pending {
+                    session: weak_session,
                     session_receiver,
                     session_sender,
                     _start_suppression_task: start_suppression_task,
                 };
             }
             SuppressConnectionsState::Suppressed { session, host_id } => {
+                let mut write = self.state.write();
                 if write.active_id == Some(host_id) {
                     write.suppress_connections =
                         SuppressConnectionsState::Suppressed { session, host_id };
                     return;
                 }
                 info!("migrating Suppressed connection suppression to new host");
-                let Some(session) = session.upgrade() else {
+                let Some(strong_session) = session.upgrade() else {
                     return;
                 };
 
                 let (session_sender, session_receiver) = oneshot::channel();
                 let session_receiver = session_receiver.shared();
-                let start_suppression_task = self.make_suppress_connections_task(session);
+                let start_suppression_task = self.make_suppress_connections_task(strong_session);
                 write.suppress_connections = SuppressConnectionsState::Pending {
+                    session,
                     session_receiver,
                     session_sender,
                     _start_suppression_task: start_suppression_task,
