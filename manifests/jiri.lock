@@ -716,8 +716,8 @@
     },
     {
         "package": "fuchsia/third_party/zoneinfo",
-        "version": "version:2026e",
-        "instance_id": "6XYoFIfrJYeayIGFIxysxuvr3625oKMeSWfcCn0xU60C"
+        "version": "version:2026f",
+        "instance_id": "Pei5AZgpNcZBkqYHwm81sQeUwORHDz-rt77iulmt6iUC"
     },
     {
         "package": "fuchsia/tools/breakpad/linux-amd64",
