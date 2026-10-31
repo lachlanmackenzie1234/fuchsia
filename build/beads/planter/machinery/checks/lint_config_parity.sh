@@ -65,14 +65,58 @@ LINT_PATTERNS = [
 
 findings = []
 
+# Resolve effective change base when HEAD is already the task's migration commit.
+def resolve_change_base(raw_base):
+    base = (raw_base or "").strip() or "HEAD"
+    head_subj = git(["log", "-1", "--format=%s", "HEAD"]).strip()
+    if head_subj.startswith("[bazel_migration]"):
+        head_sha = git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).strip()
+        parent_sha = git(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"]).strip()
+        base_sha = git(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"]).strip()
+        if parent_sha and (base == "HEAD" or base_sha == head_sha):
+            return "HEAD~1"
+    return base
+
+
 # Collect the unified diff of the task's change since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is
 # the task's own commit, "HEAD" when HEAD is unrelated upstream history).
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = resolve_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
 diff_texts = [
     git(["diff", "--unified=0", change_base]),
 ]
 
+# Check whether a Rust source file belongs to a migrated package whose BUILD.bazel
+# applies `//build/config/rust/lints:clippy_warn_all` to a test target (in Bazel,
+# `clippy_warn_all` bakes `_CLIPPY_WARN_PRODUCTION` in, whereas GN `rustc_test`
+# omits `clippy_warn_production`).
+def has_clippy_warn_all_on_rust_test(rs_path):
+    if not rs_path.endswith(".rs"):
+        return False
+    pkg = os.path.dirname(rs_path).strip("/")
+    while pkg:
+        bzl_path = os.path.join(workdir, pkg, "BUILD.bazel")
+        if os.path.isfile(bzl_path):
+            try:
+                text = open(bzl_path, encoding="utf-8").read()
+            except OSError:
+                return False
+            has_warn_all = "//build/config/rust/lints:clippy_warn_all" in text
+            has_test = any(
+                tok in text
+                for tok in (
+                    "rustc_test(",
+                    "host_rustc_test(",
+                    "with_unit_tests",
+                    "with_host_unit_tests",
+                )
+            )
+            return has_warn_all and has_test
+        pkg = os.path.dirname(pkg).strip("/")
+    return False
+
+
 seen = set()
+seen_allowed_test_files = set()
 for text in diff_texts:
     cur_file = None
     new_line = 0
@@ -98,6 +142,21 @@ for text in diff_texts:
             continue
         for pkind, rx, why in LINT_PATTERNS:
             if pkind == kind and rx.search(body):
+                if has_clippy_warn_all_on_rust_test(cur_file):
+                    if cur_file not in seen_allowed_test_files:
+                        seen_allowed_test_files.add(cur_file)
+                        findings.append({
+                            "source": "lint_config_parity",
+                            "category": "allowed_test_clippy_warn_all_edit",
+                            "severity": "INFO",
+                            "file": cur_file,
+                            "line": line,
+                            "message": (
+                                f"Allowed clippy_warn_all test lint fix ({why}) in '{cur_file}' "
+                                "to preserve clippy coverage without disable_clippy = True."
+                            ),
+                        })
+                    continue
                 key = (cur_file, line, why)
                 if key in seen:
                     continue
@@ -358,6 +417,152 @@ default_rustc_dict = (
     (default_lints_targets.get("clippy_warn_default", {}).get("rustc") or [{}])[0]
 )
 
+# Check whether a package's BUILD.gn restricts the entire file to the host toolchain via a
+# top-level `assert(is_host, ...)`, in which case skipping `target_compatible_with =
+# HOST_OS_CONSTRAINTS` in bazel2gn avoids wrapping generated targets in a redundant
+# `if (is_host)` block that alters shac test-parity polarity on unguarded pre-migration targets.
+def has_file_scope_assert_is_host(pkg):
+    gn_rel = os.path.join(pkg, "BUILD.gn") if pkg else "BUILD.gn"
+    gn_text = read_rel(gn_rel) or git(["show", f"{change_base}:{gn_rel}"]) or ""
+    pre_sentinel = gn_text.split("## BAZEL2GN SENTINEL", 1)[0]
+    return bool(re.search(r"(?m)^\s*assert\(\s*is_host\b", pre_sentinel))
+
+
+# Strip `#` comments and top-level `template(...) { ... }` / `if (...is_host...) { ... }` blocks
+# from a GN file so we can find unguarded top-level `rustc_*` targets with `with_unit_tests = true`.
+def find_unguarded_gn_rust_unit_tests(gn_text):
+    lines = [
+        re.sub(r"#.*$", "", ln)
+        for ln in gn_text.split("## BAZEL2GN SENTINEL", 1)[0].splitlines()
+    ]
+    cleaned = "\n".join(lines)
+    # Remove top-level `template(...) { ... }` and `if (...is_host...) { ... }` blocks.
+    out = []
+    i = 0
+    n = len(cleaned)
+    block_hdr = re.compile(
+        r"\b(?:template\s*\([^)]*\)|if\s*\([^)]*\b(?:is_host|host_toolchain)\b[^)]*\))\s*\{"
+    )
+    while i < n:
+        m = block_hdr.search(cleaned, i)
+        if not m:
+            out.append(cleaned[i:])
+            break
+        out.append(cleaned[i : m.start()])
+        depth = 1
+        j = m.end()
+        while j < n and depth > 0:
+            if cleaned[j] == "{":
+                depth += 1
+            elif cleaned[j] == "}":
+                depth -= 1
+            j += 1
+        i = j
+    top_gn = "".join(out)
+    unit_tests = {}
+    tgt_pat = re.compile(
+        r'\b(rustc_(?:library|binary|proc_macro))\s*\(\s*"([^"]+)"\s*\)\s*\{'
+    )
+    for m in tgt_pat.finditer(top_gn):
+        rule_type, tname = m.group(1), m.group(2)
+        depth = 1
+        j = m.end()
+        while j < len(top_gn) and depth > 0:
+            if top_gn[j] == "{":
+                depth += 1
+            elif top_gn[j] == "}":
+                depth -= 1
+            j += 1
+        body = top_gn[m.end() : max(m.end(), j - 1)]
+        if re.search(r"\bwith_unit_tests\s*=\s*true\b", body) and not re.search(
+            r"\bwith_host_unit_tests\s*=\s*true\b", body
+        ):
+            unit_tests[f"{tname}_test"] = (rule_type, tname)
+    return unit_tests
+
+
+# Detect when a dual-build BUILD.gn with a file-scope `assert(is_host, ...)` had an unguarded
+# top-level `rustc_*(with_unit_tests = true)` target at $PLANTER_CHANGE_BASE, and bazel2gn now
+# wraps the generated `rustc_test("<name>_test")` in `if (is_host)` below the sentinel (which
+# causes shac's `bazel_test_parity` check to fail with CLASS 1 SILENT ORPHANING on the device leg).
+def check_host_assert_test_polarity_drift(cur_pkg, bzl_rel, tree):
+    gn_rel = os.path.join(cur_pkg, "BUILD.gn") if cur_pkg else "BUILD.gn"
+    after_gn = read_rel(gn_rel) or ""
+    if "## BAZEL2GN SENTINEL" not in after_gn:
+        return
+    before_gn = git(["show", f"{change_base}:{gn_rel}"]) or ""
+    if not before_gn or "## BAZEL2GN SENTINEL" in before_gn:
+        return
+    unguarded_tests = find_unguarded_gn_rust_unit_tests(before_gn)
+    if not unguarded_tests:
+        return
+    post_gn = after_gn.split("## BAZEL2GN SENTINEL", 1)[1]
+    bzl_lines = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            for kw in stmt.value.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    bzl_lines[kw.value.value] = getattr(stmt, "lineno", 1)
+    for test_name, (orig_rule, lib_name) in sorted(unguarded_tests.items()):
+        # Check if `group("tests")` in before_gn referenced `:<test_name>` without `($host_toolchain)`.
+        if not re.search(
+            r'":' + re.escape(test_name) + r'"', before_gn
+        ):
+            continue
+        # Check if `post_gn` wraps `rustc_test("<test_name>")` inside `if (is_host)`.
+        if not re.search(
+            r"\bif\s*\(\s*is_host\s*\)\s*\{\s*rustc_test\s*\(\s*\""
+            + re.escape(test_name)
+            + r"\"",
+            post_gn,
+        ):
+            continue
+        lineno = bzl_lines.get(test_name, 1)
+        wrap_name = (
+            f"{lib_name}_host_test"
+            if not test_name.endswith("_host_test")
+            else f"{test_name}_wrapper"
+        )
+        findings.append({
+            "source": "lint_config_parity",
+            "category": "host_assert_test_polarity_drift",
+            "severity": "error",
+            "file": bzl_rel,
+            "line": lineno,
+            "message": (
+                f"Target '{test_name}' in {bzl_rel} generates `if (is_host) {{ "
+                f'rustc_test("{test_name}") }}` below `## BAZEL2GN SENTINEL` in '
+                f"{gn_rel}, but pre-migration {gn_rel} relied on a file-scope "
+                f'`assert(is_host, ...)` with an unguarded `{orig_rule}("{lib_name}") '
+                "{{ with_unit_tests = true }}`. Shac's `bazel_test_parity` check "
+                "ignores file-scope `assert(is_host)` and classifies the "
+                f"pre-migration `//{cur_pkg}:{test_name}` as a `device` leg, so "
+                "wrapping the generated `rustc_test` in `if (is_host)` changes its "
+                "inferred polarity to `host` and fails CQ with `CLASS 1 SILENT "
+                "ORPHANING (REMOVED TEST TARGET WITH EXISTING SOURCES)`."
+            ),
+            "remediation": (
+                f"In {bzl_rel}, replace `host_rustc_test(name = \"{test_name}\", ...)` "
+                f"with `rustc_test(name = \"{test_name}\", crate = \":{lib_name}\", ...)` "
+                "(do not repeat `edition` when `crate` is set, and annotate "
+                "`target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip` "
+                "with an explanatory comment above it so `bazel2gn` omits the "
+                "redundant `if (is_host)` block) plus "
+                f"`wrap_host_rust_test(name = \"{wrap_name}\", binary_name = "
+                f"\"{test_name}\", ...)` from "
+                '`"//build/bazel/rules/host_tests:host_rustc_test.bzl"` (passing any '
+                "runtime test data in `data` on `rustc_test` and `test_data` on "
+                "`wrap_host_rust_test`), wire "
+                f"`\"//{cur_pkg}:{wrap_name}\"` into the `host_tests` suite, and "
+                f"re-run `fx bazel2gn -d {cur_pkg}`."
+            ),
+        })
+
+
 if target_dir:
     root = os.path.join(workdir, target_dir)
     for dirpath, _dirs, files in os.walk(root):
@@ -369,17 +574,221 @@ if target_dir:
         tree = parse_rel(rel)
         if tree is None:
             continue
+        raw_bzl = read_rel(rel) or ""
+        pkg_asserts_is_host = has_file_scope_assert_is_host(cur_pkg)
+        if pkg_asserts_is_host:
+            check_host_assert_test_polarity_drift(cur_pkg, rel, tree)
+        for idx, bzl_line in enumerate(raw_bzl.splitlines(), start=1):
+            if re.search(
+                r"#\s*@bazel2gn:raw_attribute:.*\bexclude_toolchain_tags\s*\+?=",
+                bzl_line,
+            ):
+                findings.append({
+                    "source": "lint_config_parity",
+                    "category": "raw_attribute_for_supported_bazel2gn_tag",
+                    "severity": "error",
+                    "file": rel,
+                    "line": idx,
+                    "message": (
+                        f"Line {idx} in {rel} uses `# @bazel2gn:raw_attribute:` to emit "
+                        "`exclude_toolchain_tags`, which `bazel2gn` supports natively."
+                    ),
+                    "remediation": (
+                        'Use `tags = ["exclude_toolchain_tags=<tag>", ...]` (plus '
+                        "`target_compatible_with = HOST_OS_CONSTRAINTS` when host-only, "
+                        "or `disable_instrumentation = True` on `fx_cc_*` for "
+                        '`"instrumented"`) instead of `# @bazel2gn:raw_attribute:`. '
+                        "If the binary is wrapped by `bazel_host_tool` in BUILD.gn "
+                        "and marked `# @bazel2gn:skip`, remove the `raw_attribute`."
+                    ),
+                })
+            if not pkg_asserts_is_host and re.search(
+                r"\btarget_compatible_with\s*=\s*HOST_OS_CONSTRAINTS\b.*#\s*@bazel2gn:skip\b",
+                bzl_line,
+            ):
+                base_gn_for_skip = git(["show", f"{change_base}:{cur_pkg}/BUILD.gn"])
+                if not base_gn_for_skip and change_base == "HEAD":
+                    base_gn_for_skip = git(["show", f"HEAD~1:{cur_pkg}/BUILD.gn"])
+                base_gn_clean_skip = re.sub(r"#[^\n]*", "", base_gn_for_skip or "")
+                if re.search(r"\bif\s*\(\s*is_host\b", base_gn_clean_skip):
+                    findings.append({
+                        "source": "lint_config_parity",
+                        "category": "unnecessary_skip_on_host_constraints",
+                        "severity": "error",
+                        "file": rel,
+                        "line": idx,
+                        "message": (
+                            f"Line {idx} in {rel} puts `# @bazel2gn:skip` on "
+                            "`target_compatible_with = HOST_OS_CONSTRAINTS`."
+                        ),
+                        "remediation": (
+                            "Remove `# @bazel2gn:skip` from `target_compatible_with = "
+                            "HOST_OS_CONSTRAINTS` (or use `host_rustc_test` / `host_go_test`); "
+                            "`bazel2gn` natively translates it to `if (is_host)`."
+                        ),
+                    })
+        # Check for dual-build packages where base BUILD.gn had an unguarded
+        # `rustc_library` / `rustc_binary` / `rustc_proc_macro` with `with_unit_tests = true`
+        # without `if (is_host)`, `assert(is_host)`, or a local `group("tests")` referencing
+        # `($host_toolchain)`. In such packages, `scripts/shac/check_bazel_test_parity.py`
+        # (`GN_RUST_UNITTEST_OWNER_RULES`) classifies the pre-migration unit test in `before_gn`
+        # as `"device"` polarity (unlike `ffx_plugin`, which wraps its inner targets in
+        # `if (is_host)` inside `ffx_plugin.gni` and is not in `GN_RUST_UNITTEST_OWNER_RULES`),
+        # so if `bazel2gn` wraps the generated `rustc_test` in `if (is_host)` (from
+        # `host_rustc_test` or unskipped `target_compatible_with = HOST_OS_CONSTRAINTS`),
+        # `shac` fails with `CLASS 1 SILENT ORPHANING (REMOVED TEST TARGET WITH EXISTING SOURCES)`.
+        base_gn_for_pol = git(["show", f"{change_base}:{cur_pkg}/BUILD.gn"])
+        if (
+            not base_gn_for_pol or "## BAZEL2GN SENTINEL" in base_gn_for_pol
+        ) and change_base == "HEAD":
+            cand_pol = git(["show", f"HEAD~1:{cur_pkg}/BUILD.gn"])
+            if cand_pol:
+                base_gn_for_pol = cand_pol
+        base_gn_pol_clean = re.sub(r"#[^\n]*", "", base_gn_for_pol or "")
+        unguarded_pol_tests = find_unguarded_gn_rust_unit_tests(
+            base_gn_for_pol or ""
+        )
+        cur_gn_full = os.path.join(workdir, cur_pkg, "BUILD.gn")
+        cur_gn_text = ""
+        if os.path.isfile(cur_gn_full):
+            try:
+                with open(cur_gn_full, encoding="utf-8", errors="ignore") as gf:
+                    cur_gn_text = gf.read()
+            except OSError:
+                pass
+        if (
+            "## BAZEL2GN SENTINEL" in cur_gn_text
+            and "## BAZEL2GN SENTINEL" not in base_gn_pol_clean
+            and unguarded_pol_tests
+            and not re.search(
+                r"\b(?:if|assert)\s*\(\s*is_host\b", base_gn_pol_clean
+            )
+            and "host_toolchain" not in base_gn_pol_clean
+            and not re.search(
+                r"\b(?:fuchsia_unittest_package|fuchsia_test_package)\s*\(",
+                base_gn_pol_clean,
+            )
+        ):
+            bzl_src_pol = ""
+            try:
+                with open(
+                    os.path.join(workdir, rel),
+                    encoding="utf-8",
+                    errors="ignore",
+                ) as bf_pol:
+                    bzl_src_pol = bf_pol.read()
+            except OSError:
+                pass
+            for node_p in ast.walk(tree):
+                if not (
+                    isinstance(node_p, ast.Call)
+                    and isinstance(node_p.func, ast.Name)
+                ):
+                    continue
+                r_p = node_p.func.id
+                if r_p not in ("host_rustc_test", "rustc_test"):
+                    continue
+                seg_p = ast.get_source_segment(bzl_src_pol, node_p) or ""
+                has_unskipped_host_tcw = bool(
+                    re.search(
+                        r"\btarget_compatible_with\s*=\s*HOST_OS_CONSTRAINTS\b"
+                        r"(?![^\n]*#\s*@bazel2gn:skip\b)",
+                        seg_p,
+                    )
+                )
+                if r_p == "host_rustc_test" or has_unskipped_host_tcw:
+                    t_p = "<test>"
+                    for kw_p in node_p.keywords:
+                        if (
+                            kw_p.arg == "name"
+                            and isinstance(kw_p.value, ast.Constant)
+                            and isinstance(kw_p.value.value, str)
+                        ):
+                            t_p = kw_p.value.value
+                    if t_p not in unguarded_pol_tests:
+                        continue
+                    orig_rule_p, lib_name_p = unguarded_pol_tests[t_p]
+                    wrap_name_p = (
+                        f"{lib_name_p}_host_test"
+                        if not t_p.endswith("_host_test")
+                        else f"{t_p}_wrapper"
+                    )
+                    findings.append({
+                        "source": "lint_config_parity",
+                        "category": "shac_unconditional_gn_unit_test_polarity_shift",
+                        "severity": "error",
+                        "file": rel,
+                        "line": getattr(node_p, "lineno", 1),
+                        "message": (
+                            f"Target '{t_p}' ({r_p}) in '{rel}' causes `fx bazel2gn` to wrap "
+                            f'`rustc_test("{t_p}")` in `if (is_host)` in '
+                            f"'{cur_pkg}/BUILD.gn', whereas base '{cur_pkg}/BUILD.gn' declared "
+                            f'`{orig_rule_p}("{lib_name_p}")` with `with_unit_tests = true` '
+                            "without `if (is_host)`, `assert(is_host)`, or a local "
+                            '`group("tests")` `$host_toolchain` edge. This causes '
+                            "`scripts/shac/check_bazel_test_parity.py` to classify the base GN "
+                            "test as `device` polarity and the generated GN test as `host` "
+                            "polarity, failing `shac check` with `CLASS 1 SILENT ORPHANING`."
+                        ),
+                        "remediation": (
+                            f"In '{rel}', replace `host_rustc_test(name = \"{t_p}\", ...)` "
+                            f"with `rustc_test(name = \"{t_p}\", crate = \":{lib_name_p}\", ...)` "
+                            '(loaded from `"//build/bazel/rules/rust:rustc_test.bzl"`, omitting '
+                            "`edition` when `crate` is set) and annotate "
+                            "`target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip` "
+                            "(with an explanatory comment line directly above "
+                            "`target_compatible_with`) on both `rustc_test` and `rustc_library`, "
+                            f'add `wrap_host_rust_test(name = "{wrap_name_p}", binary_name = '
+                            f'"{t_p}", ...)` from '
+                            '`"//build/bazel/rules/host_tests:host_rustc_test.bzl"` wired as '
+                            f'`"//{cur_pkg}:{wrap_name_p}"` into the `host_tests` suite, and '
+                            f"re-run `fx bazel2gn -d {cur_pkg}` so the generated GN targets in "
+                            f"'{cur_pkg}/BUILD.gn' remain unguarded by `if (is_host)`."
+                        ),
+                    })
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             rule_name = node.func.id if isinstance(node.func, ast.Name) else ""
             is_testonly = False
             lint_kw = None
+            disable_clippy_kw = None
+            target_name = "<target>"
             for kw in node.keywords:
-                if kw.arg == "testonly" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    target_name = kw.value.value
+                elif kw.arg == "testonly" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
                     is_testonly = True
                 elif kw.arg == "lint_config":
                     lint_kw = kw
+                elif (
+                    kw.arg == "disable_clippy"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is True
+                ):
+                    disable_clippy_kw = kw
+            if disable_clippy_kw is not None:
+                base_gn = git(["show", f"{change_base}:{cur_pkg}/BUILD.gn"])
+                if not re.search(r"\bdisable_clippy\s*=\s*true\b", base_gn):
+                    findings.append({
+                        "source": "lint_config_parity",
+                        "category": "unrequested_disable_clippy",
+                        "severity": "error",
+                        "file": rel,
+                        "line": getattr(disable_clippy_kw, "lineno", getattr(node, "lineno", 1)),
+                        "message": (
+                            f"Target '{target_name}' in {rel} sets `disable_clippy = True`, "
+                            f"but `{cur_pkg}/BUILD.gn` did not set `disable_clippy = true` at "
+                            "the change base. Disabling clippy loses lint coverage during migration."
+                        ),
+                        "remediation": (
+                            "Remove `disable_clippy = True` from BUILD.bazel. If `clippy_warn_all` "
+                            "on a Rust test target in Bazel surfaces a `_CLIPPY_WARN_PRODUCTION` "
+                            "lint (such as `clippy::redundant_clone`, which GN `rustc_test` "
+                            "omitted), fix the lint or add a narrow `#[allow(clippy::<lint>)]` "
+                            "in the test source file instead of disabling clippy on the target."
+                        ),
+                    })
             if lint_kw is None:
                 continue
             is_test_target = is_testonly or rule_name in ("rustc_test", "rust_test")
@@ -445,6 +854,63 @@ if target_dir:
                             "//build/config/rust/lints so the Bazel lint set matches GN's append semantics."
                         ),
                     })
+
+    # Also run //scripts/shac/check_bazel_test_parity.py directly against change_base when present
+    # (shac skips bazel_test_parity on uncommitted working trees when HEAD has Reviewed-on:).
+    parity_script = os.path.join(workdir, "scripts", "shac", "check_bazel_test_parity.py")
+    if os.path.isfile(parity_script):
+        try:
+            import importlib.util
+            import pathlib
+
+            spec = importlib.util.spec_from_file_location("check_bazel_test_parity", parity_script)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules["check_bazel_test_parity"] = mod
+                spec.loader.exec_module(mod)
+                drift_files = {
+                    os.path.dirname(f["file"]).strip("/")
+                    for f in findings
+                    if f.get("category")
+                    in (
+                        "host_assert_test_polarity_drift",
+                        "shac_unconditional_gn_unit_test_polarity_shift",
+                    )
+                }
+                for pf in mod.analyze_repository(
+                    pathlib.Path(workdir), base_ref=change_base
+                ):
+                    if getattr(pf, "level", "") != "error":
+                        continue
+                    fp = getattr(pf, "filepath", "") or ""
+                    fp_pkg = os.path.dirname(fp).strip("/") if fp else ""
+                    if fp and not (
+                        fp == target_dir
+                        or fp.startswith(target_dir + "/")
+                        or fp_pkg == target_dir
+                    ):
+                        continue
+                    msg = getattr(pf, "message", "") or ""
+                    if fp_pkg in drift_files and "REMOVED TEST TARGET WITH EXISTING SOURCES" in msg:
+                        continue
+                    parts = msg.split("\nRemediation:", 1)
+                    main_msg = parts[0].strip()
+                    rem_msg = (
+                        parts[1].strip()
+                        if len(parts) > 1
+                        else "Fix the Bazel/GN test parity error reported by check_bazel_test_parity.py."
+                    )
+                    findings.append({
+                        "source": "lint_config_parity",
+                        "category": "shac_bazel_test_parity",
+                        "severity": "error",
+                        "file": fp or f"{target_dir}/BUILD.bazel",
+                        "line": getattr(pf, "line", 1) or 1,
+                        "message": main_msg,
+                        "remediation": rem_msg,
+                    })
+        except Exception:
+            pass
 
 print(json.dumps(findings, indent=2))
 PYEOF

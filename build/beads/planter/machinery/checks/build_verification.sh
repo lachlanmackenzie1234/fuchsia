@@ -1291,6 +1291,11 @@ if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", 
             h.update(label.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
 
         _add("tree", _worktree_tree(workdir))
+        head_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
+        _add(
+            "head_submitted",
+            "1" if ("Reviewed-on:" in head_msg or "Roller-URL:" in head_msg) else "0",
+        )
         for sr in _subrepo_dirs():
             try:
                 rel_sr = os.path.relpath(sr, workdir)

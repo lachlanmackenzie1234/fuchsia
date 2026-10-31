@@ -199,12 +199,30 @@ def matches_subject_dir(pkg, sdir):
     return pkg == sdir
 
 
-# Check whether a [bazel_migration] or [bazel2gn]/[bazel] HEAD commit belongs to the
-# current task's target_dirs rather than a stacked parent migration commit.
+# Check whether a migration HEAD commit ([bazel_migration], [bazel2gn]/[bazel], or one
+# carrying migration footers) belongs to the current task's target_dirs rather than an
+# upstream commit or stacked parent migration commit.
 def is_task_migration_head(wdir, head_sha, parent_sha, subj, tdirs):
-    if not head_sha or not parent_sha or not subj.startswith(
-        ("[bazel_migration]", "[bazel2gn]", "[bazel]")
-    ):
+    if not head_sha or not parent_sha:
+        return False
+    try:
+        head_msg = subprocess.check_output(
+            ["git", "-C", wdir, "log", "-1", "--format=%B", head_sha],
+            stderr=subprocess.DEVNULL, text=True,
+        )
+    except Exception:
+        head_msg = ""
+    has_mig_footer = any(
+        line.strip().startswith("Bazel-Migration-Target:")
+        or (line.strip().startswith("TAG:") and "planter" in line.lower())
+        for line in head_msg.splitlines()
+    )
+    has_mig_subj = (
+        subj.startswith(("[bazel_migration]", "[bazel2gn]"))
+        or subj.lower().startswith("[bazel]")
+        or ("migrate" in subj.lower() and "bazel" in subj.lower())
+    )
+    if not (has_mig_subj or has_mig_footer):
         return False
     env_dirs = os.environ.get("PLANTER_TARGET_DIRS", "").split()
     if os.environ.get("PLANTER_TARGET_DIR", "").strip():
@@ -219,7 +237,7 @@ def is_task_migration_head(wdir, head_sha, parent_sha, subj, tdirs):
                 if ov and ov not in check_dirs:
                     check_dirs.append(ov)
     if not check_dirs:
-        return True
+        return subj.startswith("[bazel_migration]") or has_mig_footer
     head_files = [
         f.strip()
         for f in subprocess.check_output(
@@ -250,7 +268,7 @@ def is_task_migration_head(wdir, head_sha, parent_sha, subj, tdirs):
     if untracked_bazel_pkgs and not (head_bazel_pkgs & set(check_dirs)):
         return False
     sdir = (
-        subj.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
+        subj.split(" //", 1)[1].split()[0].split(":", 1)[0].strip().rstrip(".,;:").strip("/")
         if " //" in subj
         else ""
     )
@@ -1621,8 +1639,10 @@ def is_verified_target_attributes_alignment(f):
 
 
 # Verify whether a review_diff unit_test_parity finding is already satisfied via
-# aspect_hints, data/test_data/compile_data, link_deps, @bazel2gn directives, or
-# the bazel2gn-generated GN unit test target below the BAZEL2GN SENTINEL.
+# aspect_hints, data/test_data/compile_data, link_deps, @bazel2gn directives,
+# the bazel2gn-generated GN unit test target below the BAZEL2GN SENTINEL, or
+# an unused non-crate binary/host-tool GN test_deps entry that cannot be placed
+# in Rust test `deps` (no CrateInfo) and is not located by the package's Rust sources.
 def is_verified_unit_test_parity(f):
     import re
 
@@ -1655,10 +1675,68 @@ def is_verified_unit_test_parity(f):
                 gen_gn_body = gn_cur.split("BAZEL2GN SENTINEL", 1)[1]
         except OSError:
             pass
+    non_crate_gn_tmpls = {
+        "executable",
+        "cc_binary",
+        "go_binary",
+        "rustc_binary",
+        "ffx_tool",
+        "install_host_tools",
+        "sdk_host_tool",
+        "sdk_executable_host_tool",
+        "sdk_go_binary_host_tool",
+        "sdk_rustc_binary_host_tool",
+        "bazel_host_tool",
+        "bazel_ffx_tool",
+    }
+
+    def _is_unused_non_crate_bin(base_dep):
+        if not base_dep.startswith("//") or not pkg_dir or not workdir:
+            return False
+        pkg_abs = os.path.join(workdir, pkg_dir)
+        if os.path.isdir(pkg_abs):
+            for root, subdirs, files in os.walk(pkg_abs):
+                subdirs[:] = [
+                    d
+                    for d in subdirs
+                    if not os.path.isfile(os.path.join(root, d, "BUILD.bazel"))
+                    and not os.path.isfile(os.path.join(root, d, "BUILD.gn"))
+                ]
+                for fn in files:
+                    if not fn.endswith(".rs"):
+                        continue
+                    try:
+                        rs_txt = open(
+                            os.path.join(root, fn), encoding="utf-8", errors="ignore"
+                        ).read()
+                    except OSError:
+                        continue
+                    if (
+                        "current_exe" in rs_txt
+                        or "host_x64" in rs_txt
+                        or "host_arm64" in rs_txt
+                    ):
+                        return False
+        d_pkg, _, d_tgt = base_dep[2:].partition(":")
+        d_pkg = d_pkg.strip("/")
+        d_tgt = d_tgt or os.path.basename(d_pkg)
+        dep_gn = os.path.join(workdir, d_pkg, "BUILD.gn")
+        if not os.path.isfile(dep_gn):
+            return False
+        try:
+            dep_gn_txt = open(dep_gn, encoding="utf-8", errors="ignore").read()
+        except OSError:
+            return False
+        pat = r'\b([A-Za-z_]\w*)\(\s*"' + re.escape(d_tgt) + r'"\s*\)\s*\{'
+        return any(tm.group(1) in non_crate_gn_tmpls for tm in re.finditer(pat, dep_gn_txt))
+
     for dep in missing_deps:
         base_dep = dep.split("(", 1)[0].strip()
-        if f'"{base_dep}"' not in bazel_text and f'"{base_dep}"' not in gen_gn_body:
-            return False
+        if f'"{base_dep}"' in bazel_text or f'"{base_dep}"' in gen_gn_body:
+            continue
+        if _is_unused_non_crate_bin(base_dep):
+            continue
+        return False
     return True
 
 
@@ -1780,16 +1858,150 @@ def is_verified_no_gn_equiv_sentinel_drift(f):
     return all(rules_by_name.get(n) in no_gn_rules for n in missing_names)
 
 
+# Verify whether a review_diff host_compatibility finding targets a Bazel macro/rule
+# that enforces host platform constraints internally (such as ffx_plugin or idk_ffx_tool).
+def is_verified_host_only_macro_compatibility(f):
+    import ast
+    import re
+
+    msg = f.get("message", "").strip()
+    m = re.match(
+        r'^Target "([^"]+)" was inside `if \(is_host\)` in BUILD\.gn '
+        r"but is missing `target_compatible_with = HOST_OS_CONSTRAINTS` in BUILD\.bazel$",
+        msg,
+    )
+    if not m or not workdir:
+        return False
+    target_name = m.group(1)
+    rel_file = str(f.get("file", ""))
+    pkg_dir = os.path.dirname(rel_file).strip("/")
+    bazel_path = os.path.join(workdir, rel_file)
+    if not os.path.isfile(bazel_path):
+        return False
+    try:
+        tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_path)
+    except Exception:
+        return False
+    gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    is_dual_build_pkg = False
+    if os.path.isfile(gn_path):
+        try:
+            is_dual_build_pkg = "## BAZEL2GN SENTINEL" in open(
+                gn_path, encoding="utf-8", errors="ignore"
+            ).read()
+        except OSError:
+            pass
+    implicit_host_rules = {
+        "ffx_plugin",
+        "ffx_tool",
+        "idk_ffx_tool",
+        "rustc_binary_host_tool",
+        "host_rustc_test",
+        "wrap_host_rust_test",
+        "host_go_test",
+        "host_py_test",
+        "host_cc_test",
+        "host_test",
+        "host_shac_test",
+        "host_test_data_files",
+        "host_test_data_map",
+        "rustc_proc_macro",
+        "rust_proc_macro",
+    }
+    if not is_dual_build_pkg:
+        implicit_host_rules |= {
+            "cc_binary_host_tool",
+            "idk_cc_binary_host_tool",
+            "idk_go_binary_host_tool",
+            "idk_rustc_binary_host_tool",
+        }
+    loaded_bzl_by_sym = {}
+    target_rule = ""
+    for stmt in tree.body:
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Name)
+        ):
+            continue
+        call = stmt.value
+        fn = call.func.id
+        if (
+            fn == "load"
+            and call.args
+            and isinstance(call.args[0], ast.Constant)
+            and isinstance(call.args[0].value, str)
+            and call.args[0].value.startswith("//")
+            and call.args[0].value.endswith(".bzl")
+        ):
+            bzl_lbl = call.args[0].value
+            for arg in call.args[1:]:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    loaded_bzl_by_sym[arg.value] = bzl_lbl
+            for kw in call.keywords:
+                if kw.arg:
+                    loaded_bzl_by_sym[kw.arg] = bzl_lbl
+            continue
+        for kw in call.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value == target_name
+            ):
+                target_rule = fn
+                break
+    if not target_rule:
+        return False
+    if target_rule in implicit_host_rules:
+        return True
+    bzl_lbl = loaded_bzl_by_sym.get(target_rule, "")
+    if not bzl_lbl:
+        return False
+    bzl_path = os.path.join(workdir, bzl_lbl[2:].replace(":", "/"))
+    if not os.path.isfile(bzl_path):
+        return False
+    try:
+        bzl_txt = open(bzl_path, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return False
+    if "macro(" not in bzl_txt and "rule(" not in bzl_txt:
+        m_fwd = re.search(r'load\(\s*"(//[^"]+\.bzl)"', bzl_txt)
+        if m_fwd:
+            fwd_path = os.path.join(workdir, m_fwd.group(1)[2:].replace(":", "/"))
+            if os.path.isfile(fwd_path):
+                try:
+                    bzl_txt = open(fwd_path, encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    pass
+    m_mac = re.search(
+        r"\b" + re.escape(target_rule) + r"\s*=\s*macro\s*\((.*?)\n\)",
+        bzl_txt,
+        re.DOTALL,
+    )
+    if not m_mac:
+        return False
+    m_body = m_mac.group(1)
+    drops_tcw = bool(re.search(r'"target_compatible_with"\s*:\s*None\b', m_body))
+    omits_tcw = "inherit_attrs" not in m_body and '"target_compatible_with"' not in m_body
+    defaults_host = bool(re.search(r"default\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b", m_body))
+    sets_host = bool(
+        re.search(r"target_compatible_with\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b", bzl_txt)
+    )
+    return ((drops_tcw or omits_tcw) and sets_host) or (defaults_host and not is_dual_build_pkg)
+
+
 # Check whether a review_diff finding is a verified false positive for mapped/decomposed
 # target attributes, cross-package source labels, unit_test_parity aspect_hints,
-# bazel_fuchsia_package wrappers, noGNEquivalent sentinel omissions, or unmigrated
-# ancestor registration packages.
+# bazel_fuchsia_package wrappers, noGNEquivalent sentinel omissions, host-only macros,
+# or unmigrated ancestor registration packages.
 def is_benign_review_diff_finding(f):
     f_pkg = os.path.dirname(str(f.get("file", ""))).strip("/")
     if f_pkg and is_registration_only_bazel_pkg(f_pkg):
         return True
     cat = f.get("category", "")
     msg = f.get("message", "")
+    if cat == "host_compatibility" and is_verified_host_only_macro_compatibility(f):
+        return True
     if cat == "sentinel_drift" and is_verified_no_gn_equiv_sentinel_drift(f):
         return True
     if cat == "missing_sources" and is_verified_cross_package_sources(f):
@@ -1885,8 +2097,8 @@ def machinery_fingerprint():
     return tuple(entries)
 
 
-# Wait for an in-progress machinery evolution after build_verification completes.
-def wait_for_evolution_after_build(max_wait_secs=180):
+# Wait for an in-progress machinery evolution after checks complete.
+def wait_for_evolution_after_build(max_wait_secs=480):
     release_machinery_locks()
     if not evolution_running():
         return True
@@ -2002,8 +2214,11 @@ try:
                 )
             )
             all_findings.extend(diff_findings)
-    # Re-run fast static checks when a parallel machinery evolution merged during this run.
-    if not builds_skipped and (evolution_in_progress or evolution_running()):
+    # Re-run fast static checks when a parallel machinery evolution merged during this run
+    # (or when blocking static findings occur while a parallel evolution is still running).
+    if (not builds_skipped or (not only and any(blocking(f) for f in all_findings))) and (
+        evolution_in_progress or evolution_running()
+    ):
         if wait_for_evolution_after_build():
             evolution_in_progress = False
     else:

@@ -515,12 +515,17 @@ def foreign_suite_tests(label, pkg, td, seen):
 
 # Check whether sibling packages under td's parent or intermediate subsystem directories already
 # export tests via a per-package bazel_test_suite in BUILD.gn instead of an ancestor test_suite.
-def has_sibling_local_bazel_test_suite(td, anc_pkg=""):
+# Directories already represented in member_pkgs of the ancestor test_suite are covered by that
+# suite even if an older sibling still has a local bazel_test_suite in BUILD.gn.
+def has_sibling_local_bazel_test_suite(td, anc_pkg="", member_pkgs=()):
     cur = td
     while True:
         parent_dir = os.path.dirname(cur)
         if not parent_dir or parent_dir == anc_pkg or (anc_pkg and not parent_dir.startswith(anc_pkg + "/")):
             break
+        if any(p == parent_dir or p.startswith(parent_dir + "/") for p in member_pkgs):
+            cur = parent_dir
+            continue
         parent_abs = os.path.join(workdir, parent_dir)
         cur_base = os.path.basename(cur)
         if os.path.isdir(parent_abs):
@@ -546,8 +551,15 @@ _base_bazel_src_cache = {}
 def base_bazel_src_of(pkg):
     if pkg not in _base_bazel_src_cache:
         rel = os.path.join(pkg, "BUILD.bazel") if pkg else "BUILD.bazel"
-        b_ref = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
-        refs = [b_ref, "HEAD~1"] if b_ref == "HEAD" else [b_ref]
+        eff_base = globals().get("effective_diff_base") or (
+            os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+        )
+        if eff_base == "HEAD" and globals().get("head_is_task_commit"):
+            refs = ["HEAD~1"]
+        elif eff_base == "HEAD":
+            refs = ["HEAD~1", "HEAD"]
+        else:
+            refs = [eff_base]
         content = ""
         for r in refs:
             try:
@@ -563,17 +575,54 @@ def base_bazel_src_of(pkg):
     return _base_bazel_src_cache[pkg]
 
 
+_BROAD_UMBRELLA_ANCESTORS = {"", "src", "sdk", "build", "third_party"}
+_base_bazel_suites_cache = {}
+
+
+# Parse test_suite target names present in pkg's BUILD.bazel at the change base.
+def base_bazel_suites_of(pkg):
+    if pkg not in _base_bazel_suites_cache:
+        names = set()
+        src = base_bazel_src_of(pkg)
+        if src:
+            try:
+                t = ast.parse(src)
+                for node in ast.walk(t):
+                    if (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name)
+                        and node.func.id == "test_suite"
+                    ):
+                        kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+                        n = kws.get("name")
+                        if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                            names.add(n.value)
+            except Exception:
+                pass
+        _base_bazel_suites_cache[pkg] = names
+    return _base_bazel_suites_cache[pkg]
+
+
+# Check whether any directory strictly between anc_pkg and td defines its own test suite.
+def has_intermediate_test_suite_package(td, anc_pkg):
+    cur = os.path.dirname(td)
+    while cur and cur != anc_pkg and (not anc_pkg or cur.startswith(anc_pkg + "/")):
+        if bazel_suites_of(cur) or SUITE_RE.search(read_gn(os.path.join(cur, "BUILD.gn"))):
+            return True
+        cur = os.path.dirname(cur)
+    return False
+
+
 # Check whether an ancestor BUILD.bazel test_suite already aggregates tests from td's
 # child subtree under anc_pkg (or td is a direct child of anc_pkg).
 def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
-    if has_sibling_local_bazel_test_suite(td, anc_pkg):
-        return False
     in_scope_pkgs = set(target_dirs) | {td}
-    base_anc_src = base_bazel_src_of(anc_pkg)
+    base_suites = base_bazel_suites_of(anc_pkg)
+    suite_is_new_at_base = anc_suite not in base_suites
     visited = set()
     queue = [(anc_pkg, anc_suite)]
     member_pkgs = set()
-    has_direct_leaf_tests = False
+    has_direct_leaf_member = False
     while queue:
         cur_pkg, cur_suite = queue.pop(0)
         if (cur_pkg, cur_suite) in visited:
@@ -593,20 +642,45 @@ def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
             if m_name in bazel_suites_of(m_pkg):
                 queue.append((m_pkg, m_name))
             elif cur_pkg == anc_pkg:
-                has_direct_leaf_tests = True
+                has_direct_leaf_member = True
     if td in member_pkgs:
         return True
+    if has_sibling_local_bazel_test_suite(td, anc_pkg, member_pkgs):
+        return False
     if os.path.dirname(td) == anc_pkg:
-        return bool(member_pkgs) or not base_anc_src
+        if anc_pkg not in _BROAD_UMBRELLA_ANCESTORS:
+            return True
+        return bool(member_pkgs) or suite_is_new_at_base
     rel_td = os.path.relpath(td, anc_pkg)
     first_seg = rel_td.split("/")[0]
     sub_root = os.path.join(anc_pkg, first_seg) if anc_pkg else first_seg
     if any(p == sub_root or p.startswith(sub_root + "/") for p in member_pkgs):
         return True
+    if has_sibling_local_bazel_test_suite(td, anc_pkg):
+        return False
+    if suite_is_new_at_base or not member_pkgs:
+        if any(
+            ancestor_suite_covers_subtree(anc_pkg, other_s, td)
+            for other_s in base_suites
+            if other_s != anc_suite
+        ):
+            return True
+        if (
+            not base_suites
+            and anc_pkg not in _BROAD_UMBRELLA_ANCESTORS
+            and not has_intermediate_test_suite_package(td, anc_pkg)
+        ):
+            return True
+    if (
+        has_direct_leaf_member
+        and anc_pkg not in _BROAD_UMBRELLA_ANCESTORS
+        and not has_intermediate_test_suite_package(td, anc_pkg)
+    ):
+        return True
     # For flat area test suites (outside multi-subsystem top-level roots like src/sdk/zircon)
     # that directly list leaf test targets, cover all subdirectories unless an intermediate
     # ancestor between anc_pkg and td defines its own test_suite or bazel_test_suite.
-    if anc_pkg not in ("src", "sdk", "zircon") and has_direct_leaf_tests:
+    if anc_pkg not in ("src", "sdk", "zircon") and has_direct_leaf_member:
         cur_mid = os.path.dirname(td)
         has_intermediate_suite = False
         while cur_mid and cur_mid != anc_pkg and cur_mid.startswith(anc_pkg + "/"):
@@ -712,32 +786,44 @@ def nearest_ancestor_test_suite(td, param):
     return discovered[-1]
 
 
+# Return the first wired bazel_test_suite target name in anc_pkg/BUILD.gn, if any.
+def existing_wired_gn_suite_name(anc_pkg):
+    anc_gn_rel = os.path.join(anc_pkg, "BUILD.gn")
+    code = read_gn(anc_gn_rel)
+    if not code:
+        return None
+    for m in SUITE_RE.finditer(code):
+        if suite_is_wired(anc_gn_rel, m.group(1)):
+            return m.group(1)
+    return None
+
+
 # Find the canonical ancestor area directory where a flat BUILD.bazel test_suite and BUILD.gn
 # bazel_test_suite should be created when no ancestor suite for `param` exists yet.
+# Never invents a brand-new ancestor area BUILD.bazel when no ancestor suite exists yet.
 def preferred_ancestor_area_suite(td, param):
-    if has_sibling_local_bazel_test_suite(td):
-        return None
-    gn_rel_td = os.path.join(td, "BUILD.gn")
-    if SENTINEL_RE.search(read_gn(gn_rel_td)) or SUITE_RE.search(read_gn(gn_rel_td)):
-        return None
     parts = [p for p in td.split("/") if p]
     ancestors = ["/".join(parts[:i]) for i in range(1, len(parts))]
     if not ancestors:
         return None
-    # Prefer the nearest ancestor that already defines a wired bazel_test_suite covering td's
-    # subtree (or where td is a direct child of that ancestor).
+    # Prefer the nearest ancestor area that already defines a wired bazel_test_suite (e.g. for
+    # the other test environment) or test_suite covering td's subtree.
     for anc in reversed(ancestors):
+        if anc in _BROAD_UMBRELLA_ANCESTORS:
+            continue
+        if has_sibling_local_bazel_test_suite(td, anc) or has_intermediate_test_suite_package(
+            td, anc
+        ):
+            continue
         if os.path.dirname(td) != anc and not any(
             ancestor_suite_covers_subtree(anc, s_name, td)
             for s_name in bazel_suites_of(anc)
         ):
             continue
+        if existing_wired_gn_suite_name(anc) is not None:
+            return (anc, param)
         anc_gn_rel = os.path.join(anc, "BUILD.gn")
         code = read_gn(anc_gn_rel)
-        if code and any(
-            suite_is_wired(anc_gn_rel, m.group(1)) for m in SUITE_RE.finditer(code)
-        ):
-            return (anc, param)
         if bazel_suites_of(anc) and code and re.search(
             r'\bgroup\(\s*"tests(?:_no_e2e)?"\s*\)\s*\{', code
         ):
@@ -2681,10 +2767,49 @@ for td in target_dirs:
     exportable = []  # (name, kind, rule, lineno, GN twin: the bazel2gn-generated GN test it runs, or None)
     suites = {}  # test_suite name -> list of member names, or None for "every test"
     all_tests = []  # names of non-manual test targets of the package (for empty test_suite)
+
+    # Collect local test binary target names wrapped by `wrap_host_rust_test` or
+    # `host_test` in the same BUILD.bazel so the underlying `rustc_test`/`rust_test`
+    # binary is not flagged as a separate unexported host test alongside its wrapper.
+    def collect_host_wrapped_binaries(tree_node, pkg_dir):
+        wrapped = set()
+        for call_node in ast.walk(tree_node):
+            if not isinstance(call_node, ast.Call):
+                continue
+            r_name = (
+                call_node.func.id
+                if isinstance(call_node.func, ast.Name)
+                else (
+                    call_node.func.attr
+                    if isinstance(call_node.func, ast.Attribute)
+                    else ""
+                )
+            )
+            if r_name not in ("wrap_host_rust_test", "host_test"):
+                continue
+            for kw in call_node.keywords:
+                if (
+                    kw.arg in ("binary_name", "binary", "unstripped_binary")
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    bn = local_name(kw.value.value, pkg_dir)
+                    if bn:
+                        wrapped.add(bn)
+        return wrapped
+
+    host_wrapped_bins = collect_host_wrapped_binaries(tree, td)
+
     # Check whether a Rust device test binary is packaged in BUILD.bazel or a GN-kept test pkg.
     def is_rust_device_test_packaged(device_bin, call_node):
         call_seg = ast.get_source_segment(bazel_src, call_node) or ""
         if "HOST_OS_CONSTRAINTS" in call_seg or "HOST_CONSTRAINTS" in call_seg:
+            return True
+        if device_bin in host_wrapped_bins and not re.search(
+            r"\b(?:fuchsia_unittest_package|fuchsia_test_package|"
+            r"fuchsia_test_component|fuchsia_unittest_component)\s*\(",
+            base_gn_clean,
+        ):
             return True
         bin_pat = (
             r'\bbinary\s*=\s*"(?://'
@@ -2730,7 +2855,11 @@ for td in target_dirs:
         manual = "manual" in bazel_strings(kws.get("tags"))
         if rule_name in DEVICE_TEST_RULES:
             exportable.append((t_name, "target", rule_name, lineno, None))
-        elif rule_name in HOST_TEST_RULES:
+        elif rule_name in HOST_TEST_RULES or (
+            rule_name in ("rustc_test", "rust_test")
+            and t_name not in host_wrapped_bins
+            and "HOST_OS_CONSTRAINTS" in (ast.get_source_segment(bazel_src, node) or "")
+        ):
             twin = t_name if rule_name in GN_CONVERTED_HOST_TEST_RULES else None
             exportable.append((t_name, "host", rule_name, lineno, twin))
         elif rule_name in RUST_TEST_OWNERS and "host" in unit_test_envs(kws):
@@ -2740,7 +2869,14 @@ for td in target_dirs:
             suites[t_name] = None if tests_v is None else [
                 local_name(s, td) for s in bazel_strings(tests_v)
             ]
-        if not manual and (rule_name in DEVICE_TEST_RULES | HOST_TEST_RULES or rule_name.endswith("_test")):
+        if (
+            not manual
+            and t_name not in host_wrapped_bins
+            and (
+                rule_name in DEVICE_TEST_RULES | HOST_TEST_RULES
+                or rule_name.endswith("_test")
+            )
+        ):
             all_tests.append(t_name)
         if rule_name in RUST_TEST_OWNERS and "host" in unit_test_envs(kws):
             all_tests.append(t_name + "_test")
@@ -2817,7 +2953,11 @@ for td in target_dirs:
             for n in names:
                 listed_in.setdefault(n, []).append((s_rel, s_name, param, s_line))
 
-    base_ref = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+    base_ref = (
+        effective_diff_base
+        if effective_diff_base != "HEAD"
+        else ("HEAD~1" if head_is_task_commit else "HEAD")
+    )
     base_gn_src = ""
     for ref in ([base_ref, "HEAD~1"] if base_ref == "HEAD" else [base_ref]):
         try:
@@ -2896,6 +3036,16 @@ for td in target_dirs:
         gn_test_callers = direct_gn_test_callers(td, t_name)
         local_gn_tests_referenced = gn_tests_group_is_referenced(td)
         if not entries:
+            wrap_hint = ""
+            if rule_name in ("rustc_test", "rust_test"):
+                stem = t_name[:-5] if t_name.endswith("_test") else t_name
+                wrap_hint = (
+                    f" Because `{rule_name}` does not provide `FuchsiaHostTestInfo`, "
+                    f"wrap `:{t_name}` with `wrap_host_rust_test(name = "
+                    f"\"{stem}_host_test\", binary_name = \"{t_name}\")` (or use "
+                    f"`host_rustc_test` when `BUILD.gn` has no unguarded "
+                    "`assert(is_host)` unit test) and export the wrapper target."
+                )
             if anc_suite_info is not None:
                 anc_pkg, anc_suite = anc_suite_info
                 req_vis = ancestor_suite_visibility(anc_pkg)
@@ -2912,11 +3062,18 @@ for td in target_dirs:
                     f"'{anc_pkg}/BUILD.bazel' and set "
                     f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
                     f"'{bazel_rel}' (do not add a per-package `bazel_test_suite` in "
-                    f"'{gn_rel}')."
+                    f"'{gn_rel}').{wrap_hint}"
                 )
             elif missing_anc_area is not None:
                 anc_pkg, anc_suite = missing_anc_area
+                anc_gn_suite = existing_wired_gn_suite_name(anc_pkg) or "bazel_tests"
                 req_vis = ancestor_suite_visibility(anc_pkg)
+                compat_load_note = (
+                    ' (loading `HOST_OS_CONSTRAINTS` from '
+                    '`//build/bazel/platforms:constraints.bzl`)'
+                    if param == "host_tests"
+                    else ""
+                )
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not exported "
                     f"through an ancestor `test_suite` in '{anc_pkg}/BUILD.bazel' and "
@@ -2926,11 +3083,13 @@ for td in target_dirs:
                 rem_text = (
                     f"Create or update a flat `test_suite(name = \"{anc_suite}\", "
                     f"target_compatible_with = {compat_expr}, tests = [\"//{td}:{t_name}\"])` "
-                    f"in '{anc_pkg}/BUILD.bazel', wire `\"//{anc_pkg}:{anc_suite}\"` into "
-                    f"`bazel_test_suite(\"bazel_tests\") {{ {param} = [ \"//{anc_pkg}:{anc_suite}\" ] }}` "
-                    f"(and `\":bazel_tests\"` into `group(\"tests\")`) in '{anc_pkg}/BUILD.gn', "
-                    f"and set `visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
-                    f"'{bazel_rel}' (do not add a per-package `bazel_test_suite` in '{gn_rel}')."
+                    f"in '{anc_pkg}/BUILD.bazel'{compat_load_note}, wire "
+                    f"`\"//{anc_pkg}:{anc_suite}\"` into "
+                    f"`bazel_test_suite(\"{anc_gn_suite}\") {{ {param} = "
+                    f"[ \"//{anc_pkg}:{anc_suite}\" ] }}` (and `\":{anc_gn_suite}\"` into "
+                    f"`group(\"tests\")`) in '{anc_pkg}/BUILD.gn', and set "
+                    f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in '{bazel_rel}' "
+                    f"(do not add a per-package `bazel_test_suite` in '{gn_rel}').{wrap_hint}"
                 )
             else:
                 msg_text = (
@@ -2940,11 +3099,12 @@ for td in target_dirs:
                     "does not change that."
                 )
                 rem_text = (
-                    f"In '{gn_rel}' (above any BAZEL2GN SENTINEL), add "
-                    "`import(\"//build/bazel/bazel_test_suite.gni\")` and "
-                    f"`bazel_test_suite(\"<name>\") {{ {param} = [ \"//{td}:{t_name}\" ] }}` (absolute Bazel "
-                    "labels; a Bazel `test_suite` label also works), named after the GN test package it "
-                    "replaces, and list `\":<name>\"` in `group(\"tests\")`."
+                    f"Export `\"//{td}:{t_name}\"` through `bazel_test_suite(\"<name>\") {{ {param} = "
+                    f"[ \"//{td}:{t_name}\" ] }}` at the nearest `group(\"tests\")` boundary: in "
+                    f"'{gn_rel}' (above any BAZEL2GN SENTINEL) when '{gn_rel}' is kept or itself "
+                    f"owns the `group(\"tests\")` boundary, or in the parent/ancestor `BUILD.gn` "
+                    f"that lists `{td}:tests` when nothing else remains in '{gn_rel}' (deleting "
+                    f"'{gn_rel}' in Case 1).{wrap_hint}"
                 )
             findings.append({
                 "source": "cq_reachability",
@@ -3023,22 +3183,34 @@ for td in target_dirs:
         elif missing_anc_area is not None and any(e[0] == gn_rel for e in entries):
             handled_local_ancestor_suite = True
             anc_pkg, anc_suite = missing_anc_area
+            anc_gn_suite = existing_wired_gn_suite_name(anc_pkg) or "bazel_tests"
+            local_suite_name = next(e[1] for e in entries if e[0] == gn_rel)
             req_vis = ancestor_suite_visibility(anc_pkg)
+            compat_load_note = (
+                ' (loading `HOST_OS_CONSTRAINTS` from '
+                '`//build/bazel/platforms:constraints.bzl`)'
+                if param == "host_tests"
+                else ""
+            )
             msg_text = (
                 f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is exported "
                 f"via a per-package `bazel_test_suite` in '{gn_rel}' instead of "
                 f"a flat `test_suite(name = \"{anc_suite}\")` in '{anc_pkg}/BUILD.bazel' "
-                f"wired through `bazel_test_suite(\"bazel_tests\")` in '{anc_pkg}/BUILD.gn'."
+                f"wired through `bazel_test_suite(\"{anc_gn_suite}\")` in "
+                f"'{anc_pkg}/BUILD.gn'."
             )
             rem_text = (
                 f"Create or update a flat `test_suite(name = \"{anc_suite}\", "
                 f"target_compatible_with = {compat_expr}, tests = [\"//{td}:{t_name}\"])` "
-                f"in '{anc_pkg}/BUILD.bazel', wire `\"//{anc_pkg}:{anc_suite}\"` into "
-                f"`bazel_test_suite(\"bazel_tests\") {{ {param} = [ \"//{anc_pkg}:{anc_suite}\" ] }}` "
-                f"(and `\":bazel_tests\"` into `group(\"tests\")`) in '{anc_pkg}/BUILD.gn', "
-                f"set `visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
-                f"'{bazel_rel}', and remove the per-package `bazel_test_suite` "
-                f"(and unused `//build/bazel/bazel_test_suite.gni` import) from '{gn_rel}'."
+                f"in '{anc_pkg}/BUILD.bazel'{compat_load_note}, wire "
+                f"`\"//{anc_pkg}:{anc_suite}\"` into "
+                f"`bazel_test_suite(\"{anc_gn_suite}\") {{ {param} = "
+                f"[ \"//{anc_pkg}:{anc_suite}\" ] }}` (and `\":{anc_gn_suite}\"` into "
+                f"`group(\"tests\")`) in '{anc_pkg}/BUILD.gn', set "
+                f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in '{bazel_rel}', "
+                f"and remove `bazel_test_suite(\"{local_suite_name}\")` (plus "
+                f"`\":{local_suite_name}\"` from `group(\"tests\")` and any unused "
+                f"`//build/bazel/bazel_test_suite.gni` import) from '{gn_rel}'."
             )
             findings.append({
                 "source": "cq_reachability",

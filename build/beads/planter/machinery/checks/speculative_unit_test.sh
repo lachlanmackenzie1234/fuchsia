@@ -111,8 +111,10 @@ def base_gn_test_status(base_gn, name):
 
 
 # Did base_gn run unit tests on host (via ($host_toolchain), is_host, with_host_unit_tests,
-# or wiring :<lib>_test directly into group("tests") outside a fuchsia_*test_package)?
-def base_gn_had_host_unit_tests(base_gn, lib_name, test_name):
+# host-only templates such as ffx_plugin/ffx_tool/sdk_host_tool, an ancestor BUILD.gn with
+# assert(is_host) or host_toolchain test wiring, or with_unit_tests = true in a BUILD.gn
+# that defines no Fuchsia test package/component)?
+def base_gn_had_host_unit_tests(d, base_gn, lib_name, test_name):
     if base_gn is None:
         return True
     no_comments = re.sub(r"#[^\n]*", "", base_gn)
@@ -120,6 +122,15 @@ def base_gn_had_host_unit_tests(base_gn, lib_name, test_name):
         "host_toolchain" in no_comments
         or "with_host_unit_tests" in no_comments
         or re.search(r"\bis_host\b", no_comments)
+        or re.search(r"\b(?:ffx_plugin|ffx_tool|sdk_host_tool)\s*\(", no_comments)
+    ):
+        return True
+    if re.search(
+        r"\b(?:with_unit_tests|args_with_unit_tests)\s*=\s*true\b", no_comments
+    ) and not re.search(
+        r"\b(?:fuchsia_unittest_package|fuchsia_test_package|"
+        r"fuchsia_unittest_component|fuchsia_test_component|bootfs_test)\s*\(",
+        no_comments,
     ):
         return True
     # Check if :<test_name> or :<lib_name>_test is referenced in group("tests") directly
@@ -128,6 +139,21 @@ def base_gn_had_host_unit_tests(base_gn, lib_name, test_name):
         for cand in (test_name, f"{lib_name}_test"):
             if cand and re.search(r'":' + re.escape(cand) + r'"', gbody):
                 return True
+    # Check if an ancestor BUILD.gn restricts the subtree to the host toolchain.
+    cur = os.path.dirname(d)
+    while cur:
+        anc_gn = git_show(f"{cur}/BUILD.gn")
+        if anc_gn:
+            anc_clean = re.sub(r"#[^\n]*", "", anc_gn)
+            if re.search(r"\bassert\(\s*is_host\b", anc_clean):
+                return True
+            rel_sub = os.path.relpath(d, cur).replace("\\", "/")
+            if (
+                rel_sub in anc_clean
+                and ("host_toolchain" in anc_clean or re.search(r"\bis_host\b", anc_clean))
+            ):
+                return True
+        cur = os.path.dirname(cur)
     return False
 
 
@@ -265,14 +291,14 @@ for d in target_dirs:
         if explicit_false or (not had_tests and not sources_have_tests(crate_sources(d, libs[lib][1]))):
             report(d, text, m.start(), f"rustc_test :{tname}", lib, explicit_false=explicit_false)
 
-    # Check wrap_host_rust_test(binary = ":<test>") when base BUILD.gn only ran tests on Fuchsia.
+    # Check wrap_host_rust_test(binary_name = "<test>") when base BUILD.gn only ran tests on Fuchsia.
     for m in re.finditer(r"^wrap_host_rust_test\(\s*$", text, re.M):
         block = block_at(text, m.end() - 1)
         wname = attr_str(block, "name") or "wrap_host_rust_test"
-        bin_attr = attr_str(block, "binary") or ""
+        bin_attr = attr_str(block, "binary_name") or attr_str(block, "binary") or ""
         tname = bin_attr[1:] if bin_attr.startswith(":") else bin_attr
         lib = test_to_lib.get(tname, tname[:-5] if tname.endswith("_test") else tname)
-        if not base_gn_had_host_unit_tests(base_gn, lib, tname):
+        if not base_gn_had_host_unit_tests(d, base_gn, lib, tname):
             report_host_test(d, text, m.start(), wname, tname)
 
 print(json.dumps(findings, indent=2))

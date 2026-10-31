@@ -749,6 +749,46 @@ def is_subrepo_origin_main_stale(sub_rel):
 
 
 origin_main_sources = {}
+_upstream_only_files_cache = {}
+
+
+# Return a filter function `is_upstream_only_file(rel_path)` for `repo` that is
+# True only when `rel_path` was modified upstream on `origin/main` since
+# `merge-base(HEAD, origin/main)` and was not modified locally in the current
+# branch or working tree, preventing pre-migration dependency labels removed or
+# updated by the current change from being resurrected from `origin/main`.
+def get_upstream_only_file_filter(repo):
+    if repo in _upstream_only_files_cache:
+        return _upstream_only_files_cache[repo]
+    local_changed = set()
+    for cmd in (
+        ["git", "-C", repo, "diff", "--name-only", "origin/main...HEAD"],
+        ["git", "-C", repo, "diff", "--name-only", change_base],
+        ["git", "-C", repo, "diff", "--name-only", "HEAD"],
+        ["git", "-C", repo, "diff", "--cached", "--name-only"],
+    ):
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+            for line in out.splitlines():
+                if line.strip():
+                    local_changed.add(line.strip())
+        except Exception:
+            pass
+    try:
+        up_out = subprocess.check_output(
+            ["git", "-C", repo, "diff", "--name-only", "HEAD...origin/main"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        upstream_only = {
+            line.strip() for line in up_out.splitlines() if line.strip()
+        } - local_changed
+        fn = lambda rel_p, u=upstream_only: rel_p in u
+    except Exception:
+        fn = lambda rel_p, lc=local_changed: rel_p not in lc
+    _upstream_only_files_cache[repo] = fn
+    return fn
+
 
 # Batch-discover all build files mentioning any candidate package across all repos.
 # Using git grep per repository avoids false-empty results when workdir is a git worktree under
@@ -795,7 +835,9 @@ def discover_referencing_build_files(pkg_list):
         except OSError:
             pass
         # Also search origin/main in each repo so callers added upstream in a
-        # sub-repository whose working tree is at an older Jiri snapshot are found.
+        # sub-repository whose working tree is at an older Jiri snapshot are
+        # found, excluding files modified locally by the migration change.
+        is_upstream_only = get_upstream_only_file_filter(repo)
         om_grep_cmd = (
             ["git", "-C", repo, "grep", "-l", "--fixed-strings"]
             + pattern_args
@@ -813,6 +855,8 @@ def discover_referencing_build_files(pkg_list):
                     s = line.strip()
                     if s.startswith("origin/main:"):
                         rel_line = s[len("origin/main:") :]
+                        if not is_upstream_only(rel_line):
+                            continue
                         abs_cand = os.path.join(repo, rel_line)
                         origin_main_sources[abs_cand] = (repo, rel_line)
                         found.add(abs_cand)
@@ -1649,6 +1693,7 @@ def compute_package_rdeps(
             for repo in discover_git_repos():
                 if not os.path.exists(os.path.join(repo, ".git")):
                     continue
+                is_upstream_only = get_upstream_only_file_filter(repo)
                 for g_cmd, is_om in (
                     (
                         ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings"]
@@ -1676,6 +1721,8 @@ def compute_package_rdeps(
                                 continue
                             if is_om and s.startswith("origin/main:"):
                                 rel_l = s[len("origin/main:") :]
+                                if not is_upstream_only(rel_l):
+                                    continue
                                 abs_c = os.path.join(repo, rel_l)
                                 origin_main_sources[abs_c] = (repo, rel_l)
                             else:

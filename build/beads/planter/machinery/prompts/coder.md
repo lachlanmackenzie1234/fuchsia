@@ -29,7 +29,7 @@ checks and fix what they report.
    `fx bazel2gn -d <dir>` for every dual-build directory with `bazel2gn`-convertible targets.
 3. Get each target's visibility from `find_rdeps` (`per_target_recommended_visibility`). A label
    written inside a GN template in a `.gni` is checked in the BUILD.gn that invokes the template,
-   so grant visibility to that package, not to the `.gni`'s directory. `idk_cc_*` macros already
+   so grant visibility to that package, not to the `.gni`'s directory. `idk_*` macros already
    add `//sdk:__pkg__`; don't list it.
 4. Iterate with `run_checks.sh --skip-build` (seconds) plus targeted builds of what you touched,
    then finish with ONE full `run_checks.sh` (see "Verify, Then Run the Checks Once").
@@ -335,35 +335,33 @@ in `unit_tests = [":foo_unittest_bin"]` (bazel2gn generates `test("foo_unittest_
 test suite exists).
 
 ## Migrating ffx Tools (Bazel-only `ffx_tool` + GN `bazel_ffx_tool` Bridge)
-`bazel2gn` maps `ffx_tool` and `idk_ffx_tool` to `noGNEquivalent`, so ffx subtools are Bazel-only.
-A GN `ffx_tool("<name>")` (generated or hand-written) must not remain in BUILD.gn: below
-`## BAZEL2GN SENTINEL` it fails `gn gen` with `Unknown function: ffx_tool`. References:
-`//src/developer/ffx/tools/efi` (`ffx_tool`) and `//src/developer/ffx/plugins/coverage`
-(`idk_ffx_tool`).
-1. **BUILD.bazel**: define the tool without `# @bazel2gn:skip`, keeping the GN target name.
-   - Non-IDK tools: `ffx_tool` from `//src/developer/ffx/build:ffx_tool.bzl`, with
-     `binary_name = "<GN output_name>"` when it differs from the target name.
-   - Tools with GN `sdk_category = "partner"` (or `sdk_target_name`): `idk_ffx_tool` from
-     `//build/bazel/rules/idk:idk_ffx_tool.bzl` with `idk_name = "<GN output_name>"`,
-     `category = "partner"`, and `"//sdk:__pkg__"` in `visibility`; `name` must not contain
-     `idk`/`sdk`. Add `"//<dir>:<name>_idk"` to `_NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK`
-     in `//sdk/atom_lists.bzl`.
-   - Helper `rustc_library` targets and unit tests (`host_rustc_test`, or
-     `with_host_unit_tests = True` on `ffx_tool`) go in BUILD.bazel as usual.
-2. **BUILD.gn** (above the sentinel; a BUILD.gn with only the bridge may keep an empty sentinel
-   like efi or have none like coverage): keep
-   `import("//src/developer/ffx/build/ffx_tool.gni")`, `assert(is_host, ...)`, and the existing
-   forwarding groups (`group("<dir>")` -> `:<name>`, `:<name>_host_tool`; `group("bin")` ->
-   `:<name>_versioned`), and replace `ffx_tool(...)` with
-   `bazel_ffx_tool("<name>") { output_name = "<GN output_name>" }` (plus `sdk_category =
-   "partner"` for IDK tools). It defines `:<name>`, `:<name>_versioned`, and `:<name>_host_tool`,
-   so existing GN callers keep working. For IDK tools, keep a hand-written GN `sdk_atom("sdk")`
-   (`non_sdk_deps = [ ":<name>_versioned" ]`) with the coverage TODO until the IDK uses the Bazel
-   atom. Recreate any `host_test_data` that consumed the GN tool from `:<name>_host_tool`.
-3. **Tests**: add the Bazel unit test to `test_suite` in `//src/developer/ffx/BUILD.bazel`, and if
-   the package is in `_tools` in `//src/developer/ffx/tools/BUILD.gn`, add it to
-   `_bazel_tested_tools` there so its GN `:tests` group is no longer expected. Drop
-   `group("tests")` from BUILD.gn when it only listed the migrated tests.
+`bazel2gn` maps `ffx_tool` and `idk_ffx_tool` to `noGNEquivalent`, so GN `ffx_tool("<name>")` must
+not remain in BUILD.gn. References: `//src/developer/ffx/tools/efi` (`ffx_tool`) and
+`//src/developer/ffx/plugins/coverage` (`idk_ffx_tool`).
+1. **BUILD.bazel**: define `<name>` without `# @bazel2gn:skip`.
+   - Non-IDK tools: `ffx_tool` (`//src/developer/ffx/build:ffx_tool.bzl`), setting
+     `binary_name = "<GN output_name>"` when it differs from `<name>`.
+   - IDK tools (`sdk_category = "partner"` / `sdk_target_name`): `idk_ffx_tool`
+     (`//build/bazel/rules/idk:idk_ffx_tool.bzl`) with `idk_name = "<GN output_name>"` and
+     `category = "partner"` (`name` must not contain `idk`/`sdk`; `<name>_idk` grants
+     `//sdk:__pkg__` automatically). Add `"//<dir>:<name>_idk"` to the list in
+     `//sdk/atom_lists.bzl` matching `//sdk/BUILD.gn`'s `sdk_molecule` for `//<dir>:sdk`
+     (`BUILD_FFX_TOOLS_ATOMS` for `build_host_tools`,
+     `_NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK` for
+     `non_build_host_tools_required_by_bazel_sdk`, or `NON_BUILD_FFX_TOOLS_ATOMS` for
+     `non_build_host_tools`).
+   - Put helper `rustc_library` targets and `host_rustc_test` (or `with_host_unit_tests = True`) in
+     BUILD.bazel.
+2. **BUILD.gn** (above the sentinel, or omit the sentinel if only the bridge remains): keep
+   `import("//src/developer/ffx/build/ffx_tool.gni")`, `assert(is_host, ...)`, and existing
+   forwarding groups (`:<name>`, `:<name>_host_tool`, `:<name>_versioned`), and replace
+   `ffx_tool(...)` with `bazel_ffx_tool("<name>") { output_name = "<GN output_name>" }` (plus
+   `sdk_category = "partner"` and a hand-written `sdk_atom("sdk")` with
+   `non_sdk_deps = [ ":<name>_versioned" ]` for IDK tools). Recreate any `host_test_data` from
+   `:<name>_host_tool`.
+3. **Tests**: add the Bazel unit test to `test_suite` in `//src/developer/ffx/BUILD.bazel`, add the
+   package to `_bazel_tested_tools` in `//src/developer/ffx/tools/BUILD.gn` when listed in `_tools`,
+   and drop `group("tests")` from BUILD.gn when it only listed migrated tests.
 
 ## Scoping Multi-Directory CLs & Missing Dependencies (`scoping_changelists.md`)
 Follow `//build/beads/references/migration/scoping_changelists.md` (`<= 5` directories and
@@ -457,11 +455,6 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
       maps it) get a per-attribute `# @bazel2gn:skip`.
    The core `component_manager` binary (`//src/sys/component_manager:bin`) is the example:
    ```python
-   # @bazel2gn:raw_attribute:_concurrent_jobs = concurrent_jobs.rust_highmem
-   # @bazel2gn:raw_attribute:configs += _concurrent_jobs.configs
-   # @bazel2gn:raw_attribute:forward_variables_from(_concurrent_jobs.vars, "*")
-   # @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "heapdump" ]
-   # @bazel2gn:raw_attribute:assert_no_deps += [ "//third_party/rust_crates:serde_json5($current_toolchain)" ]
    # @bazel2gn:raw_attribute:deps += [ ":elf_runner_cm($default_toolchain)" ]
    rustc_binary(
        name = "bin",
@@ -469,16 +462,20 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
            ":elf_runner_cm",
        ],  # @bazel2gn:raw_overwrite:[ elf_runner_cm ]
        crate_name = "component_manager",
+       exec_properties = RBE_USE_LARGE_WORKER,
        rustc_env = {
            "ELF_RUNNER_CM_PATH": "$(execpath :elf_runner_cm)",  # @bazel2gn:value_overwrite:$elf_runner_cm_path
        },
-       tags = ["assert_no_deps=//third_party/rust_crates/vendor:regex"],
+       tags = [
+           "assert_no_deps=//third_party/rust_crates/vendor:regex",
+           "assert_no_deps=//third_party/rust_crates/vendor:serde_json5",  # @bazel2gn:path_overwrite://third_party/rust_crates:serde_json5($current_toolchain)
+           "exclude_toolchain_tags=heapdump",
+       ],
        ...
    )
    ```
-   with `import("//build/toolchain/concurrent_jobs.gni")` and the `elf_runner_cm*` variables
-   above the sentinel. Keep a target hand-written above the sentinel (Bazel twin
-   `# @bazel2gn:skip`) only when no annotation can express it, and say why in the summary.
+   with the `elf_runner_cm*` variables above the sentinel. Never use `raw_attribute` for
+   `exclude_toolchain_tags`, `assert_no_deps`, or `concurrent_jobs.rust_highmem`.
 - **Compiled manifests (`cm()`, `restricted_features`)**: where the checkout's bazel2gn supports
    them (`build/tools/bazel2gn/README.md`, "Components"), a GN `cm("<name>")` (a `.cm` that is
    embedded in a binary or read at build time, not packaged as a resource) becomes
@@ -543,30 +540,24 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 
 ## Lint Parity
 - An area `rust_lint_config` composes defaults from `//build/config/rust/lints` (`CLIPPY_WARN_PRODUCTION | _AREA_CLIPPY`, test variant `CLIPPY_WARN_DEFAULT | _AREA_CLIPPY`, `rustc = RUSTC_LINT_CONFIGS`) and needs a same-named GN `config()` next to it.
-- **Lints that fire only on Bazel test code**: set `lint_config` of the explicit `rustc_test`
-   to the area's test-flavored `rust_lint_config` (e.g.
-   `"//src/starnix/config:starnix_clippy_lints_test"`).
-- **Comments**: carry each migrated GN target's comments (and comments about it in parent
-   BUILD.gn files) over to the BUILD.bazel that now defines it.
+- **Lints on Bazel test code**: set `lint_config` of the explicit `rustc_test` to the area's test `rust_lint_config` (e.g. `"//src/starnix/config:starnix_clippy_lints_test"`). Never add `disable_clippy = True` unless GN set `disable_clippy = true`; if `//build/config/rust/lints:clippy_warn_all` on a Rust test trips a `_CLIPPY_WARN_PRODUCTION` lint (e.g. `clippy::redundant_clone`, omitted by GN `rustc_test`), fix that lint or add `#[allow(clippy::<lint>)]` in the test `.rs` file.
+- **Comments**: carry migrated GN comments to BUILD.bazel, and pair path-sync comments with `LINT.IfChange`/`LINT.ThenChange`.
 
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check, `review_diff`, and `build_verification` (`fx build`,
-GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host). Never run full
-product builds or raw `planter diff --local --check-findings` by hand.
+GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host).
 From `$PLANTER_WORKDIR`:
 1. While iterating, run `run_checks.sh --skip-build` and fix every ERROR and WARNING. On
    `upstream_rebase_conflict`, CQ `Failed to rebase`, or a CQ failure in an unrelated upstream
    target outside the migrated packages (e.g. `.mypy_checked` in `//build/**`), run
    `git fetch origin main && git rebase origin/main` (keeping both `origin/main` and your
-   entries sorted, then `git -c core.editor=true rebase --continue`); never edit unrelated
-   `//build/**` or out-of-scope files to work around an upstream `origin/main` breakage.
+   entries sorted, then `git -c core.editor=true rebase --continue`); never edit out-of-scope
+   `//build/**` files to work around an upstream `origin/main` breakage.
    If CQ failed with `no such package '<dep>': BUILD file not found`, keep stacked parent commits
-   providing `<dep>/BUILD.bazel` in `origin/main..HEAD` when rebasing (never drop them with
-   `git rebase --onto origin/main HEAD~1` or fold stacked task commits into `HEAD`), or migrate
-   `//<dep>` in `HEAD` when `<dep>/BUILD.bazel` is missing from `HEAD`. For fast compile feedback,
-   run `fx bazel2gn -d <dir>` and
-   `fx bazel build --config=fuchsia_platform //<dir>:all` (adding `-//<dir>:<name>_validate_ir_json`
-   when needed). Fix BUILD files, never sources.
+   providing `<dep>/BUILD.bazel` in `origin/main..HEAD` when rebasing, or migrate `//<dep>` in
+   `HEAD` when `<dep>/BUILD.bazel` is missing from `HEAD`. For fast compile feedback, run
+   `fx bazel2gn -d <dir>` and `fx bazel build --config=fuchsia_platform //<dir>:all` (adding
+   `-//<dir>:<name>_validate_ir_json` when needed).
 2. Run runnable host/unit tests of touched directories (`fx bazel test --config=host //<dir>:<test>`).
    Never `fx bazel test` an `fx_test` (its stub executable always fails): build it with
    `fx bazel build --config=fuchsia_platform //<dir>:all` (`fx test <package_name>` needs a

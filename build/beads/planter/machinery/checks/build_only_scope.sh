@@ -29,6 +29,15 @@ set -euo pipefail
 #   - an existing `<pkg>/README.md` in a migrated package directory when every modified
 #     (`+`/`-`) line only updates a target label reference (`//<pkg>...`) to match the
 #     migrated BUILD.gn / BUILD.bazel targets; other README.md or OWNERS edits are not allowed.
+#   - an existing source file in a migrated package when modified solely to add
+#     `LINT.IfChange` / `LINT.ThenChange` comments paired with `BUILD.bazel` / `BUILD.gn`,
+#     and/or (in `.rs` files) to resolve a `_CLIPPY_WARN_PRODUCTION` lint (such as
+#     `clippy::redundant_clone` or `#[allow(clippy::<lint>)]`) surfaced when
+#     `//build/config/rust/lints:clippy_warn_all` is applied to a Bazel Rust test target.
+#   - test-only code (`#[cfg(test)]` blocks in `.rs`, `<pkg>/tests/**`, or `*_test.*` /
+#     `test_*.*` files) in a migrated package with `host_test_data_files` / `host_test_data_map`
+#     when modified solely to adapt GN working-directory (`../../<pkg>/...`) or
+#     executable-relative (`current_exe()`) test data paths to Bazel's `<test>.runtime_dir`.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -352,6 +361,256 @@ def is_new_test_manifest(path: str) -> bool:
 relocated_new_to_old, relocated_old_to_new = find_relocated_component_manifests()
 
 
+# Check whether an existing source file inside a migrated package only adds
+# LINT.IfChange / LINT.ThenChange comments (paired with BUILD.bazel/BUILD.gn)
+# and/or resolves a `_CLIPPY_WARN_PRODUCTION` lint (such as `redundant_clone`)
+# surfaced when `//build/config/rust/lints:clippy_warn_all` is applied to a
+# Bazel Rust test target.
+IFTTT_COMMENT_RE = re.compile(r"^\s*(?://|#)\s*LINT\.(?:IfChange|ThenChange)\b")
+COMMENT_CONT_RE = re.compile(r"^\s*(?://|#)")
+CLIPPY_ALLOW_LINE_RE = re.compile(r"^\s*#!?\[\s*(?:allow|expect)\s*\(\s*clippy::")
+
+
+# Strip single-line and multi-line LINT.IfChange / LINT.ThenChange comment blocks.
+def strip_ifttt_comment_lines(lines):
+    rem = []
+    in_ifttt_paren = False
+    for line in lines:
+        if in_ifttt_paren and COMMENT_CONT_RE.match(line):
+            if ")" in line:
+                in_ifttt_paren = False
+            continue
+        in_ifttt_paren = False
+        if IFTTT_COMMENT_RE.match(line):
+            if "(" in line and ")" not in line:
+                in_ifttt_paren = True
+            continue
+        rem.append(line)
+    return rem
+
+
+def check_allowed_ifttt_or_clippy_warn_all_test_edit(path: str):
+    if path in added or not path.endswith(SOURCE_SUFFIXES):
+        return None
+    pkg, bzl_text = find_nearest_bazel_package(path)
+    if not pkg:
+        return None
+    if f"{pkg}/BUILD.bazel" not in changed and f"{pkg}/BUILD.gn" not in changed:
+        return None
+    has_warn_all_test = (
+        path.endswith(".rs")
+        and "//build/config/rust/lints:clippy_warn_all" in bzl_text
+        and any(
+            tok in bzl_text
+            for tok in (
+                "rustc_test(",
+                "host_rustc_test(",
+                "with_unit_tests",
+                "with_host_unit_tests",
+            )
+        )
+    )
+    diff_lines = git_lines(["diff", "-U0", change_base, "--", path])
+    removed = []
+    added_lines = []
+    for raw in diff_lines:
+        if raw.startswith(("diff ", "index ", "--- ", "+++ ", "@@ ")):
+            continue
+        if raw.startswith("-"):
+            if raw[1:].strip():
+                removed.append(raw[1:].strip())
+        elif raw.startswith("+"):
+            if raw[1:].strip():
+                added_lines.append(raw[1:].strip())
+    if not removed and not added_lines:
+        return None
+    rem_non_ifttt = strip_ifttt_comment_lines(removed)
+    add_non_ifttt = strip_ifttt_comment_lines(added_lines)
+    has_ifttt = len(rem_non_ifttt) < len(removed) or len(add_non_ifttt) < len(added_lines)
+    if not rem_non_ifttt and not add_non_ifttt:
+        if "LINT.IfChange" in bzl_text or "LINT.ThenChange" in bzl_text:
+            return (
+                f"Allowed LINT.IfChange/LINT.ThenChange path-sync comment update in '{path}' "
+                f"paired with '//{pkg}/BUILD.bazel'."
+            )
+        return None
+    if not has_warn_all_test:
+        return None
+    add_code = [l for l in add_non_ifttt if not CLIPPY_ALLOW_LINE_RE.match(l)]
+    if not rem_non_ifttt and not add_code and len(add_non_ifttt) <= 4:
+        return (
+            f"Allowed clippy_warn_all test lint attribute in '{path}' for '//{pkg}'"
+            + (" (with LINT.IfChange/LINT.ThenChange comments)." if has_ifttt else ".")
+        )
+    if (
+        len(rem_non_ifttt) == len(add_code)
+        and 0 < len(rem_non_ifttt) <= 4
+        and all(
+            r.replace(".clone()", "") == a
+            for r, a in zip(rem_non_ifttt, add_code)
+        )
+    ):
+        return (
+            f"Allowed clippy_warn_all redundant_clone test lint fix in '{path}' for '//{pkg}'"
+            + (" (with LINT.IfChange/LINT.ThenChange comments)." if has_ifttt else ".")
+        )
+    return None
+
+
+# Mask Rust comments and string/char literals with spaces while preserving line numbers
+# and brace positions so #[cfg(test)] / #[test] block line spans can be matched safely.
+HOST_TEST_SOURCE_SUFFIXES = SOURCE_SUFFIXES + (".go", ".py")
+RUST_MASK_RE = re.compile(
+    r"//[^\n]*|/\*[\s\S]*?\*/|b?'(?:\\.|[^'\\\n])'|b?r(#*)\"[\s\S]*?\"\1"
+    r"|b?\"(?:\\.|[^\"\\\n])*\""
+)
+RUST_TEST_ATTR_RE = re.compile(
+    r"#\s*\[\s*(?:cfg\s*\(\s*test\s*\)|(?:\w+\s*::\s*)*test\b)"
+)
+HUNK_HDR_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+GN_TEST_DATA_PATH_RE = re.compile(
+    r"\.\./|current_exe|os\.Executable|executable_path|__file__"
+)
+
+
+def _rust_cfg_test_line_ranges(text: str):
+    masked = RUST_MASK_RE.sub(
+        lambda m: "".join("\n" if ch == "\n" else " " for ch in m.group(0)), text
+    )
+    lines = masked.splitlines()
+    spans = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        if not RUST_TEST_ATTR_RE.search(lines[i]):
+            i += 1
+            continue
+        start_ln = i + 1
+        depth = 0
+        opened = False
+        j = i
+        while j < n:
+            for ch in lines[j]:
+                if ch == "{":
+                    depth += 1
+                    opened = True
+                elif ch == "}" and opened:
+                    depth -= 1
+                    if depth == 0:
+                        spans.append((start_ln, j + 1))
+                        break
+                elif ch == ";" and not opened:
+                    spans.append((start_ln, j + 1))
+                    opened = True
+                    depth = 0
+                    break
+            if opened and depth == 0:
+                break
+            j += 1
+        else:
+            if opened:
+                spans.append((start_ln, n))
+        i = max(i + 1, j + 1)
+    return spans
+
+
+# Check whether a modified source file only adapts test-scoped GN working-directory
+# (`../../<pkg>/...`) or executable-relative (`current_exe()`) test data paths to
+# Bazel's `<test>.runtime_dir` CWD in a package using `host_test_data_*`.
+def check_allowed_host_test_data_path_edit(path: str):
+    if path in added or not path.endswith(HOST_TEST_SOURCE_SUFFIXES):
+        return None
+    full_path = os.path.join(workdir, path)
+    if not os.path.isfile(full_path):
+        return None
+    pkg, bzl_text = find_nearest_bazel_package(path)
+    if not pkg:
+        return None
+    if f"{pkg}/BUILD.bazel" not in changed and f"{pkg}/BUILD.gn" not in changed:
+        return None
+    has_host_data_rule = bool(
+        re.search(r"\b(?:host_test_data_files|host_test_data_map)\s*\(", bzl_text)
+    )
+    has_host_test_with_data = bool(
+        re.search(
+            r"\b(?:host_rustc_test|wrap_host_rust_test|host_go_test|host_py_test"
+            r"|host_test|with_host_unit_tests)\b",
+            bzl_text,
+        )
+        and re.search(r"\b(?:data|test_data)\s*=", bzl_text)
+    )
+    if not (has_host_data_rule or has_host_test_with_data):
+        return None
+    diff_lines = git_lines(["diff", "-U0", change_base, "--", path])
+    hunk_spans = []
+    removed = []
+    added_lines = []
+    for raw in diff_lines:
+        hm = HUNK_HDR_RE.match(raw)
+        if hm:
+            new_start = int(hm.group(1))
+            new_count = int(hm.group(2)) if hm.group(2) is not None else 1
+            if new_count == 0:
+                pt = max(1, new_start)
+                hunk_spans.append((pt, pt))
+            else:
+                hunk_spans.append((new_start, new_start + new_count - 1))
+            continue
+        if raw.startswith(("diff ", "index ", "--- ", "+++ ")):
+            continue
+        if raw.startswith("-"):
+            body = raw[1:]
+            if body.strip():
+                removed.append(body.strip())
+        elif raw.startswith("+"):
+            body = raw[1:]
+            if LINT_SUPPRESSION_ADD_RE.search(body):
+                return None
+            if body.strip():
+                added_lines.append(body.strip())
+    if not hunk_spans or (not removed and not added_lines):
+        return None
+    if len(removed) + len(added_lines) > 45:
+        return None
+    rel_in_pkg = os.path.relpath(path, pkg).replace("\\", "/")
+    is_dedicated_test_file = bool(
+        rel_in_pkg.startswith(("tests/", "test/"))
+        or re.search(r"(?:^|/)test_[^/]+$|_test\.[A-Za-z0-9]+$", rel_in_pkg)
+    )
+    if path.endswith(".rs") and not is_dedicated_test_file:
+        try:
+            cur_src = open(full_path, encoding="utf-8").read()
+        except OSError:
+            return None
+        cfg_spans = _rust_cfg_test_line_ranges(cur_src)
+        if not cfg_spans or not all(
+            any(s_lo <= h_lo and h_hi <= s_hi for s_lo, s_hi in cfg_spans)
+            for h_lo, h_hi in hunk_spans
+        ):
+            return None
+    elif not path.endswith(".rs") and not is_dedicated_test_file:
+        return None
+    diff_blob = "\n".join(removed + added_lines)
+    if not GN_TEST_DATA_PATH_RE.search(diff_blob):
+        return None
+    data_tokens = {"test_data", "testdata", "TEST_SRCDIR", "RUNFILES"}
+    for dm in re.finditer(r'\bdest_dir\s*=\s*"([^"]+)"', bzl_text):
+        tok = dm.group(1).strip().strip("/")
+        if tok:
+            data_tokens.add(tok)
+            data_tokens.add(tok.split("/", 1)[0])
+    if not any(tok in diff_blob for tok in data_tokens):
+        return None
+    return (
+        f"Allowed test-only runtime test-data path adaptation in '{path}' for '//{pkg}': "
+        "Bazel host tests execute in '<test>.runtime_dir' where 'host_test_data_files' / "
+        "'host_test_data_map' stages files under 'dest_dir' rather than GN's 'out/<dir>' "
+        "CWD ('../../<pkg>/...') or executable parent directory. Preserve fallback to the "
+        "GN path when the test is also dual-built in GN, and explain the adaptation in "
+        "the commit message body."
+    )
+
+
 # Check whether an existing README.md inside a migrated package directory only updates
 # target label references (`//<pkg>...`) to match the migrated BUILD.gn/BUILD.bazel targets.
 def is_package_readme_label_update(path: str) -> bool:
@@ -500,6 +759,28 @@ for path in sorted(changed):
         or is_package_readme_label_update(path)
     ):
         continue
+    ifttt_or_clippy_note = check_allowed_ifttt_or_clippy_warn_all_test_edit(path)
+    if ifttt_or_clippy_note is not None:
+        findings.append({
+            "source": "build_only_scope",
+            "category": "allowed_ifttt_or_test_clippy_edit",
+            "severity": "INFO",
+            "file": path,
+            "line": 0,
+            "message": ifttt_or_clippy_note,
+        })
+        continue
+    host_test_data_note = check_allowed_host_test_data_path_edit(path)
+    if host_test_data_note is not None:
+        findings.append({
+            "source": "build_only_scope",
+            "category": "allowed_host_test_data_path_edit",
+            "severity": "INFO",
+            "file": path,
+            "line": 0,
+            "message": host_test_data_note,
+        })
+        continue
     if path in relocated_new_to_old:
         old_p, owner_pkg = relocated_new_to_old[path]
         findings.append({
@@ -552,12 +833,15 @@ for path in sorted(changed):
         "(lint_config, rustc_flags, configs, features, deps) instead of editing sources "
         "(for a C/C++ '#include <sdk/lib/...>' on an idk_cc_source_library with "
         "include_base = '//sdk', rewrite only that include to '<lib/...>' and run "
-        "'fx format-code --changed-lines --files=<file>'). If a target was not being built "
-        "in GN and has pre-existing source bitrot (or may be dead code), do not fix source "
-        "files in the migration CL: either omit an unreferenced unit test target with a "
-        "`# TODO` comment in BUILD.bazel and note it in the commit message, or leave the "
-        "broken target unmigrated so its code and GN build graph can be fixed (or deleted) "
-        "in a separate precursor CL."
+        "'fx format-code --changed-lines --files=<file>'; for a host test using "
+        "host_test_data_files/host_test_data_map whose #[cfg(test)]/test code hardcodes "
+        "'../../<pkg>/...' or current_exe(), keep the edit strictly inside "
+        "#[cfg(test)]/test files to check '<dest_dir>/...' with fallback to the GN path). "
+        "If a target was not being built in GN and has pre-existing source bitrot (or may "
+        "be dead code), do not fix source files in the migration CL: either omit an "
+        "unreferenced unit test target with a `# TODO` comment in BUILD.bazel and note it "
+        "in the commit message, or leave the broken target unmigrated so its code and GN "
+        "build graph can be fixed (or deleted) in a separate precursor CL."
     )
     findings.append({
         "source": "build_only_scope",

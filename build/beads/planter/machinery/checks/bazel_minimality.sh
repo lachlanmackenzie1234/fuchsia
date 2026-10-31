@@ -434,14 +434,32 @@ def is_allowed_scope(path: str) -> bool:
             return True
     if norm in (
         "build/BUILD.gn",
+        "build/BUILD.bazel",
         "tools/BUILD.gn",
+        "tools/BUILD.bazel",
         "src/BUILD.gn",
+        "src/BUILD.bazel",
         "sdk/BUILD.gn",
+        "sdk/BUILD.bazel",
         "sdk/atom_lists.bzl",
         "sdk/fidl/BUILD.gn",
         "sdk/fidl/category_lists.bzl",
     ):
         return True
+    # Allow ancestor BUILD.gn / BUILD.bazel files of a collateral-modified package
+    # (e.g. wiring a pre-existing test in a dependency package into its ancestor
+    # test_suite when touching that dependency's BUILD.bazel triggers shac test parity).
+    if os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel") and pkg_dir:
+        for ch_path in changed:
+            ch_norm = ch_path.strip("/")
+            ch_pkg = os.path.dirname(ch_norm)
+            if (
+                ch_pkg
+                and ch_pkg.startswith(pkg_dir + "/")
+                and os.path.basename(ch_norm) in ("BUILD.gn", "BUILD.bazel")
+                and references_in_scope_package_at_base(ch_norm)
+            ):
+                return True
     # Build files under bundles/ wire migrated targets and tests into CQ (test groups,
     # tests_barrier / bazel_target_test_suite_barrier of builder groups), which migrations
     # may need so exported bazel_test_suite tests reach tests.json only with their bundle.
@@ -1503,10 +1521,151 @@ for rel_path, full_path in bazel_files:
                             getattr(call_n, "lineno", 1),
                         )
 
-    # Check host platform constraint conventions (HOST_OS_CONSTRAINTS vs HOST_CONSTRAINTS
-    # and preserving `if (is_host)` / `assert(is_host)` guards on migrated targets).
+    # Inspect workspace-loaded .bzl macros for built-in host platform constraints.
+    def resolve_workspace_host_macros(tree_node, is_dual_build_pkg):
+        """Return (implicit_host_macros, forbid_tcw_macros) from loaded workspace .bzl files."""
+        implicit_host = set()
+        forbid_tcw = set()
+        for stmt_n in tree_node.body:
+            if not (
+                isinstance(stmt_n, ast.Expr)
+                and isinstance(stmt_n.value, ast.Call)
+                and isinstance(stmt_n.value.func, ast.Name)
+                and stmt_n.value.func.id == "load"
+                and stmt_n.value.args
+                and isinstance(stmt_n.value.args[0], ast.Constant)
+                and isinstance(stmt_n.value.args[0].value, str)
+            ):
+                continue
+            bzl_lbl = stmt_n.value.args[0].value
+            if not bzl_lbl.startswith("//") or not bzl_lbl.endswith(".bzl"):
+                continue
+            bzl_rel = bzl_lbl[2:].replace(":", "/")
+            bzl_path = os.path.join(workdir, bzl_rel)
+            if not os.path.isfile(bzl_path):
+                continue
+            try:
+                bzl_txt = open(bzl_path, encoding="utf-8", errors="ignore").read()
+            except OSError:
+                continue
+            # Follow one forwarding load hop (e.g. public re-export wrapper .bzl).
+            if "macro(" not in bzl_txt and "rule(" not in bzl_txt:
+                m_fwd = re.search(r'load\(\s*"(//[^"]+\.bzl)"', bzl_txt)
+                if m_fwd:
+                    fwd_path = os.path.join(workdir, m_fwd.group(1)[2:].replace(":", "/"))
+                    if os.path.isfile(fwd_path):
+                        try:
+                            bzl_txt = open(fwd_path, encoding="utf-8", errors="ignore").read()
+                        except OSError:
+                            pass
+            if "HOST_CONSTRAINTS" not in bzl_txt and "HOST_OS_CONSTRAINTS" not in bzl_txt:
+                continue
+            syms = [
+                a.value
+                for a in stmt_n.value.args[1:]
+                if isinstance(a, ast.Constant) and isinstance(a.value, str)
+            ] + [kw.arg for kw in stmt_n.value.keywords if kw.arg]
+            for sym in syms:
+                m_mac = re.search(
+                    r"\b" + re.escape(sym) + r"\s*=\s*macro\s*\((.*?)\n\)",
+                    bzl_txt,
+                    re.DOTALL,
+                )
+                if not m_mac:
+                    continue
+                m_body = m_mac.group(1)
+                drops_tcw = bool(re.search(r'"target_compatible_with"\s*:\s*None\b', m_body))
+                omits_tcw = (
+                    "inherit_attrs" not in m_body and '"target_compatible_with"' not in m_body
+                )
+                defaults_host = bool(
+                    re.search(r"default\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b", m_body)
+                )
+                sets_host = bool(
+                    re.search(
+                        r"target_compatible_with\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b", bzl_txt
+                    )
+                )
+                if (drops_tcw or omits_tcw) and sets_host:
+                    implicit_host.add(sym)
+                    forbid_tcw.add(sym)
+                elif defaults_host and not is_dual_build_pkg:
+                    implicit_host.add(sym)
+        return implicit_host, forbid_tcw
+
+    # Extract GN target names declared inside `if (is_host ...)` blocks.
+    def find_gn_is_host_targets(gn_src, exact_is_host_only=True):
+        """Return target names inside `if (is_host)` (or `if (is_host ...)` when False)."""
+        cleaned = "\n".join(
+            ln for ln in gn_src.splitlines() if not ln.lstrip().startswith("#")
+        )
+        pat = (
+            r"\bif\s*\(\s*is_host\s*\)\s*\{"
+            if exact_is_host_only
+            else r"\bif\s*\(\s*is_host\b[^{]*\{"
+        )
+        names = set()
+        for m_host in re.finditer(pat, cleaned):
+            depth, idx = 1, m_host.end()
+            while idx < len(cleaned) and depth > 0:
+                if cleaned[idx] == "{":
+                    depth += 1
+                elif cleaned[idx] == "}":
+                    depth -= 1
+                idx += 1
+            blk = cleaned[m_host.end() : max(m_host.end(), idx - 1)]
+            for m_t in re.finditer(r'\b[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)\s*\{', blk):
+                names.add(m_t.group(1))
+        return names
+
+    # Check host platform constraint conventions (HOST_OS_CONSTRAINTS vs HOST_CONSTRAINTS,
+    # rejecting unsupported target_compatible_with on host-only symbolic macros, and
+    # preserving `if (is_host)` guards on migrated targets).
     def check_host_constraints_parity(tree_node, gn_text):
         """Verify host-only targets use HOST_OS_CONSTRAINTS and preserve GN is_host guards."""
+        cur_gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+        is_dual_build_pkg = False
+        if os.path.isfile(cur_gn_path):
+            try:
+                is_dual_build_pkg = "## BAZEL2GN SENTINEL" in open(
+                    cur_gn_path, encoding="utf-8", errors="ignore"
+                ).read()
+            except OSError:
+                pass
+        bzl_implicit_host, bzl_forbid_tcw = resolve_workspace_host_macros(
+            tree_node, is_dual_build_pkg
+        )
+        forbid_tcw_macros = {
+            "ffx_plugin",
+            "idk_ffx_tool",
+            "host_rustc_test",
+            "wrap_host_rust_test",
+            "host_go_test",
+            "host_py_test",
+            "host_cc_test",
+            "host_shac_test",
+        } | bzl_forbid_tcw
+        implicit_host_rules = (
+            forbid_tcw_macros
+            | {
+                "ffx_tool",
+                "rustc_binary_host_tool",
+                "host_test",
+                "host_test_data_files",
+                "host_test_data_map",
+                "rustc_proc_macro",
+                "rust_proc_macro",
+            }
+            | bzl_implicit_host
+        )
+        if not is_dual_build_pkg:
+            implicit_host_rules |= {
+                "cc_binary_host_tool",
+                "idk_cc_binary_host_tool",
+                "idk_go_binary_host_tool",
+                "idk_rustc_binary_host_tool",
+            }
+
         for stmt_node in tree_node.body:
             if not (
                 isinstance(stmt_node, ast.Expr)
@@ -1531,35 +1690,64 @@ for rel_path, full_path in bazel_files:
                     "file": rel_path,
                     "line": getattr(stmt_node, "lineno", 1),
                     "message": (
-                        f"'{rel_path}' loads `@platforms//host:constraints.bzl` (`HOST_CONSTRAINTS`), "
-                        "which must not be used when migrating host targets."
+                        f"'{rel_path}' loads `@platforms//host:constraints.bzl` "
+                        "(`HOST_CONSTRAINTS`), which must not be used when migrating "
+                        "host targets."
                     ),
                     "remediation": (
-                        f"Replace `load(\"@platforms//host:constraints.bzl\", \"HOST_CONSTRAINTS\")` "
-                        "and `target_compatible_with = HOST_CONSTRAINTS` in "
-                        f"'{rel_path}' with `load(\"//build/bazel/platforms:constraints.bzl\", "
-                        "\"HOST_OS_CONSTRAINTS\")` and `target_compatible_with = HOST_OS_CONSTRAINTS`."
+                        "Replace `load(\"@platforms//host:constraints.bzl\", "
+                        "\"HOST_CONSTRAINTS\")` and `target_compatible_with = "
+                        f"HOST_CONSTRAINTS` in '{rel_path}' with "
+                        "`load(\"//build/bazel/platforms:constraints.bzl\", "
+                        "\"HOST_OS_CONSTRAINTS\")` and "
+                        "`target_compatible_with = HOST_OS_CONSTRAINTS`."
                     ),
                 })
+            elif call_n.func.id in forbid_tcw_macros:
+                t_name = ""
+                tcw_line = 0
+                for kw in call_n.keywords:
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
+                        t_name = kw.value.value
+                    elif kw.arg == "target_compatible_with":
+                        tcw_line = getattr(kw, "lineno", getattr(call_n, "lineno", 1))
+                if tcw_line:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "unsupported_target_compatible_with",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": tcw_line,
+                        "message": (
+                            f"Target '{t_name or call_n.func.id}' ({call_n.func.id}) in "
+                            f"'{rel_path}' sets `target_compatible_with`, which host-only "
+                            f"macro `{call_n.func.id}` does not accept (it sets host "
+                            "constraints internally)."
+                        ),
+                        "remediation": (
+                            f"Remove `target_compatible_with` from `{call_n.func.id}` in "
+                            f"'{rel_path}' and drop any unused `HOST_OS_CONSTRAINTS` load."
+                        ),
+                    })
 
         prev_gn = gn_text
         if "## BAZEL2GN SENTINEL" in prev_gn or not prev_gn:
-            prev_gn = "\n".join(git_lines(["show", f"HEAD~1:{pkg_dir}/BUILD.gn"])) or prev_gn
-        if not prev_gn or not re.search(r"\b(?:if|assert)\s*\(\s*is_host\s*\)", prev_gn):
+            for fallback_ref in ("HEAD~1", "origin/main"):
+                cand_gn = "\n".join(git_lines(["show", f"{fallback_ref}:{pkg_dir}/BUILD.gn"]))
+                if cand_gn and "## BAZEL2GN SENTINEL" not in cand_gn:
+                    prev_gn = cand_gn
+                    break
+                if cand_gn and not prev_gn:
+                    prev_gn = cand_gn
+        if not prev_gn or not re.search(r"\b(?:if|assert)\s*\(\s*is_host\b", prev_gn):
             return
-        host_guarded_names = set()
-        for m_host in re.finditer(r"\bif\s*\(\s*is_host\s*\)\s*\{", prev_gn):
-            depth, idx = 1, m_host.end()
-            while idx < len(prev_gn) and depth > 0:
-                if prev_gn[idx] == "{":
-                    depth += 1
-                elif prev_gn[idx] == "}":
-                    depth -= 1
-                idx += 1
-            blk = prev_gn[m_host.end() : max(m_host.end(), idx - 1)]
-            for m_t in re.finditer(r'\b[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)\s*\{', blk):
-                host_guarded_names.add(m_t.group(1))
-        if not host_guarded_names:
+        host_guarded_names = find_gn_is_host_targets(prev_gn, exact_is_host_only=True)
+        any_host_guarded_names = find_gn_is_host_targets(prev_gn, exact_is_host_only=False)
+        if not any_host_guarded_names:
             return
         host_lib_bin_rules = {
             "rustc_library",
@@ -1572,25 +1760,55 @@ for rel_path, full_path in bazel_files:
             "go_library",
             "go_binary",
             "go_binary_host_tool",
-            "idk_go_binary_host_tool",
         }
+        if is_dual_build_pkg:
+            host_lib_bin_rules.add("idk_go_binary_host_tool")
         for stmt_node in tree_node.body:
             if not (
                 isinstance(stmt_node, ast.Expr)
                 and isinstance(stmt_node.value, ast.Call)
                 and isinstance(stmt_node.value.func, ast.Name)
-                and stmt_node.value.func.id in host_lib_bin_rules
             ):
                 continue
             call_n = stmt_node.value
+            rule_id = call_n.func.id
             t_name = ""
             has_tcw = False
             for kw in call_n.keywords:
-                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
                     t_name = kw.value.value
                 elif kw.arg == "target_compatible_with":
                     has_tcw = True
-            if t_name in host_guarded_names and not has_tcw:
+            if not t_name or has_tcw:
+                continue
+            # Record matching INFO host_compatibility coverage for inherently host-only
+            # Bazel macros so planter's deduplicator suppresses review_diff's ERROR.
+            if rule_id in implicit_host_rules and t_name in any_host_guarded_names:
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "host_compatibility",
+                    "severity": "INFO",
+                    "file": rel_path,
+                    "line": getattr(call_n, "lineno", 1),
+                    "message": (
+                        f'Target "{t_name}" was inside `if (is_host)` in BUILD.gn '
+                        "but is missing `target_compatible_with = HOST_OS_CONSTRAINTS` "
+                        "in BUILD.bazel"
+                    ),
+                    "remediation": (
+                        f"None needed; `{rule_id}` sets host platform constraints "
+                        "internally."
+                    ),
+                })
+                continue
+            seg = ast.get_source_segment(source, stmt_node) or ""
+            if seg and re.sub(r"\s+", "", seg) in base_bazel_flat:
+                continue
+            if rule_id in host_lib_bin_rules and t_name in host_guarded_names:
                 findings.append({
                     "source": "bazel_minimality",
                     "category": "missing_host_os_constraints",
@@ -1598,7 +1816,7 @@ for rel_path, full_path in bazel_files:
                     "file": rel_path,
                     "line": getattr(call_n, "lineno", 1),
                     "message": (
-                        f"Target '{t_name}' ({call_n.func.id}) in '{rel_path}' was guarded by "
+                        f"Target '{t_name}' ({rule_id}) in '{rel_path}' was guarded by "
                         f"`if (is_host)` in `{pkg_dir}/BUILD.gn` but omits "
                         "`target_compatible_with = HOST_OS_CONSTRAINTS`."
                     ),
