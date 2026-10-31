@@ -475,11 +475,6 @@ class Ufs : public fdf::DriverBase2, public fdf_power::Suspendable<Ufs>, public 
   // initialization.
   virtual zx::result<> InitQuirk() { return zx::ok(); }
 
-  // Perform work required after an interrupt is received.
-  //
-  // For example, legacy PCI devices require the interrupt to be acknowledged.
-  virtual void OnIrqComplete() {}
-
   void PopulateVersionInspect(inspect::Node *inspect_node);
   void PopulateCapabilitiesInspect(inspect::Node *inspect_node);
 

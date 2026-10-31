@@ -513,7 +513,6 @@ void Ufs::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_stat
   if (zx::result<> result = Isr(); result.is_error()) {
     fdf::error("Failed to run interrupt service routine: {}", result);
   }
-  OnIrqComplete();
 
   if (zx_status_t ack_status = irq_.ack(); ack_status != ZX_OK) {
     if (ack_status != ZX_ERR_CANCELED) {
