@@ -62,20 +62,9 @@ ALLOWED_SUFFIXES = (".gni", ".bzl", ".bazelrc", ".BUILD.bazel", ".BUILD", ".MODU
 ALLOWED_PREFIX_BASENAMES = ("WORKSPACE",)
 SOURCE_SUFFIXES = (".rs", ".cc", ".cpp", ".c", ".h", ".hpp")
 CPP_SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".h", ".hh", ".hpp")
-NON_BUILD_GN_CALLS = {
-    "group",
-    "template",
-    "declare_args",
-    "foreach",
-    "forward_variables_from",
-    "bazel_test_suite",
-    "import",
-    "set_defaults",
-}
 LINT_SUPPRESSION_ADD_RE = re.compile(
     r"#!?\[\s*(?:allow|expect)\s*\(|NOLINT|clippy::|^\s*let\s+_\s*="
 )
-LINT_ONLY_REMOVE_RE = re.compile(r"\.clone\(\)|^\s*use\s+[\w:{}, *]+;\s*$")
 
 
 def git_lines(args):
@@ -136,7 +125,10 @@ def resolve_effective_change_base(raw_base):
 changed = set()
 # The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
 # commit, "HEAD" when HEAD is unrelated upstream history or a stacked parent commit) plus untracked files.
-change_base = resolve_effective_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
+change_base = (
+    os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
+    or resolve_effective_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
+)
 # Resolve target package directories from environment overrides or CLI arguments
 raw_tdirs = re.split(
     r"[\s,]+",

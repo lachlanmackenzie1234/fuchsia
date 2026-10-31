@@ -31,6 +31,10 @@ TESTY = re.compile(r"(^|[/_.-])(test_?data|testdata|tests?|fixtures?|golden)([/_
 findings = []
 
 
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    findings.append({"source": "test_data_attribute", "category": category, "severity": severity, "file": file, "line": line, "message": message, "remediation": remediation})
+
+
 def block_at(text, start):
     depth = 0
     for i in range(start, len(text)):
@@ -67,17 +71,18 @@ for d in target_dirs:
         if not testy:
             continue
         line = text[:m.start()].count("\n") + 1
-        findings.append({
-            "severity": "ERROR",
-            "file": os.path.join(d, "BUILD.bazel"),
-            "line": line,
-            "rule": "test_only_data_in_data",
-            "message": (
+        _emit(
+            findings,
+            "test_only_data_in_data",
+            "ERROR",
+            os.path.join(d, "BUILD.bazel"),
+            line,
+            (
                 f"{m.group(1)}(name = \"{name}\") defines unit tests but lists test-only "
                 f"files in `data`: {', '.join(testy)}. `data` is runtime data of the "
                 "library itself and ships to every dependent."
             ),
-            "remediation": (
+            (
                 "Move files used only by the generated <name>_test to `test_data` (for host "
                 "tests, a host_test_data() target from "
                 "//build/bazel/rules/host_tests/host_test_data.bzl when the test needs them at "
@@ -85,7 +90,7 @@ for d in target_dirs:
                 "`data` to work around this, and do not change sources to locate the files. "
                 "Example: data = [\"test_data/main.json\"] -> test_data = [\"test_data/main.json\"]."
             ),
-        })
+        )
 
 print(json.dumps(findings, indent=2))
 PYEOF

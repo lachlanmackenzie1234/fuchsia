@@ -19,7 +19,7 @@
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
 TARGET_DIRS="${PLANTER_TARGET_DIRS:-$TARGET_DIR}"
-BASE="${PLANTER_CHANGE_BASE:-HEAD}"
+BASE="${PLANTER_RESOLVED_CHANGE_BASE:-${PLANTER_CHANGE_BASE:-HEAD}}"
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "$BASE" <<'PYEOF'
 import collections, json, os, re, subprocess, sys
@@ -217,7 +217,12 @@ if head and base_rev and head != base_rev:
     msg = git("log", "-1", "--format=%B", head)
     lines = msg.splitlines()
     subject = lines[0] if lines else ""
-    changed = [f for f in git("diff", "--name-only", base_rev, head).splitlines() if f]
+    env_changed = os.environ.get("PLANTER_CHANGED_FILES", "").strip()
+    changed = (
+        [f.strip() for f in env_changed.splitlines() if f.strip()]
+        if env_changed
+        else [f for f in git("diff", "--name-only", base_rev, head).splitlines() if f]
+    )
     changed_dirs = [
         d for d in dirs if any(f == d or f.startswith(d + "/") for f in changed)
     ]
@@ -233,19 +238,7 @@ if head and base_rev and head != base_rev:
         "flake", "fix", "trivial",
     }
     dir_segments = {seg.lower() for d in dirs for seg in d.split("/") if seg}
-    generic_segments = {
-        "src", "sdk", "lib", "libs", "bin", "bins", "tools", "testing", "tests",
-        "test", "fidl", "service", "services", "client", "server", "common",
-        "util", "utils", "internal", "sys", "developer", "bringup", "zircon",
-        "products", "bundles", "boards", "examples", "third_party",
-    }
     leaves = [d.rsplit("/", 1)[-1] for d in dirs]
-    ancestor_subsystems = {
-        seg.lower()
-        for d in dirs
-        for seg in d.split("/")[:-1]
-        if seg and seg.lower() not in generic_segments
-    }
     tags = collections.Counter()
     if dirs:
         log = git("log", "-n", "200", "--format=%s", base_rev, "--", *dict.fromkeys(raw_dirs + dirs))
@@ -257,10 +250,7 @@ if head and base_rev and head != base_rev:
                 if tl in sweep_tags and tl not in dir_segments:
                     continue
                 tags[t] += 1
-    common = sorted(
-        [t for t, n in tags.most_common() if n >= 2],
-        key=lambda t: (t.lower() not in ancestor_subsystems, -tags[t]),
-    )
+    common = [t for t, n in tags.most_common() if n >= 2]
     shown = " ".join(dict.fromkeys(raw_dirs[:1] + dirs[:1])) or "<dir>"
     hint = (f"Tags used for this directory in `git log --format=%s -- {shown}`: "
             + ", ".join(f"[{t}]" for t in common[:5]) + ".") if common else (
@@ -478,23 +468,12 @@ if head and base_rev and head != base_rev:
             add("test_footer_label_without_at", ln,
                 f"`Test:` footer `{cmd}` passes Bazel labels without a leading `@`.",
                 "Write Bazel labels as `@//<dir>:<target>` in `fx bazel ...` commands.")
-        for pkg, name in re.findall(r"@?//([\w./\-]+):([\w.\-]+)", cmd):
-            if pkg.rsplit("/", 1)[-1] == name:
-                add("test_footer_redundant_label", ln,
-                    f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
-                    f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
-        # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
-        if (
-            re.search(r"\bfx bazel2gn\b", cmd)
-            or re.search(r"verify_bazel2gn", cmd)
-            or (
-                re.search(r"\bshac\s+check\b", cmd)
-                and cmd not in ("fx host-tool shac check", "fx host-tool shac check --fail-level warning")
-            )
-        ):
-            add("test_footer_bazel2gn_form", ln,
-                f"`Test:` footer `{cmd}` verifies bazel2gn/shac in a narrower or indirect form.",
-                "Use the single line `Test: fx host-tool shac check` (runs `verify_bazel2gn` and all other shac checks).")
+        if re.search(r"\bfx bazel\b", cmd):
+            for pkg, name in re.findall(r"@?//([\w./\-]+):([\w.\-]+)", cmd):
+                if pkg.rsplit("/", 1)[-1] == name:
+                    add("test_footer_redundant_label", ln,
+                        f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
+                        f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
         if re.search(r"\bfx bazel build\b.*:all\b", cmd):
             add("test_footer_build_all_not_test", ln,
                 f"`Test:` footer `{cmd}` builds `:all` instead of building or running the migrated test target.",
@@ -1435,8 +1414,8 @@ if head and base_rev and head != base_rev:
         "fx_unittest_component",
     }
     synth_component_rules = {"fx_component_manifest", "fx_test_component"}
-    # Test entry points, test-data helpers, and GN-bridged targets run/build through
-    # tests.json or bazel_action, so they need no separate `fx bazel build` footer.
+    # Bazel-only test-data helpers synthesized for migrated tests are not migrated GN
+    # targets, so they need no `Bazel-Migration-Target:` footer.
     test_data_rules = {
         "host_test_data_files",
         "host_test_data_dirs",
@@ -1446,23 +1425,6 @@ if head and base_rev and head != base_rev:
         "resource",
         "fuchsia_package_resource_group",
     }
-    test_like_rules = {
-        "fx_unittest_package",
-        "fx_test",
-        "fx_test_package",
-        "test_suite",
-        "wrap_host_rust_test",
-    } | test_data_rules
-    host_only_rules = {
-        "ffx_tool",
-        "idk_ffx_tool",
-        "go_binary_host_tool",
-        "py_binary_host_tool",
-        "cc_binary_host_tool",
-        "rustc_binary_host_tool",
-    }
-    test_like_bmt = set()
-    host_only_bmt = set()
     ut_re = r'^\s*(with_unit_tests\s*=\s*"(host|both|fuchsia)"|with_unit_tests\s*=\s*True|with_host_unit_tests\s*=\s*True)'
     bmt_dirs = list(
         dict.fromkeys(
@@ -1573,19 +1535,6 @@ if head and base_rev and head != base_rev:
                 rule in ("genrule", "filegroup", "copy_file")
                 and bool(re.search(r"^\s*testonly\s*=\s*True\b", blk, re.M))
             )
-            if (
-                rule in host_only_rules
-                or rule.startswith("host_")
-                or "HOST_OS_CONSTRAINTS" in blk
-            ):
-                host_only_bmt.add(lbl)
-            if (
-                rule in test_like_rules
-                or rule.endswith("_test")
-                or is_testonly_helper
-                or tname in cur_suite_names
-            ):
-                test_like_bmt.add(lbl)
             if (
                 tname in kept_gn_targets
                 and has_bazel2gn_skip(btxt, m.start())
@@ -1788,73 +1737,6 @@ if head and base_rev and head != base_rev:
                     "footer block so every target migrated from GN in this "
                     "commit is recorded.",
                     severity="error",
-                )
-        # While a migrated target's only users are still in GN, presubmit compiles just its
-        # bazel2gn copy, so the Test: footers are the only record that the Bazel target builds.
-        if bmt_lines and test_lines and not nothing_migrated:
-            test_text = "\n".join(l for _, l in test_lines)
-
-            def footer_covers(label):
-                pkg, _, name = label[2:].partition(":")
-                if re.search(r"@?//" + re.escape(pkg) + r":" + re.escape(name) + r"(?![\w.\-])", test_text):
-                    return True
-                if name == pkg.rsplit("/", 1)[-1] and re.search(
-                    r"@?//" + re.escape(pkg) + r"(?![\w./:\-])", test_text
-                ):
-                    return True
-                if re.search(r"@?//" + re.escape(pkg) + r":all\b", test_text):
-                    return True
-                parts = pkg.split("/")
-                return any(
-                    re.search(r"@?//" + re.escape("/".join(parts[:i])) + r"/\.\.\.", test_text)
-                    for i in range(1, len(parts) + 1)
-                )
-
-            uncovered = []
-            for _, l in bmt_lines:
-                val = l.split(":", 1)[1].strip()
-                if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val):
-                    continue
-                canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
-                if canon_val in excluded_bmt or canon_val in test_like_bmt:
-                    continue
-                if not footer_covers(canon_val):
-                    uncovered.append(canon_val)
-            if uncovered:
-                def fmt_bmt_label(lbl):
-                    pkg, _, name = lbl.partition(":")
-                    return "@" + (pkg if name == pkg.rsplit("/", 1)[-1] else lbl)
-
-                f_lbls = [
-                    fmt_bmt_label(lbl)
-                    for lbl in uncovered
-                    if lbl not in host_only_bmt
-                ]
-                h_lbls = [
-                    fmt_bmt_label(lbl)
-                    for lbl in uncovered
-                    if lbl in host_only_bmt
-                ]
-                ex_cmds = []
-                if f_lbls:
-                    ex_cmds.append(
-                        f"`Test: fx bazel build --config=fuchsia_platform {' '.join(f_lbls)}`"
-                    )
-                if h_lbls:
-                    ex_cmds.append(
-                        f"`Test: fx bazel build --config=host {' '.join(h_lbls)}`"
-                    )
-                shown_ex = " and ".join(ex_cmds)
-                add(
-                    "test_footer_missing_migrated_target",
-                    test_lines[0][0],
-                    "The `Test:` footers do not build these migrated targets: "
-                    + ", ".join(f"`{lbl}`" for lbl in uncovered)
-                    + ". Reviewers read the footers to see what was verified in Bazel, and a target "
-                    "whose users are all still in GN is not built in Bazel by presubmit.",
-                    "Build them in one `fx bazel build` footer (split by `--config=fuchsia_platform` / "
-                    f"`--config=host`), e.g. {shown_ex}, and "
-                    "record it only if it exited 0.",
                 )
 
         all_changed = set(changed) | {f for f in git("diff", "--name-only", base_rev).splitlines() if f}

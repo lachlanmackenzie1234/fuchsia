@@ -29,7 +29,6 @@ base = sys.argv[3]
 
 LIB_RE = re.compile(r"^(rustc_library|rustc_binary)\(\s*$", re.M)
 TEST_RE = re.compile(r"^rustc_test\(\s*$", re.M)
-# Any #[test], #[fuchsia::test], #[fasync::run_singlethreaded(test)], #[cfg(test)] ...
 HAS_TEST = re.compile(r"#\[\s*(?:[\w:]+::)?test\b|#\[cfg\(test\)\]|\(test\)\s*\]")
 
 REMEDIATION = """\
@@ -41,7 +40,10 @@ rerun `fx bazel2gn -d <dir>`. Migrate only tests that existed in GN."""
 findings = []
 
 
-# Return the parenthesized block that starts at `start`.
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    findings.append({"source": "speculative_unit_test", "category": category, "severity": severity, "file": file, "line": line, "message": message, "remediation": remediation})
+
+
 def block_at(text, start, open_c="(", close_c=")"):
     depth = 0
     for i in range(start, len(text)):
@@ -59,7 +61,6 @@ def attr_str(block, attr):
     return m.group(1) if m else None
 
 
-# Collect the .rs files of a crate: literal srcs, else every .rs under the package.
 def crate_sources(d, block):
     pkg = os.path.join(workdir, d)
     m = re.search(r"^\s+srcs\s*=\s*\[(.*?)\]", block, re.M | re.S)
@@ -83,11 +84,9 @@ def sources_have_tests(paths):
     return False
 
 
-# Did the base GN target of the same name have unit tests (or a GN <name>_test)?
-# Returns (had_tests: bool, explicit_false: bool).
 def base_gn_test_status(base_gn, name):
     if base_gn is None:
-        return True, False  # No base BUILD.gn: nothing to compare against.
+        return True, False
     no_comments = re.sub(r"#[^\n]*", "", base_gn)
     m = re.search(r'\b(\w+)\(\s*"' + re.escape(name) + r'"\s*\)\s*\{', no_comments)
     if m:
@@ -97,7 +96,6 @@ def base_gn_test_status(base_gn, name):
             return False, True
         if re.search(r"\bwith_(?:host_)?unit_tests\s*=\s*true\b", body):
             return True, False
-        # Check if invoked template in the same BUILD.gn sets with_unit_tests = true
         tm = re.search(r'\btemplate\(\s*"' + re.escape(tmpl_name) + r'"\s*\)\s*\{', no_comments)
         if tm:
             t_body = block_at(no_comments, tm.end() - 1, "{", "}")
@@ -110,10 +108,6 @@ def base_gn_test_status(base_gn, name):
     return False, False
 
 
-# Did base_gn run unit tests on host (via ($host_toolchain), is_host, with_host_unit_tests,
-# host-only templates such as ffx_plugin/ffx_tool/sdk_host_tool, an ancestor BUILD.gn with
-# assert(is_host) or host_toolchain test wiring, or with_unit_tests = true in a BUILD.gn
-# that defines no Fuchsia test package/component)?
 def base_gn_had_host_unit_tests(d, base_gn, lib_name, test_name):
     if base_gn is None:
         return True
@@ -133,13 +127,11 @@ def base_gn_had_host_unit_tests(d, base_gn, lib_name, test_name):
         no_comments,
     ):
         return True
-    # Check if :<test_name> or :<lib_name>_test is referenced in group("tests") directly
     for gm in re.finditer(r'\bgroup\(\s*"tests"\s*\)\s*\{', no_comments):
         gbody = block_at(no_comments, gm.end() - 1, "{", "}")
         for cand in (test_name, f"{lib_name}_test"):
             if cand and re.search(r'":' + re.escape(cand) + r'"', gbody):
                 return True
-    # Check if an ancestor BUILD.gn restricts the subtree to the host toolchain.
     cur = os.path.dirname(d)
     while cur:
         anc_gn = git_show(f"{cur}/BUILD.gn")
@@ -167,43 +159,47 @@ def _normalize_git_rev(rev):
 
 
 def git_show(path):
-    eff_base = _normalize_git_rev(base) or "HEAD"
-    try:
-        head_sha = subprocess.check_output(
-            ["git", "-C", workdir, "rev-parse", "--verify", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        base_sha = subprocess.check_output(
-            ["git", "-C", workdir, "rev-parse", "--verify", f"{eff_base}^{{commit}}"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-    except Exception:
-        head_sha, base_sha = "", ""
-    if head_sha and head_sha == base_sha:
+    resolved_env = os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
+    if resolved_env:
+        eff_base = _normalize_git_rev(resolved_env)
+    else:
+        eff_base = _normalize_git_rev(base) or "HEAD"
         try:
-            head_subj = subprocess.check_output(
-                ["git", "-C", workdir, "log", "-1", "--format=%s", "HEAD"],
+            head_sha = subprocess.check_output(
+                ["git", "-C", workdir, "rev-parse", "--verify", "HEAD"],
                 stderr=subprocess.DEVNULL,
                 text=True,
             ).strip()
-            head_files = subprocess.check_output(
-                ["git", "-C", workdir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+            base_sha = subprocess.check_output(
+                ["git", "-C", workdir, "rev-parse", "--verify", f"{eff_base}^{{commit}}"],
                 stderr=subprocess.DEVNULL,
                 text=True,
-            ).splitlines()
-            if (
-                head_subj.startswith("[bazel_migration]")
-                and target_dirs
-                and any(
-                    any(f == td or f.startswith(td + "/") for td in target_dirs)
-                    for f in head_files
-                )
-            ):
-                eff_base = "HEAD~1"
+            ).strip()
         except Exception:
-            pass
+            head_sha, base_sha = "", ""
+        if head_sha and head_sha == base_sha:
+            try:
+                head_subj = subprocess.check_output(
+                    ["git", "-C", workdir, "log", "-1", "--format=%s", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).strip()
+                head_files = subprocess.check_output(
+                    ["git", "-C", workdir, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).splitlines()
+                if (
+                    head_subj.startswith("[bazel_migration]")
+                    and target_dirs
+                    and any(
+                        any(f == td or f.startswith(td + "/") for td in target_dirs)
+                        for f in head_files
+                    )
+                ):
+                    eff_base = "HEAD~1"
+            except Exception:
+                pass
     for ref in dict.fromkeys([eff_base, "HEAD~1", "origin/main"]):
         if not ref:
             continue
@@ -223,35 +219,33 @@ def report(d, text, pos, name, lib, explicit_false=False):
         if explicit_false
         else f"its sources contain no tests, and the base GN target :{lib} had no `with_unit_tests = true`."
     )
-    findings.append({
-        "source": "speculative_unit_test",
-        "category": "speculative_empty_unit_test",
-        "severity": "ERROR",
-        "file": os.path.join(d, "BUILD.bazel"),
-        "line": text[:pos].count("\n") + 1,
-        "rule": "speculative_empty_unit_test",
-        "message": f"{name} tests crate :{lib}, but {reason}",
-        "remediation": REMEDIATION,
-    })
+    _emit(
+        findings,
+        "speculative_empty_unit_test",
+        "ERROR",
+        os.path.join(d, "BUILD.bazel"),
+        text[:pos].count("\n") + 1,
+        f"{name} tests crate :{lib}, but {reason}",
+        REMEDIATION,
+    )
 
 
 def report_host_test(d, text, pos, wrapper_name, test_name):
-    findings.append({
-        "source": "speculative_unit_test",
-        "category": "speculative_host_unit_test",
-        "severity": "ERROR",
-        "file": os.path.join(d, "BUILD.bazel"),
-        "line": text[:pos].count("\n") + 1,
-        "rule": "speculative_host_unit_test",
-        "message": (
+    _emit(
+        findings,
+        "speculative_host_unit_test",
+        "ERROR",
+        os.path.join(d, "BUILD.bazel"),
+        text[:pos].count("\n") + 1,
+        (
             f"`{wrapper_name}` wraps `{test_name}` as a host test, but in `{d}/BUILD.gn` the unit "
             "tests were only built/run on Fuchsia (inside a Fuchsia test package) and were not run on host."
         ),
-        "remediation": (
+        (
             f"Remove `{wrapper_name}` from `{d}/BUILD.bazel` and remove any `:{test_name}($host_toolchain)` "
-            f"entry added to `group(\"tests\")` unless host unit tests existed in `{d}/BUILD.gn`."
+            f'entry added to `group("tests")` unless host unit tests existed in `{d}/BUILD.gn`.'
         ),
-    })
+    )
 
 
 for d in target_dirs:
@@ -267,14 +261,12 @@ for d in target_dirs:
         if name:
             libs[name] = (m.start(), block)
 
-    # Check with_unit_tests on the library itself.
     for name, (pos, block) in libs.items():
         if re.search(r"^\s+with_(host_)?unit_tests\s*=", block, re.M):
             had_tests, explicit_false = base_gn_test_status(base_gn, name)
             if explicit_false or (not had_tests and not sources_have_tests(crate_sources(d, block))):
                 report(d, text, pos, f"with_unit_tests on :{name}", name, explicit_false=explicit_false)
 
-    # Check standalone rustc_test(crate = ":<lib>") without own srcs.
     test_to_lib = {}
     for m in TEST_RE.finditer(text):
         block = block_at(text, m.end() - 1)
@@ -291,7 +283,6 @@ for d in target_dirs:
         if explicit_false or (not had_tests and not sources_have_tests(crate_sources(d, libs[lib][1]))):
             report(d, text, m.start(), f"rustc_test :{tname}", lib, explicit_false=explicit_false)
 
-    # Check wrap_host_rust_test(binary_name = "<test>") when base BUILD.gn only ran tests on Fuchsia.
     for m in re.finditer(r"^wrap_host_rust_test\(\s*$", text, re.M):
         block = block_at(text, m.end() - 1)
         wname = attr_str(block, "name") or "wrap_host_rust_test"

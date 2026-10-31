@@ -49,7 +49,7 @@ import sys
 
 workdir = os.path.abspath(sys.argv[1])
 target_dir = sys.argv[2].strip().strip("/")
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = (os.environ.get("PLANTER_RESOLVED_CHANGE_BASE") or os.environ.get("PLANTER_CHANGE_BASE") or "HEAD").strip()
 
 GN_DEP_ATTRS = ("deps", "public_deps", "non_rust_deps", "test_deps", "proc_macro_deps", "link_deps", "data_deps", "non_test_deps")
 LINK_ATTRS = ("public_configs", "all_dependent_configs", "ldflags", "libs", "rustflags", "complete_static_lib")
@@ -477,7 +477,12 @@ EXCLUDED_GLOBAL_DIRS = (
 )
 
 candidate_dirs = {target_dir} if target_dir else set()
-changed_all = git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+_env_changed = os.environ.get("PLANTER_CHANGED_FILES")
+changed_all = (
+    [l.strip() for l in _env_changed.splitlines() if l.strip()]
+    if _env_changed is not None
+    else git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+)
 changed_set = set(changed_all)
 for p in changed_all:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
@@ -491,6 +496,20 @@ for p in changed_all:
             candidate_dirs.add(d)
 
 findings = []
+
+
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    d = {
+        "source": "gn_dep_parity",
+        "category": category,
+        "severity": severity,
+        "file": file,
+        "line": line,
+        "message": message,
+    }
+    if remediation:
+        d["remediation"] = remediation
+    findings.append(d)
 for pkg in sorted(candidate_dirs):
     gn_rel = f"{pkg}/BUILD.gn"
     before = old_text(gn_rel)
@@ -613,66 +632,56 @@ for pkg in sorted(candidate_dirs):
             ):
                 continue
             if subs and in_gn_now:
-                findings.append({
-                    "source": "gn_dep_parity",
-                    "category": "dep_label_substituted",
-                    "severity": "ERROR",
-                    "file": file,
-                    "line": line,
-                    "message": (
-                        f"{target_desc} depended on {describe(label, info)} via `{'`/`'.join(kinds)}`, but the "
-                        f"migrated target depends on {', '.join(f'`{s}`' for s in subs)} instead. That is a "
-                        "different GN target of the same package: swapping a dependency for a sibling target changes "
-                        "what GN compiles and links even though Bazel builds pass (e.g. dropping a wrapper whose "
-                        "`public_configs` link the static C++ standard library leaves GN test executables and GN "
-                        "dependents with undefined `operator new`/`operator delete`)."
-                        + (
-                            f" It was a `public_deps` edge, so GN also forwarded its public configs to every "
-                            f"dependent of `{name}`."
-                            if public
-                            else ""
-                        )
+                _emit(
+                    findings,
+                    "dep_label_substituted",
+                    "ERROR",
+                    file,
+                    line,
+                    f"{target_desc} depended on {describe(label, info)} via `{'`/`'.join(kinds)}`, but the "
+                    f"migrated target depends on {', '.join(f'`{s}`' for s in subs)} instead. That is a "
+                    "different GN target of the same package: swapping a dependency for a sibling target changes "
+                    "what GN compiles and links even though Bazel builds pass (e.g. dropping a wrapper whose "
+                    "`public_configs` link the static C++ standard library leaves GN test executables and GN "
+                    "dependents with undefined `operator new`/`operator delete`)."
+                    + (
+                        f" It was a `public_deps` edge, so GN also forwarded its public configs to every "
+                        f"dependent of `{name}`."
+                        if public
+                        else ""
                     ),
-                    "remediation": (
-                        "Keep the exact original GN label and its public forwarding. "
-                        + rust_forwarding_remedy(label, info["public_configs"], pkg)
-                        if public and rust and info and info["public_configs"]
-                        else f"Keep the exact original GN label: in {pkg}/BUILD.bazel depend on the Bazel target that "
-                        f"holds the code and put `# @bazel2gn:path_overwrite:{label}` on that list entry, then run "
-                        f"`fx bazel2gn -d {pkg}`."
-                    ),
-                })
+                    "Keep the exact original GN label and its public forwarding. "
+                    + rust_forwarding_remedy(label, info["public_configs"], pkg)
+                    if public and rust and info and info["public_configs"]
+                    else f"Keep the exact original GN label: in {pkg}/BUILD.bazel depend on the Bazel target that "
+                    f"holds the code and put `# @bazel2gn:path_overwrite:{label}` on that list entry, then run "
+                    f"`fx bazel2gn -d {pkg}`.",
+                )
             elif info and info["link"] and exists_now and not subs and not gn_unit_test_gone:
-                findings.append({
-                    "source": "gn_dep_parity",
-                    "category": "dep_link_settings_dropped",
-                    "severity": "ERROR",
-                    "file": file,
-                    "line": line,
-                    "message": (
-                        f"{target_desc} no longer depends on {describe(label, info)} (was `{'`/`'.join(kinds)}`). "
-                        "Its link-affecting settings no longer reach this target"
-                        + (" or its GN dependents" if public else "")
-                        + ", so GN links of test executables and binaries can fail even though Bazel builds pass."
-                    ),
-                    "remediation": (
-                        f"Restore the dependency with its exact GN label (put `# @bazel2gn:path_overwrite:{label}` on "
-                        f"the matching BUILD.bazel entry if Bazel needs a different label) and run `fx bazel2gn -d {pkg}`."
-                    ),
-                })
+                _emit(
+                    findings,
+                    "dep_link_settings_dropped",
+                    "ERROR",
+                    file,
+                    line,
+                    f"{target_desc} no longer depends on {describe(label, info)} (was `{'`/`'.join(kinds)}`). "
+                    "Its link-affecting settings no longer reach this target"
+                    + (" or its GN dependents" if public else "")
+                    + ", so GN links of test executables and binaries can fail even though Bazel builds pass.",
+                    f"Restore the dependency with its exact GN label (put `# @bazel2gn:path_overwrite:{label}` on "
+                    f"the matching BUILD.bazel entry if Bazel needs a different label) and run `fx bazel2gn -d {pkg}`.",
+                )
             elif label not in package_now:
-                findings.append({
-                    "source": "gn_dep_parity",
-                    "category": "dep_label_removed",
-                    "severity": "INFO",
-                    "file": new_file,
-                    "line": new_targets[name]["line"],
-                    "message": (
-                        f"{target_desc} no longer depends on `{label}` (was `{'`/`'.join(kinds)}`) and no other target "
-                        f"of //{pkg} does. Make sure it was really unused (e.g. an unused `test_deps` entry of a test "
-                        "GN never built) and say so in the CoderReport summary."
-                    ),
-                })
+                _emit(
+                    findings,
+                    "dep_label_removed",
+                    "INFO",
+                    new_file,
+                    new_targets[name]["line"],
+                    f"{target_desc} no longer depends on `{label}` (was `{'`/`'.join(kinds)}`) and no other target "
+                    f"of //{pkg} does. Make sure it was really unused (e.g. an unused `test_deps` entry of a test "
+                    "GN never built) and say so in the CoderReport summary.",
+                )
 
         for label in sorted(old_deps.get("public_deps", set()) & new_all):
             if label in new_public or any(h in new_public and fwd for h, fwd in reached.get(label, ())):
@@ -682,28 +691,24 @@ for pkg in sorted(candidate_dirs):
                 continue
             via = sorted({h for h, _ in reached.get(label, ())})
             file, line = locate(pkg, with_hops([label]), new_file, new_targets[name]["line"])
-            findings.append({
-                "source": "gn_dep_parity",
-                "category": "public_dep_forwarding_lost",
-                "severity": "ERROR",
-                "file": file,
-                "line": line,
-                "message": (
-                    f"`{label}` was a `public_deps` edge of {target_desc} and is now reached only through private "
-                    "edges"
-                    + (f" (via {', '.join(f'`{h}`' for h in via)})" if via else "")
-                    + f", but it has public_configs {', '.join(f'`{c}`' for c in sorted(info['public_configs']))}. "
-                    f"GN forwards those to the dependents of `{name}` only through `public_deps` (or when a dependency "
-                    f"re-exports them as `all_dependent_configs`), so GN tests and binaries in other packages that use "
-                    f"`{name}` lose them (e.g. link flags, giving undefined symbols; include dirs)."
-                ),
-                "remediation": (
-                    "For C/C++ targets, list it in `deps` rather than `implementation_deps` in BUILD.bazel (bazel2gn "
-                    "emits those as GN `public_deps`)."
-                    if not rust
-                    else rust_forwarding_remedy(label, info["public_configs"], pkg)
-                ),
-            })
+            _emit(
+                findings,
+                "public_dep_forwarding_lost",
+                "ERROR",
+                file,
+                line,
+                f"`{label}` was a `public_deps` edge of {target_desc} and is now reached only through private "
+                "edges"
+                + (f" (via {', '.join(f'`{h}`' for h in via)})" if via else "")
+                + f", but it has public_configs {', '.join(f'`{c}`' for c in sorted(info['public_configs']))}. "
+                f"GN forwards those to the dependents of `{name}` only through `public_deps` (or when a dependency "
+                f"re-exports them as `all_dependent_configs`), so GN tests and binaries in other packages that use "
+                f"`{name}` lose them (e.g. link flags, giving undefined symbols; include dirs).",
+                "For C/C++ targets, list it in `deps` rather than `implementation_deps` in BUILD.bazel (bazel2gn "
+                "emits those as GN `public_deps`)."
+                if not rust
+                else rust_forwarding_remedy(label, info["public_configs"], pkg),
+            )
 
 print(json.dumps(findings, indent=2))
 PYEOF

@@ -30,9 +30,14 @@ import sys
 
 workdir = os.path.abspath(sys.argv[1])
 target_dirs = [d.strip().strip("/") for d in re.split(r"[,\s]+", sys.argv[2]) if d.strip()]
-change_base = sys.argv[3]
+change_base = (os.environ.get("PLANTER_RESOLVED_CHANGE_BASE") or sys.argv[3]).strip()
 
 findings = []
+
+
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    findings.append({"source": "cc_header_deps_and_annotations", "category": category, "severity": severity, "file": file, "line": line, "message": message, "remediation": remediation})
+
 
 DIRECTIVE_RE = re.compile(r"#\s*@bazel2gn:([a-z_]+)(:.*)?$")
 CC_RULE_RE = re.compile(r"^(fx_cc_library|cc_library|idk_cc_source_library\w*)\(\s*$", re.M)
@@ -139,15 +144,16 @@ def check_directives(d, rel, text):
     for i, kind, key in pending:
         if key in documented_keys:
             continue
-        findings.append({
-            "severity": "WARNING",
-            "file": rel,
-            "line": i + 1,
-            "rule": "undocumented_bazel2gn_directive",
-            "message": (f"New `# @bazel2gn:{kind}` directive has no comment explaining "
-                        "why the generated GN differs from Bazel here."),
-            "remediation": DIRECTIVE_REMEDIATION,
-        })
+        _emit(
+            findings,
+            "undocumented_bazel2gn_directive",
+            "WARNING",
+            rel,
+            i + 1,
+            f"New `# @bazel2gn:{kind}` directive has no comment explaining "
+            "why the generated GN differs from Bazel here.",
+            DIRECTIVE_REMEDIATION,
+        )
 
 
 # Check public headers whose includes come from implementation_deps
@@ -202,16 +208,17 @@ def check_header_deps(d, rel, text):
             if not hit:
                 continue
             inc, severity = hit
-            findings.append({
-                "severity": severity,
-                "file": rel,
-                "line": line,
-                "rule": "public_header_dep_in_implementation_deps",
-                "message": (f"{m.group(1)}(name = \"{name}\") lists \"{label}\" in "
-                            f"implementation_deps, but a header in hdrs includes <{inc}>, "
-                            "so dependents need it (GN public_deps)."),
-                "remediation": HEADER_REMEDIATION,
-            })
+            _emit(
+                findings,
+                "public_header_dep_in_implementation_deps",
+                severity,
+                rel,
+                line,
+                f'{m.group(1)}(name = "{name}") lists "{label}" in '
+                f"implementation_deps, but a header in hdrs includes <{inc}>, "
+                "so dependents need it (GN public_deps).",
+                HEADER_REMEDIATION,
+            )
 
 
 for d in target_dirs:

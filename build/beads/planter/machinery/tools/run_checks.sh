@@ -39,6 +39,7 @@ back, 0 otherwise.
   DIR...        target directories (default: $PLANTER_TARGET_DIRS)"""
 
 SERIAL_BUILD_CHECKS = ("build_verification", "tests_json_parity")
+WAIVABLE_REVIEW_DIFF_CATEGORIES = {"visibility_narrowed"}
 
 sys.stdout.reconfigure(errors="replace")
 sys.stderr.reconfigure(errors="replace")
@@ -277,14 +278,26 @@ try:
     all_findings = [f for _, flist, _ in rows for f in flist]
 
     if (not only or "review_diff" in only) and _precomputed_diff_findings is not None:
-        seen = {(f["category"], f["file"], f["line"], f["message"]) for f in all_findings}
+        # Same rule as planter's upload gate (mergeReviewDiffFindings): a review_diff finding is
+        # skipped only when a check reported the same key at a severity that blocks at least as
+        # much, or explicitly waived it in a waivable category. A non-blocking check finding never
+        # hides a blocking review_diff finding.
+        seen_blocking = {}
+        waived = set()
+        for f in all_findings:
+            key = (f["category"], f["file"], f["line"], f["message"])
+            seen_blocking[key] = seen_blocking.get(key, False) or pcl.is_blocking_finding(f)
+            if f.get("waiver") and f["category"] in WAIVABLE_REVIEW_DIFF_CATEGORIES:
+                waived.add(key)
         diff_findings = []
         for raw_f in _precomputed_diff_findings:
             f = dict(raw_f, source="review_diff", severity=pcl.normalize_severity(raw_f.get("severity", "")))
             key = (f["category"], f["file"], f["line"], f["message"])
-            if key not in seen:
-                seen.add(key)
-                diff_findings.append(f)
+            blocks = pcl.is_blocking_finding(f)
+            if key in waived or (key in seen_blocking and (seen_blocking[key] or not blocks)):
+                continue
+            seen_blocking[key] = blocks
+            diff_findings.append(f)
         rows.append(({"name": "review_diff", "enabled": True}, diff_findings, diff_duration))
         all_findings.extend(diff_findings)
 except KeyboardInterrupt:
@@ -296,7 +309,7 @@ exit_code = 1 if blocking_findings else 0
 
 if as_json:
     out = [
-        {k: f[k] for k in ("source", "category", "severity", "file", "line", "message", "remediation") if k in ("source", "category", "severity", "message") or f[k]}
+        {k: f[k] for k in ("source", "category", "severity", "file", "line", "message", "remediation", "waiver") if k in ("source", "category", "severity", "message") or f.get(k)}
         for f in all_findings
     ]
     print(json.dumps(out, indent=2))

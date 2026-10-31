@@ -57,7 +57,7 @@ import sys
 workdir = os.path.abspath(sys.argv[1])
 raw_dirs = sys.argv[2] if len(sys.argv) > 2 else ""
 target_dirs = [d.strip().strip("/") for d in re.split(r"[\s,]+", raw_dirs) if d.strip().strip("/")]
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = (os.environ.get("PLANTER_RESOLVED_CHANGE_BASE") or os.environ.get("PLANTER_CHANGE_BASE") or "HEAD").strip()
 
 LINTS_PKG = "build/config/rust/lints"
 BAZEL_BUILD_FILES = ("BUILD.bazel", "BUILD")
@@ -102,8 +102,12 @@ def parse(text, rel):
         return None
 
 
-touched = set(git_lines(["diff", "--name-only", change_base]))
-touched.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+_env_changed = os.environ.get("PLANTER_CHANGED_FILES")
+if _env_changed is not None:
+    touched = {l.strip() for l in _env_changed.splitlines() if l.strip()}
+else:
+    touched = set(git_lines(["diff", "--name-only", change_base]))
+    touched.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 for td in target_dirs:
     td_abs = os.path.join(workdir, td)
     if not os.path.isdir(td_abs):
@@ -249,16 +253,12 @@ def add_chunks(tree, rel, chunks):
 findings = []
 
 
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    findings.append({"source": "shared_config_reuse", "category": category, "severity": severity, "file": file, "line": line, "message": message, "remediation": remediation})
+
+
 def emit(category, severity, rel, line, message, remediation):
-    findings.append({
-        "source": "shared_config_reuse",
-        "category": category,
-        "severity": severity,
-        "file": rel,
-        "line": line,
-        "message": message,
-        "remediation": remediation,
-    })
+    _emit(findings, category, severity, rel, line, message, remediation)
 
 
 # 1. New alias() wrappers around lint configs.

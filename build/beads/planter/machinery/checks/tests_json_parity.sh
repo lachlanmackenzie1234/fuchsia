@@ -84,10 +84,15 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 workdir = os.path.abspath(sys.argv[1])
 target_dirs = [d.strip().strip("/") for d in re.split(r"[\s,]+", sys.argv[2]) if d.strip().strip("/")]
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = (
+    os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
+    or os.environ.get("PLANTER_CHANGE_BASE", "").strip()
+    or "HEAD"
+)
 timeout = int(os.environ.get("PLANTER_GEN_TIMEOUT", "1800"))
 dry_run = os.environ.get("PLANTER_BUILD_DRY_RUN", "").strip() not in ("", "0")
 skip_build = os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
@@ -421,14 +426,34 @@ original_args = read(args_gn_rel)
 args_base = original_args + test_roots(base_text)
 args_after = original_args + test_roots(read)
 
+jiri_digest = file_digest(os.path.join(workdir, ".jiri_root", "update_history", "latest"))
 key_material = json.dumps([
     BASELINE_VERSION,
     base_commit,
     os.path.realpath(args_gn),
     sha(args_base.encode()),
-    file_digest(os.path.join(workdir, ".jiri_root", "update_history", "latest")),
+    jiri_digest,
 ])
 baseline_path = os.path.join(state_dir, "baseline-" + sha(key_material.encode())[:24] + ".json")
+result_cache_path = os.path.join(state_dir, "result-cache.json")
+result_key = sha(json.dumps([
+    key_material,
+    sha(args_after.encode()),
+    [(p, state(os.path.join(workdir, p))) for p in paths],
+]).encode())
+no_reuse = os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() not in ("", "0", "false")
+reuse_ttl = int(os.environ.get("PLANTER_BUILD_REUSE_TTL", "21600"))
+if not dry_run and not no_reuse:
+    try:
+        with open(result_cache_path) as f:
+            rc_data = json.load(f)
+        rc_entry = (rc_data.get("entries") or {}).get(result_key) if isinstance(rc_data, dict) else None
+        if isinstance(rc_entry, dict) and 0 <= time.time() - rc_entry.get("time", 0) <= reuse_ttl:
+            for rf in rc_entry.get("findings") or []:
+                findings.append(rf)
+            finish()
+    except (OSError, ValueError):
+        pass
 baseline = None
 try:
     with open(baseline_path) as f:
@@ -709,6 +734,26 @@ if not dropped:
         f"All {len(before)} tests of <build dir>/tests.json before the change (with the changed packages' "
         f":tests groups as roots) are still in it after the change ({len(added)} added).",
     )
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        rc_entries = {}
+        try:
+            with open(result_cache_path) as f:
+                old_rc = json.load(f)
+            if isinstance(old_rc, dict) and isinstance(old_rc.get("entries"), dict):
+                rc_entries = old_rc["entries"]
+        except (OSError, ValueError):
+            pass
+        now_ts = time.time()
+        rc_entries[result_key] = {"time": now_ts, "findings": list(findings)}
+        if len(rc_entries) > 10:
+            rc_entries = dict(sorted(rc_entries.items(), key=lambda kv: kv[1].get("time", 0), reverse=True)[:10])
+        fd, tmp_rc = tempfile.mkstemp(dir=state_dir, prefix=".result-cache.")
+        with os.fdopen(fd, "w") as f:
+            json.dump({"entries": rc_entries}, f)
+        os.replace(tmp_rc, result_cache_path)
+    except OSError:
+        pass
 
 finish()
 PYEOF

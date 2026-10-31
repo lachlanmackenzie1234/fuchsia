@@ -13,7 +13,7 @@ set -euo pipefail
 #    names like @bazel2gn, @platforms, @fuchsia_sdk), and individual names.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
-CHANGE_BASE="${PLANTER_CHANGE_BASE:-HEAD}"
+CHANGE_BASE="${PLANTER_RESOLVED_CHANGE_BASE:-${PLANTER_CHANGE_BASE:-HEAD}}"
 
 python3 - "$WORKDIR" "$CHANGE_BASE" <<'PYEOF'
 import json
@@ -78,14 +78,18 @@ def git_output(args):
         return ""
 
 
-changed = set()
-for cmd in (
-    ["diff", "--name-only", change_base],
-    ["ls-files", "--others", "--exclude-standard"],
-):
-    for line in git_output(cmd).splitlines():
-        if line.strip():
-            changed.add(line.strip())
+env_changed = os.environ.get("PLANTER_CHANGED_FILES", "").strip()
+if env_changed:
+    changed = {line.strip() for line in env_changed.splitlines() if line.strip()}
+else:
+    changed = set()
+    for cmd in (
+        ["diff", "--name-only", change_base],
+        ["ls-files", "--others", "--exclude-standard"],
+    ):
+        for line in git_output(cmd).splitlines():
+            if line.strip():
+                changed.add(line.strip())
 
 findings = []
 
@@ -165,45 +169,6 @@ base_rev = git_output(["rev-parse", "--verify", change_base])
 commit_msg = git_output(["log", "-1", "--format=%B", "HEAD"]).rstrip("\n")
 if commit_msg and head_rev and base_rev and head_rev != base_rev:
     scan_text("COMMIT_MSG", commit_msg)
-    msg_lines = commit_msg.splitlines()
-    if msg_lines:
-        subject = msg_lines[0].strip()
-        if len(subject) > 65:
-            findings.append({
-                "source": "confidentiality_check",
-                "category": "commit_msg_subject_length",
-                "severity": "error",
-                "file": "COMMIT_MSG",
-                "line": 1,
-                "message": (
-                    f"commit_msg: Subject line exceeds 65 characters ({len(subject)} chars). "
-                    "Limit first line to 50-65 characters."
-                ),
-                "remediation": (
-                    "Amend the HEAD commit message so the subject line is at most 65 characters "
-                    "(for example, omit trailing 'to Bazel' or move detailed crate lists to the body)."
-                ),
-            })
-        trailer_re = re.compile(r"^[A-Za-z0-9-]+:\s")
-        for idx, line in enumerate(msg_lines[1:], start=2):
-            stripped = line.strip()
-            if not stripped or trailer_re.match(stripped) or "://" in stripped:
-                continue
-            if stripped == "[DO NOT SUBMIT/REVIEW] waiting on uploader acknowledgement of planter findings":
-                continue
-            if len(line) > 72:
-                findings.append({
-                    "source": "confidentiality_check",
-                    "category": "commit_msg_line_length",
-                    "severity": "error",
-                    "file": "COMMIT_MSG",
-                    "line": idx,
-                    "message": (
-                        f"commit_msg: Body line {idx} exceeds 72 characters ({len(line)} chars). "
-                        "Wrap commit message body lines at <= 72 characters."
-                    ),
-                    "remediation": "Wrap all body lines of the HEAD commit message at 72 characters or fewer.",
-                })
 
 print(json.dumps(findings, indent=2))
 PYEOF

@@ -44,7 +44,7 @@ set -euo pipefail
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
 TARGET_DIRS="${PLANTER_TARGET_DIRS:-$TARGET_DIR}"
-CHANGE_BASE="${PLANTER_CHANGE_BASE:-HEAD}"
+CHANGE_BASE="${PLANTER_RESOLVED_CHANGE_BASE:-${PLANTER_CHANGE_BASE:-HEAD}}"
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "$CHANGE_BASE" <<'PYEOF'
 import ast
@@ -551,9 +551,7 @@ _base_bazel_src_cache = {}
 def base_bazel_src_of(pkg):
     if pkg not in _base_bazel_src_cache:
         rel = os.path.join(pkg, "BUILD.bazel") if pkg else "BUILD.bazel"
-        eff_base = globals().get("effective_diff_base") or (
-            os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
-        )
+        eff_base = globals().get("effective_diff_base") or change_base
         if eff_base == "HEAD" and globals().get("head_is_task_commit"):
             refs = ["HEAD~1"]
         elif eff_base == "HEAD":
@@ -871,7 +869,10 @@ def git_success(args):
 # Refresh local `refs/remotes/origin/main` when stale so `git merge-tree` checks
 # against current upstream `origin/main` and only caches a stamp on success.
 def maybe_refresh_origin_main(parent_sha):
-    if os.environ.get("PLANTER_SKIP_FETCH", "").strip() not in ("", "0"):
+    if (
+        os.environ.get("PLANTER_SKIP_FETCH", "").strip() not in ("", "0", "false")
+        or os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0", "false")
+    ):
         return
     force_fetch = os.environ.get("PLANTER_FORCE_FETCH", "").strip() in ("1", "true")
     origin_sha = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
@@ -1062,9 +1063,13 @@ head_is_task_commit = bool(
 )
 
 # 2. Check changed and target files for leftover conflict markers.
-changed_files = set(git_lines(["diff", "--name-only", effective_diff_base]))
-changed_files.update(git_lines(["diff", "--name-only", "HEAD"]))
-changed_files.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+env_changed = os.environ.get("PLANTER_CHANGED_FILES", "").strip()
+if env_changed:
+    changed_files = {l.strip() for l in env_changed.splitlines() if l.strip()}
+else:
+    changed_files = set(git_lines(["diff", "--name-only", effective_diff_base]))
+    changed_files.update(git_lines(["diff", "--name-only", "HEAD"]))
+    changed_files.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 for td in target_dirs:
     for bname in ("BUILD.bazel", "BUILD.gn"):
         rel_p = os.path.join(td, bname)
@@ -1429,42 +1434,6 @@ if origin_main and head_sha and head_sha != origin_main:
                                     ),
                                 })
 
-# Extract Gerrit CL numbers from a 'Depends on:' line or block in a commit message,
-# ignoring Gerrit 'Reviewed-on:' footers and unrelated prose links.
-def extract_depends_on_cl_nums(msg):
-    if not msg:
-        return []
-    dep_cl_re = re.compile(
-        r"(?:fxrev\.dev|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
-    )
-    cl_nums = []
-    in_depends_on = False
-    for raw_line in msg.splitlines():
-        line = raw_line.strip()
-        if not line:
-            in_depends_on = False
-            continue
-        if re.match(r"(?i)^Reviewed-on\s*:", line):
-            in_depends_on = False
-            continue
-        if re.match(r"(?i)^Depends\s+on\s*:", line):
-            in_depends_on = True
-            for cl_num in dep_cl_re.findall(line):
-                if cl_num not in cl_nums:
-                    cl_nums.append(cl_num)
-            continue
-        if in_depends_on:
-            if re.match(r"^[A-Za-z][A-Za-z0-9-]*\s*:", line) and not re.match(
-                r"(?i)^https?:", line
-            ):
-                in_depends_on = False
-                continue
-            for cl_num in dep_cl_re.findall(line):
-                if cl_num not in cl_nums:
-                    cl_nums.append(cl_num)
-    return cl_nums
-
-
 # Check whether HEAD is stacked on a local ancestor commit that has already landed on
 # origin/main, or still carries a 'Depends on:' reference to a CL now in origin/main.
 def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha):
@@ -1796,129 +1765,6 @@ if origin_main and head_is_task_commit:
     )
     check_unlanded_bazel_dependencies(origin_main, parent_sha)
 
-
-# Check that referenced workspace Bazel packages and targets exist in origin/main or the top commit
-# when HEAD is the task's own commit (PLANTER_CHANGE_BASE != HEAD).
-def check_unmerged_parent_bazel_package_deps():
-    if change_base == "HEAD" or not (
-        origin_main and head_sha and parent_sha and base_sha and base_sha != head_sha
-    ):
-        return
-    stack_base = git_out(["merge-base", origin_main, head_sha])
-    if not (
-        stack_base
-        and parent_sha != stack_base
-        and is_ancestor(stack_base, parent_sha)
-    ):
-        return
-    anc_files = set(git_lines(["diff", "--name-only", stack_base, "HEAD~1"]))
-    top_files = set(git_lines(["diff", "--name-only", "HEAD~1", "HEAD"]))
-    top_files.update(git_lines(["diff", "--name-only", "HEAD"]))
-    top_files.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
-    scan_dirs = list(target_dirs)
-    for rel_f in sorted(top_files):
-        if os.path.basename(rel_f) in ("BUILD.bazel", "BUILD"):
-            pkg_d = os.path.dirname(rel_f).strip("/")
-            if pkg_d and pkg_d not in scan_dirs:
-                scan_dirs.append(pkg_d)
-    for td in scan_dirs:
-        bazel_rel = os.path.join(td, "BUILD.bazel")
-        bazel_full = os.path.join(workdir, bazel_rel)
-        if not os.path.isfile(bazel_full):
-            continue
-        try:
-            with open(bazel_full, "r", encoding="utf-8") as f:
-                td_tree = ast.parse(f.read(), filename=bazel_rel)
-        except Exception:
-            continue
-        vis_nodes = set()
-        for call_node in ast.walk(td_tree):
-            if isinstance(call_node, ast.Call):
-                for kw in call_node.keywords:
-                    if kw.arg == "visibility" and kw.value is not None:
-                        for sub in ast.walk(kw.value):
-                            vis_nodes.add(id(sub))
-        missing_pkgs = {}
-        for node in ast.walk(td_tree):
-            if id(node) in vis_nodes:
-                continue
-            if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
-                continue
-            s = re.sub(r"^@@?//", "//", node.value.strip())
-            if not s.startswith("//") or s.startswith(("//visibility:", "//conditions:")):
-                continue
-            parts = split_label(s, td)
-            if not parts:
-                continue
-            dep_pkg, dep_target = parts
-            if (
-                not dep_pkg
-                or dep_pkg == td
-                or dep_pkg in missing_pkgs
-                or dep_target in ("__pkg__", "__subpackages__")
-            ):
-                continue
-            dep_bazel = f"{dep_pkg}/BUILD.bazel"
-            dep_build = f"{dep_pkg}/BUILD"
-            if not (
-                os.path.isfile(os.path.join(workdir, dep_bazel))
-                or os.path.isfile(os.path.join(workdir, dep_build))
-            ):
-                continue
-            in_origin = (
-                git_out(["cat-file", "-t", f"{origin_main}:{dep_bazel}"]) == "blob"
-                or git_out(["cat-file", "-t", f"{origin_main}:{dep_build}"]) == "blob"
-            )
-            in_top = dep_bazel in top_files or dep_build in top_files
-            if not in_origin and not in_top and (dep_bazel in anc_files or dep_build in anc_files):
-                missing_pkgs[dep_pkg] = getattr(node, "lineno", 1)
-            elif (
-                in_origin
-                and not in_top
-                and dep_target
-                and (dep_bazel in anc_files or dep_build in anc_files)
-            ):
-                orig_blob = git_out(["show", f"{origin_main}:{dep_bazel}"]) or git_out(
-                    ["show", f"{origin_main}:{dep_build}"]
-                )
-                name_pat = r'\bname\s*=\s*"' + re.escape(dep_target) + r'"'
-                if orig_blob and not re.search(name_pat, orig_blob):
-                    missing_pkgs[dep_pkg] = getattr(node, "lineno", 1)
-        for dep_pkg, lineno in sorted(missing_pkgs.items()):
-            msg = (
-                f"'{bazel_rel}' depends on `//{dep_pkg}`, whose `BUILD.bazel` does not "
-                f"exist in `origin/main` ({origin_main[:11]}) and is only present in an "
-                f"unmerged local ancestor commit (`{stack_base[:11]}..HEAD~1`). Because "
-                "Gerrit CQ tests the uploaded commit against `origin/main`, Bazel cquery "
-                f"(`tests.json` generation) fails in CQ with `no such package '{dep_pkg}': "
-                "BUILD file not found`."
-            )
-            rem = (
-                f"Include `{dep_pkg}/BUILD.bazel` (and `{dep_pkg}/BUILD.gn` if modified) in "
-                "the top commit `HEAD` so the uploaded CL is self-contained on `origin/main`: "
-                "fold the unmerged ancestor commit(s) into `HEAD` with "
-                '`git reset --soft "$(git merge-base origin/main HEAD)" && '
-                "git commit --amend --no-edit` (removing any `Depends on:` body lines for "
-                "the folded task, adding its targets to `Bazel-Migration-Target:` footers, "
-                "and listing its files in `modified_files`)."
-            )
-            findings.append({
-                "source": "cq_reachability",
-                "category": "unmerged_parent_bazel_package_dep",
-                "severity": "error",
-                "file": bazel_rel,
-                "line": lineno,
-                "message": msg,
-                "remediation": rem,
-            })
-
-
-# Disabled: stacked tasks with unlanded dependencies are uploaded as WIP and gated
-# by planter until their parent dependency CLs land. Folding HEAD~1 into HEAD
-# duplicates the parent CL's BUILD.bazel/BUILD.gn into the child CL and causes
-# guaranteed add/add merge conflicts when the parent CL lands (see
-# stacked_bazel_dependency_package below).
-# check_unmerged_parent_bazel_package_deps()
 
 # Check that every main-repo Bazel package referenced (directly or transitively)
 # in BUILD.bazel dependency attributes has a BUILD.bazel or BUILD file in the

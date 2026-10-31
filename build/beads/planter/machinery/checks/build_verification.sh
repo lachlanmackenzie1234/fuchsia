@@ -93,7 +93,11 @@ import time
 
 workdir = os.path.abspath(sys.argv[1])
 target_dirs = [d.strip().strip("/") for d in sys.argv[2].split() if d.strip().strip("/")]
-change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+change_base = (
+    os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
+    or os.environ.get("PLANTER_CHANGE_BASE", "").strip()
+    or "HEAD"
+)
 timeout = int(os.environ.get("PLANTER_BUILD_TIMEOUT", "5400"))
 dry_run = os.environ.get("PLANTER_BUILD_DRY_RUN", "").strip() not in ("", "0")
 skip_build = os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
@@ -141,7 +145,12 @@ EXCLUDED_GLOBAL_DIRS = (
 )
 
 dirs = list(target_dirs)
-changed = git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+env_changed = os.environ.get("PLANTER_CHANGED_FILES", "").strip()
+changed = (
+    [l.strip() for l in env_changed.splitlines() if l.strip()]
+    if env_changed
+    else git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
+)
 changed_set = set(changed)
 
 
@@ -916,7 +925,7 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     ),
                     "remediation": (
                         "Quote any GN label containing toolchain parentheses in the commit `Test:` footer and "
-                        "`CoderReport.tests_run` (e.g. `fx build '//pkg:target(//build/toolchain:...)'`), or copy "
+                        "`CoderReport.test_footers` (e.g. `fx build '//pkg:target(//build/toolchain:...)'`), or copy "
                         "the exact quoted command from `PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`."
                     ),
                 })
@@ -941,7 +950,7 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     ),
                     "remediation": (
                         f"Pass `-- ... {' '.join(missing_excls)}` in the commit `Test:` footer and "
-                        "`CoderReport.tests_run` (copy the exact command from "
+                        "`CoderReport.test_footers` (copy the exact command from "
                         "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
                     ),
                 })
@@ -964,7 +973,7 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                         "on labels outside the configured product graph."
                     ),
                     "remediation": (
-                        "Amend the commit message `Test:` footer (and only list commands in `CoderReport.tests_run`) to use "
+                        "Amend the commit message `Test:` footer (and only list commands in `CoderReport.test_footers`) to use "
                         "commands that actually succeed in the configured build (copy the exact shell-quoted commands from "
                         "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
                     ),
@@ -1081,7 +1090,7 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
             ),
             # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
             "remediation": (
-                "Consolidate the commit message `Test:` footers (and `CoderReport.tests_run`) to at most 3 lines: "
+                "Consolidate the commit message `Test:` footers (and `CoderReport.test_footers`) to at most 3 lines: "
                 "one `fx bazel test|build --config=fuchsia_platform @//<dir>:<test>` line for the migrated test targets, "
                 "one `fx bazel test --config=host @//<dir>:<host test>` line when host tests exist, and "
                 "`fx host-tool shac check` last; "
@@ -1350,8 +1359,6 @@ if reused is not None:
     for rf in reused:
         if isinstance(rf, dict) and rf.get("category") in ("bazel_tests_note", "bazel_tests_exported"):
             continue
-        if isinstance(rf, dict) and rf.get("category") == "dependents_note":
-            rf = dict(rf, message=rf.get("message", "").replace("CoderReport.tests_run", "CoderReport.test_footers"))
         findings.append(rf)
     if exported_tests["host_tests"] or exported_tests["target_tests"]:
         for n in bazel_tests_export_notes():

@@ -582,6 +582,7 @@ def extract_bazel_targets(bazel_text, filename="<BUILD.bazel>"):
     return targets
 
 
+# Mirrors planter's substrate.Finding JSON fields (waiver: see visibility_audit.sh).
 FINDING_FIELDS = (
     "source",
     "category",
@@ -590,6 +591,7 @@ FINDING_FIELDS = (
     "line",
     "message",
     "remediation",
+    "waiver",
 )
 
 

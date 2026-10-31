@@ -204,8 +204,12 @@ def record_diff_visibility_narrowed_info(clean_targets):
         except Exception:
             return
 
-    seen_keys = {
-        (f.get("category"), f.get("file"), f.get("line"), f.get("message"))
+    reason = (
+        "Intentional visibility narrowing verified by visibility_audit "
+        "(all actual reverse dependencies and preserved narrow GN scopes are covered)."
+    )
+    by_key = {
+        (f.get("category"), f.get("file"), f.get("line"), f.get("message")): f
         for f in findings
     }
     for df in diff_list:
@@ -219,20 +223,25 @@ def record_diff_visibility_narrowed_info(clean_targets):
         if not tname or (f_rel, tname) not in clean_targets:
             continue
         key = ("visibility_narrowed", f_rel, ln, msg)
-        if key in seen_keys:
+        if key in by_key:
+            # record_intentional_visibility_narrowing already reported this target; waive the
+            # review_diff finding through that entry instead of emitting a duplicate.
+            by_key[key]["waiver"] = reason
             continue
-        seen_keys.add(key)
-        emit_finding(
-            "visibility_narrowed",
-            "info",
-            f_rel,
-            ln,
-            msg,
-            (
-                "Intentional visibility narrowing verified by visibility_audit "
-                "(all actual reverse dependencies and preserved narrow GN scopes are covered)."
-            ),
+        entry = pcl.emit(
+            findings,
+            category="visibility_narrowed",
+            severity="info",
+            file=f_rel,
+            line=ln,
+            message=msg,
+            remediation=reason,
+            source="visibility_audit",
         )
+        # An explicit waiver: planter's upload gate drops the review_diff visibility_narrowed
+        # finding with this key (a same-key INFO finding alone no longer suppresses it).
+        entry["waiver"] = reason
+        by_key[key] = entry
 
 for rel_path in sorted(candidate_files):
     full_path = os.path.join(workdir, rel_path)

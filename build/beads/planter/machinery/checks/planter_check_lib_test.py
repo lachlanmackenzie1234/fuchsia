@@ -514,6 +514,13 @@ rustc_library(
             self.assertEqual(findings[0]["category"], "cat1")
             self.assertEqual(findings[0]["line"], 7)
 
+            # The explicit review_diff waiver survives parsing (planter's gate reads it).
+            findings, ok = pcl.parse_check_findings(
+                '[{"category": "visibility_narrowed", "severity": "info", "message": "m", "waiver": "verified"}]'
+            )
+            self.assertTrue(ok)
+            self.assertEqual(findings[0]["waiver"], "verified")
+
     def test_run_checks_integration(self):
         run_checks_sh = os.path.normpath(
             os.path.join(

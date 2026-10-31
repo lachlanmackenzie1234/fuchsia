@@ -65,7 +65,13 @@ LINT_PATTERNS = [
 
 findings = []
 
-# Resolve effective change base when HEAD is already the task's migration commit.
+
+def _emit(findings, category, severity, file, line, message, remediation=""):
+    findings.append({"source": "lint_config_parity", "category": category, "severity": severity, "file": file, "line": line, "message": message, "remediation": remediation})
+
+
+# Resolve effective change base when HEAD is already the task's migration commit (fallback for
+# runs outside planter, which exports PLANTER_RESOLVED_CHANGE_BASE).
 def resolve_change_base(raw_base):
     base = (raw_base or "").strip() or "HEAD"
     head_subj = git(["log", "-1", "--format=%s", "HEAD"]).strip()
@@ -80,10 +86,16 @@ def resolve_change_base(raw_base):
 
 # Collect the unified diff of the task's change since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is
 # the task's own commit, "HEAD" when HEAD is unrelated upstream history).
-change_base = resolve_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
-diff_texts = [
-    git(["diff", "--unified=0", change_base]),
-]
+change_base = (
+    os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
+    or resolve_change_base(os.environ.get("PLANTER_CHANGE_BASE", ""))
+)
+env_changed = os.environ.get("PLANTER_CHANGED_FILES", "").strip()
+if env_changed:
+    non_build = [p.strip() for p in env_changed.splitlines() if p.strip() and not is_build_file(p.strip())]
+    diff_texts = [git(["diff", "--unified=0", change_base, "--"] + non_build)] if non_build else []
+else:
+    diff_texts = [git(["diff", "--unified=0", change_base])]
 
 # Check whether a Rust source file belongs to a migrated package whose BUILD.bazel
 # applies `//build/config/rust/lints:clippy_warn_all` to a test target (in Bazel,
@@ -145,39 +157,35 @@ for text in diff_texts:
                 if has_clippy_warn_all_on_rust_test(cur_file):
                     if cur_file not in seen_allowed_test_files:
                         seen_allowed_test_files.add(cur_file)
-                        findings.append({
-                            "source": "lint_config_parity",
-                            "category": "allowed_test_clippy_warn_all_edit",
-                            "severity": "INFO",
-                            "file": cur_file,
-                            "line": line,
-                            "message": (
+                        _emit(
+                            findings,
+                            "allowed_test_clippy_warn_all_edit",
+                            "INFO",
+                            cur_file,
+                            line,
+                            (
                                 f"Allowed clippy_warn_all test lint fix ({why}) in '{cur_file}' "
                                 "to preserve clippy coverage without disable_clippy = True."
                             ),
-                        })
+                        )
                     continue
                 key = (cur_file, line, why)
                 if key in seen:
                     continue
                 seen.add(key)
-                findings.append({
-                    "source": "lint_config_parity",
-                    "category": "lint_driven_source_edit",
-                    "severity": "error",
-                    "file": cur_file,
-                    "line": line,
-                    "message": (
-                        f"Migration {why} in non-build file '{cur_file}': `{body.strip()[:120]}`. "
-                        "GN-to-Bazel migrations must not edit sources to silence lints/warnings."
-                    ),
-                    "remediation": (
-                        "Revert the source edit (git checkout $PLANTER_CHANGE_BASE -- <file>). "
-                        "Pre-existing lint findings are out of scope. If the Bazel build newly reports this "
-                        "lint, restore lint parity in BUILD.bazel (lint_config, rustc_flags, testonly, "
-                        "features) instead; if impossible, stop and report the blocker."
-                    ),
-                })
+                _emit(
+                    findings,
+                    "lint_driven_source_edit",
+                    "error",
+                    cur_file,
+                    line,
+                    f"Migration {why} in non-build file '{cur_file}': `{body.strip()[:120]}`. "
+                    "GN-to-Bazel migrations must not edit sources to silence lints/warnings.",
+                    "Revert the source edit (git checkout $PLANTER_CHANGE_BASE -- <file>). "
+                    "Pre-existing lint findings are out of scope. If the Bazel build newly reports this "
+                    "lint, restore lint parity in BUILD.bazel (lint_config, rustc_flags, testonly, "
+                    "features) instead; if impossible, stop and report the blocker.",
+                )
 
 # lint_config semantics check for BUILD.bazel files in the target package tree:
 # resolve custom lint_config labels (including through alias() chains and loaded .bzl
@@ -527,13 +535,13 @@ def check_host_assert_test_polarity_drift(cur_pkg, bzl_rel, tree):
             if not test_name.endswith("_host_test")
             else f"{test_name}_wrapper"
         )
-        findings.append({
-            "source": "lint_config_parity",
-            "category": "host_assert_test_polarity_drift",
-            "severity": "error",
-            "file": bzl_rel,
-            "line": lineno,
-            "message": (
+        _emit(
+            findings,
+            "host_assert_test_polarity_drift",
+            "error",
+            bzl_rel,
+            lineno,
+            (
                 f"Target '{test_name}' in {bzl_rel} generates `if (is_host) {{ "
                 f'rustc_test("{test_name}") }}` below `## BAZEL2GN SENTINEL` in '
                 f"{gn_rel}, but pre-migration {gn_rel} relied on a file-scope "
@@ -545,7 +553,7 @@ def check_host_assert_test_polarity_drift(cur_pkg, bzl_rel, tree):
                 "inferred polarity to `host` and fails CQ with `CLASS 1 SILENT "
                 "ORPHANING (REMOVED TEST TARGET WITH EXISTING SOURCES)`."
             ),
-            "remediation": (
+            (
                 f"In {bzl_rel}, replace `host_rustc_test(name = \"{test_name}\", ...)` "
                 f"with `rustc_test(name = \"{test_name}\", crate = \":{lib_name}\", ...)` "
                 "(do not repeat `edition` when `crate` is set, and annotate "
@@ -560,7 +568,7 @@ def check_host_assert_test_polarity_drift(cur_pkg, bzl_rel, tree):
                 f"`\"//{cur_pkg}:{wrap_name}\"` into the `host_tests` suite, and "
                 f"re-run `fx bazel2gn -d {cur_pkg}`."
             ),
-        })
+        )
 
 
 if target_dir:
@@ -583,17 +591,17 @@ if target_dir:
                 r"#\s*@bazel2gn:raw_attribute:.*\bexclude_toolchain_tags\s*\+?=",
                 bzl_line,
             ):
-                findings.append({
-                    "source": "lint_config_parity",
-                    "category": "raw_attribute_for_supported_bazel2gn_tag",
-                    "severity": "error",
-                    "file": rel,
-                    "line": idx,
-                    "message": (
+                _emit(
+                    findings,
+                    "raw_attribute_for_supported_bazel2gn_tag",
+                    "error",
+                    rel,
+                    idx,
+                    (
                         f"Line {idx} in {rel} uses `# @bazel2gn:raw_attribute:` to emit "
                         "`exclude_toolchain_tags`, which `bazel2gn` supports natively."
                     ),
-                    "remediation": (
+                    (
                         'Use `tags = ["exclude_toolchain_tags=<tag>", ...]` (plus '
                         "`target_compatible_with = HOST_OS_CONSTRAINTS` when host-only, "
                         "or `disable_instrumentation = True` on `fx_cc_*` for "
@@ -601,7 +609,7 @@ if target_dir:
                         "If the binary is wrapped by `bazel_host_tool` in BUILD.gn "
                         "and marked `# @bazel2gn:skip`, remove the `raw_attribute`."
                     ),
-                })
+                )
             if not pkg_asserts_is_host and re.search(
                 r"\btarget_compatible_with\s*=\s*HOST_OS_CONSTRAINTS\b.*#\s*@bazel2gn:skip\b",
                 bzl_line,
@@ -611,22 +619,22 @@ if target_dir:
                     base_gn_for_skip = git(["show", f"HEAD~1:{cur_pkg}/BUILD.gn"])
                 base_gn_clean_skip = re.sub(r"#[^\n]*", "", base_gn_for_skip or "")
                 if re.search(r"\bif\s*\(\s*is_host\b", base_gn_clean_skip):
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "unnecessary_skip_on_host_constraints",
-                        "severity": "error",
-                        "file": rel,
-                        "line": idx,
-                        "message": (
+                    _emit(
+                        findings,
+                        "unnecessary_skip_on_host_constraints",
+                        "error",
+                        rel,
+                        idx,
+                        (
                             f"Line {idx} in {rel} puts `# @bazel2gn:skip` on "
                             "`target_compatible_with = HOST_OS_CONSTRAINTS`."
                         ),
-                        "remediation": (
+                        (
                             "Remove `# @bazel2gn:skip` from `target_compatible_with = "
                             "HOST_OS_CONSTRAINTS` (or use `host_rustc_test` / `host_go_test`); "
                             "`bazel2gn` natively translates it to `if (is_host)`."
                         ),
-                    })
+                    )
         # Check for dual-build packages where base BUILD.gn had an unguarded
         # `rustc_library` / `rustc_binary` / `rustc_proc_macro` with `with_unit_tests = true`
         # without `if (is_host)`, `assert(is_host)`, or a local `group("tests")` referencing
@@ -713,13 +721,13 @@ if target_dir:
                         if not t_p.endswith("_host_test")
                         else f"{t_p}_wrapper"
                     )
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "shac_unconditional_gn_unit_test_polarity_shift",
-                        "severity": "error",
-                        "file": rel,
-                        "line": getattr(node_p, "lineno", 1),
-                        "message": (
+                    _emit(
+                        findings,
+                        "shac_unconditional_gn_unit_test_polarity_shift",
+                        "error",
+                        rel,
+                        getattr(node_p, "lineno", 1),
+                        (
                             f"Target '{t_p}' ({r_p}) in '{rel}' causes `fx bazel2gn` to wrap "
                             f'`rustc_test("{t_p}")` in `if (is_host)` in '
                             f"'{cur_pkg}/BUILD.gn', whereas base '{cur_pkg}/BUILD.gn' declared "
@@ -730,7 +738,7 @@ if target_dir:
                             "test as `device` polarity and the generated GN test as `host` "
                             "polarity, failing `shac check` with `CLASS 1 SILENT ORPHANING`."
                         ),
-                        "remediation": (
+                        (
                             f"In '{rel}', replace `host_rustc_test(name = \"{t_p}\", ...)` "
                             f"with `rustc_test(name = \"{t_p}\", crate = \":{lib_name_p}\", ...)` "
                             '(loaded from `"//build/bazel/rules/rust:rustc_test.bzl"`, omitting '
@@ -745,7 +753,7 @@ if target_dir:
                             f"re-run `fx bazel2gn -d {cur_pkg}` so the generated GN targets in "
                             f"'{cur_pkg}/BUILD.gn' remain unguarded by `if (is_host)`."
                         ),
-                    })
+                    )
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -770,25 +778,25 @@ if target_dir:
             if disable_clippy_kw is not None:
                 base_gn = git(["show", f"{change_base}:{cur_pkg}/BUILD.gn"])
                 if not re.search(r"\bdisable_clippy\s*=\s*true\b", base_gn):
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "unrequested_disable_clippy",
-                        "severity": "error",
-                        "file": rel,
-                        "line": getattr(disable_clippy_kw, "lineno", getattr(node, "lineno", 1)),
-                        "message": (
+                    _emit(
+                        findings,
+                        "unrequested_disable_clippy",
+                        "error",
+                        rel,
+                        getattr(disable_clippy_kw, "lineno", getattr(node, "lineno", 1)),
+                        (
                             f"Target '{target_name}' in {rel} sets `disable_clippy = True`, "
                             f"but `{cur_pkg}/BUILD.gn` did not set `disable_clippy = true` at "
                             "the change base. Disabling clippy loses lint coverage during migration."
                         ),
-                        "remediation": (
+                        (
                             "Remove `disable_clippy = True` from BUILD.bazel. If `clippy_warn_all` "
                             "on a Rust test target in Bazel surfaces a `_CLIPPY_WARN_PRODUCTION` "
                             "lint (such as `clippy::redundant_clone`, which GN `rustc_test` "
                             "omitted), fix the lint or add a narrow `#[allow(clippy::<lint>)]` "
                             "in the test source file instead of disabling clippy on the target."
                         ),
-                    })
+                    )
             if lint_kw is None:
                 continue
             is_test_target = is_testonly or rule_name in ("rustc_test", "rust_test")
@@ -804,21 +812,17 @@ if target_dir:
                     continue
                 target_res = resolve_lint_config_target(lpkg, lname)
                 if not target_res or target_res[2]["rule"] != "rust_lint_config":
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "lint_config_semantics",
-                        "severity": "warning",
-                        "file": rel,
-                        "line": lineno,
-                        "message": (
-                            f"lint_config = \"{label}\" does not resolve to a `rust_lint_config` target. "
-                            "Bazel lint_config REPLACES the macro default lint set while GN appends to it."
-                        ),
-                        "remediation": (
-                            "Point `lint_config` at a valid `rust_lint_config` target (or pre-existing alias) "
-                            "that includes the default clippy and rustc lint sets from //build/config/rust/lints."
-                        ),
-                    })
+                    _emit(
+                        findings,
+                        "lint_config_semantics",
+                        "warning",
+                        rel,
+                        lineno,
+                        f'lint_config = "{label}" does not resolve to a `rust_lint_config` target. '
+                        "Bazel lint_config REPLACES the macro default lint set while GN appends to it.",
+                        "Point `lint_config` at a valid `rust_lint_config` target (or pre-existing alias) "
+                        "that includes the default clippy and rustc lint sets from //build/config/rust/lints.",
+                    )
                     continue
                 def_pkg, def_name, tinfo = target_res
                 clippy_branches = tinfo.get("clippy") or []
@@ -837,23 +841,19 @@ if target_dir:
                         missing_desc.append(f"clippy lints ({', '.join(missing_clippy[:5])})")
                     if missing_rustc:
                         missing_desc.append(f"rustc lints ({', '.join(missing_rustc[:5])})")
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "lint_config_semantics",
-                        "severity": "warning",
-                        "file": rel,
-                        "line": lineno,
-                        "message": (
-                            f"lint_config = \"{label}\" (resolving to //{def_pkg}:{def_name}) omits default "
-                            f"{' and '.join(missing_desc)} from //build/config/rust/lints. "
-                            "Bazel lint_config REPLACES the macro default lint set while GN appends to it, "
-                            "so omitting the defaults changes the effective lint set."
-                        ),
-                        "remediation": (
-                            f"Compose `//{def_pkg}:{def_name}` with the default clippy/rustc lint constants from "
-                            "//build/config/rust/lints so the Bazel lint set matches GN's append semantics."
-                        ),
-                    })
+                    _emit(
+                        findings,
+                        "lint_config_semantics",
+                        "warning",
+                        rel,
+                        lineno,
+                        f'lint_config = "{label}" (resolving to //{def_pkg}:{def_name}) omits default '
+                        f"{' and '.join(missing_desc)} from //build/config/rust/lints. "
+                        "Bazel lint_config REPLACES the macro default lint set while GN appends to it, "
+                        "so omitting the defaults changes the effective lint set.",
+                        f"Compose `//{def_pkg}:{def_name}` with the default clippy/rustc lint constants from "
+                        "//build/config/rust/lints so the Bazel lint set matches GN's append semantics.",
+                    )
 
     # Also run //scripts/shac/check_bazel_test_parity.py directly against change_base when present
     # (shac skips bazel_test_parity on uncommitted working trees when HEAD has Reviewed-on:).
@@ -900,15 +900,15 @@ if target_dir:
                         if len(parts) > 1
                         else "Fix the Bazel/GN test parity error reported by check_bazel_test_parity.py."
                     )
-                    findings.append({
-                        "source": "lint_config_parity",
-                        "category": "shac_bazel_test_parity",
-                        "severity": "error",
-                        "file": fp or f"{target_dir}/BUILD.bazel",
-                        "line": getattr(pf, "line", 1) or 1,
-                        "message": main_msg,
-                        "remediation": rem_msg,
-                    })
+                    _emit(
+                        findings,
+                        "shac_bazel_test_parity",
+                        "error",
+                        fp or f"{target_dir}/BUILD.bazel",
+                        getattr(pf, "line", 1) or 1,
+                        main_msg,
+                        rem_msg,
+                    )
         except Exception:
             pass
 
