@@ -79,7 +79,7 @@ async fn discovery_over_adapter_change() {
             .unwrap();
     let host_info_1 = Arc::new(RwLock::new(host_1.info()));
 
-    hd.set_active_host(HostId(1)).expect("can set active host");
+    hd.set_active_host(HostId(1)).await.expect("can set active host");
 
     // Add Host #2 to dispatcher
     let (host_server_2, host_2, _gatt_server_2, _bonding) =
@@ -335,7 +335,7 @@ async fn connection_policy_over_adapter_change() {
             .await
             .unwrap();
 
-    hd.set_active_host(HostId(1)).expect("can set active host");
+    hd.set_active_host(HostId(1)).await.expect("can set active host");
 
     let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
         host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
@@ -600,7 +600,7 @@ async fn connection_policy_migrates_pending_suppression() {
             .await
             .unwrap();
 
-    hd.set_active_host(HostId(1)).expect("can set active host");
+    hd.set_active_host(HostId(1)).await.expect("can set active host");
 
     let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
         host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
@@ -835,7 +835,7 @@ async fn discoverable_over_adapter_change() {
             .await
             .unwrap();
 
-    hd.set_active_host(HostId(1)).expect("can set active host");
+    hd.set_active_host(HostId(1)).await.expect("can set active host");
 
     let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
         host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
@@ -1076,7 +1076,7 @@ async fn discoverable_migrates_pending_discoverable() {
             .await
             .unwrap();
 
-    hd.set_active_host(HostId(1)).expect("can set active host");
+    hd.set_active_host(HostId(1)).await.expect("can set active host");
 
     let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
         host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
@@ -1129,4 +1129,295 @@ async fn discoverable_migrates_pending_discoverable() {
 
     drop(client);
     assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_over_set_active_host() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 should receive SetConnectable(false)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Explicitly designate Host 2 as active via set_active_host
+    let mut set_active_fut = std::pin::pin!(hd.set_active_host(HostId(2)));
+    assert!(futures::poll!(&mut set_active_fut).is_pending());
+
+    // The previously active host receives Shutdown and has connectable restored to true
+    // when a new active host is designated.
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 1, got: {x:?}"),
+    }
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on host 1, got: {x:?}"),
+    }
+    set_active_fut.await.expect("set_active_host succeeds");
+
+    // Host 2 should receive SetConnectable(false) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    // Dropping token should cause Host 2 to receive SetConnectable(true)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable on host 2, got: {x:?}"),
+    }
+
+    // Host 1 should receive no further messages after token drop.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after token drop"
+    );
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn connection_policy_pending_over_set_active_host() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let mut fut = client.set_connection_policy(policy);
+    assert!(futures::poll!(&mut fut).is_pending());
+
+    // Host 1 receives SetConnectable(false), but we hold the responder so suppression stays Pending.
+    let _responder_1 = match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => responder,
+        x => panic!("Expected SetConnectable(false) on host 1, got: {x:?}"),
+    };
+
+    // Switch active host to Host 2 while suppression is still Pending on Host 1.
+    let mut set_active_fut = std::pin::pin!(hd.set_active_host(HostId(2)));
+    assert!(futures::poll!(&mut set_active_fut).is_pending());
+
+    // Host 1 must receive Shutdown followed by SetConnectable(true) to undo the pipelined
+    // SetConnectable(false) request.
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 1, got: {x:?}"),
+    }
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on host 1, got: {x:?}"),
+    }
+    set_active_fut.await.expect("set_active_host succeeds");
+
+    // Host 2 receives the migrated SetConnectable(false) request and completes the pending session.
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false) on host 2, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Dropping token restores connectability on Host 2.
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_over_set_active_host() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut = client.make_discoverable(server_token);
+
+    // Host 1 should receive SetDiscoverable(true)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Explicitly designate Host 2 as active via set_active_host
+    hd.set_active_host(HostId(2)).await.expect("set_active_host succeeds");
+
+    // Host 2 should receive SetDiscoverable(true) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    // The previously active host receives Shutdown when a new active host is designated.
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 1, got: {x:?}"),
+    }
+
+    // Dropping token should cause Host 2 to receive SetDiscoverable(false)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    // Host 1 should receive no further messages after token drop.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after token drop"
+    );
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discovery_over_set_active_host() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+    let host_info_1 = Arc::new(RwLock::new(host_1.info()));
+
+    let (host_server_2, host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+    let host_info_2 = Arc::new(RwLock::new(host_2.info()));
+
+    let (access_client, access_server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access = access::run(hd.clone(), access_server);
+
+    let (discovery_session, discovery_session_server) = endpoints::create_proxy();
+    let run_client = async move {
+        // Request discovery on active Host #1
+        let response = access_client.start_discovery(discovery_session_server).await;
+        assert_matches!(response, Ok(Ok(())));
+
+        // Assert that Host #1 is now marked as discovering
+        let _ = host_1
+            .clone()
+            .refresh_test_host_info()
+            .await
+            .expect("did not receive Host #1 info update");
+        assert!(host_1.info().discovering);
+
+        // Explicitly designate Host #2 as active via set_active_host
+        hd.set_active_host(HostId(2)).await.expect("set_active_host succeeds");
+
+        // Assert that Host #1 stopped discovering when shut down
+        let _ = host_1
+            .clone()
+            .refresh_test_host_info()
+            .await
+            .expect("did not receive Host #1 info update");
+        assert!(!host_1.info().discovering);
+
+        // Assert that Host #2 is now marked as discovering
+        let _ = host_2
+            .clone()
+            .refresh_test_host_info()
+            .await
+            .expect("did not receive Host #2 info update");
+        assert!(host_2.info().discovering);
+
+        // Drop discovery session so that the other futures may terminate, then assert Host #2
+        // stops discovering.
+        drop(discovery_session);
+
+        let _ = host_2
+            .clone()
+            .refresh_test_host_info()
+            .await
+            .expect("did not receive Host #2 info update");
+        assert!(!host_2.info().discovering);
+
+        Ok(())
+    };
+
+    future::try_join4(
+        run_client,
+        run_access,
+        host_device::test::run_discovery_host_server(host_server_1, host_info_1),
+        host_device::test::run_discovery_host_server(host_server_2, host_info_2),
+    )
+    .await
+    .map(|_: ((), (), (), ())| ())
+    .expect("successful execution")
 }

@@ -229,6 +229,7 @@ enum SuppressConnectionsState {
     NotSuppressed,
     Pending {
         session: Weak<SuppressConnectionsSession>,
+        host_id: Option<HostId>,
         // Additional client requests for connection suppression made while suppression is
         // asynchronously starting.
         session_receiver: Shared<oneshot::Receiver<Arc<SuppressConnectionsSession>>>,
@@ -568,15 +569,16 @@ struct HostDispatcherState {
 }
 
 impl HostDispatcherState {
-    /// Set the active adapter for this HostDispatcher
-    pub fn set_active_host(&mut self, adapter_id: HostId) -> types::Result<()> {
+    /// Set the active adapter for this HostDispatcher. Returns Ok(true) if the active host
+    /// changed, Ok(false) if it was already active, or Err if the host is unknown.
+    pub fn set_active_host(&mut self, adapter_id: HostId) -> types::Result<bool> {
         if !self.host_devices.contains_key(&adapter_id) {
             return Err(types::Error::no_host());
         }
 
         if let Some(id) = self.active_id {
             if id == adapter_id {
-                return Ok(());
+                return Ok(false);
             }
 
             // Shut down the previously active host.
@@ -584,7 +586,7 @@ impl HostDispatcherState {
         }
 
         self.set_active_id(Some(adapter_id));
-        Ok(())
+        Ok(true)
     }
 
     /// Used to set the pairing delegate. If there is a prior pairing delegate connected to the
@@ -809,8 +811,15 @@ impl HostDispatcher {
     }
 
     /// Set the active adapter for this HostDispatcher
-    pub fn set_active_host(&self, host: HostId) -> types::Result<()> {
-        self.state.write().set_active_host(host)
+    pub async fn set_active_host(&self, host: HostId) -> types::Result<()> {
+        let changed = {
+            let mut state = self.state.write();
+            state.set_active_host(host)?
+        };
+        if changed {
+            self.configure_newly_active_adapter().await;
+        }
+        Ok(())
     }
 
     /// Used to set the pairing delegate. If there is a prior pairing delegate connected to the
@@ -1051,7 +1060,7 @@ impl HostDispatcher {
         let hd = self.clone();
         fasync::Task::spawn(async move {
             debug!("suppress_connections_task: waiting for suppress_connections_on_active_host");
-            let Ok(host) = hd.suppress_connections_on_active_host().await else {
+            let Ok(host) = hd.suppress_connections_on_active_host(&session).await else {
                 // On failure (host init timeout), revert state to NotSuppressed if still in the
                 // Pending state for this session, and drop Pending state outside the write lock to
                 // notify Receivers.
@@ -1070,14 +1079,28 @@ impl HostDispatcher {
         })
     }
 
-    async fn suppress_connections_on_active_host(&self) -> types::Result<HostDevice> {
-        match self.active_host().await {
-            Some(host) => {
-                host.set_connectable(false).await?;
-                Ok(host)
+    async fn suppress_connections_on_active_host(
+        &self,
+        session: &Arc<SuppressConnectionsSession>,
+    ) -> types::Result<HostDevice> {
+        let adapter = self.when_hosts_found().await;
+        let (host, fut) = {
+            let mut write = adapter.state.write();
+            let host = write.get_active_host().ok_or_else(types::Error::no_host)?;
+            let SuppressConnectionsState::Pending { session: pending_session, host_id, .. } =
+                &mut write.suppress_connections
+            else {
+                return Err(format_err!("Connection suppression no longer pending").into());
+            };
+            if !std::ptr::eq(pending_session.as_ptr(), Arc::as_ptr(session)) {
+                return Err(format_err!("Connection suppression session superseded").into());
             }
-            None => Err(types::Error::no_host()),
-        }
+            *host_id = Some(host.id());
+            let fut = host.set_connectable(false);
+            (host, fut)
+        };
+        fut.await?;
+        Ok(host)
     }
 
     pub(crate) async fn suppress_connections(
@@ -1104,6 +1127,7 @@ impl HostDispatcher {
         // this suppression session initialization
         self.state.write().suppress_connections = SuppressConnectionsState::Pending {
             session: weak_session,
+            host_id: None,
             session_receiver: session_receiver.clone(),
             session_sender,
             _start_suppression_task: start_suppression_task,
@@ -1411,9 +1435,7 @@ impl HostDispatcher {
         };
 
         if became_active {
-            if let Err(err) = self.configure_newly_active_adapter().await {
-                warn!("Failed to persist state on adapter add: {:?}", err);
-            }
+            self.configure_newly_active_adapter().await;
         }
 
         Ok(())
@@ -1461,9 +1483,7 @@ impl HostDispatcher {
         } // Now the lock is dropped, we can run the async notify
 
         if new_adapter_activated {
-            if let Err(err) = self.configure_newly_active_adapter().await {
-                warn!("Failed to persist state on adapter change: {:?}", err);
-            }
+            self.configure_newly_active_adapter().await;
         }
         self.notify_host_watchers();
     }
@@ -1605,7 +1625,7 @@ impl HostDispatcher {
         }
     }
 
-    fn migrate_suppress_connections_to_active_host(&self) {
+    async fn migrate_suppress_connections_to_active_host(&self) {
         let old_state = std::mem::replace(
             &mut self.state.write().suppress_connections,
             SuppressConnectionsState::NotSuppressed,
@@ -1614,11 +1634,30 @@ impl HostDispatcher {
             SuppressConnectionsState::NotSuppressed => {}
             SuppressConnectionsState::Pending {
                 session,
+                host_id,
                 session_receiver,
                 session_sender,
                 _start_suppression_task,
             } => {
                 info!("migrating Pending connection suppression to new host");
+                let mut restore_fut = None;
+                if let Some(old_host_id) = host_id {
+                    let mut write = self.state.write();
+                    if write.active_id == Some(old_host_id) {
+                        write.suppress_connections = SuppressConnectionsState::Pending {
+                            session,
+                            host_id,
+                            session_receiver,
+                            session_sender,
+                            _start_suppression_task,
+                        };
+                        return;
+                    }
+                    restore_fut = write
+                        .host_devices
+                        .get(&old_host_id)
+                        .map(|old_host| old_host.set_connectable(true));
+                }
                 // Stop the old suppression task, and restart suppression on the new host.
                 let session = session.upgrade().unwrap_or_else(|| {
                     Arc::new(SuppressConnectionsSession { dispatcher_state: self.state.clone() })
@@ -1628,42 +1667,59 @@ impl HostDispatcher {
                 let start_suppression_task = self.make_suppress_connections_task(session);
                 self.state.write().suppress_connections = SuppressConnectionsState::Pending {
                     session: weak_session,
+                    host_id: None,
                     session_receiver,
                     session_sender,
                     _start_suppression_task: start_suppression_task,
                 };
+                if let Some(fut) = restore_fut {
+                    if let Err(e) = fut.await {
+                        warn!("Unexpected error response when enabling connectable: {:?}", e);
+                    }
+                }
             }
             SuppressConnectionsState::Suppressed { session, host_id } => {
-                let mut write = self.state.write();
-                if write.active_id == Some(host_id) {
-                    write.suppress_connections =
-                        SuppressConnectionsState::Suppressed { session, host_id };
-                    return;
+                let restore_fut = {
+                    let mut write = self.state.write();
+                    if write.active_id == Some(host_id) {
+                        write.suppress_connections =
+                            SuppressConnectionsState::Suppressed { session, host_id };
+                        return;
+                    }
+                    let restore_fut = write
+                        .host_devices
+                        .get(&host_id)
+                        .map(|old_host| old_host.set_connectable(true));
+                    info!("migrating Suppressed connection suppression to new host");
+                    if let Some(strong_session) = session.upgrade() {
+                        let (session_sender, session_receiver) = oneshot::channel();
+                        let session_receiver = session_receiver.shared();
+                        let start_suppression_task =
+                            self.make_suppress_connections_task(strong_session);
+                        write.suppress_connections = SuppressConnectionsState::Pending {
+                            session,
+                            host_id: None,
+                            session_receiver,
+                            session_sender,
+                            _start_suppression_task: start_suppression_task,
+                        };
+                    }
+                    restore_fut
+                };
+                if let Some(fut) = restore_fut {
+                    if let Err(e) = fut.await {
+                        warn!("Unexpected error response when enabling connectable: {:?}", e);
+                    }
                 }
-                info!("migrating Suppressed connection suppression to new host");
-                let Some(strong_session) = session.upgrade() else {
-                    return;
-                };
-
-                let (session_sender, session_receiver) = oneshot::channel();
-                let session_receiver = session_receiver.shared();
-                let start_suppression_task = self.make_suppress_connections_task(strong_session);
-                write.suppress_connections = SuppressConnectionsState::Pending {
-                    session,
-                    session_receiver,
-                    session_sender,
-                    _start_suppression_task: start_suppression_task,
-                };
             }
         }
     }
 
     /// Configure a newly active adapter with the correct behavior for an active adapter.
-    async fn configure_newly_active_adapter(&self) -> types::Result<()> {
-        self.migrate_discovery_to_active_host().await;
+    async fn configure_newly_active_adapter(&self) {
         self.migrate_discoverable_to_active_host();
-        self.migrate_suppress_connections_to_active_host();
-        Ok(())
+        self.migrate_suppress_connections_to_active_host().await;
+        self.migrate_discovery_to_active_host().await;
     }
 
     /// Route pairing requests from this host through our pairing dispatcher, if it exists
