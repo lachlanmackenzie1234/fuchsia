@@ -45,6 +45,7 @@ if (is_linux && !has_prebuilt_vulkan_runtime) {
       "renderer/batch_gpu_downloader_unittest.cc",
       "renderer/buffer_cache_unittest.cc",
       "renderer/sampler_cache_unittest.cc",
+      "resources/resource_recycler_unittest.cc",
       "run_all_unittests.cc",
       "shape/mesh_spec_unittest.cc",
       "util/align_unittest.cc",
