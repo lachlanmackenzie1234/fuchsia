@@ -11466,6 +11466,29 @@ impl Scheduler {
                 // SAFETY: `thread_lock` is held exclusively.
                 let thread_state = unsafe { (*state_ptr).state };
 
+                // The thread was woken with a migration function pending while the
+                // CPU it was headed for was deactivating: `unblock_common` set it
+                // READY and pushed it on that CPU's `save_state_list_` without
+                // assigning a current CPU, and it stays there until that CPU's next
+                // reschedule processes the list and places it through
+                // `find_active_scheduler_for_thread`, which reads the affinity masks
+                // under the thread lock. There is no container to synchronize with
+                // and no run queue to move it between: just update the mask and let
+                // the pending placement honor it.
+                // SAFETY: `thread_lock` is held exclusively.
+                if thread_state == ThreadState::Ready
+                    && unsafe { (*state_ptr).curr_cpu } == INVALID_CPU
+                {
+                    ChainLockTransaction::finalize(token);
+                    // SAFETY: `thread_lock` is held exclusively and `thread` is not in
+                    // any run queue.
+                    let previous_affinity =
+                        unsafe { set_affinity(&mut *state_ptr, affinity, affinity_type) };
+                    // SAFETY: `thread_lock` was acquired above in `token`.
+                    unsafe { (*thread_lock).release(token) };
+                    return TransactionResult::Value(previous_affinity);
+                }
+
                 // The thread container is a scheduler.
                 if (thread_state == ThreadState::Running) || (thread_state == ThreadState::Ready) {
                     let trace = local_ktrace_begin_scope!(COMMON, "sched_migrate");
