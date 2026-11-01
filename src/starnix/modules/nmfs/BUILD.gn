@@ -134,7 +134,6 @@ fuchsia_component_manifest("starnix-nmfs-tests-manifest") {
 
 fuchsia_test_component("starnix-nmfs-tests-component") {
   cm_label = ":starnix-nmfs-tests-manifest"
-  component_name = "starnix-nmfs-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_nmfs_lib_test",

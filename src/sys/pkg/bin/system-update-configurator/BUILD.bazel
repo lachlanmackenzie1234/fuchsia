@@ -104,7 +104,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "system-update-configurator",
     deps = [
         ":bin",  # @bazel2gn:path_overwrite::bin
     ],

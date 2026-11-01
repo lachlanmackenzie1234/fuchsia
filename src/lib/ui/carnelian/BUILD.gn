@@ -734,7 +734,6 @@ fuchsia_component_manifest("carnelian-render-tests-manifest") {
 
 fuchsia_test_component("carnelian-render-tests-component") {
   cm_label = ":carnelian-render-tests-manifest"
-  component_name = "carnelian-render-tests"
   deps = [ ":carnelian_lib_test" ]
   test_type = "system"
 }
@@ -752,7 +751,6 @@ fuchsia_component_manifest("carnelian-tests-manifest") {
 
 fuchsia_test_component("carnelian-tests-component") {
   cm_label = ":carnelian-tests-manifest"
-  component_name = "carnelian-tests"
   deps = [ ":carnelian_lib_test" ]
   test_type = "system"
 }

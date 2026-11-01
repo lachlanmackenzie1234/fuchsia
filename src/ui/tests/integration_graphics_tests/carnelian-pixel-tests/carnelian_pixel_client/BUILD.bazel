@@ -48,7 +48,6 @@ fx_component(
     name = "static_square_component",
     testonly = True,
     compiled_manifest = ":static_square_component_manifest",
-    component_name = "static_square",
     visibility = ["//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests:__subpackages__"],
     deps = [":static_square_bin_packaged"],
 )

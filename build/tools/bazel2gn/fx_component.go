@@ -51,7 +51,6 @@ var (
 	allowedFxComponentAttrs = map[string]bool{
 		"name":                   true,
 		"compiled_manifest":      true,
-		"component_name":         true,
 		"check_includes":         true,
 		"deps":                   true,
 		"testonly":               true,

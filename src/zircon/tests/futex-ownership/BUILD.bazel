@@ -63,7 +63,6 @@ fx_component_manifest(
 fx_test_component(
     name = "futex-ownership-test-component",
     compiled_manifest = ":futex-ownership-test-manifest",
-    component_name = "futex-ownership-test",
     deps = [":futex-ownership_packaged_bin"],
 )
 

@@ -53,7 +53,6 @@ fx_component(
     name = "dictionaries_route_to_all_test",
     testonly = True,
     compiled_manifest = ":dictionaries_route_to_all_test-manifest",
-    component_name = "dictionaries_route_to_all_test",
     deps = [":dictionaries_route_to_all_test_bin_packaged_bin"],
 )
 
@@ -92,7 +91,6 @@ fx_component(
     name = "dictionaries_route_to_all_proxy",
     testonly = True,
     compiled_manifest = ":dictionaries_route_to_all_proxy-manifest",
-    component_name = "dictionaries_route_to_all_proxy",
     deps = [":route_to_all_proxy_bin_packaged_bin"],
 )
 
@@ -107,7 +105,6 @@ fx_component_manifest(
 fx_test_component(
     name = "dictionaries_route_to_all_test_root_component",
     compiled_manifest = ":dictionaries_route_to_all_test_root-manifest",
-    component_name = "dictionaries_route_to_all_test_root",
     deps = ["//src/sys/component_manager/testing/echo_server:echo_server_testing_packaged_bin"],
 )
 

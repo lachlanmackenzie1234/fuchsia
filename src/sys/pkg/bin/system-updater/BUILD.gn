@@ -152,7 +152,6 @@ fuchsia_structured_config_rust_lib("config_lib") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "system-updater"
   visibility = [
     ":*",
     "//src/security/tests/pkg_test/tests/*",
@@ -168,7 +167,6 @@ fuchsia_component_manifest("isolated-v2-manifest") {
 
 fuchsia_component("isolated-v2") {
   cm_label = ":isolated-v2-manifest"
-  component_name = "system-updater-isolated"
   visibility = [
     ":*",
     "//src/sys/pkg/tests/system-updater:*",

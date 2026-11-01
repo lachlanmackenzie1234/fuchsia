@@ -109,7 +109,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-nanohub-tests-component",
     compiled_manifest = ":starnix-nanohub-tests-manifest",
-    component_name = "starnix-nanohub-tests",
     test_type = "starnix",
     deps = [
         ":nanohub_test_packaged_bin",
@@ -146,7 +145,6 @@ fx_package(
 fx_component(
     name = "google_display_component",
     compiled_manifest = ":google_display_manifest",
-    component_name = "google_display",
 )
 
 fx_component_manifest(
@@ -172,7 +170,6 @@ fx_package(
 fx_component(
     name = "sockettunnel_component",
     compiled_manifest = ":sockettunnel_manifest",
-    component_name = "sockettunnel",
 )
 
 fx_component_manifest(
@@ -198,7 +195,6 @@ fx_package(
 fx_component(
     name = "google_nanohub_component",
     compiled_manifest = ":google_nanohub_manifest",
-    component_name = "google_nanohub",
 )
 
 fx_component_manifest(
@@ -224,7 +220,6 @@ fx_package(
 fx_component(
     name = "google_backlight_component",
     compiled_manifest = ":google_backlight_manifest",
-    component_name = "google_backlight",
 )
 
 fx_component_manifest(

@@ -63,7 +63,6 @@ fuchsia_component_manifest("component-manifest") {
 fuchsia_component("component") {
   testonly = true
   cm_label = ":component-manifest"
-  component_name = "dev_time_source"
   visibility = [
     ":*",
     "//src/sys/time/testing/realm-proxy:*",

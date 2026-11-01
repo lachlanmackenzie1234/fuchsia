@@ -279,7 +279,6 @@ fuchsia_component_manifest("factory_store_providers_manifest") {
 
 fuchsia_component("factory_store_providers_comp") {
   cm_label = ":factory_store_providers_manifest"
-  component_name = "factory_store_providers"
   visibility = [
     ":*",
     "//vendor/google/*",

@@ -112,7 +112,6 @@ fuchsia_component_manifest("trigger-manifest") {
 fuchsia_component("trigger") {
   testonly = true
   cm_label = ":trigger-manifest"
-  component_name = "trigger"
   deps = [ ":trigger_bin" ]
 }
 

@@ -94,7 +94,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-framebuffer-tests-component",
     compiled_manifest = ":starnix-framebuffer-tests-manifest",
-    component_name = "starnix-framebuffer-tests",
     deps = [
         ":framebuffer_test_packaged_bin",
         # In GN, //src/starnix/kernel/vdso is a resource() propagated through

@@ -98,7 +98,6 @@ fx_component_manifest(
 fx_component(
     name = "virtio_gpu_component",
     compiled_manifest = ":virtio_gpu_manifest",
-    component_name = "virtio_gpu",
     visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
     deps = [":virtio_gpu_packaged_bin"],
 )

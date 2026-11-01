@@ -52,6 +52,5 @@ fx_component(
     name = "trigger-cmp",
     testonly = True,
     compiled_manifest = ":trigger-cmp-manifest",
-    component_name = "trigger",
     deps = [":trigger-bin_packaged_bin"],
 )

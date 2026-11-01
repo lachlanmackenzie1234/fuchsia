@@ -70,7 +70,6 @@ fuchsia_component_manifest("manifest") {
 fuchsia_component("manager") {
   testonly = true
   cm_label = ":manifest"
-  component_name = "fuzz-manager"
   visibility = [
     ":*",
     "//src/sys/fuzzing:*",
@@ -117,7 +116,6 @@ fuchsia_component_manifest("unittests-manifest") {
 
 fuchsia_test_component("unittests-component") {
   cm_label = ":unittests-manifest"
-  component_name = "unittests"
   visibility = [ ":*" ]
   deps = [ ":bin_test" ]
 }

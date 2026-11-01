@@ -93,7 +93,6 @@ fuchsia_component_manifest("scoped_task_test_cmp_manifest") {
 
 fuchsia_test_component("scoped_task_test_cmp") {
   cm_label = ":scoped_task_test_cmp_manifest"
-  component_name = "scoped_task_test"
   deps = [
     ":scoped_task_test",
     ":scoped_task_test_spawner",

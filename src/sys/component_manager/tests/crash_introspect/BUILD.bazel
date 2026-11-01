@@ -55,7 +55,6 @@ fx_component(
     name = "report_then_panic_on_start",
     check_includes = False,
     compiled_manifest = ":report_then_panic_on_start-manifest",
-    component_name = "report_then_panic_on_start",
     deps = [":report_then_panic_on_start_bin_packaged_bin"],
 )
 
@@ -84,7 +83,6 @@ fx_component_manifest(
 fx_component(
     name = "panic_on_start",
     compiled_manifest = ":panic_on_start-manifest",
-    component_name = "panic_on_start",
     visibility = [
         "//src/sys/component_manager:__pkg__",
         "//src/sys/lib/elf_runner:__pkg__",

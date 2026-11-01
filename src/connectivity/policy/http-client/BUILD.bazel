@@ -121,7 +121,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "http-client",
     # `//src/connectivity/policy/http-client/integration` depends on
     # `../:component` in GN.
     # @bazel2gn:skip
@@ -150,7 +149,6 @@ fx_component_manifest(
 fx_component(
     name = "google_component",
     compiled_manifest = ":google_manifest",
-    component_name = "google-http-client",
     deps = [":http_client_packaged_bin"],
 )
 

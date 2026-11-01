@@ -34,7 +34,6 @@ fx_component_manifest(
 fx_component(
     name = "cpp-time-example-component",
     compiled_manifest = ":cpp-time-example-manifest",
-    component_name = "cpp-time-example",
     visibility = ["//examples/time:__subpackages__"],
     deps = [":bin_packaged"],
 )

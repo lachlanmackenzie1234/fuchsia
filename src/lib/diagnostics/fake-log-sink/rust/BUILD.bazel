@@ -69,7 +69,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fake-log-sink-tests-component",
     compiled_manifest = ":fake-log-sink-tests-manifest",
-    component_name = "fake-log-sink-tests",
     deps = [":rust_test_packaged_bin"],
 )
 

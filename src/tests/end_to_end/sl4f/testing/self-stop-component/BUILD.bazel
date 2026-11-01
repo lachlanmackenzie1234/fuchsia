@@ -39,7 +39,6 @@ fx_component_manifest(
 fx_component(
     name = "self-stop-component",
     compiled_manifest = ":self-stop-component-manifest",
-    component_name = "self-stop-component",
     visibility = ["//src/tests/end_to_end/sl4f/testing:__pkg__"],
     deps = [":bin_packaged_bin"],
 )

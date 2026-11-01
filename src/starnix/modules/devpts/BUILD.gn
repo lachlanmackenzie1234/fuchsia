@@ -96,7 +96,6 @@ fuchsia_component_manifest("starnix-devpts-tests-manifest") {
 
 fuchsia_test_component("starnix-devpts-tests-component") {
   cm_label = ":starnix-devpts-tests-manifest"
-  component_name = "starnix-devpts-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_devpts_lib_test",

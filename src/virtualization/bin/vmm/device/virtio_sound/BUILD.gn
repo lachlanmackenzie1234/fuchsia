@@ -127,7 +127,6 @@ fuchsia_component_manifest("virtio_sound_manifest") {
 
 fuchsia_component("virtio_sound_component") {
   cm_label = ":virtio_sound_manifest"
-  component_name = "virtio_sound"
   visibility = [
     ":*",
     "//src/virtualization/bin/vmm/device/*",

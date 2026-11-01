@@ -119,6 +119,5 @@ fuchsia_component_manifest("fxfs-crypt-manifest") {
 
 fuchsia_component("fxfs-crypt") {
   cm_label = ":fxfs-crypt-manifest"
-  component_name = "fxfs-crypt"
   deps = [ ":fxfs_crypt" ]
 }

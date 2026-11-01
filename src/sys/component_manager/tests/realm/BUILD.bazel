@@ -54,5 +54,4 @@ fx_component(
     name = "no_program",
     testonly = True,
     compiled_manifest = ":no_program-manifest",
-    component_name = "no_program",
 )

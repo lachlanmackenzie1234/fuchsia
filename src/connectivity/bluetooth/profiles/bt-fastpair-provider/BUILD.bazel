@@ -114,7 +114,6 @@ fuchsia_structured_config_rust_lib(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "bt-fastpair-provider",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//vendor/google:__subpackages__"],
     deps = [":bin_packaged_bin"],
@@ -158,7 +157,6 @@ fx_component_manifest(
 fx_test_component(
     name = "bt-fastpair-provider-tests-component",
     compiled_manifest = ":bt-fastpair-provider-tests-manifest",
-    component_name = "bt-fastpair-provider-tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [":bt_fastpair_provider_bin_test_packaged_bin"],
 )

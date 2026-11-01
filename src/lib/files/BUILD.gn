@@ -111,7 +111,6 @@ fuchsia_component_manifest("files-tests-manifest") {
 
 fuchsia_test_component("files-tests-component") {
   cm_label = ":files-tests-manifest"
-  component_name = "files-tests"
   deps = [ ":files_unittests" ]
 }
 

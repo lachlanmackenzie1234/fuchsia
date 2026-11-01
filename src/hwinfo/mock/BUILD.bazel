@@ -65,7 +65,6 @@ fx_component(
     name = "component",
     testonly = True,
     compiled_manifest = ":component_manifest",
-    component_name = "mock",
     deps = [":mock_packaged_bin"],
 )
 

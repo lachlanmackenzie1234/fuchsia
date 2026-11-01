@@ -85,7 +85,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-usbfs-tests-component",
     compiled_manifest = ":starnix-usbfs-tests-manifest",
-    component_name = "starnix-usbfs-tests",
     test_type = "starnix",
     deps = [
         ":usbfs_test_packaged_bin",

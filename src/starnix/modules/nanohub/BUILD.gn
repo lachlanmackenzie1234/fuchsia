@@ -141,7 +141,6 @@ fuchsia_component_manifest("starnix-nanohub-tests-manifest") {
 
 fuchsia_test_component("starnix-nanohub-tests-component") {
   cm_label = ":starnix-nanohub-tests-manifest"
-  component_name = "starnix-nanohub-tests"
   test_type = "starnix"
   deps = [
     ":nanohub_test",
@@ -166,7 +165,6 @@ fuchsia_component_manifest("google_display_manifest") {
 
 fuchsia_component("google_display_component") {
   cm_label = ":google_display_manifest"
-  component_name = "google_display"
 }
 
 fuchsia_component_manifest("sockettunnel_manifest") {
@@ -176,7 +174,6 @@ fuchsia_component_manifest("sockettunnel_manifest") {
 
 fuchsia_component("sockettunnel_component") {
   cm_label = ":sockettunnel_manifest"
-  component_name = "sockettunnel"
 }
 
 fuchsia_component_manifest("google_nanohub_manifest") {
@@ -186,7 +183,6 @@ fuchsia_component_manifest("google_nanohub_manifest") {
 
 fuchsia_component("google_nanohub_component") {
   cm_label = ":google_nanohub_manifest"
-  component_name = "google_nanohub"
 }
 
 fuchsia_component_manifest("google_backlight_manifest") {
@@ -196,5 +192,4 @@ fuchsia_component_manifest("google_backlight_manifest") {
 
 fuchsia_component("google_backlight_component") {
   cm_label = ":google_backlight_manifest"
-  component_name = "google_backlight"
 }

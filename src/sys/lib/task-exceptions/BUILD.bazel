@@ -70,6 +70,5 @@ fx_component(
     name = "task-exceptions-cmp",
     testonly = True,
     compiled_manifest = ":task-exceptions-cmp-manifest",
-    component_name = "task-exceptions-tests",
     deps = [":task-exceptions_test_packaged_bin"],
 )

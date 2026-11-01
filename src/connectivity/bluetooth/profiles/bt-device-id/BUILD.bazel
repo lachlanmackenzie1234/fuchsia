@@ -71,7 +71,6 @@ fuchsia_structured_config_rust_lib(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "bt-device-id",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//src/connectivity/bluetooth/profiles/tests/bt-device-id-integration-tests:__pkg__"],
     deps = [":bin_packaged_bin"],

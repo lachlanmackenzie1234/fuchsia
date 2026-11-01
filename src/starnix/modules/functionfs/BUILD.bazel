@@ -84,7 +84,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-functionfs-tests-component",
     compiled_manifest = ":starnix-functionfs-tests-manifest",
-    component_name = "starnix-functionfs-tests",
     test_type = "starnix",
     deps = [
         ":functionfs_test_packaged_bin",

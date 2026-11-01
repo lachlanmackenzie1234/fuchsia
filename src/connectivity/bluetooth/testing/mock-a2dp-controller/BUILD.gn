@@ -57,7 +57,6 @@ if (is_fuchsia) {
   fuchsia_component("mock-a2dp-controller") {
     testonly = true
     cm_label = ":manifest"
-    component_name = "mock-a2dp-controller"
     visibility = [
       ":*",
       "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:*",

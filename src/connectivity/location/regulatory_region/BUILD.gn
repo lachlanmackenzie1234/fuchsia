@@ -79,7 +79,6 @@ fuchsia_component_manifest("regulatory_region_manifest") {
 
 fuchsia_component("regulatory_region_component") {
   cm_label = ":regulatory_region_manifest"
-  component_name = "regulatory_region"
   visibility = [
     ":*",
     "//src/connectivity/location/regulatory_region/tests:*",
@@ -138,7 +137,6 @@ fuchsia_component_manifest("regulatory-region-test-manifest") {
 
 fuchsia_test_component("regulatory-region-test") {
   cm_label = ":regulatory-region-test-manifest"
-  component_name = "regulatory-region-test"
   deps = [ ":regulatory_region_bin_test" ]
 }
 
@@ -150,7 +148,6 @@ fuchsia_component_manifest("regulatory-region-lib-test-manifest") {
 
 fuchsia_test_component("regulatory-region-lib-test") {
   cm_label = ":regulatory-region-lib-test-manifest"
-  component_name = "regulatory-region-lib-test"
   deps = [ ":regulatory_region_lib_lib_test" ]
 }
 

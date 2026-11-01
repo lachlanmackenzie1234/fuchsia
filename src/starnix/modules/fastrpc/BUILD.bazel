@@ -31,7 +31,6 @@ fx_package(
 fx_component(
     name = "google_fastrpc_component",
     compiled_manifest = ":google_fastrpc_manifest",
-    component_name = "google_fastrpc",
 )
 
 fx_component_manifest(

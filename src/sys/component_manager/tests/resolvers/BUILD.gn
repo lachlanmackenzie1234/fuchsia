@@ -69,6 +69,5 @@ fuchsia_component_manifest("trigger-cmp-manifest") {
 fuchsia_component("trigger-cmp") {
   testonly = true
   cm_label = ":trigger-cmp-manifest"
-  component_name = "trigger"
   deps = [ ":trigger-bin" ]
 }

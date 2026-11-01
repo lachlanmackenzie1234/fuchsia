@@ -165,7 +165,6 @@ fx_component(
     name = "disabled-test-example",
     testonly = True,
     compiled_manifest = ":disabled-test-example-manifest",
-    component_name = "disabled-test-example",
     deps = [":disabled-test-example-bin_packaged_bin"],
 )
 
@@ -188,7 +187,6 @@ fx_component(
     name = "failing-test-example",
     testonly = True,
     compiled_manifest = ":failing-test-example-manifest",
-    component_name = "failing-test-example",
     deps = [":failing-test-example-bin_packaged_bin"],
 )
 
@@ -211,7 +209,6 @@ fx_component(
     name = "get-tests-closes-channel-example",
     testonly = True,
     compiled_manifest = ":get-tests-closes-channel-example-manifest",
-    component_name = "get-tests-closes-channel-example",
     deps = [":get-tests-closes-channel-example-bin_packaged_bin"],
 )
 
@@ -234,7 +231,6 @@ fx_component(
     name = "get-tests-hangs-example",
     testonly = True,
     compiled_manifest = ":get-tests-hangs-example-manifest",
-    component_name = "get-tests-hangs-example",
     deps = [":get-tests-hangs-example-bin_packaged_bin"],
 )
 
@@ -257,7 +253,6 @@ fx_component(
     name = "huge-test-example",
     testonly = True,
     compiled_manifest = ":huge-test-example-manifest",
-    component_name = "huge-test-example",
     deps = [":huge-test-example-bin_packaged_bin"],
 )
 
@@ -280,7 +275,6 @@ fx_component(
     name = "incomplete-test-example",
     testonly = True,
     compiled_manifest = ":incomplete-test-example-manifest",
-    component_name = "incomplete-test-example",
     deps = [":incomplete-test-example-bin_packaged_bin"],
 )
 
@@ -303,7 +297,6 @@ fx_component(
     name = "invalid-test-example",
     testonly = True,
     compiled_manifest = ":invalid-test-example-manifest",
-    component_name = "invalid-test-example",
     deps = [":invalid-test-example-bin_packaged_bin"],
 )
 
@@ -326,7 +319,6 @@ fx_component(
     name = "no-onfinished-after-test-example",
     testonly = True,
     compiled_manifest = ":no-onfinished-after-test-example-manifest",
-    component_name = "no-onfinished-after-test-example",
     deps = [":no-onfinished-after-test-example-bin_packaged_bin"],
 )
 
@@ -349,7 +341,6 @@ fx_component(
     name = "no-test-example",
     testonly = True,
     compiled_manifest = ":no-test-example-manifest",
-    component_name = "no-test-example",
     deps = [":no-test-example-bin_packaged_bin"],
 )
 
@@ -372,7 +363,6 @@ fx_component(
     name = "passing-test-example",
     testonly = True,
     compiled_manifest = ":passing-test-example-manifest",
-    component_name = "passing-test-example",
     deps = [":passing-test-example-bin_packaged_bin"],
 )
 
@@ -395,7 +385,6 @@ fx_component(
     name = "test-with-stderr",
     testonly = True,
     compiled_manifest = ":test-with-stderr-manifest",
-    component_name = "test-with-stderr",
     deps = [":test-with-stderr-bin_packaged_bin"],
 )
 
@@ -415,7 +404,6 @@ fx_component_manifest(
 fx_component(
     name = "run-closes-channel-example",
     compiled_manifest = ":run-closes-channel-example-manifest",
-    component_name = "run-closes-channel-example",
     deps = [":run-closes-channel-example-bin_packaged_bin"],
 )
 
@@ -435,7 +423,6 @@ fx_component_manifest(
 fx_component(
     name = "run-hangs-example",
     compiled_manifest = ":run-hangs-example-manifest",
-    component_name = "run-hangs-example",
     deps = [":run-hangs-example-bin_packaged_bin"],
 )
 
@@ -474,7 +461,6 @@ fx_component_manifest(
 fx_component(
     name = "echo_test_client",
     compiled_manifest = ":echo_test_client-manifest",
-    component_name = "echo_test_client",
     visibility = [
         "//src/sys/run_test_suite/tests:__pkg__",
         "//src/sys/test_manager/tests:__pkg__",
@@ -495,7 +481,6 @@ fx_component_manifest(
 fx_component(
     name = "echo_test_realm",
     compiled_manifest = ":echo_test_realm-manifest",
-    component_name = "echo_test_realm",
     visibility = ["//src/sys/test_manager/tests:__pkg__"],
 )
 
@@ -534,7 +519,6 @@ fx_component(
     name = "no_suite_service",
     testonly = True,
     compiled_manifest = ":no_suite_service-manifest",
-    component_name = "no_suite_service",
     deps = [":no_suite_service_bin_packaged_bin"],
 )
 
@@ -568,7 +552,6 @@ fx_component(
     name = "hanging_test",
     testonly = True,
     compiled_manifest = ":hanging_test-manifest",
-    component_name = "hanging_test",
     deps = [":hanging_test_bin_packaged_bin"],
 )
 
@@ -602,7 +585,6 @@ fx_component(
     name = "check_build_info_chromium_realm_test",
     testonly = True,
     compiled_manifest = ":check_build_info_chromium_realm_test-manifest",
-    component_name = "check_build_info_chromium_realm_test",
     tags = ["manual"],
     deps = [":noop_test_bin_packaged_bin"],
 )
@@ -622,7 +604,6 @@ fx_component(
     name = "custom_artifact_realm_test",
     testonly = True,
     compiled_manifest = ":custom_artifact_realm_test-manifest",
-    component_name = "custom_artifact_realm_test",
     visibility = ["//src/sys/test_manager/tests:__pkg__"],
 )
 
@@ -662,7 +643,6 @@ fx_component_manifest(
 fx_test_component(
     name = "debug_data_test",
     compiled_manifest = ":debug_data_test-manifest",
-    component_name = "debug_data_test",
     deps = [":debug_data_test_bin_packaged_bin"],
 )
 
@@ -726,7 +706,6 @@ fx_component(
     name = "debug_data_write_test",
     testonly = True,
     compiled_manifest = ":debug_data_write_test-manifest",
-    component_name = "debug_data_write_test",
     visibility = ["//src/sys/test_manager/tests:__pkg__"],
     deps = [":debug_data_write_test_bin_packaged_bin"],
 )
@@ -768,7 +747,6 @@ fx_component(
     name = "debug_data_spam_test",
     testonly = True,
     compiled_manifest = ":debug_data_spam_test-manifest",
-    component_name = "debug_data_spam_test",
     visibility = ["//src/sys/test_manager/tests:__pkg__"],
     deps = [":debug_data_spam_test_bin_packaged_bin"],
 )
@@ -809,7 +787,6 @@ fx_component(
     name = "nonhermetic_capability_test",
     testonly = True,
     compiled_manifest = ":nonhermetic_capability_test-manifest",
-    component_name = "nonhermetic_capability_test",
     deps = [":nonhermetic_capability_test_bin_packaged_bin"],
 )
 
@@ -844,6 +821,5 @@ fx_component(
     name = "data_storage_test",
     testonly = True,
     compiled_manifest = ":data_storage_test-manifest",
-    component_name = "data_storage_test",
     deps = [":data_storage_test_bin_packaged_bin"],
 )

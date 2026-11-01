@@ -117,7 +117,6 @@ fuchsia_component_manifest("starnix-syscalls-tests-manifest") {
 
 fuchsia_test_component("starnix-syscalls-tests-component") {
   cm_label = ":starnix-syscalls-tests-manifest"
-  component_name = "starnix-syscalls-tests"
   test_type = "starnix"
   deps = [
     ":syscalls_test",

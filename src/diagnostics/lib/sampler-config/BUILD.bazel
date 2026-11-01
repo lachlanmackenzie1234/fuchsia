@@ -93,7 +93,6 @@ fx_component_manifest(
 fx_test_component(
     name = "sampler-config-tests-component",
     compiled_manifest = ":sampler-config-tests-manifest",
-    component_name = "sampler-config-tests",
     deps = [":sampler-config_test_packaged_bin"],
 )
 

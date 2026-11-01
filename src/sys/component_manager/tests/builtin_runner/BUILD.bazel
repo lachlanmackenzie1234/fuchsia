@@ -57,7 +57,6 @@ fx_component(
     name = "simple_elf_program_packaged_elf_runner",
     testonly = True,
     compiled_manifest = ":simple_elf_program_packaged_elf_runner-manifest",
-    component_name = "simple_elf_program_packaged_elf_runner",
     deps = [":simple_elf_program_bin_packaged_bin"],
 )
 
@@ -73,6 +72,5 @@ fx_component(
     name = "simple_elf_program_builtin_elf_runner",
     testonly = True,
     compiled_manifest = ":simple_elf_program_builtin_elf_runner-manifest",
-    component_name = "simple_elf_program_builtin_elf_runner",
     deps = [":simple_elf_program_bin_packaged_bin"],
 )

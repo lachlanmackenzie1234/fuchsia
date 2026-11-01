@@ -111,7 +111,6 @@ fuchsia_structured_config_rust_lib("system_update_committer_config") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "system-update-committer"
   visibility = [
     ":*",
     "//src/security/tests/pkg_test/tests/*",
@@ -176,7 +175,6 @@ fuchsia_component_manifest("unittest_manifest") {
 
 fuchsia_test_component("unittest_component") {
   cm_label = ":unittest_manifest"
-  component_name = "unittest_component"
   deps = [ ":system_update_committer_lib_test" ]
 }
 

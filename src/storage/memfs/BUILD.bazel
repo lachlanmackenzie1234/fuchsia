@@ -119,7 +119,6 @@ fx_component_manifest(
 fx_component(
     name = "memfs_component",
     compiled_manifest = ":memfs_component_manifest",
-    component_name = "memfs",
     visibility = [
         "//src/connectivity/wlan:__subpackages__",
         "//src/developer/memory/monitor/tests:__pkg__",

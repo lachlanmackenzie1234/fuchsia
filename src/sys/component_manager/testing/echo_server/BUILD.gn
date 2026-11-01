@@ -50,7 +50,6 @@ fuchsia_component_manifest("echo_server-manifest") {
 fuchsia_component("echo_server") {
   testonly = true
   cm_label = ":echo_server-manifest"
-  component_name = "echo_server"
   visibility = [ "//*" ]
   deps = [ ":echo_server_testing" ]
 }

@@ -69,7 +69,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-goog-chip-info-tests-component",
     compiled_manifest = ":starnix-goog-chip-info-tests-manifest",
-    component_name = "starnix-goog-chip-info-tests",
     test_type = "starnix",
     deps = [
         ":goog_chip_info_test_packaged_bin",

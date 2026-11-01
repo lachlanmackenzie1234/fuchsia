@@ -102,7 +102,6 @@ fuchsia_component_manifest("fake_alpha_manifest") {
 
 fuchsia_component("fake_alpha_comp") {
   cm_label = ":fake_alpha_manifest"
-  component_name = "fake_alpha"
   deps = [ ":bin" ]
 }
 
@@ -113,7 +112,6 @@ fuchsia_component_manifest("fake_cast_manifest") {
 
 fuchsia_component("fake_cast_comp") {
   cm_label = ":fake_cast_manifest"
-  component_name = "fake_cast"
   deps = [ ":bin" ]
 }
 
@@ -124,7 +122,6 @@ fuchsia_component_manifest("fake_misc_manifest") {
 
 fuchsia_component("fake_misc_comp") {
   cm_label = ":fake_misc_manifest"
-  component_name = "fake_misc"
   deps = [ ":bin" ]
 }
 
@@ -135,7 +132,6 @@ fuchsia_component_manifest("fake_playready_manifest") {
 
 fuchsia_component("fake_playready_comp") {
   cm_label = ":fake_playready_manifest"
-  component_name = "fake_playready"
   deps = [ ":bin" ]
 }
 
@@ -146,7 +142,6 @@ fuchsia_component_manifest("fake_weave_manifest") {
 
 fuchsia_component("fake_weave_comp") {
   cm_label = ":fake_weave_manifest"
-  component_name = "fake_weave"
   deps = [ ":bin" ]
 }
 
@@ -157,7 +152,6 @@ fuchsia_component_manifest("fake_widevine_manifest") {
 
 fuchsia_component("fake_widevine_comp") {
   cm_label = ":fake_widevine_manifest"
-  component_name = "fake_widevine"
   deps = [ ":bin" ]
 }
 

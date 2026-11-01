@@ -107,7 +107,6 @@ fx_component_manifest(
 fx_test_component(
     name = "files-tests-component",
     compiled_manifest = ":files-tests-manifest",
-    component_name = "files-tests",
     deps = [
         ":files_unittests_packaged_bin",
     ],

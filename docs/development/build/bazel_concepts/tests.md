@@ -190,7 +190,6 @@ fx_component_manifest(
 fx_test_component(
     name = "bar_test_component",
     compiled_manifest = ":bar_test_manifest",
-    component_name = "bar_test",
     deps = [":bar_test_packaged_bin"],
 )
 

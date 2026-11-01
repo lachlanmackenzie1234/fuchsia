@@ -101,7 +101,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test_component",
     compiled_manifest = ":test_component_manifest",
-    component_name = "builtins_tests",
     test_type = "system",
     deps = [":builtins_test_packaged_bin"],
 )

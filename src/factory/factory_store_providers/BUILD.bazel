@@ -78,7 +78,6 @@ fx_component_manifest(
 fx_component(
     name = "factory_store_providers_comp",
     compiled_manifest = ":factory_store_providers_manifest",
-    component_name = "factory_store_providers",
     visibility = ["//vendor/google:__subpackages__"],
     deps = [":factory_store_providers_packaged_bin"],
 )

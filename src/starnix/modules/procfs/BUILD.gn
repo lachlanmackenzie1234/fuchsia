@@ -197,7 +197,6 @@ fuchsia_component_manifest("starnix-procfs-tests-manifest") {
 
 fuchsia_test_component("starnix-procfs-tests-component") {
   cm_label = ":starnix-procfs-tests-manifest"
-  component_name = "starnix-procfs-tests"
   test_type = "starnix"
   deps = [
     ":procfs_test",

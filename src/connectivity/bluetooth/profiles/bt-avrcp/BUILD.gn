@@ -125,7 +125,6 @@ if (is_fuchsia) {
 if (is_fuchsia) {
   fuchsia_component("component") {
     cm_label = ":manifest"
-    component_name = "bt-avrcp"
     visibility = [
       ":*",
       "//src/connectivity/bluetooth/profiles/tests/bt-avrcp-integration-tests:*",

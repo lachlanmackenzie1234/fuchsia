@@ -40,7 +40,6 @@ fx_component_manifest(
 fx_component(
     name = "echo-client",
     compiled_manifest = ":echo-client-manifest",
-    component_name = "echo_client",
     visibility = [
         "//examples/fidl/echo-realm:__pkg__",
         "//examples/fidl/rust:__pkg__",

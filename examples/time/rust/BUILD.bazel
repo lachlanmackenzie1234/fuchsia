@@ -42,7 +42,6 @@ fx_component_manifest(
 fx_component(
     name = "rust-time-example-component",
     compiled_manifest = ":rust-time-example-manifest",
-    component_name = "rust-time-example",
     visibility = ["//examples/time:__subpackages__"],
     deps = [":rust_time_example_packaged_bin"],
 )

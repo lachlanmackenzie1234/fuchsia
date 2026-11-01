@@ -76,7 +76,6 @@ fx_component_manifest(
 fx_test_component(
     name = "getaddrinfo_test_component",
     compiled_manifest = ":getaddrinfo_test_component-manifest",
-    component_name = "getaddrinfo_test",
     deps = [":getaddrinfo_test_packaged_bin"],
 )
 
@@ -90,7 +89,6 @@ fx_component_manifest(
 fx_component(
     name = "lookup_server_component",
     compiled_manifest = ":lookup_server_component-manifest",
-    component_name = "lookup_server",
     deps = [":lookup_server_packaged_bin"],
 )
 

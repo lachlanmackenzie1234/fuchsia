@@ -116,7 +116,6 @@ fuchsia_component_manifest("sparse-test-manifest") {
 
 fuchsia_test_component("sparse-test-component") {
   cm_label = ":sparse-test-manifest"
-  component_name = "sparse-test"
   deps = [ ":sparse_lib_test" ]
 }
 

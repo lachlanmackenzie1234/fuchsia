@@ -40,7 +40,6 @@ fuchsia_component_manifest("self-stop-component-manifest") {
 
 fuchsia_component("self-stop-component") {
   cm_label = ":self-stop-component-manifest"
-  component_name = "self-stop-component"
   visibility = [
     ":*",
     "//src/tests/end_to_end/sl4f/testing:*",

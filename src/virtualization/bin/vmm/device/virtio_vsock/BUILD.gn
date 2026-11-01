@@ -122,7 +122,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("virtio_vsock_cmp") {
   cm_label = ":manifest"
-  component_name = "virtio_vsock"
   visibility = [
     ":*",
     "//src/virtualization/bin/vmm/device/*",

@@ -79,7 +79,6 @@ fuchsia_component_manifest("remote_unified_aspace_tests-manifest") {
 
 fuchsia_test_component("remote_unified_aspace_tests-component") {
   cm_label = ":remote_unified_aspace_tests-manifest"
-  component_name = "remote_unified_aspace_tests"
   test_type = "starnix"
   deps = [
     ":remote_unified_aspace_tests",

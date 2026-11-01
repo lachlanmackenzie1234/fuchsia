@@ -75,7 +75,6 @@ fuchsia_component_manifest("simple_elf_program_packaged_elf_runner-manifest") {
 fuchsia_component("simple_elf_program_packaged_elf_runner") {
   testonly = true
   cm_label = ":simple_elf_program_packaged_elf_runner-manifest"
-  component_name = "simple_elf_program_packaged_elf_runner"
   deps = [ ":simple_elf_program_bin" ]
 }
 
@@ -88,6 +87,5 @@ fuchsia_component_manifest("simple_elf_program_builtin_elf_runner-manifest") {
 fuchsia_component("simple_elf_program_builtin_elf_runner") {
   testonly = true
   cm_label = ":simple_elf_program_builtin_elf_runner-manifest"
-  component_name = "simple_elf_program_builtin_elf_runner"
   deps = [ ":simple_elf_program_bin" ]
 }

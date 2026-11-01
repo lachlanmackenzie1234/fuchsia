@@ -78,7 +78,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-ext4-tests-component",
     compiled_manifest = ":starnix-ext4-tests-manifest",
-    component_name = "starnix-ext4-tests",
     test_type = "starnix",
     deps = [
         ":ext4_test_packaged_bin",

@@ -195,7 +195,6 @@ fx_packaged_binary(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "pkg-cache",
     visibility = [
         "//src/sys/pkg/lib/isolated-swd:__pkg__",
         "//src/sys/pkg/tests/isolated-ota:__pkg__",

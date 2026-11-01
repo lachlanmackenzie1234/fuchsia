@@ -94,6 +94,5 @@ fuchsia_component_manifest("task-exceptions-cmp-manifest") {
 fuchsia_component("task-exceptions-cmp") {
   testonly = true
   cm_label = ":task-exceptions-cmp-manifest"
-  component_name = "task-exceptions-tests"
   deps = [ ":task-exceptions_test" ]
 }

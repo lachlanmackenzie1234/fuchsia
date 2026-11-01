@@ -58,7 +58,6 @@ fuchsia_component_manifest("radarutil-component-manifest") {
 
 fuchsia_component("radarutil-component") {
   cm_label = ":radarutil-component-manifest"
-  component_name = "radarutil-component"
   deps = [ ":radarutil-bin" ]
 }
 

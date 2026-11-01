@@ -58,7 +58,6 @@ fx_component_manifest(
 fx_test_component(
     name = "haptics_system_test_component",
     compiled_manifest = ":haptics_system_test_manifest",
-    component_name = "haptics_system_test",
     test_type = "system",
     deps = [":haptics_system_test_packaged_bin"],
 )

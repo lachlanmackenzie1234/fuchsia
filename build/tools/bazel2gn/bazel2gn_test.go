@@ -271,7 +271,6 @@ fx_packaged_binary(
 fx_test_component(
 	name = "foo-test-component",
 	compiled_manifest = ":foo-manifest",
-	component_name = "foo-test",
 	deps = [":foo_packaged_bin"],
 )
 
@@ -324,7 +323,6 @@ fx_component(
 	name = "component",
 	check_includes = False,
 	compiled_manifest = ":manifest",
-	component_name = "my-component",
 	visibility = ["//bundles/assembly:__subpackages__"],
 	deps = ["//src/starnix/containers:default_init"],
 )`,
@@ -335,7 +333,6 @@ fx_component(
 fuchsia_component("component") {
 	check_includes = false
 	cm_label = ":manifest"
-	component_name = "my-component"
 	visibility = [
 		":*",
 		"//bundles/assembly/*",

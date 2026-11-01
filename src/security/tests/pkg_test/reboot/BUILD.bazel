@@ -51,7 +51,6 @@ fx_component(
     name = "security_pkg_reboot-component",
     testonly = True,
     compiled_manifest = ":security_pkg_reboot-manifest",
-    component_name = "security_pkg_reboot",
     visibility = ["//src/security/tests/pkg_test/tests:__subpackages__"],
     deps = [":security_pkg_reboot_packaged_bin"],
 )

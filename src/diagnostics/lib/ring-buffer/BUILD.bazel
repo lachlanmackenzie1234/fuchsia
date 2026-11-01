@@ -61,7 +61,6 @@ fx_component_manifest(
 fx_test_component(
     name = "ring-buffer-tests-component",
     compiled_manifest = ":ring-buffer-tests-manifest",
-    component_name = "ring-buffer-tests",
     deps = [":ring-buffer_test_packaged_bin"],
 )
 

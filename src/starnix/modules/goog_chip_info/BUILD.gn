@@ -88,7 +88,6 @@ fuchsia_component_manifest("starnix-goog-chip-info-tests-manifest") {
 
 fuchsia_test_component("starnix-goog-chip-info-tests-component") {
   cm_label = ":starnix-goog-chip-info-tests-manifest"
-  component_name = "starnix-goog-chip-info-tests"
   test_type = "starnix"
   deps = [
     ":goog_chip_info_test",

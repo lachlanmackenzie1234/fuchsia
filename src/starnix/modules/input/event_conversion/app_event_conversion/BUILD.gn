@@ -129,7 +129,6 @@ fuchsia_component_manifest(
 
 fuchsia_test_component("starnix-app-input-event-conversion-tests-component") {
   cm_label = ":starnix-app-input-event-conversion-tests-manifest"
-  component_name = "starnix-app-input-event-conversion-tests"
   test_type = "starnix"
   deps = [ ":app_event_conversion_test" ]
 }

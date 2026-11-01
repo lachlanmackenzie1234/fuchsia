@@ -56,7 +56,6 @@ fuchsia_component_manifest("static_square_component_manifest") {
 fuchsia_component("static_square_component") {
   testonly = true
   cm_label = ":static_square_component_manifest"
-  component_name = "static_square"
   visibility = [
     ":*",
     "//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests/*",

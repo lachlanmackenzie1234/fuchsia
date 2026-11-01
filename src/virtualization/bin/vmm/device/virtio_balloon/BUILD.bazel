@@ -83,7 +83,6 @@ fx_component_manifest(
 fx_component(
     name = "virtio_balloon_component",
     compiled_manifest = ":virtio_balloon_manifest",
-    component_name = "virtio_balloon",
     visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
     deps = [":virtio_balloon_packaged_bin"],
 )

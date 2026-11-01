@@ -90,7 +90,6 @@ fx_component(
     name = "ui-puppet-component",
     testonly = True,
     compiled_manifest = ":ui-puppet-component_manifest",
-    component_name = "ui-puppet",
     visibility = ["//src/ui/tests/conformance_input_tests:__pkg__"],
     deps = [":bin_packaged"],
 )

@@ -50,7 +50,6 @@ fuchsia_component_manifest("echo_client_manifest") {
 
 fuchsia_component("echo_client") {
   cm_label = ":echo_client_manifest"
-  component_name = "echo_client"
   visibility = [
     ":*",
     "//src/lib/fuchsia-component-test/tests:*",

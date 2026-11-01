@@ -391,14 +391,6 @@ _fx_check_includes = rule(
 )
 
 _COMMON_COMPONENT_ATTRS = {
-    # Unused; will be removed soon.
-    "component_name": attr.string(
-        doc = "Unused; will be removed soon. Set `component_name` on `fx_component_manifest` instead.",
-        mandatory = False,
-        # Otherwise an unset value reaches the impl as an always-truthy
-        # select(), and the `name` fallback never applies.
-        configurable = False,
-    ),
     "check_includes": attr.bool(
         doc = """Whether to check against `expect_includes()` in `deps`.
 
@@ -417,6 +409,10 @@ _COMMON_COMPONENT_ATTRS = {
     # Set from `test_type`, which only `fx_test_component()` accepts.
     "test_realm": None,
 
+    # Component names are set on `fx_component_manifest()` rather than
+    # overridden on the component rule.
+    "component_name": None,
+
     # TODO(https://fxbug.dev/520207779): Determine whether we need these attributes for platform
     # packages and update the implementation and `fuchsia_component_common()`'s documentation of
     # these attributes as appropriate.
@@ -426,7 +422,6 @@ _COMMON_COMPONENT_ATTRS = {
 
 def _fx_component_impl(
         name,
-        component_name,
         compiled_manifest,
         deps,
         check_includes,
@@ -436,8 +431,6 @@ def _fx_component_impl(
         # Only `fx_test_component()` declares this attribute.
         test_type = None,
         **kwargs):
-    _ = component_name  # Unused; will be removed soon.
-
     if _is_test_component:
         # Inherited attributes that are not set default to None, so only an
         # explicit `testonly = False` is an error.

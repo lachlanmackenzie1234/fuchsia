@@ -48,7 +48,6 @@ fuchsia_component_manifest("echo-server-manifest") {
 
 fuchsia_component("echo-server") {
   cm_label = ":echo-server-manifest"
-  component_name = "echo_server"
   visibility = [
     ":*",
     "//examples/fidl/cpp/services:*",

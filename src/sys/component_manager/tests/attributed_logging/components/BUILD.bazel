@@ -70,7 +70,6 @@ fx_component(
     name = "reader",
     testonly = True,
     compiled_manifest = ":reader-manifest",
-    component_name = "reader",
     deps = [":archive-reader_packaged_bin"],
 )
 
@@ -92,7 +91,6 @@ fx_component(
     name = "empty-component",
     testonly = True,
     compiled_manifest = ":empty-component-manifest",
-    component_name = "empty",
     deps = [":empty_packaged_bin"],
 )
 
@@ -114,7 +112,6 @@ fx_component(
     name = "without-use",
     testonly = True,
     compiled_manifest = ":without-use-manifest",
-    component_name = "without-use",
     deps = [":use-unoffered_packaged_bin"],
 )
 
@@ -130,7 +127,6 @@ fx_component(
     name = "use-unoffered-component",
     testonly = True,
     compiled_manifest = ":use-unoffered-component-manifest",
-    component_name = "use-unoffered",
     deps = [":use-unoffered_packaged_bin"],
 )
 
@@ -146,7 +142,6 @@ fx_component(
     name = "optional-use-unoffered-component",
     testonly = True,
     compiled_manifest = ":optional-use-unoffered-component-manifest",
-    component_name = "optional-use-unoffered",
     deps = [":use-unoffered_packaged_bin"],
 )
 
@@ -162,7 +157,6 @@ fx_component(
     name = "optional-use-from-void-component",
     testonly = True,
     compiled_manifest = ":optional-use-from-void-component-manifest",
-    component_name = "optional-use-from-void",
     deps = [":use-unoffered_packaged_bin"],
 )
 
@@ -181,7 +175,6 @@ fx_component(
     name = "offers-to-children-unavailable",
     testonly = True,
     compiled_manifest = ":offers-to-children-unavailable-manifest",
-    component_name = "offers-to-children-unavailable",
 )
 
 fx_component_manifest(
@@ -199,7 +192,6 @@ fx_component(
     name = "offers-to-children-unavailable-but-optional",
     testonly = True,
     compiled_manifest = ":offers-to-children-unavailable-but-optional-manifest",
-    component_name = "offers-to-children-unavailable-but-optional",
 )
 
 fx_component_manifest(
@@ -217,5 +209,4 @@ fx_component(
     name = "routing-tests",
     testonly = True,
     compiled_manifest = ":routing-tests-manifest",
-    component_name = "routing-tests",
 )

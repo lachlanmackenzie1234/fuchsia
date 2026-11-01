@@ -128,7 +128,6 @@ fuchsia_component_manifest("test-component-manifest") {
 
 fuchsia_test_component("test-component") {
   cm_label = ":test-component-manifest"
-  component_name = "package-directory-lib-test"
   deps = [ ":package-directory_test" ]
 }
 

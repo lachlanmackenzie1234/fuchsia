@@ -66,7 +66,6 @@ fuchsia_component_manifest("manifest") {
 fuchsia_component("registry") {
   testonly = true
   cm_label = ":manifest"
-  component_name = "fuzz-registry"
   visibility = [
     ":*",
     "//src/sys/fuzzing:*",
@@ -107,7 +106,6 @@ fuchsia_component_manifest("unittests-manifest") {
 
 fuchsia_test_component("unittests-component") {
   cm_label = ":unittests-manifest"
-  component_name = "unittests"
   visibility = [ ":*" ]
   deps = [ ":bin_test" ]
 }

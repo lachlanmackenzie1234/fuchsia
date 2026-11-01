@@ -88,7 +88,6 @@ fuchsia_component_manifest("component_manager_logger_test-manifest") {
 
 fuchsia_test_component("component_manager_logger_test-component") {
   cm_label = ":component_manager_logger_test-manifest"
-  component_name = "component_manager_logger_test"
   deps = [ ":cm_logger_lib_test" ]
   test_type = "system"
 }

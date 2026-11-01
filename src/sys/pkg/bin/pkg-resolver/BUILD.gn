@@ -312,7 +312,6 @@ fuchsia_structured_config_rust_lib("config_lib") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "pkg-resolver"
   visibility = [
     ":*",
     "//src/sys/pkg/tests/isolated-ota:*",

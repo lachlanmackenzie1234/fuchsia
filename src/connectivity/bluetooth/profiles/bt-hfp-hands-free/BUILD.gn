@@ -121,7 +121,6 @@ fuchsia_structured_config_rust_lib("hfp_hands_free_profile_config") {
 if (is_fuchsia) {
   fuchsia_component("component") {
     cm_label = ":manifest"
-    component_name = "bt-hfp-hands-free"
     deps = [ ":bin" ]
   }
 }

@@ -524,7 +524,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix_core_tests-component",
     compiled_manifest = ":starnix_core_tests-manifest",
-    component_name = "starnix_core_tests",
     test_type = "starnix",
     deps = [
         ":starnix_core_test_packaged_bin",

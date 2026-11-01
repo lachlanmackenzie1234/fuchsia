@@ -49,7 +49,6 @@ fx_component(
     name = "mock-a2dp-controller",
     testonly = True,
     compiled_manifest = ":manifest",
-    component_name = "mock-a2dp-controller",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__",

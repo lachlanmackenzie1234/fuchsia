@@ -189,7 +189,6 @@ fuchsia_component_manifest("disabled-test-example-manifest") {
 fuchsia_component("disabled-test-example") {
   testonly = true
   cm_label = ":disabled-test-example-manifest"
-  component_name = "disabled-test-example"
   deps = [ ":disabled-test-example-bin" ]
 }
 
@@ -202,7 +201,6 @@ fuchsia_component_manifest("failing-test-example-manifest") {
 fuchsia_component("failing-test-example") {
   testonly = true
   cm_label = ":failing-test-example-manifest"
-  component_name = "failing-test-example"
   deps = [ ":failing-test-example-bin" ]
 }
 
@@ -215,7 +213,6 @@ fuchsia_component_manifest("get-tests-closes-channel-example-manifest") {
 fuchsia_component("get-tests-closes-channel-example") {
   testonly = true
   cm_label = ":get-tests-closes-channel-example-manifest"
-  component_name = "get-tests-closes-channel-example"
   deps = [ ":get-tests-closes-channel-example-bin" ]
 }
 
@@ -228,7 +225,6 @@ fuchsia_component_manifest("get-tests-hangs-example-manifest") {
 fuchsia_component("get-tests-hangs-example") {
   testonly = true
   cm_label = ":get-tests-hangs-example-manifest"
-  component_name = "get-tests-hangs-example"
   deps = [ ":get-tests-hangs-example-bin" ]
 }
 
@@ -241,7 +237,6 @@ fuchsia_component_manifest("huge-test-example-manifest") {
 fuchsia_component("huge-test-example") {
   testonly = true
   cm_label = ":huge-test-example-manifest"
-  component_name = "huge-test-example"
   deps = [ ":huge-test-example-bin" ]
 }
 
@@ -254,7 +249,6 @@ fuchsia_component_manifest("incomplete-test-example-manifest") {
 fuchsia_component("incomplete-test-example") {
   testonly = true
   cm_label = ":incomplete-test-example-manifest"
-  component_name = "incomplete-test-example"
   deps = [ ":incomplete-test-example-bin" ]
 }
 
@@ -267,7 +261,6 @@ fuchsia_component_manifest("invalid-test-example-manifest") {
 fuchsia_component("invalid-test-example") {
   testonly = true
   cm_label = ":invalid-test-example-manifest"
-  component_name = "invalid-test-example"
   deps = [ ":invalid-test-example-bin" ]
 }
 
@@ -280,7 +273,6 @@ fuchsia_component_manifest("no-onfinished-after-test-example-manifest") {
 fuchsia_component("no-onfinished-after-test-example") {
   testonly = true
   cm_label = ":no-onfinished-after-test-example-manifest"
-  component_name = "no-onfinished-after-test-example"
   deps = [ ":no-onfinished-after-test-example-bin" ]
 }
 
@@ -293,7 +285,6 @@ fuchsia_component_manifest("no-test-example-manifest") {
 fuchsia_component("no-test-example") {
   testonly = true
   cm_label = ":no-test-example-manifest"
-  component_name = "no-test-example"
   deps = [ ":no-test-example-bin" ]
 }
 
@@ -306,7 +297,6 @@ fuchsia_component_manifest("passing-test-example-manifest") {
 fuchsia_component("passing-test-example") {
   testonly = true
   cm_label = ":passing-test-example-manifest"
-  component_name = "passing-test-example"
   deps = [ ":passing-test-example-bin" ]
 }
 
@@ -319,7 +309,6 @@ fuchsia_component_manifest("test-with-stderr-manifest") {
 fuchsia_component("test-with-stderr") {
   testonly = true
   cm_label = ":test-with-stderr-manifest"
-  component_name = "test-with-stderr"
   deps = [ ":test-with-stderr-bin" ]
 }
 
@@ -330,7 +319,6 @@ fuchsia_component_manifest("run-closes-channel-example-manifest") {
 
 fuchsia_component("run-closes-channel-example") {
   cm_label = ":run-closes-channel-example-manifest"
-  component_name = "run-closes-channel-example"
   deps = [ ":run-closes-channel-example-bin" ]
 }
 
@@ -341,7 +329,6 @@ fuchsia_component_manifest("run-hangs-example-manifest") {
 
 fuchsia_component("run-hangs-example") {
   cm_label = ":run-hangs-example-manifest"
-  component_name = "run-hangs-example"
   deps = [ ":run-hangs-example-bin" ]
 }
 
@@ -369,7 +356,6 @@ fuchsia_component_manifest("echo_test_client-manifest") {
 
 fuchsia_component("echo_test_client") {
   cm_label = ":echo_test_client-manifest"
-  component_name = "echo_test_client"
   visibility = [
     ":*",
     "//src/sys/run_test_suite/tests:*",
@@ -385,7 +371,6 @@ fuchsia_component_manifest("echo_test_realm-manifest") {
 
 fuchsia_component("echo_test_realm") {
   cm_label = ":echo_test_realm-manifest"
-  component_name = "echo_test_realm"
   visibility = [
     ":*",
     "//src/sys/test_manager/tests:*",
@@ -415,7 +400,6 @@ fuchsia_component_manifest("no_suite_service-manifest") {
 fuchsia_component("no_suite_service") {
   testonly = true
   cm_label = ":no_suite_service-manifest"
-  component_name = "no_suite_service"
   deps = [ ":no_suite_service_bin" ]
 }
 
@@ -435,7 +419,6 @@ fuchsia_component_manifest("hanging_test-manifest") {
 fuchsia_component("hanging_test") {
   testonly = true
   cm_label = ":hanging_test-manifest"
-  component_name = "hanging_test"
   deps = [ ":hanging_test_bin" ]
 }
 
@@ -455,7 +438,6 @@ fuchsia_component_manifest("check_build_info_chromium_realm_test-manifest") {
 fuchsia_component("check_build_info_chromium_realm_test") {
   testonly = true
   cm_label = ":check_build_info_chromium_realm_test-manifest"
-  component_name = "check_build_info_chromium_realm_test"
   deps = [ ":noop_test_bin" ]
 }
 
@@ -468,7 +450,6 @@ fuchsia_component_manifest("custom_artifact_realm_test-manifest") {
 fuchsia_component("custom_artifact_realm_test") {
   testonly = true
   cm_label = ":custom_artifact_realm_test-manifest"
-  component_name = "custom_artifact_realm_test"
   visibility = [
     ":*",
     "//src/sys/test_manager/tests:*",
@@ -496,7 +477,6 @@ fuchsia_component_manifest("debug_data_test-manifest") {
 
 fuchsia_test_component("debug_data_test") {
   cm_label = ":debug_data_test-manifest"
-  component_name = "debug_data_test"
   deps = [ ":debug_data_test_bin" ]
 }
 
@@ -527,7 +507,6 @@ fuchsia_component_manifest("debug_data_write_test-manifest") {
 fuchsia_component("debug_data_write_test") {
   testonly = true
   cm_label = ":debug_data_write_test-manifest"
-  component_name = "debug_data_write_test"
   visibility = [
     ":*",
     "//src/sys/test_manager/tests:*",
@@ -557,7 +536,6 @@ fuchsia_component_manifest("debug_data_spam_test-manifest") {
 fuchsia_component("debug_data_spam_test") {
   testonly = true
   cm_label = ":debug_data_spam_test-manifest"
-  component_name = "debug_data_spam_test"
   visibility = [
     ":*",
     "//src/sys/test_manager/tests:*",
@@ -586,7 +564,6 @@ fuchsia_component_manifest("nonhermetic_capability_test-manifest") {
 fuchsia_component("nonhermetic_capability_test") {
   testonly = true
   cm_label = ":nonhermetic_capability_test-manifest"
-  component_name = "nonhermetic_capability_test"
   deps = [ ":nonhermetic_capability_test_bin" ]
 }
 
@@ -607,6 +584,5 @@ fuchsia_component_manifest("data_storage_test-manifest") {
 fuchsia_component("data_storage_test") {
   testonly = true
   cm_label = ":data_storage_test-manifest"
-  component_name = "data_storage_test"
   deps = [ ":data_storage_test_bin" ]
 }

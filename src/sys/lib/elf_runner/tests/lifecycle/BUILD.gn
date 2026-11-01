@@ -231,7 +231,6 @@ fuchsia_component_manifest("lifecycle_timeout_unresponsive_root-manifest") {
 fuchsia_component("lifecycle_timeout_unresponsive_root") {
   testonly = true
   cm_label = ":lifecycle_timeout_unresponsive_root-manifest"
-  component_name = "lifecycle_timeout_unresponsive_root"
 }
 
 fuchsia_component_manifest("lifecycle_timeout_unresponsive_node-manifest") {
@@ -243,7 +242,6 @@ fuchsia_component_manifest("lifecycle_timeout_unresponsive_node-manifest") {
 fuchsia_component("lifecycle_timeout_unresponsive_node") {
   testonly = true
   cm_label = ":lifecycle_timeout_unresponsive_node-manifest"
-  component_name = "lifecycle_timeout_unresponsive_node"
   deps = [ ":unresponsive_component" ]
 }
 
@@ -256,7 +254,6 @@ fuchsia_component_manifest("lifecycle_timeout_root-manifest") {
 fuchsia_component("lifecycle_timeout_root") {
   testonly = true
   cm_label = ":lifecycle_timeout_root-manifest"
-  component_name = "lifecycle_timeout_root"
 }
 
 fuchsia_component_manifest("immediate_exit_component-manifest") {
@@ -268,7 +265,6 @@ fuchsia_component_manifest("immediate_exit_component-manifest") {
 fuchsia_component("immediate_exit_component") {
   testonly = true
   cm_label = ":immediate_exit_component-manifest"
-  component_name = "immediate_exit_component"
   deps = [ ":immediate_exit" ]
 }
 
@@ -281,7 +277,6 @@ fuchsia_component_manifest("immediate_escrow_component-manifest") {
 fuchsia_component("immediate_escrow_component") {
   testonly = true
   cm_label = ":immediate_escrow_component-manifest"
-  component_name = "immediate_escrow_component"
   visibility = [
     ":*",
     "//src/sys/lib/elf_runner:*",
@@ -298,6 +293,5 @@ fuchsia_component_manifest("rendezvous_exit_component-manifest") {
 fuchsia_component("rendezvous_exit_component") {
   testonly = true
   cm_label = ":rendezvous_exit_component-manifest"
-  component_name = "rendezvous_exit_component"
   deps = [ ":rendezvous_exit" ]
 }

@@ -90,7 +90,6 @@ fx_packaged_binary(
 fx_component(
     name = "vsock_service_component",
     compiled_manifest = ":manifest",
-    component_name = "vsock_service",
     visibility = ["//src/paravirtualization/testing:__pkg__"],
     deps = [":bin_packaged_bin"],
 )

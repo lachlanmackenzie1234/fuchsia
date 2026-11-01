@@ -65,7 +65,6 @@ fuchsia_component_manifest("getaddrinfo_test_component-manifest") {
 
 fuchsia_test_component("getaddrinfo_test_component") {
   cm_label = ":getaddrinfo_test_component-manifest"
-  component_name = "getaddrinfo_test"
   deps = [ ":getaddrinfo_test" ]
 }
 
@@ -76,7 +75,6 @@ fuchsia_component_manifest("lookup_server_component-manifest") {
 
 fuchsia_component("lookup_server_component") {
   cm_label = ":lookup_server_component-manifest"
-  component_name = "lookup_server"
   deps = [ ":lookup_server" ]
 }
 

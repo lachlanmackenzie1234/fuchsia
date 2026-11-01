@@ -101,7 +101,6 @@ fuchsia_component_manifest("sampler-config-tests-manifest") {
 
 fuchsia_test_component("sampler-config-tests-component") {
   cm_label = ":sampler-config-tests-manifest"
-  component_name = "sampler-config-tests"
   deps = [ ":sampler-config_test" ]
 }
 

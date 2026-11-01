@@ -143,7 +143,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fuchsia-hyper-lib-test",
     compiled_manifest = ":fuchsia-hyper-lib-test-manifest",
-    component_name = "fuchsia-hyper-lib-test",
     test_type = "system",
     deps = [":fuchsia-hyper_test_packaged_bin"],
 )

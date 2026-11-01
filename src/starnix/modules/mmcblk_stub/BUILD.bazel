@@ -69,7 +69,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-mmcblk-stub-tests-component",
     compiled_manifest = ":starnix-mmcblk-stub-tests-manifest",
-    component_name = "starnix-mmcblk-stub-tests",
     test_type = "starnix",
     deps = [
         ":mmcblk_stub_test_packaged_bin",

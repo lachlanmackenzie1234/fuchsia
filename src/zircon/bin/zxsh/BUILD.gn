@@ -272,7 +272,6 @@ fuchsia_component_manifest("zxsh_tests_manifest") {
 
 fuchsia_test_component("zxsh_tests_component") {
   cm_label = ":zxsh_tests_manifest"
-  component_name = "zxsh_tests"
   deps = [
     ":bin",
     ":zxsh_bin_test",

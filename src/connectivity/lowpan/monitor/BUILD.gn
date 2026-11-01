@@ -50,7 +50,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("lowpan-monitor") {
   cm_label = ":manifest"
-  component_name = "lowpan-monitor"
   visibility = [
     ":*",
     "//src/connectivity/lowpan/drivers/lowpan-ot-driver:*",

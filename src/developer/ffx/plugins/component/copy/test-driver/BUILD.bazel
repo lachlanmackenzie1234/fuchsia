@@ -33,7 +33,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "test-driver",
     deps = [
         ":test_driver_file_over_64KB",
         ":test_driver_file_under_64KB",

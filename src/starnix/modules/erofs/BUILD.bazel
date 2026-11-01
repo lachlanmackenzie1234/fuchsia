@@ -85,7 +85,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-erofs-tests-component",
     compiled_manifest = ":starnix-erofs-tests-manifest",
-    component_name = "starnix-erofs-tests",
     test_type = "starnix",
     deps = [
         ":erofs_test_packaged_bin",

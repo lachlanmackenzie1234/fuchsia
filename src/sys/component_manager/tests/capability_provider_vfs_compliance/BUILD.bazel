@@ -56,7 +56,6 @@ fx_component_manifest(
 fx_test_component(
     name = "integration-test",
     compiled_manifest = ":integration-test-manifest",
-    component_name = "integration-test",
     test_type = "vfs_compliance",
     deps = [":integration_test_bin_packaged_bin"],
 )

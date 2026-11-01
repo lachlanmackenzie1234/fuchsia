@@ -67,7 +67,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "bt-le-battery-service",
     deps = [":bt_le_battery_service_packaged_bin"],
 )
 

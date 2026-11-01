@@ -51,7 +51,6 @@ fx_component_manifest(
 fx_component(
     name = "echo-server",
     compiled_manifest = ":echo-server-manifest",
-    component_name = "echo_server",
     visibility = [
         "//examples/fidl/cpp/services:__pkg__",
         "//examples/fidl/echo-realm:__pkg__",

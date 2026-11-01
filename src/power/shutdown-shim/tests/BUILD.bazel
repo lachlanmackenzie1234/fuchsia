@@ -55,7 +55,6 @@ fx_component(
     name = "shutdown_shim_component",
     testonly = True,
     compiled_manifest = ":shutdown_shim_manifest",
-    component_name = "shutdown-shim",
     deps = [":shutdown_shim_packaged_bin"],
 )
 # LINT.ThenChange(BUILD.gn)

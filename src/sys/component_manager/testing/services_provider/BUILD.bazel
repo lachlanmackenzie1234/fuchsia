@@ -46,7 +46,6 @@ fx_component(
     name = "provider-a-cmp",
     testonly = True,
     compiled_manifest = ":provider-a-cmp-manifest",
-    component_name = "provider-a",
     visibility = ["//src/sys/component_manager/tests/services:__pkg__"],
     deps = [":provider-bin_packaged_bin"],
 )
@@ -63,7 +62,6 @@ fx_component(
     name = "provider-b-cmp",
     testonly = True,
     compiled_manifest = ":provider-b-cmp-manifest",
-    component_name = "provider-b",
     visibility = ["//src/sys/component_manager/tests/services:__pkg__"],
     deps = [":provider-bin_packaged_bin"],
 )

@@ -88,7 +88,6 @@ fuchsia_component_manifest("settings_inspect_utils_tests_manifest") {
 
 fuchsia_test_component("settings_inspect_utils_tests_component") {
   cm_label = ":settings_inspect_utils_tests_manifest"
-  component_name = "settings_inspect_utils_test"
   deps = [ ":settings_inspect_utils_lib_test" ]
 }
 

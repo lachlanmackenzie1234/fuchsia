@@ -81,7 +81,6 @@ fx_component_manifest(
 fx_test_component(
     name = "example_test_component",
     compiled_manifest = ":example_test_manifest",
-    component_name = "example_test",
     deps = [
         ":example_test_packaged_bin",
     ],
@@ -96,7 +95,6 @@ fx_component_manifest(
 fx_component(
     name = "example_helper_component",
     compiled_manifest = ":example_helper_manifest",
-    component_name = "example_helper",
 )
 
 fx_package(
@@ -302,7 +300,6 @@ fx_component(
     name = "example_subpackage_component",
     testonly = True,
     compiled_manifest = ":example_helper_manifest",
-    component_name = "example_helper",
     deps = [
         ":example_second_test_packaged_bin",
     ],
@@ -371,7 +368,6 @@ fx_component_manifest(
 fx_test_component(
     name = "example_starnix_test_component",
     compiled_manifest = ":example_starnix_test_manifest",
-    component_name = "example_starnix_test",
     test_type = "starnix",
     deps = [
         ":example_test_packaged_bin",
@@ -817,7 +813,6 @@ fx_component(
     name = "example_expect_includes_component",
     testonly = True,
     compiled_manifest = ":example_expect_includes_manifest",
-    component_name = "example_expect_includes",
     deps = [":example_expect_includes_packaged_bin"],
 )
 
@@ -852,7 +847,6 @@ fx_packaged_binary(
 fx_test_component(
     name = "example_unenforced_omitted_component",
     compiled_manifest = ":example_test_manifest",
-    component_name = "example_unenforced_omitted",
     deps = [":example_unenforced_includes_packaged_bin"],
 )
 
@@ -870,7 +864,6 @@ fx_component(
     testonly = True,
     check_includes = False,
     compiled_manifest = ":example_helper_manifest",
-    component_name = "example_check_includes_disabled",
     deps = [":example_expect_includes_packaged_bin"],
 )
 
@@ -958,7 +951,6 @@ fx_component(
     name = "example_component_unwrapped_cc_binary",
     testonly = True,
     compiled_manifest = ":example_helper_manifest",
-    component_name = "example_helper",
     tags = ["manual"],
     deps = [":example_test_bin"],
 )
@@ -972,7 +964,6 @@ analysis_failure_test(
 fx_test_component(
     name = "example_component_unwrapped_rust_binary",
     compiled_manifest = ":example_test_manifest",
-    component_name = "example_test",
     tags = ["manual"],
     deps = [":example_rust_test_bin"],
 )
@@ -1331,7 +1322,6 @@ fx_component_manifest(
 fx_test_component(
     name = "example_cc_test_component",
     compiled_manifest = ":example_cc_test_manifest",
-    component_name = "example_cc_test",
     tags = ["manual"],
     deps = [":example_cc_test_packaged_bin"],
 )
@@ -1406,13 +1396,11 @@ fx_component(
     name = "example_custom_name_component",
     testonly = True,
     compiled_manifest = ":example_helper_manifest",
-    component_name = "custom_helper_component",
 )
 
 fx_test_component(
     name = "example_custom_name_test_component",
     compiled_manifest = ":example_test_manifest",
-    component_name = "custom_test_component",
     deps = [":example_test_packaged_bin"],
 )
 

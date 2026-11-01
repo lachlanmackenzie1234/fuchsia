@@ -106,7 +106,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-thermal-module-tests-component",
     compiled_manifest = ":starnix-thermal-module-tests-manifest",
-    component_name = "starnix-thermal-module-tests",
     test_type = "starnix",
     deps = [
         ":thermal_test_packaged_bin",

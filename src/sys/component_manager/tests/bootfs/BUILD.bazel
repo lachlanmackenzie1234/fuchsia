@@ -52,7 +52,6 @@ fx_component_manifest(
 fx_test_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "bootfs",
     test_type = "system",
     deps = [":bin_packaged_bin"],
 )

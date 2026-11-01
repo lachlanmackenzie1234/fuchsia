@@ -71,7 +71,6 @@ fx_component_manifest(
 fx_test_component(
     name = "process_unittests_component",
     compiled_manifest = ":process_unittests_manifest",
-    component_name = "process_unittests",
     deps = [
         ":unittests_packaged_bin",
         "//src/zircon/bin/zxsh:sh",

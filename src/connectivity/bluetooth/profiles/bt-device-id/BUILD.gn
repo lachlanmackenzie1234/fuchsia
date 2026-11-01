@@ -88,7 +88,6 @@ fuchsia_structured_config_rust_lib("bt_device_id_profile_config") {
 if (is_fuchsia) {
   fuchsia_component("component") {
     cm_label = ":manifest"
-    component_name = "bt-device-id"
     visibility = [
       ":*",
       "//src/connectivity/bluetooth/profiles/tests/bt-device-id-integration-tests:*",

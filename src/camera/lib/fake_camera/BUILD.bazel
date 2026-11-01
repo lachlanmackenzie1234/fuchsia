@@ -78,7 +78,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fake_camera_unittest_component",
     compiled_manifest = ":fake_camera_unittest_manifest",
-    component_name = "fake_camera_unittest",
     deps = [":fake_camera_unittest_packaged_bin"],
 )
 

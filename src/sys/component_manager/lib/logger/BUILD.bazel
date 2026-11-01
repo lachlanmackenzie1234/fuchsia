@@ -64,7 +64,6 @@ fx_component_manifest(
 fx_test_component(
     name = "component_manager_logger_test-component",
     compiled_manifest = ":component_manager_logger_test-manifest",
-    component_name = "component_manager_logger_test",
     deps = [":logger_test_packaged_bin"],
 )
 

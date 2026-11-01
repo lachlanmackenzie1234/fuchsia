@@ -165,7 +165,6 @@ fx_packaged_binary(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "system-updater",
     visibility = [
         "//src/security/tests/pkg_test/tests:__subpackages__",
         "//src/sys/pkg:__subpackages__",
@@ -187,7 +186,6 @@ fx_component_manifest(
 fx_component(
     name = "isolated-v2",
     compiled_manifest = ":isolated-v2-manifest",
-    component_name = "system-updater-isolated",
     visibility = ["//src/sys/pkg/tests/system-updater:__pkg__"],
     deps = [":system_updater_packaged_bin"],
 )
@@ -240,7 +238,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test-component",
     compiled_manifest = ":test-component-manifest",
-    component_name = "system-updater-tests",
     deps = [":bin_test_packaged_bin"],
 )
 

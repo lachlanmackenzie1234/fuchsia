@@ -72,7 +72,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fuchsia_vulkan_tests-component",
     compiled_manifest = ":fuchsia_vulkan_tests-manifest",
-    component_name = "fuchsia_vulkan_tests",
     deps = [":fuchsia-vulkan_test_packaged_bin"],
 )
 

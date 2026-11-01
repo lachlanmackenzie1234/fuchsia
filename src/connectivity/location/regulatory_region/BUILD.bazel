@@ -68,7 +68,6 @@ fx_component_manifest(
 fx_component(
     name = "regulatory_region_component",
     compiled_manifest = ":regulatory_region_manifest",
-    component_name = "regulatory_region",
     visibility = [
         "//src/connectivity/location/regulatory_region/tests:__pkg__",
         "//src/connectivity/wlan/tests/helpers/realm-factory:__pkg__",
@@ -123,7 +122,6 @@ fx_component_manifest(
 fx_test_component(
     name = "regulatory-region-test",
     compiled_manifest = ":regulatory-region-test-manifest",
-    component_name = "regulatory-region-test",
     deps = [":bin_test_packaged_bin"],
 )
 
@@ -148,7 +146,6 @@ fx_component_manifest(
 fx_test_component(
     name = "regulatory-region-lib-test",
     compiled_manifest = ":regulatory-region-lib-test-manifest",
-    component_name = "regulatory-region-lib-test",
     deps = [":lib_test_packaged_bin"],
 )
 

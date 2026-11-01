@@ -68,7 +68,6 @@ fx_component(
     name = "manager",
     testonly = True,
     compiled_manifest = ":manifest",
-    component_name = "fuzz-manager",
     visibility = [
         "//src/sys/fuzzing:__pkg__",
         "//src/sys/test_runners/fuzz/tests:__pkg__",
@@ -107,7 +106,6 @@ fx_component_manifest(
 fx_test_component(
     name = "unittests-component",
     compiled_manifest = ":unittests-manifest",
-    component_name = "unittests",
     visibility = ["//visibility:private"],
     deps = [":bin_test_packaged_bin"],
 )

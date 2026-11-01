@@ -108,7 +108,6 @@ fuchsia_component_manifest("starnix-ext4-tests-manifest") {
 
 fuchsia_test_component("starnix-ext4-tests-component") {
   cm_label = ":starnix-ext4-tests-manifest"
-  component_name = "starnix-ext4-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_ext4_lib_test",

@@ -105,7 +105,6 @@ fuchsia_component_manifest("starnix-android-usb-tests-manifest") {
 
 fuchsia_test_component("starnix-android-usb-tests-component") {
   cm_label = ":starnix-android-usb-tests-manifest"
-  component_name = "starnix-android-usb-tests"
   test_type = "starnix"
   deps = [
     ":android_usb_test",

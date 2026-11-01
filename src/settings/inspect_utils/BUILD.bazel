@@ -65,7 +65,6 @@ fx_component_manifest(
 fx_test_component(
     name = "settings_inspect_utils_tests_component",
     compiled_manifest = ":settings_inspect_utils_tests_manifest",
-    component_name = "settings_inspect_utils_test",
     deps = [":settings_inspect_utils_lib_test_packaged_bin"],
 )
 

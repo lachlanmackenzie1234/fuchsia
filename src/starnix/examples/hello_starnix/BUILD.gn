@@ -93,7 +93,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "hello_starnix"
   deps = [ ":hello_starnix_bin" ]
 }
 

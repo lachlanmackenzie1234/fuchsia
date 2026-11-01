@@ -121,7 +121,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-procfs-tests-component",
     compiled_manifest = ":starnix-procfs-tests-manifest",
-    component_name = "starnix-procfs-tests",
     test_type = "starnix",
     deps = [
         ":procfs_test_packaged_bin",

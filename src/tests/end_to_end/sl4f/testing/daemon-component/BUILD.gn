@@ -40,7 +40,6 @@ fuchsia_component_manifest("daemon-component-manifest") {
 
 fuchsia_component("daemon-component") {
   cm_label = ":daemon-component-manifest"
-  component_name = "daemon-component"
   visibility = [
     ":*",
     "//src/tests/end_to_end/sl4f/testing:*",

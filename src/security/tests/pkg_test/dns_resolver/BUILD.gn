@@ -54,7 +54,6 @@ fuchsia_component_manifest("security_pkg_dns_resolver-manifest") {
 fuchsia_component("security_pkg_dns_resolver-component") {
   testonly = true
   cm_label = ":security_pkg_dns_resolver-manifest"
-  component_name = "security_pkg_dns_resolver"
   visibility = [
     ":*",
     "//src/security/tests/pkg_test/tests/*",

@@ -43,6 +43,5 @@ fx_component(
     name = "component",
     testonly = True,
     compiled_manifest = ":component-manifest",
-    component_name = "exit-with-error",
     deps = [":exit-with-error-bin_packaged_bin"],
 )

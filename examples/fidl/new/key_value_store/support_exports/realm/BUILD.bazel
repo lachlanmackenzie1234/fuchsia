@@ -21,7 +21,6 @@ fx_component_manifest(
 fx_component(
     name = "realm",
     compiled_manifest = ":realm-manifest",
-    component_name = "realm",
     visibility = [
         "//examples/fidl/new/key_value_store/support_exports/cpp_natural:__pkg__",
         "//examples/fidl/new/key_value_store/support_exports/cpp_wire:__pkg__",

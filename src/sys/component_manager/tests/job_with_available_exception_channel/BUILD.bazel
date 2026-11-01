@@ -48,7 +48,6 @@ fx_component_manifest(
 fx_test_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "job-with-available-exception-channel-test",
     deps = [":bin_packaged_bin"],
 )
 

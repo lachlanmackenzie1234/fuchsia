@@ -62,7 +62,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_alpha_comp",
     compiled_manifest = ":fake_alpha_manifest",
-    component_name = "fake_alpha",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -76,7 +75,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_cast_comp",
     compiled_manifest = ":fake_cast_manifest",
-    component_name = "fake_cast",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -90,7 +88,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_misc_comp",
     compiled_manifest = ":fake_misc_manifest",
-    component_name = "fake_misc",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -104,7 +101,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_playready_comp",
     compiled_manifest = ":fake_playready_manifest",
-    component_name = "fake_playready",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -118,7 +114,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_weave_comp",
     compiled_manifest = ":fake_weave_manifest",
-    component_name = "fake_weave",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -132,7 +127,6 @@ fx_component_manifest(
 fx_component(
     name = "fake_widevine_comp",
     compiled_manifest = ":fake_widevine_manifest",
-    component_name = "fake_widevine",
     deps = [":fake_factory_store_provider_packaged_bin"],
 )
 
@@ -229,7 +223,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fake_factory_store_providers_tests_component",
     compiled_manifest = ":fake_factory_store_providers_tests_manifest",
-    component_name = "fake_factory_store_providers_tests",
     deps = [":fake_factory_store_providers_test_packaged_bin"],
 )
 

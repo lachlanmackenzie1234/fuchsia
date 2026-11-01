@@ -79,7 +79,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-cgroupfs-tests-component",
     compiled_manifest = ":starnix-cgroupfs-tests-manifest",
-    component_name = "starnix-cgroupfs-tests",
     test_type = "starnix",
     deps = [
         ":cgroupfs_test_packaged_bin",

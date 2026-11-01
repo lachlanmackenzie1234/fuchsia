@@ -98,7 +98,6 @@ fx_packaged_binary(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "system-update-committer",
     visibility = [
         "//src/security/tests/pkg_test/tests:__subpackages__",
         "//src/sys/pkg:__subpackages__",
@@ -144,7 +143,6 @@ fx_component_manifest(
 fx_test_component(
     name = "unittest_component",
     compiled_manifest = ":unittest_manifest",
-    component_name = "unittest_component",
     deps = [":lib_test_packaged_bin"],
 )
 

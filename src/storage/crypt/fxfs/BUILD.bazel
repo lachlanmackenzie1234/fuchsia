@@ -95,7 +95,6 @@ fx_component_manifest(
 fx_component(
     name = "fxfs-crypt",
     compiled_manifest = ":fxfs-crypt-manifest",
-    component_name = "fxfs-crypt",
     deps = [":fxfs_crypt_packaged_bin"],
 )
 

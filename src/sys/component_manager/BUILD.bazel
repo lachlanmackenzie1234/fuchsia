@@ -418,7 +418,6 @@ fx_component_manifest(
 fx_component(
     name = "elf_runner",
     compiled_manifest = ":elf_runner-manifest",
-    component_name = "elf_runner",
     visibility = [
         "//examples/components/runner/colocated/integration_tests:__pkg__",
         "//src/sys/component_manager/tests/builtin_runner:__pkg__",

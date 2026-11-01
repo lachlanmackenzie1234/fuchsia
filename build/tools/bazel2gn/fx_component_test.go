@@ -43,7 +43,6 @@ fx_component_manifest(
 fx_component(
 	name = "component",
 	compiled_manifest = ":manifest",
-	component_name = "http-client",
 	deps = [":http_client_packaged_bin"],
 )
 
@@ -57,7 +56,6 @@ fx_component_manifest(
 fx_component(
 	name = "google_component",
 	compiled_manifest = ":google_manifest",
-	component_name = "google-http-client",
 	deps = [":http_client_packaged_bin"],
 )
 
@@ -80,7 +78,6 @@ fuchsia_component_manifest("manifest") {
 }
 fuchsia_component("component") {
 	cm_label = ":manifest"
-	component_name = "http-client"
 	deps = [
 		":http_client",
 	]
@@ -91,7 +88,6 @@ fuchsia_component_manifest("google_manifest") {
 }
 fuchsia_component("google_component") {
 	cm_label = ":google_manifest"
-	component_name = "google-http-client"
 	deps = [
 		":http_client",
 	]
@@ -129,7 +125,6 @@ fx_component(
 	name = "component",
 	testonly = True,
 	compiled_manifest = ":component-manifest",
-	component_name = "exit-with-error",
 	deps = [":exit-with-error-bin_packaged_bin"],
 )`,
 			wantGN: `rustc_binary("exit-with-error-bin") {
@@ -148,7 +143,6 @@ fuchsia_component_manifest("component-manifest") {
 fuchsia_component("component") {
 	testonly = true
 	cm_label = ":component-manifest"
-	component_name = "exit-with-error"
 	deps = [
 		":exit-with-error-bin",
 	]
@@ -235,7 +229,6 @@ fuchsia_component("comp_b") {
 fx_component(
 	name = "empty_container_component",
 	compiled_manifest = ":empty_container_manifest",
-	component_name = "empty_container",
 	deps = ["//src/starnix/containers:default_init"],
 )
 
@@ -251,7 +244,6 @@ fx_component_manifest(
 }
 fuchsia_component("empty_container_component") {
 	cm_label = ":empty_container_manifest"
-	component_name = "empty_container"
 	deps = [
 		"//src/starnix/containers:default_init",
 	]
@@ -382,7 +374,6 @@ fx_component_manifest(
 fx_test_component(
 	name = "test-component",
 	compiled_manifest = ":test-manifest",
-	component_name = "lib-test",
 	deps = [":lib_test_packaged_bin"],
 )
 
@@ -437,7 +428,6 @@ fuchsia_structured_config_rust_lib("shared_config") {
 fx_component(
 	name = "component",
 	compiled_manifest = ":manifest",
-	component_name = "dispatcher",
 )`,
 			wantGN: `fuchsia_component_manifest("manifest") {
 	component_name = "dispatcher"
@@ -448,7 +438,6 @@ fx_component(
 }
 fuchsia_component("component") {
 	cm_label = ":manifest"
-	component_name = "dispatcher"
 }`,
 		},
 		{

@@ -40,7 +40,6 @@ fuchsia_component_manifest("c-time-example-component-manifest") {
 
 fuchsia_component("c-time-example-component") {
   cm_label = ":c-time-example-component-manifest"
-  component_name = "c-time-example"
   visibility = [
     ":*",
     "//examples/time/*",

@@ -55,7 +55,6 @@ fx_component(
     name = "security_pkg_dns_resolver-component",
     testonly = True,
     compiled_manifest = ":security_pkg_dns_resolver-manifest",
-    component_name = "security_pkg_dns_resolver",
     visibility = ["//src/security/tests/pkg_test/tests:__subpackages__"],
     deps = [":security_pkg_dns_resolver-binary_packaged"],
 )

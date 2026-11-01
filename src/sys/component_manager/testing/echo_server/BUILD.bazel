@@ -48,7 +48,6 @@ fx_component(
     name = "echo_server",
     testonly = True,
     compiled_manifest = ":echo_server-manifest",
-    component_name = "echo_server",
     visibility = ["//:__subpackages__"],
     deps = [":echo_server_testing_packaged_bin"],
 )

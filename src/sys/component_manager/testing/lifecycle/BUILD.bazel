@@ -47,7 +47,6 @@ fx_component(
     name = "lifecycle",
     testonly = True,
     compiled_manifest = ":lifecycle-manifest",
-    component_name = "lifecycle",
     visibility = [
         "//src/sys/component_manager:__pkg__",
         "//src/sys/lib/elf_runner:__subpackages__",

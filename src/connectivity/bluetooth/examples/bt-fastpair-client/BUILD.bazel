@@ -57,7 +57,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "bt-fastpair-client",
     deps = [":bt_fastpair_client_packaged_bin"],
 )
 

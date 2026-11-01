@@ -56,7 +56,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "bt-device-id-client",
     deps = [":bin_packaged_bin"],
 )
 

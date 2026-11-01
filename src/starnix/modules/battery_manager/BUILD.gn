@@ -88,7 +88,6 @@ fuchsia_component_manifest("starnix-battery-manager-tests-manifest") {
 
 fuchsia_test_component("starnix-battery-manager-tests-component") {
   cm_label = ":starnix-battery-manager-tests-manifest"
-  component_name = "starnix-battery-manager-tests"
   test_type = "starnix"
   deps = [
     ":battery_manager_test",

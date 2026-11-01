@@ -45,7 +45,6 @@ fx_component_manifest(
 fx_component(
     name = "echo_client",
     compiled_manifest = ":echo_client_manifest",
-    component_name = "echo_client",
     visibility = ["//src/lib/fuchsia-component-test/tests:__pkg__"],
     deps = [":echo_client_testing_packaged_bin"],
 )

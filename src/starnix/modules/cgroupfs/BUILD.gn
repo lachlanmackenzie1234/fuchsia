@@ -110,7 +110,6 @@ fuchsia_component_manifest("starnix-cgroupfs-tests-manifest") {
 
 fuchsia_test_component("starnix-cgroupfs-tests-component") {
   cm_label = ":starnix-cgroupfs-tests-manifest"
-  component_name = "starnix-cgroupfs-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_cgroupfs_lib_test",

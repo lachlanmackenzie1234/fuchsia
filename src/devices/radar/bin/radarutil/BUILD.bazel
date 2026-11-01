@@ -64,7 +64,6 @@ fx_component_manifest(
 fx_component(
     name = "radarutil-component",
     compiled_manifest = ":radarutil-component-manifest",
-    component_name = "radarutil-component",
     deps = [":radarutil_packaged_bin"],
 )
 

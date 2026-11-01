@@ -45,7 +45,6 @@ fx_component_manifest(
 fx_component(
     name = "dynamic-create-child-child",
     compiled_manifest = ":dynamic-create-child-child-manifest",
-    component_name = "dynamic-create-child-child",
     deps = [":bin_packaged"],
 )
 
@@ -90,7 +89,6 @@ fx_component_manifest(
 fx_test_component(
     name = "dynamic-create-child-test",
     compiled_manifest = ":dynamic-create-child-test-manifest",
-    component_name = "dynamic-create-child-test",
     deps = [":test_bin_packaged"],
 )
 

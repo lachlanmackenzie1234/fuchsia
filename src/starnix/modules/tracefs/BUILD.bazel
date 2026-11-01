@@ -76,7 +76,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-tracefs-tests-component",
     compiled_manifest = ":starnix-tracefs-tests-manifest",
-    component_name = "starnix-tracefs-tests",
     test_type = "starnix",
     deps = [
         ":tracefs_test_packaged_bin",

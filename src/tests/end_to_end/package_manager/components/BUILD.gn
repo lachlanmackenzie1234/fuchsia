@@ -69,13 +69,11 @@ fuchsia_component_manifest("package-manager-sample2-manifest") {
 fuchsia_component("package-manager-sample") {
   testonly = true
   cm_label = ":package-manager-sample-manifest"
-  component_name = "package-manager-sample"
   deps = [ ":package-manager-sample-bin" ]
 }
 
 fuchsia_component("package-manager-sample2") {
   testonly = true
   cm_label = ":package-manager-sample2-manifest"
-  component_name = "package-manager-sample2"
   deps = [ ":package-manager-sample-bin2" ]
 }

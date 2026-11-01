@@ -52,7 +52,6 @@ fuchsia_component_manifest("virtio_rng_component-manifest") {
 
 fuchsia_component("virtio_rng_component") {
   cm_label = ":virtio_rng_component-manifest"
-  component_name = "virtio_rng"
   visibility = [
     ":*",
     "//src/virtualization/bin/vmm/device/*",

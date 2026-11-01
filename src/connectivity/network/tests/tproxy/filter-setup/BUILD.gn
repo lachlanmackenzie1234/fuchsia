@@ -55,7 +55,6 @@ fuchsia_component_manifest("filter-setup-manifest") {
 fuchsia_component("filter-setup") {
   testonly = true
   cm_label = ":filter-setup-manifest"
-  component_name = "filter-setup"
   visibility = [
     ":*",
     "//src/connectivity/network/tests/tproxy:*",

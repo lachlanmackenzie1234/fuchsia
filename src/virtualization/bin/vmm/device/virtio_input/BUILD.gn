@@ -106,7 +106,6 @@ fuchsia_component_manifest("virtio_input_manifest") {
 
 fuchsia_component("virtio_input_component") {
   cm_label = ":virtio_input_manifest"
-  component_name = "virtio_input"
   visibility = [
     ":*",
     "//src/virtualization/bin/vmm/device/*",

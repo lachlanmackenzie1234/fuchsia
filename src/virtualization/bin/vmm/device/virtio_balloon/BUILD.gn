@@ -102,7 +102,6 @@ fuchsia_component_manifest("virtio_balloon_manifest") {
 
 fuchsia_component("virtio_balloon_component") {
   cm_label = ":virtio_balloon_manifest"
-  component_name = "virtio_balloon"
   visibility = [
     ":*",
     "//src/virtualization/bin/vmm/device/*",

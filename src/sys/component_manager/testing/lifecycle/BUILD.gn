@@ -54,7 +54,6 @@ fuchsia_component_manifest("lifecycle-manifest") {
 fuchsia_component("lifecycle") {
   testonly = true
   cm_label = ":lifecycle-manifest"
-  component_name = "lifecycle"
   visibility = [
     ":*",
     "//src/sys/component_manager:*",

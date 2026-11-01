@@ -57,7 +57,6 @@ fx_component(
     name = "filter-setup",
     testonly = True,
     compiled_manifest = ":filter-setup-manifest",
-    component_name = "filter-setup",
     visibility = ["//src/connectivity/network/tests/tproxy:__pkg__"],
     deps = [":filter_setup_packaged_bin"],
 )

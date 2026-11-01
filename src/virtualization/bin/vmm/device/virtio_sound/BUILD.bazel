@@ -93,7 +93,6 @@ fx_component_manifest(
 fx_component(
     name = "virtio_sound_component",
     compiled_manifest = ":virtio_sound_manifest",
-    component_name = "virtio_sound",
     visibility = [
         "//src/virtualization/bin/vmm/device:__subpackages__",
     ],

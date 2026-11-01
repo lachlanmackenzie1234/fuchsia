@@ -31,7 +31,6 @@ fx_package(
 fx_component(
     name = "hvdcp_opti_component",
     compiled_manifest = ":hvdcp_opti_manifest",
-    component_name = "hvdcp_opti",
 )
 
 fx_component_manifest(

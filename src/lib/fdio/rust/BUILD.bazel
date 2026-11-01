@@ -122,7 +122,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test-component",
     compiled_manifest = ":test-component-manifest",
-    component_name = "fdio_lib_test",
     deps = [
         ":fdio_test_packaged_bin",
         ":spawn_builder_test_target_packaged_bin",

@@ -152,7 +152,6 @@ fuchsia_component_manifest("test_component_manifest") {
 
 fuchsia_test_component("test_component") {
   cm_label = ":test_component_manifest"
-  component_name = "builtins_tests"
   test_type = "system"
   deps = [ ":builtins_lib_test" ]
 }

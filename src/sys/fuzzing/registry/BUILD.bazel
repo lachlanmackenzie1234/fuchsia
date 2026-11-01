@@ -61,7 +61,6 @@ fx_component(
     name = "registry",
     testonly = True,
     compiled_manifest = ":manifest",
-    component_name = "fuzz-registry",
     visibility = [
         "//src/sys/fuzzing:__pkg__",
         "//src/sys/fuzzing/registry/tests:__pkg__",
@@ -100,7 +99,6 @@ fx_component_manifest(
 fx_test_component(
     name = "unittests-component",
     compiled_manifest = ":unittests-manifest",
-    component_name = "unittests",
     visibility = ["//visibility:private"],
     deps = [":bin_test_packaged_bin"],
 )

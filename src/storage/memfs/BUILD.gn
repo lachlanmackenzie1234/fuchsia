@@ -116,7 +116,6 @@ fuchsia_component_manifest("memfs_component_manifest") {
 
 fuchsia_component("memfs_component") {
   cm_label = ":memfs_component_manifest"
-  component_name = "memfs"
   visibility = [
     ":*",
     "//src/connectivity/wlan/*",

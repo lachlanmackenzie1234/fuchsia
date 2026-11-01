@@ -44,6 +44,5 @@ fuchsia_component_manifest("component-manifest") {
 fuchsia_component("component") {
   testonly = true
   cm_label = ":component-manifest"
-  component_name = "exit-with-error"
   deps = [ ":exit-with-error-bin" ]
 }

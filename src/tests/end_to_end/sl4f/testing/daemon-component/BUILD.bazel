@@ -39,7 +39,6 @@ fx_component_manifest(
 fx_component(
     name = "daemon-component",
     compiled_manifest = ":daemon-component-manifest",
-    component_name = "daemon-component",
     visibility = ["//src/tests/end_to_end/sl4f/testing:__pkg__"],
     deps = [":bin_packaged_bin"],
 )

@@ -57,7 +57,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "bt-opp-client",
     deps = [":bt_opp_client_packaged_bin"],
 )
 

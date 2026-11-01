@@ -71,7 +71,6 @@ fx_component(
     name = "sharder",
     testonly = True,
     compiled_manifest = ":sharder_manifest",
-    component_name = "sharder",
     visibility = ["//:__subpackages__"],
     deps = [":sharder_packaged_bin"],
 )

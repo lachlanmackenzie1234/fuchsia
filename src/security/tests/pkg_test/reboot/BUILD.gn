@@ -51,7 +51,6 @@ fuchsia_component_manifest("security_pkg_reboot-manifest") {
 fuchsia_component("security_pkg_reboot-component") {
   testonly = true
   cm_label = ":security_pkg_reboot-manifest"
-  component_name = "security_pkg_reboot"
   visibility = [
     ":*",
     "//src/security/tests/pkg_test/tests/*",

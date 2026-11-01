@@ -77,7 +77,6 @@ if (is_fuchsia) {
 if (is_fuchsia) {
   fuchsia_component("component") {
     cm_label = ":manifest"
-    component_name = "bt-peripheral-hub"
     deps = [ ":bin" ]
   }
 }

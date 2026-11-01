@@ -59,7 +59,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":component-manifest",
-    component_name = "bt-le-battery-monitor",
     deps = [":bt_le_battery_monitor_packaged_bin"],
 )
 

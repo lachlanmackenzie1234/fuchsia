@@ -169,7 +169,6 @@ fx_component(
     name = "lifecycle_timeout_unresponsive_root",
     testonly = True,
     compiled_manifest = ":lifecycle_timeout_unresponsive_root-manifest",
-    component_name = "lifecycle_timeout_unresponsive_root",
 )
 
 fx_packaged_binary(
@@ -191,7 +190,6 @@ fx_component(
     name = "lifecycle_timeout_unresponsive_node",
     testonly = True,
     compiled_manifest = ":lifecycle_timeout_unresponsive_node-manifest",
-    component_name = "lifecycle_timeout_unresponsive_node",
     deps = [":unresponsive_component_packaged_bin"],
 )
 
@@ -210,7 +208,6 @@ fx_component(
     name = "lifecycle_timeout_root",
     testonly = True,
     compiled_manifest = ":lifecycle_timeout_root-manifest",
-    component_name = "lifecycle_timeout_root",
 )
 
 fx_packaged_binary(
@@ -232,7 +229,6 @@ fx_component(
     name = "immediate_exit_component",
     testonly = True,
     compiled_manifest = ":immediate_exit_component-manifest",
-    component_name = "immediate_exit_component",
     deps = [":immediate_exit_packaged_bin"],
 )
 
@@ -255,7 +251,6 @@ fx_component(
     name = "immediate_escrow_component",
     testonly = True,
     compiled_manifest = ":immediate_escrow_component-manifest",
-    component_name = "immediate_escrow_component",
     visibility = ["//src/sys/lib/elf_runner:__pkg__"],
     deps = [":immediate_escrow_packaged_bin"],
 )
@@ -279,6 +274,5 @@ fx_component(
     name = "rendezvous_exit_component",
     testonly = True,
     compiled_manifest = ":rendezvous_exit_component-manifest",
-    component_name = "rendezvous_exit_component",
     deps = [":rendezvous_exit_packaged_bin"],
 )

@@ -71,7 +71,6 @@ fx_component(
     name = "package-manager-sample",
     testonly = True,
     compiled_manifest = ":package-manager-sample-manifest",
-    component_name = "package-manager-sample",
     deps = [":package-manager-sample-bin_packaged_bin"],
 )
 
@@ -79,6 +78,5 @@ fx_component(
     name = "package-manager-sample2",
     testonly = True,
     compiled_manifest = ":package-manager-sample2-manifest",
-    component_name = "package-manager-sample2",
     deps = [":package-manager-sample-bin2_packaged_bin"],
 )

@@ -134,7 +134,6 @@ fuchsia_structured_config_rust_lib(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "bt-hfp-audio-gateway",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",
@@ -187,7 +186,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test-component",
     compiled_manifest = ":test-component-manifest",
-    component_name = "test-component",
     target_compatible_with = ["@platforms//os:fuchsia"],
     test_type = "system",
     deps = [":bt_hfp_audio_gateway_bin_test_packaged_bin"],

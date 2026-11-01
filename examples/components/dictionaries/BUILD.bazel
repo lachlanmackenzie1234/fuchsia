@@ -50,7 +50,6 @@ fx_component_manifest(
 fx_component(
     name = "dynamic-dictionary-provider",
     compiled_manifest = ":dynamic-dictionary-provider-manifest",
-    component_name = "dynamic-dictionary-provider",
     deps = [":provider_bin_packaged"],
 )
 
@@ -91,7 +90,6 @@ fx_component_manifest(
 fx_test_component(
     name = "dynamic-dictionary-example",
     compiled_manifest = ":dynamic-dictionary-example-manifest",
-    component_name = "dynamic-dictionary-example",
     deps = [":bin_packaged"],
 )
 

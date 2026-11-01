@@ -64,7 +64,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "vsock-loopback"
   visibility = [
     ":*",
     "//src/paravirtualization/*",

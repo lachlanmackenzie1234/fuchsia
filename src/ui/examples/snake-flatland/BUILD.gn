@@ -111,7 +111,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("snake-flatland") {
   cm_label = ":manifest"
-  component_name = "snake-flatland"
   visibility = [
     ":*",
     "//src/ui/examples:*",

@@ -97,7 +97,6 @@ fuchsia_component_manifest("sharder_manifest") {
 fuchsia_component("sharder") {
   testonly = true
   cm_label = ":sharder_manifest"
-  component_name = "sharder"
   visibility = [ "//*" ]
   deps = [ ":bin" ]
 }

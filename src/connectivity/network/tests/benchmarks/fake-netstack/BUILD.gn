@@ -74,7 +74,6 @@ fuchsia_component_manifest("fake-netstack-manifest") {
 fuchsia_component("fake-netstack") {
   testonly = true
   cm_label = ":fake-netstack-manifest"
-  component_name = "fake-netstack"
   visibility = [
     ":*",
     "//src/connectivity/network/tests/benchmarks/socket-loopback:*",

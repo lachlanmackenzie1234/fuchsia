@@ -103,7 +103,6 @@ fuchsia_component_manifest("starnix-overlayfs-tests-manifest") {
 
 fuchsia_test_component("starnix-overlayfs-tests-component") {
   cm_label = ":starnix-overlayfs-tests-manifest"
-  component_name = "starnix-overlayfs-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_overlayfs_lib_test",

@@ -156,7 +156,6 @@ fuchsia_component_manifest("starnix-thermal-module-tests-manifest") {
 
 fuchsia_test_component("starnix-thermal-module-tests-component") {
   cm_label = ":starnix-thermal-module-tests-manifest"
-  component_name = "starnix-thermal-module-tests"
   test_type = "starnix"
   deps = [
     ":thermal_test",

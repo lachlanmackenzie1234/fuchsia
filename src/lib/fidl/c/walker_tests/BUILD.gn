@@ -121,7 +121,6 @@ fuchsia_component_manifest("fidl-handle-closing-tests-manifest") {
 
 fuchsia_test_component("fidl-handle-closing-tests-component") {
   cm_label = ":fidl-handle-closing-tests-manifest"
-  component_name = "fidl-handle-closing-tests"
   deps = [
     ":test_launcher_bin",
     ":tests_to_run_under_handle_policy",

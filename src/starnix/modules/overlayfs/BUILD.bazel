@@ -78,7 +78,6 @@ fx_component_manifest(
 fx_test_component(
     name = "starnix-overlayfs-tests-component",
     compiled_manifest = ":starnix-overlayfs-tests-manifest",
-    component_name = "starnix-overlayfs-tests",
     test_type = "starnix",
     deps = [
         ":overlayfs_test_packaged_bin",

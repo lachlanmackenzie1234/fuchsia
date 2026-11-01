@@ -69,7 +69,6 @@ fx_component(
     name = "fake-netstack",
     testonly = True,
     compiled_manifest = ":fake-netstack-manifest",
-    component_name = "fake-netstack",
     visibility = ["//src/connectivity/network/tests/benchmarks/socket-loopback:__pkg__"],
     deps = [":fake_netstack_packaged_bin"],
 )
@@ -88,7 +87,6 @@ fx_component(
     name = "component-dropin",
     testonly = True,
     compiled_manifest = ":component-dropin-manifest",
-    component_name = "netstack3",
     deps = [":fake_netstack_packaged_bin"],
 )
 

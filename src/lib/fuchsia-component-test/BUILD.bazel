@@ -93,7 +93,6 @@ fx_component_manifest(
 fx_test_component(
     name = "fuchsia_component_test_unittests_component",
     compiled_manifest = ":fuchsia_component_test_unittests_manifest",
-    component_name = "fuchsia_component_test_unittests",
     deps = [":fuchsia-component-test-lib_test_packaged_bin"],
 )
 

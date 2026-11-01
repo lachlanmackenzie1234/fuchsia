@@ -73,6 +73,5 @@ fx_component(
     name = "write_startup_socket",
     testonly = True,
     compiled_manifest = ":write_startup_socket-manifest",
-    component_name = "write_startup_socket",
     deps = [":write_startup_socket_bin_packaged_bin"],
 )

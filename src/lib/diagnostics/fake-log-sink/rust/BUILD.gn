@@ -121,7 +121,6 @@ fuchsia_component_manifest("fake-log-sink-tests-manifest") {
 
 fuchsia_test_component("fake-log-sink-tests-component") {
   cm_label = ":fake-log-sink-tests-manifest"
-  component_name = "fake-log-sink-tests"
   deps = [ ":fake_log_sink_lib_test" ]
 }
 

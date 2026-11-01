@@ -118,7 +118,6 @@ fuchsia_structured_config_rust_lib("system_update_checker_config") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "system-update-checker"
   visibility = [
     ":*",
     "//src/sys/pkg/tests/system-update-checker:*",

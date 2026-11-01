@@ -129,7 +129,6 @@ fuchsia_component_manifest("test-component-manifest") {
 
 fuchsia_test_component("test-component") {
   cm_label = ":test-component-manifest"
-  component_name = "fdio_lib_test"
   deps = [
     ":fdio_test",
     ":spawn_builder_test_target",

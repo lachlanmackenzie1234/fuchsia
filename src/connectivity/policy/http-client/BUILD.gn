@@ -173,7 +173,6 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "http-client"
   deps = [ ":http_client" ]
 }
 
@@ -184,7 +183,6 @@ fuchsia_component_manifest("google_manifest") {
 
 fuchsia_component("google_component") {
   cm_label = ":google_manifest"
-  component_name = "google-http-client"
   deps = [ ":http_client" ]
 }
 

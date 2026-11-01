@@ -178,7 +178,6 @@ fx_component_manifest(
 fx_test_component(
     name = "zxsh_tests_component",
     compiled_manifest = ":zxsh_tests_manifest",
-    component_name = "zxsh_tests",
     deps = [
         ":bin_test_packaged_bin",
         ":zxsh_packaged_bin",

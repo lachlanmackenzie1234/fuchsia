@@ -840,7 +840,6 @@ fuchsia_component_manifest("elf_runner-manifest") {
 
 fuchsia_component("elf_runner") {
   cm_label = ":elf_runner-manifest"
-  component_name = "elf_runner"
   visibility = [
     ":*",
     "//examples/components/runner/colocated/integration_tests:*",

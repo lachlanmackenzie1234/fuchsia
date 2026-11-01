@@ -77,7 +77,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "bt-rfcomm",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",

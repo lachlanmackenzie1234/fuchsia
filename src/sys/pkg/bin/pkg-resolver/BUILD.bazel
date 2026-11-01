@@ -150,7 +150,6 @@ fx_packaged_binary(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "pkg-resolver",
     visibility = ["//src/sys/pkg/tests/isolated-ota:__pkg__"],
     deps = [
         ":bin",  # @bazel2gn:path_overwrite::bin

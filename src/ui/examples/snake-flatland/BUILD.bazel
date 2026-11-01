@@ -74,7 +74,6 @@ fx_component_manifest(
 fx_component(
     name = "snake-flatland",
     compiled_manifest = ":manifest",
-    component_name = "snake-flatland",
     visibility = ["//src/ui/examples:__pkg__"],
     deps = [":bin_packaged"],
 )

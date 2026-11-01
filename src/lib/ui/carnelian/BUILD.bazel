@@ -354,7 +354,6 @@ fx_component_manifest(
 fx_test_component(
     name = "carnelian-render-tests-component",
     compiled_manifest = ":carnelian-render-tests-manifest",
-    component_name = "carnelian-render-tests",
     deps = [":carnelian_test_packaged_bin"],
 )
 
@@ -387,7 +386,6 @@ fx_component_manifest(
 fx_test_component(
     name = "carnelian-tests-component",
     compiled_manifest = ":carnelian-tests-manifest",
-    component_name = "carnelian-tests",
     deps = [":carnelian_test_packaged_bin"],
 )
 

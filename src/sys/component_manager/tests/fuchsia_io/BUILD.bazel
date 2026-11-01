@@ -52,7 +52,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test_component",
     compiled_manifest = ":test_component-manifest",
-    component_name = "cm_fuchsia_io",
     deps = [":bin_packaged_bin"],
 )
 
@@ -67,7 +66,6 @@ fx_component(
     name = "child",
     testonly = True,
     compiled_manifest = ":child-manifest",
-    component_name = "child",
 )
 
 fx_package(

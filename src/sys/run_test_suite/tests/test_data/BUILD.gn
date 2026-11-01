@@ -122,7 +122,6 @@ fuchsia_component_manifest("long_running_test-manifest") {
 fuchsia_component("long_running_test") {
   testonly = true
   cm_label = ":long_running_test-manifest"
-  component_name = "long_running_test"
   deps = [ ":long_running_test_bin" ]
 }
 
@@ -135,7 +134,6 @@ fuchsia_component_manifest("logging_test-manifest") {
 fuchsia_component("logging_test") {
   testonly = true
   cm_label = ":logging_test-manifest"
-  component_name = "logging_test"
   deps = [ ":logging_test_bin" ]
 }
 
@@ -148,7 +146,6 @@ fuchsia_component_manifest("log_then_hang_test-manifest") {
 fuchsia_component("log_then_hang_test") {
   testonly = true
   cm_label = ":log_then_hang_test-manifest"
-  component_name = "log_then_hang_test"
   deps = [ ":log_then_hang_test_bin" ]
 }
 
@@ -161,7 +158,6 @@ fuchsia_component_manifest("logspam_test-manifest") {
 fuchsia_component("logspam_test") {
   testonly = true
   cm_label = ":logspam_test-manifest"
-  component_name = "logspam_test"
   deps = [ ":logspam_test_bin" ]
 }
 
@@ -174,7 +170,6 @@ fuchsia_component_manifest("stdout_ansi_test-manifest") {
 fuchsia_component("stdout_ansi_test") {
   testonly = true
   cm_label = ":stdout_ansi_test-manifest"
-  component_name = "stdout_ansi_test"
   deps = [ ":stdout_ansi_test_bin" ]
 }
 
@@ -187,6 +182,5 @@ fuchsia_component_manifest("error_logging_test-manifest") {
 fuchsia_component("error_logging_test") {
   testonly = true
   cm_label = ":error_logging_test-manifest"
-  component_name = "error_logging_test"
   deps = [ ":error_logging_test_bin" ]
 }

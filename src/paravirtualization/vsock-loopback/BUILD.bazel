@@ -62,7 +62,6 @@ fx_component_manifest(
 fx_component(
     name = "component",
     compiled_manifest = ":manifest",
-    component_name = "vsock-loopback",
     visibility = ["//src/paravirtualization:__subpackages__"],
     deps = [":bin_packaged"],
 )

@@ -89,7 +89,6 @@ fuchsia_component_manifest("power_state_recorder_rust_unittests-manifest") {
 
 fuchsia_test_component("power_state_recorder_rust_unittests-component") {
   cm_label = ":power_state_recorder_rust_unittests-manifest"
-  component_name = "power_state_recorder_rust_unittests"
   deps = [ ":state_recorder_lib_test" ]
 }
 

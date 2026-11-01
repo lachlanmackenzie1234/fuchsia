@@ -98,7 +98,6 @@ fx_component_manifest(
 fx_test_component(
     name = "test-component",
     compiled_manifest = ":test-component-manifest",
-    component_name = "package-directory-lib-test",
     deps = [":package-directory_test_packaged_bin"],
 )
 

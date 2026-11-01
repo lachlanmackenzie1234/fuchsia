@@ -83,6 +83,5 @@ fuchsia_component_manifest("component_manifest") {
 fuchsia_component("component") {
   testonly = true
   cm_label = ":component_manifest"
-  component_name = "mock"
   deps = [ ":bin" ]
 }

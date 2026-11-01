@@ -56,6 +56,5 @@ fx_component_manifest(
 fx_component(
     name = "psi_provider",
     compiled_manifest = ":psi_provider-manifest",
-    component_name = "psi_provider",
     deps = [":psi_provider_packaged_bin"],
 )

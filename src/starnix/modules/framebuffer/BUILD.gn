@@ -136,7 +136,6 @@ fuchsia_component_manifest("starnix-framebuffer-tests-manifest") {
 
 fuchsia_test_component("starnix-framebuffer-tests-component") {
   cm_label = ":starnix-framebuffer-tests-manifest"
-  component_name = "starnix-framebuffer-tests"
   deps = [
     ":framebuffer_test",
     "//src/starnix/kernel/vdso",

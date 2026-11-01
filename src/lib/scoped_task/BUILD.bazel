@@ -90,7 +90,6 @@ fx_component_manifest(
 fx_test_component(
     name = "scoped_task_test_cmp",
     compiled_manifest = ":scoped_task_test_cmp_manifest",
-    component_name = "scoped_task_test",
     deps = [
         ":scoped_task_test_packaged_bin",
         ":scoped_task_test_spawner_packaged_bin",

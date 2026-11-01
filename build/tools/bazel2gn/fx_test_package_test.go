@@ -44,7 +44,6 @@ fx_component_manifest(
 fx_test_component(
 	name = "foo-tests-component",
 	compiled_manifest = ":foo-tests-manifest",
-	component_name = "foo-tests",
 	deps = [":foo_unittests_packaged_bin"],
 )
 
@@ -71,7 +70,6 @@ fuchsia_component_manifest("foo-tests-manifest") {
 }
 fuchsia_test_component("foo-tests-component") {
 	cm_label = ":foo-tests-manifest"
-	component_name = "foo-tests"
 	deps = [
 		":foo_unittests",
 	]

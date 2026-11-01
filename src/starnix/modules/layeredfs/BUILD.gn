@@ -86,7 +86,6 @@ fuchsia_component_manifest("starnix-layeredfs-tests-manifest") {
 
 fuchsia_test_component("starnix-layeredfs-tests-component") {
   cm_label = ":starnix-layeredfs-tests-manifest"
-  component_name = "starnix-layeredfs-tests"
   test_type = "starnix"
   deps = [
     ":starnix_modules_layeredfs_lib_test",

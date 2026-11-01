@@ -61,7 +61,6 @@ fuchsia_component_manifest("dynamic-dictionary-provider-manifest") {
 
 fuchsia_component("dynamic-dictionary-provider") {
   cm_label = ":dynamic-dictionary-provider-manifest"
-  component_name = "dynamic-dictionary-provider"
   deps = [ ":provider_bin" ]
 }
 if (is_fuchsia) {
@@ -86,7 +85,6 @@ fuchsia_component_manifest("dynamic-dictionary-example-manifest") {
 
 fuchsia_test_component("dynamic-dictionary-example") {
   cm_label = ":dynamic-dictionary-example-manifest"
-  component_name = "dynamic-dictionary-example"
   deps = [ ":bin" ]
 }
 

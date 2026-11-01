@@ -50,7 +50,6 @@ fuchsia_component_manifest("provider-a-cmp-manifest") {
 fuchsia_component("provider-a-cmp") {
   testonly = true
   cm_label = ":provider-a-cmp-manifest"
-  component_name = "provider-a"
   visibility = [
     ":*",
     "//src/sys/component_manager/tests/services:*",
@@ -67,7 +66,6 @@ fuchsia_component_manifest("provider-b-cmp-manifest") {
 fuchsia_component("provider-b-cmp") {
   testonly = true
   cm_label = ":provider-b-cmp-manifest"
-  component_name = "provider-b"
   visibility = [
     ":*",
     "//src/sys/component_manager/tests/services:*",

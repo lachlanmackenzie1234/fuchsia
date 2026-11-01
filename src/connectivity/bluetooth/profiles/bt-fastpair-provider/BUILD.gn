@@ -112,7 +112,6 @@ fuchsia_structured_config_rust_lib("fastpair_provider_config") {
 if (is_fuchsia) {
   fuchsia_component("component") {
     cm_label = ":manifest"
-    component_name = "bt-fastpair-provider"
     visibility = [
       ":*",
       "//vendor/google/*",
@@ -199,7 +198,6 @@ if (is_fuchsia) {
 if (is_fuchsia) {
   fuchsia_test_component("bt-fastpair-provider-tests-component") {
     cm_label = ":bt-fastpair-provider-tests-manifest"
-    component_name = "bt-fastpair-provider-tests"
     deps = [ ":bt_fastpair_provider_bin_test" ]
   }
 }

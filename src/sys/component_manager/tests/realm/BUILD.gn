@@ -144,5 +144,4 @@ fuchsia_component_manifest("no_program-manifest") {
 fuchsia_component("no_program") {
   testonly = true
   cm_label = ":no_program-manifest"
-  component_name = "no_program"
 }

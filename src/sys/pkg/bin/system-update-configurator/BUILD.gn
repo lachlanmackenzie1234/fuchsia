@@ -186,6 +186,5 @@ fuchsia_component_manifest("manifest") {
 
 fuchsia_component("component") {
   cm_label = ":manifest"
-  component_name = "system-update-configurator"
   deps = [ ":bin" ]
 }

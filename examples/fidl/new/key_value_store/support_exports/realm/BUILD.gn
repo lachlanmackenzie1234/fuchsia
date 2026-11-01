@@ -34,7 +34,6 @@ fuchsia_component_manifest("realm-manifest") {
 
 fuchsia_component("realm") {
   cm_label = ":realm-manifest"
-  component_name = "realm"
   visibility = [
     ":*",
     "//examples/fidl/new/key_value_store/support_exports/cpp_natural:*",

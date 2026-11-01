@@ -104,7 +104,6 @@ fuchsia_component_manifest("starnix-device-mapper-tests-manifest") {
 
 fuchsia_test_component("starnix-device-mapper-tests-component") {
   cm_label = ":starnix-device-mapper-tests-manifest"
-  component_name = "starnix-device-mapper-tests"
   test_type = "starnix"
   deps = [
     ":device_mapper_test",
