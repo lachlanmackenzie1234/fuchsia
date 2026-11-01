@@ -542,7 +542,7 @@ _NORMAL_DEPENDENCIES = {
             "zstd-safe": Label("//third_party/rust_crates/vendor/zstd-safe-8.2.0:zstd_safe"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
-            "askama": Label("//third_party/rust_crates/vendor/askama-0.15.6:askama"),
+            "askama": Label("//third_party/rust_crates/vendor/askama-0.16.1:askama"),
             "async-fs": Label("//third_party/rust_crates/vendor/async-fs-2.2.0:async_fs"),
             "cargo_metadata": Label("//third_party/rust_crates/vendor/cargo_metadata-0.23.1:cargo_metadata"),
             "crossterm": Label("//third_party/rust_crates/vendor/crossterm-0.29.0:crossterm"),

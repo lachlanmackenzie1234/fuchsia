@@ -176,14 +176,14 @@ alias(
 )
 
 alias(
-    name = "askama-0.15.6",
-    actual = "//third_party/rust_crates/vendor/askama-0.15.6:askama",
+    name = "askama-0.16.1",
+    actual = "//third_party/rust_crates/vendor/askama-0.16.1:askama",
     tags = ["manual"],
 )
 
 alias(
     name = "askama",
-    actual = "//third_party/rust_crates/vendor/askama-0.15.6:askama",
+    actual = "//third_party/rust_crates/vendor/askama-0.16.1:askama",
     tags = ["manual"],
 )
 
