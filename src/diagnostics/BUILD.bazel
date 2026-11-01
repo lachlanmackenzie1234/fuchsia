@@ -11,6 +11,7 @@ test_suite(
     name = "host_tests",
     tests = [
         "//src/diagnostics/lib/sampler-config:sampler-config_host_test",
+        "//src/diagnostics/triage:triage_lib_test",
     ],
 )
 
