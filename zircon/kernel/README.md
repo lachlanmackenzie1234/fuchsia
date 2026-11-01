@@ -332,3 +332,6 @@ use <crate_name> as _;
 - **Running Tests**:
   - Run with `fx core-tests --kernel-unittest <suite_name>` or
     `fx run-boot-test core-tests.eng`.
+  - When running from a non-interactive shell (e.g. an agent harness), follow
+    the "Kernel boot tests" section of `//AGENTS.md`: detach stdin, pass
+    `-c kernel.halt-on-panic=false`, and bound the run with `timeout`.

@@ -276,14 +276,36 @@ yield more detailed logs than `ffx log`.
 
 `fx run-boot-test` runs kernel boot tests and provides more control over the
 test environment than `fx test`. It is useful to run Zircon's core tests.
+`fx core-tests` wraps `fx run-boot-test core-tests.eng`, and
+`--kernel-unittest <suite>` runs a kernel `ut` suite (C++ or Rust) before the
+core tests.
 
-By default (`kernel.halt-on-panic=false`) Zircon reboots on a kernel panic, and
-`fx run-boot-test` runs QEMU with `-no-reboot`, so a panic causes QEMU to exit
-and the command to return a failing exit code. Do **not** pass
-`kernel.halt-on-panic=true` when running boot tests from a shell command
-harness: it makes the kernel halt in the panic shell instead of rebooting, so
-QEMU never exits and the command hangs. Only use `kernel.halt-on-panic=true`
-when you explicitly intend to interact with the panic shell.
+When running QEMU boot tests (`fx run-boot-test`, `fx core-tests`, `fx qemu`)
+from a shell command harness or other non-interactive shell:
+
+*   **Detach stdin.** QEMU runs with `-nographic`, which connects the serial
+    console to stdin. If it is started from a background job, the shell stops
+    it with SIGTTIN/SIGTTOU (state `T` in `ps`, no CPU time) and it looks like
+    a hang. Start it with `setsid -w ... </dev/null` (use `-w`/`--wait` so `setsid` blocks until completion).
+*   **Disable halt-on-panic.** `fx qemu` (`zircon/scripts/run-zircon`) always
+    adds `kernel.halt-on-panic=true`, so a kernel panic halts in the panic
+    shell and QEMU never exits. Override it with
+    `-c kernel.halt-on-panic=false` (the last value wins). Together with the
+    `-no-reboot` that `fx run-boot-test` passes, a panic then makes QEMU exit.
+    Only leave `kernel.halt-on-panic=true` when you explicitly intend to
+    interact with the panic shell.
+*   **Bound and log.** Wrap the command in `timeout` and redirect its output
+    to a file. Do not pipe it into `grep`, which hides all progress until QEMU
+    exits.
+*   **Check the log, not just the exit code.** Look for `All tests passed`
+    (kernel `ut` suites) and `[  PASSED  ]` (core-tests). A fully passing run
+    can still exit nonzero (e.g. 31 on x64 after `graceful-shutdown`).
+
+```bash
+setsid -w timeout 1800 fx run-boot-test core-tests.eng \
+  -c kernel.halt-on-panic=false --kernel-unittest <suite> \
+  </dev/null > /tmp/boot-test.log 2>&1
+```
 
 #### Core tests
 

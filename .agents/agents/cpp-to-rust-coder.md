@@ -84,8 +84,10 @@ When tasked with implementing or updating a port:
      using `run_command` after applying code edits.
    - Read compiler diagnostics and address all errors and Clippy warnings.
    - Run relevant tests (`fx test`, `fx core-tests`, or `fx run-boot-test`). If any files under
-     `//zircon/kernel` are modified, run the full `core-tests` suite. When builds and tests finish,
-     run `./scripts/fx bazel shutdown` to release open file descriptors held by the Bazel server.
+     `//zircon/kernel` are modified, run the full `core-tests` suite. Follow the "Kernel boot
+     tests" section of `//AGENTS.md` when running QEMU boot tests so that they cannot stall or
+     hang. When builds and tests finish, run `./scripts/fx bazel shutdown` to release open file
+     descriptors held by the Bazel server.
    - Manually wrap any comments (`//`, `///`), string literals, or macro bodies exceeding 100
      characters (since `fx format-code` does not format them), and then run `./scripts/fx
      format-code` from the repository root.
