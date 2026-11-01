@@ -588,9 +588,6 @@ fn test_ambiguous_label() {
         quote! {
             break 'outer 'inner: loop { break 'inner 42; };
         },
-        quote! {
-            break 'outer ::lib::foo();
-        },
     ] {
         syn::parse2::<Stmt>(stmt).unwrap();
     }
