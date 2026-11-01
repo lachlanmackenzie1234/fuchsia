@@ -29,9 +29,6 @@ rustc_library("component") {
     "//third_party/rust_crates:futures",
   ]
 
-  # The component tool is only used for debugging.
-  deps += [ "//build/validate:non_production_tag" ]
-
   # This is a part of the bootfs image, so attempt to minimize its size impact.
   configs += [ "//build/config/rust:bootfs" ]
 

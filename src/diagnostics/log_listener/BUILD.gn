@@ -49,7 +49,6 @@ fuchsia_package("log_listener_shell_pkg") {
   deps = [
     ":bin",
     ":log_bin",
-    "//build/validate:non_production_tag",
   ]
 }
 

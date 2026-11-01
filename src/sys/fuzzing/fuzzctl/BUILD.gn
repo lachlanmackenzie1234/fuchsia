@@ -90,7 +90,6 @@ rustc_binary("bin") {
   ]
   deps = [
     ":lib",
-    "//build/validate:non_production_tag",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust",

@@ -731,9 +731,6 @@ visibility = [
   ":loom-v0_7_2.actual.rust_compilation_deps",
 ]
 testonly = true
-deps = [
-  "//build/validate:non_production_tag",
-]
 
 [gn.package.generic-array."0.14.9"]
 rustflags = [ "--cfg=relaxed_coherence" ]
@@ -825,7 +822,6 @@ configs = [
 # Loom has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
 [gn.package.loom."0.7.2"]
-deps = [ "//build/validate:non_production_tag" ]
 testonly = true
 
 [gn.package.md-5."0.11.0"]
@@ -852,7 +848,7 @@ output_name = "mock-omaha-server"
 # Has build script but no config needed.
 
 [gn.package.mockall."0.15.0"]
-deps = ["//build/validate:non_production_tag"]
+# Has build script but no config needed.
 
 [gn.package.mockall_derive."0.15.0"]
 # Has build script but no config needed.
@@ -1183,7 +1179,6 @@ rustflags = []
 # scoped-tls has not gone through a thorough safety review yet, and needs to be
 # re-reviewed before it can be used outside of tests.
 [gn.package.scoped-tls."1.0.1"]
-deps = [ "//build/validate:non_production_tag" ]
 visibility = [
   "//third_party/rust_crates/compat/icu:*",
   ":loom-v0_7_2.actual",

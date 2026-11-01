@@ -10181,7 +10181,6 @@ rustc_library("generator-v0_8_11") {
     deps += [ ":windows-link-v0_2_1" ]
     deps += [ ":windows-result-v0_3_4" ]
   }
-  deps += [ "//build/validate:non_production_tag" ]
 
   rustenv = []
 
@@ -13045,7 +13044,6 @@ rustc_library("loom-v0_7_2") {
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":tracing-subscriber-v0_3_23" ]
   deps += [ ":tracing-v0_1_44" ]
-  deps += [ "//build/validate:non_production_tag" ]
 
   rustenv = []
 
@@ -13846,7 +13844,6 @@ rustc_library("mockall-v0_15_0") {
   deps += [ ":mockall_derive-v0_15_0($host_toolchain)" ]
   deps += [ ":predicates-tree-v1_0_13" ]
   deps += [ ":predicates-v3_1_4" ]
-  deps += [ "//build/validate:non_production_tag" ]
 
   rustenv = []
 
@@ -20401,7 +20398,6 @@ rustc_library("scoped-tls-v1_0_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ "//build/validate:non_production_tag" ]
 
   rustenv = []
 

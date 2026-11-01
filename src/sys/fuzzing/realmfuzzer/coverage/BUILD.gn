@@ -24,7 +24,6 @@ rustc_binary("bin") {
     "src/options.rs",
   ]
   deps = [
-    "//build/validate:non_production_tag",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",

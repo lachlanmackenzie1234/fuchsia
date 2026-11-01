@@ -19,10 +19,7 @@ group("snapshot") {
 fuchsia_package("pkg") {
   package_name = "snapshot"
 
-  deps = [
-    ":main",
-    "//build/validate:non_production_tag",
-  ]
+  deps = [ ":main" ]
 }
 
 ###############################################################################

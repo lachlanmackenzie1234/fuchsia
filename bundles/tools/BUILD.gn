@@ -30,7 +30,6 @@ group("tools") {
     "//third_party/openssh-portable:ssh-keygen-shell-pkg",
     "//third_party/openssh-portable:ssh-shell-pkg",
   ]
-  deps = [ "//build/validate:non_production_tag" ]
 
   # These are libraries that were being included in tools?
   # "//src/security/lib/scrutiny",

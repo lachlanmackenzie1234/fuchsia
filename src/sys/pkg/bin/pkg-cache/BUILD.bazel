@@ -214,8 +214,7 @@ resource(
     dest = "data/pkgfs_disable_executability_restrictions",
 )
 
-# GN dependency //build/validate:non_production_tag has no Bazel equivalent:
-# the only consumer is the
+# The only consumer is the
 # //bundles/assembly:pkgfs_disable_executability_restrictions AIB, which sets
 # allowed_in = ["eng"], so assembly keeps it out of production builds.
 fx_package(

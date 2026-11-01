@@ -122,7 +122,6 @@ rustc_binary("bin") {
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:url",
   ]
-  deps += [ "//build/validate:non_production_tag" ]
 }
 
 rustc_test("bin_test") {
@@ -176,7 +175,6 @@ rustc_test("bin_test") {
   source_root = "src/main.rs"
   configs += [ "//build/config/rust:bootfs" ]
   output_name = "debug_dash_launcher_bin_test"
-  deps += [ "//build/validate:non_production_tag" ]
 }
 
 fuchsia_component("component") {

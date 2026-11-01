@@ -44,8 +44,6 @@ fuchsia_structured_config_rust_lib(
     cm_label = ":manifest",
 )
 
-# The dash shell is only used in eng products, not production.
-# @bazel2gn:raw_attribute:deps += [ "//build/validate:non_production_tag" ]
 rustc_binary(
     name = "bin",
     srcs = [
@@ -100,7 +98,6 @@ rustc_binary(
 # sentinel because it packages `//src/bringup/bin/ptysvc:component` (which is
 # GN-only). `meta/debug_dash_launcher_unittests.cml` expects
 # `bin/debug_dash_launcher_bin_test`.
-# @bazel2gn:raw_attribute:deps += [ "//build/validate:non_production_tag" ]
 rustc_test(
     name = "bin_test",
     build_flags = ["//build/config/rust:bootfs"],

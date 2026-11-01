@@ -71,7 +71,6 @@ source_set("common") {
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
   ]
-  deps = [ "//build/validate:non_production_tag" ]
 }
 
 source_set("runner-unittests-common") {
