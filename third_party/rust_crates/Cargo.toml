@@ -377,7 +377,7 @@ serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-liby
 serial_test = "4.0.1" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.2", default-features = false }
 signal-hook = "0.4.5"
-syn = { version = "3.0.6", features = ["full", "visit", "visit-mut", "extra-traits"] }
+syn = { version = "3.0.9", features = ["full", "visit", "visit-mut", "extra-traits"] }
 synstructure = "0.14.0"
 term_grid = "0.2.0"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw

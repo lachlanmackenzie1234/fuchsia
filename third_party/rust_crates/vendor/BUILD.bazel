@@ -3074,14 +3074,14 @@ alias(
 )
 
 alias(
-    name = "syn-3.0.6",
-    actual = "//third_party/rust_crates/vendor/syn-3.0.6:syn",
+    name = "syn-3.0.9",
+    actual = "//third_party/rust_crates/vendor/syn-3.0.9:syn",
     tags = ["manual"],
 )
 
 alias(
     name = "syn",
-    actual = "//third_party/rust_crates/vendor/syn-3.0.6:syn",
+    actual = "//third_party/rust_crates/vendor/syn-3.0.9:syn",
     tags = ["manual"],
 )
 

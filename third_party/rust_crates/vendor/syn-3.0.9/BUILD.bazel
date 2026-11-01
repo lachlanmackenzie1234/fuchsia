@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "syn",
     package_url = "https://github.com/dtolnay/syn",
-    package_version = "3.0.6",
+    package_version = "3.0.9",
 )
 
 license(
@@ -94,7 +94,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "3.0.6",
+    version = "3.0.9",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.47:quote",
