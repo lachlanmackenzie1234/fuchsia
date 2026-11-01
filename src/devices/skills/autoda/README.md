@@ -66,8 +66,12 @@ lines keep working. The auditor accepts `--spec`/`--devlog` and the older
 
 Roles are defined once in `ROLES` in
 [`register_subagents.py`](scripts/register_subagents.py). `WORKFLOWS` lists
-which roles each entry point registers and may attach a workflow addendum,
-appended to the role's system prompt under a `WORKFLOW CONTEXT` banner.
+which roles each entry point registers. Every registered prompt ends with an
+`ACTIVE WORKFLOW` banner naming the entry point; roles shared by several
+workflows (`linux-driver-expert`, `datasheet-researcher`, `hardware-prober`)
+carry shared invariants followed by one section per workflow and follow the
+section the banner names. A workflow may also attach an addendum, appended
+after the banner, for roles that need extra workflow-specific instructions.
 
 | Role | `fix` | `recon` | Specification |
 | :--- | :---: | :---: | :--- |
