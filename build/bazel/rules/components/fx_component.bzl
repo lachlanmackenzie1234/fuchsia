@@ -391,13 +391,9 @@ _fx_check_includes = rule(
 )
 
 _COMMON_COMPONENT_ATTRS = {
-    # The behavior is different from that documented for the inherited attribute.
+    # Unused; will be removed soon.
     "component_name": attr.string(
-        doc = """The name of the component.
-
-        This value will override the component name value in the `compiled_manifest`.
-        Defaults to the `name` of this target.
-        """,
+        doc = "Unused; will be removed soon. Set `component_name` on `fx_component_manifest` instead.",
         mandatory = False,
         # Otherwise an unset value reaches the impl as an always-truthy
         # select(), and the `name` fallback never applies.
@@ -440,6 +436,8 @@ def _fx_component_impl(
         # Only `fx_test_component()` declares this attribute.
         test_type = None,
         **kwargs):
+    _ = component_name  # Unused; will be removed soon.
+
     if _is_test_component:
         # Inherited attributes that are not set default to None, so only an
         # explicit `testonly = False` is an error.
@@ -462,7 +460,6 @@ def _fx_component_impl(
     fuchsia_component_common(
         name = name,
         compiled_manifest = compiled_manifest,
-        component_name = component_name or name,
         deps = deps,
         testonly = testonly,
         visibility = visibility,

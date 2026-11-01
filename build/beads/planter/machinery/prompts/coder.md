@@ -108,9 +108,10 @@ target comments into `BUILD.bazel`; pair path-sync comments with `LINT.IfChange`
 - Rules: `fx_package`, `fx_packaged_binary` (`//build/bazel/rules/packages:*`), `fx_component`,
   `fx_component_manifest` (`//build/bazel/rules/components:fx_component.bzl`), `resource`
   (`@fuchsia_rules_common//packages:resources.bzl`).
-- **Manifests & packaged binaries**: Set `component_name` matching GN (`<n>` for `fuchsia_component`,
-  `package_name` for `fuchsia_package_with_single_component`) and list shards in `includes` (prefer
-  `cml_shard`). Mark binaries `tags = ["manual"]`, wrap in `fx_packaged_binary(..., binary_name = "<elf>")`,
+- **Manifests & packaged binaries**: Set `component_name` on `fx_component_manifest` (or
+  `fx_unittest_component`; never on `fx_component` or `fx_test_component`) matching GN (`<n>` for
+  `fuchsia_component`, `package_name` for `fuchsia_package_with_single_component`) and list shards in
+  `includes` (prefer `cml_shard`). Mark binaries `tags = ["manual"]`, wrap in `fx_packaged_binary(..., binary_name = "<elf>")`,
   and pass to `fx_component(deps)` or `fx_package(tools)`. Test helper components use
   `fx_component(testonly = True)`, never `fx_test_component`.
 - **`BUILD.gn` & assembly cleanup**: `bazel2gn` converts `fx_component`/`fx_component_manifest`,

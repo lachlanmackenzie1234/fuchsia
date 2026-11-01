@@ -1358,9 +1358,8 @@ verify_fx_test_unstripped_binaries(
     test = ":example_cc_test",
 )
 
-# Tests that `fx_component()` defaults `component_name` to `name` (overriding
-# `compiled_manifest`'s `component_name`) and `fx_package()` defaults
-# `package_name` (and `archive_name`) to `name`.
+# Tests that `fx_component()` uses `compiled_manifest`'s `component_name` and
+# `fx_package()` defaults `package_name` (and `archive_name`) to `name`.
 fx_component(
     name = "example_default_name_component",
     compiled_manifest = ":example_helper_manifest",
@@ -1373,15 +1372,14 @@ fx_package(
 
 verify_names_in_fx_package(
     name = "verify_example_default_name_package",
-    expected_component_names = ["example_default_name_component"],
+    expected_component_names = ["example_helper"],
     expected_far_name = "example_default_name_package.far",
     expected_package_name = "example_default_name_package",
     package = ":example_default_name_package",
 )
 
-# Tests that `fx_test_component()` defaults `component_name` to `name`
-# (overriding `compiled_manifest`'s `component_name`) when `component_name` is
-# omitted.
+# Tests that `fx_test_component()` uses `compiled_manifest`'s `component_name`
+# when `component_name` is omitted.
 fx_test_component(
     name = "example_default_name_test_component",
     compiled_manifest = ":example_test_manifest",
@@ -1396,16 +1394,14 @@ fx_package(
 verify_names_in_fx_package(
     name = "verify_example_default_name_test_package",
     testonly = True,
-    expected_component_names = ["example_default_name_test_component"],
+    expected_component_names = ["example_test"],
     expected_far_name = "example_default_name_test_package.far",
     expected_package_name = "example_default_name_test_package",
     package = ":example_default_name_test_package",
 )
 
-# Tests that explicit `component_name` on `fx_component()` and
-# `fx_test_component()` overrides both `name` and `compiled_manifest`'s
-# `component_name`, and explicit `package_name` and `archive_name` on
-# `fx_package()` override `name`.
+# Tests that `fx_component()` and `fx_test_component()` use `compiled_manifest`'s `component_name`,
+# and explicit `package_name` and `archive_name` on `fx_package()` override `name`.
 fx_component(
     name = "example_custom_name_component",
     testonly = True,
@@ -1432,8 +1428,8 @@ verify_names_in_fx_package(
     name = "verify_example_custom_names_package",
     testonly = True,
     expected_component_names = [
-        "custom_helper_component",
-        "custom_test_component",
+        "example_helper",
+        "example_test",
     ],
     expected_far_name = "custom_archive_name.far",
     expected_package_name = "custom_package_name",

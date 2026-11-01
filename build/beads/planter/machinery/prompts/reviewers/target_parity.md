@@ -93,7 +93,8 @@ emit findings to re-litigate rules owned by passing checks:
 ## 4. Fuchsia Package, Component & Test Migration Semantics
 1. **`fx_package` & Component Parity**:
    - Verify `fx_component_manifest` sets `component_name` matching GN (`<n>` for
-     `fuchsia_component("<n>")`, or `package_name` for `fuchsia_package_with_single_component`) and
+     `fuchsia_component("<n>")`, or `package_name` for `fuchsia_package_with_single_component`),
+     `fx_component` / `fx_test_component` do not set `component_name`, and `fx_component_manifest`
      lists all direct and transitive `.shard.cml` dependencies in `includes`.
    - Verify migrated `fuchsia_package` / `fuchsia_package_with_single_component` /
      `fuchsia_component` definitions are removed from `BUILD.gn`, and if
