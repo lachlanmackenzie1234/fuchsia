@@ -13,9 +13,12 @@
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <linux/audit.h>
 #include <linux/capability.h>
+#include <linux/netlink.h>
 
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/selinux/userspace/audit_utils.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
@@ -113,6 +116,61 @@ TEST(InheritTest, FdUseDeniedFdRemappedToNull) {
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     }));
   }));
+}
+
+// Verifies that AVC denials emitted while revalidating inherited file descriptors during `execve`
+// report the post-exec binary name in `comm=` rather than the pre-exec thread name.
+TEST(InheritTest, UnauthorizedFdDenialLogsPostExecComm) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kBridgeSecurityContext[] = "test_u:test_r:test_inherit_bridge_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_no_use_fd_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    auto tmp_file_path = CreateTmpFile();
+    ASSERT_TRUE(tmp_file_path.is_ok());
+    fbl::unique_fd no_use_fd(open(tmp_file_path.value().data(), O_RDONLY));
+    ASSERT_TRUE(no_use_fd.is_valid());
+
+    ASSERT_TRUE(RunSubprocessAs(kBridgeSecurityContext, [&] {
+      std::string binary_name = "true_bin";
+      std::string path_for_exec = PathForExec(binary_name);
+      char* const args[] = {binary_name.data(), nullptr};
+
+      ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
+      SAFE_SYSCALL(execv(path_for_exec.data(), args));
+    }));
+  }));
+
+  fbl::unique_fd audit_fd = OpenNetlinkAuditSocket();
+  ASSERT_TRUE(audit_fd.is_valid());
+  ASSERT_TRUE(SendUserAuditMessage(audit_fd.get(), 1, "COMM_TEST_END").is_ok());
+  ASSERT_TRUE(RegisterAsAuditDaemon(audit_fd.get(), getpid()).is_ok());
+
+  bool found_fd_denial = false;
+  char buf[4096];
+  while (true) {
+    auto recv_res = ReceiveNetlinkMessage(audit_fd.get(), buf, sizeof(buf));
+    if (recv_res.is_error() && recv_res.error_value() == EINTR) {
+      continue;
+    }
+    ASSERT_TRUE(recv_res.is_ok()) << strerror(recv_res.error_value());
+    ASSERT_GE(recv_res.value(), static_cast<ssize_t>(NLMSG_LENGTH(0)));
+    auto* header = reinterpret_cast<struct nlmsghdr*>(buf);
+    std::string_view message(reinterpret_cast<const char*>(NLMSG_DATA(header)),
+                             recv_res.value() - sizeof(*header));
+    if (header->nlmsg_type == AUDIT_USER_AVC &&
+        message.find("COMM_TEST_END") != std::string_view::npos) {
+      break;
+    }
+    if (header->nlmsg_type == AUDIT_AVC && message.find("tclass=fd") != std::string_view::npos) {
+      found_fd_denial = true;
+      EXPECT_NE(message.find("comm=\"true_bin\""), std::string_view::npos) << message;
+    }
+  }
+  EXPECT_TRUE(UnregisterAuditDaemon(audit_fd.get()).is_ok());
+  EXPECT_TRUE(found_fd_denial);
 }
 
 // Under the parent domain, open a test file twice such that the child domain does not have the
