@@ -687,6 +687,41 @@ TEST(InheritTest, NoAtSecureAllowed) {
   }));
 }
 
+class InheritShareTest : public testing::TestWithParam<bool> {};
+
+// When a process shares filesystem context (via `CLONE_FS`), `exec` requires the `share`
+// permission for the post-exec domain and fails with `EPERM` if denied.
+TEST_P(InheritShareTest, ShareWithCloneFs) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  const bool allow_share = GetParam();
+  const char* child_context = allow_share ? "test_u:test_r:test_inherit_child_allow_share_t:s0"
+                                          : "test_u:test_r:test_inherit_child_no_share_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    test_helper::CloneHelper clone_helper;
+    test_helper::ForkHelper fork_helper;
+    clone_helper.runInClonedChild(CLONE_FS | SIGCHLD, [&] {
+      ASSERT_TRUE(WriteTaskAttr("exec", child_context).is_ok());
+
+      std::string binary_name = "true_bin";
+      std::string path_for_exec = PathForExec(binary_name);
+      char* const args[] = {binary_name.data(), nullptr};
+      if (allow_share) {
+        SAFE_SYSCALL(execv(path_for_exec.data(), args));
+      } else {
+        EXPECT_THAT(execv(path_for_exec.data(), args), SyscallFailsWithErrno(EPERM));
+      }
+    });
+  }));
+}
+
+INSTANTIATE_TEST_SUITE_P(InheritTest, InheritShareTest, ::testing::Bool(),
+                         [](const testing::TestParamInfo<bool>& info) {
+                           return info.param ? "Allowed" : "Denied";
+                         });
+
 // Creates a temporary `#!` script and ELF interpreter labeled for script transition testing.
 void PrepareScriptTest(const test_helper::ScopedTempDir& temp_dir, std::string* script_path) {
   constexpr char kInterpreterFileLabel[] = "test_u:object_r:test_inherit_interp_file_t:s0";

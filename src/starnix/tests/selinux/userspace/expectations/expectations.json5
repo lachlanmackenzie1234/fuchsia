@@ -17,6 +17,10 @@
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/RootContext",
 
+                // TODO: https://fxbug.dev/578846638 - Return EPERM when process share check fails
+                // on execve.
+                "InheritTest/InheritShareTest.ShareWithCloneFs/Denied",
+
                 // TODO: https://fxbug.dev/532921178 - io_uring memory accounting is not implemented
                 // in Starnix.
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",
