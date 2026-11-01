@@ -21,7 +21,22 @@ exports_files(
 )
 
 cml_shard(
+    name = "offer.shard",
+    shard = "offer.shard.cml",
+)
+
+cml_shard(
     name = "use.shard",
     shard = "use.shard.cml",
     visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
+)
+
+cml_shard(
+    name = "client.shard",
+    includes = [
+        ":offer.shard",
+        ":use.shard",
+    ],
+    shard = "client.shard.cml",
+    visibility = ["//src/sys/time/timekeeper:__pkg__"],
 )
