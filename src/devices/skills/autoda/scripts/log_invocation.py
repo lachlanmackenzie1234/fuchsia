@@ -2,26 +2,31 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Logs /autoda-fix skill invocations with skill version and session model telemetry.
+"""Logs AutoDA skill invocations with skill version and session model telemetry.
 
-Executes at the start of Phase 0 (Step 0.1) in `/autoda-fix` to record:
+Shared by the AutoDA entry-point skills (`--workflow fix` for `/autoda-fix`,
+`--workflow recon` for `/autoda-recon`). Executes at the start of Phase 0 to
+record:
 - timestamp (UTC ISO-8601)
 - user (LDAP)
-- bug_id (Buganizer issue ID)
+- workflow ("fix" or "recon")
+- bug_id (Buganizer issue ID; fix workflow)
+- system_id and campaign_id (recon workflow)
 - conversation_id (Root orchestrator conversation UUID)
 - trajectory_id (Resolved via reflection_cli or transcript.jsonl)
-- skill ("autoda-fix")
-- skill_version (Parsed from SKILL.md YAML frontmatter)
+- skill ("autoda-fix" or "autoda-recon")
+- skill_version (Parsed from the entry point's SKILL.md YAML frontmatter)
 - model (Concise model + checkpoint summary)
 - model_id (Logical model identifier)
 - model_version (Full response model string from reflection_cli)
-- verification_mode ("Mode A", "Mode B", or "Mode C" when selected)
+- verification_mode ("Mode A", "Mode B", or "Mode C" when selected; fix)
+- hardware_verification and outcome (recon)
 
 When Fuchsia metrics collection (`fx metrics` / `ffx config analytics`) is
 enabled, appends/upserts the record to the shared dashboard telemetry JSONL file
 (and a local fallback in ~/.gemini/jetski/autoda_skill_invocations.jsonl).
-Always prints the resolved JSON object to stdout for inclusion in `bug_spec.md`,
-`bug_devlog.md`, and Gerrit commit trailers.
+Always prints the resolved JSON object to stdout for inclusion in the session
+artifacts and Gerrit commit trailers.
 """
 
 import argparse
@@ -40,13 +45,21 @@ _DEFAULT_SHARED_TELEMETRY_PATH = (
     "/google/data/rw/users/ch/chadnorvell/autoda/dashboard/data/"
     "skill_invocations.jsonl"
 )
-_DEFAULT_SKILL_VERSION = "1.2.0"
+_WORKFLOW_SKILLS = {"fix": "autoda-fix", "recon": "autoda-recon"}
+_DEFAULT_SKILL_VERSIONS = {"fix": "1.3.0", "recon": "1.0.0"}
+_RECON_HW_VERIFICATION = {"enabled", "disabled"}
+_RECON_OUTCOMES = {
+    "IN_PROGRESS",
+    "STATIC_COMPLETE",
+    "HARDWARE_VERIFIED",
+    "BLOCKED",
+}
 
 
-def read_skill_version(skill_md_path: Path) -> str:
+def read_skill_version(skill_md_path: Path, default: str) -> str:
     """Extracts `version:` from SKILL.md YAML frontmatter."""
     if not skill_md_path.is_file():
-        return _DEFAULT_SKILL_VERSION
+        return default
     try:
         content = skill_md_path.read_text(encoding="utf-8", errors="replace")[
             :2048
@@ -56,7 +69,7 @@ def read_skill_version(skill_md_path: Path) -> str:
             return m.group(1).strip()
     except OSError:
         pass
-    return _DEFAULT_SKILL_VERSION
+    return default
 
 
 def format_concise_model(model_id: str, model_version: str) -> str:
@@ -214,7 +227,14 @@ def upsert_jsonl_record(jsonl_path: Path, record: Dict[str, Any]) -> bool:
                             record.get("bug_id")
                             and obj.get("bug_id") == record.get("bug_id")
                         )
-                        if same_conv and (same_bug or not obj.get("bug_id")):
+                        same_system = bool(
+                            record.get("system_id")
+                            and obj.get("system_id") == record.get("system_id")
+                        )
+                        unkeyed = not obj.get("bug_id") and not obj.get(
+                            "system_id"
+                        )
+                        if same_conv and (same_bug or same_system or unkeyed):
                             merged = dict(obj)
                             for k, v in record.items():
                                 if v != "" and v is not None:
@@ -256,16 +276,7 @@ def read_spec_frontmatter_fields(
     """Reads (verification_mode, adversarial_review, adversarial_review_rounds) from bug_spec.md."""
     if not conversation_id:
         return "", "", None
-    brain_root = (
-        Path(
-            os.environ.get(
-                "ANTIGRAVITY_APP_DATA_DIR",
-                str(Path.home() / ".gemini" / "jetski"),
-            )
-        )
-        / "brain"
-    )
-    spec_path = brain_root / conversation_id / "bug_spec.md"
+    spec_path = _brain_root() / conversation_id / "bug_spec.md"
     if not spec_path.is_file():
         return "", "", None
     mode = ""
@@ -293,6 +304,43 @@ def read_spec_frontmatter_fields(
     except OSError:
         pass
     return mode, adv_review, adv_rounds
+
+
+def read_recon_spec_frontmatter_fields(
+    conversation_id: str,
+) -> Tuple[str, str, str]:
+    """Reads (system_id, hardware_verification, outcome) from recon_spec.md."""
+    if not conversation_id:
+        return "", "", ""
+    spec_path = _brain_root() / conversation_id / "recon_spec.md"
+    if not spec_path.is_file():
+        return "", "", ""
+    fields = {"system_id": "", "hardware_verification": "", "outcome": ""}
+    try:
+        content = spec_path.read_text(encoding="utf-8", errors="replace")[:4096]
+        for key in fields:
+            m = re.search(rf"(?m)^{key}\s*:\s*[\"']?([^\"'\n]+)[\"']?", content)
+            if m and "pending" not in m.group(1).lower():
+                fields[key] = m.group(1).strip()
+    except OSError:
+        pass
+    return (
+        fields["system_id"],
+        fields["hardware_verification"].lower(),
+        fields["outcome"].upper(),
+    )
+
+
+def _brain_root() -> Path:
+    return (
+        Path(
+            os.environ.get(
+                "ANTIGRAVITY_APP_DATA_DIR",
+                str(Path.home() / ".gemini" / "jetski"),
+            )
+        )
+        / "brain"
+    )
 
 
 def _get_fuchsia_metrics_dir() -> Path:
@@ -360,17 +408,47 @@ def is_fx_metrics_enabled(fuchsia_dir: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Log /autoda-fix invocation telemetry (Signal B)."
+        description="Log AutoDA skill invocation telemetry (Signal B)."
+    )
+    parser.add_argument(
+        "--workflow",
+        default="fix",
+        choices=sorted(_WORKFLOW_SKILLS),
+        help="Entry-point workflow being invoked (default: fix).",
     )
     parser.add_argument(
         "--conversation-id",
         default="",
-        help="Root Bug Orchestrator conversation UUID.",
+        help="Root orchestrator conversation UUID.",
     )
     parser.add_argument(
         "--bug-id",
         default="",
-        help="Buganizer issue ID.",
+        help="Buganizer issue ID (fix workflow).",
+    )
+    parser.add_argument(
+        "--system-id",
+        default="",
+        help="Stable identifier of the hardware system under recon.",
+    )
+    parser.add_argument(
+        "--campaign-id",
+        default="",
+        help="Recon campaign identifier grouping per-system sessions.",
+    )
+    parser.add_argument(
+        "--hardware-verification",
+        default="",
+        choices=["", *sorted(_RECON_HW_VERIFICATION)],
+        help="Recon hardware verification policy ('enabled' or 'disabled').",
+    )
+    parser.add_argument(
+        "--outcome",
+        default="",
+        help=(
+            "Recon session outcome (IN_PROGRESS, STATIC_COMPLETE, "
+            "HARDWARE_VERIFIED, or BLOCKED)."
+        ),
     )
     parser.add_argument(
         "--verification-mode",
@@ -409,12 +487,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    workflow = args.workflow
+    skill_name = _WORKFLOW_SKILLS[workflow]
     here = Path(__file__).resolve().parent
-    skill_md = here.parent / "SKILL.md"
+    # Entry-point skills live beside the shared core:
+    # //src/devices/skills/autoda/scripts -> //src/devices/skills/<skill>/SKILL.md
+    skill_md = here.parent.parent / skill_name / "SKILL.md"
     fuchsia_dir = Path(
-        os.environ.get("FUCHSIA_DIR", str(here.parents[3]))
+        os.environ.get("FUCHSIA_DIR", str(here.parents[4]))
     ).resolve()
-    skill_version = args.skill_version.strip() or read_skill_version(skill_md)
+    skill_version = args.skill_version.strip() or read_skill_version(
+        skill_md, _DEFAULT_SKILL_VERSIONS[workflow]
+    )
 
     clean_bug = re.sub(r"^(?:b/|bug:)", "", args.bug_id.strip(), flags=re.I)
     m_digits = re.search(r"(\d{5,})", clean_bug)
@@ -425,16 +509,6 @@ def main() -> int:
         conv_id
     )
     final_model = args.model.strip() or resolved_model
-    spec_mode, spec_adv, spec_rounds = read_spec_frontmatter_fields(conv_id)
-    verification_mode = (
-        normalize_verification_mode(args.verification_mode) or spec_mode
-    )
-    adv_review = args.adversarial_review.strip().lower() or spec_adv
-    adv_rounds = (
-        args.adversarial_review_rounds
-        if args.adversarial_review_rounds is not None
-        else spec_rounds
-    )
 
     try:
         user = os.environ.get("USER") or getpass.getuser()
@@ -448,19 +522,48 @@ def main() -> int:
             )
         ),
         "user": user,
+        "workflow": workflow,
         "bug_id": bug_id,
         "conversation_id": conv_id,
         "trajectory_id": traj_id,
-        "skill": "autoda-fix",
+        "skill": skill_name,
         "skill_version": skill_version,
         "model": final_model,
         "model_id": model_id,
         "model_version": model_version,
-        "verification_mode": verification_mode,
-        "adversarial_review": adv_review,
     }
-    if adv_rounds is not None:
-        record["adversarial_review_rounds"] = adv_rounds
+
+    if workflow == "fix":
+        spec_mode, spec_adv, spec_rounds = read_spec_frontmatter_fields(conv_id)
+        verification_mode = (
+            normalize_verification_mode(args.verification_mode) or spec_mode
+        )
+        adv_review = args.adversarial_review.strip().lower() or spec_adv
+        adv_rounds = (
+            args.adversarial_review_rounds
+            if args.adversarial_review_rounds is not None
+            else spec_rounds
+        )
+        record["verification_mode"] = verification_mode
+        record["adversarial_review"] = adv_review
+        if adv_rounds is not None:
+            record["adversarial_review_rounds"] = adv_rounds
+    else:
+        spec_system, spec_hw, spec_outcome = read_recon_spec_frontmatter_fields(
+            conv_id
+        )
+        outcome = args.outcome.strip().upper() or spec_outcome
+        if outcome and outcome not in _RECON_OUTCOMES:
+            parser.error(
+                f"--outcome must be one of {sorted(_RECON_OUTCOMES)}, "
+                f"got {outcome!r}."
+            )
+        record["system_id"] = args.system_id.strip() or spec_system
+        record["campaign_id"] = args.campaign_id.strip()
+        record["hardware_verification"] = (
+            args.hardware_verification.strip().lower() or spec_hw
+        )
+        record["outcome"] = outcome
 
     metrics_enabled = is_fx_metrics_enabled(fuchsia_dir)
     shared_ok = False

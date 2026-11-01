@@ -2,14 +2,24 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Subagent definitions for the autoda-fix workflow.
+"""Subagent definitions for the AutoDA skill family.
 
-Contains system prompts and configuration specs for dynamically registering the
-fit-for-purpose subagent team via `define_subagent` when running the in-situ
-driver bug investigation, surgical fix, and hardware verification workflow.
+Roles are defined once in `ROLES`. Each entry-point skill (`autoda-fix`,
+`autoda-recon`) registers the subset of roles listed for its workflow in
+`WORKFLOWS`, optionally with a workflow-specific prompt addendum appended to
+the role's system prompt. Entry points call `define_subagent` with the
+configurations returned by `subagents_for(<workflow>)`.
+
+Run `register_subagents.py --workflow fix|recon` to print the merged
+configurations as JSON.
 """
 
-SUBAGENTS = {
+import argparse
+import json
+import sys
+from typing import Any, Dict
+
+ROLES: Dict[str, Dict[str, Any]] = {
     "bug-investigator": {
         "description": (
             "Executes Phase 0 reconnaissance (`issues readonly render"
@@ -346,7 +356,150 @@ SUBAGENTS = {
     },
 }
 
-if __name__ == "__main__":
-    import json
+# Per-workflow role membership and prompt addenda. An addendum is appended to
+# the role's shared system prompt under a `WORKFLOW CONTEXT` banner so that a
+# role defined for one workflow can be reused by another with adjusted framing.
+WORKFLOWS: Dict[str, Dict[str, Any]] = {
+    "fix": {
+        "skill": "autoda-fix",
+        "roles": [
+            "bug-investigator",
+            "fuchsia-driver-fixer",
+            "hardware-prober",
+            "linux-driver-expert",
+            "datasheet-researcher",
+            "session-auditor",
+            "adversarial-reviewer",
+        ],
+        "addenda": {},
+    },
+    "recon": {
+        "skill": "autoda-recon",
+        "roles": [
+            "linux-driver-expert",
+            "datasheet-researcher",
+            "hardware-prober",
+            "session-auditor",
+            "adversarial-reviewer",
+        ],
+        "addenda": {
+            "linux-driver-expert": (
+                "There is no Fuchsia driver to diff against; the subject is"
+                " a hardware system that Fuchsia does not yet drive."
+                " Deconstruct the reference Linux driver into claims: the"
+                " MMIO register map with an access class per register"
+                " (read-only, read-modify-write safe, write-1-to-clear,"
+                " self-clearing, destructive-read, hard-deny), the"
+                " initialization and power sequencing with ordering and"
+                " delays, clock/reset/power-domain/pinctrl dependencies from"
+                " the driver and its devicetree binding, and every quirk or"
+                " errata workaround. For each workaround, run `git log` /"
+                " `git blame` on the lines to recover the commit that added"
+                " it and the silicon revision it was added for. Prefer the"
+                " product or vendor kernel tree named in the campaign config"
+                " over upstream and record which tree and `branch@commit` was"
+                " read. Emit one fact per row with an applies-to scope (SoC,"
+                " IP block and revision, silicon revision) and the verbatim"
+                " citation. The zero-parametric-memory rule and the"
+                " `VERIFIED_FROM_SOURCE` / `BLOCKED_MISSING_LINUX_SOURCE`"
+                " status markers apply unchanged."
+            ),
+            "datasheet-researcher": (
+                "Extract the canonical bitfield map, power-on reset values,"
+                " access rules, clock and divider equations, and timing"
+                " bounds for the whole block, not only a single register"
+                " under suspicion. Return `STATUS: VERIFIED_FROM_DATASHEET`"
+                " with citations, or `STATUS: UNAVAILABLE_NO_DATASHEET_FOUND`."
+                " Every row carries an applies-to scope; flag explicitly when"
+                " the document revision does not match the silicon revision"
+                " in scope, and never silently apply a sibling part's or a"
+                " later generation's values."
+            ),
+            "hardware-prober": (
+                "The target node is usually unclaimed: discover it with"
+                " `driver-lab.pyz list --unclaimed`, use proxy mode"
+                " (`bind-proxy`) and fall back to `in-situ` only when an"
+                " existing debug-capable driver already owns the node. Run"
+                " liveness probes first, and never touch a block whose clock"
+                " or power dependencies (the recon spec's dependency section)"
+                " are not established, because reads of an unclocked block"
+                " return garbage or hang the bus. Record `state_origin`"
+                " (`firmware-configured` or `post-reset`) for every observed"
+                " value: a booted device is not at reset, and a value read"
+                " after the bootloader or firmware configured the block is"
+                " not a power-on reset value. Use the out-of-band recovery"
+                " method from the campaign config. Evidence rules are"
+                " unchanged: cite `target-audit.jsonl` and the finalized"
+                " `manifest.json`."
+            ),
+            "session-auditor": (
+                "Audit `recon_spec.md` and `recon_devlog.md` with"
+                " `audit_session.py --workflow recon`. Gate `static`: every"
+                " claim carries a confidence tier, a status, an applies-to"
+                " scope, and a verbatim-cited source; the Linux and datasheet"
+                " status markers are recorded; the contradiction ledger and"
+                " the gaps section are complete; no simulated or synthetic"
+                " values appear anywhere. Gate `verified`: every `[VERIFIED]`"
+                " claim cites an evidence manifest hash, `boot_id`, and audit"
+                " sequence range that also appear in `recon_devlog.md`, and"
+                " no claim was promoted to `[VERIFIED]` from documentation"
+                " or source reading alone."
+            ),
+            "adversarial-reviewer": (
+                "There is no patch to review. Attempt to falsify the"
+                " high-blast-radius claims in `recon_spec.md` (writable"
+                " register masks, hard-deny ranges, power, clock, and reset"
+                " sequences) against their cited sources and evidence"
+                " bundles, and return a verdict per claim rather than per"
+                " session."
+            ),
+        },
+    },
+}
 
-    print(json.dumps(SUBAGENTS, indent=2))
+
+def subagents_for(workflow: str) -> Dict[str, Dict[str, Any]]:
+    """Returns the merged subagent configurations for an entry-point workflow."""
+    if workflow not in WORKFLOWS:
+        raise KeyError(
+            f"Unknown workflow {workflow!r}; expected one of"
+            f" {sorted(WORKFLOWS)}"
+        )
+    spec = WORKFLOWS[workflow]
+    merged: Dict[str, Dict[str, Any]] = {}
+    for role in spec["roles"]:
+        config = dict(ROLES[role])
+        addendum = spec["addenda"].get(role)
+        if addendum:
+            config["system_prompt"] = (
+                config["system_prompt"]
+                + f"\n\nWORKFLOW CONTEXT: {spec['skill']} ({workflow})."
+                + " Where this prompt refers to the bug-fix workflow, apply"
+                + " the following instead.\n"
+                + addendum
+            )
+        merged[role] = config
+    return merged
+
+
+# Backward-compatible alias for callers that import the fix-workflow table.
+SUBAGENTS = subagents_for("fix")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Print AutoDA subagent configurations for a workflow."
+    )
+    parser.add_argument(
+        "--workflow",
+        default="fix",
+        choices=sorted(WORKFLOWS),
+        help="Entry-point workflow whose subagent set to print.",
+    )
+    args = parser.parse_args()
+    print(json.dumps(subagents_for(args.workflow), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

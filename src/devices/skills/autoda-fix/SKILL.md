@@ -7,7 +7,7 @@ description: >
   tests or target logs (Mode C). Use when diagnosing, fixing, or verifying
   hardware, register-level, concurrency, state-machine, or logic bugs in
   existing Fuchsia drivers.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Skill: AutoDA Fix (`autoda-fix`)
@@ -45,6 +45,12 @@ cold-context **Opus 5 Max** adversarial patch review loop:
 6.  **Loop autonomously** until every verification criterion in `bug_spec.md`,
     the adversarial reviewer (if enabled), and **Gate 2 (`session-auditor`)**
     are satisfied.
+
+`autoda-fix` is the bug-fix entry point of the AutoDA skill family. The role
+specifications, subagent registry, compliance auditor, and telemetry logger are
+shared with the other entry points and live in the core directory
+[`/src/devices/skills/autoda/`](../autoda/README.md), referred to below as
+`<path_to_autoda_core>`. Every shared script takes `--workflow fix`.
 
 ---
 
@@ -86,17 +92,17 @@ Upon starting the workflow, establish the subagent execution mode:
 
 1.  **Multi-Agent Mode (Recommended):** If `define_subagent` and
     `invoke_subagent` are available:
-    * Read [`scripts/register_subagents.py`](scripts/register_subagents.py) and
-      the role specifications under `references/`:
-      - [`references/bug-investigator.md`](references/bug-investigator.md)
-      - [`references/fuchsia-driver-fixer.md`](references/fuchsia-driver-fixer.md)
-      - [`references/hardware-prober.md`](references/hardware-prober.md)
-      - [`references/linux-driver-expert.md`](references/linux-driver-expert.md)
-      - [`references/datasheet-researcher.md`](references/datasheet-researcher.md)
-      - [`references/session-auditor.md`](references/session-auditor.md)
-      - [`references/adversarial-reviewer.md`](references/adversarial-reviewer.md)
+    * Read [`register_subagents.py`](../autoda/scripts/register_subagents.py)
+      and the role specifications under `<path_to_autoda_core>/references/`:
+      - [`references/bug-investigator.md`](../autoda/references/bug-investigator.md)
+      - [`references/fuchsia-driver-fixer.md`](../autoda/references/fuchsia-driver-fixer.md)
+      - [`references/hardware-prober.md`](../autoda/references/hardware-prober.md)
+      - [`references/linux-driver-expert.md`](../autoda/references/linux-driver-expert.md)
+      - [`references/datasheet-researcher.md`](../autoda/references/datasheet-researcher.md)
+      - [`references/session-auditor.md`](../autoda/references/session-auditor.md)
+      - [`references/adversarial-reviewer.md`](../autoda/references/adversarial-reviewer.md)
     * Define any missing subagents via `define_subagent` using the
-      configurations in `scripts/register_subagents.py`.
+      configurations in `register_subagents.py --workflow fix`.
     * Delegate Phase 0.2 reconnaissance and Mode C reproduction to
       `bug-investigator`, Modes A & B probing to `hardware-prober`, ground-truth
       comparative triangulation to `linux-driver-expert` /
@@ -107,11 +113,13 @@ Upon starting the workflow, establish the subagent execution mode:
       or `invoke_subagent` with `Model="pro"`).
 2.  **Single-Agent Progressive Mode:** If subagent tools are unavailable,
     execute each phase directly while strictly adopting the role constraints in
-    `references/*.md`, running `scripts/audit_session.py` at Gate 1 and Gate 2,
-    and maintaining the dual artifacts.
+    `<path_to_autoda_core>/references/*.md`, running `audit_session.py
+    --workflow fix` at Gate 1 and Gate 2, and maintaining the dual artifacts.
 
 Also read the companion [`driver-lab` skill](../driver-lab/SKILL.md) for CLI,
-`StateBank`, and plan schema specifics.
+`StateBank`, and plan schema specifics, and the shared conventions in the [core
+README](../autoda/README.md) (dual-artifact discipline, zero parametric memory,
+status markers, telemetry).
 
 ---
 
@@ -125,7 +133,7 @@ session; do not upload these artifacts to external trackers):
 ```yaml
 ---
 skill: autoda-fix
-skill_version: "1.2.0"
+skill_version: "1.3.0"
 model: "<session_model_and_version>"
 conversation_id: "<root_orchestrator_conversation_id>"
 trajectory_id: "<trajectory_id_or_empty>"
@@ -259,12 +267,13 @@ frontmatter block as `bug_spec.md`):
 #### Step 0.1: Eager Telemetry Logging, Artifact Initialization & Sidecar Pane Popup (MUST Execute First)
 
 1.  **Record Skill Invocation Telemetry & Resolve `skill_version` + `model`:**
-    * Run `scripts/log_invocation.py` (located alongside this `SKILL.md`)
-      passing the bug ID from the user's prompt and the root orchestrator's
-      `conversation_id`:
+    * Run `log_invocation.py` from the shared core
+      (`<path_to_autoda_core>/scripts/`) passing the bug ID from the user's
+      prompt and the root orchestrator's `conversation_id`:
 
      ```bash
-     python3 <path_to_autoda_fix_skill>/scripts/log_invocation.py \
+     python3 <path_to_autoda_core>/scripts/log_invocation.py \
+       --workflow fix \
        --bug-id "<bug_id>" \
        --conversation-id "<root_orchestrator_conversation_id>"
      ```
@@ -282,7 +291,7 @@ frontmatter block as `bug_spec.md`):
       using `write_to_file` (with `ArtifactMetadata`: `UserFacing: true`,
       `RequestFeedback: false`).
     * Prefix both files with the structured YAML frontmatter block (`skill:
-      autoda-fix`, `skill_version: "1.2.0"`, `model`, root `conversation_id`,
+      autoda-fix`, `skill_version: "1.3.0"`, `model`, root `conversation_id`,
       `trajectory_id`, `bug_id` extracted from the user prompt,
       `gerrit_change_id: "pending"`, `target_driver: "investigating"`,
       `verification_mode: "Pending Phase 0 Selection"`, `adversarial_review:
@@ -311,9 +320,9 @@ frontmatter block as `bug_spec.md`):
 #### Step 0.2: Delegated Reconnaissance & ToT Re-Validation (`bug-investigator`)
 To preserve the Bug Orchestrator's context window across the session, **delegate
 Step 0.2 to the `bug-investigator` subagent** (see
-[`references/bug-investigator.md`](references/bug-investigator.md)). Instruct
-`bug-investigator` to perform the following read-only checks and return a
-concise **Reconnaissance Brief** ($\le 60$ lines):
+[`references/bug-investigator.md`](../autoda/references/bug-investigator.md)).
+Instruct `bug-investigator` to perform the following read-only checks and return
+a concise **Reconnaissance Brief** ($\le 60$ lines):
 
 1.  **Bug Provenance Inspection & Anti-Prompt-Injection ("Suggested Fix"
     Quarantine):**
@@ -519,7 +528,8 @@ the sidecar is installed):
   before entering Phase 1:
 
   ```bash
-  python3 <path_to_autoda_fix_skill>/scripts/log_invocation.py \
+  python3 <path_to_autoda_core>/scripts/log_invocation.py \
+    --workflow fix \
     --bug-id "<bug_id>" \
     --conversation-id "<root_orchestrator_conversation_id>" \
     --verification-mode "<Mode A | Mode B | Mode C>" \
@@ -726,15 +736,16 @@ Before delegating code changes to `fuchsia-driver-fixer` in Phase 3:
 1.  Run the deterministic Gate 1 compliance script:
 
     ```bash
-    python3 <path_to_autoda_fix_skill>/scripts/audit_session.py \
+    python3 <path_to_autoda_core>/scripts/audit_session.py \
+      --workflow fix \
       --gate pre-fix \
       --bug-spec "<artifact_dir>/bug_spec.md" \
       --bug-devlog "<artifact_dir>/bug_devlog.md"
     ```
 
 2.  Invoke the independent **`session-auditor`** subagent (see
-    [`references/session-auditor.md`](references/session-auditor.md)) for **Gate
-    1 (`Pre-Fix Audit`)** to verify that:
+    [`references/session-auditor.md`](../autoda/references/session-auditor.md))
+    for **Gate 1 (`Pre-Fix Audit`)** to verify that:
     * No parenthetical `Mode C` fallback was smuggled when `Mode A` or `Mode B`
       was approved, and Mode C was not selected for a bug that requires fake
       hardware to stand in for real silicon.
@@ -779,7 +790,8 @@ flowchart TD
   code change** that genuinely fixes the verified root cause while honoring
   every invariant recorded in `## 3b` and `## 3c` of `bug_spec.md` and checking
   all seven items in the **Critical Driver Bug & Hardware Invariants Checklist**
-  in [`references/fuchsia-driver-fixer.md`](references/fuchsia-driver-fixer.md):
+  in
+  [`references/fuchsia-driver-fixer.md`](../autoda/references/fuchsia-driver-fixer.md):
   - **Mode A:** Apply the exact register/bitfield/DMA-alignment/sequence/IRQ
     fix, and tighten any overly permissive fake-hardware unit test fixture so
     the unit test also enforces the real silicon constraint alongside HITL
@@ -868,7 +880,7 @@ flowchart TD
 When the user enabled the **Adversarial Patch Review Loop** in Phase 0
 (`adversarial_review: "enabled"`), execute up to **3 rounds** of cold-context
 adversarial review using **Opus 5 Max** (see
-[`references/adversarial-reviewer.md`](references/adversarial-reviewer.md)):
+[`references/adversarial-reviewer.md`](../autoda/references/adversarial-reviewer.md)):
 
 1.  **Spawn a Fresh Cold-Context Opus 5 Max Reviewer (Round $N \in \{1, 2,
     3\}$):**
@@ -1009,7 +1021,8 @@ adversarial review using **Opus 5 Max** (see
      1.  Run the deterministic Gate 2 compliance script:
 
          ```bash
-         python3 <path_to_autoda_fix_skill>/scripts/audit_session.py \
+         python3 <path_to_autoda_core>/scripts/audit_session.py \
+           --workflow fix \
            --gate pre-commit \
            --bug-spec "<artifact_dir>/bug_spec.md" \
            --bug-devlog "<artifact_dir>/bug_devlog.md"
@@ -1030,7 +1043,8 @@ adversarial review using **Opus 5 Max** (see
       `--adversarial-review-rounds`):
 
      ```bash
-     python3 <path_to_autoda_fix_skill>/scripts/log_invocation.py \
+     python3 <path_to_autoda_core>/scripts/log_invocation.py \
+       --workflow fix \
        --bug-id "<bug_id>" \
        --conversation-id "<root_orchestrator_conversation_id>" \
        --verification-mode "<Mode A | Mode B | Mode C>" \

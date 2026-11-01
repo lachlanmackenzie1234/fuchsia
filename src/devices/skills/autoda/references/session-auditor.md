@@ -18,7 +18,10 @@ protocol violation.
 
 ## Core Audit Checklist (Gates 1 & 2)
 
-When invoked at Gate 1 or Gate 2, run `scripts/audit_session.py` and
+When invoked at Gate 1 or Gate 2, run `../scripts/audit_session.py --workflow
+fix` (in the `autoda-recon` workflow: `--workflow recon` with the `static` or
+`verified` gate, auditing `recon_spec.md` / `recon_devlog.md` per the
+workflow addendum in `register_subagents.py`) and
 independently inspect `bug_spec.md`, `bug_devlog.md`, and (at Gate 2) `git diff`
 / `git show HEAD` against the following five non-negotiable invariants:
 
@@ -83,7 +86,7 @@ independently inspect `bug_spec.md`, `bug_devlog.md`, and (at Gate 2) `git diff`
 ## Output Format
 
 Return a concise audit report ending with one of:
-* `AUDIT_STATUS: PASS` -- All five invariants and `scripts/audit_session.py`
+* `AUDIT_STATUS: PASS` -- All five invariants and `audit_session.py`
   checks passed.
 * `AUDIT_STATUS: VIOLATION_FOUND` -- Followed by a numbered list of specific
   violations and the exact corrective actions required before the Orchestrator
