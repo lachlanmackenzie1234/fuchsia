@@ -2637,9 +2637,9 @@ pub fn poll(
         return error!(EINVAL);
     }
 
-    let mut pollfds = vec![pollfd::default(); num_fds as usize];
-    for (index, poll_descriptor) in pollfds.iter_mut().enumerate() {
-        *poll_descriptor = current_task.read_object(user_pollfds.at(index)?)?;
+    let mut pollfds =
+        current_task.read_objects_to_smallvec::<pollfd, 16>(user_pollfds, num_fds as usize)?;
+    for poll_descriptor in &mut pollfds {
         poll_descriptor.revents = 0;
     }
 
@@ -2666,8 +2666,7 @@ pub fn poll(
     waiter.wait(current_task, mask, deadline)?;
 
     let mut ready_items = waiter.ready_items.lock();
-    let mut unique_ready_items =
-        bit_vec::BitVec::from_elem(usize::try_from(num_fds).unwrap(), false);
+    let mut num_ready = 0;
     for ReadyItem { key: ready_key, events: ready_events } in ready_items.drain(..) {
         let ready_key = assert_matches::assert_matches!(
             ready_key,
@@ -2677,15 +2676,19 @@ pub fn poll(
             | FdEvents::POLLERR
             | FdEvents::POLLHUP
             | FdEvents::POLLNVAL;
-        let return_events = (interested_events & ready_events).bits();
-        pollfds[ready_key].revents = return_events as i16;
-        unique_ready_items.set(ready_key, true);
+        let return_events = (interested_events & ready_events).bits() as i16;
+        if return_events != 0 {
+            if pollfds[ready_key].revents == 0 {
+                num_ready += 1;
+            }
+            pollfds[ready_key].revents |= return_events;
+        }
     }
     drop(ready_items);
 
     write_pollfds(current_task, user_pollfds, &pollfds)?;
 
-    Ok(unique_ready_items.into_iter().filter(Clone::clone).count())
+    Ok(num_ready)
 }
 
 /// Polls `pollfds` by querying their files, without creating a waiter.
@@ -2738,9 +2741,7 @@ fn write_pollfds(
     user_pollfds: UserRef<pollfd>,
     pollfds: &[pollfd],
 ) -> Result<(), Errno> {
-    for (index, poll_descriptor) in pollfds.iter().enumerate() {
-        current_task.write_object(user_pollfds.at(index)?, poll_descriptor)?;
-    }
+    current_task.write_objects(user_pollfds, pollfds)?;
     Ok(())
 }
 
@@ -4014,6 +4015,7 @@ mod tests {
         can_query_without_wait: bool,
         events_before_wait: FdEvents,
         events_after_wait: FdEvents,
+        enqueued_wait_events: Vec<FdEvents>,
         waited: std::sync::atomic::AtomicBool,
     }
 
@@ -4030,6 +4032,26 @@ mod tests {
                     can_query_without_wait,
                     events_before_wait,
                     events_after_wait,
+                    enqueued_wait_events: Vec::new(),
+                    waited: std::sync::atomic::AtomicBool::new(false),
+                }),
+                OpenFlags::RDWR,
+                "[test_poll]",
+            )
+        }
+
+        fn new_file_with_wait_events(
+            current_task: &CurrentTask,
+            enqueued_wait_events: Vec<FdEvents>,
+            events_after_wait: FdEvents,
+        ) -> FileHandle {
+            crate::vfs::Anon::new_private_file(
+                current_task,
+                Box::new(Self {
+                    can_query_without_wait: false,
+                    events_before_wait: FdEvents::empty(),
+                    events_after_wait,
+                    enqueued_wait_events,
                     waited: std::sync::atomic::AtomicBool::new(false),
                 }),
                 OpenFlags::RDWR,
@@ -4049,9 +4071,12 @@ mod tests {
             _current_task: &CurrentTask,
             _waiter: &Waiter,
             _events: FdEvents,
-            _handler: EventHandler,
+            handler: EventHandler,
         ) -> Option<crate::task::WaitCanceler> {
             self.waited.store(true, std::sync::atomic::Ordering::Relaxed);
+            for events in &self.enqueued_wait_events {
+                handler.clone().handle(*events);
+            }
             None
         }
 
@@ -4195,6 +4220,89 @@ mod tests {
             assert!(!is_fd_set(&readfds_out, transient_select_fd.raw() as usize));
             assert!(is_fd_set(&readfds_out, wait_required_select_fd.raw() as usize));
             assert!(is_fd_set(&writefds_out, persistent_select_fd.raw() as usize));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_poll_duplicate_ready_events() {
+        spawn_kernel_and_run(async |current_task| {
+            let addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // Enqueues POLLOUT from `wait_async` and POLLIN from `query_events` for the same key.
+            let union_fd = current_task
+                .add_file(
+                    TestPollFile::new_file_with_wait_events(
+                        current_task,
+                        vec![FdEvents::POLLOUT],
+                        FdEvents::POLLIN,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            // Enqueues POLLIN followed by an unsought POLLOUT where `return_events == 0`, which
+            // must not clear the earlier POLLIN bit.
+            let trailing_empty_fd = current_task
+                .add_file(
+                    TestPollFile::new_file_with_wait_events(
+                        current_task,
+                        vec![FdEvents::POLLIN, FdEvents::POLLOUT],
+                        FdEvents::empty(),
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            // Enqueues only an unsought POLLOUT where `return_events == 0`, which must leave
+            // `revents` at 0 and not increment `num_ready`.
+            let empty_only_fd = current_task
+                .add_file(
+                    TestPollFile::new_file_with_wait_events(
+                        current_task,
+                        vec![FdEvents::POLLOUT],
+                        FdEvents::empty(),
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            // Enqueues three identical POLLIN items for the same descriptor, which must count once.
+            let repeated_fd = current_task
+                .add_file(
+                    TestPollFile::new_file_with_wait_events(
+                        current_task,
+                        vec![FdEvents::POLLIN, FdEvents::POLLIN],
+                        FdEvents::POLLIN,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            let user_pollfds = UserRef::<pollfd>::new(addr);
+            let pollfds_in = [
+                pollfd { fd: union_fd.raw(), events: (POLLIN | POLLOUT) as i16, revents: 0 },
+                pollfd { fd: trailing_empty_fd.raw(), events: POLLIN as i16, revents: 0 },
+                pollfd { fd: empty_only_fd.raw(), events: POLLIN as i16, revents: 0 },
+                pollfd { fd: repeated_fd.raw(), events: POLLIN as i16, revents: 0 },
+            ];
+            current_task.write_objects(user_pollfds, &pollfds_in).unwrap();
+
+            let num_ready = poll(
+                current_task,
+                user_pollfds,
+                pollfds_in.len() as i32,
+                None,
+                zx::MonotonicInstant::INFINITE,
+            )
+            .unwrap();
+            assert_eq!(num_ready, 3);
+
+            let pollfds_out: [pollfd; 4] = current_task.read_object(UserRef::new(addr)).unwrap();
+            assert_eq!(pollfds_out[0].revents, (POLLIN | POLLOUT) as i16);
+            assert_eq!(pollfds_out[1].revents, POLLIN as i16);
+            assert_eq!(pollfds_out[2].revents, 0);
+            assert_eq!(pollfds_out[3].revents, POLLIN as i16);
         })
         .await;
     }
