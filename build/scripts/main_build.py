@@ -963,8 +963,8 @@ class FuchsiaBuildContext(object):
             "MAKEFLAGS",
             "TMPDIR",  # was passed for Goma on macOS, but it might have other uses.
             "CLICOLOR_FORCE",
-            "FUCHSIA_BAZEL_DISK_CACHE",
-            "FUCHSIA_BAZEL_DISK_CACHE_SIZE",
+            bazel_inv.ENV_BAZEL_DISK_CACHE,
+            bazel_inv.ENV_BAZEL_DISK_CACHE_SIZE,
             "FUCHSIA_BAZEL_JOB_COUNT",
             "FUCHSIA_BAZEL_PRINT_COMMANDS",
             "FUCHSIA_DEBUG_BAZEL_SANDBOX",

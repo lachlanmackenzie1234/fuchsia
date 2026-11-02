@@ -207,13 +207,6 @@ if _has_config "remote"; then
   if [[ -n "${_CPUS}" ]]; then
     _JOBS=$(( 10 * _CPUS ))
   fi
-else
-  if [[ -n "${FUCHSIA_BAZEL_DISK_CACHE:-}" ]]; then
-    _BAZEL_CONFIG_ARGS+=("--disk_cache=${FUCHSIA_BAZEL_DISK_CACHE}")
-    if [[ -n "${FUCHSIA_BAZEL_DISK_CACHE_SIZE:-}" ]]; then
-      _BAZEL_CONFIG_ARGS+=("--experimental_disk_cache_gc_max_size=${FUCHSIA_BAZEL_DISK_CACHE_SIZE}")
-    fi
-  fi
 fi
 
 if [[ -n "${FUCHSIA_BAZEL_JOB_COUNT:-}" ]]; then

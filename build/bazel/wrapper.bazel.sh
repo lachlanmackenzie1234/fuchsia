@@ -298,29 +298,6 @@ if [[ "${_BAZEL_COMMAND}" != "vendor" ]]; then
   )
 fi
 
-# Use a shared disk cache if FUCHSIA_BAZEL_DISK_CACHE is set. Bazel
-# documentation states that --disk_cache is compatible with remote caching.
-#
-# This is useful when several checkouts are used on the same machine,
-# or when performing repeated clean builds frequently.
-#
-# Define FUCHSIA_BAZEL_DISK_CACHE_SIZE to enable automatic garbage
-# collection, which will be performed by Bazel in the background when idle.
-# If undefined, the cache is unlimited, and users will need to clean it
-# manually.
-[[ -n "${FUCHSIA_BAZEL_DISK_CACHE}" && -n "${_BAZEL_COMMAND}" ]] && {
-  if [[ "${FUCHSIA_BAZEL_DISK_CACHE}" =~ ^/ ]]; then
-    _BAZEL_EXTRA_ARGS+=(--disk_cache="${FUCHSIA_BAZEL_DISK_CACHE}")
-    if [[ -n "${FUCHSIA_BAZEL_DISK_CACHE_SIZE}" ]]; then
-      # The size should be a size in bytes, optionally followed by K, M, G or T.
-      _BAZEL_EXTRA_ARGS+=(--experimental_disk_cache_gc_max_size="${FUCHSIA_BAZEL_DISK_CACHE_SIZE}")
-    fi
-  else
-    echo >&2 "ERROR: FUCHSIA_BAZEL_DISK_CACHE ignored (not absolute): $FUCHSIA_BAZEL_DISK_CACHE"
-    exit 1
-  fi
-}
-
 # Add remote related arguments for configuration-sensitive commands.
 # It is likely that this is only required for commands that build artifacts
 # (i.e. build, run, test but not cquery and aquery) but err on the side of

@@ -109,6 +109,26 @@ def _resultstore_config_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
         )
 
 
+def _disk_cache_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
+    """Generates bazelrc lines for local disk cache configuration."""
+    disk_cache = env.get(bazel_inv.ENV_BAZEL_DISK_CACHE, "").strip()
+    if not disk_cache:
+        return
+
+    path = Path(disk_cache)
+    if not path.is_absolute():
+        sys.stderr.write(
+            f"WARNING: {bazel_inv.ENV_BAZEL_DISK_CACHE} ignored (not absolute): {disk_cache}\n"
+        )
+        return
+
+    yield f"build --disk_cache={path}"
+
+    cache_size = env.get(bazel_inv.ENV_BAZEL_DISK_CACHE_SIZE, "").strip()
+    if cache_size:
+        yield f"build --experimental_disk_cache_gc_max_size={cache_size}"
+
+
 def _log_options_bazelrc(log_dir: Path) -> Iterable[str]:
     """Generates options pointing Bazel invocation log outputs to log_dir."""
     workspace_log = log_dir / "workspace_events.log"
@@ -179,6 +199,7 @@ def generate_invocation(
             bazelrc_lines.append(build_config_option("_bes_common", opt))
 
     bazelrc_lines.extend(_resultstore_config_bazelrc(env))
+    bazelrc_lines.extend(_disk_cache_bazelrc(env))
     bazelrc_lines.extend(_auth_bazelrc(env))
     bazelrc_lines.extend(_service_proxies_bazelrc(effective_env))
 

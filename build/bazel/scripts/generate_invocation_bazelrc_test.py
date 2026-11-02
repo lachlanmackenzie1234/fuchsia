@@ -246,6 +246,51 @@ class ResultStoreConfigBazelrcTest(unittest.TestCase):
         )
 
 
+class DiskCacheBazelrcTest(unittest.TestCase):
+    def test_disk_cache_only(self) -> None:
+        rc = list(
+            gen._disk_cache_bazelrc(
+                {bazel_inv.ENV_BAZEL_DISK_CACHE: "/path/to/disk-cache"}
+            )
+        )
+        self.assertEqual(rc, ["build --disk_cache=/path/to/disk-cache"])
+
+    def test_disk_cache_with_size(self) -> None:
+        rc = list(
+            gen._disk_cache_bazelrc(
+                {
+                    bazel_inv.ENV_BAZEL_DISK_CACHE: "/path/to/disk-cache",
+                    bazel_inv.ENV_BAZEL_DISK_CACHE_SIZE: "40G",
+                }
+            )
+        )
+        self.assertEqual(
+            rc,
+            [
+                "build --disk_cache=/path/to/disk-cache",
+                "build --experimental_disk_cache_gc_max_size=40G",
+            ],
+        )
+
+    def test_relative_disk_cache_warns(self) -> None:
+        err_buf = io.StringIO()
+        with contextlib.redirect_stderr(err_buf):
+            rc = list(
+                gen._disk_cache_bazelrc(
+                    {bazel_inv.ENV_BAZEL_DISK_CACHE: "relative/path"}
+                )
+            )
+        self.assertEqual(rc, [])
+        self.assertIn("ignored (not absolute)", err_buf.getvalue())
+
+    def test_empty_disk_cache(self) -> None:
+        self.assertEqual(
+            list(gen._disk_cache_bazelrc({bazel_inv.ENV_BAZEL_DISK_CACHE: ""})),
+            [],
+        )
+        self.assertEqual(list(gen._disk_cache_bazelrc({})), [])
+
+
 class ServiceProxiesBazelrcTest(unittest.TestCase):
     def test_proxy_sockets(self) -> None:
         env = {
@@ -441,6 +486,21 @@ class MainEnvWrapperTest(unittest.TestCase):
         self.assertIn("WARNING: Failed to save debug copy", err_buf.getvalue())
         self.assertIn("Read-only file system", err_buf.getvalue())
         self.assertIn("build --invocation_id=", out_buf.getvalue())
+
+    def test_main_relative_disk_cache_warning(self) -> None:
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with (
+            mock.patch.dict(
+                os.environ, {bazel_inv.ENV_BAZEL_DISK_CACHE: "relative/path"}
+            ),
+            contextlib.redirect_stdout(out_buf),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            exit_code = gen.main([])
+            self.assertEqual(exit_code, 0)
+        self.assertIn("ignored (not absolute)", err_buf.getvalue())
+        self.assertNotIn("--disk_cache", out_buf.getvalue())
 
 
 if __name__ == "__main__":
