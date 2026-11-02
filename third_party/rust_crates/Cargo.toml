@@ -371,7 +371,7 @@ proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 pulldown-cmark = { version = "0.13.5", features = ["serde"] }
 quote = "1.0.47"
 rustfix = "0.9.8"
-rustls-native-certs = "0.8.4"
+rustls-native-certs = "0.8.5"
 semver = "1.0.28"
 serde_yaml = "0.9.34+deprecated" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
 serial_test = "4.0.1" # Not for use on Fuchsia, only for a single process.

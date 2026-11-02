@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.71"
 name = "rustls-native-certs"
-version = "0.8.4"
+version = "0.8.5"
 build = false
 include = [
     "Cargo.toml",
@@ -64,7 +64,7 @@ version = "0.23"
 version = "0.103"
 
 [dev-dependencies.serial_test]
-version = "3"
+version = "4"
 
 [dev-dependencies.tempfile]
 version = "3.5"

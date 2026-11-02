@@ -1901,13 +1901,13 @@ group("rustls-0.23.46") {
 
 if (!(current_os == "fuchsia")) {
   group("rustls-native-certs") {
-    public_deps = [ ":rustls-native-certs-v0_8_4" ]
+    public_deps = [ ":rustls-native-certs-v0_8_5" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("rustls-native-certs-0.8.4") {
-    public_deps = [ ":rustls-native-certs-v0_8_4" ]
+  group("rustls-native-certs-0.8.5") {
+    public_deps = [ ":rustls-native-certs-v0_8_5" ]
   }
 }
 
@@ -11676,7 +11676,7 @@ rustc_library("hyper-rustls-v0_27_10") {
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_21" ]
   deps += [ ":hyper-v1_12_0" ]
-  deps += [ ":rustls-native-certs-v0_8_4" ]
+  deps += [ ":rustls-native-certs-v0_8_5" ]
   deps += [ ":rustls-v0_23_46" ]
   deps += [ ":tokio-rustls-v0_26_6" ]
   deps += [ ":tokio-v1_54_1" ]
@@ -19373,21 +19373,21 @@ rustc_library("rustls-v0_23_46") {
   applicable_licenses = [ ":rustls-v0_23_46.license" ]
 }
 
-license("rustls-native-certs-v0_8_4.license") {
+license("rustls-native-certs-v0_8_5.license") {
   public_package_name = "rustls_native_certs"
   license_files = [
-    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE",
-    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-ISC",
-    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.5/LICENSE",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.5/LICENSE-ISC",
+    "//third_party/rust_crates/vendor/rustls-native-certs-0.8.5/LICENSE-MIT",
   ]
 }
 
-rustc_library("rustls-native-certs-v0_8_4") {
+rustc_library("rustls-native-certs-v0_8_5") {
   crate_name = "rustls_native_certs"
   source_root =
-      "//third_party/rust_crates/vendor/rustls-native-certs-0.8.4/src/lib.rs"
-  output_name = "rustls_native_certs-807969e1e0b02cfe"
+      "//third_party/rust_crates/vendor/rustls-native-certs-0.8.5/src/lib.rs"
+  output_name = "rustls_native_certs-5e631cf885ad53da"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19409,8 +19409,8 @@ rustc_library("rustls-native-certs-v0_8_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=807969e1e0b02cfe",
-    "-Cextra-filename=-807969e1e0b02cfe",
+    "-Cmetadata=5e631cf885ad53da",
+    "-Cextra-filename=-5e631cf885ad53da",
   ]
 
   aliased_deps = {
@@ -19418,7 +19418,7 @@ rustc_library("rustls-native-certs-v0_8_4") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustls-native-certs-v0_8_4.license" ]
+  applicable_licenses = [ ":rustls-native-certs-v0_8_5.license" ]
 }
 
 license("rustls-pemfile-v2_2_0.license") {
