@@ -70,6 +70,14 @@ as they cause the `gemini-cli` to hang and run out of input tokens.
 If you must glob all source files, it is advised to exclude or separately glob
 the contents of `//out`.
 
+## Code search
+
+A Fuchsia checkout managed by `jiri` is a set of plain git repositories, not a
+Cog/CitC workspace, so `cs --corpus=local` does not work in it. Do not attempt
+`cs` in such a checkout. Instead, search with `git grep` (run from the root of
+the relevant repository, e.g. `//` or `//vendor/google`) or `rg`, excluding
+`//out`. Do not include `cs` commands in subagent prompts.
+
 ## Code Authoring Requirements
 
 1.  **Verify with Build:** After implementation of a change, run `fx build` to
