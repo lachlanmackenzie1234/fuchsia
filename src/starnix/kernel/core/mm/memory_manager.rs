@@ -3615,41 +3615,30 @@ impl MemoryManagerState {
     fn set_mapping_name(
         &mut self,
         addr: UserAddress,
-        length: usize,
-        name: Option<FsString>,
+        end: UserAddress,
+        new_name: MappingName,
+        memories_to_name: &mut SmallVec<[Arc<MemoryObject>; 1]>,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
-        if addr.ptr() % *PAGE_SIZE as usize != 0 {
-            return error!(EINVAL);
-        }
-        let end = match addr.checked_add(length) {
-            Some(addr) => addr.round_up(*PAGE_SIZE).map_err(|_| errno!(ENOMEM))?,
-            None => return error!(EINVAL),
-        };
-
-        let mappings_in_range =
-            self.mappings.range(addr..end).map(|(r, m)| (r.clone(), m.clone())).collect::<Vec<_>>();
+        let mappings_in_range: SmallVec<[(Range<UserAddress>, Mapping); 2]> =
+            self.mappings.range(addr..end).map(|(r, m)| (r.clone(), m.clone())).collect();
 
         if mappings_in_range.is_empty() {
             return error!(EINVAL);
         }
-        if !mappings_in_range.first().unwrap().0.contains(&addr) {
+        if !mappings_in_range[0].0.contains(&addr) {
             return error!(ENOMEM);
         }
 
         let mut last_range_end = None;
-        // There's no get_mut on RangeMap, because it would be hard to implement correctly in
-        // combination with merging of adjacent mappings. Instead, make a copy, change the copy,
-        // and insert the copy.
-        for (mut range, mut mapping) in mappings_in_range {
+        // Update whole-mapping renames in-place via `update_exact`, and fall back to cloning and
+        // inserting when splitting a range or after a neighbor merge.
+        for (orig_range, mut mapping) in mappings_in_range {
             if mapping.name().is_file() {
                 // It's invalid to assign a name to a file-backed mapping.
                 return error!(EBADF);
             }
-            // Handle mappings that start before the region to be named.
-            range.start = std::cmp::max(range.start, addr);
-            // Handle mappings that extend past the region to be named.
-            range.end = std::cmp::min(range.end, end);
+            let range = std::cmp::max(orig_range.start, addr)..std::cmp::min(orig_range.end, end);
 
             if let Some(last_range_end) = last_range_end {
                 if last_range_end != range.start {
@@ -3661,20 +3650,26 @@ impl MemoryManagerState {
             // TODO(b/310255065): We have no place to store names in a way visible to programs outside of Starnix
             // such as memory analysis tools.
             if let MappingBacking::Memory(backing) = self.get_mapping_backing(&mapping) {
-                match &name {
-                    Some(memory_name) => {
-                        backing.memory().set_zx_name(memory_name);
-                    }
-                    None => {
-                        backing.memory().set_zx_name(b"");
-                    }
+                let memory = backing.memory();
+                if !memories_to_name.iter().any(|existing| Arc::ptr_eq(existing, memory)) {
+                    memories_to_name.push(Arc::clone(memory));
                 }
             }
-            mapping.set_name(match &name {
-                Some(name) => MappingName::Vma(FlyByteStr::new(name.as_bytes())),
-                None => MappingName::None,
-            });
-            released_mappings.extend(self.mappings.insert(range, mapping));
+            if orig_range == range && mapping.name() == new_name {
+                continue;
+            }
+            let updated_in_place = if orig_range == range {
+                self.mappings.update_exact::<_, Errno>(&range, |m| {
+                    m.set_name(new_name.clone());
+                    Ok(())
+                })?
+            } else {
+                false
+            };
+            if !updated_in_place {
+                mapping.set_name(new_name.clone());
+                released_mappings.extend(self.mappings.insert(range, mapping));
+            }
         }
         if let Some(last_range_end) = last_range_end {
             if last_range_end < end {
@@ -5468,10 +5463,36 @@ impl MemoryManager {
         length: usize,
         name: Option<FsString>,
     ) -> Result<(), Errno> {
-        let mut state = self.state.write();
+        if addr.ptr() % *PAGE_SIZE as usize != 0 {
+            return error!(EINVAL);
+        }
+        let end = match addr.checked_add(length) {
+            Some(addr) => addr.round_up(*PAGE_SIZE).map_err(|_| errno!(ENOMEM))?,
+            None => return error!(EINVAL),
+        };
+        let new_name = match &name {
+            Some(name) => MappingName::Vma(FlyByteStr::new(name.as_bytes())),
+            None => MappingName::None,
+        };
+
+        let mut memories_to_name: SmallVec<[Arc<MemoryObject>; 1]> = SmallVec::new();
         let mut released_mappings = ReleasedMappings::default();
-        let result = state.set_mapping_name(addr, length, name, &mut released_mappings);
-        released_mappings.finalize(state);
+        let result = {
+            let mut state = self.state.write();
+            let res = state.set_mapping_name(
+                addr,
+                end,
+                new_name,
+                &mut memories_to_name,
+                &mut released_mappings,
+            );
+            released_mappings.finalize(state);
+            res
+        };
+        let zx_name: &[u8] = name.as_deref().map_or(b"", |n| n.as_slice());
+        for memory in memories_to_name {
+            memory.set_zx_name(zx_name);
+        }
         result
     }
 
@@ -8613,6 +8634,42 @@ mod tests {
 
                 let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
                 assert_eq!(mapping.name(), MappingName::Vma("foo".into()));
+            }
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_vma_name_splits_and_merges() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let mm = current_task.mm().unwrap();
+            let base = map_memory(&current_task, UserAddress::default(), 3 * *PAGE_SIZE);
+
+            // Split into named segments, then rename one of them to the name it already has.
+            mm.set_mapping_name(base, page_size, Some("seg-a".into())).unwrap();
+            mm.set_mapping_name((base + page_size).unwrap(), page_size, Some("seg-b".into()))
+                .unwrap();
+            mm.set_mapping_name((base + 2 * page_size).unwrap(), page_size, Some("seg-b".into()))
+                .unwrap();
+            mm.set_mapping_name((base + page_size).unwrap(), page_size, Some("seg-b".into()))
+                .unwrap();
+            {
+                let state = mm.state.read();
+                let (range, mapping) = state.mappings.get((base + page_size).unwrap()).unwrap();
+                assert_eq!(range.start, (base + page_size).unwrap());
+                assert_eq!(mapping.name(), MappingName::Vma("seg-b".into()));
+            }
+
+            // Renaming all 3 pages to the same name coalesces the split RangeMap entries back into
+            // a single 3-page mapping.
+            mm.set_mapping_name(base, 3 * page_size, Some("merged".into())).unwrap();
+            {
+                let state = mm.state.read();
+                let (range, mapping) = state.mappings.get(base).unwrap();
+                assert_eq!(range.start, base);
+                assert_eq!(range.end, (base + 3 * page_size).unwrap());
+                assert_eq!(mapping.name(), MappingName::Vma("merged".into()));
             }
         })
         .await;
