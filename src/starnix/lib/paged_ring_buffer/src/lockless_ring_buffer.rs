@@ -200,7 +200,8 @@ impl Node {
             (LocklessRingBuffer::PAGE_HEADER_SIZE..=(*PAGE_SIZE) as usize).contains(&write_offset)
         );
         let data_size = write_offset - LocklessRingBuffer::PAGE_HEADER_SIZE;
-        self.page_data.write_at(8, &(data_size as u64).to_le_bytes());
+        self.page_data
+            .write_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &(data_size as u64).to_le_bytes());
 
         // Clear `PAGE_ACTIVE_BIT` to publish the completed page.
         // - Release: orders the `data_size` write above before this store. The reader's Acquire
@@ -251,48 +252,69 @@ impl Node {
     }
 }
 
-/// Points in `try_reserve_on_page()` where a test can run code, to force an interleaving that
-/// another thread would otherwise have to hit by chance.
+/// Test-only hooks that run code at chosen points inside the ring buffer, so a test can force
+/// an interleaving that another thread would otherwise have to hit by chance.
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TestHook {
-    /// After the claim is sized and before its CAS.
-    BeforeClaim,
-    /// After the claim CAS succeeds and before the record is stamped.
-    AfterClaim,
-}
+mod test_hooks {
+    use super::LocklessRingBuffer;
+    use std::cell::RefCell;
 
-#[cfg(test)]
-thread_local! {
-    /// The hook armed by `set_test_hook()`. It is thread-local, so tests that run in parallel
-    /// don't see each other's hooks.
-    static TEST_HOOK: std::cell::RefCell<Option<(TestHook, Box<dyn FnOnce(&LocklessRingBuffer)>)>> =
-        const { std::cell::RefCell::new(None) };
-}
+    /// Points in `try_reserve_on_page()` where a test can run code, to force an interleaving that
+    /// another thread would otherwise have to hit by chance.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) enum TestHook {
+        /// After the claim is sized and before its CAS.
+        BeforeClaim,
+        /// After the claim CAS succeeds and before the record is stamped.
+        AfterClaim,
+    }
 
-/// Arms `hook` to run once, on this thread, the next time it reaches `point`.
-#[cfg(test)]
-fn set_test_hook(point: TestHook, hook: impl FnOnce(&LocklessRingBuffer) + 'static) {
-    TEST_HOOK.with(|h| *h.borrow_mut() = Some((point, Box::new(hook))));
-}
+    thread_local! {
+        /// The hook armed by `set_test_hook()`. It is thread-local, so tests that run in parallel
+        /// don't see each other's hooks.
+        static TEST_HOOK: RefCell<Option<(TestHook, Box<dyn FnOnce(&LocklessRingBuffer)>)>> =
+            const { RefCell::new(None) };
+    }
 
-/// Returns whether a hook is armed on this thread. Tests check that it is not after the code
-/// under test runs, which shows that the hook fired.
-#[cfg(test)]
-fn test_hook_is_armed() -> bool {
-    TEST_HOOK.with(|h| h.borrow().is_some())
-}
+    /// Disarms the test hook when dropped, so a hook that a test armed but never reached does not
+    /// fire in a later test that runs on the same thread.
+    #[must_use = "the hook is disarmed when the guard is dropped"]
+    pub(super) struct TestHookGuard;
 
-/// Runs and disarms the hook armed for `point`, if any. The hook is disarmed before it runs, so
-/// it can call back into `buffer`.
-#[cfg(test)]
-fn run_test_hook(point: TestHook, buffer: &LocklessRingBuffer) {
-    let hook = TEST_HOOK.with(|h| {
-        let mut h = h.borrow_mut();
-        if h.as_ref().is_some_and(|(p, _)| *p == point) { h.take() } else { None }
-    });
-    if let Some((_, hook)) = hook {
-        hook(buffer);
+    impl Drop for TestHookGuard {
+        fn drop(&mut self) {
+            TEST_HOOK.with(|h| *h.borrow_mut() = None);
+        }
+    }
+
+    /// Arms `hook` to run once, on this thread, the next time it reaches `point`, until the returned
+    /// guard is dropped.
+    pub(super) fn set_test_hook(
+        point: TestHook,
+        hook: impl FnOnce(&LocklessRingBuffer) + 'static,
+    ) -> TestHookGuard {
+        TEST_HOOK.with(|h| {
+            assert!(h.replace(Some((point, Box::new(hook)))).is_none(), "test hook already armed");
+        });
+        TestHookGuard
+    }
+
+    /// Returns whether a hook is armed on this thread. Tests check that it is not after the code
+    /// under test runs, which shows that the hook fired.
+    pub(super) fn test_hook_is_armed() -> bool {
+        TEST_HOOK.with(|h| h.borrow().is_some())
+    }
+
+    /// Runs and disarms the hook armed for `point`, if any. The hook is disarmed before it runs, so
+    /// it can call back into `buffer`.
+    pub(super) fn run_test_hook(point: TestHook, buffer: &LocklessRingBuffer) {
+        let hook = TEST_HOOK.with(|h| {
+            let mut h = h.borrow_mut();
+            if h.as_ref().is_some_and(|(p, _)| *p == point) { h.take() } else { None }
+        });
+        if let Some((_, hook)) = hook {
+            hook(buffer);
+        }
     }
 }
 
@@ -342,6 +364,10 @@ pub struct LocklessRingBuffer {
 impl LocklessRingBuffer {
     // This is an Ftrace page header consisting of a u64 timestamp at offset 0 and a u64 data size at offset 8.
     pub const PAGE_HEADER_SIZE: usize = 16;
+
+    /// Offset in the page header of the u64 data size (the ftrace `commit` field): the number
+    /// of record bytes after the header.
+    pub const DATA_SIZE_OFFSET: usize = 8;
 
     // An ftrace record header is a u32: the low `TYPE_OR_LENGTH_BITS` hold `type_or_length`, and
     // the high `TIME_DELTA_BITS` hold the time delta from the previous record, in nanoseconds.
@@ -429,7 +455,9 @@ impl LocklessRingBuffer {
             .prev
             .store(Node::make_val(circle_size - 1, FLAG_NORMAL), Ordering::Relaxed);
         // Initialize reader page size to 0
-        nodes[pages - 1].page_data.write_at(8, &0u64.to_le_bytes());
+        nodes[pages - 1]
+            .page_data
+            .write_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &0u64.to_le_bytes());
         let now = zx::BootInstant::get();
         let buffer = Self {
             vmo,
@@ -611,7 +639,7 @@ impl LocklessRingBuffer {
                 return Err(());
             }
             #[cfg(test)]
-            run_test_hook(TestHook::BeforeClaim, self);
+            test_hooks::run_test_hook(test_hooks::TestHook::BeforeClaim, self);
             match tail_node.write_offset.compare_exchange_weak(
                 current_offset,
                 current_offset + total_size,
@@ -624,7 +652,7 @@ impl LocklessRingBuffer {
         };
 
         #[cfg(test)]
-        run_test_hook(TestHook::AfterClaim, self);
+        test_hooks::run_test_hook(test_hooks::TestHook::AfterClaim, self);
 
         let actual_prev = self.prev_timestamp.fetch_max(now_nanos, Ordering::AcqRel);
         let final_now_nanos = std::cmp::max(now_nanos, actual_prev);
@@ -828,7 +856,9 @@ impl LocklessRingBuffer {
                 // Reset `active_writers` to PAGE_ACTIVE_BIT (1) since the page is active.
                 next_node.active_writers.store(PAGE_ACTIVE_BIT, Ordering::Release);
                 // Clear the size field in the page header to avoid reader seeing stale size.
-                next_node.page_data.write_at(8, &0u64.to_le_bytes());
+                next_node
+                    .page_data
+                    .write_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &0u64.to_le_bytes());
             }
 
             // Move the tail to `next_idx` in the next generation. If the CAS fails, another
@@ -1050,7 +1080,7 @@ impl LocklessRingBuffer {
                 return None;
             }
             let mut size_bytes = [0u8; 8];
-            head_node.page_data.read_at(8, &mut size_bytes);
+            head_node.page_data.read_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &mut size_bytes);
             let size = u64::from_le_bytes(size_bytes);
             if size == 0 {
                 // This can happen even if `head_page != tail_page` (the ring is not empty).
@@ -1096,7 +1126,9 @@ impl LocklessRingBuffer {
                 // Reset `active_writers` to PAGE_ACTIVE_BIT before recycling.
                 self.nodes[reader_idx].active_writers.store(PAGE_ACTIVE_BIT, Ordering::Relaxed);
                 // Clear the size field in the page header to avoid reader seeing stale size.
-                self.nodes[reader_idx].page_data.write_at(8, &0u64.to_le_bytes());
+                self.nodes[reader_idx]
+                    .page_data
+                    .write_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &0u64.to_le_bytes());
                 // Unlock prev_node and set its next to reader_idx as NORMAL
                 let unlocked_val = Node::make_val(reader_idx, FLAG_NORMAL);
                 prev_node.next.store(unlocked_val, Ordering::Release);
@@ -1305,7 +1337,9 @@ impl LocklessRingBuffer {
         self.nodes[initial_pages - 1].next.store(Node::make_val(0, FLAG_HEADER), Ordering::Relaxed);
 
         // Initialize reader page size to 0
-        self.nodes[initial_pages].page_data.write_at(8, &0u64.to_le_bytes());
+        self.nodes[initial_pages]
+            .page_data
+            .write_at(LocklessRingBuffer::DATA_SIZE_OFFSET, &0u64.to_le_bytes());
         // Initialize first page.
         let _ = self.vmo.op_range(zx::VmoOp::ZERO, 0, *PAGE_SIZE);
         let nanos = now.into_nanos() as u64;
@@ -1329,6 +1363,7 @@ impl Drop for LocklessRingBuffer {
 
 #[cfg(test)]
 mod tests {
+    use super::test_hooks::{TestHook, set_test_hook, test_hook_is_armed};
     use super::*;
     use std::cell::Cell;
     use std::sync::Arc;
@@ -1539,10 +1574,11 @@ mod tests {
     }
     /// Returns the `data_size` field of the page header at the start of `page`.
     fn read_data_size(page: &[u8]) -> usize {
-        const DATA_SIZE_OFFSET: usize = 8;
         assert!(page.len() >= LocklessRingBuffer::PAGE_HEADER_SIZE, "page shorter than header");
         let mut size_bytes = [0u8; 8];
-        size_bytes.copy_from_slice(&page[DATA_SIZE_OFFSET..LocklessRingBuffer::PAGE_HEADER_SIZE]);
+        size_bytes.copy_from_slice(
+            &page[LocklessRingBuffer::DATA_SIZE_OFFSET..LocklessRingBuffer::PAGE_HEADER_SIZE],
+        );
         u64::from_le_bytes(size_bytes) as usize
     }
 
@@ -3080,7 +3116,7 @@ mod tests {
         // A stamps them, writer B claims and stamps its own, at a later time.
         let t_a = t0 + 1_000_000_000;
         let t_b = t_a + 10;
-        set_test_hook(TestHook::AfterClaim, move |buffer| {
+        let _hook = set_test_hook(TestHook::AfterClaim, move |buffer| {
             assert_eq!(write_record_at(buffer, t_b, b"writer B"), (0, t_b - t0));
         });
         let (res, now, delta) =
@@ -3111,7 +3147,7 @@ mod tests {
         // W stamps them, another writer finalizes Node 0 and moves the tail to Node 1. W's pin
         // keeps Node 0 from being read or reset in the meantime. The hook's `finalize()` call
         // borrows W's pin, which `finalize()` requires.
-        set_test_hook(TestHook::AfterClaim, |buffer| {
+        let _hook = set_test_hook(TestHook::AfterClaim, |buffer| {
             buffer.nodes[0].finalize();
             let tail_val = buffer.tail_page.load(Ordering::Relaxed);
             let mut yield_tracker = YieldTracker::default();
@@ -3139,7 +3175,7 @@ mod tests {
         // After an idle gap, writer W sizes its claim with a `TIME_STAMP` record. Before W's CAS,
         // writer X claims and stamps a record, with its own `TIME_STAMP` record.
         let t1 = t0 + 1_000_000_000;
-        set_test_hook(TestHook::BeforeClaim, move |buffer| {
+        let _hook = set_test_hook(TestHook::BeforeClaim, move |buffer| {
             assert_eq!(write_record_at(buffer, t1, b"writer X"), (0, t1 - t0));
         });
         // W's CAS fails. Its retry reads X's time from `prev_timestamp`, so W needs no
@@ -3163,7 +3199,7 @@ mod tests {
         let t1 = t0 + 1_000;
         let t_x = t1 + 1_000_000;
         let t2 = t_x + 200_000_000;
-        set_test_hook(TestHook::BeforeClaim, move |buffer| {
+        let _hook = set_test_hook(TestHook::BeforeClaim, move |buffer| {
             assert_eq!(write_record_at(buffer, t_x, b"writer X"), (0, t_x - t0));
         });
         let clock_reads = Cell::new(0);
