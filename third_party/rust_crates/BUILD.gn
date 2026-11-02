@@ -1058,11 +1058,11 @@ group("iota-0.2.3") {
 }
 
 group("itertools") {
-  public_deps = [ ":itertools-v0_14_0" ]
+  public_deps = [ ":itertools-v0_15_0" ]
 }
 
-group("itertools-0.14.0") {
-  public_deps = [ ":itertools-v0_14_0" ]
+group("itertools-0.15.0") {
+  public_deps = [ ":itertools-v0_15_0" ]
 }
 
 group("itoa") {
@@ -12523,6 +12523,42 @@ rustc_library("itertools-v0_14_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":itertools-v0_14_0.license" ]
+}
+
+license("itertools-v0_15_0.license") {
+  public_package_name = "itertools"
+  license_files = [
+    "//third_party/rust_crates/vendor/itertools-0.15.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/itertools-0.15.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("itertools-v0_15_0") {
+  crate_name = "itertools"
+  source_root = "//third_party/rust_crates/vendor/itertools-0.15.0/src/lib.rs"
+  output_name = "itertools-117bac7f5c22744e"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":either-v1_19_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=117bac7f5c22744e",
+    "-Cextra-filename=-117bac7f5c22744e",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"use_alloc\"",
+    "--cfg=feature=\"use_std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":itertools-v0_15_0.license" ]
 }
 
 license("itoa-v1_0_18.license") {

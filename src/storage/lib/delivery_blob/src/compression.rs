@@ -437,7 +437,7 @@ impl ChunkedArchiveHeader {
 
         // I2: Each entry's decompressed offset must be equal to the end of the previous frame
         //     (i.e. to the previous frame's decompressed offset + length).
-        for (prev, curr) in entries.iter().tuple_windows() {
+        for [prev, curr] in entries.iter().array_windows() {
             if (prev.decompressed_offset.get() + prev.decompressed_size.get())
                 != curr.decompressed_offset.get()
             {
@@ -447,7 +447,7 @@ impl ChunkedArchiveHeader {
 
         // I3: Each entry's compressed offset must be greater than or equal to the end of the
         //     previous frame (i.e. to the previous frame's compressed offset + length).
-        for (prev, curr) in entries.iter().tuple_windows() {
+        for [prev, curr] in entries.iter().array_windows() {
             if (prev.compressed_offset.get() + prev.compressed_size.get())
                 > curr.compressed_offset.get()
             {
