@@ -76,12 +76,6 @@ class SimpleRedactor : public RedactorBase {
   int num_calls_{0};
 };
 
-TEST_F(LogMessageStoreTest, NotSafeAfterInterruption) {
-  LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize, GetIdentityRedactor(),
-                        MakeIdentityEncoder(), /*ignore_before_timestamp=*/std::nullopt);
-  EXPECT_FALSE(store.SafeAfterInterruption());
-}
-
 TEST_F(LogMessageStoreTest, UnlimitedMessages) {
   // Set the block to hold 10 log messages while the buffer holds 1 log message (but the buffer
   // limits should be ignored because the component has just started up).

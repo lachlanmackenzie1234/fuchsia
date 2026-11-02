@@ -109,15 +109,15 @@ source_set("log_source") {
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_hlcpp",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
     "//sdk/lib/async",
-    "//sdk/lib/async:async-cpp",
+    "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
-    "//src/lib/fxl",
+    "//src/lib/diagnostics/fidl_log_message_parser",
   ]
 
   deps = [
     ":constants",
+    "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/diagnostics/fidl_log_message_parser",
   ]
 }
 
