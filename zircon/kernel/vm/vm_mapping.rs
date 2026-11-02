@@ -5,17 +5,22 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::{
-    ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_RWX_MASK, ARCH_MMU_FLAG_PERM_WRITE,
+    ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ,
+    ARCH_MMU_FLAG_PERM_RWX_MASK, ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE,
     ARCH_UNMAP_OPTION_ENLARGE, ARCH_UNMAP_OPTION_HARVEST, ARCH_UNMAP_OPTION_NONE, ArchMmuFlags,
-    ExistingEntryAction,
+    ArchVmAspace, ExistingEntryAction,
 };
+use super::fault::{self, flag as pf_flag};
 use super::page_source::MultiPageRequest;
 use super::vm::{vm_get_zero_page_paddr, vm_ktrace_duration};
 use super::vm_address_region::{
     LifeCycleState, MemoryPriority, VmAddressRegion, VmAddressRegionOrMapping, flag, region_list,
 };
 use super::vm_aspace::{VmAspace, VmAspaceLockClass, VmAspaceRegionLockClass};
+use super::vm_cow_pages::DeferredOps;
 use super::vm_object::{VmObject, VmObjectLockClass};
+use super::vm_object_paged::VmObjectPaged;
+use super::vm_object_physical::VmObjectPhysical;
 use crate::counters::define_kcounter;
 use crate::kernel::types::{PAddr, VAddr};
 use crate::ktrace_rs::ArgValue;
@@ -795,6 +800,10 @@ impl VmMapping {
         // SAFETY: Both the aspace lock and the object lock are held.
         unsafe { *self.state().object.get() = None };
         self.state().object_reset.store(true, Ordering::Relaxed);
+    }
+
+    fn object_reset(&self) -> bool {
+        self.state().object_reset.load(Ordering::Relaxed)
     }
 
     fn currently_faulting<'s>(
@@ -2423,8 +2432,7 @@ impl VmMapping {
     }
 
     // Accessors for VMO-mapping state.
-    // These can be read under either lock (both locks being held for writing), so we provide two
-    // different accessors, one for each lock.
+    // These can be read under either lock (both locks being held for writing).
     /// Returns the architecture MMU flags and the top of the protection region containing `va`.
     pub fn arch_mmu_flags_range_locked(
         &self,
@@ -2443,30 +2451,489 @@ impl VmMapping {
         self.flags_range_at_addr_locked(token, offset.0).mmu_flags
     }
 
-    /// Resolves a page fault on this mapping while holding the aspace lock.
-    pub fn page_fault_locked(
+    /// Page fault in an address within the mapping. The requested address must be page-aligned.
+    ///
+    /// If `additional_pages` is non-zero, then up to that many additional pages may be resolved
+    /// using the same `pf_flags`. It is not an error for the `additional_pages` to span beyond the
+    /// mapping or underlying VMO, although the range will get truncated internally. As such only
+    /// the page containing `va` is required to be resolved, and this method may return `Ok` if any
+    /// number, including zero, of the additional pages are resolved.
+    ///
+    /// `object` is required to be this mapping's object, with the requirement that if the aspace
+    /// lock is not held over the call to this function, then the caller is required to ensure that
+    /// `object` will remain alive for the duration of the call.
+    ///
+    /// As the `additional_pages` are resolved with the same `pf_flags` they may trigger
+    /// copy-on-write or other allocations in the underlying VMO.
+    ///
+    /// If this returns `Status::SHOULD_WAIT`, then the caller should wait on `page_request`
+    /// and try again. In addition to a status this returns how many pages got mapped in.
+    ///
+    /// This may return `Status::UNAVAILABLE` if the aspace lock is not held and means that the
+    /// mapping was destroyed before the page fault could be handled.
+    ///
+    /// If `Ok` is returned then the number of pages mapped in is guaranteed to be >0.
+    ///
+    /// If `additional_pages` was non-zero, then the maximum number of pages that will be mapped is
+    /// `additional_pages + 1`. Otherwise the maximum number of pages that will be mapped is
+    /// `Self::PAGE_FAULT_MAX_OPTIMISTIC_PAGES`.
+    ///
+    /// # Safety
+    ///
+    /// `object` is this mapping's object, or was until the mapping's object was reset, and the
+    /// object lock is not held. `va` is page-aligned and within this mapping, `additional_pages` is
+    /// less than `usize::MAX`, and `page_request` does not hold an active request.
+    #[inline(never)]
+    pub unsafe fn page_fault(
         &self,
-        _token: &mut LockToken<'_, VmAspaceLockClass>,
+        va: VAddr,
+        pf_flags: u32,
+        additional_pages: usize,
+        object: &VmObject,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> (Result<(), Status>, u32) {
+        vm_ktrace_duration!(
+            2,
+            "VmMapping::PageFault",
+            "user_id" => object.user_id(),
+            "va" => ArgValue::Pointer(va.0),
+        );
+        self.state().canary.assert();
+
+        debug_assert!(kernel_page::is_aligned(va.0));
+
+        if let Some(paged) = object.as_paged() {
+            // SAFETY: `paged` is this mapping's object, or was until the mapping's object was
+            // reset, and the object lock is not held. `va` is page-aligned and within this
+            // mapping, `additional_pages` is less than `usize::MAX`, and `page_request` does not
+            // hold an active request.
+            return unsafe {
+                self.page_fault_paged(va, pf_flags, additional_pages, paged, page_request)
+            };
+        }
+        hint::cold_path();
+        let phys = object.as_physical();
+        assert!(phys.is_some());
+        let phys = phys.unwrap();
+        // SAFETY: `phys` is this mapping's object, or was until the mapping's object was
+        // reset, and the object lock is not held. `va` is page-aligned and within this
+        // mapping, `additional_pages` is less than `usize::MAX`, and `page_request` does not
+        // hold an active request.
+        unsafe { self.page_fault_physical(va, pf_flags, additional_pages, phys, page_request) }
+    }
+
+    /// # Safety
+    ///
+    /// `paged` is this mapping's object, or was until the mapping's object was reset, and the
+    /// object lock is not held. `va` is page-aligned and within this mapping, `additional_pages` is
+    /// less than `usize::MAX`, and `page_request` does not hold an active request.
+    #[inline(never)]
+    unsafe fn page_fault_paged(
+        &self,
+        va: VAddr,
+        pf_flags: u32,
+        additional_pages: usize,
+        paged: &VmObjectPaged,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> (Result<(), Status>, u32) {
+        stack_pin_init!(let deferred = paged.make_deferred_ops());
+        ksync::lock!(let mut guard = paged
+            .lock_ref()
+            .lock_policy_with::<RawCriticalMutexOrderedPolicy>(paged.lock_order() as usize));
+        // SAFETY: `guard` is never released.
+        let object_token = unsafe { guard.as_mut().token_mut_unchecked() };
+        if self.object_reset() {
+            hint::cold_path();
+            return (Err(Status::UNAVAILABLE), 0);
+        }
+        // The caller was obliged to pass us our object in as `paged`, whose lock we now hold. Since
+        // we know that our object can only be one of two values, `Some(paged)` or `None`, then if
+        // the reset flag is false, i.e. our object is still `Some(paged)`, then we know that:
+        //  * Our read of the reset flag did not race, since it is written under the object lock,
+        //    which we presently hold
+        //  * our object == `Some(paged)` since it's not `None`
+        //  * our object cannot transition to `None` since we hold its lock.
+        //
+        // SAFETY: `paged` is this mapping's object, and this mapping has no other
+        // `CurrentlyFaulting`. `va` is page-aligned and within this mapping, `additional_pages` is
+        // less than `usize::MAX`, `deferred` was made for `paged`, and `page_request` does not
+        // hold an active request.
+        unsafe {
+            self.page_fault_locked_object(
+                object_token,
+                va.0,
+                pf_flags,
+                additional_pages,
+                paged,
+                Some(deferred.as_mut()),
+                page_request,
+            )
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `phys` is this mapping's object, or was until the mapping's object was reset, and the object
+    /// lock is not held. `va` is page-aligned and within this mapping, `additional_pages` is less
+    /// than `usize::MAX`, and `page_request` does not hold an active request.
+    #[cold]
+    #[inline(never)]
+    unsafe fn page_fault_physical(
+        &self,
+        va: VAddr,
+        pf_flags: u32,
+        additional_pages: usize,
+        phys: &VmObjectPhysical,
+        page_request: Pin<&mut MultiPageRequest>,
+    ) -> (Result<(), Status>, u32) {
+        ksync::lock!(let mut guard = phys.lock_ref().lock());
+        // SAFETY: `guard` is never released.
+        let object_token = unsafe { guard.as_mut().token_mut_unchecked() };
+        if self.object_reset() {
+            hint::cold_path();
+            return (Err(Status::UNAVAILABLE), 0);
+        }
+        // See comment in `page_fault_paged` for explanation.
+        //
+        // SAFETY: `phys` is this mapping's object, and this mapping has no other
+        // `CurrentlyFaulting`. `va` is page-aligned and within this mapping, `additional_pages` is
+        // less than `usize::MAX`, and `phys` is not paged.
+        unsafe {
+            self.page_fault_locked_object(
+                object_token,
+                va.0,
+                pf_flags,
+                additional_pages,
+                phys,
+                None,
+                page_request,
+            )
+        }
+    }
+
+    /// Convenience wrapper around `page_fault` that can be called with the aspace lock held and
+    /// will never return `Status::UNAVAILABLE`.
+    ///
+    /// # Safety
+    ///
+    /// This mapping is alive and the object lock is not held. `va` is page-aligned and within this
+    /// mapping, `additional_pages` is less than `usize::MAX`, and `page_request` does not hold an
+    /// active request.
+    pub unsafe fn page_fault_locked(
+        &self,
+        token: &mut LockToken<'_, VmAspaceLockClass>,
         va: VAddr,
         pf_flags: u32,
         additional_pages: usize,
         page_request: Pin<&mut MultiPageRequest>,
     ) -> (Result<(), Status>, u32) {
-        let mut mapped = 0u32;
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`, the aspace lock is held, and
-        // `page_request` is a pinned `MultiPageRequest`.
-        let status = unsafe {
-            bindings::cpp_vm_mapping_page_fault_locked(
-                self.as_ffi_ptr(),
-                va.0,
-                pf_flags,
-                additional_pages,
-                page_request.as_raw().cast(),
-                &mut mapped,
-            )
-        };
-        (Status::ok(status), mapped)
+        // As the aspace lock is held we can safely just use the direct raw value of the object,
+        // knowing that it cannot be destructed, and call the regular `page_fault` method. This is
+        // explicitly safe to call with the aspace lock held.
+        // SAFETY: An `Alive` mapping always has a backing `object`.
+        let object = unsafe { self.object_locked(token).as_deref().unwrap_unchecked() };
+        // SAFETY: `object` is this mapping's object and the object lock is not held. `va` is
+        // page-aligned and within this mapping, `additional_pages` is less than `usize::MAX`, and
+        // `page_request` does not hold an active request.
+        unsafe { self.page_fault(va, pf_flags, additional_pages, object, page_request) }
     }
+
+    /// Internal helper for performing a page fault after the object lock is acquired.
+    ///
+    /// Additionally the object is passed in as the downcast specific type in `object` to allow the
+    /// helper to assume that the object lock is held in all paths, without needing to do its own
+    /// lock assertions, after runtime casting, throughout.
+    ///
+    /// # Safety
+    ///
+    /// `object` is this mapping's object and this mapping has no other `CurrentlyFaulting`. `va` is
+    /// page-aligned and within this mapping, and `additional_pages` is less than `usize::MAX`. If
+    /// `object` is paged, `deferred` is `Some` and was made for it, and `page_request` does not
+    /// hold an active request.
+    #[inline(always)]
+    #[expect(clippy::too_many_arguments)]
+    unsafe fn page_fault_locked_object<T: PageFaultObject>(
+        &self,
+        token: &mut LockToken<'_, VmObjectLockClass>,
+        va: usize,
+        pf_flags: u32,
+        additional_pages: usize,
+        object: &T,
+        deferred: Option<Pin<&mut DeferredOps<'_>>>,
+        mut page_request: Pin<&mut MultiPageRequest>,
+    ) -> (Result<(), Status>, u32) {
+        // Fault batch size when num_pages > 1.
+        const BATCH_PAGES: usize = 16;
+        const COALESCER_SIZE: usize = if VmMapping::PAGE_FAULT_MAX_OPTIMISTIC_PAGES > BATCH_PAGES {
+            VmMapping::PAGE_FAULT_MAX_OPTIMISTIC_PAGES
+        } else {
+            BATCH_PAGES
+        };
+
+        let vmo_offset = (va.wrapping_sub(self.base().0) as u64).wrapping_add(self.object_offset());
+
+        ltracef!(
+            "{:p} va {:#x} vmo_offset {:#x}, pf_flags {:#x} ({})\n",
+            self,
+            va,
+            vmo_offset,
+            pf_flags,
+            zr::from_utf8_lossy(&fault::flags_to_string(pf_flags))
+        );
+
+        // Need to look up the mmu flags for this virtual address, as well as how large a region
+        // those flags are for so we can cap the extra mappings we create.
+        let range = self.flags_range_at_addr_locked_object(token, va);
+
+        // Build the mmu flags we need to have based on the page fault. This strategy of building
+        // the flags and then comparing all at once allows the compiler to provide much better code
+        // gen.
+        let mut needed_mmu_flags: ArchMmuFlags = 0;
+        if (pf_flags & pf_flag::USER) != 0 {
+            needed_mmu_flags |= ARCH_MMU_FLAG_PERM_USER;
+        }
+        let write = (pf_flags & pf_flag::WRITE) != 0;
+        if write {
+            needed_mmu_flags |= ARCH_MMU_FLAG_PERM_WRITE;
+        } else {
+            needed_mmu_flags |= ARCH_MMU_FLAG_PERM_READ;
+        }
+        if (pf_flags & pf_flag::INSTRUCTION) != 0 {
+            needed_mmu_flags |= ARCH_MMU_FLAG_PERM_EXECUTE;
+        }
+        // Check that all the needed flags are present.
+        if (range.mmu_flags & needed_mmu_flags) != needed_mmu_flags {
+            hint::cold_path();
+            if (pf_flags & pf_flag::USER) != 0 && (range.mmu_flags & ARCH_MMU_FLAG_PERM_USER) == 0 {
+                // user page fault on non user mapped region
+                ltracef!("permission failure: user fault on non user region\n");
+            }
+            if (pf_flags & pf_flag::WRITE) != 0 && (range.mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) == 0
+            {
+                // write to a non-writable region
+                ltracef!("permission failure: write fault on non-writable region\n");
+            }
+            if (pf_flags & pf_flag::WRITE) == 0 && (range.mmu_flags & ARCH_MMU_FLAG_PERM_READ) == 0
+            {
+                // read to a non-readable region
+                ltracef!("permission failure: read fault on non-readable region\n");
+            }
+            if (pf_flags & pf_flag::INSTRUCTION) != 0
+                && (range.mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) == 0
+            {
+                // instruction fetch from a no execute region
+                ltracef!("permission failure: execute fault on no execute region\n");
+            }
+            return (Err(Status::ACCESS_DENIED), 0);
+        }
+
+        // Calculate the number of pages from `va` until the end of the protection range.
+        let num_protection_range_pages =
+            range.region_top.wrapping_sub(va as u64) as usize / kernel_page::SIZE;
+
+        let mut vmo_size = object.size_locked(token);
+        if let Some(paged) = object.as_paged_object() {
+            // If fault-beyond-stream-size is set, throw exception on memory accesses past the page
+            // containing the user defined stream size.
+            if (self.flags() & flag::FAULT_BEYOND_STREAM_SIZE) != 0 {
+                hint::cold_path();
+                if let Some(size) = paged.saturating_stream_size_locked(token) {
+                    vmo_size = size;
+                }
+            }
+        }
+
+        if vmo_offset >= vmo_size {
+            hint::cold_path();
+            return (Err(Status::OUT_OF_RANGE), 0);
+        }
+
+        // Calculate the maximum number of pages we can legally look at, i.e. are valid, in the vmo
+        // taking into account the protection range, which is implicitly taking into account the
+        // mapping size.
+        let num_vmo_pages = ((vmo_size - vmo_offset) / kernel_page::SIZE as u64) as usize;
+        let num_valid_pages = min(num_protection_range_pages, num_vmo_pages);
+
+        // Number of requested pages, trimmed to protection range & VMO.
+        let num_required_pages = min(num_valid_pages, additional_pages.wrapping_add(1));
+        debug_assert!(num_required_pages > 0);
+        // Helper to calculate the remaining pt pages if we need them.
+        let calc_pt_pages = |va: usize| {
+            let next_pt_base = ArchVmAspace::next_user_page_table_offset(va);
+            next_pt_base.wrapping_sub(va) / kernel_page::SIZE
+        };
+        // Number of pages we're aiming to fault. If a range > 1 page is supplied, it is assumed the
+        // user knows the appropriate range, so opportunistic pages will not be added.
+        let num_fault_pages = if additional_pages == 0 {
+            min(min(Self::PAGE_FAULT_MAX_OPTIMISTIC_PAGES, num_valid_pages), calc_pt_pages(va))
+        } else {
+            num_required_pages
+        };
+
+        // Opportunistic pages are not considered in `currently_faulting` optimization, as it is not
+        // guaranteed the mappings will be updated.
+        let currently_faulting_len = (num_required_pages * kernel_page::SIZE) as u64;
+        let fault = |currently_faulting: &CurrentlyFaulting<'_>,
+                     token: &mut LockToken<'_, VmObjectLockClass>| {
+            // SAFETY: The object lock is held until `coalescer` is dropped.
+            let mut coalescer = unsafe {
+                VmMappingCoalescer::<COALESCER_SIZE>::new(
+                    self,
+                    token,
+                    va,
+                    range.mmu_flags,
+                    ExistingEntryAction::Upgrade,
+                )
+            };
+
+            if let Some(paged) = object.as_paged_object() {
+                let Some(mut deferred) = deferred else {
+                    unreachable!("paged faults take DeferredOps");
+                };
+                // fault in or grab existing pages.
+                let cursor_size = (num_fault_pages * kernel_page::SIZE) as u64;
+                // SAFETY: `token` is for the lock of `paged`. `vmo_offset` and `cursor_size` are
+                // page-aligned, and `cursor_size` is non-zero.
+                let cursor =
+                    unsafe { paged.get_lookup_cursor_locked(token, vmo_offset, cursor_size) };
+                stack_try_pin_init!(let cursor = cursor);
+                let mut cursor = match cursor {
+                    Ok(cursor) => cursor,
+                    Err(status) => {
+                        hint::cold_path();
+                        return (Err(status), coalescer.total_mapped() as u32);
+                    }
+                };
+                // Do not consider pages touched when mapping in, if they are actually touched they
+                // will get an accessed bit set in the hardware.
+                cursor.as_mut().disable_mark_accessed();
+
+                // Fault requested pages.
+                let mut offset = 0;
+                while offset < num_required_pages * kernel_page::SIZE {
+                    let mut curr_mmu_flags = range.mmu_flags;
+
+                    let num_curr_pages = num_required_pages - (offset / kernel_page::SIZE);
+                    // SAFETY: `deferred` was made for the VMO that `cursor` was made for,
+                    // `num_curr_pages` is non-zero and at most the number of pages left in the
+                    // range of `cursor`, and `page_request` does not hold an active request.
+                    let result = unsafe {
+                        cursor.as_mut().require_page(
+                            write,
+                            num_curr_pages as u64,
+                            deferred.as_mut(),
+                            page_request.as_mut(),
+                        )
+                    };
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(status) => {
+                            hint::cold_path();
+                            let _ = coalescer.flush();
+                            return (Err(status), coalescer.total_mapped() as u32);
+                        }
+                    };
+
+                    debug_assert!(!write || result.writable);
+
+                    // We looked up in order to write. Mark as modified. Only need to do this once.
+                    if write && offset == 0 {
+                        // SAFETY: `mark_modified_locked` does not change the page lists, parent
+                        // links, parent limits, or sizes of the VMO hierarchy of `cursor`, or
+                        // acquire ancestor locks in that hierarchy.
+                        paged.mark_modified_locked(unsafe { cursor.as_mut().token_mut() });
+                    }
+
+                    // If we read faulted, and lookup didn't say that this is always writable, then
+                    // we map or modify the page without any write permissions. This ensures we will
+                    // fault again if a write is attempted so we can potentially replace this page
+                    // with a copy or a new one, or update the page's dirty state.
+                    if !write && !result.writable {
+                        // we read faulted, so only map with read permissions
+                        curr_mmu_flags &= !ARCH_MMU_FLAG_PERM_WRITE;
+                    }
+
+                    // SAFETY: The state of `result.page` is valid to inspect.
+                    let paddr = unsafe { result.page.paddr() };
+                    // SAFETY: `paddr` is valid to map at `va + offset` until `coalescer` is
+                    // dropped.
+                    if let Err(status) = unsafe {
+                        coalescer.append_or_adjust_mapping(va + offset, paddr, curr_mmu_flags)
+                    } {
+                        hint::cold_path();
+                        // Flush any existing pages in the coalescer.
+                        let _ = coalescer.flush();
+                        return (Err(status), coalescer.total_mapped() as u32);
+                    }
+                    offset += kernel_page::SIZE;
+                }
+
+                // Fault opportunistic pages. If a range is supplied, it is assumed the user knows
+                // the appropriate range, so opportunistic pages will not be faulted.
+                if additional_pages == 0 {
+                    debug_assert!(num_fault_pages > 0);
+                    // Check how much space the coalescer has for faulting additional pages.
+                    let mut extra_pages =
+                        coalescer.extra_page_capacity_from(va.wrapping_add(kernel_page::SIZE));
+                    extra_pages = min(extra_pages, num_fault_pages - 1);
+
+                    // Acquire any additional pages, but only if they already exist as the user has
+                    // not attempted to use these pages yet.
+                    if extra_pages > 0 {
+                        let writable = (coalescer.mmu_flags() & ARCH_MMU_FLAG_PERM_WRITE) != 0;
+                        let slots = coalescer.next_page_slots();
+                        // SAFETY: `extra_pages` is at most the length of `slots`.
+                        let slots = unsafe { slots.get_unchecked_mut(..extra_pages) };
+                        // SAFETY: `slots` is non-empty, and its length is at most the number of
+                        // pages left in the range of `cursor`.
+                        let num_extra_pages =
+                            unsafe { cursor.as_mut().if_exist_pages(writable, slots) }.len();
+                        // SAFETY: `num_extra_pages` is at most the number of slots after the
+                        // current count, and those slots are initialized with physical addresses
+                        // that are valid to map at the virtual addresses that follow the current
+                        // run until `coalescer` is dropped.
+                        unsafe { coalescer.increment_count(num_extra_pages) };
+                    }
+                }
+            }
+            if let Some(phys) = object.as_physical_object() {
+                // Already validated the size, and since physical VMOs are always allocated, and not
+                // resizable, we know we can always retrieve the maximum number of pages without
+                // failure.
+                let phys_len = num_fault_pages * kernel_page::SIZE;
+                let result = phys.lookup_contiguous_locked(token, vmo_offset, phys_len as u64);
+
+                assert!(result.is_ok());
+                let phys_base = result.unwrap();
+
+                // Extrapolate the pages from the base address.
+                let mut offset = 0;
+                while offset < phys_len {
+                    // SAFETY: `phys_base + offset` is valid to map at `va + offset` until
+                    // `coalescer` is dropped.
+                    if let Err(status) =
+                        unsafe { coalescer.append(va + offset, PAddr(phys_base.0 + offset)) }
+                    {
+                        hint::cold_path();
+                        return (Err(status), coalescer.total_mapped() as u32);
+                    }
+                    offset += kernel_page::SIZE;
+                }
+            }
+            let status = coalescer.flush();
+            if status.is_ok() {
+                // Mapping has been successfully updated by us. Inform the faulting helper so that
+                // it knows not to unmap the range instead.
+                currently_faulting.mapping_updated();
+            }
+            (status, coalescer.total_mapped() as u32)
+        };
+        // SAFETY: `vmo_offset` and `currently_faulting_len` are page aligned, the range is in the
+        // range of the VMO that this mapping maps, this mapping has no other `CurrentlyFaulting`,
+        // and the pages that map it may be unmapped until this returns.
+        unsafe { CurrentlyFaulting::scoped(self, token, vmo_offset, currently_faulting_len, fault) }
+    }
+
     /// Informs the mapping that a write is going to be performed to the backing VMO.
     ///
     /// If necessary, creates a private clone of the VMO and returns a new mapping.
@@ -2496,13 +2963,59 @@ fn debug_assert_aspace_remove_write_failed(mapping: &VmMapping, offset: u64, len
     );
 }
 
-/// Helper class for managing the logic of skipping certain unmap operations for in progress faults.
+/// Ensure the `object` type is exactly the form we expect so that whether it is paged is
+/// calculated correctly.
+///
+/// # Safety
+///
+/// `as_paged_object` and `as_physical_object` return `None` or `self`.
+unsafe trait PageFaultObject {
+    fn size_locked(&self, token: &LockToken<'_, VmObjectLockClass>) -> u64;
+    fn as_paged_object(&self) -> Option<&VmObjectPaged>;
+    fn as_physical_object(&self) -> Option<&VmObjectPhysical>;
+}
+
+// SAFETY: `as_paged_object` returns `self` and `as_physical_object` returns `None`.
+unsafe impl PageFaultObject for VmObjectPaged {
+    #[inline(always)]
+    fn size_locked(&self, token: &LockToken<'_, VmObjectLockClass>) -> u64 {
+        VmObjectPaged::size_locked(self, token)
+    }
+    #[inline(always)]
+    fn as_paged_object(&self) -> Option<&VmObjectPaged> {
+        Some(self)
+    }
+    #[inline(always)]
+    fn as_physical_object(&self) -> Option<&VmObjectPhysical> {
+        None
+    }
+}
+
+// SAFETY: `as_paged_object` returns `None` and `as_physical_object` returns `self`.
+unsafe impl PageFaultObject for VmObjectPhysical {
+    #[inline(always)]
+    fn size_locked(&self, token: &LockToken<'_, VmObjectLockClass>) -> u64 {
+        VmObjectPhysical::size_locked(self, token)
+    }
+    #[inline(always)]
+    fn as_paged_object(&self) -> Option<&VmObjectPaged> {
+        None
+    }
+    #[inline(always)]
+    fn as_physical_object(&self) -> Option<&VmObjectPhysical> {
+        Some(self)
+    }
+}
+
+/// Helper struct for managing the logic of skipping certain unmap operations for in-progress
+/// faults.
+///
 /// This is expected to be stack allocated under the object lock and the object lock must not be
 /// dropped over its lifetime.
+///
 /// Creating this object creates a contract where the caller will either update the mapping for this
 /// location and call `mapping_updated`, or this object will automatically unmap the location if
 /// necessary.
-#[repr(C)]
 struct CurrentlyFaulting<'a> {
     /// Reference back to the original mapping.
     mapping: &'a VmMapping,
@@ -2520,36 +3033,44 @@ enum CurrentlyFaultingState {
     Completed,
 }
 
-::zr::static_assert_size_and_align!(
-    CurrentlyFaulting<'static>,
-    constants::kVmMappingCurrentlyFaultingSize,
-    constants::kVmMappingCurrentlyFaultingAlign,
-);
-
 impl<'a> CurrentlyFaulting<'a> {
-    fn new(mapping: &'a VmMapping, object_offset: u64, len: u64) -> Self {
-        Self {
+    /// # Safety
+    ///
+    /// `object_offset` and `len` are page aligned, `[object_offset, object_offset + len)` is in the
+    /// range of the VMO that `mapping` maps, `mapping` has no other `CurrentlyFaulting`, and the
+    /// pages that map the range in `mapping` may be unmapped until this returns.
+    unsafe fn scoped<'t, R>(
+        mapping: &'a VmMapping,
+        token: &mut LockToken<'t, VmObjectLockClass>,
+        object_offset: u64,
+        len: u64,
+        f: impl FnOnce(&CurrentlyFaulting<'a>, &mut LockToken<'t, VmObjectLockClass>) -> R,
+    ) -> R {
+        let currently_faulting = Self {
             mapping,
             object_offset,
             len,
             state: Cell::new(CurrentlyFaultingState::NoUnmapNeeded),
+        };
+        debug_assert!(mapping.currently_faulting(token).is_none());
+        // SAFETY: `currently_faulting` is a `CurrentlyFaulting` for `mapping` that stays live and
+        // is not moved until `currently_faulting` is reset to `None` below. Until then, the object
+        // lock stays held, no `&mut` to `currently_faulting` exists, and it is not written except
+        // through its `Cell` fields.
+        unsafe { mapping.set_currently_faulting(token, Some(NonNull::from(&currently_faulting))) };
+        let result = f(&currently_faulting, token);
+        // If the caller did not call `mapping_updated`, and an unmap was skipped, then we must
+        // unmap the range ourselves. We only do the unmap here if a prior unmap was skipped to
+        // avoid needless unmaps due to transient errors such as needing to wait on a page request.
+        if currently_faulting.state.get() == CurrentlyFaultingState::UnmapSkipped {
+            // SAFETY: `object_offset` and `len` are page aligned,
+            // `[object_offset, object_offset + len)` is in the range of the VMO that `mapping`
+            // maps, and the pages that map that range in `mapping` may be unmapped until now.
+            unsafe { currently_faulting.unmap_skipped(token) };
         }
-    }
-
-    /// # Safety
-    ///
-    /// `object_offset` and `len` are page aligned, `[object_offset, object_offset + len)` is in the
-    /// range of the VMO that the mapping maps, and the mapping has no other `CurrentlyFaulting`.
-    /// `end` is called on `self` before the object lock is released, `self` is deallocated or
-    /// moved, or `'a` ends. Until then, the pages that map the range in the mapping may be
-    /// unmapped, no `&mut` to `self` exists, and it is not written except through its `Cell`
-    /// fields.
-    unsafe fn begin(&self, token: &mut LockToken<'_, VmObjectLockClass>) {
-        debug_assert!(self.mapping.currently_faulting(token).is_none());
-        // SAFETY: `self` is a `CurrentlyFaulting` for its mapping that stays live and is not moved
-        // until `end` resets `currently_faulting`. Until then, the object lock stays held, no
-        // `&mut` to `self` exists, and it is not written except through its `Cell` fields.
-        unsafe { self.mapping.set_currently_faulting(token, Some(NonNull::from(self))) };
+        // SAFETY: `faulting` is `None`.
+        unsafe { mapping.set_currently_faulting(token, None) };
+        result
     }
 
     /// Called to say that the given range needs to be unmapped. This returns true if updating the
@@ -2573,25 +3094,6 @@ impl<'a> CurrentlyFaulting<'a> {
 
     /// # Safety
     ///
-    /// `begin` was called on `self`, `end` has not been called on it since, and the ongoing
-    /// preconditions of `begin` still hold.
-    unsafe fn end(&self, token: &mut LockToken<'_, VmObjectLockClass>) {
-        // If the caller did not call `mapping_updated`, and an unmap was skipped, then we must
-        // unmap the range ourselves. We only do the unmap here if a prior unmap was skipped to
-        // avoid needless unmaps due to transient errors such as needing to wait on a page request.
-        if self.state.get() == CurrentlyFaultingState::UnmapSkipped {
-            // SAFETY: `begin` requires that `self.object_offset` and `self.len` are page aligned,
-            // `[self.object_offset, self.object_offset + self.len)` is in the range of the VMO
-            // that `self.mapping` maps, and the pages that map that range in `self.mapping` may be
-            // unmapped until now.
-            unsafe { self.unmap_skipped(token) };
-        }
-        // SAFETY: `faulting` is `None`.
-        unsafe { self.mapping.set_currently_faulting(token, None) };
-    }
-
-    /// # Safety
-    ///
     /// `self.object_offset` and `self.len` are page aligned,
     /// `[self.object_offset, self.object_offset + self.len)` is in the range of the VMO that
     /// `self.mapping` maps, and the pages that map that range in `self.mapping` may be unmapped.
@@ -2602,7 +3104,7 @@ impl<'a> CurrentlyFaulting<'a> {
             self.mapping.object_range_to_vaddr_range(token, self.object_offset, self.len).unwrap();
         assert!(new_len == self.len);
         let aspace = self.mapping.aspace();
-        // SAFETY: `[base, base + new_len)` maps the range of the VMO given to `new`, whose pages
+        // SAFETY: `[base, base + new_len)` maps the range of the VMO given to `scoped`, whose pages
         // may be unmapped.
         let status = unsafe {
             aspace.arch_aspace().unmap(
@@ -2615,7 +3117,7 @@ impl<'a> CurrentlyFaulting<'a> {
     }
 }
 
-/// Helper class for batching installing mappings into the arch aspace. The mappings object lock
+/// Helper struct for batch-installing mappings into the arch aspace. The mapping's object lock
 /// must be held over the entirety of the lifetime of this object, without ever being released.
 struct VmMappingCoalescer<'a, const N: usize> {
     mapping: &'a VmMapping,
@@ -2678,6 +3180,7 @@ impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
     /// # Safety
     ///
     /// `paddr` is valid to map at `vaddr` until `self` is dropped.
+    #[inline(always)]
     unsafe fn append_or_adjust_mapping(
         &mut self,
         vaddr: usize,
@@ -2706,9 +3209,11 @@ impl<'a, const N: usize> VmMappingCoalescer<'a, N> {
         if self.can_append(vaddr) && self.count != 0 { N - self.count } else { 0 }
     }
 
-    // Functions for the user to manually manage the pages array. It is up to the user to manage
-    // the page count and ensure the coalescer doesn't overflow, maintains the correct page count
-    // and that the pages are contiguous.
+    // Functions for the user to manually populate the remaining `phys` slots and advance the page
+    // count.
+
+    /// Returns the remaining slots in `self.phys` after the current count
+    /// (`&mut self.phys[self.count..]`).
     fn next_page_slots(&mut self) -> &mut [MaybeUninit<PAddr>] {
         &mut self.phys[self.count..]
     }
@@ -2875,11 +3380,6 @@ pub extern "C" fn rust_vm_mapping_private_clone(this: &VmMapping) -> bool {
     this.state().private_clone
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_mapping_object_reset(this: &VmMapping) -> bool {
-    this.state().object_reset.load(Ordering::Relaxed)
-}
-
 /// # Safety
 ///
 /// The aspace lock is held.
@@ -2901,64 +3401,6 @@ pub unsafe extern "C" fn rust_vm_mapping_set_mergeable_locked(
     // SAFETY: The aspace lock is held by the caller.
     let mut token = unsafe { LockToken::new() };
     this.set_mergeable_locked(&mut token, mergeable);
-}
-
-/// # Safety
-///
-/// `storage` is aligned and valid for writes of a `CurrentlyFaulting`. `object_offset` and `len`
-/// are page aligned, `[object_offset, object_offset + len)` is in the range of the VMO that
-/// `mapping` maps, and `mapping` has no other `CurrentlyFaulting`. The object lock is held.
-/// `storage` is passed to `rust_vm_mapping_currently_faulting_end` before the object lock is
-/// released, `storage` is deallocated or moved, or `mapping`'s lifetime ends. Until then, the pages
-/// that map the range in `mapping` may be unmapped, and `storage` is not accessed except by passing
-/// it to `rust_vm_mapping_currently_faulting_mapping_updated` and
-/// `rust_vm_mapping_currently_faulting_end`.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_vm_mapping_currently_faulting_begin<'a>(
-    storage: *mut CurrentlyFaulting<'a>,
-    mapping: &'a VmMapping,
-    object_offset: u64,
-    len: u64,
-) {
-    // SAFETY: `storage` is aligned and valid for writes of a `CurrentlyFaulting`.
-    unsafe { storage.write(CurrentlyFaulting::new(mapping, object_offset, len)) };
-    // SAFETY: The object lock is held by the caller.
-    let mut token = unsafe { LockToken::new() };
-    // SAFETY: `storage` holds a `CurrentlyFaulting`. `object_offset` and `len` are page aligned,
-    // the range is in the range of the VMO that `mapping` maps, and `mapping` has no other
-    // `CurrentlyFaulting`. `rust_vm_mapping_currently_faulting_end` calls `end` on `storage` before
-    // the object lock is released, `storage` is deallocated or moved, or `'a` ends. Until then, the
-    // pages that map the range in `mapping` may be unmapped, and `storage` is only accessed through
-    // shared references, which do not write it except through its `Cell` fields.
-    unsafe { (*storage).begin(&mut token) };
-}
-
-/// # Safety
-///
-/// `storage` holds a `CurrentlyFaulting` initialized by `rust_vm_mapping_currently_faulting_begin`
-/// and not yet passed to `rust_vm_mapping_currently_faulting_end`, and the ongoing preconditions of
-/// `rust_vm_mapping_currently_faulting_begin` still hold. The object lock is held.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_vm_mapping_currently_faulting_mapping_updated(
-    storage: &CurrentlyFaulting<'_>,
-) {
-    storage.mapping_updated();
-}
-
-/// # Safety
-///
-/// `storage` holds a `CurrentlyFaulting` initialized by `rust_vm_mapping_currently_faulting_begin`
-/// and not yet passed to `rust_vm_mapping_currently_faulting_end`, and the ongoing preconditions of
-/// `rust_vm_mapping_currently_faulting_begin` still hold. The object lock is held.
-#[unsafe(no_mangle)]
-unsafe extern "C" fn rust_vm_mapping_currently_faulting_end(storage: &CurrentlyFaulting<'_>) {
-    // SAFETY: The object lock is held by the caller.
-    let mut token = unsafe { LockToken::new() };
-    // SAFETY: `storage` was passed to `rust_vm_mapping_currently_faulting_begin`, which called
-    // `begin` on it, and has not been passed to `rust_vm_mapping_currently_faulting_end` since.
-    // The preconditions of `rust_vm_mapping_currently_faulting_begin`, and so the ongoing
-    // preconditions of `begin`, still hold.
-    unsafe { storage.end(&mut token) };
 }
 
 /// # Safety
@@ -2985,6 +3427,19 @@ pub unsafe extern "C" fn rust_vm_mapping_set_first_region_arch_mmu_flags(
     // SAFETY: The object lock is held by the caller.
     let mut object_token = unsafe { LockToken::new() };
     this.set_first_region_arch_mmu_flags_locked(&aspace_token, &mut object_token, flags);
+}
+
+/// # Safety
+///
+/// The aspace lock is held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_arch_mmu_flags_locked(
+    this: &VmMapping,
+    offset: usize,
+) -> ArchMmuFlags {
+    // SAFETY: The aspace lock is held.
+    let token = unsafe { LockToken::new() };
+    this.arch_mmu_flags_locked(&token, VAddr(offset))
 }
 
 #[unsafe(no_mangle)]
@@ -3141,6 +3596,58 @@ pub extern "C" fn rust_vm_mapping_map_range(
     ignore_existing: bool,
 ) -> zx_status_t {
     Status::result_into_raw(this.map_range(offset, len, commit, ignore_existing))
+}
+
+/// # Safety
+///
+/// `object` is the mapping's object, or was until the mapping's object was reset, stays alive for
+/// the duration of the call, and its lock is not held. `va` is page-aligned and within the
+/// mapping, `additional_pages` is less than `usize::MAX`, and `page_request` does not hold an
+/// active request.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_page_fault(
+    this: &VmMapping,
+    va: usize,
+    pf_flags: u32,
+    additional_pages: usize,
+    object: &VmObject,
+    page_request: Pin<&mut MultiPageRequest>,
+    out_mapped: &mut MaybeUninit<u32>,
+) -> zx_status_t {
+    // SAFETY: `object` is the mapping's object, or was until the mapping's object was reset, and
+    // the object lock is not held. `va` is page-aligned and within the mapping,
+    // `additional_pages` is less than `usize::MAX`, and `page_request` does not hold an active
+    // request.
+    let (status, mapped) =
+        unsafe { this.page_fault(VAddr(va), pf_flags, additional_pages, object, page_request) };
+    out_mapped.write(mapped);
+    Status::result_into_raw(status)
+}
+
+/// # Safety
+///
+/// The aspace lock is held and the object lock is not held. The mapping is alive, `va` is
+/// page-aligned and within it, `additional_pages` is less than `usize::MAX`, and `page_request`
+/// does not hold an active request.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_page_fault_locked(
+    this: &VmMapping,
+    va: usize,
+    pf_flags: u32,
+    additional_pages: usize,
+    page_request: Pin<&mut MultiPageRequest>,
+    out_mapped: &mut MaybeUninit<u32>,
+) -> zx_status_t {
+    // SAFETY: The aspace lock is held.
+    let mut token = unsafe { LockToken::new() };
+    // SAFETY: The mapping is alive and the object lock is not held. `va` is page-aligned and
+    // within it, `additional_pages` is less than `usize::MAX`, and `page_request` does not hold
+    // an active request.
+    let (status, mapped) = unsafe {
+        this.page_fault_locked(&mut token, VAddr(va), pf_flags, additional_pages, page_request)
+    };
+    out_mapped.write(mapped);
+    Status::result_into_raw(status)
 }
 
 /// # Safety

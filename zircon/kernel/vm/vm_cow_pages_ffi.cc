@@ -162,7 +162,8 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_lookup_cursor_require_page(
     VmCowPages::LookupCursor* cursor, bool will_write, uint64_t max_request_pages,
     VmCowPages::DeferredOps* deferred, MultiPageRequest* page_request, vm_page_t** out_page,
     bool* out_writable) TA_NO_THREAD_SAFETY_ANALYSIS {
-  auto result = cursor->RequirePage(will_write, max_request_pages, *deferred, page_request);
+  __UNINITIALIZED auto result =
+      cursor->RequirePage(will_write, max_request_pages, *deferred, page_request);
   if (unlikely(result.is_error())) {
     return result.error_value();
   }

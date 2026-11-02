@@ -139,9 +139,6 @@ void cpp_vm_mapping_protection_ranges_cursor_get(const VmMappingProtectionRanges
                                                  vaddr_t* out_key, arch_mmu_flags_t* out_flags);
 void cpp_vm_mapping_protection_ranges_cursor_next(VmMappingProtectionRangesCursor* cursor);
 void cpp_vm_mapping_protection_ranges_cursor_prev(VmMappingProtectionRangesCursor* cursor);
-zx_status_t cpp_vm_mapping_page_fault_locked(VmMapping* mapping, vaddr_t va, uint32_t pf_flags,
-                                             size_t additional_pages,
-                                             MultiPageRequest* page_request, uint32_t* out_mapped);
 
 __END_CDECLS
 

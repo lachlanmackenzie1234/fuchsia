@@ -979,16 +979,8 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
   enum class Mergeable : bool { YES = true, NO = false };
 
   // Accessors for VMO-mapping state
-  // These can be read under either lock (both locks being held for writing), so we provide two
-  // different accessors, one for each lock.
-  arch_mmu_flags_t arch_mmu_flags_locked(vaddr_t offset) const
-      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return FlagsRangeAtAddrLocked(offset).mmu_flags;
-  }
-  struct FlagsRange {
-    arch_mmu_flags_t mmu_flags;
-    uint64_t region_top;
-  };
+  // These can be read under either lock (both locks being held for writing).
+  arch_mmu_flags_t arch_mmu_flags_locked(vaddr_t offset) const TA_REQ(lock());
   uint64_t object_offset() const;
 
   Lock<CriticalMutex>* object_lock() const TA_RET_CAP(object_locked()->lock()) TA_REQ(lock()) {
@@ -1170,25 +1162,6 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
     return ZX_OK;
   }
 
-  FlagsRange FlagsRangeAtAddrLocked(vaddr_t va) const TA_REQ(lock())
-      TA_REQ(object_locked()->lock()) {
-    if (rest_protection_ranges_.is_empty()) {
-      return FlagsRange{first_region_arch_mmu_flags_locked(), base() + size()};
-    }
-    // Find the first transition strictly after 'va'.
-    auto it = rest_protection_ranges_.upper_bound(va);
-    // |it| represents the end of the range that includes |va|
-    vaddr_t top = it ? (*it).first : base() + size();
-    // Now go backwards to find the start of the range that includes |va|, which tells us the flags.
-    it--;
-    arch_mmu_flags_t flags = it ? (*it).second : first_region_arch_mmu_flags_locked();
-    return FlagsRange{flags, top};
-  }
-  FlagsRange FlagsRangeAtAddrLockedObject(vaddr_t va) const
-      TA_REQ(object_locked()->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return FlagsRangeAtAddrLocked(va);
-  }
-
   // The maximum number of pages that a page fault can optimistically extend the fault to include.
   // This is defined and exposed here for the purposes of unittests.
   static constexpr uint64_t kPageFaultMaxOptimisticPages = kVmMappingPageFaultMaxOptimisticPages;
@@ -1221,10 +1194,8 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
 
   const fbl::RefPtr<VmObject>& object_locked() const TA_REQ(lock());
   bool private_clone() const;
-  bool object_reset() const;
   Mergeable mergeable_locked() const TA_REQ(lock());
   void set_mergeable_locked(Mergeable mergeable) TA_REQ(lock());
-  class CurrentlyFaulting;
 
   // allow VmAddressRegion to manipulate VmMapping internals for construction
   // and bookkeeping
@@ -1242,17 +1213,6 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
 
   zx_status_t DestroyLockedObject(DestroyUnmap unmap, DestroyRemoveFromParent remove_region)
       TA_REQ(region_lock()) TA_REQ(lock()) TA_REQ(object_locked()->lock());
-
-  // Internal helper for performing a page fault after the object lock is acquired. Additionally
-  // the object is passed in as the downcast specific type in object to allow the helper to assume
-  // that object->lock() is held in all paths, without needing to do its own AssertHeld's, after
-  // runtime casting, throughout.
-  template <typename T>
-  ktl::pair<zx_status_t, uint32_t> PageFaultLockedObject(vaddr_t va, uint pf_flags,
-                                                         size_t additional_pages, T* object,
-                                                         VmCowPages::DeferredOps* deferred,
-                                                         MultiPageRequest* page_request)
-      TA_REQ(object->lock()) TA_REQ(object_locked()->lock());
 
   // Unmap a subset of the region of memory in the containing address space,
   // returning it to the parent region to allocate.  If all of the memory is unmapped,
@@ -1386,15 +1346,11 @@ void rust_vm_mapping_assert_canary(const VmMapping* mapping);
 const fbl::RefPtr<VmObject>* rust_vm_mapping_object(const VmMapping* mapping);
 uint64_t rust_vm_mapping_object_offset(const VmMapping* mapping);
 bool rust_vm_mapping_private_clone(const VmMapping* mapping);
-bool rust_vm_mapping_object_reset(const VmMapping* mapping);
 VmMapping::Mergeable rust_vm_mapping_mergeable_locked(const VmMapping* mapping);
 void rust_vm_mapping_set_mergeable_locked(VmMapping* mapping, VmMapping::Mergeable mergeable);
-void rust_vm_mapping_currently_faulting_begin(void* storage, VmMapping* mapping,
-                                              uint64_t object_offset, uint64_t len);
-void rust_vm_mapping_currently_faulting_mapping_updated(void* storage);
-void rust_vm_mapping_currently_faulting_end(void* storage);
 arch_mmu_flags_t rust_vm_mapping_first_region_arch_mmu_flags(const VmMapping* mapping);
 void rust_vm_mapping_set_first_region_arch_mmu_flags(VmMapping* mapping, arch_mmu_flags_t flags);
+arch_mmu_flags_t rust_vm_mapping_arch_mmu_flags_locked(const VmMapping* mapping, vaddr_t offset);
 VmObject* rust_vm_mapping_vmo(const VmMapping* mapping);
 VmMapping* rust_vm_mapping_create(VmAddressRegion* parent, bool private_clone, vaddr_t base,
                                   size_t size, uint32_t vmar_flags, VmObject* vmo,
@@ -1421,6 +1377,12 @@ zx_status_t rust_vm_mapping_destroy_locked_object(VmMapping* mapping, VmMapping:
                                                   VmMapping::DestroyRemoveFromParent remove_region);
 zx_status_t rust_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                       bool ignore_existing);
+zx_status_t rust_vm_mapping_page_fault(VmMapping* mapping, vaddr_t va, uint pf_flags,
+                                       size_t additional_pages, VmObject* object,
+                                       MultiPageRequest* page_request, uint32_t* out_mapped);
+zx_status_t rust_vm_mapping_page_fault_locked(VmMapping* mapping, vaddr_t va, uint pf_flags,
+                                              size_t additional_pages,
+                                              MultiPageRequest* page_request, uint32_t* out_mapped);
 zx_status_t rust_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
                                           arch_mmu_flags_t new_arch_mmu_flags);
 zx_status_t rust_vm_mapping_protect_locked(VmMapping* mapping, vaddr_t base, size_t size,
@@ -1448,7 +1410,6 @@ inline const fbl::RefPtr<VmObject>& VmMapping::object_locked() const {
 }
 inline uint64_t VmMapping::object_offset() const { return rust_vm_mapping_object_offset(this); }
 inline bool VmMapping::private_clone() const { return rust_vm_mapping_private_clone(this); }
-inline bool VmMapping::object_reset() const { return rust_vm_mapping_object_reset(this); }
 inline VmMapping::Mergeable VmMapping::mergeable_locked() const {
   return rust_vm_mapping_mergeable_locked(this);
 }
@@ -1460,6 +1421,26 @@ inline arch_mmu_flags_t VmMapping::first_region_arch_mmu_flags_locked() const {
 }
 inline void VmMapping::set_first_region_arch_mmu_flags_locked(arch_mmu_flags_t flags) {
   rust_vm_mapping_set_first_region_arch_mmu_flags(this, flags);
+}
+inline arch_mmu_flags_t VmMapping::arch_mmu_flags_locked(vaddr_t offset) const {
+  return rust_vm_mapping_arch_mmu_flags_locked(this, offset);
+}
+inline ktl::pair<zx_status_t, uint32_t> VmMapping::PageFault(vaddr_t va, uint pf_flags,
+                                                             size_t additional_pages,
+                                                             VmObject* object,
+                                                             MultiPageRequest* page_request) {
+  __UNINITIALIZED uint32_t mapped;
+  zx_status_t status = rust_vm_mapping_page_fault(this, va, pf_flags, additional_pages, object,
+                                                  page_request, &mapped);
+  return {status, mapped};
+}
+inline ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, uint pf_flags,
+                                                                   size_t additional_pages,
+                                                                   MultiPageRequest* page_request) {
+  __UNINITIALIZED uint32_t mapped;
+  zx_status_t status = rust_vm_mapping_page_fault_locked(this, va, pf_flags, additional_pages,
+                                                         page_request, &mapped);
+  return {status, mapped};
 }
 inline zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit,
                                        bool ignore_existing) {

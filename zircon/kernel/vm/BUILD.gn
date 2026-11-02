@@ -177,7 +177,6 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kRefCountedAdoptionValidator",
     "kVmAddressRegionState.*",
     "kVmMappingState.*",
-    "kVmMappingCurrentlyFaulting.*",
     "kVmMappingPageFaultMaxOptimisticPages",
     "kVmCowPagesState.*",
     "kPhysicalPageProviderState.*",
@@ -807,7 +806,6 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_mapping_destruct",
     "cpp_vm_mapping_force_writable",
     "cpp_vm_mapping_mark_mergeable",
-    "cpp_vm_mapping_page_fault_locked",
     "cpp_vm_mapping_protection_ranges_begin",
     "cpp_vm_mapping_protection_ranges_clear",
     "cpp_vm_mapping_protection_ranges_cursor_get",
@@ -849,12 +847,10 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   ]
   type_blocklist = [
     "CppVmAddressRegionEnumerator_.*",
-    "MultiPageRequest",
     "VmAspace",
     "VmAddressRegion_AttributionCounts",
     "VmAddressRegion_MapResult",
     "VmMapping_AttributionCounts",
-    "VmMapping_CurrentlyFaulting",
     "VmObject",
     "fbl_RefPtr",
     "vaddr_t",
@@ -900,7 +896,6 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "pub use zx_types::{zx_status_t, zx_vaddr_t as vaddr_t};",
     "pub type fbl_RefPtr = core::ffi::c_void;",
     "pub type VmAspace = core::ffi::c_void;",
-    "pub type MultiPageRequest = core::ffi::c_void;",
   ]
   expect_lints = [ "non_camel_case_types" ]
 }

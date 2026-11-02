@@ -207,13 +207,18 @@ impl GuestPhysicalAspace {
                 if (mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE) != 0 {
                     pf_flags |= pf_flag::INSTRUCTION;
                 }
-                let (fault_status, _) = mapping.page_fault_locked(
-                    guard.as_mut().token_mut(),
-                    VAddr(guest_paddr),
-                    pf_flags,
-                    0,
-                    page_request.as_mut(),
-                );
+                // SAFETY: `mapping` is alive and the object lock is not held. `guest_paddr` is
+                // page-aligned and within `mapping`, the additional page count is less than
+                // `usize::MAX`, and `page_request` does not hold an active request.
+                let (fault_status, _) = unsafe {
+                    mapping.page_fault_locked(
+                        guard.as_mut().token_mut(),
+                        VAddr(guest_paddr),
+                        pf_flags,
+                        0,
+                        page_request.as_mut(),
+                    )
+                };
                 fault_status
             };
 
