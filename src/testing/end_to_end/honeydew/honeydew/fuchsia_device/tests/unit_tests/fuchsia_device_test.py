@@ -1071,11 +1071,58 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_fc_check_connection: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.health_check() raising HealthCheckError"""
-        with self.assertRaises(errors.HealthCheckError):
+        with self.assertRaises(errors.HealthCheckError) as context:
             self.fd_fc_obj.health_check()
 
+        err_msg = str(context.exception)
+        self.assertTrue(
+            err_msg.startswith(
+                f"health check failed on '{self.fd_fc_obj.device_name}': "
+            )
+        )
+        self.assertRegex(
+            err_msg,
+            r"\[leg=ffx \| ffx=FAIL\(\d+\.\ds\)\] FfxConnectionError: ffx connection error$",
+        )
         mock_ffx_check_connection.assert_called_once_with(self.fd_fc_obj.ffx)
         mock_fc_check_connection.assert_not_called()
+
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "check_connection",
+        side_effect=fc_errors.FuchsiaControllerConnectionError(
+            "fc connection error"
+        ),
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "check_connection",
+        autospec=True,
+    )
+    def test_health_check_fc_exception(
+        self,
+        mock_ffx_check_connection: mock.Mock,
+        mock_fc_check_connection: mock.Mock,
+    ) -> None:
+        """Testcase for FuchsiaDevice.health_check() raising HealthCheckError when FC leg fails."""
+        with self.assertRaises(errors.HealthCheckError) as context:
+            self.fd_fc_obj.health_check()
+
+        err_msg = str(context.exception)
+        self.assertTrue(
+            err_msg.startswith(
+                f"health check failed on '{self.fd_fc_obj.device_name}': "
+            )
+        )
+        self.assertRegex(
+            err_msg,
+            r"\[leg=fc \| ffx=ok\(\d+\.\ds\) fc=FAIL\(\d+\.\ds\)\] FuchsiaControllerConnectionError: fc connection error$",
+        )
+        mock_ffx_check_connection.assert_called_once_with(self.fd_fc_obj.ffx)
+        mock_fc_check_connection.assert_called_once_with(
+            self.fd_fc_obj.fuchsia_controller
+        )
 
     @parameterized.expand(
         [

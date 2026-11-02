@@ -3,12 +3,14 @@
 # found in the LICENSE file.
 """FuchsiaDevice abstract base class implementation."""
 
+import contextlib
 import dataclasses
 import inspect
 import json
 import logging
 import os
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime
 from typing import Any
 
@@ -226,6 +228,9 @@ class FuchsiaDevice(
 
         self._usb_power_hub: usb_power_hub_interface.UsbPowerHub | None = None
         self._usb_power_hub_port: int | None = None
+
+        self._health_check_leg_statuses: list[str] = []
+        self._current_health_check_leg: str | None = None
 
         self.health_check()
 
@@ -772,6 +777,8 @@ class FuchsiaDevice(
         Raises:
             errors.HealthCheckError
         """
+        self._health_check_leg_statuses = []
+        self._current_health_check_leg = None
         try:
             # TODO(b/421476805): Reduce the timeout back to 60 seconds once
             # we're able to supply a configuration value for this. The timeout
@@ -789,24 +796,69 @@ class FuchsiaDevice(
 
                 self._check_connections()
 
+                leg_summary: str = " ".join(self._health_check_leg_statuses)
                 _LOGGER.info(
-                    "Completed the health check successfully on %s...",
+                    "Completed the health check successfully on %s (%s)...",
                     self.device_name,
+                    leg_summary,
                 )
         except (
             errors.HoneydewTimeoutError,
             errors.TransportConnectionError,
         ) as err:
-            raise errors.HealthCheckError(
-                f"health check failed on '{self._device_info.name}'"
-            ) from err
+            err_msg: str = self._format_health_check_error(err)
+            _LOGGER.warning("%s", err_msg)
+            raise errors.HealthCheckError(err_msg) from err
+
+    def _format_health_check_error(self, err: Exception) -> str:
+        """Formats the error message for a failed health check."""
+        failed_leg: str = self._current_health_check_leg or "unknown"
+        leg_summary: str = " ".join(self._health_check_leg_statuses)
+        leg_suffix: str = f" | {leg_summary}" if leg_summary else ""
+        return (
+            f"health check failed on '{self._device_info.name}': "
+            f"[leg={failed_leg}{leg_suffix}] {type(err).__name__}: {err}"
+        )
+
+    @contextlib.contextmanager
+    def _health_check_leg(self, leg_name: str) -> Iterator[None]:
+        """Context manager that runs a single transport health check leg, recording its status and duration.
+
+        To accurately measure elapsed time and attribute any initialization
+        errors to the right leg, this is implemented as a context manager so
+        lazy `@properties.Transport` access (e.g. `self.ffx`,
+        `self.fuchsia_controller`, `self.adb`) happens inside the timed `try`
+        block rather than at function argument evaluation time.
+        """
+        self._current_health_check_leg = leg_name
+        start_time: float = time.monotonic()
+        try:
+            yield
+        except errors.NotEnabledError:
+            self._current_health_check_leg = None
+            self._health_check_leg_statuses.append(f"{leg_name}=skipped")
+            raise
+        except (
+            errors.HoneydewTimeoutError,
+            errors.TransportConnectionError,
+        ):
+            elapsed: float = time.monotonic() - start_time
+            self._health_check_leg_statuses.append(
+                f"{leg_name}=FAIL({elapsed:.1f}s)"
+            )
+            raise
+        elapsed = time.monotonic() - start_time
+        self._current_health_check_leg = None
+        self._health_check_leg_statuses.append(f"{leg_name}=ok({elapsed:.1f}s)")
 
     def _check_connections(self) -> None:
         """Checks health of all device transports."""
         # Note - FFX is invoked first to verify connectivity
-        self.ffx.check_connection()
+        with self._health_check_leg("ffx"):
+            self.ffx.check_connection()
 
-        self.fuchsia_controller.check_connection()
+        with self._health_check_leg("fc"):
+            self.fuchsia_controller.check_connection()
 
     def get_inspect_data(
         self,

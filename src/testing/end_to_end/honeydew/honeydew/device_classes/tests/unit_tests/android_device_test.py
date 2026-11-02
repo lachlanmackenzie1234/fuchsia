@@ -1215,6 +1215,10 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             mock_fc_check_connection.assert_called_once_with(
                 self.ad_obj.fuchsia_controller
             )
+            self.assertEqual(
+                self.ad_obj._health_check_leg_statuses[-1], "adb=skipped"
+            )
+            self.assertIsNone(self.ad_obj._current_health_check_leg)
         finally:
             self.ad_obj._config = orig_config
             self.ad_obj.__dict__.pop("adb", None)
@@ -1244,9 +1248,19 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_adb_check_connection: mock.Mock,
     ) -> None:
         """Testcase for AndroidDevice.health_check() raising HealthCheckError on ADB failure."""
-        with self.assertRaises(errors.HealthCheckError):
+        with self.assertRaises(errors.HealthCheckError) as context:
             self.ad_obj.health_check()
 
+        err_msg = str(context.exception)
+        self.assertTrue(
+            err_msg.startswith(
+                f"health check failed on '{self.ad_obj.device_name}': "
+            )
+        )
+        self.assertRegex(
+            err_msg,
+            r"\[leg=adb \| ffx=ok\(\d+\.\ds\) fc=ok\(\d+\.\ds\) adb=FAIL\(\d+\.\ds\)\] AdbConnectionError: ADB connection error$",
+        )
         mock_adb_check_connection.assert_called_once()
         self.ad_obj.__dict__.pop("adb", None)
 

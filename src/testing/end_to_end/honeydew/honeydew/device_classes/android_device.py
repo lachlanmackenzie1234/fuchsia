@@ -461,7 +461,8 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         super()._check_connections()
 
         try:
-            self.adb.check_connection()
+            with self._health_check_leg("adb"):
+                self.adb.check_connection()
         except errors.NotEnabledError:
             _LOGGER.info(
                 "ADB is not enabled on %s, so skipping the ADB connection check.",
