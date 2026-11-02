@@ -19,7 +19,7 @@ use netlink_packet_core::{
     DoneMessage, ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
 use netlink_packet_utils::Emitable;
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, Nl80211ProxyLock};
 use starnix_uapi::errors;
 use std::sync::Arc;
 
@@ -66,7 +66,7 @@ impl ReconnectState {
 }
 
 struct Nl80211FamilyInner {
-    proxy: Mutex<fidl_wlanix::Nl80211Proxy>,
+    proxy: LockDepMutex<fidl_wlanix::Nl80211Proxy, Nl80211ProxyLock>,
     reconnect_state: futures::lock::Mutex<ReconnectState>,
     connect_wlanix_fn: ConnectWlanixFn,
 }
@@ -91,7 +91,7 @@ impl Nl80211Family {
         let nl80211_proxy = Self::connect_proxy(&wlanix_svc)?;
         Ok(Self {
             inner: Arc::new(Nl80211FamilyInner {
-                proxy: Mutex::new(nl80211_proxy),
+                proxy: LockDepMutex::new(nl80211_proxy),
                 reconnect_state: futures::lock::Mutex::new(ReconnectState::new()),
                 connect_wlanix_fn: Box::new(connect_wlanix_fn),
             }),
@@ -433,6 +433,7 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async::TestExecutor;
     use futures::{FutureExt, pin_mut};
+    use starnix_sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::task::Poll;
     use test_case::test_case;

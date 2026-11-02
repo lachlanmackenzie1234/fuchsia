@@ -362,6 +362,7 @@ lock_ordering! {
     Terminal(NanohubContentsLock),
     Terminal(NanohubServiceLock),
     Terminal(NetnsIdLock),
+    Terminal(Nl80211ProxyLock),
     Terminal(NmfsNetworkManagerLock),
     Terminal(NotFoundCountsLock),
     Terminal(OdpmProxyLock),
