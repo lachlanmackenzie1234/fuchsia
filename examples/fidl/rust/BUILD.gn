@@ -11,9 +11,16 @@ group("all") {
     ":echo-rust-client",
     ":echo-rust-client-sync",
     ":echo-service-rust",
+    ":tests",
+    "server:echo-rust-server",
+  ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
     "fidl_crates",
     "persistence",
-    "server:echo-rust-server",
   ]
 }
 

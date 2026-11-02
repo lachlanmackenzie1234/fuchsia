@@ -31,6 +31,7 @@ group("tests") {
 
     # All other tests.
     "drivers/driver_test_realm:non_hermetic_tests",
+    "fidl:tests",
     "intl:tests",
   ]
 }
