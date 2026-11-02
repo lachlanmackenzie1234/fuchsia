@@ -1401,7 +1401,7 @@ impl Catalog {
             (
                 dep.dependent.as_ref().map(|d| d.element_id),
                 dep.requires.element_id,
-                usize::MAX - dep.requires.level.index,
+                std::cmp::Reverse(dep.requires.level),
             )
         });
         for dep in dependencies {
@@ -1920,9 +1920,9 @@ mod tests {
 
     // Convenience aliases.
     const OFF: IndexedPowerLevel =
-        IndexedPowerLevel { level: BinaryPowerLevel::Off.into_primitive(), index: 0 };
+        IndexedPowerLevel::from_same_level_and_index(BinaryPowerLevel::Off.into_primitive());
     const ON: IndexedPowerLevel =
-        IndexedPowerLevel { level: BinaryPowerLevel::On.into_primitive(), index: 1 };
+        IndexedPowerLevel::from_same_level_and_index(BinaryPowerLevel::On.into_primitive());
 
     const ZERO: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(0);
     const ONE: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(1);
@@ -2558,14 +2558,8 @@ mod tests {
             )
             .expect("add_element failed");
         assert_eq!(broker.lookup_name(latinum), "Latinum".to_string());
-        assert_eq!(
-            broker.get_current_level(&latinum),
-            Some(IndexedPowerLevel { level: 7, index: 2 })
-        );
-        assert_eq!(
-            broker.get_required_level(&latinum),
-            Some(IndexedPowerLevel { level: 5, index: 0 })
-        );
+        assert_eq!(broker.get_current_level(&latinum), Some(IndexedPowerLevel::new(7, 2)));
+        assert_eq!(broker.get_required_level(&latinum), Some(IndexedPowerLevel::new(5, 0)));
 
         assert_data_tree!(inspect, root: {
             test: {
@@ -3895,7 +3889,7 @@ mod tests {
         // and all others should have a default required level of 0.
         let mut broker_status = BrokerStatusMatcher::new();
         broker_status.required_level.update(parent, ZERO);
-        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 10, index: 0 });
+        broker_status.required_level.update(grandparent, IndexedPowerLevel::new(10, 0));
         broker_status.required_level.update(child1, ZERO);
         broker_status.required_level.update(child2, ZERO);
         broker_status.assert_matches(&broker);
@@ -3906,30 +3900,28 @@ mod tests {
         // dependency on Grandparent. Grandparent has no dependencies so its
         // level should be raised first.
         let lease1 = broker
-            .acquire_lease(child1, IndexedPowerLevel { level: 5, index: 1 }, zx::Koid::from_raw(1))
+            .acquire_lease(child1, IndexedPowerLevel::new(5, 1), zx::Koid::from_raw(1))
             .expect("acquire failed");
-        broker_status
-            .required_level
-            .update(grandparent, IndexedPowerLevel { level: 200, index: 2 });
+        broker_status.required_level.update(grandparent, IndexedPowerLevel::new(200, 2));
         broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to 200. Now Parent claim should
         // be enforced, because its dependency on Grandparent is unblocked
         // raising its required level to 50.
-        broker.update_current_level(grandparent, IndexedPowerLevel { level: 200, index: 2 });
-        broker_status.required_level.update(parent, IndexedPowerLevel { level: 50, index: 2 });
+        broker.update_current_level(grandparent, IndexedPowerLevel::new(200, 2));
+        broker_status.required_level.update(parent, IndexedPowerLevel::new(50, 2));
         broker_status.assert_matches(&broker);
 
         // Update Parent's current level to 50.
         // Parent and Grandparent should have required levels of 50 and 200.
-        broker.update_current_level(parent, IndexedPowerLevel { level: 50, index: 2 });
-        broker_status.required_level.update(child1, IndexedPowerLevel { level: 5, index: 1 });
+        broker.update_current_level(parent, IndexedPowerLevel::new(50, 2));
+        broker_status.required_level.update(child1, IndexedPowerLevel::new(5, 1));
         broker_status.assert_matches(&broker);
 
         // Update Child 1's current level to 5.
         // Lease Child 1's is now satisfied.
-        broker.update_current_level(child1, IndexedPowerLevel { level: 5, index: 1 });
+        broker.update_current_level(child1, IndexedPowerLevel::new(5, 1));
         broker_status.lease.update(lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
@@ -3937,15 +3929,15 @@ mod tests {
         // requirements of Parent at 30 and Grandparent at 100, they are
         // superseded by Child 1's requirements of 50 and 200.
         let lease2 = broker
-            .acquire_lease(child2, IndexedPowerLevel { level: 3, index: 1 }, zx::Koid::from_raw(2))
+            .acquire_lease(child2, IndexedPowerLevel::new(3, 1), zx::Koid::from_raw(2))
             .expect("acquire failed");
-        broker_status.required_level.update(child2, IndexedPowerLevel { level: 3, index: 1 });
+        broker_status.required_level.update(child2, IndexedPowerLevel::new(3, 1));
         broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update Child 2's current level to 3.
         // Lease Child 2's is now satisfied.
-        broker.update_current_level(child2, IndexedPowerLevel { level: 3, index: 1 });
+        broker.update_current_level(child2, IndexedPowerLevel::new(3, 1));
         broker_status.lease.update(lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
@@ -3960,14 +3952,14 @@ mod tests {
         // Parent's required level should immediately drop to 30.
         // Grandparent's required level will remain at 200 for now.
         broker.update_current_level(child1, ZERO);
-        broker_status.required_level.update(parent, IndexedPowerLevel { level: 30, index: 1 });
+        broker_status.required_level.update(parent, IndexedPowerLevel::new(30, 1));
         broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Lower Parent's current level to 30. Now Grandparent's required level
         // should drop to 90.
-        broker.update_current_level(parent, IndexedPowerLevel { level: 30, index: 1 });
-        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 90, index: 1 });
+        broker.update_current_level(parent, IndexedPowerLevel::new(30, 1));
+        broker_status.required_level.update(grandparent, IndexedPowerLevel::new(90, 1));
         broker_status.assert_matches(&broker);
 
         // All claims for Lease 1 should now be cleaned up,
@@ -3989,13 +3981,13 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Lower GrandParent's current level to 90.
-        broker.update_current_level(grandparent, IndexedPowerLevel { level: 90, index: 1 });
+        broker.update_current_level(grandparent, IndexedPowerLevel::new(90, 1));
         broker_status.assert_matches(&broker);
 
         // Lower Parent's current level to 0. Grandparent claim should now be
         // dropped and have its default required level of 10.
         broker.update_current_level(parent, ZERO);
-        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 10, index: 0 });
+        broker_status.required_level.update(grandparent, IndexedPowerLevel::new(10, 0));
         broker_status.assert_matches(&broker);
         assert_lease_cleaned_up(&broker.catalog, lease2.id);
     }
@@ -6242,9 +6234,9 @@ mod tests {
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
         let levels = vec![0, 1, 2];
-        let level_0 = IndexedPowerLevel { level: 0, index: 0 };
-        let level_1 = IndexedPowerLevel { level: 1, index: 1 };
-        let level_2 = IndexedPowerLevel { level: 2, index: 2 };
+        let level_0 = IndexedPowerLevel::from_same_level_and_index(0);
+        let level_1 = IndexedPowerLevel::from_same_level_and_index(1);
+        let level_2 = IndexedPowerLevel::from_same_level_and_index(2);
 
         let element_a = broker
             .add_element("A", level_0.level, levels.clone(), vec![])
@@ -6317,7 +6309,7 @@ mod tests {
         let lease = broker
             .acquire_lease(
                 element_b,
-                IndexedPowerLevel { level: 1, index: 1 },
+                IndexedPowerLevel::from_same_level_and_index(1),
                 zx::Koid::from_raw(1),
             )
             .expect("acquire failed");
@@ -6328,13 +6320,13 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_a).unwrap().level, 1);
 
         // Transition A to 1.
-        broker.update_current_level(element_a, IndexedPowerLevel { level: 1, index: 1 });
+        broker.update_current_level(element_a, IndexedPowerLevel::from_same_level_and_index(1));
 
         // Now B's dependency is satisfied, so B's required level is 1.
         assert_eq!(broker.get_required_level(&element_b).unwrap().level, 1);
 
         // Transition B to 1 to satisfy the lease.
-        broker.update_current_level(element_b, IndexedPowerLevel { level: 1, index: 1 });
+        broker.update_current_level(element_b, IndexedPowerLevel::from_same_level_and_index(1));
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
         broker.remove_element(&element_a);
@@ -6457,8 +6449,8 @@ mod tests {
             )
             .expect("add_dependency failed");
 
-        let level_10 = IndexedPowerLevel { level: 10, index: 1 };
-        let level_20 = IndexedPowerLevel { level: 20, index: 2 };
+        let level_10 = IndexedPowerLevel::new(10, 1);
+        let level_20 = IndexedPowerLevel::new(20, 2);
 
         // Acquire Lease 1 on A at level 10.
         let lease1 =

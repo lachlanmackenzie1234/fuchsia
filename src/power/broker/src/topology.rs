@@ -20,7 +20,7 @@ use std::{fmt, ops};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct IndexedPowerLevel {
     pub level: fpb::PowerLevel,
-    pub index: usize,
+    index: usize,
 }
 
 impl IndexedPowerLevel {
@@ -29,6 +29,11 @@ impl IndexedPowerLevel {
     #[allow(dead_code)]
     #[cfg(test)]
     pub const MAX: IndexedPowerLevel = Self { level: fpb::PowerLevel::MAX, index: usize::MAX };
+
+    #[cfg(test)]
+    pub const fn new(level: fpb::PowerLevel, index: usize) -> Self {
+        Self { level, index }
+    }
 
     #[cfg(test)]
     pub const fn from_same_level_and_index(level_and_index: u8) -> Self {

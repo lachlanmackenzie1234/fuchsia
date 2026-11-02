@@ -2063,6 +2063,220 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that `initial_lease_token` suppression compares `IndexedPowerLevel` order rather
+    /// than raw `u8` values when an element's `valid_levels` are non-monotonic (`[10, 5, 2]`).
+    #[fuchsia::test]
+    fn test_add_element_initial_lease_non_monotonic_levels() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        let element_b_token = zx::Event::create();
+        let (element_b_runner_client, element_b_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut element_b_runner = element_b_runner_server.into_stream();
+        let (element_b_control, element_b_control_server) = create_proxy::<ElementControlMarker>();
+        let (element_b_status, element_b_status_server) = create_proxy::<StatusMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("B".into()),
+                    initial_current_level: Some(BinaryPowerLevel::Off.into_primitive()),
+                    valid_levels: Some(BINARY_POWER_LEVELS.to_vec()),
+                    element_control: Some(element_b_control_server),
+                    element_runner: Some(element_b_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .expect("AddElement B failed")
+                .expect("AddElement B error");
+
+            element_b_control
+                .register_dependency_token(
+                    element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                )
+                .await
+                .expect("register_dependency_token failed")
+                .expect("register_dependency_token error");
+
+            element_b_control
+                .open_status_channel(element_b_status_server)
+                .expect("open_status_channel B failed");
+            assert_eq!(
+                element_b_status
+                    .watch_power_level()
+                    .await
+                    .expect("watch B initial fidl")
+                    .expect("watch B initial"),
+                BinaryPowerLevel::Off.into_primitive()
+            );
+
+            let responder = assert_set_level_required_eq_and_return_responder(
+                element_b_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            responder.send().expect("send failed");
+        });
+
+        // Element A has non-monotonic valid_levels [10, 5, 2]:
+        //   index 0 -> 10 (minimum)
+        //   index 1 ->  5 (initial_current_level / initial lease target)
+        //   index 2 ->  2 (maximum)
+        let (element_a_runner_client, element_a_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut element_a_runner = element_a_runner_server.into_stream();
+        let (element_a_control, element_a_control_server) = create_proxy::<ElementControlMarker>();
+        let (element_a_status, element_a_status_server) = create_proxy::<StatusMarker>();
+        let element_a_token = zx::Event::create();
+        let (lease_token_client, lease_token_server) = zx::EventPair::create();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("A".into()),
+                    initial_current_level: Some(5),
+                    valid_levels: Some(vec![10, 5, 2]),
+                    dependencies: Some(vec![LevelDependency {
+                        dependent_level: Some(5),
+                        requires_token: Some(
+                            element_b_token
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                .expect("dup failed"),
+                        ),
+                        requires_level_by_preference: Some(vec![
+                            BinaryPowerLevel::On.into_primitive(),
+                        ]),
+                        ..Default::default()
+                    }]),
+                    element_control: Some(element_a_control_server),
+                    element_runner: Some(element_a_runner_client),
+                    initial_lease_token: Some(lease_token_server),
+                    ..Default::default()
+                })
+                .await
+                .expect("AddElement A failed")
+                .expect("AddElement A error");
+
+            element_a_control
+                .register_dependency_token(
+                    element_a_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                )
+                .await
+                .expect("register_dependency_token A failed")
+                .expect("register_dependency_token A error");
+
+            element_a_control
+                .open_status_channel(element_a_status_server)
+                .expect("open_status_channel A failed");
+        });
+
+        // B must be requested ON while A's initial minimum level 10 (index 0 < index 1) is
+        // suppressed on element_a_runner despite 10 > 5 in raw u8 value.
+        let element_b_on_responder = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(
+                element_b_runner.try_next(),
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await
+        });
+
+        // Race element_a_runner against Status.WatchPowerLevel so that if SetLevel(10) is wrongly
+        // dispatched instead of suppressed, the test panics immediately rather than hanging.
+        executor.run_singlethreaded(async {
+            loop {
+                let mut runner_fut = std::pin::pin!(element_a_runner.try_next());
+                let mut status_fut = std::pin::pin!(element_a_status.watch_power_level());
+                match futures_util::future::select(runner_fut.as_mut(), status_fut.as_mut()).await {
+                    futures_util::future::Either::Left((req, _)) => {
+                        panic!("unexpected SetLevel on A while waiting for initial lease: {req:?}");
+                    }
+                    futures_util::future::Either::Right((res, _)) => {
+                        let observed = res.expect("watch A fidl").expect("watch A");
+                        if observed == 10 {
+                            break;
+                        }
+                        assert_eq!(observed, 5);
+                    }
+                }
+            }
+        });
+
+        // Lease A at 2 (index 2 > wait index 1, even though 2 < 5 as raw u8) before turning B ON
+        // so that once B ON is satisfied, A's first dispatched SetLevel must be 2 (verifying the
+        // higher-index/smaller-u8 direction end-to-end as well).
+        let (high_lease_client, high_lease_server) = zx::EventPair::create();
+        executor.run_singlethreaded(async {
+            topology
+                .lease(fpb::LeaseSchema {
+                    lease_token: Some(high_lease_server),
+                    lease_name: Some("high_lease_a_2".into()),
+                    dependencies: Some(vec![fpb::LeaseDependency {
+                        requires_token: Some(element_a_token),
+                        requires_level_by_preference: Some(vec![2]),
+                        ..Default::default()
+                    }]),
+                    should_return_pending_lease: Some(true),
+                    ..Default::default()
+                })
+                .await
+                .expect("lease A(2) fidl")
+                .expect("lease A(2) error");
+
+            assert_send_response_updates_level_to(
+                element_b_on_responder,
+                &element_b_status,
+                BinaryPowerLevel::On.into_primitive(),
+            )
+            .await;
+
+            let a_responder =
+                assert_set_level_required_eq_and_return_responder(element_a_runner.try_next(), 2)
+                    .await;
+            assert_send_response_updates_level_to(a_responder, &element_a_status, 2).await;
+
+            fasync::OnSignals::new(
+                &lease_token_client,
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+            )
+            .await
+            .expect("initial lease satisfied");
+        });
+
+        // Dropping the high lease steps A down to initial lease level 5 (index 1).
+        drop(high_lease_client);
+        executor.run_singlethreaded(async {
+            let a_responder =
+                assert_set_level_required_eq_and_return_responder(element_a_runner.try_next(), 5)
+                    .await;
+            assert_send_response_updates_level_to(a_responder, &element_a_status, 5).await;
+        });
+
+        // Dropping the initial lease steps A down to its minimum level 10 (index 0) and then B OFF.
+        drop(lease_token_client);
+        executor.run_singlethreaded(async {
+            let a_responder =
+                assert_set_level_required_eq_and_return_responder(element_a_runner.try_next(), 10)
+                    .await;
+            assert_send_response_updates_level_to(a_responder, &element_a_status, 10).await;
+
+            let b_responder = assert_set_level_required_eq_and_return_responder(
+                element_b_runner.try_next(),
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+            assert_send_response_updates_level_to(
+                b_responder,
+                &element_b_status,
+                BinaryPowerLevel::Off.into_primitive(),
+            )
+            .await;
+        });
+
+        Ok(())
+    }
+
     /// Verifies `remove_with_required_element` dependency behavior: when a parent element is
     /// removed, removable dependent leases remain satisfied while unremovable dependent leases
     /// transition to pending.

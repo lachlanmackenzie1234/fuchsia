@@ -929,7 +929,7 @@ impl ElementRunnerHandler {
                                 // This allows us to support adding an element with an
                                 // initial_current_level above the minimum level.
                                 if let Some(wait) = &wait_for_level {
-                                    if required_level.level < wait.level {
+                                    if required_level < *wait {
                                        // We must update the broker state to complete the transition,
                                        // otherwise the broker will block future updates (like going back to 1).
                                        suppressed_level = Some(required_level.clone());
@@ -1093,7 +1093,7 @@ mod tests {
         let task = detector.spawn_watchdog(
             "test_element".to_string(),
             "test_debug".to_string(),
-            IndexedPowerLevel { level: 1, index: 1 },
+            IndexedPowerLevel::from_same_level_and_index(1),
         );
 
         // Run until stalled to start the watchdog task and register the timer.
@@ -1164,7 +1164,7 @@ mod tests {
         let task = detector.spawn_watchdog(
             "test_element".to_string(),
             "test_debug".to_string(),
-            IndexedPowerLevel { level: 1, index: 1 },
+            IndexedPowerLevel::from_same_level_and_index(1),
         );
 
         // Run until stalled to start the watchdog task and register the timer.
