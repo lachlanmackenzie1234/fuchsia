@@ -13,6 +13,7 @@ use super::thread::{
     preempt_clear_timeslice_extension, preempt_disable, preempt_reenable,
     preempt_set_timeslice_extension,
 };
+use crate::kernel::mutex::Mutex;
 use crate::platform_rs::timer::DurationMono;
 
 /// `AutoPreemptDisabler` is a RAII helper that automatically manages disabling and
@@ -299,8 +300,8 @@ pub struct AutoExpiringPreemptDisabler {
 }
 
 impl AutoExpiringPreemptDisabler {
-    /// Default timeslice extension duration (150us).
-    pub const DEFAULT_TIMESLICE_EXTENSION: DurationMono = DurationMono::from_micros(150);
+    /// Default timeslice extension duration, [`Mutex::DEFAULT_TIMESLICE_EXTENSION`] (150us).
+    pub const DEFAULT_TIMESLICE_EXTENSION: DurationMono = Mutex::DEFAULT_TIMESLICE_EXTENSION;
 
     /// Creates a new guard and attempts to set a timeslice extension for `max_deferral_duration`.
     #[inline]

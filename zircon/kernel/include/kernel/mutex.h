@@ -104,6 +104,8 @@ class TA_CAP("mutex") Mutex
                      TimesliceExtension<TimesliceExtensionEnabled> timeslice_extension);
 
  private:
+  friend struct MutexLayout;
+
   // The actual implementation of the Release operation.  See above for why this
   // is separate from |Release()|.
   void ReleaseInternal();

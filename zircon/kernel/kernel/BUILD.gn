@@ -450,6 +450,49 @@ kernel_bindgen_crate("semaphore-bindings") {
   raw_lines = [ "#![no_std]" ]
 }
 
+kernel_bindgen_crate("mutex-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/mutex_layout.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  notice_year = 2026
+
+  # Layout contract only: the opaque `Mutex`/`CriticalMutex` types (for FFI
+  # pointer signatures) and the `MutexLayout` constants the Rust `Mutex` and
+  # `CriticalMutex` assert their layout and constants against.
+  #
+  # The C++ types are opaque because bindgen does not apply the empty base
+  # optimization to the `spin_tracing::LockNameStorage` base of `Mutex` (a class
+  # template specialized on a non-type `bool` parameter): when both scheduler
+  # lock spin tracing and lock name tracing are disabled, it emits the empty
+  # base as a 1-byte `_base` field, shifting every field offset and producing an
+  # underflowed trailing padding array.
+  function_blocklist = [ ".*" ]
+  var_allowlist = [ "MutexLayout_k.*" ]
+  type_allowlist = [
+    "Mutex",
+    "CriticalMutex",
+  ]
+  opaque_types = [
+    "Mutex",
+    "CriticalMutex",
+  ]
+
+  # bindgen still emits nested enums of allowlisted opaque classes.
+  type_blocklist = [
+    "zx_duration_t",
+    "CriticalMutex_ShouldClear",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  expect_lints = [ "non_upper_case_globals" ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::zx_duration_t;",
+  ]
+}
+
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
@@ -466,9 +509,11 @@ kernel_rust_mod("kernel-rs") {
     "idle_power_thread.rs",
     "interrupt.rs",
     "koid.rs",
+    "lazy_owned_wait_queue.rs",
     "lock_trace.rs",
     "mod.rs",
     "mp.rs",
+    "mutex.rs",
     "owned_wait_queue.rs",
     "owned_wait_queue_pool.rs",
     "percpu.rs",
@@ -488,6 +533,7 @@ kernel_rust_mod("kernel-rs") {
   ]
   deps = [
     ":event-bindings",
+    ":mutex-bindings",
     ":owned-wait-queue-bindings",
     ":owned-wait-queue-pool-bindings",
     ":percpu-bindings",
