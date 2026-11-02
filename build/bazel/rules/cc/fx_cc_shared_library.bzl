@@ -5,6 +5,11 @@
 """Macro for defining a Fuchsia C++ shared library."""
 
 load(
+    "@fuchsia_rules_common//:transition_utils.bzl",
+    "TRANSITIVE_FEATURES_ATTRS",
+    "cc_shared_library_apply_transitive_features",
+)
+load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
     "BUILD_FLAGS_CC_MACRO_ATTRS",
     "wrap_cc_macro_args_with_build_flags",
@@ -53,8 +58,12 @@ def _fx_cc_shared_library_impl(
         disable_build_flags,
         disable_instrumentation,
         features,
+        transitive_features,
         **kwargs):
     """Implementation for the fx_cc_shared_library() macro."""
+
+    if type(transitive_features) != "list":
+        fail("In %s, transitive_features is not configurable and must be a list of strings, got %s" % (name, type(transitive_features)))
 
     features = get_cc_instrumentation_features(features, disable_instrumentation)
 
@@ -62,12 +71,29 @@ def _fx_cc_shared_library_impl(
         name,
         kwargs.get("shared_lib_name"),
     )
+
+    if transitive_features:
+        cc_shlib_name = name + ".actual"
+        cc_shlib_visibility = ["//visibility:private"]
+        cc_shared_library_apply_transitive_features(
+            name = name,
+            actual = ":" + cc_shlib_name,
+            feature_names = transitive_features,
+            tags = kwargs.get("tags"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            testonly = kwargs.get("testonly"),
+            visibility = kwargs.pop("visibility", None),
+        )
+    else:
+        cc_shlib_name = name
+        cc_shlib_visibility = kwargs.pop("visibility", None)
+
     kwargs["shared_lib_name"] = shared_lib_name
     kwargs["features"] = features
 
     wrapped_kwargs = wrap_cc_macro_args_with_build_flags(
         kwargs = kwargs,
-        name = name,
+        name = cc_shlib_name,
         cc_rule_name = "cc_shared_library",
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
@@ -82,7 +108,8 @@ def _fx_cc_shared_library_impl(
     ] + (wrapped_kwargs.get("user_link_flags") or [])
 
     cc_shared_library(
-        name = name,
+        name = cc_shlib_name,
+        visibility = cc_shlib_visibility,
         **wrapped_kwargs
     )
 
@@ -91,6 +118,11 @@ fx_cc_shared_library = macro(
 
     Toolchain overrides can be specified using build_flags and
     disable_build_flags. These will not affect dependencies.
+
+    If both transitive_features and features are defined, transitive_features
+    is applied first to change the build configuration used to build the native
+    target, then features will be applied to the cc_shared_library() itself
+    (overriding any transitive_features values), but not to its dependencies.
     """,
     implementation = _fx_cc_shared_library_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
@@ -101,5 +133,5 @@ fx_cc_shared_library = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
-    } | CC_INSTRUMENTATION_ATTRS | BUILD_FLAGS_CC_MACRO_ATTRS,
+    } | CC_INSTRUMENTATION_ATTRS | BUILD_FLAGS_CC_MACRO_ATTRS | TRANSITIVE_FEATURES_ATTRS,
 )

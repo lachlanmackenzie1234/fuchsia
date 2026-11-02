@@ -647,6 +647,13 @@ def query_bazel_commands(
 
             norm_label = _normalize_label(label)
             actions = target_actions_map.get(norm_label, [])
+            if not actions:
+                actions = target_actions_map.get(norm_label + ".actual", [])
+            if not actions:
+                base_name = norm_label.rsplit(":", 1)[-1].rsplit("/", 1)[-1]
+                actions = target_actions_map.get(
+                    f"{norm_label}.actual/{base_name}", []
+                )
             matched_cmd = None
             fallback_cmd = None
             expect_pic = query.bazel.use_pic

@@ -5,6 +5,11 @@
 """Macro for defining a Fuchsia C++ binary."""
 
 load(
+    "@fuchsia_rules_common//:transition_utils.bzl",
+    "TRANSITIVE_FEATURES_ATTRS",
+    "cc_apply_transitive_features",
+)
+load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
     "BUILD_FLAGS_CC_MACRO_ATTRS",
     "wrap_cc_macro_args_with_build_flags",
@@ -30,14 +35,43 @@ def _fx_cc_binary_impl(
         disable_build_flags,
         disable_instrumentation,
         features,
+        transitive_features,
         **kwargs):
     """Implementation for the fx_cc_binary() macro."""
 
+    if type(transitive_features) != "list":
+        fail("In %s, transitive_features is not configurable and must be a list of strings, got %s" % (name, type(transitive_features)))
+
     features = get_cc_instrumentation_features(features, disable_instrumentation)
+
+    shared_lib_name, soname = get_shared_library_name_and_soname(name) if linkshared else (None, None)
+
+    if transitive_features:
+        if linkshared:
+            # Place the inner cc_binary in a `<name>.actual/` subdirectory with
+            # the original basename so @rules_cc produces `<name>.actual/lib<name>.so`
+            # rather than `lib<name>.actual.so`.
+            cc_binary_name = "{}.actual/{}".format(name, name.split("/")[-1])
+        else:
+            cc_binary_name = name + ".actual"
+        cc_binary_visibility = ["//visibility:private"]
+        cc_apply_transitive_features(
+            name = name,
+            actual = ":" + cc_binary_name,
+            feature_names = transitive_features,
+            output_name = shared_lib_name,
+            tags = kwargs.get("tags"),
+            target_compatible_with = kwargs.get("target_compatible_with"),
+            testonly = kwargs.get("testonly"),
+            visibility = kwargs.pop("visibility", None),
+        )
+    else:
+        cc_binary_name = name
+        cc_binary_visibility = kwargs.pop("visibility", None)
 
     wrapped_kwargs = wrap_cc_macro_args_with_build_flags(
         kwargs = kwargs | {"features": features, "linkshared": linkshared},
-        name = name,
+        name = cc_binary_name,
         cc_rule_name = "cc_binary",
         # LINT.IfChange(fdio_config)
         # Link libfdio.so into Fuchsia executables by default. This is a no-op
@@ -57,13 +91,13 @@ def _fx_cc_binary_impl(
         # Prepend default -Wl,-soname=<soname> before the build_flags response
         # file and linkopts so that custom soname flags in build_flags(ldflags = ...)
         # or linkopts appear later on the linker command line and override it.
-        _, soname = get_shared_library_name_and_soname(name)
         wrapped_kwargs["linkopts"] = [
             "-Wl,-soname={}".format(soname),
         ] + (wrapped_kwargs.get("linkopts") or [])
 
     cc_binary(
-        name = name,
+        name = cc_binary_name,
+        visibility = cc_binary_visibility,
         **wrapped_kwargs
     )
 
@@ -72,6 +106,11 @@ fx_cc_binary = macro(
 
     Toolchain overrides can be specified using build_flags and
     disable_build_flags. These will not affect dependencies.
+
+    If both transitive_features and features are defined, transitive_features
+    is applied first to change the build configuration used to build the native
+    target, then features will be applied to the cc_binary() itself (overriding
+    any transitive_features values), but not to its dependencies.
     """,
     implementation = _fx_cc_binary_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
@@ -112,5 +151,5 @@ fx_cc_binary = macro(
             default = False,
             configurable = False,
         ),
-    } | CC_INSTRUMENTATION_ATTRS | BUILD_FLAGS_CC_MACRO_ATTRS,
+    } | CC_INSTRUMENTATION_ATTRS | BUILD_FLAGS_CC_MACRO_ATTRS | TRANSITIVE_FEATURES_ATTRS,
 )

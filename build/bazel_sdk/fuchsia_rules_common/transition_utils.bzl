@@ -158,11 +158,12 @@ def cc_apply_transitive_features_impl(ctx):
     # <builtin> 'executable' provided by an executable rule 'cc_apply_transitive_features' should be created by the same rule.
     #
     # So copy/symlink the executable in the current build configuration's output directory.
-    final_executable = ctx.actions.declare_file(ctx.label.name)
+    output_name = ctx.attr.output_name or ctx.label.name
+    final_executable = ctx.actions.declare_file(output_name)
     ctx.actions.symlink(output = final_executable, target_file = actual[DefaultInfo].files.to_list()[0], is_executable = True)
     result.append(DefaultInfo(
         files = depset([final_executable]),
-        runfiles = actual[DefaultInfo].default_runfiles,
+        runfiles = ctx.runfiles(files = [final_executable]).merge(actual[DefaultInfo].default_runfiles),
         executable = final_executable,
     ))
     for provider in CC_KNOWN_PROVIDERS:
@@ -178,6 +179,9 @@ CC_APPLY_TRANSITIVE_FEATURES_ATTRS = {
         doc = "Label to actual target to build under the new build configuration.",
         providers = [[DefaultInfo, CcInfo], [DefaultInfo, CcSharedLibraryInfo]],
         cfg = features_list_transition,
+    ),
+    "output_name": attr.string(
+        doc = "Optional output file name. Defaults to the target name.",
     ),
 } | FEATURES_LIST_TRANSITION_ATTRS
 
@@ -209,7 +213,7 @@ def cc_shared_library_apply_transitive_features_impl(ctx):
     result = [
         DefaultInfo(
             files = depset([final_file]),
-            runfiles = actual[DefaultInfo].default_runfiles,
+            runfiles = ctx.runfiles(files = [final_file]).merge(actual[DefaultInfo].default_runfiles),
         ),
     ]
     for provider in [CcInfo, CcSharedLibraryInfo]:

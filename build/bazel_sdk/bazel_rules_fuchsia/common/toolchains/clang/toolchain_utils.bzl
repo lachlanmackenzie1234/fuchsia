@@ -101,6 +101,13 @@ def compute_clang_features(
         enabled = is_linux or is_fuchsia,
     )
 
+    # A hard-coded Bazel feature which indicates, when enabled, that binaries
+    # and their static library dependencies should be compiled with PIC ("pic"
+    # build variable set) even in -c opt compilation mode.
+    prefer_pic_for_opt_binaries_feature = feature(
+        name = "prefer_pic_for_opt_binaries",
+    )
+
     # @rules_cc sets the "pic" build variable for compile actions that produce
     # PIC objects (*.pic.o) and leaves it unset for non-PIC objects (*.o).
     # Emit -fPIC when "pic" is available and -fPIE when "pic" is not available.
@@ -531,6 +538,7 @@ def compute_clang_features(
         default_compile_flags_feature,
         target_system_name_feature,
         supports_pic_feature,
+        prefer_pic_for_opt_binaries_feature,
         pic_feature,
         coverage_feature,
         coverage_rust_feature,

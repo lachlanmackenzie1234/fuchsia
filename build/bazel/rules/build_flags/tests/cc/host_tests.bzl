@@ -14,8 +14,8 @@ load(
     "wrap_cc_macro_args_with_build_flags",
 )
 load("@fuchsia_rules_common//build_flags:providers.bzl", "BuildFlagsInfo")
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
 
 visibility("private")
@@ -24,6 +24,7 @@ def build_flags_cc_binary_host_test(
         name,
         build_flags = [],
         disable_build_flags = [],
+        transitive_features = [],
         **kwargs):
     """Define a new C++ or C host test for build_flags() support.
 
@@ -31,22 +32,17 @@ def build_flags_cc_binary_host_test(
        name: (string) Name of the host_test() target, the binary will be named "{name}_bin".
        build_flags: (list[label]) optional list of labels to build_flags() targets.
        disable_build_flags: (list[label]) optional list of labels to build_flags() targets.
-       **kwargs: All other arguments are passed to cc_binary().
+       transitive_features: (list[string]) optional list of feature names to apply transitively.
+       **kwargs: All other arguments are passed to fx_cc_binary().
     """
     binary_name = "{}_bin".format(name)
 
-    new_kwargs = wrap_cc_macro_args_with_build_flags(
-        kwargs = kwargs,
-        name = name,
-        cc_rule_name = "cc_binary",
+    fx_cc_binary(
+        name = binary_name,
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
-        target_type = "cxx_executable",
-    )
-
-    cc_binary(
-        name = binary_name,
-        **new_kwargs
+        transitive_features = transitive_features,
+        **kwargs
     )
 
     host_test(

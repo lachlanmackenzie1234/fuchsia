@@ -186,6 +186,22 @@ fx_cc_binary(
     linkshared = True,
 )
 
+fx_cc_binary(
+    name = "fx_cc_binary_linkshared_transitive_features_for_test",
+    srcs = ["fx_cc_library_for_test.cc"],
+    build_flags = [":fx_cc_library_flags"],
+    linkshared = True,
+    transitive_features = ["pic"],
+)
+
+fx_cc_binary(
+    name = "libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so",
+    srcs = ["fx_cc_library_for_test.cc"],
+    build_flags = [":fx_cc_library_flags"],
+    linkshared = True,
+    transitive_features = ["pic"],
+)
+
 fx_cc_shared_library(
     name = "fx_cc_shared_library_default_soname_for_test",
     build_flags = [":flags_invalid_ldflags"],
@@ -224,8 +240,10 @@ fx_cc_binary(
     data = [
         ":fx_cc_binary_linkshared_default_soname_for_test",
         ":fx_cc_binary_linkshared_for_test",
+        ":fx_cc_binary_linkshared_transitive_features_for_test",
         ":fx_cc_shared_library_default_soname_for_test",
         ":fx_cc_shared_library_for_test",
+        ":libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so",
     ],
     disable_build_flags = [":flags2"],
     deps = [":fx_cc_library_for_test"],
@@ -237,12 +255,16 @@ host_test(
     data = [
         ":fx_cc_binary_linkshared_default_soname_for_test",
         ":fx_cc_binary_linkshared_for_test",
+        ":fx_cc_binary_linkshared_transitive_features_for_test",
         ":fx_cc_shared_library_default_soname_for_test",
         ":fx_cc_shared_library_for_test",
+        ":libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so",
     ],
     test_args = [
         "$(location :fx_cc_binary_linkshared_default_soname_for_test)=libfx_cc_binary_linkshared_default_soname_for_test.so",
         "$(location :fx_cc_binary_linkshared_for_test)=libcustom_soname.so",
+        "$(location :fx_cc_binary_linkshared_transitive_features_for_test)=libfx_cc_binary_linkshared_transitive_features_for_test.so:libfx_cc_binary_linkshared_transitive_features_for_test.so",
+        "$(location :libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so)=libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so:libfx_cc_binary_linkshared_so_name_transitive_features_for_test.so",
         "$(location :fx_cc_shared_library_default_soname_for_test)=libfx_cc_shared_library_default_soname_for_test.so",
         "$(location :fx_cc_shared_library_for_test)=libcustom_soname.so",
     ],
@@ -507,4 +529,34 @@ build_flags_cc_binary_host_test(
     srcs = ["check_cflags_cpp.cc"],
     build_flags = [":flags1"],
     data = [":shared_lib_with_symbol_allow_undefined"],
+)
+
+# Tests for transitive_features on fx_cc_binary(), including override via features.
+
+fx_cc_library(
+    name = "transitive_features_lib",
+    srcs = ["transitive_features_lib.cc"],
+)
+
+build_flags_cc_binary_host_test(
+    name = "check_fx_cc_binary_transitive_features",
+    srcs = ["transitive_features_main.cc"],
+    copts = ["-DEXPECT_LIB_NO_PIC=1"],
+    transitive_features = [
+        "prefer_pic_for_opt_binaries",
+        "-pic",
+    ],
+    deps = [":transitive_features_lib"],
+)
+
+build_flags_cc_binary_host_test(
+    name = "check_fx_cc_binary_features_override_transitive_features",
+    srcs = ["transitive_features_main.cc"],
+    copts = ["-DEXPECT_LIB_NO_PIC=0"],
+    features = ["-pic"],
+    transitive_features = [
+        "prefer_pic_for_opt_binaries",
+        "pic",
+    ],
+    deps = [":transitive_features_lib"],
 )

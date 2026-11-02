@@ -127,6 +127,24 @@ int main(int argc, char** argv) {
     }
     std::string path = arg.substr(0, eq);
     std::string expected_soname = arg.substr(eq + 1);
+    std::string expected_basename = "";
+    size_t colon = expected_soname.find(':');
+    if (colon != std::string::npos) {
+      expected_basename = expected_soname.substr(colon + 1);
+      expected_soname = expected_soname.substr(0, colon);
+    }
+    if (!expected_basename.empty()) {
+      std::string actual_basename = path;
+      size_t slash = actual_basename.rfind('/');
+      if (slash != std::string::npos) {
+        actual_basename = actual_basename.substr(slash + 1);
+      }
+      if (actual_basename != expected_basename) {
+        fprintf(stderr, "Filename mismatch for %s: got '%s', expected '%s'\n", path.c_str(),
+                actual_basename.c_str(), expected_basename.c_str());
+        return 1;
+      }
+    }
     std::string actual_soname = GetElfSoname(path.c_str());
     if (actual_soname != expected_soname) {
       fprintf(stderr, "DT_SONAME mismatch for %s: got '%s', expected '%s'\n", path.c_str(),
