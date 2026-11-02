@@ -5,13 +5,14 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/uart/chars-from.h>
+#include <multi-file.h>
 #include <stdio.h>
 
 #include <efi/protocol/serial-io.h>
 #include <efi/protocol/simple-text-output.h>
 #include <efi/system-table.h>
 #include <ktl/span.h>
-#include <phys/stdio.h>
+#include <phys/efi/main.h>
 
 #include <ktl/enforce.h>
 
@@ -106,16 +107,17 @@ int EfiStdoutWrite(void* protocol, const char* str_data, size_t str_len) {
   return wrote;
 }
 
+FILE gConOut, gSerial;
+MultiFile<2> gMux;
+
 }  // namespace
 
 void SetEfiStdout(efi_system_table* sys) {
-  PhysConsole& console = PhysConsole::Get();
+  *stdout = gMux;
 
   if (sys->ConOut) {
-    console.set_graphics(FILE{
-        EfiStdoutWrite<efi_simple_text_output_protocol>,
-        sys->ConOut,
-    });
+    gConOut = FILE{EfiStdoutWrite<efi_simple_text_output_protocol>, sys->ConOut};
+    gMux.files()[0] = &gConOut;
 
     // TODO(mcgrathr): in headless qemu/ovmf, ConOut is also the serial console
     // so enabling both double-prints everything.  Need a way to figure out if
@@ -126,11 +128,8 @@ void SetEfiStdout(efi_system_table* sys) {
   void* serial_ptr;
   efi_status status = sys->BootServices->LocateProtocol(&SerialIoProtocol, nullptr, &serial_ptr);
   if (status == EFI_SUCCESS) {
-    auto serial = static_cast<efi_serial_io_protocol*>(serial_ptr);
-    console.set_serial(FILE{
-        EfiStdoutWrite<efi_serial_io_protocol>,
-        serial,
-    });
+    gSerial = FILE{EfiStdoutWrite<efi_serial_io_protocol>, serial_ptr};
+    gMux.files()[1] = &gSerial;
   } else {
     printf("EFI: no serial console found: %#zx\n", status);
   }

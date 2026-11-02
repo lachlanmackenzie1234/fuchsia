@@ -49,7 +49,7 @@ class EntropyHandoff {
  private:
   crypto::EntropyPool pool_;
 
-  FILE* log_ = PhysConsole::Get().null();
+  FILE* log_ = NullFile();
   bool has_valid_item_ = false;
 };
 

@@ -4,7 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <phys/stdio.h>
+#include <stdio.h>
+
 #include <phys/uart-console.h>
 
 #include <ktl/enforce.h>
@@ -21,6 +22,6 @@ void SetUartConsole(const uart::all::Config<>& uart_config) {
     driver.Init();
 
     // Update stdout global to write to the configured driver.
-    PhysConsole::Get().set_serial(FILE{&driver});
+    *stdout = FILE{&driver};
   });
 }

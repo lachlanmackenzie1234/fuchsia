@@ -12,22 +12,17 @@
 
 #include "log.h"
 
-FILE gStdout;
+namespace {
 
-PhysConsole::PhysConsole()
-    : null_{[](ktl::string_view s) -> int { return static_cast<int>(s.length()); }}, mux_files_{} {}
+int NullWrite(void*, const char*, size_t len) { return static_cast<int>(len); }
 
-PhysConsole& PhysConsole::Get() {
-  static PhysConsole gConsole;
-  return gConsole;
-}
+constinit FILE gNullFile{NullWrite, nullptr};
 
-void InitStdout() { gStdout = PhysConsole::Get().mux_; }
+}  // namespace
 
-void PhysConsole::SetMux(size_t idx, const FILE& f) {
-  mux_files_[idx] = f;
-  mux_.files()[idx] = &mux_files_[idx];
-}
+constinit FILE gStdout{NullWrite, nullptr};
+
+FILE* NullFile() { return &gNullFile; }
 
 void debugf(const char* fmt, ...) {
   FILE* outfile = stdout;

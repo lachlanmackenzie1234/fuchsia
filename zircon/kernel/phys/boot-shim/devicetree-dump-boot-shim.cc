@@ -10,7 +10,6 @@
 #include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/main.h>
-#include <phys/stdio.h>
 #include <phys/symbolize.h>
 
 namespace {
@@ -37,7 +36,6 @@ size_t Base64Encode(const uint8_t* src, size_t len, char* dst) {
 }  // namespace
 
 void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
-  InitStdout();
   ApplyRelocations();
 
   AddressSpace aspace;

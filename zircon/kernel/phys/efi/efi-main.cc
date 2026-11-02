@@ -20,7 +20,6 @@
 #include <phys/efi/main.h>
 #include <phys/efi/protocol.h>
 #include <phys/main.h>
-#include <phys/stdio.h>
 
 #include "src/lib/utf_conversion/utf_conversion.h"
 
@@ -122,7 +121,6 @@ efi_status EfiMain(efi_handle image_handle, efi_system_table* systab) {
   gEfiImageHandle = image_handle;
   gEfiSystemTable = systab;
 
-  InitStdout();
   SetEfiStdout(systab);
 
   ktl::span<char16_t*> args_utf16;
@@ -141,7 +139,7 @@ efi_status EfiMain(efi_handle image_handle, efi_system_table* systab) {
   }
 
   // TODO(https://fxbug.dev/454670680): Ideally this should be before
-  // InitStdout(); however this results in a mystery crashes/failures on x86
+  // SetEfiStdout(); however this results in a mystery crashes/failures on x86
   // when moved up.
   ArchSetUpCpu();
 

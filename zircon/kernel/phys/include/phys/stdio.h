@@ -7,42 +7,19 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_STDIO_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_STDIO_H_
 
-#include <multi-file.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <zircon/compiler.h>
+
+// Returns a FILE that discards everything written to it.  *stdout starts out
+// as a copy of it.
+FILE* NullFile();
 
 struct CallableFile {
   FILE* f = nullptr;
 
   int operator()(std::string_view str) const { return f->Write(str); }
 };
-
-class PhysConsole {
- public:
-  static PhysConsole& Get();
-
-  FILE* null() { return &null_; }
-  FILE* graphics() { return &mux_files_[kGraphics]; }
-  FILE* serial() { return &mux_files_[kSerial]; }
-
-  void set_graphics(const FILE& f) { SetMux(kGraphics, f); }
-  void set_serial(const FILE& f) { SetMux(kSerial, f); }
-
- private:
-  enum MuxType : size_t { kGraphics, kSerial, kMuxTypes };
-
-  friend void InitStdout();
-
-  PhysConsole();
-
-  void SetMux(size_t idx, const FILE& f);
-
-  MultiFile<kMuxTypes> mux_;
-  FILE null_, mux_files_[kMuxTypes];
-};
-
-void InitStdout();
 
 // A printf that respects the `kernel.phys.verbose` boot option: if the option
 // is false, nothing will be printed.

@@ -11,7 +11,7 @@
 
 #include "uart.h"
 
-// Wires up the associated UART to stdout via PhysConsole::set_serial.
+// Wires up the associated UART to stdout.
 void SetUartConsole(const uart::all::Config<>& uart_config);
 
 // Gets the underlying driver set up by SetUartConsole.  The reference

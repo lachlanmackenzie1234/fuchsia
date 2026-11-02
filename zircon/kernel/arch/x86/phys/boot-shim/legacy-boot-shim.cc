@@ -20,7 +20,6 @@
 #include <phys/allocation.h>
 #include <phys/boot-zbi.h>
 #include <phys/main.h>
-#include <phys/stdio.h>
 #include <phys/symbolize.h>
 #include <phys/uart-console.h>
 
@@ -29,8 +28,6 @@
 #include <ktl/enforce.h>
 
 void PhysMain(void* ptr, arch::EarlyTicks boot_ticks) {
-  InitStdout();
-
   ApplyRelocations();
 
   Symbolize symbolize(kLegacyShimName);

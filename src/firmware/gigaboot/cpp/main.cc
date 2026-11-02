@@ -10,8 +10,6 @@
 #include <optional>
 #include <string_view>
 
-#include <phys/stdio.h>
-
 #include "backends.h"
 #include "fastboot_tcp.h"
 #include "gbl_loader.h"
@@ -54,11 +52,6 @@ bool IsQemu() {
 // Always enable serial output if not already. Infra relies on serial to get device feedback.
 // Without it, some CI/CQs fail.
 void SetSerial() {
-  PhysConsole& console = PhysConsole::Get();
-  if (*console.serial() != FILE()) {
-    return;
-  }
-
   // QEMU routes serial output to the console. To avoid double printing, avoid using serial
   // output when running in QEMU.
   if (IsQemu()) {

@@ -433,7 +433,6 @@ if (toolchain_environment == "kernel.phys" ||
 
     sources = [ "uart-console.cc" ]
     deps = [
-      ":stdio",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
       "//zircon/system/ulib/uart",

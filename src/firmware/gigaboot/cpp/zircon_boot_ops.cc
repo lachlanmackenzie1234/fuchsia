@@ -96,9 +96,7 @@ void Boot(ZirconBootOps* ops, zbi_header_t* zbi, size_t capacity) {
 
   // Once we exit boot service, console output will be set to NULL. Thus we must not print from now
   // on otherwise it crashes.
-  PhysConsole& console = PhysConsole::Get();
-  console.set_serial(*console.null());
-  console.set_graphics(*console.null());
+  *stdout = *NullFile();
   boot.Boot();
 }
 

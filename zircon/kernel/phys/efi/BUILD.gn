@@ -139,7 +139,6 @@ source_set("main") {
       "..:allocation",
       "..:boot-options",
       "..:main",
-      "..:stdio",
       "//src/lib/utf_conversion",
       "//zircon/kernel/arch/$zircon_cpu/phys/efi",
       "//zircon/kernel/lib/boot-options",

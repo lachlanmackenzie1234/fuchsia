@@ -33,7 +33,6 @@
 #include <phys/boot-zbi.h>
 #include <phys/main.h>
 #include <phys/new.h>
-#include <phys/stdio.h>
 #include <phys/symbolize.h>
 #include <phys/uart-console.h>
 
@@ -196,7 +195,7 @@ class BootShimHelper {
                           ktl::invocable<> auto&& after_relocs_cb)
       : symbolize_((
             // Must happen before initializing the symbolize object.
-            ApplyRelocations(), InitStdout(), after_relocs_cb(), shim_name)),
+            ApplyRelocations(), after_relocs_cb(), shim_name)),
         shim_(shim_name, [this, boot_payload]() {
           ArchSetUpCpu();
           // Will initialize `gDevicetreeBoot`.

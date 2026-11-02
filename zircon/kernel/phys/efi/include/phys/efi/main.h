@@ -16,6 +16,8 @@
 // This is the entry point in the PE-COFF headers.
 extern "C" efi_status EfiMain(efi_handle image, efi_system_table* systab);
 
+// Sets *stdout to write to the console output if there is one, else to the
+// serial I/O protocol if there is one.
 void SetEfiStdout(efi_system_table* systab);
 
 // Gives whether the current application was launched from the UEFI shell.
