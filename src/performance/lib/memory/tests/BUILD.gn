@@ -9,9 +9,20 @@ if (is_host) {
     main_source = "profile_test.py"
     libraries = [ "//src/performance/lib/memory" ]
   }
+
+  python_host_test("resource_usage_test") {
+    main_source = "resource_usage_test.py"
+    libraries = [
+      "//src/performance/lib/memory",
+      "//third_party/parameterized",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
-  public_deps = [ ":profile_test($host_toolchain)" ]
+  public_deps = [
+    ":profile_test($host_toolchain)",
+    ":resource_usage_test($host_toolchain)",
+  ]
 }
