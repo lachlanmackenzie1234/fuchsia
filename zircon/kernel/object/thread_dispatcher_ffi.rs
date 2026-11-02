@@ -379,10 +379,16 @@ pub unsafe extern "C" fn rust_thread_dispatcher_get_runtime_stats(
 ///
 /// # Safety
 ///
-/// Must only be called on the current running thread.
+/// `thread` must be the `ThreadDispatcher` of the currently running user thread, which is exiting
+/// (from `Thread::Current::Exit`) and will never reenter userspace, and the calling thread must
+/// hold no spinlocks or chain locks and be in a valid state to block.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_thread_dispatcher_exiting_current(thread: &ThreadDispatcher) {
-    thread.exiting_current();
+    // SAFETY: `Thread::Current::Exit` calls this (via `ThreadDispatcher::ExitingCurrent`) on the
+    // exiting current thread's own `user_thread_` with interrupts enabled, before disabling
+    // preemption or acquiring any spinlocks or chain locks, and the thread never returns to
+    // userspace afterwards.
+    unsafe { thread.exiting_current() };
 }
 
 /// Sets the blocked reason of the current thread and returns the previous one.

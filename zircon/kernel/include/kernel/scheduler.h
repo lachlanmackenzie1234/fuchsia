@@ -1131,7 +1131,6 @@ extern "C" {
 FFI_ALWAYS_INLINE void cpp_scheduler_dump(Scheduler* scheduler, bool queue_state_only);
 FFI_ALWAYS_INLINE const void* cpp_scheduler_get_queue_lock(const Scheduler* scheduler);
 void cpp_current_mono_time_and_boot_ticks(Scheduler::SchedMonoTimeAndBootTicks* out);
-void cpp_scheduler_block(Thread* current_thread);
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_update_power_level(
     uint32_t domain_id, uint64_t controller_id, power_management::ControlInterface interface,

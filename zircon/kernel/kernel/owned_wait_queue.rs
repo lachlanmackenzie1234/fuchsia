@@ -27,6 +27,7 @@ use crate::kernel::wait_queue::{
 };
 use core::convert::Infallible;
 use core::ffi::c_void;
+use core::marker::PhantomData;
 use core::mem::{align_of, offset_of, size_of};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -820,6 +821,23 @@ impl ThreadUnblockList {
         unsafe { self.as_list().push_back_raw(NonNull::from(thread)) }
     }
 
+    /// Adds the [`Thread`] pointed to by `thread` to the back of the list.
+    ///
+    /// Equivalent to [`Self::push_back`], but takes the [`ThreadPtr`] directly, avoiding a
+    /// `NonNull<Thread> -> &Thread -> NonNull<Thread>` round-trip.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `thread` points to a live [`Thread`] which is not currently a
+    /// member of any unblock list, and that it remains alive while it is a member of this list.
+    #[inline]
+    pub unsafe fn push_back_ptr(self: Pin<&mut Self>, thread: ThreadPtr) {
+        // SAFETY: A `ThreadPtr` wraps a `NonNull<Thread>`, so `thread.as_raw()` is non-null.
+        let thread = unsafe { NonNull::new_unchecked(thread.as_raw()) };
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.as_list().push_back_raw(thread) }
+    }
+
     /// Removes and returns the [`Thread`] at the front of the list, if any.
     #[inline]
     pub fn pop_front(self: Pin<&mut Self>) -> Option<ThreadPtr> {
@@ -843,6 +861,77 @@ impl PinnedDrop for ThreadUnblockList {
         unsafe {
             bindings::cpp_thread_unblock_list_destroy(self.as_raw());
         }
+    }
+}
+
+/// The result of [`ChainLockProof::try_lock_one_waiter_locked`].
+enum LockOneWaiterResult {
+    /// The front waiter was approved by the wake hooks and its lock was acquired; it is still
+    /// queued in the wait queue.
+    Locked(ThreadPtr),
+    /// The queue is empty, or the wake hooks rejected the front waiter.
+    NoneToWake,
+    /// Acquiring the front waiter's lock requires the transaction to back off.
+    Backoff,
+}
+
+/// Holds the lock of an [`OwnedWaitQueue`] acquired by
+/// [`OwnedWaitQueue::lock_for_wake_one_or_backoff`], until it is consumed by
+/// [`OwnedWaitQueue::dequeue_one_and_release_locked`].
+///
+/// Dropping a `WakeOneGuard` without consuming it violates the contract of
+/// [`OwnedWaitQueue::lock_for_wake_one_or_backoff`]: `Drop` releases only the queue's lock, and
+/// leaks the locks of the queue's downstream PI chain and of the locked waiter (if any).
+///
+/// Unlike [`OwnerGuard<'a, OwnedWaitQueue>`], which stores `&'a OwnedWaitQueue`, this guard refers
+/// to the queue through a raw pointer, so passing it by value into a function does not create a
+/// `[fn entry]`-protected reference to the queue which would remain protected until that function
+/// returns, after the queue's lock has been released and the queue may have been deallocated.
+/// See "Memory model" on [`OwnedWaitQueue::dequeue_one_and_release_locked`].
+///
+/// The lifetime `'a` still ties the guard to the borrows of the queue and the transaction token
+/// at compile time, as with [`OwnerGuard`].
+#[must_use = "if unused, the queue's ChainLock will immediately be released"]
+pub(crate) struct WakeOneGuard<'a> {
+    // Safety invariant: `queue` points to a live `OwnedWaitQueue` whose lock is held by the
+    // active transaction (associated with `clt_token`), and this guard is responsible for
+    // releasing it.
+    queue: NonNull<OwnedWaitQueue>,
+    // A reference to a zero-sized token, so retagging it protects no memory.
+    clt_token: &'a ChainLockTransactionToken,
+    _queue: PhantomData<&'a OwnedWaitQueue>,
+}
+
+impl<'a> WakeOneGuard<'a> {
+    /// Takes responsibility for releasing the queue's lock held by `guard`.
+    #[inline(always)]
+    fn new(
+        guard: OwnerGuard<'a, OwnedWaitQueue>,
+        clt_token: &'a ChainLockTransactionToken,
+    ) -> Self {
+        let queue: &'a OwnedWaitQueue = guard.into_unguarded();
+        queue.lock().assert_held(clt_token);
+        Self { queue: NonNull::from(queue), clt_token, _queue: PhantomData }
+    }
+
+    /// Consumes the guard without releasing the queue's lock, transferring responsibility for
+    /// releasing it to the caller, and returns the queue.
+    #[inline(always)]
+    fn into_raw(self) -> NonNull<OwnedWaitQueue> {
+        let queue = self.queue;
+        // Skip `Drop`, which would release the lock.
+        core::mem::forget(self);
+        queue
+    }
+}
+
+impl Drop for WakeOneGuard<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: Per the type's invariant, `self.queue`'s lock is held by the active transaction
+        // and this guard is responsible for releasing it. `&mut self` refers to the guard rather
+        // than the queue, and the queue is not accessed after this call.
+        unsafe { OwnedWaitQueue::release_lock_raw(self.queue, self.clt_token) };
     }
 }
 
@@ -3276,7 +3365,8 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
     ///
     /// The caller must ensure that:
     /// - The active transaction has not yet been finalized, and no locks in `self.owner()`'s
-    ///   downstream PI chain or waiter threads are already held.
+    ///   downstream PI chain or waiter threads are already held, and no proof or guard for any
+    ///   node in that chain or any waiter thread in `self.owner()` is live.
     /// - `unblock_list` is empty.
     /// - If this call returns `true`, the caller must finalize the transaction and process
     ///   `unblock_list` via [`Self::wake_threads_locked`] on `self.owner()` before ending the
@@ -3316,16 +3406,9 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         // and try again.  Drop the locks we obtained starting from our owner (if
         // any).
         if !locked {
-            if let Some(owner) = self.owner_thread() {
-                // SAFETY: The owner of a queue is a live thread which cannot change while this
-                // queue's lock is held.
-                let owner: &Thread = unsafe { owner.as_ref() };
-                owner.lock().assert_acquired(clt_token);
-                // SAFETY: The chain starting from `owner` was locked by `lock_pi_chain` above.
-                unsafe {
-                    OwnedWaitQueue::unlock_pi_chain_common(owner, core::ptr::null(), clt_token);
-                }
-            }
+            // SAFETY: The chain starting from `self.owner_thread()` was locked by `lock_pi_chain`
+            // above.
+            unsafe { self.unlock_owner_pi_chain_locked(clt_token) };
             return false;
         }
 
@@ -3334,13 +3417,83 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         true
     }
 
+    /// Unlocks the PI chain starting from `self.owner_thread()`, if any.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the PI chain starting from `self.owner_thread()` (if `Some`) is
+    /// locked by the active transaction, and that no [`ChainLockProof`] or [`OwnerGuard`] for any
+    /// node in `self`'s downstream PI chain (other than `self`) is live or used during or after
+    /// the call (as required by [`OwnedWaitQueue::unlock_pi_chain_common`]).
+    #[inline(always)]
+    unsafe fn unlock_owner_pi_chain_locked(&self, clt_token: &ChainLockTransactionToken) {
+        if let Some(owner) = self.owner_thread() {
+            // SAFETY: The owner of a queue is a live thread which cannot change while this
+            // queue's lock is held.
+            let owner: &Thread = unsafe { owner.as_ref() };
+            owner.lock().assert_acquired(clt_token);
+            // SAFETY: Forwarded from the caller.
+            unsafe {
+                OwnedWaitQueue::unlock_pi_chain_common(owner, core::ptr::null(), clt_token);
+            }
+        }
+    }
+
+    /// Tries to lock the single highest-priority waiter thread in place (without removing it from
+    /// the collection) if `hooks.allow` permits waking it.
+    ///
+    /// Returns [`LockOneWaiterResult::Locked`] if a waiter was approved and locked,
+    /// [`LockOneWaiterResult::NoneToWake`] if the queue is empty or `hooks.allow` rejected the
+    /// front waiter, or [`LockOneWaiterResult::Backoff`] if acquiring the waiter's lock required
+    /// backing off.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the transaction is not finalized, that no waiter thread locks
+    /// are currently held, and that no proof or guard for any waiter thread in `self` is live.
+    #[inline(always)]
+    unsafe fn try_lock_one_waiter_locked<H: IWakeRequeueHook + ?Sized>(
+        &mut self,
+        hooks: &mut H,
+        clt_token: &ChainLockTransactionToken,
+    ) -> LockOneWaiterResult {
+        let Some(t_ptr) = self.peek_front() else {
+            return LockOneWaiterResult::NoneToWake;
+        };
+        // SAFETY: `t_ptr` is blocked in this queue, and cannot exit while this queue's lock is
+        // held.
+        let t: &Thread = unsafe { t_ptr.as_ref() };
+
+        let allow = {
+            // SAFETY: `t`'s lock is not held. `t` is blocked in this queue, whose lock is held
+            // (proven by `self`), and a blocked thread's wait queue state cannot change without
+            // also holding that lock. `t_proof` is only used for those reads.
+            let t_proof = unsafe { assume_synchronized_read_only(t) };
+            assert_in_wait_queue(&t_proof, &self.as_base());
+            hooks.allow(t)
+        };
+        if !allow {
+            return LockOneWaiterResult::NoneToWake;
+        }
+
+        // SAFETY: No proof or guard for `t` is live (per the caller, and `t_proof` above has been
+        // dropped).
+        if !unsafe { raw_lock(t) }.acquire_or_backoff(clt_token) {
+            core::hint::cold_path();
+            return LockOneWaiterResult::Backoff;
+        }
+
+        LockOneWaiterResult::Locked(t_ptr)
+    }
+
     /// Tries to lock a set of up to `max_count` threads to wake, placing them in `res` and back
     /// into the collection on success.
     ///
     /// # Safety
     ///
     /// The caller must ensure that the transaction is not finalized, that no waiter thread locks
-    /// are held, and that `res` is empty.
+    /// are held, that no proof or guard for any waiter thread in `self` is live, and that `res`
+    /// is empty.
     unsafe fn lock_and_make_waiter_list_locked<H: IWakeRequeueHook + ?Sized>(
         &mut self,
         max_count: u32,
@@ -3348,6 +3501,26 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         mut res: Pin<&mut ThreadUnblockList>,
         clt_token: &ChainLockTransactionToken,
     ) -> bool {
+        debug_assert!(res.is_empty());
+        if max_count == 0 {
+            return true;
+        }
+        if max_count == 1 {
+            // Fast path for waking a single thread: lock the front waiter in place without
+            // removing it from and immediately reinserting it into the WAVL collection.
+            // SAFETY: Forwarded from the caller.
+            return match unsafe { self.try_lock_one_waiter_locked(hooks, clt_token) } {
+                LockOneWaiterResult::Locked(t_ptr) => {
+                    // SAFETY: `t_ptr` is live and locked by `try_lock_one_waiter_locked`, and is
+                    // blocked in this queue so it is not in any unblock list.
+                    unsafe { res.as_mut().push_back_ptr(t_ptr) };
+                    true
+                }
+                LockOneWaiterResult::NoneToWake => true,
+                LockOneWaiterResult::Backoff => false,
+            };
+        }
+
         // Try to lock a set of threads to wake.  If we succeeded, make sure we place
         // them back into the collection before returning.
         // SAFETY: Forwarded from the caller.
@@ -3758,6 +3931,127 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         self.validate_sched_state_storage();
     }
 
+    /// Clears any current owner of `self` and unlocks its downstream PI chain.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the transaction is finalized, that the PI chain starting from
+    /// `self.owner_thread()` (if `Some`) is locked by the active transaction, and that no
+    /// [`ChainLockProof`] or [`OwnerGuard`] for any node in `self`'s downstream PI chain (other
+    /// than `self`) is live or used during or after the call (as required by
+    /// [`Self::assign_owner_internal`] and [`OwnedWaitQueue::unlock_pi_chain_common`]).
+    #[inline(always)]
+    unsafe fn clear_and_unlock_owner_locked(
+        &mut self,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) {
+        if let Some(old_owner) = self.owner_thread() {
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.assign_owner_internal(None, clt_token, preempt_disabled_token) };
+            // SAFETY: `old_owner` was the owner of this queue, and its chain is still locked.
+            let old_owner: &Thread = unsafe { old_owner.as_ref() };
+            old_owner.lock().assert_acquired(clt_token);
+            // SAFETY: The chain starting from `old_owner` is locked (per the caller).
+            unsafe {
+                OwnedWaitQueue::unlock_pi_chain_common(old_owner, core::ptr::null(), clt_token);
+            }
+        }
+    }
+
+    /// Dequeues a locked waiter `t` from `self`, propagates the PI removal, and assigns `t` as the
+    /// new owner of `self` if `option == WakeOption::AssignOwner` and waiters remain.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `t` is live, locked by the finalized transaction `clt_token`
+    /// with no other proof or guard for `t` live, and blocked in `self.owner()`, and that
+    /// `self.owner_thread()` is `None`.
+    #[inline(always)]
+    unsafe fn dequeue_waiter_and_update_pi_locked<H: IWakeRequeueHook + ?Sized>(
+        &mut self,
+        t: &Thread,
+        wake_hooks: &mut H,
+        option: WakeOption,
+        force_inheritance: ForceInheritance,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) {
+        t.lock().assert_acquired(clt_token);
+        {
+            // SAFETY: `t`'s lock is held and no other proof or guard for it is live.
+            let mut t_proof = unsafe { assume_locked(t) };
+
+            // Call the user's hook, allowing them to maintain any internal bookkeeping
+            // they need to maintain.
+            wake_hooks.on_wake_or_requeue(&mut t_proof);
+
+            // Remove this thread from our collection, then remove its contributions to
+            // our IPVs.
+            let old_target_ep = self.has_deadline_pressure().then(|| self.get_effective_profile());
+            // SAFETY: `t` is blocked in this queue, and the storage is updated below.
+            unsafe { self.as_base().dequeue(&mut t_proof, Ok(())) };
+            // SAFETY: `t` was just removed from this queue. Per `# Safety`,
+            // `self.owner_thread().is_none()`, so `self` has no downstream PI chain: there are no
+            // further nodes downstream of `self` whose locks must be held, and the locks of `t`
+            // and `self` are proven held by `t_proof` and `self`.
+            unsafe {
+                OwnedWaitQueue::begin_propagate_thread_owq(
+                    &mut t_proof,
+                    self,
+                    REMOVE_SINGLE_EDGE_OP,
+                    force_inheritance,
+                    old_target_ep.as_ref(),
+                    clt_token,
+                    preempt_disabled_token,
+                );
+            }
+            // SAFETY: `t` was just removed from this queue's collection.
+            unsafe { self.update_sched_state_storage_thread_removed(&mut t_proof) };
+        }
+
+        // If we still have blocked threads, and we are supposed to make this thread
+        // our owner, do so now.  We removed our existing owner at the start of this
+        // operation, and it is illegal to attempt to wake multiple threads and make
+        // them each our owner, so our owner should still be `None`.
+        //
+        // TODO(johngro): We may need a tweak to the propagation.  Our thread is in
+        // an intermediate state right now.  It has been removed from its wait
+        // queue, but its state is still blocked since it has not been through
+        // `scheduler::unblock` yet.  The easiest thing to do might be to just
+        // directly assign our IPVs from our current wait queue stats and set owner
+        // directly.
+        //
+        // Note that when `t` is woken by `OwnedWaitQueue::wake_one_and_release_locked` (e.g. via
+        // `wake_thread_and_assign_owner`), this intermediate state (`t` owns `self` while still
+        // blocked) persists after `self`'s lock is released, until `scheduler::unblock` releases
+        // `t`'s lock. This is safe: any operation which walks or modifies the PI chain through
+        // `t` must acquire `t`'s lock, which the finalized transaction holds until then.
+        if !self.is_empty() && (option == WakeOption::AssignOwner) {
+            debug_assert!(self.owner_thread().is_none());
+            // SAFETY: `t`'s lock is held, and it is not blocked in any queue, so it has no
+            // downstream PI chain.
+            unsafe { self.assign_owner_internal(Some(t), clt_token, preempt_disabled_token) };
+        }
+    }
+
+    /// Validates post-wake ownership and scheduler state storage invariants and returns the
+    /// [`WakeThreadsResult`].
+    #[inline(always)]
+    fn finish_wake_locked(&mut self, woken: u32, option: WakeOption) -> WakeThreadsResult {
+        // If our `WakeOption` was `None`, we should no longer have an owner.  Otherwise,
+        // it was `AssignOwner`, in which case we should only have an owner if we still
+        // have blocked threads.
+        debug_assert!(
+            ((option == WakeOption::None) && self.owner_thread().is_none())
+                || ((option == WakeOption::AssignOwner)
+                    && (!self.is_empty() || self.owner_thread().is_none()))
+        );
+
+        self.validate_sched_state_storage();
+        WakeThreadsResult { woken, still_waiting: self.count(), owner: self.owner_thread() }
+    }
+
     /// Wakes the locked `threads` from this wait queue while already holding the queue lock.
     ///
     /// The PI-chain locks and the locks of the threads in `threads` are released as the threads
@@ -3793,97 +4087,42 @@ impl ChainLockProof<'_, OwnedWaitQueue> {
         debug_assert!(option != WakeOption::AssignOwner || threads.iter().nth(1).is_none());
         let mut woken: u32 = 0;
 
-        // Start by removing any existing owner.  We will either wake a thread an make
+        // Start by removing any existing owner.  We will either wake a thread and make
         // it the new owner, or we are simply going to remove the owner entirely.
-        // Once we have removed the old owner, we can unlock the PI chain starting
-        // from the old owner (if any)
-        if let Some(old_owner) = self.owner_thread() {
-            // SAFETY: Forwarded from the caller.
-            unsafe { self.assign_owner_internal(None, clt_token, preempt_disabled_token) };
-            // SAFETY: `old_owner` was the owner of this queue, and its chain is still locked.
-            let old_owner: &Thread = unsafe { old_owner.as_ref() };
-            old_owner.lock().assert_acquired(clt_token);
-            // SAFETY: The chain starting from `old_owner` is locked (per the caller).
-            unsafe {
-                OwnedWaitQueue::unlock_pi_chain_common(old_owner, core::ptr::null(), clt_token);
-            }
-        }
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.clear_and_unlock_owner_locked(clt_token, preempt_disabled_token) };
 
         // Now wake all of the threads we had selected
         while let Some(t) = threads.as_mut().pop_front() {
             // SAFETY: Every thread in `threads` is live and locked (per the caller).
             let t: &Thread = unsafe { t.as_ref() };
-            t.lock().assert_acquired(clt_token);
-
-            {
-                // SAFETY: `t`'s lock is held and no other proof or guard for it is live.
-                let mut t_proof = unsafe { assume_locked(t) };
-
-                // Call the user's hook, allowing them to maintain any internal bookkeeping
-                // they need to maintain.
-                wake_hooks.on_wake_or_requeue(&mut t_proof);
-
-                // Remove this thread from our collection, then remove its contributions to
-                // our IPVs.
-                let old_target_ep =
-                    self.has_deadline_pressure().then(|| self.get_effective_profile());
-                // SAFETY: `t` is blocked in this queue, and the storage is updated below.
-                unsafe { self.as_base().dequeue(&mut t_proof, Ok(())) };
-                // SAFETY: `t` was just removed from this queue, and the caller guarantees that the
-                // PI chain downstream of this queue is locked by the finalized transaction.
-                unsafe {
-                    OwnedWaitQueue::begin_propagate_thread_owq(
-                        &mut t_proof,
-                        self,
-                        REMOVE_SINGLE_EDGE_OP,
-                        force_inheritance,
-                        old_target_ep.as_ref(),
-                        clt_token,
-                        preempt_disabled_token,
-                    );
-                }
-                // SAFETY: `t` was just removed from this queue's collection.
-                unsafe { self.update_sched_state_storage_thread_removed(&mut t_proof) };
-            }
-
-            // If we still have blocked threads, and we are supposed to make this thread
-            // our owner, do so now.  We removed our existing owner at the start of this
-            // operation, and it is illegal to attempt to wake multiple threads and make
-            // them each our owner, so our owner should still be `None`.
-            //
-            // TODO(johngro): We may need a tweak to the propagation.  Our thread is in
-            // an intermediate state right now.  It has been removed from its wait
-            // queue, but its state is still blocked since it has not been through
-            // `scheduler::unblock` yet.  The easiest thing to do might be to just
-            // directly assign our IPVs from our current wait queue stats and set owner
-            // directly.
-            if !self.is_empty() && (option == WakeOption::AssignOwner) {
-                debug_assert!(self.owner_thread().is_none());
-                // SAFETY: `t`'s lock is held, and it is not blocked in any queue, so it has no
-                // downstream PI chain.
-                unsafe { self.assign_owner_internal(Some(t), clt_token, preempt_disabled_token) };
+            // SAFETY: `t` is live, locked by the finalized transaction, and blocked in
+            // `self.owner()` with no other proof or guard for it live (per the caller).
+            // `self.owner_thread()` is `None`: `clear_and_unlock_owner_locked` cleared it above,
+            // and it stays `None` on every iteration, since `dequeue_waiter_and_update_pi_locked`
+            // only assigns an owner when `option == WakeOption::AssignOwner`, in which case
+            // `threads` contains at most one thread (per the caller, and debug-asserted above).
+            unsafe {
+                self.dequeue_waiter_and_update_pi_locked(
+                    t,
+                    wake_hooks,
+                    option,
+                    force_inheritance,
+                    clt_token,
+                    preempt_disabled_token,
+                );
             }
 
             // Finally, unblock the thread, drop its lock in the process.
-            // SAFETY: `t`'s lock is held (per the caller, and debug-asserted above), and no other
-            // proof or guard for it is live.
+            // SAFETY: `t`'s lock is held (per the caller), and no other proof or guard for it is
+            // live.
             let t_guard = unsafe { OwnerGuard::adopt_unchecked(t, clt_token) };
             // SAFETY: `t` was dequeued from this queue and the active transaction is finalized.
             unsafe { scheduler::unblock(t_guard, clt_token) };
             woken += 1;
         }
 
-        // If our `WakeOption` was `None`, we should no longer have an owner.  Otherwise,
-        // it was `AssignOwner`, in which case we should only have an owner if we still
-        // have blocked threads.
-        debug_assert!(
-            ((option == WakeOption::None) && self.owner_thread().is_none())
-                || ((option == WakeOption::AssignOwner)
-                    && (!self.is_empty() || self.owner_thread().is_none()))
-        );
-
-        self.validate_sched_state_storage();
-        WakeThreadsResult { woken, still_waiting: self.count(), owner: self.owner_thread() }
+        self.finish_wake_locked(woken, option)
     }
 }
 
@@ -3896,7 +4135,8 @@ impl OwnedWaitQueue {
     ///
     /// The caller must ensure that:
     /// - The active transaction has not yet been finalized, and neither `self.lock()` nor any lock
-    ///   in `self`'s downstream PI chain or waiter threads is currently held.
+    ///   in `self`'s downstream PI chain or waiter threads is currently held, and no proof or
+    ///   guard for any node in that chain or any waiter thread in `self` is live.
     /// - `unblock_list` is empty.
     /// - If this call returns `Some`, the caller must finalize the transaction and process
     ///   `unblock_list` via [`ChainLockProof::wake_threads_locked`] on `self` and release the
@@ -3932,6 +4172,235 @@ impl OwnedWaitQueue {
 
         // Success!  The list of locked threads ready to be woken has been populated.
         Some(guard)
+    }
+
+    /// Obtains all of the locks needed to wake at most one thread from `self` without constructing
+    /// a [`ThreadUnblockList`] or mutating the WAVL collection during locking.
+    ///
+    /// On success, returns `Some((self_guard, waiter))` where `self_guard` holds `self.lock()` and
+    /// `waiter` (if `Some`) is locked by the active transaction and still queued in `self`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The active transaction has not yet been finalized, and neither `self.lock()` nor any lock
+    ///   in `self`'s downstream PI chain or waiter threads is currently held, and no proof or
+    ///   guard for any node in `self`'s downstream PI chain or any waiter thread in `self` is
+    ///   live.
+    /// - If this call returns `Some((guard, waiter))`, the caller must finalize the transaction and
+    ///   consume `(guard, waiter)` via [`Self::dequeue_one_and_release_locked`] or
+    ///   [`Self::wake_one_and_release_locked`] before ending the transaction.
+    #[inline]
+    pub(crate) unsafe fn lock_for_wake_one_or_backoff<'a, H: IWakeRequeueHook + ?Sized>(
+        &'a self,
+        wake_hooks: &mut H,
+        clt_token: &'a ChainLockTransactionToken,
+    ) -> Option<(WakeOneGuard<'a>, Option<ThreadPtr>)> {
+        // `OwnerGuard::new` (`ChainLock::acquire_first_in_chain`) checks that the transaction is
+        // active and that `self.lock()` is not already held.
+        let mut guard = OwnerGuard::new(self, clt_token);
+
+        // SAFETY: Forwarded from the caller.
+        let lock_res = unsafe { OwnedWaitQueue::lock_pi_chain(&mut guard.proof(), clt_token) };
+        if lock_res == ChainLockResult::Backoff {
+            core::hint::cold_path();
+            guard.release();
+            return None;
+        }
+        debug_assert!(lock_res == ChainLockResult::Ok);
+
+        // SAFETY: The transaction is not finalized, no waiter thread locks are held, and no proof
+        // or guard for any waiter thread in `self` is live (per the caller).
+        let waiter =
+            match unsafe { guard.proof().try_lock_one_waiter_locked(wake_hooks, clt_token) } {
+                LockOneWaiterResult::Locked(t_ptr) => Some(t_ptr),
+                LockOneWaiterResult::NoneToWake => None,
+                LockOneWaiterResult::Backoff => {
+                    core::hint::cold_path();
+                    // SAFETY: The chain starting from `owner` was locked by `lock_pi_chain` above,
+                    // and no proof or guard for any of its nodes is live.
+                    unsafe { guard.proof().unlock_owner_pi_chain_locked(clt_token) };
+                    guard.release();
+                    return None;
+                }
+            };
+        Some((WakeOneGuard::new(guard, clt_token), waiter))
+    }
+
+    /// Dequeues at most one locked waiter produced by [`Self::lock_for_wake_one_or_backoff`],
+    /// updates PI bookkeeping, and releases `guard` (the queue's lock) without unblocking
+    /// `thread`.
+    ///
+    /// Once the queue's lock is released, no reference to the queue is live or protected in this
+    /// call (see "Memory model" below), so the queue may be deallocated by another CPU as soon as
+    /// its lock is released (for example, when it is embedded in a `ThreadDispatcher` that is
+    /// destroyed once a waiter observes the release), and the caller may subsequently call
+    /// [`scheduler::unblock`] on `thread` even when the queue is embedded in `thread`'s
+    /// `ThreadDispatcher`. The caller must not access the queue after this call.
+    ///
+    /// # Memory model
+    ///
+    /// Under Stacked Borrows and Tree Borrows, every reference passed into a function, including
+    /// a reference stored in a field of a by-value aggregate argument such as
+    /// `OwnerGuard { owner: &'a OwnedWaitQueue, .. }`, is retagged with a `[fn entry]` protector
+    /// which lasts until that function returns, even if the aggregate is consumed or dropped
+    /// earlier in the body. Deallocating protected memory while the protector is active is
+    /// undefined behavior. These semantics are defined on the abstract machine (MIR), so neither
+    /// `#[inline]` nor `#[inline(always)]` changes them: inlining only affects which LLVM
+    /// attributes are visible to the optimizer, not whether the program has undefined behavior.
+    ///
+    /// This function therefore never receives a reference to the queue:
+    /// - `guard` is a [`WakeOneGuard`], which refers to the queue through `NonNull` and
+    ///   `PhantomData<&'a _>`. Lifetimes are a compile-time construct, raw pointers and
+    ///   `PhantomData` carry no tag, and so nothing in `guard` is retagged or protected.
+    /// - The `&OwnedWaitQueue` and the [`ChainLockProof`] used for the PI updates are locals of a
+    ///   block that ends (along with the `[fn entry]` protectors of every callee that received
+    ///   them) before the lock is released. Locals are never protected.
+    /// - The lock is released through [`Self::release_lock_raw`], which releases the raw
+    ///   [`ChainLock`] directly instead of calling `OwnerGuard::release(self)`, which would itself
+    ///   hold a protected `&OwnedWaitQueue` (its by-value `self.owner`) across the unlock.
+    ///
+    /// The only reference which remains live across the unlock is the `&ChainLock` receiver of
+    /// `ChainLock::release` itself. This is the same unavoidable window as in every `&self`-based
+    /// unlock (e.g. `OwnerGuard::release` and `Event::signal_worker`; cf. rust-lang/rust#55005),
+    /// and is mitigated by `ChainLock::release` not accessing the lock after the releasing store.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `(guard, thread)` is the unmodified state produced by a successful
+    ///   [`Self::lock_for_wake_one_or_backoff`] in the current transaction (if `thread` is `Some`,
+    ///   it is live, locked by the active transaction, and blocked in the queue, and the PI chain
+    ///   downstream of the queue is locked by the active transaction).
+    /// - No [`ChainLockProof`] or [`OwnerGuard`] for the queue, for any node in its downstream PI
+    ///   chain, or for `thread` is live across this call.
+    /// - If `thread` is `Some(t)`, the caller must subsequently unblock `t` via
+    ///   [`scheduler::unblock`] before ending the transaction.
+    /// - The active transaction has been finalized via [`ChainLockTransaction::finalize`].
+    #[inline]
+    pub(crate) unsafe fn dequeue_one_and_release_locked<H: IWakeRequeueHook + ?Sized>(
+        guard: WakeOneGuard<'_>,
+        thread: Option<ThreadPtr>,
+        wake_hooks: &mut H,
+        option: WakeOption,
+        force_inheritance: ForceInheritance,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) -> WakeThreadsResult {
+        assert_transaction_active(clt_token);
+        preempt_disabled_token.assert_held();
+        // Take responsibility for releasing the queue's lock from `guard`.
+        let queue = guard.into_raw();
+        let res = {
+            // SAFETY: The queue's lock is held by the active transaction (per `guard`), so the
+            // queue is live until it is released below, and no other proof or guard for it is
+            // live (per the caller). `self_proof` (and the `&OwnedWaitQueue` it holds) is a
+            // local which ends with this block, before the lock is released.
+            let mut self_proof = unsafe { assume_locked(queue.as_ref()) };
+            debug_assert!(self_proof.owner().magic() == OWNED_MAGIC);
+            // SAFETY: The transaction is finalized, the PI chain downstream of the queue is
+            // locked, and no proof or guard for any of its nodes is live (per the caller).
+            unsafe { self_proof.clear_and_unlock_owner_locked(clt_token, preempt_disabled_token) };
+            let woken = if let Some(t_ptr) = thread {
+                // SAFETY: `t_ptr` is live and locked by the active transaction (per the caller).
+                let t: &Thread = unsafe { t_ptr.as_ref() };
+                // SAFETY: `self_proof.owner_thread()` was cleared above; `t` is live, locked by
+                // the finalized transaction with no other proof or guard live, and blocked in
+                // the queue (per the caller).
+                unsafe {
+                    self_proof.dequeue_waiter_and_update_pi_locked(
+                        t,
+                        wake_hooks,
+                        option,
+                        force_inheritance,
+                        clt_token,
+                        preempt_disabled_token,
+                    );
+                }
+                1
+            } else {
+                0
+            };
+            self_proof.finish_wake_locked(woken, option)
+        };
+
+        // SAFETY: The queue's lock is held by the active transaction, `self_proof` has ended, and
+        // the queue is not accessed after this point.
+        unsafe { Self::release_lock_raw(queue, clt_token) };
+        res
+    }
+
+    /// Releases the lock of `queue` through its raw [`ChainLock`].
+    ///
+    /// No reference to the queue is passed into (and so protected for the duration of) the
+    /// releasing call: the `&OwnedWaitQueue` formed here is only passed to [`raw_lock`], whose
+    /// `[fn entry]` protector ends when it returns, before the lock is released. See "Memory
+    /// model" on [`Self::dequeue_one_and_release_locked`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `queue` points to a live `OwnedWaitQueue` whose lock is held
+    /// by the active transaction, that responsibility for releasing that lock has been taken from
+    /// any guard, that no proof or guard for the queue is live, and that the queue is not
+    /// accessed after this call (since another CPU may deallocate it as soon as its lock is
+    /// released).
+    #[inline(always)]
+    unsafe fn release_lock_raw(queue: NonNull<Self>, clt_token: &ChainLockTransactionToken) {
+        // SAFETY: `queue` is live while its lock is held, and no proof or guard for it is live
+        // (per the caller).
+        let lock: &ChainLock = unsafe { raw_lock(queue.as_ref()) };
+        // `ChainLock::release` checks (in debug builds) that the lock is held by this transaction.
+        lock.release(clt_token);
+    }
+
+    /// Dequeues at most one locked waiter produced by [`Self::lock_for_wake_one_or_backoff`],
+    /// updates PI bookkeeping, releases `guard` (the queue's lock), and then unblocks `thread` (if
+    /// `Some`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `(guard, thread)` is the unmodified state produced by a successful
+    ///   [`Self::lock_for_wake_one_or_backoff`] in the current transaction (if `thread` is `Some`,
+    ///   it is live, locked by the active transaction, and blocked in the queue, and the PI chain
+    ///   downstream of the queue is locked by the active transaction).
+    /// - No [`ChainLockProof`] or [`OwnerGuard`] for the queue, for any node in its downstream PI
+    ///   chain, or for `thread` is live across this call.
+    /// - The active transaction has been finalized via [`ChainLockTransaction::finalize`].
+    #[inline]
+    unsafe fn wake_one_and_release_locked<H: IWakeRequeueHook + ?Sized>(
+        guard: WakeOneGuard<'_>,
+        thread: Option<ThreadPtr>,
+        wake_hooks: &mut H,
+        option: WakeOption,
+        force_inheritance: ForceInheritance,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) -> WakeThreadsResult {
+        // SAFETY: Forwarded from the caller; `thread` (if `Some`) is unblocked immediately below.
+        let res = unsafe {
+            Self::dequeue_one_and_release_locked(
+                guard,
+                thread,
+                wake_hooks,
+                option,
+                force_inheritance,
+                clt_token,
+                preempt_disabled_token,
+            )
+        };
+
+        if let Some(t_ptr) = thread {
+            // SAFETY: `t_ptr`'s ChainLock is still held by the active transaction `clt_token`, so
+            // the thread is live and cannot exit until `scheduler::unblock` releases its lock
+            // below, and no other proof or guard for it is live (per the caller).
+            let t_guard = unsafe { OwnerGuard::adopt_unchecked(t_ptr.as_ref(), clt_token) };
+            // SAFETY: `t` was dequeued from the wait queue above and the active transaction is
+            // finalized.
+            unsafe { scheduler::unblock(t_guard, clt_token) };
+        }
+
+        res
     }
 
     /// Obtains all of the locks needed for a `wake_and_requeue` operation.
@@ -4846,7 +5315,19 @@ impl OwnedWaitQueue {
 
     /// Wakes up to the specified number of threads from the wait queue, removing any current queue
     /// owner in the process.
+    #[inline]
     pub fn wake_threads<H: IWakeRequeueHook + ?Sized>(
+        &self,
+        wake_count: u32,
+        wake_hooks: &mut H,
+    ) -> WakeThreadsResult {
+        if wake_count == 1 {
+            return self.wake_single_thread(wake_hooks, WakeOption::None);
+        }
+        self.wake_multiple_threads(wake_count, wake_hooks)
+    }
+
+    fn wake_multiple_threads<H: IWakeRequeueHook + ?Sized>(
         &self,
         wake_count: u32,
         wake_hooks: &mut H,
@@ -4858,8 +5339,9 @@ impl OwnedWaitQueue {
             // of this transaction.
             let preempt_disabled = unsafe { PreemptDisabledToken::new() };
             pin_init::stack_pin_init!(let threads = ThreadUnblockList::init());
-            // SAFETY: The transaction holds no locks and `threads` is empty. On success, the
-            // locks are processed by `wake_threads_locked` and `guard.release()`.
+            // SAFETY: The transaction holds no locks, no proof or guard for any node in `self`'s
+            // downstream PI chain or any waiter thread in `self` is live, and `threads` is empty.
+            // On success, the locks are processed by `wake_threads_locked` and `guard.release()`.
             if let Some(mut guard) = unsafe {
                 self.lock_for_wake_operation_or_backoff(
                     wake_count,
@@ -4896,9 +5378,20 @@ impl OwnedWaitQueue {
 
     /// Attempts to wake exactly one thread, and assigns ownership of the queue to the woken thread
     /// (if any).
+    #[inline]
     pub fn wake_thread_and_assign_owner<H: IWakeRequeueHook + ?Sized>(
         &self,
         wake_hooks: &mut H,
+    ) -> WakeThreadsResult {
+        self.wake_single_thread(wake_hooks, WakeOption::AssignOwner)
+    }
+
+    /// Wakes at most one thread from `self` using [`Self::lock_for_wake_one_or_backoff`] and
+    /// [`Self::wake_one_and_release_locked`].
+    fn wake_single_thread<H: IWakeRequeueHook + ?Sized>(
+        &self,
+        wake_hooks: &mut H,
+        option: WakeOption,
     ) -> WakeThreadsResult {
         assert_no_transaction_active();
         let mut result = WakeThreadsResult::default();
@@ -4906,28 +5399,34 @@ impl OwnedWaitQueue {
             // SAFETY: `PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION` disables preemption for the duration
             // of this transaction.
             let preempt_disabled = unsafe { PreemptDisabledToken::new() };
-            pin_init::stack_pin_init!(let threads = ThreadUnblockList::init());
-            // SAFETY: The transaction holds no locks and `threads` is empty. On success, the
-            // locks are processed by `wake_threads_locked` and `guard.release()`.
-            if let Some(mut guard) = unsafe {
-                self.lock_for_wake_operation_or_backoff(1, wake_hooks, threads.as_mut(), token)
-            } {
+            // SAFETY: The transaction holds no locks, and no proof or guard for any node in
+            // `self`'s downstream PI chain or any waiter thread in `self` is live. On success,
+            // `(guard, waiter)` are consumed by `wake_one_and_release_locked`.
+            if let Some((guard, waiter)) =
+                unsafe { self.lock_for_wake_one_or_backoff(wake_hooks, token) }
+            {
                 ChainLockTransaction::finalize(token);
-                // SAFETY: `threads` was populated by `lock_for_wake_operation_or_backoff` with
-                // `max_wake == 1`, and the transaction is finalized.
+                // SAFETY: `(guard, waiter)` was produced by `lock_for_wake_one_or_backoff` in this
+                // transaction and is unmodified, the transaction is finalized, and no proof or
+                // guard for `self`, its downstream PI chain, or `waiter` is live. This discharges
+                // all preconditions of `wake_one_and_release_locked`. (Since `WakeOneGuard` holds
+                // no reference to `self`, that call does not require `self` to remain allocated
+                // after its lock is released, although it does here: `&self` is valid for the
+                // entire `wake_single_thread` call.)
                 result = unsafe {
-                    guard.proof().wake_threads_locked(
-                        threads.as_mut(),
+                    Self::wake_one_and_release_locked(
+                        guard,
+                        waiter,
                         wake_hooks,
-                        WakeOption::AssignOwner,
+                        option,
                         ForceInheritance::No,
                         token,
                         &preempt_disabled,
                     )
                 };
-                guard.release();
                 return DONE.into();
             }
+            core::hint::cold_path();
             Action::Backoff.into()
         };
         ChainLockTransaction::until_done(
@@ -5814,7 +6313,9 @@ pub unsafe extern "C" fn rust_owned_wait_queue_lock_for_wake_operation_or_backof
     // SAFETY: The C++ declaration is `TA_REQ(chainlock_transaction_token)`.
     let token = unsafe { ChainLockTransaction::mark_active() };
     // SAFETY: The caller upholds the preconditions of `lock_for_wake_operation_or_backoff` (the
-    // transaction is not finalized, no locks are held, and `unblock_list` is empty).
+    // transaction is not finalized, no locks are held, no Rust proof or guard for any node in
+    // `owq`'s downstream PI chain or any waiter thread in `owq` is live, and `unblock_list` is
+    // empty).
     let locked = unsafe {
         owq.lock_for_wake_operation_or_backoff(max_wake, &mut wake_hooks, unblock_list, &token)
     };
@@ -5861,7 +6362,9 @@ pub unsafe extern "C" fn rust_owned_wait_queue_lock_for_wake_operation_locked(
     // `owq` exists.
     let mut proof = unsafe { ChainLockProof::assume_held_unchecked(owq) };
     // SAFETY: The caller upholds the preconditions of `lock_for_wake_operation_locked` (the
-    // transaction is not finalized, no downstream locks are held, and `unblock_list` is empty).
+    // transaction is not finalized, no downstream locks are held, no Rust proof or guard for any
+    // node in `owq`'s downstream PI chain or any waiter thread in `owq` is live, and
+    // `unblock_list` is empty).
     unsafe { proof.lock_for_wake_operation_locked(max_wake, &mut hooks, unblock_list, &token) }
 }
 
@@ -5880,6 +6383,7 @@ mod tests {
         single_chain_lock_guard_owned,
     };
     use crate::kernel::deadline::Deadline;
+    use crate::kernel::scheduler;
     use crate::kernel::thread::{self, AnnotatedAutoEagerReschedDisabler};
     use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
     use core::ffi::c_void;
@@ -5910,6 +6414,121 @@ mod tests {
 
     const EMPTY_RESULT: WakeThreadsResult =
         WakeThreadsResult { woken: 0, still_waiting: 0, owner: None };
+
+    /// A hook which rejects the first thread it is asked about (and only that thread), counting
+    /// how often it is asked about any other thread.
+    #[derive(Default)]
+    struct RejectFirstHook {
+        rejected: Option<ThreadPtr>,
+        rejected_allow_count: u32,
+        other_allow_count: u32,
+        wake_count: u32,
+    }
+
+    impl IWakeRequeueHook for RejectFirstHook {
+        fn allow(&mut self, thread: &Thread) -> bool {
+            let thread = Some(ThreadPtr::from(thread));
+            if self.rejected.is_none() {
+                self.rejected = thread;
+            }
+            if self.rejected == thread {
+                self.rejected_allow_count += 1;
+                false
+            } else {
+                self.other_allow_count += 1;
+                true
+            }
+        }
+
+        fn on_wake_or_requeue(&mut self, _thread: &mut ChainLockProof<'_, Thread>) {
+            self.wake_count += 1;
+        }
+    }
+
+    /// Returns whether `thread` owns any `OwnedWaitQueue`, as observed while holding its lock.
+    fn owns_any_queue(thread: &Thread) -> bool {
+        single_chain_lock_guard_owned!(
+            scope,
+            thread,
+            IRQ_SAVE_OPTION,
+            clt_tag!("owq_rust_test_owns_any_queue")
+        );
+        !scope.proof().owned_wait_queues().is_empty()
+    }
+
+    /// Observations made by [`wake_one_split`] within its transaction.
+    struct SplitWakeObservations {
+        /// The result of `dequeue_one_and_release_locked`.
+        res: WakeThreadsResult,
+        /// The waiter which was dequeued (and then unblocked), if any.
+        waiter: Option<ThreadPtr>,
+        /// Whether the queue's lock was released by `dequeue_one_and_release_locked`.
+        queue_released: bool,
+        /// Whether the dequeued waiter's lock (if any) was still held after
+        /// `dequeue_one_and_release_locked` returned, until `scheduler::unblock`.
+        waiter_held_until_unblock: bool,
+    }
+
+    /// Wakes at most one thread from `owq` with the split flow used by `MessageWaiter::signal`:
+    /// `lock_for_wake_one_or_backoff`, then `dequeue_one_and_release_locked` (which releases the
+    /// queue's lock), and only then `scheduler::unblock` on the dequeued waiter.
+    fn wake_one_split<H: IWakeRequeueHook>(
+        owq: &OwnedWaitQueue,
+        hooks: &mut H,
+        option: WakeOption,
+    ) -> SplitWakeObservations {
+        let mut obs = SplitWakeObservations {
+            res: WakeThreadsResult { woken: u32::MAX, still_waiting: u32::MAX, owner: None },
+            waiter: None,
+            queue_released: false,
+            waiter_held_until_unblock: false,
+        };
+        ChainLockTransaction::until_done(
+            PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("owq_rust_test_wake_one_split"),
+            |token| -> TransactionResult<()> {
+                // SAFETY: Preemption is disabled by `PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION`.
+                let preempt_token = unsafe { PreemptDisabledToken::new() };
+                // SAFETY: The transaction holds no locks, and no proof or guard for any node in
+                // `owq`'s downstream PI chain or any waiter in `owq` is live. On success,
+                // `(guard, waiter)` are consumed below.
+                let Some((guard, waiter)) =
+                    (unsafe { owq.lock_for_wake_one_or_backoff(hooks, token) })
+                else {
+                    return Action::Backoff.into();
+                };
+                ChainLockTransaction::finalize(token);
+                // SAFETY: `(guard, waiter)` was produced by `lock_for_wake_one_or_backoff` in this
+                // transaction, which is finalized, no proof or guard for `owq`, its downstream PI
+                // chain, or `waiter` is live, and `waiter` (if any) is unblocked below.
+                obs.res = unsafe {
+                    OwnedWaitQueue::dequeue_one_and_release_locked(
+                        guard,
+                        waiter,
+                        hooks,
+                        option,
+                        ForceInheritance::No,
+                        token,
+                        &preempt_token,
+                    )
+                };
+                obs.queue_released = !owq.lock().is_held(token);
+                obs.waiter = waiter;
+                if let Some(t_ptr) = waiter {
+                    // SAFETY: `t_ptr`'s lock is still held by the active transaction, so it is
+                    // live, and no other proof or guard for it is live.
+                    let t: &Thread = unsafe { t_ptr.as_ref() };
+                    obs.waiter_held_until_unblock = t.lock().is_held(token);
+                    // SAFETY: As above.
+                    let t_guard = unsafe { OwnerGuard::adopt_unchecked(t, token) };
+                    // SAFETY: `t` was dequeued from `owq` above and the transaction is finalized.
+                    unsafe { scheduler::unblock(t_guard, token) };
+                }
+                DONE.into()
+            },
+        );
+        obs
+    }
 
     /// Returns the owner of `owq` as observed while holding its lock.
     fn observe_owner(owq: &OwnedWaitQueue) -> Option<ThreadPtr> {
@@ -6506,8 +7125,9 @@ mod tests {
                 // SAFETY: Preemption is disabled by `PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION`.
                 let preempt_token = unsafe { PreemptDisabledToken::new() };
                 stack_pin_init!(let unblock_list = ThreadUnblockList::init());
-                // SAFETY: `owq_ref.lock()` is not held, `unblock_list` is empty, and the acquired
-                // locks are processed by `wake_threads_locked` below.
+                // SAFETY: No locks are held, no proof or guard for any node in `owq_ref`'s
+                // downstream PI chain or any waiter in `owq_ref` is live, `unblock_list` is empty,
+                // and the acquired locks are processed by `wake_threads_locked` below.
                 let Some(mut guard) = (unsafe {
                     owq_ref.lock_for_wake_operation_or_backoff(
                         1,
@@ -6551,7 +7171,9 @@ mod tests {
                 let mut guard = OwnerGuard::new(owq_ref, token);
                 let mut proof = guard.proof();
                 stack_pin_init!(let unblock_list = ThreadUnblockList::init());
-                // SAFETY: `unblock_list` is empty and the acquired locks are processed by
+                // SAFETY: No downstream or waiter locks are held, no proof or guard for any node in
+                // `owq_ref`'s downstream PI chain or any waiter in `owq_ref` is live,
+                // `unblock_list` is empty, and the acquired locks are processed by
                 // `wake_threads_locked` below.
                 if !unsafe {
                     proof.lock_for_wake_operation_locked(
@@ -6585,6 +7207,192 @@ mod tests {
         assert_eq!(unwrap_ok!(waiter_a.join()), 0);
         assert_eq!(unwrap_ok!(waiter_b.join()), 0);
         assert_true!(observe_owner(owq_ref).is_none());
+    }
+
+    /// Verifies the split single-waiter wake flow on empty and populated queues.
+    #[test]
+    fn split_wake_one_empty_and_populated() {
+        // Exercises `lock_for_wake_one_or_backoff` + `dequeue_one_and_release_locked` followed by
+        // a separate `scheduler::unblock` (the split flow used by `MessageWaiter::signal`).
+        stack_pin_init!(let owq = OwnedWaitQueue::init());
+        let owq_ref: &OwnedWaitQueue = &owq;
+        let queues = [owq_ref];
+        // SAFETY: Called from a running kernel thread.
+        let current_ptr = unsafe { ThreadPtr::current() };
+        // SAFETY: `current_ptr` is the currently executing thread.
+        let current = unsafe { current_ptr.as_ref() };
+
+        // An empty queue: nothing is dequeued, the hook is never consulted, and the queue's lock
+        // is released.
+        for option in [WakeOption::None, WakeOption::AssignOwner] {
+            let mut hook = CountHook::default();
+            let obs = wake_one_split(owq_ref, &mut hook, option);
+            assert_true!(obs.res == EMPTY_RESULT);
+            assert_true!(obs.waiter.is_none());
+            assert_true!(obs.queue_released);
+            assert_eq!(hook.allow_count, 0);
+            assert_eq!(hook.wake_count, 0);
+            expect_true!(owq_ref.lock().is_unlocked());
+        }
+
+        // Block a waiter which declares the test thread to be the owner of the queue.
+        let ctx_a = WaiterContext::new(owq_ref, Some(current_ptr));
+        // SAFETY: `waiter_a` is dropped (or joined) before `ctx_a`, and only blocks in `owq`.
+        let waiter_a = unwrap_ok!(unsafe { spawn_waiter(&ctx_a, &queues) });
+        assert_true!(observe_owner(owq_ref) == Some(current_ptr));
+        assert_true!(owns_any_queue(current));
+
+        // A hook which denies the waiter leaves it blocked, but still removes the owner.
+        let mut deny_hook = CountHook { deny: true, ..Default::default() };
+        let obs = wake_one_split(owq_ref, &mut deny_hook, WakeOption::None);
+        assert_true!(obs.res == WakeThreadsResult { woken: 0, still_waiting: 1, owner: None });
+        assert_true!(obs.waiter.is_none());
+        assert_true!(obs.queue_released);
+        assert_true!(deny_hook.allow_count >= 1);
+        assert_eq!(deny_hook.wake_count, 0);
+        assert_true!(observe_owner(owq_ref).is_none());
+        assert_true!(!owns_any_queue(current));
+
+        // Block a second waiter, then wake one thread and make it the owner, since another thread
+        // is still waiting. The queue's lock is released before the waiter is unblocked, while the
+        // waiter's lock is held until then.
+        let ctx_b = WaiterContext::new(owq_ref, None);
+        // SAFETY: `waiter_b` is dropped (or joined) before `ctx_b`, and only blocks in `owq`.
+        let waiter_b = unwrap_ok!(unsafe { spawn_waiter(&ctx_b, &queues) });
+        let mut assign_hook = CountHook::default();
+        let obs = wake_one_split(owq_ref, &mut assign_hook, WakeOption::AssignOwner);
+        assert_eq!(obs.res.woken, 1);
+        assert_eq!(obs.res.still_waiting, 1);
+        assert_true!(obs.waiter.is_some());
+        assert_true!(obs.res.owner == obs.waiter);
+        assert_true!(obs.queue_released);
+        assert_true!(obs.waiter_held_until_unblock);
+        assert_eq!(assign_hook.wake_count, 1);
+        assert_true!(assign_hook.last_thread == obs.waiter);
+        assert_true!(
+            obs.waiter == Some(waiter_a.thread()) || obs.waiter == Some(waiter_b.thread())
+        );
+        // `observe_owner` is not checked here: the woken owner may already have exited (which
+        // disowns the queue). `obs.res.owner` above checks the assignment deterministically.
+        let first = obs.waiter;
+
+        // Wake the remaining thread with `WakeOption::None`, which removes the owner.
+        let mut wake_hook = CountHook::default();
+        let obs = wake_one_split(owq_ref, &mut wake_hook, WakeOption::None);
+        assert_true!(obs.res == WakeThreadsResult { woken: 1, still_waiting: 0, owner: None });
+        assert_true!(obs.waiter.is_some());
+        assert_true!(obs.waiter != first);
+        assert_true!(obs.queue_released);
+        assert_true!(obs.waiter_held_until_unblock);
+        assert_eq!(wake_hook.wake_count, 1);
+        assert_true!(wake_hook.last_thread == obs.waiter);
+        assert_true!(observe_owner(owq_ref).is_none());
+
+        assert_eq!(unwrap_ok!(waiter_a.join()), 0);
+        assert_eq!(unwrap_ok!(waiter_b.join()), 0);
+        expect_true!(owq_ref.lock().is_unlocked());
+    }
+
+    /// Verifies `wake_threads(1, ..)` with two waiters clears the existing owner's PI edge.
+    #[test]
+    fn wake_one_of_two_clears_existing_owner() {
+        // With `WakeOption::None`, waking one of two waiters removes the old owner's PI edge
+        // while leaving the other waiter blocked in the (now unowned) queue.
+        stack_pin_init!(let owq = OwnedWaitQueue::init());
+        let owq_ref: &OwnedWaitQueue = &owq;
+        let queues = [owq_ref];
+        // SAFETY: Called from a running kernel thread.
+        let current_ptr = unsafe { ThreadPtr::current() };
+        // SAFETY: `current_ptr` is the currently executing thread.
+        let current = unsafe { current_ptr.as_ref() };
+        assert_true!(!owns_any_queue(current));
+
+        // Block two waiters, each declaring the test thread to be the owner of the queue.
+        let ctx_a = WaiterContext::new(owq_ref, Some(current_ptr));
+        // SAFETY: `waiter_a` is dropped (or joined) before `ctx_a`, and only blocks in `owq`.
+        let waiter_a = unwrap_ok!(unsafe { spawn_waiter(&ctx_a, &queues) });
+        let ctx_b = WaiterContext::new(owq_ref, Some(current_ptr));
+        // SAFETY: `waiter_b` is dropped (or joined) before `ctx_b`, and only blocks in `owq`.
+        let waiter_b = unwrap_ok!(unsafe { spawn_waiter(&ctx_b, &queues) });
+        assert_true!(observe_owner(owq_ref) == Some(current_ptr));
+        assert_true!(owns_any_queue(current));
+
+        let mut hook = CountHook::default();
+        let res = owq_ref.wake_threads(1, &mut hook);
+        assert_true!(res == WakeThreadsResult { woken: 1, still_waiting: 1, owner: None });
+        assert_true!(hook.allow_count >= 1);
+        assert_eq!(hook.wake_count, 1);
+        let first = hook.last_thread;
+        assert_true!(first == Some(waiter_a.thread()) || first == Some(waiter_b.thread()));
+        // The old owner's PI edge was removed: the queue has no owner, and the test thread no
+        // longer owns it.
+        assert_true!(observe_owner(owq_ref).is_none());
+        assert_true!(!owns_any_queue(current));
+
+        // Wake the remaining waiter.
+        let mut hook = CountHook::default();
+        let res = owq_ref.wake_threads(1, &mut hook);
+        assert_true!(res == WakeThreadsResult { woken: 1, still_waiting: 0, owner: None });
+        assert_eq!(hook.wake_count, 1);
+        assert_true!(hook.last_thread.is_some());
+        assert_true!(hook.last_thread != first);
+
+        assert_eq!(unwrap_ok!(waiter_a.join()), 0);
+        assert_eq!(unwrap_ok!(waiter_b.join()), 0);
+        assert_true!(observe_owner(owq_ref).is_none());
+        assert_true!(!owns_any_queue(current));
+    }
+
+    /// Verifies `wake_threads` stops at the first waiter rejected by `hook.allow`.
+    #[test]
+    fn wake_threads_stops_at_first_rejected_waiter() {
+        // When `hook.allow` rejects only the front waiter, `wake_threads` wakes nothing rather
+        // than skipping to the next waiter, on both the single-waiter (`wake_count == 1`) and
+        // multi-waiter paths.
+        stack_pin_init!(let owq = OwnedWaitQueue::init());
+        let owq_ref: &OwnedWaitQueue = &owq;
+        let queues = [owq_ref];
+
+        let ctx_a = WaiterContext::new(owq_ref, None);
+        // SAFETY: `waiter_a` is dropped (or joined) before `ctx_a`, and only blocks in `owq`.
+        let waiter_a = unwrap_ok!(unsafe { spawn_waiter(&ctx_a, &queues) });
+        let ctx_b = WaiterContext::new(owq_ref, None);
+        // SAFETY: `waiter_b` is dropped (or joined) before `ctx_b`, and only blocks in `owq`.
+        let waiter_b = unwrap_ok!(unsafe { spawn_waiter(&ctx_b, &queues) });
+
+        // Single-waiter path: only the front waiter is considered.
+        let mut reject_hook = RejectFirstHook::default();
+        let res = owq_ref.wake_threads(1, &mut reject_hook);
+        assert_true!(res == WakeThreadsResult { woken: 0, still_waiting: 2, owner: None });
+        assert_true!(reject_hook.rejected.is_some());
+        assert_true!(reject_hook.rejected_allow_count >= 1);
+        assert_eq!(reject_hook.other_allow_count, 0);
+        assert_eq!(reject_hook.wake_count, 0);
+        let front = reject_hook.rejected;
+        assert_true!(front == Some(waiter_a.thread()) || front == Some(waiter_b.thread()));
+
+        // Multi-waiter path: rejecting the front waiter also stops the wake.
+        let mut reject_hook = RejectFirstHook { rejected: front, ..Default::default() };
+        let res = owq_ref.wake_threads(2, &mut reject_hook);
+        assert_true!(res == WakeThreadsResult { woken: 0, still_waiting: 2, owner: None });
+        assert_true!(reject_hook.rejected_allow_count >= 1);
+        assert_eq!(reject_hook.other_allow_count, 0);
+        assert_eq!(reject_hook.wake_count, 0);
+
+        // The rejected waiter was indeed the front waiter: it is the one woken next.
+        let mut hook = CountHook::default();
+        let res = owq_ref.wake_threads(1, &mut hook);
+        assert_true!(res == WakeThreadsResult { woken: 1, still_waiting: 1, owner: None });
+        assert_true!(hook.last_thread == front);
+
+        let mut hook = CountHook::default();
+        let res = owq_ref.wake_threads(1, &mut hook);
+        assert_true!(res == WakeThreadsResult { woken: 1, still_waiting: 0, owner: None });
+        assert_true!(hook.last_thread.is_some());
+        assert_true!(hook.last_thread != front);
+
+        assert_eq!(unwrap_ok!(waiter_a.join()), 0);
+        assert_eq!(unwrap_ok!(waiter_b.join()), 0);
     }
 
     /// Verifies `OwnedWaitQueue` lock proofs and guarded field accessors.
@@ -6711,8 +7519,9 @@ mod tests {
                     // SAFETY: The queue is empty and `proof` proves the lock is held.
                     pi_res = unsafe { OwnedWaitQueue::lock_pi_chain(&mut proof, token) };
                     stack_pin_init!(let unblock_list = ThreadUnblockList::init());
-                    // SAFETY: `unblock_list` is empty and any locks acquired in `unblock_list` are
-                    // processed by `wake_threads_locked` below.
+                    // SAFETY: The queue is empty and unowned (so there are no waiters or downstream
+                    // PI chain), `unblock_list` is empty, and any locks acquired in `unblock_list`
+                    // are processed by `wake_threads_locked` below.
                     let ok = unsafe {
                         proof.lock_for_wake_operation_locked(
                             1,
@@ -6754,8 +7563,9 @@ mod tests {
                 // SAFETY: Preemption is disabled by `PREEMPT_DISABLE_AND_IRQ_SAVE_OPTION`.
                 let preempt_token = unsafe { PreemptDisabledToken::new() };
                 stack_pin_init!(let unblock_list = ThreadUnblockList::init());
-                // SAFETY: `owq_ref.lock()` is not held, `unblock_list` is empty, and the returned
-                // `guard` and `unblock_list` are processed and released below.
+                // SAFETY: `owq_ref.lock()` is not held, the queue is empty and unowned (so there
+                // are no waiters or downstream PI chain), `unblock_list` is empty, and the
+                // returned `guard` and `unblock_list` are processed and released below.
                 let mut guard = unsafe {
                     owq_ref.lock_for_wake_operation_or_backoff(
                         1,

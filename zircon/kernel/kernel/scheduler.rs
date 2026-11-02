@@ -2391,7 +2391,6 @@ unsafe extern "C" {
     fn cpp_save_state_list_destroy(holder: *mut SaveStateList);
 
     fn cpp_thread_call_migrate_fn_for_cpu(cpu: CpuNum);
-    fn cpp_scheduler_block(current_thread: *mut Thread);
 }
 
 /// Returns a pointer to the `ChainLock` embedded in `thread`.
@@ -9547,20 +9546,36 @@ impl Scheduler {
     }
 }
 
-/// Callback for `Scheduler::Block`.
+/// Blocks the already-blocked `current_thread` on the current CPU's scheduler by rescheduling
+/// via `Scheduler::reschedule_common`.
+///
+/// This is the shared implementation of both the Rust [`block`] API and the C++
+/// `Scheduler::Block` FFI entry point ([`rust_kernel_scheduler_block`]). The scheduler drops
+/// `current_thread`'s lock during the context switch and reacquires it before returning when
+/// `current_thread` becomes runnable again.
 ///
 /// # Safety
-/// `current_thread` must be valid and be the current thread, interrupts must be
-/// disabled, an active `ChainLockTransaction` must hold `current_thread`'s lock
-/// (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`), and no
-/// scheduler's `queue_lock_` may be held (`TA_EXCL(queue_lock_)`).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread) {
+///
+/// The caller must ensure that (as required by `Scheduler::reschedule_common`):
+/// - `current_thread` is non-null, properly aligned, and points to the live [`Thread`] currently
+///   executing on this CPU (`current_get()`), with no conflicting mutable references to its
+///   `SchedulerState`, and has already been transitioned to a non-`Running` (blocked) state.
+/// - Interrupts are disabled, and no scheduler's `queue_lock_` is held (`TA_EXCL(queue_lock_)`).
+/// - The active `ChainLockTransaction` is finalized with `current_thread`'s lock as the only held
+///   chain lock (`assert_num_locks_held(1)`;
+///   `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - No spinlocks are held on the current CPU (`cpp_arch_num_spinlocks_held() == 0`), and blocking
+///   is permitted (`!arch_rs::blocking_disallowed()`).
+#[inline]
+unsafe fn block_raw(current_thread: *mut Thread) {
     let mut trace = local_ktrace_begin_scope!(COMMON, "sched_block");
     debug_assert_eq!(current_thread, super::thread::current_get());
     // SAFETY: `current_thread` is valid and locked by the caller.
     unsafe { Thread::assert_canary_ptr(current_thread) };
     debug_assert!(
+        // SAFETY: The caller guarantees that `current_thread` points to the live current thread
+        // and that no conflicting mutable reference to its `SchedulerState` exists, and its lock
+        // (held by the active transaction) guards `state`, so this read is race-free.
         unsafe { (*cpp_thread_get_scheduler_state(current_thread)).state } != ThreadState::Running
     );
     // SAFETY: Interrupts are disabled and `current_thread` is locked on the current
@@ -9572,6 +9587,32 @@ pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread
             trace.as_mut().map(|s| s as &mut dyn ktrace_rs::ErasedScope),
         );
     }
+}
+
+/// Callback for `Scheduler::Block`: blocks the already-blocked `current_thread` on the current
+/// CPU's scheduler.
+///
+/// This is a thin FFI trampoline to [`block_raw`]; Rust callers should use [`block`] instead.
+///
+/// # Safety
+///
+/// The caller must ensure that (as required by `Scheduler::reschedule_common`):
+/// - `current_thread` is non-null, properly aligned, and points to the live `Thread` currently
+///   executing on this CPU (`current_get()`), with no conflicting mutable references to its
+///   `SchedulerState`, and has already been transitioned to a non-`Running` (blocked) state.
+/// - Interrupts are disabled, and no scheduler's `queue_lock_` is held (`TA_EXCL(queue_lock_)`).
+/// - The active `ChainLockTransaction` is finalized with `current_thread`'s lock as the only held
+///   chain lock (`assert_num_locks_held(1)`;
+///   `TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
+/// - No spinlocks are held on the current CPU (`cpp_arch_num_spinlocks_held() == 0`), and blocking
+///   is permitted (`!arch_rs::blocking_disallowed()`).
+// SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration
+// `void rust_kernel_scheduler_block(Thread* current_thread)` in
+// `zircon/kernel/include/kernel/scheduler.h`, whose only caller is `Scheduler::Block`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread) {
+    // SAFETY: Forwarded from the caller.
+    unsafe { block_raw(current_thread) };
 }
 
 /// Called when the preemption timer for a CPU has fired.
@@ -13011,7 +13052,7 @@ pub unsafe extern "C" fn rust_scheduler_get_processing_limits(
 
 /// Blocks `current_thread` in the scheduler.
 ///
-/// The scheduler drops `current_thread`'s lock during the context switch and re-acquires it
+/// The scheduler drops `current_thread`'s lock during the context switch and reacquires it
 /// before returning when `current_thread` becomes runnable again.
 ///
 /// # Safety
@@ -13031,7 +13072,7 @@ pub unsafe fn block(
     // SAFETY: `current_thread` proves `current_thread.owner().lock()` is held in the active
     // transaction, and the caller upholds the scheduler blocking preconditions.
     unsafe {
-        cpp_scheduler_block(current_thread.owner().as_raw());
+        block_raw(current_thread.owner().as_raw());
     }
 }
 

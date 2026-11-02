@@ -942,6 +942,169 @@ void TestBadSyscall(std::string_view name, uint64_t syscall_number) {
 TEST(Threads, BadSyscallCaller) { TestBadSyscall("BadSyscallCaller", 1); }
 TEST(Threads, BadSyscallNumber) { TestBadSyscall("BadSyscallNumber", 10000); }
 
+// Suspends |test_thread| while it is blocked in zx_channel_call (so the kernel returns
+// ZX_ERR_INTERNAL_INTR_RETRY and leaves the thread's channel call waiter queued on the channel),
+// reads the request message from |server| into |txid|, and redirects the thread to
+// zx_thread_exit so that it exits on resume without ever calling zx_channel_call_finish.
+void SuspendChannelCallAndRedirectToExit(const TestThread& test_thread, const zx::channel& server,
+                                         zx::suspend_token* suspend_token, zx_txid_t* txid) {
+  // Wait for the thread to send its request and block waiting for the reply.
+  ASSERT_OK(server.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+  ASSERT_NO_FATAL_FAILURE(
+      wait_thread_blocked(test_thread.thread().get(), ZX_THREAD_STATE_BLOCKED_CHANNEL));
+
+  ASSERT_NO_FATAL_FAILURE(suspend_thread_synchronous(test_thread.thread().get(),
+                                                     suspend_token->reset_and_get_address()));
+
+  uint8_t request[9];
+  uint32_t actual_bytes = 0;
+  ASSERT_OK(server.read(0, request, nullptr, sizeof(request), 0, &actual_bytes, nullptr));
+  ASSERT_EQ(actual_bytes, sizeof(request));
+  memcpy(txid, request, sizeof(*txid));
+
+  ASSERT_NO_FATAL_FAILURE(jump_to_thread_exit(test_thread.thread().get()));
+}
+
+// Writes a reply for the channel call request with |txid| to |server|, carrying a duplicate of
+// |event|, so that a leaked or doubly-closed reply would show up in |event|'s handle count.
+void WriteChannelCallReplyWithHandle(const zx::channel& server, zx_txid_t txid,
+                                     const zx::event& event) {
+  uint8_t reply[9] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j'};
+  memcpy(reply, &txid, sizeof(txid));
+  zx::event dup;
+  ASSERT_OK(event.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+  zx_handle_t handle = dup.release();
+  ASSERT_OK(server.write(0, reply, sizeof(reply), &handle, 1));
+}
+
+uint32_t GetHandleCount(const zx::event& event) {
+  zx_info_handle_count_t info = {};
+  EXPECT_OK(event.get_info(ZX_INFO_HANDLE_COUNT, &info, sizeof(info), nullptr, nullptr));
+  return info.handle_count;
+}
+
+// A thread suspended in zx_channel_call exits before calling zx_channel_call_finish while its
+// waiter is still queued on the channel. The kernel must cancel the pending wait as the thread
+// exits, so a reply written afterwards is queued on the caller's endpoint as an ordinary message
+// rather than delivered to the exited thread's waiter.
+TEST(Threads, SuspendChannelCallThenExit) {
+  zx::channel server;
+  channel_call_suspend_test_arg thread_arg = {.channel = ZX_HANDLE_INVALID,
+                                              .call_status = ZX_ERR_BAD_STATE};
+  ASSERT_OK(zx_channel_create(0, &thread_arg.channel, server.reset_and_get_address()));
+  // The thread exits without closing its endpoint, so the test owns it.
+  zx::channel client(thread_arg.channel);
+
+  TestThread test_thread;
+  ASSERT_NO_FATAL_FAILURE(test_thread.Init("SuspendChannelCallThenExit"));
+  ASSERT_NO_FATAL_FAILURE(test_thread.Start(threads_test_channel_call_fn, &thread_arg));
+
+  zx::suspend_token suspend_token;
+  zx_txid_t txid = 0;
+  ASSERT_NO_FATAL_FAILURE(
+      SuspendChannelCallAndRedirectToExit(test_thread, server, &suspend_token, &txid));
+
+  // Resume the thread, which exits while its waiter is still queued on the channel.
+  suspend_token.reset();
+  ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
+  // zx_channel_call never returned to the thread.
+  EXPECT_EQ(thread_arg.call_status, ZX_ERR_BAD_STATE);
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_NO_FATAL_FAILURE(WriteChannelCallReplyWithHandle(server, txid, event));
+
+  // The reply must have been queued on the caller's endpoint.
+  uint8_t reply[9];
+  zx::handle received;
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(client.read(0, reply, received.reset_and_get_address(), sizeof(reply), 1, &actual_bytes,
+                        &actual_handles));
+  EXPECT_EQ(actual_bytes, sizeof(reply));
+  EXPECT_EQ(actual_handles, 1u);
+  zx_txid_t reply_txid = 0;
+  memcpy(&reply_txid, reply, sizeof(reply_txid));
+  EXPECT_EQ(reply_txid, txid);
+
+  received.reset();
+  EXPECT_EQ(GetHandleCount(event), 1u);
+}
+
+enum class ChannelCallPeerAction {
+  kReply,
+  kClose,
+  kReplyThenClose,
+};
+
+// Races the exit of a thread suspended in zx_channel_call (before it calls
+// zx_channel_call_finish) against the peer replying with a handle and/or closing its endpoint, so
+// that the exiting thread may either find its waiter still queued, or find it already unlinked
+// by the peer and have to wait for the peer's in-flight signal.
+void RunSuspendedChannelCallExitRace(ChannelCallPeerAction action) {
+  constexpr int kIterations = 50;
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  for (int i = 0; i < kIterations; ++i) {
+    zx::channel server;
+    channel_call_suspend_test_arg thread_arg = {.channel = ZX_HANDLE_INVALID,
+                                                .call_status = ZX_ERR_BAD_STATE};
+    ASSERT_OK(zx_channel_create(0, &thread_arg.channel, server.reset_and_get_address()));
+    // The thread exits without closing its endpoint, so the test owns it.
+    zx::channel client(thread_arg.channel);
+
+    TestThread test_thread;
+    ASSERT_NO_FATAL_FAILURE(test_thread.Init("SuspendedChannelCallExitRace"));
+    ASSERT_NO_FATAL_FAILURE(test_thread.Start(threads_test_channel_call_fn, &thread_arg));
+
+    zx::suspend_token suspend_token;
+    zx_txid_t txid = 0;
+    ASSERT_NO_FATAL_FAILURE(
+        SuspendChannelCallAndRedirectToExit(test_thread, server, &suspend_token, &txid));
+
+    std::atomic<bool> go{false};
+    std::thread peer([&]() {
+      while (!go.load()) {
+      }
+      if (action != ChannelCallPeerAction::kClose) {
+        WriteChannelCallReplyWithHandle(server, txid, event);
+      }
+      if (action != ChannelCallPeerAction::kReply) {
+        server.reset();
+      }
+    });
+
+    // Resume the thread so that it exits concurrently with the peer's action.
+    go.store(true);
+    suspend_token.reset();
+    peer.join();
+    ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
+    // zx_channel_call never returned to the thread.
+    EXPECT_EQ(thread_arg.call_status, ZX_ERR_BAD_STATE);
+
+    // Destroy both endpoints along with any reply still queued on the caller's endpoint. Whether
+    // the reply was delivered to the exiting thread's waiter or queued on the caller's endpoint,
+    // its handle must have been closed exactly once.
+    client.reset();
+    server.reset();
+    ASSERT_EQ(GetHandleCount(event), 1u, "iteration %d", i);
+  }
+}
+
+TEST(Threads, SuspendChannelCallThenExitRacesWithReply) {
+  ASSERT_NO_FATAL_FAILURE(RunSuspendedChannelCallExitRace(ChannelCallPeerAction::kReply));
+}
+
+TEST(Threads, SuspendChannelCallThenExitRacesWithPeerClose) {
+  ASSERT_NO_FATAL_FAILURE(RunSuspendedChannelCallExitRace(ChannelCallPeerAction::kClose));
+}
+
+TEST(Threads, SuspendChannelCallThenExitRacesWithReplyThenPeerClose) {
+  ASSERT_NO_FATAL_FAILURE(RunSuspendedChannelCallExitRace(ChannelCallPeerAction::kReplyThenClose));
+}
+
 TEST(Threads, ExitViaException) {
   TestThread test_thread;
   ASSERT_NO_FATAL_FAILURE(test_thread.Init("ExitViaException"));

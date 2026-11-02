@@ -119,7 +119,7 @@ pub struct ThreadDispatcherState {
     /// Needed to support the requirements of being able to interrupt a call
     /// in order to suspend a thread.
     #[pin]
-    pub(crate) channel_waiter: MessageWaiter,
+    pub(super) channel_waiter: MessageWaiter,
 
     /// A lower level lock which is needed to satisfy some odd synchronization
     /// requirements when blocking a thread in a futex and declaring a new owner in
@@ -251,14 +251,24 @@ impl core::ops::Deref for CurrentThreadDispatcher {
     }
 }
 
-/// A wrapper around a raw pointer to the current thread's [`MessageWaiter`].
+/// A wrapper around a pointer to the current thread's [`MessageWaiter`].
 ///
-/// This type explicitly does not implement [`Send`] or [`Sync`], guaranteeing that it cannot be
-/// shared with or sent to other threads. Because the [`MessageWaiter`] is embedded in the
-/// currently executing [`ThreadDispatcher`], it cannot be destroyed while this thread is
-/// executing, making it safe to dereference the raw pointer into a [`MessageWaiter`] reference.
+/// This type explicitly does not implement [`Send`] or [`Sync`] (`NonNull` is neither),
+/// guaranteeing that it cannot be shared with or sent to other threads. Because the
+/// [`MessageWaiter`] is embedded in the currently executing [`ThreadDispatcher`], it cannot be
+/// destroyed while this thread is executing, making it safe to dereference the pointer into a
+/// [`MessageWaiter`] reference.
 pub struct CurrentMessageWaiter {
-    ptr: *const MessageWaiter,
+    ptr: core::ptr::NonNull<MessageWaiter>,
+}
+
+impl CurrentMessageWaiter {
+    /// Returns a pointer to the current thread's [`MessageWaiter`], without materializing an
+    /// intermediate `&MessageWaiter`.
+    #[inline]
+    pub fn as_non_null(&self) -> core::ptr::NonNull<MessageWaiter> {
+        self.ptr
+    }
 }
 
 impl core::ops::Deref for CurrentMessageWaiter {
@@ -269,7 +279,7 @@ impl core::ops::Deref for CurrentMessageWaiter {
         // SAFETY: `CurrentMessageWaiter` does not implement `Send` or `Sync`, so it cannot be
         // shared with other threads. `self.ptr` points to the `MessageWaiter` embedded in the
         // current `ThreadDispatcher`, which cannot be destroyed while this thread is executing.
-        unsafe { &*self.ptr }
+        unsafe { self.ptr.as_ref() }
     }
 }
 
@@ -307,7 +317,7 @@ impl ThreadDispatcher {
     #[inline]
     pub fn get_current_message_waiter() -> CurrentMessageWaiter {
         let current = Self::get_current();
-        CurrentMessageWaiter { ptr: &raw const current.state().channel_waiter }
+        CurrentMessageWaiter { ptr: core::ptr::NonNull::from(&current.state().channel_waiter) }
     }
 
     /// Asserts that the dispatcher state is valid.
@@ -1012,8 +1022,15 @@ impl ThreadDispatcher {
     }
 
     /// This is called from Thread as it is exiting, just before it stops for good.
-    /// It is an error to call this on anything other than the current thread.
-    pub fn exiting_current(&self) {
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be the currently executing user thread (`self.is_current()`), which is exiting
+    ///   and will never reenter userspace or issue another syscall.
+    /// - The calling thread must hold no spinlocks or chain locks and be in a valid state to block
+    ///   (canceling a pending channel wait may block until an in-flight `signal()` completes).
+    pub unsafe fn exiting_current(&self) {
+        debug_assert!(self.is_current());
         self.state().canary.assert();
         ltrace_entry_obj!(self);
         {
@@ -1023,6 +1040,16 @@ impl ThreadDispatcher {
             unsafe {
                 self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dying);
             }
+        }
+
+        // If this thread was interrupted during `zx_channel_call` and is exiting before calling
+        // `zx_channel_call_finish`, cancel its pending channel wait now while still on the exiting
+        // user thread so that `channel_waiter.channel` is `None` before `~ThreadDispatcher()`.
+        // SAFETY: Per the caller, `self` is the currently exiting user thread (which owns
+        // `channel_waiter`), which will never reenter userspace or issue another syscall, and
+        // holds no spinlocks or chain locks and is in a valid state to block.
+        unsafe {
+            self.state().channel_waiter.cancel_pending_wait();
         }
 
         // Notify a debugger if attached. Do this before marking the thread as
