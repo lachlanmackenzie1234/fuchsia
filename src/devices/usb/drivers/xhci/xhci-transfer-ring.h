@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_XHCI_XHCI_TRANSFER_RING_H_
 #define SRC_DEVICES_USB_DRIVERS_XHCI_XHCI_TRANSFER_RING_H_
 
-#include <fuchsia/hardware/usb/request/c/banjo.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 

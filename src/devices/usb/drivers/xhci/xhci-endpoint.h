@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
-#include <fuchsia/hardware/usb/request/c/banjo.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <vector>
