@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::reader::{BlockService, read_aligned_range, read_aligned_range_with_precommit};
+use crate::reader::{
+    BlockService, MAX_READ_BUFFER_SIZE, read_aligned_range, read_aligned_range_with_precommit,
+};
 use crate::{
     BLOCK_SIZE, ENCRYPTION_KEY_SIZE, Extents, MappingCommand, NullPageRequest, PageRequest,
     RawMappingCommand,
@@ -160,6 +162,38 @@ impl File {
         }
     }
 
+    /// Returns the maximum uncompressed byte length for a single [`PageRequest`] window on a file
+    /// with `window_alignment` (`MAX_READ_BUFFER_SIZE` rounded down to a multiple of
+    /// `window_alignment`, or `window_alignment` if larger).
+    fn max_page_request_window(window_alignment: u64) -> u64 {
+        std::cmp::max(
+            (MAX_READ_BUFFER_SIZE as u64 / window_alignment) * window_alignment,
+            window_alignment,
+        )
+    }
+
+    /// Expands `original_range` to `window_alignment` boundaries, clamped to the page-aligned end
+    /// of the file, or returns `None` if `original_range` is empty or starts past the end of the
+    /// file.
+    fn aligned_read_range(
+        &self,
+        original_range: Range<u64>,
+        window_alignment: u64,
+    ) -> Option<Range<u64>> {
+        if original_range.is_empty() {
+            return None;
+        }
+        let page_size = zx::system_get_page_size() as u64;
+        let page_aligned_size = self.uncompressed_size.next_multiple_of(page_size);
+        if original_range.start >= page_aligned_size {
+            return None;
+        }
+        Some(
+            (original_range.start / window_alignment) * window_alignment
+                ..min(original_range.end.next_multiple_of(window_alignment), page_aligned_size),
+        )
+    }
+
     /// Streams and decodes the uncompressed range requested by `page_request`, applying readahead.
     pub fn read_range(
         self: &Arc<Self>,
@@ -191,23 +225,33 @@ impl File {
         mut page_request: impl PageRequest,
         record_offset: impl Fn(u64),
     ) {
-        let page_size = zx::system_get_page_size() as u64;
-        let original_range = page_request.range();
-        if original_range.is_empty() {
-            return;
+        let max_window = Self::max_page_request_window(window_alignment);
+        loop {
+            let range = page_request.range();
+            let max_end = (range.start / max_window + 1) * max_window;
+            if range.end > max_end {
+                let head = page_request.split_at(max_end);
+                self.read_single_window(window_alignment, service, head, &record_offset);
+            } else {
+                self.read_single_window(window_alignment, service, page_request, &record_offset);
+                break;
+            }
         }
+    }
 
-        let page_aligned_size = self.uncompressed_size.next_multiple_of(page_size);
-        if original_range.start >= page_aligned_size {
+    fn read_single_window(
+        self: &Arc<Self>,
+        window_alignment: u64,
+        service: &(impl BlockService + ?Sized),
+        mut page_request: impl PageRequest,
+        record_offset: &impl Fn(u64),
+    ) {
+        let Some(read_range) = self.aligned_read_range(page_request.range(), window_alignment)
+        else {
             return;
-        }
+        };
 
         let chunk_size = self.verification_alignment();
-        let read_range = (original_range.start / window_alignment) * window_alignment
-            ..std::cmp::min(
-                original_range.end.next_multiple_of(window_alignment),
-                page_aligned_size,
-            );
         if page_request.prepare(read_range.clone(), chunk_size as usize).is_err() {
             return;
         }
@@ -368,18 +412,11 @@ impl File {
         service: &(impl BlockService + ?Sized),
         delivery_handler: &Arc<D>,
     ) -> bool {
-        let page_size = zx::system_get_page_size() as u64;
-        if original_range.is_empty() {
+        let Some(child_read_range) =
+            self.aligned_read_range(original_range, self.read_ahead_size())
+        else {
             return false;
-        }
-        let page_aligned_size = self.uncompressed_size.next_multiple_of(page_size);
-        if original_range.start >= page_aligned_size {
-            return false;
-        }
-        let read_ahead_size = self.read_ahead_size();
-        let raw_start = (original_range.start / read_ahead_size) * read_ahead_size;
-        let raw_end = min(original_range.end.next_multiple_of(read_ahead_size), page_aligned_size);
-        let child_read_range = raw_start..raw_end;
+        };
         let parent_align = parent_file.verification_alignment();
 
         let mut started_async_io = false;
@@ -401,11 +438,10 @@ impl File {
                 }
                 crate::DeviceExtent::Block(dev_offset) => {
                     let parent_start = dev_offset + (slice_start - extent.logical_range().start);
-                    let parent_byte_range = parent_start..(parent_start + slice_len);
                     let child_req = delivery_handler.get_child_page_request(
                         child_key,
                         slice_start,
-                        parent_byte_range,
+                        parent_start..(parent_start + slice_len),
                     );
                     parent_file.read_range_with_alignment(parent_align, service, child_req);
                     started_async_io = true;
@@ -701,33 +737,13 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
         PagerThread { files: self.clone(), thread: Some(thread) }
     }
 
-    // Dispatches a page request for an already-loaded `file`. When `self.parent` is `Some`, calls
-    // `file.read_child_range` directly without allocating a root `D::Request` first.
-    fn dispatch_page_range(&self, key: u64, file: &Arc<File>, original_range: Range<u64>) {
-        if let Some(parent_file) = &self.parent {
-            let _ = file.read_child_range(
-                key,
-                original_range,
-                parent_file,
-                self.service.as_ref(),
-                &self.delivery_handler,
-            );
-        } else {
-            let req = self.delivery_handler.get_page_request(key, original_range);
-            self.dispatch_page_request(key, file, req);
-        }
-    }
-
-    // Dispatches a `D::Request` (including requests that were queued in `LoadingSlot` while
-    // metadata was still loading) to either `file.read_child_range` (for child sessions) or
+    // Dispatches a `D::Request` to either `file.read_child_range` (for child sessions) or
     // `file.read_range_with_recording` (for root sessions).
     fn dispatch_page_request(&self, key: u64, file: &Arc<File>, req: D::Request) {
-        let original_range = req.range();
         if let Some(parent_file) = &self.parent {
-            drop(req);
             let _ = file.read_child_range(
                 key,
-                original_range,
+                req.range(),
                 parent_file,
                 self.service.as_ref(),
                 &self.delivery_handler,
@@ -793,16 +809,6 @@ impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Files<S, D> {
     // If the file is currently loading or unmapped, queues the request to be fulfilled
     // when loaded.
     fn handle_page_request(&self, key: u64, range: Range<u64>) {
-        {
-            let map = self.map.lock();
-            if let Some(FileEntry::Loaded(file)) = map.get(&key) {
-                let file = Arc::clone(file);
-                drop(map);
-                self.dispatch_page_range(key, &file, range);
-                return;
-            }
-        }
-
         let req = self.delivery_handler.get_page_request(key, range);
         let mut map = self.map.lock();
         match map.entry(key) {
@@ -2048,6 +2054,9 @@ mod tests {
             ) -> Result<(), ChunkedArchiveError> {
                 Ok(())
             }
+            fn split_at(&mut self, _mid: u64) -> Self {
+                unreachable!()
+            }
         }
 
         let metadata = BlobMetadata {
@@ -3140,6 +3149,9 @@ mod tests {
                 self.range = read_range;
                 Ok(())
             }
+            fn split_at(&mut self, _mid: u64) -> Self {
+                unreachable!()
+            }
             fn precommit(&self) -> PagePrecommit {
                 PagePrecommit::new(self.vaddr, self.len, self.keep_alive.clone())
             }
@@ -3176,5 +3188,269 @@ mod tests {
         unsafe {
             let _ = fuchsia_runtime::vmar_root_self().unmap(vaddr, 2 * page_size);
         }
+    }
+
+    #[fuchsia::test]
+    fn test_files_splits_large_page_request_into_1mib_windows() {
+        use delivery_blob::compression::ChunkedArchiveError;
+
+        struct RecordingRequest {
+            range: Range<u64>,
+            buf: Vec<u8>,
+            prepared_ranges: Arc<Mutex<Vec<Range<u64>>>>,
+        }
+
+        impl DataBuffer for RecordingRequest {
+            fn range(&self) -> Range<u64> {
+                self.range.clone()
+            }
+            fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
+                MutPtrByteSlice::from(&mut self.buf[..])
+            }
+            fn commit(&mut self, _size: usize) -> Result<(), ChunkedArchiveError> {
+                Ok(())
+            }
+        }
+
+        impl PageRequest for RecordingRequest {
+            fn prepare(
+                &mut self,
+                read_range: Range<u64>,
+                _read_alignment: usize,
+            ) -> Result<(), ChunkedArchiveError> {
+                let len = (read_range.end - read_range.start) as usize;
+                assert!(len <= MAX_READ_BUFFER_SIZE, "prepared range {len} > 1 MiB");
+                self.buf = vec![0u8; len];
+                self.prepared_ranges.lock().push(read_range);
+                Ok(())
+            }
+
+            fn split_at(&mut self, mid: u64) -> Self {
+                let head_range = self.range.start..mid;
+                self.range.start = mid;
+                Self {
+                    range: head_range,
+                    buf: Vec::new(),
+                    prepared_ranges: self.prepared_ranges.clone(),
+                }
+            }
+        }
+
+        let file_size = (2 * MAX_READ_BUFFER_SIZE + 256 * 1024) as u64;
+        let service = Arc::new(FakeBlockService::new(vec![0xABu8; file_size as usize]));
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let prepared_clone = prepared.clone();
+        let files = Arc::new(Files::new(
+            service,
+            TestDeliveryHandler(move |_k, range| RecordingRequest {
+                range,
+                buf: Vec::new(),
+                prepared_ranges: prepared_clone.clone(),
+            }),
+            zx::Port::create(),
+        ));
+
+        let extents = Extents::try_new([Extent::new(0..file_size, Some(0))], 0).expect("extents");
+        let file = Arc::new(File::new(extents, file_size, Transform::None));
+        files.insert(77, file);
+
+        files.handle_page_request(77, 0..file_size);
+        let ranges = prepared.lock().clone();
+        let mib = MAX_READ_BUFFER_SIZE as u64;
+        assert_eq!(ranges, vec![0..mib, mib..2 * mib, 2 * mib..file_size]);
+    }
+
+    #[fuchsia::test]
+    fn test_child_files_splits_large_page_requests_and_handles_deferred_loading() {
+        use delivery_blob::compression::ChunkedArchiveError;
+
+        #[derive(Clone, Debug, PartialEq)]
+        struct RecordedChildSlice {
+            child_key: u64,
+            child_target_offset: u64,
+            parent_byte_range: Range<u64>,
+            prepared_parent_range: Range<u64>,
+        }
+
+        struct ChildRecordingRequest {
+            range: Range<u64>,
+            buf: Vec<u8>,
+            child_meta: Option<(u64, u64, Range<u64>)>,
+            recorded: Arc<Mutex<Vec<RecordedChildSlice>>>,
+            on_record: Arc<fuchsia_sync::Condvar>,
+        }
+
+        impl DataBuffer for ChildRecordingRequest {
+            fn range(&self) -> Range<u64> {
+                self.range.clone()
+            }
+            fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
+                MutPtrByteSlice::from(&mut self.buf[..])
+            }
+            fn commit(&mut self, _size: usize) -> Result<(), ChunkedArchiveError> {
+                Ok(())
+            }
+        }
+
+        impl PageRequest for ChildRecordingRequest {
+            fn prepare(
+                &mut self,
+                read_range: Range<u64>,
+                _read_alignment: usize,
+            ) -> Result<(), ChunkedArchiveError> {
+                let len = (read_range.end - read_range.start) as usize;
+                assert!(len <= MAX_READ_BUFFER_SIZE, "prepared child parent range {len} > 1 MiB");
+                self.buf = vec![0u8; len];
+                let (child_key, child_target_offset, parent_byte_range) = self
+                    .child_meta
+                    .take()
+                    .expect("root get_page_request should not be prepared for child session");
+                self.recorded.lock().push(RecordedChildSlice {
+                    child_key,
+                    child_target_offset,
+                    parent_byte_range,
+                    prepared_parent_range: read_range,
+                });
+                self.on_record.notify_all();
+                Ok(())
+            }
+
+            fn split_at(&mut self, mid: u64) -> Self {
+                let head_range = self.range.start..mid;
+                let head_meta =
+                    self.child_meta.as_mut().map(|(child_key, child_offset, parent_range)| {
+                        let head = (*child_key, *child_offset, head_range.clone());
+                        *child_offset += mid - head_range.start;
+                        parent_range.start = mid;
+                        head
+                    });
+                self.range.start = mid;
+                Self {
+                    range: head_range,
+                    buf: Vec::new(),
+                    child_meta: head_meta,
+                    recorded: self.recorded.clone(),
+                    on_record: self.on_record.clone(),
+                }
+            }
+        }
+
+        struct ChildRecordingHandler {
+            recorded: Arc<Mutex<Vec<RecordedChildSlice>>>,
+            on_record: Arc<fuchsia_sync::Condvar>,
+        }
+
+        impl DeliveryHandler for ChildRecordingHandler {
+            type Request = ChildRecordingRequest;
+
+            fn get_page_request(self: &Arc<Self>, _key: u64, range: Range<u64>) -> Self::Request {
+                ChildRecordingRequest {
+                    range,
+                    buf: Vec::new(),
+                    child_meta: None,
+                    recorded: self.recorded.clone(),
+                    on_record: self.on_record.clone(),
+                }
+            }
+
+            fn get_child_page_request(
+                self: &Arc<Self>,
+                child_key: u64,
+                child_target_offset: u64,
+                parent_byte_range: Range<u64>,
+            ) -> Self::Request {
+                ChildRecordingRequest {
+                    range: parent_byte_range.clone(),
+                    buf: Vec::new(),
+                    child_meta: Some((child_key, child_target_offset, parent_byte_range)),
+                    recorded: self.recorded.clone(),
+                    on_record: self.on_record.clone(),
+                }
+            }
+        }
+
+        let mib = MAX_READ_BUFFER_SIZE as u64;
+        let parent_size = 2 * mib + 256 * 1024;
+        let child_size = 2 * mib;
+        let service = Arc::new(FakeBlockService::new(vec![0xCDu8; parent_size as usize]));
+
+        let parent_extents =
+            Extents::try_new([Extent::new(0..parent_size, Some(0))], 0).expect("parent extents");
+        let parent_file = Arc::new(File::new(parent_extents, parent_size, Transform::None));
+
+        // Map the 2 MiB child file starting at an unaligned 4 KiB block offset in the parent so a
+        // 2 MiB child read (`0..2 MiB` -> `4 KiB..2 MiB + 4 KiB` in parent) crosses two 1 MiB
+        // parent window boundaries (`1 MiB` and `2 MiB`).
+        let dev_offset = 4096u64;
+        let child_extents =
+            Extents::try_new([Extent::new(0..child_size, Some(dev_offset))], 0).expect("extents");
+        let child_file = Arc::new(File::new(child_extents, child_size, Transform::None));
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let on_record = Arc::new(fuchsia_sync::Condvar::new());
+        let handler = Arc::new(ChildRecordingHandler {
+            recorded: recorded.clone(),
+            on_record: on_record.clone(),
+        });
+        let child_files = Arc::new(Files::new_with_shared_handler(
+            service,
+            handler,
+            zx::Port::create(),
+            Some(parent_file),
+        ));
+        let _pager_thread = child_files.spawn_pager_thread();
+
+        // 1. Queue a 4 KiB child page request while the child file is not yet loaded, then insert
+        // the child file so `PagerThread` dispatches it through `dispatch_page_request` ->
+        // `dispatch_page_range` -> `read_child_range`.
+        child_files.handle_page_request(88, 0..4096);
+        assert!(child_files.has_queued_page_requests(88));
+        child_files.insert(88, child_file);
+
+        {
+            let mut guard = recorded.lock();
+            while guard.is_empty() {
+                on_record.wait(&mut guard);
+            }
+            assert_eq!(
+                &*guard,
+                &[RecordedChildSlice {
+                    child_key: 88,
+                    child_target_offset: 0,
+                    parent_byte_range: dev_offset..(dev_offset + TARGET_READ_AHEAD_SIZE),
+                    prepared_parent_range: 0..(TARGET_READ_AHEAD_SIZE
+                        + DEFAULT_VERIFICATION_ALIGNMENT),
+                }]
+            );
+            guard.clear();
+        }
+
+        // 2. Dispatch a 2 MiB request on the loaded child file and verify it is split at the 1 MiB
+        // and 2 MiB parent boundaries so each prepared parent range is <= 1 MiB.
+        child_files.handle_page_request(88, 0..child_size);
+        let slices = recorded.lock().clone();
+        assert_eq!(
+            slices,
+            vec![
+                RecordedChildSlice {
+                    child_key: 88,
+                    child_target_offset: 0,
+                    parent_byte_range: dev_offset..mib,
+                    prepared_parent_range: 0..mib,
+                },
+                RecordedChildSlice {
+                    child_key: 88,
+                    child_target_offset: mib - dev_offset,
+                    parent_byte_range: mib..(2 * mib),
+                    prepared_parent_range: mib..(2 * mib),
+                },
+                RecordedChildSlice {
+                    child_key: 88,
+                    child_target_offset: 2 * mib - dev_offset,
+                    parent_byte_range: (2 * mib)..(2 * mib + dev_offset),
+                    prepared_parent_range: (2 * mib)..(2 * mib + DEFAULT_VERIFICATION_ALIGNMENT),
+                },
+            ]
+        );
     }
 }

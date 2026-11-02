@@ -56,7 +56,7 @@ impl PagePrecommit {
 }
 
 /// Trait for servicing a page request.
-pub trait PageRequest: DataBuffer {
+pub trait PageRequest: DataBuffer + Sized {
     /// Prepares the target buffer for reading `read_range`.
     ///
     /// `read_alignment` specifies the alignment boundary used when delivering chunks for Merkle
@@ -68,6 +68,13 @@ pub trait PageRequest: DataBuffer {
         read_range: Range<u64>,
         read_alignment: usize,
     ) -> Result<(), ChunkedArchiveError>;
+
+    /// Splits `self` at uncompressed byte offset `mid` (`self.range().start < mid <
+    /// self.range().end`), returning a new [`PageRequest`] covering `self.range().start..mid` and
+    /// updating `self` to cover `mid..self.range().end`.
+    ///
+    /// Must only be called prior to [`PageRequest::prepare`].
+    fn split_at(&mut self, mid: u64) -> Self;
 
     /// Returns a deferred [`PagePrecommit`] handle that batch-commits and maps the prepared
     /// destination pages in the root VMAR while asynchronous block I/O is in flight.
@@ -103,6 +110,10 @@ impl PageRequest for NullPageRequest {
         _read_alignment: usize,
     ) -> Result<(), ChunkedArchiveError> {
         Ok(())
+    }
+
+    fn split_at(&mut self, _mid: u64) -> Self {
+        NullPageRequest
     }
 }
 

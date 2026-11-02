@@ -4450,7 +4450,7 @@ mod tests {
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
         let mapping_vmo = zx::Vmo::create(4096).unwrap();
         let port = zx::Port::create();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
         let res = mapper_proxy
             .open_session(mapper_session_server, mapping_vmo, Some(port), Some(delivery_queue))
             .await

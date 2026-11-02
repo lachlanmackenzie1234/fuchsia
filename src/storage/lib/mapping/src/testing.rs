@@ -210,6 +210,21 @@ impl PageRequest for TestVecBuffer {
         self.offset = read_range.start;
         Ok(())
     }
+
+    fn split_at(&mut self, mid: u64) -> Self {
+        assert_eq!(self.committed_len, 0, "split_at must be called before commit");
+        assert!(mid > self.range.start && mid < self.range.end);
+        let head_range = self.range.start..mid;
+        self.range.start = mid;
+        self.offset = mid;
+        Self {
+            data: AlignedBuffer::default(),
+            range: head_range.clone(),
+            committed_len: 0,
+            offset: head_range.start,
+            receiver: self.receiver.clone(),
+        }
+    }
 }
 
 /// A [`DeliveryHandler`] test adapter that implements `get_page_request` via a closure.
