@@ -43,7 +43,7 @@ fn write_hex_reg(w: &mut impl Write, name: &str, val: u64) -> core::fmt::Result 
 #[sanitize(address = "off")]
 pub unsafe fn render_crashlog_registers(target: &mut impl Write, regs: &CrashlogRegs) {
     if regs.iframe.is_null() {
-        let _ = write!(target, "missing");
+        let _ = writeln!(target, "missing");
         return;
     }
     // SAFETY: Null was ruled out above, and the caller guarantees a non-null `regs.iframe` is
