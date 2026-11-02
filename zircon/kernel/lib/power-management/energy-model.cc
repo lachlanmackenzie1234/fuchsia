@@ -21,6 +21,7 @@
 #include <utility>
 
 #include <fbl/alloc_checker.h>
+#include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
 
@@ -29,7 +30,6 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/power-management/pdev-power-level-controller.h>
 
-#include <fbl/array.h>
 #include <kernel/ffi.h>
 #include <kernel/scheduler.h>
 #else
@@ -49,6 +49,11 @@ zx::result<EnergyModel> EnergyModel::Create(
     std::span<const ProcessorPowerLevelTransition> transitions, uint64_t max_processing_rate) {
   // Allocations below would be UB.
   if (levels.size() < 1) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  // PowerLevel stores its original index as a uint8_t.
+  if (levels.size() > static_cast<size_t>(std::numeric_limits<uint8_t>::max()) + 1) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -116,16 +121,6 @@ zx::result<EnergyModel> EnergyModel::Create(
     }
   }
 
-  // Generate lookup table based on original indexes.
-  std::sort(power_levels_lookup.begin(), power_levels_lookup.end(),
-            [&power_levels](const size_t& a, const size_t& b) constexpr {
-              if (power_levels[a].processing_rate() == power_levels[b].processing_rate()) {
-                return power_levels[a].power_coefficient_nw() <
-                       power_levels[b].power_coefficient_nw();
-              }
-              return power_levels[a].processing_rate() < power_levels[b].processing_rate();
-            });
-
   // This will naturally partition idle and active states, having all idle states at the beginning.
   std::sort(power_levels.begin(), power_levels.end(),
             [](const PowerLevel& a, const PowerLevel& b) constexpr {
@@ -134,6 +129,12 @@ zx::result<EnergyModel> EnergyModel::Create(
               }
               return a.processing_rate() < b.processing_rate();
             });
+
+  // Map each original level index to its index in the sorted array. Each PowerLevel retains its
+  // original index in level(), so this holds for any sort permutation, including ties.
+  for (size_t i = 0; i < power_levels.size(); ++i) {
+    power_levels_lookup[power_levels[i].level()] = i;
+  }
 
   // Fill up the square matrix from level i to level j, where i and j, are indexes into the
   // power_level array.
@@ -145,7 +146,7 @@ zx::result<EnergyModel> EnergyModel::Create(
     ZX_ASSERT(power_levels[i].level() == transition.from);
     ZX_ASSERT(power_levels[j].level() == transition.to);
 
-    size_t transition_offset = i * power_levels.size() + j;
+    size_t transition_offset = (i * power_levels.size()) + j;
     power_level_transitions[transition_offset] = PowerLevelTransition(transition);
   }
 
