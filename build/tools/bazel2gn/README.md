@@ -132,10 +132,12 @@ compiled_action("generate") {
 }
 ```
 
-`outs` are placed in `$target_gen_dir` unless they have a `path_overwrite`
-annotation. `args` only support `$(location <file>)`, `$(execpath <file>)`, and
-`$(RULEDIR)`; any other substitution is an error. The GN tool's output name must
-match its target name, because `tool_output_name` is not synced.
+`outs` and `depfile` are placed in `$target_gen_dir` unless they have a
+`path_overwrite` annotation. `args` only support `$(location <label>)` and
+`$(execpath <label>)` (for `outs`, `srcs`, or `path_overwrite`-annotated
+`deps`), and `$(RULEDIR)`; any other substitution is an error. `deps`,
+`mnemonic`, `testonly`, `visibility`, and `tool_output_name` are forwarded as
+well.
 
 #### Large RBE workers
 

@@ -346,6 +346,10 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		if err := validateRustTestOutputName(expr, rawAttrs); err != nil {
 			return nil, err
 		}
+	case compiledActionRule:
+		if err := validateCompiledAction(expr); err != nil {
+			return nil, err
+		}
 	}
 	// TODO(jayzhuang): Handle package level settings, e.g. visibility.
 	if gnTemplateName == noGNEquivalent || bazelRule == "package" {
@@ -481,13 +485,13 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		wrappingConditions = append(wrappingConditions, cond)
 	}
 
-	// `compiled_action()` args can refer to outputs, so collect them first.
+	// `compiled_action()` args can refer to outputs, depfile, or overwritten srcs, so collect them first.
 	var compiledActionOutputs map[string]string
 	if bazelRule == compiledActionRule {
 		var err error
-		compiledActionOutputs, err = compiledActionOuts(expr)
+		compiledActionOutputs, err = compiledActionPaths(expr)
 		if err != nil {
-			return nil, fmt.Errorf("converting compiled_action outs: %v", err)
+			return nil, fmt.Errorf("converting compiled_action paths: %v", err)
 		}
 	}
 
@@ -886,13 +890,21 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		if isFxManifestRule(bazelRule) {
 			transformers = append(transformers, bazelFilePathsToGN)
 		}
+	case "depfile":
+		if bazelRule == compiledActionRule {
+			transformers = append(transformers, compiledActionScalarOutTransformer(expr))
+		}
 	case "args":
 		if bazelRule == compiledActionRule {
 			transformers = append(transformers, compiledActionArgsTransformer(compiledActionOutputs))
 		}
 	case "tool":
 		if bazelRule == compiledActionRule {
-			transformers = append(transformers, bazelDepToGN)
+			transformers = append(transformers, compiledActionToolTransformer(expr))
+		}
+	case "tool_output_name", "mnemonic":
+		if bazelRule == compiledActionRule {
+			transformers = append(transformers, compiledActionStringAttrTransformer(attrName))
 		}
 	case "config_data":
 		if bazelRule == "ffx_plugin" {

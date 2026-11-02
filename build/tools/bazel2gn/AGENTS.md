@@ -31,9 +31,10 @@ motivation, and comment annotations.
     assignment operators (`bazelAttrToGNAssignmentOps`), platform constraints,
     `coptToConfig`, third-party repo mappings, and `@bazel2gn:*` annotation
     prefixes.
--   [`compiled_action.go`](./compiled_action.go): Converts `compiled_action`
-    `outs` (placed under `$target_gen_dir` unless overwritten) and `args`
-    (`$(location <label>)`, `$(execpath <label>)`, and `$(RULEDIR)`).
+-   [`compiled_action.go`](./compiled_action.go): Validates and converts
+    `compiled_action` `outs` and `depfile` (placed under `$target_gen_dir`
+    unless overwritten), `args` (`$(location <label>)`, `$(execpath <label>)`,
+    and `$(RULEDIR)`), `tool`, `tool_output_name`, `deps`, and `mnemonic`.
 -   [`fx_component.go`](./fx_component.go): Validates `fx_component_manifest`
     and `fx_component`, skips `fx_component_manifest` targets consumed only by
     Bazel-only `fx_test_component` or a skipped `fx_component` in the same

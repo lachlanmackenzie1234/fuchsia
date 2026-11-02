@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -95,5 +96,54 @@ printf '%s\n' "$input" | sed 's/  # UNFORMATTED//'
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("writeDiagnostics(runBatch(%q)) diff (-want +got):\n%s", dirs, diff)
+	}
+}
+
+func TestSyncCompiledActionIncludesMigrationImport(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+	bazelPath := filepath.Join(fuchsiaDir, "pkg", "BUILD.bazel")
+	gnPath := filepath.Join(fuchsiaDir, "pkg", "BUILD.gn")
+
+	writeFile(t, bazelPath, `load("//build/bazel/rules:compiled_action.bzl", "compiled_action")
+
+compiled_action(
+    name = "generate_epoch",
+    srcs = ["//src/sys/pkg/bin/system-updater/epoch:history"],
+    outs = ["epoch.json"],
+    args = [
+        "--history",
+        "$(location //src/sys/pkg/bin/system-updater/epoch:history)",
+        "--output",
+        "$(location :epoch.json)",
+    ],
+    tool = "//src/sys/pkg/bin/system-updater/epoch:generator",
+    tool_output_name = "epoch_generator",
+)
+`)
+	writeFile(t, gnPath, "# Above sentinel\n\n"+bazel2gn.SentinelComment+"\n")
+
+	p := syncParams{
+		relDir:        "pkg",
+		buildifierBin: fakeTool(t, "buildifier", "cat\n"),
+		gnBin:         fakeTool(t, "gn", "cat\n"),
+		checkOnly:     false,
+	}
+	if err := syncDirectory(context.Background(), bazelPath, gnPath, p); err != nil {
+		t.Fatalf("syncDirectory() failed: %v", err)
+	}
+	gotBytes, err := os.ReadFile(gnPath)
+	if err != nil {
+		t.Fatalf("reading synced BUILD.gn: %v", err)
+	}
+	got := string(gotBytes)
+	for _, wantSubstr := range []string{
+		`import("//build/tools/bazel2gn/bazel_migration.gni")`,
+		`compiled_action("generate_epoch") {`,
+		`tool = "//src/sys/pkg/bin/system-updater/epoch:generator"`,
+		`tool_output_name = "epoch_generator"`,
+	} {
+		if !strings.Contains(got, wantSubstr) {
+			t.Errorf("synced BUILD.gn missing %q:\n%s", wantSubstr, got)
+		}
 	}
 }
