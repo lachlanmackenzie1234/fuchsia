@@ -1884,21 +1884,22 @@ class BpfCgroupTest : public BpfTestBase {
     assert(root_cgroup_);
   }
 
-  fbl::unique_fd LoadBlockPortProgram(uint32_t expected_attach_type) {
-    // A bpf program that blocks bind on 42.
+  fbl::unique_fd LoadBlockPortProgram(uint32_t expected_attach_type, int32_t block_ret = 0,
+                                      int32_t allow_ret = 1) {
+    // A bpf program that blocks bind on BLOCKED_PORT.
     bpf_insn program[] = {
         // r0 <- [r1+24] (bpf_sock_addr.user_port)
         BPF_LOAD_OFFSET(0, 1, offsetof(bpf_sock_addr, user_port)),
         // r0 != BLOCKED_PORT -> JMP 2
         BPF_JNE_IMM(0, htons(BLOCKED_PORT), 2),
 
-        // r0 <- 0
-        BPF_MOV_IMM(0, 0),
+        // r0 <- block_ret
+        BPF_MOV_IMM(0, block_ret),
         // exit
         BPF_RETURN(),
 
-        // r0 <- 1
-        BPF_MOV_IMM(0, 1),
+        // r0 <- allow_ret
+        BPF_MOV_IMM(0, allow_ret),
         // exit
         BPF_RETURN(),
     };
@@ -1942,12 +1943,12 @@ class BpfCgroupTest : public BpfTestBase {
     ASSERT_THAT(TryDetachFromRootCgroup(attach_type), SyscallSucceeds());
   }
 
-  testing::AssertionResult TryBind(uint16_t port, int expected_errno) {
-    fbl::unique_fd sock(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+  testing::AssertionResult TryBind(uint16_t port, int expected_errno, int domain = AF_INET) {
+    fbl::unique_fd sock(socket(domain, SOCK_DGRAM, IPPROTO_UDP));
     if (!sock) {
       return testing::AssertionFailure() << "socket failed: " << strerror(errno);
     }
-    sockaddr_in addr = {
+    sockaddr_in addr4 = {
         .sin_family = AF_INET,
         .sin_port = htons(port),
         .sin_addr =
@@ -1955,7 +1956,15 @@ class BpfCgroupTest : public BpfTestBase {
                 .s_addr = htonl(INADDR_LOOPBACK),
             },
     };
-    int r = bind(sock.get(), reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    sockaddr_in6 addr6 = {
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(port),
+        .sin6_addr = IN6ADDR_ANY_INIT,
+    };
+    sockaddr* addr = domain == AF_INET6 ? reinterpret_cast<sockaddr*>(&addr6)
+                                        : reinterpret_cast<sockaddr*>(&addr4);
+    socklen_t addrlen = domain == AF_INET6 ? sizeof(addr6) : sizeof(addr4);
+    int r = bind(sock.get(), addr, addrlen);
     if (expected_errno) {
       if (r != -1) {
         return testing::AssertionFailure() << "bind succeeded when it expected to fail";
@@ -2025,6 +2034,41 @@ TEST_F(BpfCgroupTest, BlockBind) {
 
   // Should be unblocked now.
   ASSERT_TRUE(TryBind(BLOCKED_PORT, 0));
+}
+
+TEST_F(BpfCgroupTest, BlockBindWithReturnFlags) {
+  if (!test_helper::IsStarnix() && !test_helper::IsKernelVersionAtLeast(5, 12)) {
+    GTEST_SKIP() << "BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE return values require Linux >= 5.12.";
+  }
+
+  // BPF_CGROUP_INET{4,6}_BIND encodes BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE (1) in result >> 1
+  // and the allow/reject verdict in result & 1: 2 rejects the bind, 3 allows it.
+  constexpr int32_t kRejectWithNoCapNetBindService = 2;
+  constexpr int32_t kAllowWithNoCapNetBindService = 3;
+
+  {
+    SCOPED_TRACE("BPF_CGROUP_INET4_BIND");
+    ASSERT_TRUE(TryBind(BLOCKED_PORT, 0, AF_INET));
+    auto prog = LoadBlockPortProgram(BPF_CGROUP_INET4_BIND, kRejectWithNoCapNetBindService,
+                                     kAllowWithNoCapNetBindService);
+    AttachToRootCgroup(BPF_CGROUP_INET4_BIND, prog.get());
+    EXPECT_TRUE(TryBind(BLOCKED_PORT, EPERM, AF_INET));
+    EXPECT_TRUE(TryBind(BLOCKED_PORT + 1, 0, AF_INET));
+    DetachFromRootCgroup(BPF_CGROUP_INET4_BIND);
+    EXPECT_TRUE(TryBind(BLOCKED_PORT, 0, AF_INET));
+  }
+
+  {
+    SCOPED_TRACE("BPF_CGROUP_INET6_BIND");
+    ASSERT_TRUE(TryBind(BLOCKED_PORT, 0, AF_INET6));
+    auto prog = LoadBlockPortProgram(BPF_CGROUP_INET6_BIND, kRejectWithNoCapNetBindService,
+                                     kAllowWithNoCapNetBindService);
+    AttachToRootCgroup(BPF_CGROUP_INET6_BIND, prog.get());
+    EXPECT_TRUE(TryBind(BLOCKED_PORT, EPERM, AF_INET6));
+    EXPECT_TRUE(TryBind(BLOCKED_PORT + 1, 0, AF_INET6));
+    DetachFromRootCgroup(BPF_CGROUP_INET6_BIND);
+    EXPECT_TRUE(TryBind(BLOCKED_PORT, 0, AF_INET6));
+  }
 }
 
 TEST_F(BpfCgroupTest, BlockConnect) {
