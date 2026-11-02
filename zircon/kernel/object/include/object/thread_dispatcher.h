@@ -56,10 +56,6 @@ void cpp_thread_dispatcher_attach_to_core_thread(ThreadDispatcher* thread, Threa
 int cpp_thread_start_routine_entry(void* thread);
 
 // Rust FFI prototypes:
-zx_status_t rust_thread_dispatcher_create(
-    ProcessDispatcher* process, uint32_t flags, const char* name_ptr, size_t name_len,
-    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle,
-    ffi::Uninitialized<zx_rights_t>* out_rights);
 void rust_thread_dispatcher_state_init(void* state, const ThreadDispatcher* disp,
                                        ProcessDispatcher* process);
 void rust_thread_dispatcher_state_destroy(void* state);
@@ -68,7 +64,6 @@ zx_koid_t rust_thread_dispatcher_get_related_koid(const ThreadDispatcher* thread
 ProcessDispatcher* rust_thread_dispatcher_get_process(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_assert_canary(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread);
-zx_status_t rust_thread_dispatcher_initialize(const ThreadDispatcher* thread);
 zx_status_t rust_thread_dispatcher_make_runnable(const ThreadDispatcher* thread,
                                                  const UserEntryState* entry, bool suspended);
 void rust_thread_dispatcher_kill(const ThreadDispatcher* thread);
@@ -120,9 +115,6 @@ class ThreadDispatcher final : public Dispatcher,
 
   using EntryState = UserEntryState;
 
-  static zx_status_t Create(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags,
-                            ktl::string_view name, KernelHandle<ThreadDispatcher>* out_handle,
-                            zx_rights_t* out_rights);
   ~ThreadDispatcher();
 
   static ThreadDispatcher* GetCurrent() { return Thread::Current::Get()->user_thread(); }
@@ -158,9 +150,6 @@ class ThreadDispatcher final : public Dispatcher,
   // Should only be called by ProcessDispatcher upon adding the initialized thread.
   void set_is_initial_thread(bool is_initial_thread) { is_initial_thread_ = is_initial_thread; }
 
-  // Performs initialization on a newly constructed ThreadDispatcher
-  // If this fails, then the object is invalid and should be deleted
-  zx_status_t Initialize() TA_EXCL(get_lock()) { return rust_thread_dispatcher_initialize(this); }
   // Transitions a thread from the INITIALIZED state to either the RUNNING or SUSPENDED state.
   // Is the caller's responsibility to ensure this thread is registered with the parent process,
   // as such this is only expected to be called from the ProcessDispatcher.

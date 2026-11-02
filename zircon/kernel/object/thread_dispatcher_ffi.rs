@@ -16,8 +16,7 @@ use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_status::Status;
 use zx_types::{
-    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_koid_t, zx_rights_t,
-    zx_status_t,
+    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_koid_t, zx_status_t,
 };
 
 unsafe extern "C" {
@@ -231,40 +230,6 @@ unsafe extern "C" {
 
 // Exported FFI functions for C++ callers:
 
-/// Creates a new ThreadDispatcher.
-///
-/// # Safety
-///
-/// `process` must point to a valid `ProcessDispatcher` whose reference count was transferred.
-/// `name_ptr` must point to at least `name_len` readable bytes.
-/// `out_handle` and `out_rights` must point to valid uninitialized memory.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_thread_dispatcher_create(
-    process: *mut ProcessDispatcher,
-    flags: u32,
-    name_ptr: *const core::ffi::c_char,
-    name_len: usize,
-    out_handle: *mut MaybeUninit<KernelHandle<ThreadDispatcher>>,
-    out_rights: *mut MaybeUninit<zx_rights_t>,
-) -> zx_status_t {
-    // SAFETY: The caller transferred a reference count on `process`.
-    let process_ref = unsafe { RefPtr::from_raw(process) };
-    // SAFETY: The caller guarantees `name_ptr` points to `name_len` readable bytes
-    // whenever `name_len > 0`.
-    let name_slice = unsafe { zr::slice_from_raw_parts(name_ptr.cast(), name_len) };
-    match ThreadDispatcher::create(process_ref, flags, name_slice) {
-        Ok((handle, rights)) => {
-            // SAFETY: The caller guarantees both out pointers are valid for writes.
-            unsafe {
-                (*out_handle).write(handle);
-                (*out_rights).write(rights);
-            }
-            zx_types::ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
 /// Initializes `ThreadDispatcherState` in-place.
 ///
 /// # Safety
@@ -304,12 +269,6 @@ pub extern "C" fn rust_thread_dispatcher_get_process(
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_thread_dispatcher_assert_canary(thread: &ThreadDispatcher) {
     thread.assert_canary();
-}
-
-/// Completes initialization of a newly constructed thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_thread_dispatcher_initialize(thread: &ThreadDispatcher) -> zx_status_t {
-    Status::result_into_raw(thread.initialize())
 }
 
 /// Transitions a thread from the initialized state to either running or suspended.

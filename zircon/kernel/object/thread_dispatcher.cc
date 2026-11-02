@@ -35,22 +35,6 @@
 
 #define LOCAL_TRACE 0
 
-// static
-zx_status_t ThreadDispatcher::Create(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags,
-                                     ktl::string_view name,
-                                     KernelHandle<ThreadDispatcher>* out_handle,
-                                     zx_rights_t* out_rights) {
-  ffi::Uninitialized<KernelHandle<ThreadDispatcher>> handle;
-  ffi::Uninitialized<zx_rights_t> rights;
-  zx_status_t status = rust_thread_dispatcher_create(fbl::ExportToRawPtr(&process), flags,
-                                                     name.data(), name.size(), &handle, &rights);
-  if (status == ZX_OK) {
-    *out_handle = ktl::move(handle.Get());
-    *out_rights = rights.Get();
-  }
-  return status;
-}
-
 ThreadDispatcher::ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process) : Dispatcher(0u) {
   DISPATCHER_VERIFY_OFFSET(ThreadDispatcher, kThreadDispatcherStateOffset);
   rust_thread_dispatcher_state_init(&opaque_storage_, this, fbl::ExportToRawPtr(&process));

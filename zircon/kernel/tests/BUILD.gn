@@ -109,7 +109,6 @@ if (toolchain_environment == "kernel") {
       "scheduler_state_tests.cc",
       "string_tests.cc",
       "sync_ipi_tests.cc",
-      "thread_dispatcher_tests.cc",
       "timer_tests.cc",
       "variant_tests.cc",
     ]

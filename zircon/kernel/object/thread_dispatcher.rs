@@ -507,7 +507,10 @@ impl ThreadDispatcher {
             .expect("core thread was cleared before the thread reached the Dead lifecycle")
     }
 
-    /// Completes initialization of the thread object outside of the constructor.
+    /// Completes initialization of a newly constructed `ThreadDispatcher` outside of the
+    /// constructor. If this fails, the object is invalid and should be dropped.
+    ///
+    /// The caller must not hold this thread's dispatcher lock.
     pub fn initialize(&self) -> Result<(), Status> {
         self.state().canary.assert();
         ltrace_entry_obj!(self);
@@ -1570,7 +1573,7 @@ extern "C" fn rust_thread_start_routine(arg: *mut c_void) -> i32 {
 
 /// In-tree kernel unit tests for `ThreadDispatcher`.
 #[cfg(ktest)]
-#[unittest::suite(name = "thread_dispatcher_rust")]
+#[unittest::suite(name = "thread_dispatcher")]
 mod tests {
     use super::super::exception_dispatcher::ExceptionDispatcher;
     use super::super::job_dispatcher::JobDispatcher;
