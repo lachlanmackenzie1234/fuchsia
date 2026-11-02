@@ -89,12 +89,29 @@ def validate(payload):
         finding["severity"] = severity
         if not str(finding.get("comment") or "").strip():
             raise ReportError(f"findings[{index}].comment must not be empty")
+        confidence = finding.get("confidence")
+        if confidence is not None:
+            if (
+                not isinstance(confidence, int)
+                or isinstance(confidence, bool)
+                or not 0 <= confidence <= 100
+            ):
+                raise ReportError(
+                    f"findings[{index}].confidence must be an integer between"
+                    " 0 and 100"
+                )
         start = _positive_int_or_none(finding, "line_start", index)
         end = _positive_int_or_none(finding, "line_end", index)
         if end is not None and (start is None or end < start):
             raise ReportError(
                 f"findings[{index}].line_end must be >= line_start"
             )
+    skipped = payload.get("skipped_files")
+    if skipped is not None:
+        if not isinstance(skipped, list) or not all(
+            isinstance(p, str) for p in skipped
+        ):
+            raise ReportError("skipped_files must be a list of strings")
     payload["findings"] = findings
     return payload
 
@@ -146,6 +163,11 @@ def _render_rule(finding):
 
 def _render_finding(finding, workspace_root):
     badge = SEVERITIES[finding["severity"]]
+    conf = (
+        f" (Confidence: {finding['confidence']}%)"
+        if finding.get("confidence") is not None
+        else ""
+    )
     loc = (
         f" {_location_link(finding, workspace_root)}"
         if finding.get("file_path")
@@ -154,7 +176,7 @@ def _render_finding(finding, workspace_root):
     lines = [
         f"- **#{finding['finding_id']}**{loc}",
         "",
-        f"  {badge}{_render_rule(finding)}: {finding['comment']}",
+        f"  {badge}{conf}{_render_rule(finding)}: {finding['comment']}",
     ]
     diff = finding.get("suggested_diff")
     if diff:
@@ -167,13 +189,45 @@ def _render_finding(finding, workspace_root):
     return lines
 
 
-def render(payload, workspace_root=""):
+def _recompute_decision(current_decision, findings):
+    if current_decision == "not_applicable":
+        return current_decision
+    if any(f["severity"] == "blocking" for f in findings):
+        return "changes_requested"
+    if findings:
+        return "approved_with_suggestions"
+    return "approved"
+
+
+def _format_skipped_files(skipped):
+    count = len(skipped)
+    noun = "file" if count == 1 else "files"
+    preview = ", ".join(f"`{p}`" for p in skipped[:5])
+    if count > 5:
+        preview = f"{preview}, +{count - 5} more"
+    return f"- **Skipped Files**: {count} {noun} matched skip globs ({preview})"
+
+
+def render(payload, workspace_root="", min_confidence=None):
     """Validates `payload`, numbers its findings, and returns Markdown.
 
     Sets sequential `finding_id`s ("1", "2", ...) on the findings in display
     order so follow-up fixes can refer to the numbers shown in the report.
     """
     report = validate(payload)
+    if min_confidence is not None:
+        if not 0 <= min_confidence <= 100:
+            raise ReportError("min_confidence must be between 0 and 100")
+        filtered = [
+            f
+            for f in report["findings"]
+            if f.get("confidence") is None or f["confidence"] >= min_confidence
+        ]
+        if len(filtered) != len(report["findings"]):
+            report["findings"] = filtered
+            report["decision"] = _recompute_decision(
+                report["decision"], filtered
+            )
     lines = ["## Code Review", "", DECISIONS[report["decision"]], ""]
     if report.get("summary"):
         lines.extend([report["summary"], ""])
@@ -184,6 +238,9 @@ def render(payload, workspace_root=""):
         lines.append(
             "- **Skills Evaluated**: " + ", ".join(f"`{s}`" for s in skills)
         )
+    skipped = report.get("skipped_files") or []
+    if skipped:
+        lines.append(_format_skipped_files(skipped))
     lines.append("")
 
     # Findings without a file sort first; within a file, file-level findings
@@ -221,12 +278,20 @@ def main(argv=None):
         default="",
         help="Repository root used to build file:// links (default: none).",
     )
+    parser.add_argument(
+        "--min_confidence",
+        type=int,
+        default=None,
+        help="Drop findings whose confidence is below this 0-100 threshold.",
+    )
     args = parser.parse_args(argv)
     with open(args.review_result_file, encoding="utf-8") as f:
         payload = json.load(f)
     try:
         markdown = render(
-            payload, os.path.abspath(args.workspace) if args.workspace else ""
+            payload,
+            os.path.abspath(args.workspace) if args.workspace else "",
+            min_confidence=args.min_confidence,
         )
     except ReportError as e:
         print(f"error: {e}", file=sys.stderr)

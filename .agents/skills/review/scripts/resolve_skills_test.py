@@ -283,6 +283,91 @@ class ResolveSkillsTest(unittest.TestCase):
             configs = resolve_skills.parse_textproto(f.read())["configs"]
         self.assertTrue(all("id" in c for c in configs))
 
+    def test_filter_skipped_files_defaults_and_custom(self):
+        retained, skipped = resolve_skills.filter_skipped_files(
+            [
+                "Cargo.lock",
+                "third_party/rust_crates/Cargo.lock",
+                "src/lib/depfile/src/depfile.rs",
+                "src/lib/fsl/socket/socket_stats.pb.h",
+                "tools/fidl/foo.golden",
+                "docs/images/diagram.png",
+                "out/default/args.gn",
+                "src/developer/ffx/test_data/out/config.json",
+                "docs/README.md",
+            ],
+            resolve_skills.DEFAULT_SKIP_GLOBS,
+        )
+        self.assertEqual(
+            retained,
+            [
+                "src/lib/depfile/src/depfile.rs",
+                "src/developer/ffx/test_data/out/config.json",
+                "docs/README.md",
+            ],
+        )
+        self.assertEqual(
+            skipped,
+            [
+                "Cargo.lock",
+                "third_party/rust_crates/Cargo.lock",
+                "src/lib/fsl/socket/socket_stats.pb.h",
+                "tools/fidl/foo.golden",
+                "docs/images/diagram.png",
+                "out/default/args.gn",
+            ],
+        )
+
+    def test_main_envelope_and_skip_flags(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_tree(root)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                resolve_skills.main(
+                    [
+                        f"--repo_root={root}",
+                        "--files=/src/lib/foo.rs,Cargo.lock,docs/ignore.md,"
+                        "docs/slash.md",
+                        "--project=fuchsia",
+                        "--skip_globs=docs/ignore.md, //docs/slash.md",
+                        "--output_format=envelope",
+                    ]
+                )
+            envelope = json.loads(out.getvalue())
+            self.assertEqual(envelope["retained_files"], ["src/lib/foo.rs"])
+            self.assertEqual(
+                envelope["skipped_files"],
+                ["Cargo.lock", "docs/ignore.md", "docs/slash.md"],
+            )
+            self.assertEqual(
+                [
+                    os.path.relpath(t["skill_path"], root)
+                    for t in envelope["tasks"]
+                ],
+                [".agents/skills/rust_best_practices/SKILL.md"],
+            )
+
+    def test_main_no_default_skips(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._write_tree(root)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                resolve_skills.main(
+                    [
+                        f"--repo_root={root}",
+                        "--files=Cargo.lock",
+                        "--no_default_skips",
+                        "--output_format=envelope",
+                    ]
+                )
+            envelope = json.loads(out.getvalue())
+            self.assertEqual(envelope["retained_files"], ["Cargo.lock"])
+            self.assertEqual(envelope["skipped_files"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

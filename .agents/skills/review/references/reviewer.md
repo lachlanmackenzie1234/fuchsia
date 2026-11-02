@@ -12,10 +12,9 @@ Your prompt gives you:
 - The target scope and its immutable commit hash(es), or `working copy` for
   uncommitted changes.
 - An intent summary of the change.
-- Your task: a `skill_path` and its `files`, or `general` with all changed
-  files.
+- Your task: a `skill_path` and its `files`, or `general` with all retained
+  changed files.
 - Your output file.
-- For a second-round reviewer: the paths of the first-round result files.
 
 ## Step 1: Read the diff
 
@@ -51,8 +50,6 @@ If a file you need is missing on disk (sparse checkout), read it with
   correctness. Verify claims, edge cases, and error paths against the code.
 - Confirm each finding against the post-change code. Drop speculative findings
   ("make sure that ...") and issues already handled elsewhere.
-- A second-round reviewer reports only defects that are not already in the
-  first-round files.
 
 ## Step 4: Write the result
 

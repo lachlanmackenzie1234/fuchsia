@@ -161,6 +161,77 @@ Found one blocking issue.
                 }
             )
 
+    def test_confidence_and_skipped_files_rendering(self):
+        payload = {
+            "decision": "changes_requested",
+            "scope": "Working copy",
+            "skipped_files": ["Cargo.lock", "docs/a.png"],
+            "findings": [
+                {
+                    "severity": "blocking",
+                    "confidence": 95,
+                    "comment": "Panics on empty slice.",
+                    "rule_reference": "rust_best_practices/panics",
+                    "file_path": "src/lib.rs",
+                    "line_start": 10,
+                }
+            ],
+        }
+        rendered = render_report.render(payload, "/repo")
+        self.assertIn(
+            "- **Skipped Files**: 2 files matched skip globs (`Cargo.lock`,"
+            " `docs/a.png`)",
+            rendered,
+        )
+        self.assertIn(
+            "**🚨 Blocking** (Confidence: 95%)"
+            " (*rust_best_practices/panics*): Panics on empty slice.",
+            rendered,
+        )
+
+    def test_min_confidence_filters_and_recomputes_decision(self):
+        payload = {
+            "decision": "changes_requested",
+            "findings": [
+                {
+                    "severity": "blocking",
+                    "confidence": 65,
+                    "comment": "Speculative concern.",
+                    "file_path": "src/lib.rs",
+                    "line_start": 5,
+                },
+                {
+                    "severity": "suggestion",
+                    "confidence": 85,
+                    "comment": "Add doc comment.",
+                    "file_path": "src/lib.rs",
+                    "line_start": 12,
+                },
+            ],
+        }
+        rendered = render_report.render(payload, "/repo", min_confidence=80)
+        self.assertIn("**Approved with minor suggestions**", rendered)
+        self.assertNotIn("Speculative concern.", rendered)
+        self.assertIn("Add doc comment.", rendered)
+        self.assertEqual(len(payload["findings"]), 1)
+
+    def test_invalid_confidence_rejected(self):
+        for bad in (-1, 101, True, "90"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(render_report.ReportError):
+                    render_report.render(
+                        {
+                            "decision": "changes_requested",
+                            "findings": [
+                                {
+                                    "severity": "blocking",
+                                    "confidence": bad,
+                                    "comment": "x",
+                                }
+                            ],
+                        }
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,31 @@ CONFIG = os.path.join(".agents", "code-review", "agent_configs.textproto")
 VENDOR_PROJECT = "vendor/google"
 VENDOR_DIR = os.path.join("vendor", "google")
 
+DEFAULT_SKIP_GLOBS = [
+    "**/Cargo.lock",
+    "**/package-lock.json",
+    "**/pnpm-lock.yaml",
+    "**/pubspec.lock",
+    "**/poetry.lock",
+    "**/*.golden",
+    "**/*.snap",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.gif",
+    "**/*.ico",
+    "**/*.webp",
+    "**/*.bin",
+    "**/*.tar",
+    "**/*.tar.gz",
+    "**/*.zip",
+    "**/*.pb.go",
+    "**/*.pb.h",
+    "**/*.pb.cc",
+    "out/**",
+    ".venvs/**",
+]
+
 _TOKEN_RE = re.compile(
     r"\s*(?:(#[^\n]*)|([A-Za-z_][A-Za-z0-9_]*)\s*:?\s*(\{)|"
     r'([A-Za-z_][A-Za-z0-9_]*)\s*:\s*("(?:[^"\\]|\\.)*"|[^\s{}]+)|(\}))'
@@ -84,6 +109,47 @@ def parse_textproto(text):
     if len(stack) != 1:
         raise ValueError("unbalanced braces in text proto")
     return root
+
+
+def glob_to_regex(pat):
+    """Converts a glob pattern with `**` support to an anchored regex."""
+    i, n = 0, len(pat)
+    res = []
+    while i < n:
+        c = pat[i]
+        i += 1
+        if c == "*":
+            if i < n and pat[i] == "*":
+                i += 1
+                if i < n and pat[i] == "/":
+                    i += 1
+                    res.append("(?:.*/)?")
+                else:
+                    res.append(".*")
+            else:
+                res.append("[^/]*")
+        elif c == "?":
+            res.append("[^/]")
+        elif c in r"\.+^$()[]{}|":
+            res.append("\\" + c)
+        else:
+            res.append(c)
+    return "^" + "".join(res) + "$"
+
+
+def filter_skipped_files(files, skip_globs):
+    """Splits `files` into `(retained_files, skipped_files)`."""
+    normalized = [g.lstrip("/") for g in skip_globs if g.lstrip("/")]
+    if not normalized:
+        return list(files), []
+    regexes = [re.compile(glob_to_regex(g)) for g in normalized]
+    retained, skipped = [], []
+    for f in files:
+        if any(rx.match(f) for rx in regexes):
+            skipped.append(f)
+        else:
+            retained.append(f)
+    return retained, skipped
 
 
 def _filter_matches(flt, path, project):
@@ -197,6 +263,25 @@ def main(argv=None):
         default="fuchsia",
         help="Gerrit project the files belong to",
     )
+    ap.add_argument(
+        "--skip_globs",
+        default=None,
+        help="comma-separated additional globs to skip",
+    )
+    ap.add_argument(
+        "--no_default_skips",
+        action="store_true",
+        help="disable built-in default skip globs",
+    )
+    ap.add_argument(
+        "--output_format",
+        choices=("tasks", "envelope"),
+        default="tasks",
+        help=(
+            "'tasks' (default) prints a JSON array of skill tasks; 'envelope'"
+            " prints {'tasks', 'retained_files', 'skipped_files'}"
+        ),
+    )
     args = ap.parse_args(argv)
     root = (
         os.path.abspath(args.repo_root)
@@ -205,7 +290,19 @@ def main(argv=None):
     )
     with open(os.path.join(root, CONFIG), encoding="utf-8") as f:
         text = f.read()
-    files = [p.strip().lstrip("/") for p in args.files.split(",") if p.strip()]
+    raw_files = [
+        p.strip().lstrip("/") for p in args.files.split(",") if p.strip()
+    ]
+    globs = [] if args.no_default_skips else list(DEFAULT_SKIP_GLOBS)
+    if args.skip_globs:
+        globs.extend(
+            g.strip().lstrip("/")
+            for g in args.skip_globs.split(",")
+            if g.strip().lstrip("/")
+        )
+    files, skipped = filter_skipped_files(raw_files, globs)
+    for path in skipped:
+        print(f"info: skipped non-reviewable file: {path}", file=sys.stderr)
     results = resolve(
         text,
         files,
@@ -218,7 +315,16 @@ def main(argv=None):
     ]
     for path in missing:
         print(f"warning: skill file not found: {path}", file=sys.stderr)
-    json.dump(results, sys.stdout, indent=2)
+    output = (
+        {
+            "tasks": results,
+            "retained_files": files,
+            "skipped_files": skipped,
+        }
+        if args.output_format == "envelope"
+        else results
+    )
+    json.dump(output, sys.stdout, indent=2)
     print()
     return 0
 
