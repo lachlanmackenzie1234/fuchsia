@@ -23,6 +23,7 @@ test_suite(
         "//src/lib/assembly/config_data:config_data_test",
         "//src/lib/assembly/constants:constants_test",
         "//src/lib/assembly/container:container_test",
+        "//src/lib/assembly/driver_manifest:driver_manifest_test",
         "//src/lib/assembly/fxfs:fxfs_test",
         "//src/lib/assembly/image_assembly_config:image_assembly_config_test",
         "//src/lib/assembly/images_config:images_config_test",

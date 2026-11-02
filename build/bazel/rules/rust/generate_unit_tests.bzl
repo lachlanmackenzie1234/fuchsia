@@ -101,7 +101,6 @@ _ALLOWED_PACKAGES = {
     "src/lib/assembly/component_id_index": True,
     "src/lib/assembly/component_manager_config": True,
     "src/lib/assembly/domain_config": True,
-    "src/lib/assembly/driver_manifest": True,
     "src/lib/assembly/fvm": True,
     "src/lib/assembly/image_assembly_config_builder": True,
     "src/lib/assembly/memory_buckets": True,
