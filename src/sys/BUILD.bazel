@@ -24,9 +24,12 @@ test_suite(
         "//src/sys/lib/elf_runner/tests/environ:elf_runner_environ_test",
         "//src/sys/run_test_suite/directory:test-output-directory-unit-tests",
         "//src/sys/service-broker:service-broker-unittests",
+        "//src/sys/stash:stash-tests",
+        "//src/sys/stash/tests/inspect:stash-integration-tests",
         "//src/sys/test_manager/tests/test_data:debug-data-test_test",
         "//src/sys/time/httpsdate_time_source:httpsdate-time-source-tests",
         "//src/sys/time/lib/push-source:push-source-tests",
         "//src/sys/time/timekeeper/persistence:time-persistence-tests",
+        "//src/sys/tools/stash_ctl:stash_ctl_tests",
     ],
 )
