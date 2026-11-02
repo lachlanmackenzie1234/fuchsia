@@ -1762,3 +1762,82 @@ async fn pending_suppression_migration_restores_deferred_connectable_true() {
     assert_matches!(run_access_task.await, Ok(()));
 }
 
+#[fuchsia::test]
+async fn discovery_migrates_pending_across_multiple_adapter_changes() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+    let host_info_1 = Arc::new(RwLock::new(host_1.info()));
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (host_server_3, host_3, _gatt_server_3, _bonding_3) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(3), &hd)
+            .await
+            .unwrap();
+    let host_info_3 = Arc::new(RwLock::new(host_3.info()));
+
+    let _host_1_task = fuchsia_async::Task::spawn(host_device::test::run_discovery_host_server(
+        host_server_1,
+        host_info_1,
+    ));
+    let _host_3_task = fuchsia_async::Task::spawn(host_device::test::run_discovery_host_server(
+        host_server_3,
+        host_info_3.clone(),
+    ));
+
+    let (access_client, access_server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), access_server));
+
+    let (discovery_session, discovery_session_server) = endpoints::create_proxy();
+    let response = access_client.start_discovery(discovery_session_server).await;
+    assert_matches!(response, Ok(Ok(())));
+
+    let _ =
+        host_1.clone().refresh_test_host_info().await.expect("did not receive Host #1 info update");
+    assert!(host_1.info().discovering);
+
+    // Poll set_active_host(HostId(2)) once so it transitions DiscoveryState::Discovering to
+    // DiscoveryState::Pending and suspends at session_receiver.await before start_discovery_task
+    // runs.
+    let mut set_active_2_fut = std::pin::pin!(hd.set_active_host(HostId(2)));
+    assert!(futures::poll!(&mut set_active_2_fut).is_pending());
+
+    // Migrate again from Host #2 (Pending) to Host #3 while migration to Host #2 is still Pending.
+    hd.set_active_host(HostId(3)).await.expect("set_active_host(3) succeeds");
+    set_active_2_fut.await.expect("set_active_host(2) completes");
+
+    // Host #2 must only receive Shutdown (its pending start_discovery_task was cancelled before
+    // sending StartDiscovery).
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 2, got: {x:?}"),
+    }
+    assert!(
+        host_server_2.next().now_or_never().is_none(),
+        "Unexpected message received on host 2 after Pending discovery migration"
+    );
+
+    // Host #3 must start discovering and remain discovering while the client holds
+    // discovery_session (verifying that the Pending -> Pending migration did not drop the session).
+    let _ =
+        host_3.clone().refresh_test_host_info().await.expect("did not receive Host #3 info update");
+    assert!(host_3.info().discovering);
+    assert!(host_info_3.read().discovering);
+
+    // Dropping the client's discovery_session token must now stop discovery on Host #3.
+    drop(discovery_session);
+    let _ =
+        host_3.clone().refresh_test_host_info().await.expect("did not receive Host #3 info update");
+    assert!(!host_3.info().discovering);
+    assert!(!host_info_3.read().discovering);
+
+    drop(access_client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
