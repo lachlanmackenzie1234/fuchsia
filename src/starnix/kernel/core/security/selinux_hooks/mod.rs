@@ -671,6 +671,12 @@ pub(super) struct SocketState {
     peer_sid: LockDepMutex<Option<SecurityId>, SeLinuxPeerSidLock>,
 }
 
+/// Security state for a datagram message. This holds the [`SecurityId`] of the sending socket.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SecurityContextToken {
+    sid: SecurityId,
+}
+
 /// Security state for a bpf [`ebpf_api::maps::Map`] instance. This currently just holds the
 /// SID that the [`crate::task::Task`] that created the file object had.
 #[derive(Clone, Debug, PartialEq)]

@@ -714,6 +714,7 @@ impl SocketOps for StubbedNetlinkSocket {
                     message_length: msg_bytes.len(),
                     address: Some(SocketAddress::Netlink(NetlinkAddress::default())),
                     credentials: None,
+                    security_state: None,
                     ancillary_data: vec![],
                 };
                 Ok(info)
@@ -1786,6 +1787,7 @@ impl SocketOps for AuditNetlinkSocket {
             message_length: size,
             address: Some(SocketAddress::Netlink(NetlinkAddress::default())),
             credentials: None,
+            security_state: None,
             ancillary_data: vec![],
         })
     }
@@ -1941,7 +1943,7 @@ mod tests {
 
         let mut sender = NetlinkToClientSender::<RouteNetlinkMessage>::new(socket_inner.clone());
         sender.send(message.clone(), Some(ModernGroup(MODERN_GROUP)));
-        let Message { data, address, credentials: _, ancillary_data: _ } =
+        let Message { data, address, credentials: _, security_state: _, ancillary_data: _ } =
             socket_inner.lock().read_message().expect("should read message");
 
         assert_eq!(

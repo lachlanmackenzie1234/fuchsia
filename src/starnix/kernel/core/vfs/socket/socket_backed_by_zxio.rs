@@ -605,6 +605,7 @@ impl SocketOps for ZxioBackedSocket {
             message_length: info.message_length,
             address,
             credentials: None,
+            security_state: None,
             ancillary_data: info.control_messages.drain(..).map(AncillaryData::Ip).collect(),
         })
     }

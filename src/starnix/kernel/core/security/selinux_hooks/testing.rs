@@ -5,12 +5,11 @@
 #![cfg(test)]
 use crate::security::selinux_hooks::selinuxfs::selinuxfs_policy_loaded;
 
-use crate::security::SecurityServer;
 use crate::task::CurrentTask;
 use crate::task::loader::ResolvedProgram;
 use crate::testing::spawn_kernel_with_selinux_and_run;
 use crate::vfs::{FileMapping, FileWriteGuardMode, FsStr, NamespaceNode, OpenAccessCheck};
-use selinux::TaskAttrs;
+use selinux::{SecurityServer, TaskAttrs};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::file_mode::FileMode;

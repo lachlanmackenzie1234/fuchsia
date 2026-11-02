@@ -38,8 +38,8 @@
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BpfMapState, BpfProgState, FileObjectState, FileSystemState, KernelState, NonPrivateDirEntry,
-    NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, PerfEventState, common_cap,
-    selinux_hooks, yama,
+    NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile, PerfEventState, SecurityContextToken,
+    common_cap, selinux_hooks, yama,
 };
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
@@ -1520,20 +1520,33 @@ pub fn socket_getpeersec_stream(
     })
 }
 
-/// Returns the Security Context with which the [`crate::vfs::Socket`]'s is labeled, to return to
-/// the recipient via `SCM_SECURITY` auxiliary data, if `SO_PASSSEC` is set.
+/// Returns an opaque [`SecurityContextToken`] with which the [`crate::vfs::Socket`] is labeled, to
+/// resolve and return to the recipient via `SCM_SECURITY` auxiliary data if `SO_PASSSEC` is set.
 /// Corresponds to the `socket_getpeersec_dgram()` LSM hook.
-pub fn socket_getpeersec_dgram(current_task: &CurrentTask, socket: &Socket) -> Vec<u8> {
+pub fn socket_getpeersec_dgram(
+    current_task: &CurrentTask,
+    socket: &Socket,
+) -> Option<SecurityContextToken> {
     track_hook_duration!("security.hooks.socket_getpeersec_dgram");
-    let Some(socket) = NonPrivateSocket::new(socket) else {
-        return Vec::default();
-    };
+    let socket = NonPrivateSocket::new(socket)?;
+    current_task.kernel().security_state.state.is_some().then(|| SecurityContextToken {
+        state: selinux_hooks::socket::socket_getpeersec_dgram(socket),
+    })
+}
+
+/// Resolves an opaque [`SecurityContextToken`] returned by [`socket_getpeersec_dgram`] into a
+/// NUL-terminated Security Context byte string for delivery via `SCM_SECURITY`.
+pub fn security_token_to_context_with_nul(
+    current_task: &CurrentTask,
+    token: SecurityContextToken,
+) -> Option<Vec<u8>> {
+    track_hook_duration!("security.hooks.security_token_to_context_with_nul");
     if_selinux_else(
         current_task,
         |security_server| {
-            selinux_hooks::socket::socket_getpeersec_dgram(&security_server, current_task, socket)
+            selinux_hooks::socket::security_token_to_context_with_nul(security_server, token.state)
         },
-        Vec::default,
+        || None,
     )
 }
 
@@ -3774,7 +3787,43 @@ mod tests {
                 Ok(())
             );
             assert_eq!(socket_getpeersec_stream(current_task, socket), Ok(Vec::<u8>::new()));
-            assert_eq!(socket_getpeersec_dgram(current_task, socket), Vec::<u8>::new());
+            assert_eq!(socket_getpeersec_dgram(current_task, socket), None);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn socket_getpeersec_dgram_defers_context_serialization() {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            // `hooks_tests_policy` only grants `unix_stream_socket { create }`, so switch to
+            // permissive mode to create a `SocketType::Datagram` socket.
+            security_server.set_enforcing(false);
+            let expected_context = b"u:object_r:test_socket_create_yes_t:s0";
+            let task_sid = security_server
+                .security_context_to_sid(expected_context.into())
+                .expect("invalid security context");
+            testing::mutate_attrs_for_test(current_task, |attrs| attrs.current_sid = task_sid);
+
+            let socket_file = SocketFile::new_socket(
+                current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                OpenFlags::RDWR,
+                SocketProtocol::IP,
+                /* kernel_private = */ false,
+            )
+            .expect("socket creation should succeed");
+            let socket =
+                Socket::get_from_file(&socket_file).expect("FileHandle should be a socket");
+
+            let token = socket_getpeersec_dgram(current_task, socket)
+                .expect("non-private socket with policy should produce a security token");
+            let mut expected_with_nul = expected_context.to_vec();
+            expected_with_nul.push(b'\0');
+            assert_eq!(
+                security_token_to_context_with_nul(current_task, token),
+                Some(expected_with_nul)
+            );
         })
         .await;
     }

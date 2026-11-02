@@ -5,7 +5,8 @@
 use super::audit::Auditable;
 use super::{
     FsNodeLabel, FsNodeSidAndClass, NonPrivateFsNode, NonPrivateSocket, NonPrivateSocketFile,
-    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
+    SecurityContextToken, build_permission_check, check_permission, current_task_state,
+    fs_node_effective_sid_and_class,
 };
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
@@ -477,20 +478,26 @@ pub(in crate::security) fn socket_getpeersec_stream(
     Ok(security_server.sid_to_security_context_with_nul(peer_sid).unwrap())
 }
 
-/// Returns the Security Context with which messages sent by this [`crate::vfs::Socket`] should
-/// be labeled.
+/// Returns a [`SecurityContextToken`] encoding the [`SecurityId`] with which messages sent by this
+/// [`crate::vfs::Socket`] should be labeled.
 pub(in crate::security) fn socket_getpeersec_dgram(
-    security_server: &SecurityServer,
-    _current_task: &CurrentTask,
     socket: NonPrivateSocket<'_>,
-) -> Vec<u8> {
+) -> SecurityContextToken {
     let socket_sid = if let Some(socket_node) = socket.fs_node() {
         fs_node_effective_sid_and_class(socket_node).sid
     } else {
         track_stub!(TODO("https://fxbug.dev/414583985"), "socket_getpeersec_dgram without FsNode");
         InitialSid::Unlabeled.into()
     };
-    security_server.sid_to_security_context_with_nul(socket_sid).unwrap()
+    SecurityContextToken { sid: socket_sid }
+}
+
+/// Resolves a [`SecurityContextToken`] into a NUL-terminated Security Context byte string.
+pub(in crate::security) fn security_token_to_context_with_nul(
+    security_server: &SecurityServer,
+    token: SecurityContextToken,
+) -> Option<Vec<u8>> {
+    security_server.sid_to_security_context_with_nul(token.sid)
 }
 
 /// Checks if the Unix domain `sending_socket` is allowed to send a message to the
