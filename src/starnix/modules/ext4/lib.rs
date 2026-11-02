@@ -258,6 +258,11 @@ struct ExtFile {
     memory: OnceCell<Arc<MemoryObject>>,
 }
 
+fn strip_write_right(vmo: zx::Vmo) -> Result<zx::Vmo, Errno> {
+    let info = vmo.basic_info().map_err(impossible_error)?;
+    vmo.replace_handle(info.rights - zx::Rights::WRITE).map_err(impossible_error)
+}
+
 impl ExtFile {
     fn new(inner: ExtNode, name: FsString) -> Self {
         ExtFile { inner, name, memory: OnceCell::new() }
@@ -296,15 +301,13 @@ impl FsNodeOps for ExtFile {
                 last_block = pager_extent.logical.end;
                 pager_extents.push(pager_extent);
             }
-            Ok(Arc::new(MemoryObject::from(
-                fs_ops
-                    .pager
-                    .register(self.name.as_ref(), inode_num, file_size, &pager_extents)
-                    .map_err(|e| errno!(EINVAL, e))?,
-            )))
+            let vmo = fs_ops
+                .pager
+                .register(self.name.as_ref(), inode_num, file_size, &pager_extents)
+                .map_err(|e| errno!(EINVAL, e))?;
+            Ok(Arc::new(MemoryObject::from(strip_write_right(vmo)?)))
         })?;
 
-        // TODO(https://fxbug.dev/42080696) returned memory shouldn't be writeable
         Ok(Box::new(MemoryRegularFile::new(memory.clone())))
     }
 }
@@ -447,5 +450,25 @@ mod tests {
         inode.e2di_nblock_high = LE16::new(0x3);
         let node = create_test_ext_node(inode);
         assert_eq!(get_blocks_from_node(&node), (0x3 << 32) | 0xABCDE);
+    }
+
+    #[test]
+    fn test_ext_file_memory_strips_write_right() {
+        let vmo = zx::Vmo::create(4096).expect("failed to create VMO");
+        vmo.write(b"hello", 0).expect("failed to write initial contents");
+        let memory =
+            MemoryObject::from(strip_write_right(vmo).expect("failed to strip write right"));
+
+        assert!(
+            !memory.get_rights().contains(zx::Rights::WRITE),
+            "ExtFile memory must not retain WRITE right: {:?}",
+            memory.get_rights()
+        );
+        let vmo = memory.as_vmo().expect("expected VMO-backed MemoryObject");
+        assert_eq!(vmo.write(b"mutate", 0), Err(zx::Status::ACCESS_DENIED));
+
+        let mut buf = [0u8; 5];
+        vmo.read(&mut buf, 0).expect("reading from ExtFile VMO should succeed");
+        assert_eq!(&buf, b"hello");
     }
 }
