@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <optional>
@@ -250,6 +251,41 @@ TEST(ProcAttrTest, ZombieCurrentAttr) {
 
     EXPECT_EQ(RemoveTrailingNul(context), my_label.value());
   }));
+}
+
+TEST(ProcAttrTest, RestrictedProcFilesHaveOwnerOnlyReadMode) {
+  constexpr const char* kRequiredRestrictedProcFiles[] = {
+      "/proc/pagetypeinfo",
+      "/proc/vmallocinfo",
+  };
+  for (const char* path : kRequiredRestrictedProcFiles) {
+    struct stat st{};
+    ASSERT_THAT(stat(path, &st), SyscallSucceeds()) << path;
+    EXPECT_EQ(st.st_mode & 0777, 0400u) << path;
+  }
+
+  constexpr const char* kOptionalRestrictedProcFiles[] = {
+      "/proc/allocinfo",
+      "/proc/slabinfo",
+  };
+  for (const char* path : kOptionalRestrictedProcFiles) {
+    struct stat st{};
+    if (stat(path, &st) == 0) {
+      EXPECT_EQ(st.st_mode & 0777, 0400u) << path;
+    }
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    constexpr uid_t kUnprivilegedUid = 1000;
+    constexpr gid_t kUnprivilegedGid = 1000;
+    ASSERT_THAT(setresgid(kUnprivilegedGid, kUnprivilegedGid, kUnprivilegedGid), SyscallSucceeds());
+    ASSERT_THAT(setresuid(kUnprivilegedUid, kUnprivilegedUid, kUnprivilegedUid), SyscallSucceeds());
+    for (const char* path : kRequiredRestrictedProcFiles) {
+      EXPECT_THAT(open(path, O_RDONLY), SyscallFailsWithErrno(EACCES)) << path;
+    }
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 }  // namespace
