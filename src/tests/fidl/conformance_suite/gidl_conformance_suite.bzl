@@ -7,6 +7,8 @@
 visibility([
     "//sdk/ctf/tests/pkg/fidl/...",
     "//sdk/lib/fidl/...",
+    "//src/developer/fuchsia-controller/...",
+    "//src/lib/dynfidl/...",
     "//src/lib/fidl/...",
     "//src/lib/fidl_codec/...",
     "//src/tests/benchmarks/fidl/...",
