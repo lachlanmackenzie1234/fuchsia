@@ -81,10 +81,12 @@ impl VSockConnector {
             return Err(ConnectError::ConnectFailed(self.cid, port, std::io::Error::from(error)));
         }
 
-        let socket = match tokio::io::unix::AsyncFd::new(socket) {
+        // SAFETY: `socket` is an `OwnedFd` that owns a valid open file descriptor
+        // for the lifetime of the `AsyncFd`.
+        let socket = match unsafe { tokio::io::unix::AsyncFd::register(socket) } {
             Ok(s) => s,
             Err(error) => {
-                return Err(ConnectError::AsyncCreateFailed(self.cid, port, error));
+                return Err(ConnectError::AsyncCreateFailed(self.cid, port, error.into()));
             }
         };
 

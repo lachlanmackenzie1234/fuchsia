@@ -457,7 +457,7 @@ CRATE_ANNOTATIONS = {
     ],
     "tokio": [
         crate.annotation(
-            version = "1.53.1",
+            version = "1.54.1",
             crate_features = crate.select(
                 common = [],
                 selects = {

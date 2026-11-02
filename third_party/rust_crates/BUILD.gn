@@ -2474,25 +2474,25 @@ group("thiserror-2.0.21") {
 
 if (!(current_os == "fuchsia")) {
   group("tokio") {
-    public_deps = [ ":tokio-v1_53_1" ]
+    public_deps = [ ":tokio-v1_54_1" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("tokio-1.53.1") {
-    public_deps = [ ":tokio-v1_53_1" ]
+  group("tokio-1.54.1") {
+    public_deps = [ ":tokio-v1_54_1" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("tokio") {
-    public_deps = [ ":tokio-v1_53_1" ]
+    public_deps = [ ":tokio-v1_54_1" ]
   }
 }
 
 if (current_os == "fuchsia") {
-  group("tokio-1.53.1") {
-    public_deps = [ ":tokio-v1_53_1" ]
+  group("tokio-1.54.1") {
+    public_deps = [ ":tokio-v1_54_1" ]
   }
 }
 
@@ -9687,12 +9687,12 @@ rustc_library("fuse3-v0_9_0") {
   deps = []
   deps += [ ":libc-v0_2_190" ]
   deps += [ ":nix-v0_29_0" ]
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":trait-make-v0_1_0($host_toolchain)" ]
   deps += [ ":async-notify-v0_3_4" ]
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":slab-v0_4_12" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ ":which-v8_0_6" ]
   deps += [ ":zerocopy-v0_8_61" ]
@@ -11622,7 +11622,6 @@ rustc_library("hyper-v1_12_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":atomic-waker-v1_1_2" ]
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":futures-core-v0_3_34" ]
@@ -11633,6 +11632,7 @@ rustc_library("hyper-v1_12_0") {
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":smallvec-v1_16_3" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":want-v0_3_2" ]
 
   rustenv = []
@@ -11673,13 +11673,13 @@ rustc_library("hyper-rustls-v0_27_10") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_21" ]
   deps += [ ":hyper-v1_12_0" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
   deps += [ ":rustls-v0_23_46" ]
   deps += [ ":tokio-rustls-v0_26_6" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":tower-service-v0_3_3" ]
 
   rustenv = []
@@ -11716,7 +11716,6 @@ rustc_library("hyper-util-v0_1_21") {
 
   deps = []
   deps += [ ":libc-v0_2_190" ]
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":futures-channel-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
@@ -11726,6 +11725,7 @@ rustc_library("hyper-util-v0_1_21") {
   deps += [ ":hyper-v1_12_0" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":socket2-v0_6_5" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":tower-service-v0_3_3" ]
   deps += [ ":tracing-v0_1_44" ]
 
@@ -13655,7 +13655,6 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
@@ -13670,6 +13669,7 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":sha2-v0_11_1" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":url-v2_5_8" ]
 
   rustenv = []
@@ -13708,7 +13708,6 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
@@ -13723,6 +13722,7 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":sha2-v0_11_1" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":url-v2_5_8" ]
 
   rustenv = []
@@ -13762,7 +13762,6 @@ rustc_library("mock-omaha-server-v0_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
@@ -13776,6 +13775,7 @@ rustc_library("mock-omaha-server-v0_5_0") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":sha2-v0_11_1" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":url-v2_5_8" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
@@ -13819,7 +13819,6 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":anyhow-v1_0_104" ]
   deps += [ ":argh-v0_1_19" ]
   deps += [ ":derive_builder-v0_20_2" ]
@@ -13833,6 +13832,7 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
   deps += [ ":sha2-v0_11_1" ]
+  deps += [ ":tokio-v1_54_1" ]
   deps += [ ":url-v2_5_8" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
@@ -23257,15 +23257,15 @@ rustc_macro("tls_codec_derive-v0_4_2") {
   applicable_licenses = [ ":tls_codec_derive-v0_4_2.license" ]
 }
 
-license("tokio-v1_53_1.license") {
+license("tokio-v1_54_1.license") {
   public_package_name = "tokio"
-  license_files = [ "//third_party/rust_crates/forks/tokio-1.53.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/tokio-1.54.1/LICENSE" ]
 }
 
-rustc_library("tokio-v1_53_1") {
+rustc_library("tokio-v1_54_1") {
   crate_name = "tokio"
-  source_root = "//third_party/rust_crates/forks/tokio-1.53.1/src/lib.rs"
-  output_name = "tokio-e0b354790a60dd57"
+  source_root = "//third_party/rust_crates/vendor/tokio-1.54.1/src/lib.rs"
+  output_name = "tokio-701c4c0030cebd53"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -23280,7 +23280,7 @@ rustc_library("tokio-v1_53_1") {
     deps += [ ":libc-v0_2_190" ]
     deps += [ ":mio-v1_2_4" ]
   }
-  if (!(current_cpu == "wasm32") || (false && !false)) {
+  if (!(current_cpu == "wasm32") || false || (false && !false)) {
     deps += [ ":socket2-v0_6_5" ]
   }
   if (false) {
@@ -23306,8 +23306,8 @@ rustc_library("tokio-v1_53_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e0b354790a60dd57",
-    "-Cextra-filename=-e0b354790a60dd57",
+    "-Cmetadata=701c4c0030cebd53",
+    "-Cextra-filename=-701c4c0030cebd53",
     "--cfg=feature=\"bytes\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"io-util\"",
@@ -23346,7 +23346,7 @@ rustc_library("tokio-v1_53_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tokio-v1_53_1.license" ]
+  applicable_licenses = [ ":tokio-v1_54_1.license" ]
 }
 
 license("tokio-macros-v2_7_2.license") {
@@ -23401,8 +23401,8 @@ rustc_library("tokio-rustls-v0_26_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":rustls-v0_23_46" ]
+  deps += [ ":tokio-v1_54_1" ]
 
   rustenv = []
 
@@ -23437,9 +23437,9 @@ rustc_library("tokio-stream-v0_1_19") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tokio-v1_53_1" ]
   deps += [ ":futures-core-v0_3_34" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
+  deps += [ ":tokio-v1_54_1" ]
 
   rustenv = []
 
