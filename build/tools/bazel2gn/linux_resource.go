@@ -55,7 +55,7 @@ var (
 
 func isLinuxResourceBinaryRule(rule string) bool {
 	switch rule {
-	case "cc_binary", "fx_cc_binary", "fx_cc_test", "rustc_binary", "rust_binary":
+	case "cc_binary", "fx_cc_binary", "fx_cc_test_binary", "rustc_binary", "rust_binary":
 		return true
 	default:
 		return false

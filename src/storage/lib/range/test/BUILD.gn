@@ -37,7 +37,7 @@ group("tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("range") {
+cc_test_executable("range") {
   sources = [
     "interval-tree-test.cc",
     "range.cc",
@@ -48,6 +48,8 @@ test("range") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("range-test-pkg") {

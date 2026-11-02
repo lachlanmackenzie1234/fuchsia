@@ -2,6 +2,19 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/testing/host_test.gni")
+
+# The GN copy of the `fidl-walker-host-tests_host_test` Bazel host test. The
+# generated `cc_test_executable("fidl-walker-host-tests")` doesn't register a
+# host test by itself.
+if (is_host) {
+  host_test("fidl-walker-host-tests_host_test") {
+    binary_path = "$root_out_dir/fidl-walker-host-tests"
+    target = get_label_info(":fidl-walker-host-tests", "label_with_toolchain")
+    deps = [ ":fidl-walker-host-tests" ]
+  }
+}
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -155,12 +168,14 @@ source_set("host_test_sources") {
   ]
 }
 
-test("fidl-walker-host-tests") {
+cc_test_executable("fidl-walker-host-tests") {
   visibility = [
     ":*",
     "//src/lib/fidl/c:*",
   ]
   deps = [ ":host_test_sources" ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fidl("fidl.test.coding") {

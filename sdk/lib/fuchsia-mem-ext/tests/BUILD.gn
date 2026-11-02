@@ -33,13 +33,15 @@ group("tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("fuchsia-mem-ext-test") {
+cc_test_executable("fuchsia-mem-ext-test") {
   sources = [ "fuchsia-mem-ext-tests.cc" ]
   deps = [
     "//sdk/lib/fuchsia-mem-ext",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("fuchsia-mem-ext-test-package") {

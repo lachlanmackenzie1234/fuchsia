@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -10,7 +10,7 @@ package(default_applicable_licenses = ["//:license"])
 # Preserve original GN output_name so GN does not emit a top-level phony alias
 # that collides with fuchsia_unittest_package("fidl_cpp_natural_coding_tests") on incremental builds.
 # @bazel2gn:raw_attribute:output_name="fidl_cpp_natural_coding_tests"
-fx_cc_test(
+fx_cc_test_binary(
     name = "fidl_cpp_natural_coding_tests_bin",
     srcs = [
         "natural_response_test.cc",

@@ -51,7 +51,7 @@ source_set("driver-utils") {
   ]
 }
 
-test("driver-utils-test") {
+cc_test_executable("driver-utils-test") {
   sources = [
     "poll-until-test.cc",
     "post-task-test.cc",
@@ -64,6 +64,8 @@ test("driver-utils-test") {
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("driver-utils-test-package") {

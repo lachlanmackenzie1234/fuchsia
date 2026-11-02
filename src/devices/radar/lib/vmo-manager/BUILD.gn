@@ -50,13 +50,15 @@ source_set("vmo-manager") {
   ]
 }
 if (is_fuchsia) {
-  test("vmo-manager-test-bin") {
+  cc_test_executable("vmo-manager-test-bin") {
     sources = [ "vmo-manager-test.cc" ]
     output_name = "vmo-manager-test"
     deps = [
       ":vmo-manager",
       "//zircon/system/ulib/zxtest",
     ]
+    testonly = true
+    emit_tool_path = false
   }
 }
 

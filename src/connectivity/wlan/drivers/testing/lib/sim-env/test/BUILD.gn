@@ -27,7 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("event_unittests") {
+cc_test_executable("event_unittests") {
   sources = [ "event_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -35,9 +35,11 @@ test("event_unittests") {
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("rx_tests") {
+cc_test_executable("rx_tests") {
   sources = [ "rx_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -46,9 +48,11 @@ test("rx_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("frame_ie_tests") {
+cc_test_executable("frame_ie_tests") {
   sources = [ "frame_ie_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -57,9 +61,11 @@ test("frame_ie_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("location_tests") {
+cc_test_executable("location_tests") {
   sources = [ "location_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -68,9 +74,11 @@ test("location_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("trans_time_tests") {
+cc_test_executable("trans_time_tests") {
   sources = [ "trans_time_tests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -79,6 +87,8 @@ test("trans_time_tests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_component("wlan-sim-env-test.event_unittests.component") {

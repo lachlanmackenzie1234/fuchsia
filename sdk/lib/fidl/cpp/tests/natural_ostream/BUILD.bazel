@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -11,7 +11,7 @@ package(default_applicable_licenses = ["//:license"])
 # that collides with fuchsia_unittest_package("fidl_cpp_natural_ostream_tests") on incremental builds.
 # test-parity-allow-manual: Fuchsia-only test binary wrapped by :fidl_cpp_natural_ostream_tests (host-compatible deps do not mark it Fuchsia-only on --config=host).
 # @bazel2gn:raw_attribute:output_name="fidl_cpp_natural_ostream_tests"
-fx_cc_test(
+fx_cc_test_binary(
     name = "fidl_cpp_natural_ostream_tests_bin",
     srcs = ["natural_ostream_tests.cc"],
     tags = ["manual"],

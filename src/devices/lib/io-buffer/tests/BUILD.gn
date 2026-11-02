@@ -32,13 +32,15 @@ group("tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("phys-iter-test-bin") {
+cc_test_executable("phys-iter-test-bin") {
   sources = [ "phys-iter-test.cc" ]
   deps = [
     "//src/devices/lib/io-buffer",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("phys-iter-test") {

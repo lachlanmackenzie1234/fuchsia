@@ -27,13 +27,15 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("fidl_cpp_natural_ostream_tests_bin") {
+cc_test_executable("fidl_cpp_natural_ostream_tests_bin") {
   sources = [ "natural_ostream_tests.cc" ]
   deps = [
     "//sdk/testing/fidl/types_tests:test.types_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
   output_name = "fidl_cpp_natural_ostream_tests"
 }
 

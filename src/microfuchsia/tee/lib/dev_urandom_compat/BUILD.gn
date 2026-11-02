@@ -46,13 +46,15 @@ source_set("dev_urandom_compat") {
   ]
 }
 
-test("dev_urandom_compat_test") {
+cc_test_executable("dev_urandom_compat_test") {
   sources = [ "dev_urandom_compat_test.cc" ]
   deps = [
     ":dev_urandom_compat",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("dev_urandom_compat_test_package") {

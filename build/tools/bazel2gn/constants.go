@@ -101,7 +101,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_cc_binary":          "executable",
 	"fx_cc_library_headers": "library_headers",
 	"fx_cc_library":         "static_library",
-	"fx_cc_test":            "test",
+	"fx_cc_test_binary":     "cc_test_executable",
 
 	// C++ Zircon
 	"cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable` not specified.
@@ -250,10 +250,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// instead, and `fuchsia_component_manifest()` does not accept `includes`.
 	"fx_component_manifest": {"includes": true},
 	"fx_compiled_manifest":  {"includes": true},
-	// GN `test()` hardcodes `testonly = true` on its inner `cc_test_executable()`
-	// without reading `invoker.testonly`, so emitting `testonly` fails `gn gen`
-	// with "Assignment had no effect". (`callExprToGN()` rejects non-`True` values.)
-	"fx_cc_test": {"testonly": true},
+	// `fx_cc_test_binary()` is always testonly, so `extraGnExpressionByRules`
+	// always sets `testonly = true` on the GN `cc_test_executable()` instead.
+	// (`callExprToGN()` rejects non-`True` values.)
+	"fx_cc_test_binary": {"testonly": true},
 }
 
 // unsupportedAttrsByRules lists attributes that bazel2gn can't translate yet.
@@ -319,7 +319,7 @@ var buildFlagsAttrMap = map[string]string{
 // fxCcBinaryAttrMap maps from attribute names in `fx_cc_binary()` to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var fxCcBinaryAttrMap = mustMergeMaps(mustMergeMaps(ccBinAttrMap, buildFlagsAttrMap), map[string]string{
-	// `gn_output_name` only exists on `fx_cc_binary()` / `fx_cc_test()` to
+	// `gn_output_name` only exists on `fx_cc_binary()` / `fx_cc_test_binary()` to
 	// set the GN `output_name`; Bazel ignores it.
 	"gn_output_name": "output_name",
 })
@@ -492,7 +492,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"fuchsia_cc_dso":      fuchsiaCcDsoAttrMap,
 	"fx_cc_binary":        fxCcBinaryAttrMap,
 	"fx_cc_library":       fxCcLibAttrMap,
-	"fx_cc_test":          fxCcBinaryAttrMap,
+	"fx_cc_test_binary":   fxCcBinaryAttrMap,
 
 	// C++ Zircon
 	"cc_shared_library_zx": ccLibAttrMap,
@@ -549,14 +549,17 @@ var attrMapsByRules = map[string]map[string]string{
 	},
 }
 
-var extraGnExpressionByRules = map[string]string{
-	"cc_shared_library_zx":     `sdk = "shared"`,
-	"cc_source_library_zx":     `sdk = "source"`,
-	"cc_static_library_zx":     `sdk = "static"`,
-	"idk_cc_shared_library_zx": `sdk = "shared"`,
-	"idk_cc_source_library_zx": `sdk = "source"`,
-	"idk_cc_static_library_zx": `sdk = "static"`,
-	"test_suite":               `testonly = true`,
+var extraGnExpressionByRules = map[string][]string{
+	"cc_shared_library_zx":     {`sdk = "shared"`},
+	"cc_source_library_zx":     {`sdk = "source"`},
+	"cc_static_library_zx":     {`sdk = "static"`},
+	"idk_cc_shared_library_zx": {`sdk = "shared"`},
+	"idk_cc_source_library_zx": {`sdk = "source"`},
+	"idk_cc_static_library_zx": {`sdk = "static"`},
+	"test_suite":               {`testonly = true`},
+	// GN `cc_test_executable()` doesn't force `testonly`, and like GN `test()`,
+	// keep test binaries out of tool_paths.json on host.
+	"fx_cc_test_binary": {`testonly = true`, `emit_tool_path = false`},
 }
 
 // These identifiers with the same meanings are represented differently in Bazel

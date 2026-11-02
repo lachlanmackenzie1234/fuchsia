@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -64,7 +64,7 @@ fx_cc_library(
     alwayslink = True,
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "mcs_rate_lookup_test",
     srcs = ["mcs_rate_lookup_test.cc"],
     deps = [
@@ -81,7 +81,7 @@ fx_unittest_package(
     visibility = ["//src/connectivity/wlan:__pkg__"],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "wlan_cpp_bitfield_test",
     srcs = ["bitfield_test.cc"],
     deps = [

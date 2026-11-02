@@ -404,20 +404,21 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 				hasWithUnitTests = true
 			}
 		}
-		// Validate `testonly` on `fx_cc_test` before `attrsToOmit` drops it so
-		// `testonly = False` (or any non-`True` expression) fails conversion
-		// rather than silently generating a `testonly = true` GN `test()`.
-		if bazelRule == "fx_cc_test" && ident.Name == "testonly" {
+		// Validate `testonly` on `fx_cc_test_binary` before `attrsToOmit` drops
+		// it so `testonly = False` (or any non-`True` expression) fails
+		// conversion rather than silently generating a `testonly = true` GN
+		// `cc_test_executable()`.
+		if bazelRule == "fx_cc_test_binary" && ident.Name == "testonly" {
 			if rhsIdent, ok := unwrapParenExpr(binaryExpr.Y).(*syntax.Ident); !ok || rhsIdent.Name != "True" {
-				return nil, errors.New("fx_cc_test targets are always testonly; testonly must be True if specified")
+				return nil, errors.New("fx_cc_test_binary targets are always testonly; testonly must be True if specified")
 			}
 		}
-		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test` is renamed to GN
+		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test_binary` is renamed to GN
 		// `output_name` through `attrMapsByRules`. Only validate it here:
 		// require a string literal so that `fx_packaged_binary` and
 		// `linux_resource` lookups (see `indexGNBinaries`) see the same name as
 		// GN, and reject a conflicting raw `output_name` annotation.
-		if (bazelRule == "fx_cc_binary" || bazelRule == "fx_cc_test") && ident.Name == "gn_output_name" {
+		if (bazelRule == "fx_cc_binary" || bazelRule == "fx_cc_test_binary") && ident.Name == "gn_output_name" {
 			if _, err := stringLiteralValue(binaryExpr.Y); err != nil {
 				return nil, fmt.Errorf("gn_output_name of %s must be a string literal: %v", bazelRule, err)
 			}
@@ -518,7 +519,17 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	}
 
 	if extra, ok := extraGnExpressionByRules[bazelRule]; ok {
-		ret = append(ret, indent([]string{extra}, 1)...)
+		// GN fails on a second assignment to the same variable, so reject raw
+		// attributes that set a variable bazel2gn already sets for this rule.
+		for _, e := range extra {
+			extraName := strings.TrimSpace(strings.SplitN(e, "=", 2)[0])
+			for _, raw := range rawAttrs {
+				if strings.TrimSpace(strings.SplitN(raw, "=", 2)[0]) == extraName {
+					return nil, fmt.Errorf("bazel2gn always sets `%s` on %s; remove the `# @bazel2gn:raw_attribute:%s` annotation", e, bazelRule, extraName)
+				}
+			}
+		}
+		ret = append(ret, indent(extra, 1)...)
 	}
 	ret = append(ret, indent(rawAttrs, 1)...)
 

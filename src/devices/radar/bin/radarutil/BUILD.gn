@@ -61,7 +61,7 @@ fuchsia_component("radarutil-component") {
   deps = [ ":radarutil-bin" ]
 }
 
-test("radarutil-test-bin") {
+cc_test_executable("radarutil-test-bin") {
   sources = [
     "radarutil-test.cc",
     "radarutil.cc",
@@ -75,6 +75,8 @@ test("radarutil-test-bin") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("radarutil-test") {

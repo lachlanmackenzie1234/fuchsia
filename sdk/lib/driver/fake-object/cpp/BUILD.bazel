@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
@@ -33,7 +33,7 @@ idk_cc_source_library(
     ],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "fake_object_test",
     srcs = [
         "fake-object-test.cc",

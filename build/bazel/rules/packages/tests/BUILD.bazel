@@ -12,7 +12,7 @@ load("@rules_cc//cc:defs.bzl", "cc_import")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/cc:fx_cc_shared_library.bzl", "fx_cc_shared_library")
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load(
     "//build/bazel/rules/components:cml_shard.bzl",
     "cml_shard",
@@ -1253,10 +1253,10 @@ verify_fx_test_unstripped_binaries(
     test = ":example_disabled_extra_linker_flags_unittest_package",
 )
 
-# Tests `fx_cc_test()` (implicit `testonly = True`, `no-fat-lto-objects-linking` by default)
+# Tests `fx_cc_test_binary()` (implicit `testonly = True`, `no-fat-lto-objects-linking` by default)
 # with both `fx_unittest_package()` and `fx_packaged_binary(install_root = "test/")`
 # inside an `fx_test_component()`.
-fx_cc_test(
+fx_cc_test_binary(
     name = "example_cc_test_bin",
     srcs = ["example_test.cc"],
     tags = ["manual"],

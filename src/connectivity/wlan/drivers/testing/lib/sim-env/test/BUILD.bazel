@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "event_unittests",
     srcs = ["event_unittests.cc"],
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
@@ -19,7 +19,7 @@ fx_cc_test(
     ],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "rx_tests",
     srcs = ["rx_tests.cc"],
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
@@ -33,7 +33,7 @@ fx_cc_test(
     ],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "frame_ie_tests",
     srcs = ["frame_ie_tests.cc"],
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
@@ -47,7 +47,7 @@ fx_cc_test(
     ],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "location_tests",
     srcs = ["location_tests.cc"],
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
@@ -61,7 +61,7 @@ fx_cc_test(
     ],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "trans_time_tests",
     srcs = ["trans_time_tests.cc"],
     # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings

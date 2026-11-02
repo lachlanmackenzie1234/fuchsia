@@ -57,7 +57,7 @@ sdk_source_set("cpp") {
   ]
 }
 
-test("fake_object_test") {
+cc_test_executable("fake_object_test") {
   sources = [
     "fake-object-test.cc",
     "internal.h",
@@ -66,6 +66,8 @@ test("fake_object_test") {
     ":cpp",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("fake_object_test_package") {

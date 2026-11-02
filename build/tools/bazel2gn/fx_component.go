@@ -327,8 +327,8 @@ type packagedBinaryRecord struct {
 //  3. Resolves `fx_packaged_binary()` targets referenced by converted
 //     component `deps`: unwrapping directly to `:<binary>` when
 //     `install_root + binary_name` matches the GN target's default
-//     distribution destination (e.g. `"test/<output_name>"` for `fx_cc_test()`,
-//     `"bin/<output_name>"` for other executables, or `"lib/lib<output_name>.so"`
+//     distribution destination (e.g. `"bin/<output_name>"` for executables,
+//     including `fx_cc_test_binary()`, or `"lib/lib<output_name>.so"`
 //     for `rustc_cdylib`, `fuchsia_cc_dso`, and `fuchsia_rust_dso`), or
 //     rewriting the `fx_packaged_binary()` into a GN `renamed_binary()` target
 //     otherwise (when supported by the rule).
@@ -673,8 +673,8 @@ type gnBinaryOutput struct {
 	// built directly in `$root_out_dir`).
 	outFile string
 	// defaultDest is the default package installation path emitted by the GN
-	// target's `distribution_entries` metadata (e.g. `"bin/<output_name>"`,
-	// `"test/<output_name>"`, or `"lib/lib<output_name>.so"`).
+	// target's `distribution_entries` metadata (e.g. `"bin/<output_name>"` or
+	// `"lib/lib<output_name>.so"`).
 	defaultDest string
 	// ruleName is the Bazel rule name defining this target.
 	ruleName string
@@ -713,15 +713,17 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryOutput, error) {
 		}
 
 		rawOut, hasRawOut := rawOutputNameFromStmt(stmt, call)
-		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test` sets the GN `output_name`.
-		if fn.Name == "fx_cc_binary" || fn.Name == "fx_cc_test" {
+		// `gn_output_name` on `fx_cc_binary` and `fx_cc_test_binary` sets the GN `output_name`.
+		if fn.Name == "fx_cc_binary" || fn.Name == "fx_cc_test_binary" {
 			if out, ok := unskippedCallStringAttr(call, "gn_output_name"); ok && out != "" {
 				rawOut, hasRawOut = out, true
 			}
 		}
 
 		switch fn.Name {
-		case "cc_binary", "fx_cc_binary":
+		case "cc_binary", "fx_cc_binary", "fx_cc_test_binary":
+			// GN `executable()` and `cc_test_executable()` (which
+			// `fx_cc_test_binary()` becomes) both install to `"bin/"`.
 			outName := name
 			if hasRawOut {
 				outName = rawOut
@@ -732,19 +734,6 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryOutput, error) {
 			outputs[name] = gnBinaryOutput{
 				outFile:      outName,
 				defaultDest:  "bin/" + outName,
-				ruleName:     fn.Name,
-				allowRenamed: true,
-			}
-		case "fx_cc_test":
-			// GN `test()` (from //build/test.gni) sets `destination = "test/<output_file>"`
-			// in `distribution_entries`, unlike `executable()` which installs to `"bin/"`.
-			outName := name
-			if hasRawOut {
-				outName = rawOut
-			}
-			outputs[name] = gnBinaryOutput{
-				outFile:      outName,
-				defaultDest:  "test/" + outName,
 				ruleName:     fn.Name,
 				allowRenamed: true,
 			}

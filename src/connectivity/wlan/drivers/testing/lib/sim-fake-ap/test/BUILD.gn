@@ -27,7 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("assoc_unittests") {
+cc_test_executable("assoc_unittests") {
   sources = [ "assoc_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -36,9 +36,11 @@ test("assoc_unittests") {
     "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("auth_unittests") {
+cc_test_executable("auth_unittests") {
   sources = [ "auth_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -47,9 +49,11 @@ test("auth_unittests") {
     "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("beacon_unittests") {
+cc_test_executable("beacon_unittests") {
   sources = [ "beacon_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -59,9 +63,11 @@ test("beacon_unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("data_unittests") {
+cc_test_executable("data_unittests") {
   sources = [ "data_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -70,9 +76,11 @@ test("data_unittests") {
     "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
-test("probe_unittests") {
+cc_test_executable("probe_unittests") {
   sources = [ "probe_unittests.cc" ]
   configs += [ "//build/config:Wno-conversion" ]
   deps = [
@@ -82,6 +90,8 @@ test("probe_unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_component("wlan-sim-fake-ap-test.assoc_unittests.component") {

@@ -228,8 +228,8 @@ to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
     `BUILD.bazel` wrapping an un-skipped binary or shared-object target in the
     same file:
     *   If `install_root + binary_name` matches the GN target's default
-        distribution destination (`"test/<output_name>"` for `fx_cc_test()`,
-        `"bin/<output_name>"` for other executables, or
+        distribution destination (`"bin/<output_name>"` for executables,
+        including `fx_cc_test_binary()`, or
         `"lib/lib<output_name>.so"` for `rustc_cdylib()`, `fuchsia_cc_dso()`,
         and `fuchsia_rust_dso()`), `:<packaged_bin>` in `deps` unwraps directly
         to the underlying `:<binary>` target.
@@ -246,7 +246,7 @@ another un-skipped target).
 #### Starnix Linux binaries
 
 Starnix Linux binaries and shared objects packaged into Fuchsia components use
-standard binary rules (`fx_cc_binary()`, `fx_cc_test()`, `cc_binary()`,
+standard binary rules (`fx_cc_binary()`, `fx_cc_test_binary()`, `cc_binary()`,
 `rustc_binary()`) paired with `linux_resource()` (from
 `//src/starnix/containers:linux_resource.bzl`), which syncs to GN's
 `linux_resource()` template (from `//src/starnix/build/linux_resource.gni`):
@@ -255,7 +255,7 @@ standard binary rules (`fx_cc_binary()`, `fx_cc_test()`, `cc_binary()`,
     `cc_binary_host_tool()`, and `idk_cc_binary_host_tool()`), `linkopts` maps
     to GN `ldflags`, and `linkshared = True` on `fx_cc_binary()` / `cc_binary()`
     maps to GN `loadable_module()`. `gn_output_name` on `fx_cc_binary()`
-    / `fx_cc_test()` is only used by GN: it maps to the GN `output_name` (the
+    / `fx_cc_test_binary()` is only used by GN: it maps to the GN `output_name` (the
     Bazel binary is always named after the target).
 *   When a `linux_resource()` references a binary target in the same
     `BUILD.bazel` file that has no non-`linux_resource()` GN consumers,
@@ -334,12 +334,17 @@ While a library is used in both build systems, its tests run in both (see
 [Testing libraries in both build systems](/docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)),
 so `bazel2gn` translates test rules too:
 
-*   `fx_cc_test()` (from `//build/bazel/rules/cc:fx_cc_test.bzl`) maps to GN
-    `test()` (from `//build/test.gni`) with the same attribute mappings as
-    `fx_cc_binary()` (except `linkshared`, which is not supported on tests).
-    `testonly` is omitted in GN because `test()` hardcodes `testonly = true`
-    without reading `invoker.testonly` (`testonly = False` is an error), and
-    `disable_lto` passes through when explicitly set.
+*   `fx_cc_test_binary()` (from
+    `//build/bazel/rules/cc:fx_cc_test_binary.bzl`) maps to GN
+    `cc_test_executable()` (from `//build/testing/cc_test_executable.gni`) with
+    the same attribute mappings as `fx_cc_binary()` (except `linkshared`, which
+    is not supported on test binaries). The GN target always gets
+    `testonly = true` (`testonly = False` is an error) and
+    `emit_tool_path = false`, and `disable_lto` passes through when explicitly
+    set. Like the Bazel macro, it doesn't register a test. `bazel2gn` doesn't
+    translate `host_cc_test()` yet, so the GN copy of a C++ host test is a
+    hand-written GN `host_test()` that runs the generated binary, above the
+    sentinel.
 *   `rustc_test()` maps to GN `rustc_test()`. With `crate = ":<lib>"`, the
     crate must be defined in the same `BUILD.bazel`, and its `srcs`,
     `crate_root`, `edition`, `rustc_env`, `deps`, `proc_macro_deps`,
@@ -642,7 +647,7 @@ has no counterpart in the Bazel target. This annotation must be placed right
 above the target definition it is annotating to take effect. Multiple
 `@bazel2gn:raw_attribute:` annotations may be stacked right above a target.
 Prefer a Bazel attribute when the rule has one: for example, set
-`gn_output_name` on `fx_cc_binary()` and `fx_cc_test()` instead of using this
+`gn_output_name` on `fx_cc_binary()` and `fx_cc_test_binary()` instead of using this
 annotation.
 
 **Example:**

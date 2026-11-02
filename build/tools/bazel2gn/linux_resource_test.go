@@ -365,8 +365,8 @@ linux_resource("linux_res") {
 }`,
 		},
 		{
-			name: "fx_cc_test with custom gn_output_name and linux_resource",
-			bazel: `fx_cc_test(
+			name: "fx_cc_test_binary with custom gn_output_name and linux_resource",
+			bazel: `fx_cc_test_binary(
 	name = "syscall_test_bin",
 	testonly = True,
 	srcs = ["syscall_test.cc"],
@@ -382,7 +382,7 @@ linux_resource(
 	dest = "data/tests/custom_syscall_test",
 )`,
 			wantGN: `if (is_linux && !is_host) {
-	test("syscall_test_bin") {
+	cc_test_executable("syscall_test_bin") {
 		sources = [
 			"syscall_test.cc",
 		]
@@ -393,6 +393,8 @@ linux_resource(
 		deps = [
 			"//third_party/googletest:gtest_main",
 		]
+		testonly = true
+		emit_tool_path = false
 	}
 }
 linux_resource("syscall_test_res") {

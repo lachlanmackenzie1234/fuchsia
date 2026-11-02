@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/components:fx_component.bzl", "fx_component_manifest", "fx_test_component")
 load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
@@ -11,7 +11,7 @@ load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 package(default_applicable_licenses = ["//:license"])
 
 # test-parity-allow-manual: Fuchsia-only test binary wrapped by fx_packaged_binary in :fidl_cpp_natural_type_api_tests_package.
-fx_cc_test(
+fx_cc_test_binary(
     name = "fidl_cpp_natural_type_api_tests_bin",
     srcs = [
         "bits_test.cc",

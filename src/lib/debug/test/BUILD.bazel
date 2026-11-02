@@ -2,12 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
-fx_cc_test(
+fx_cc_test_binary(
     name = "backtrace-request-test",
     srcs = ["backtrace-request-test.cc"],
     tags = ["manual"],
@@ -30,7 +30,7 @@ fx_unittest_package(
 #
 # Related unittests exist alongside the backtrace and crashsvc code, but
 # this verifies that the pieces are working together correctly.
-fx_cc_test(
+fx_cc_test_binary(
     name = "backtrace-request-integration-test",
     srcs = ["backtrace-request-integration-test.cc"],
     tags = ["manual"],

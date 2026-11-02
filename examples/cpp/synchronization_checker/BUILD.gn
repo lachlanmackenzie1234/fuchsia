@@ -39,7 +39,7 @@ group("hermetic_tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("test") {
+cc_test_executable("test") {
   sources = [ "main.cc" ]
   deps = [
     "//sdk/lib/async:async-cpp",
@@ -47,6 +47,8 @@ test("test") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/zx",
   ]
+  testonly = true
+  emit_tool_path = false
   output_name = "cpp_examples_synchronization_checker_test"
 }
 

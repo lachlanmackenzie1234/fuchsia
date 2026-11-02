@@ -35,7 +35,7 @@ group("tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("backtrace-request-test") {
+cc_test_executable("backtrace-request-test") {
   sources = [ "backtrace-request-test.cc" ]
   deps = [
     "//src/lib/debug:backtrace-request",
@@ -43,6 +43,8 @@ test("backtrace-request-test") {
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("backtrace-request-test-pkg") {
@@ -55,12 +57,14 @@ fuchsia_unittest_package("backtrace-request-test-pkg") {
   ]
 }
 
-test("backtrace-request-integration-test") {
+cc_test_executable("backtrace-request-integration-test") {
   sources = [ "backtrace-request-integration-test.cc" ]
   deps = [
     "//src/lib/debug:backtrace-request",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("backtrace-request-integration-test-pkg") {

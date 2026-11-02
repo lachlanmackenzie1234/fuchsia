@@ -172,7 +172,7 @@ def verify_build_flags_labels_test(
 
     Args:
         name: (string) Name of the host_test() target.
-        target_under_test: (label) Label of a target wrapped with build_flags() support (e.g. `fx_cc_test`).
+        target_under_test: (label) Label of a target wrapped with build_flags() support (e.g. `fx_cc_test_binary`).
         expected_ordered_labels: (list[label]) `build_flags` labels expected in order.
         unexpected_labels: (list[label]) `build_flags` labels expected to be absent.
     """

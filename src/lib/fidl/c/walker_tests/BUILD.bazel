@@ -5,7 +5,7 @@
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
-load("//build/bazel/rules/cc:fx_cc_test.bzl", "fx_cc_test")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component_manifest",
@@ -198,7 +198,7 @@ fx_cc_library(
 )
 
 # Some of the tests can run on host.
-fx_cc_test(
+fx_cc_test_binary(
     name = "fidl-walker-host-tests",
     # In GN, this target used if (!is_fuchsia) and is instantiated via ($host_toolchain).
     # @bazel2gn:skip

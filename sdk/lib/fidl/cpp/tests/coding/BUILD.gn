@@ -27,7 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("fidl_cpp_natural_coding_tests_bin") {
+cc_test_executable("fidl_cpp_natural_coding_tests_bin") {
   sources = [
     "natural_response_test.cc",
     "natural_struct_test.cc",
@@ -40,6 +40,8 @@ test("fidl_cpp_natural_coding_tests_bin") {
     "//sdk/testing/fidl/types_tests:test.types_cpp",
     "//zircon/system/ulib/zxtest",
   ]
+  testonly = true
+  emit_tool_path = false
   output_name = "fidl_cpp_natural_coding_tests"
 }
 

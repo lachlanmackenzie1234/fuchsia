@@ -618,32 +618,31 @@ fx_component(
 }`,
 		},
 		{
-			name: "fx_packaged_binary wrapping fx_cc_test unwraps when install_root is test/",
-			bazel: `fx_cc_test(
+			name: "fx_packaged_binary wrapping fx_cc_test_binary unwraps when install_root is bin/",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	srcs = ["foo_test.cc"],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
 	name = "bar_test_bin",
 	srcs = ["bar_test.cc"],
 	gn_output_name = "custom_bar_test",
 )
 
 fx_packaged_binary(
-	name = "foo_test_in_test_dir",
+	name = "foo_test_in_bin_dir",
 	testonly = True,
 	binary = ":foo_test",
 	binary_name = "foo_test",
-	install_root = "test/",
 )
 
 fx_packaged_binary(
-	name = "bar_test_in_test_dir",
+	name = "bar_test_in_bin_dir",
 	testonly = True,
 	binary = ":bar_test_bin",
 	binary_name = "custom_bar_test",
-	install_root = "test/",
+	install_root = "bin/",
 )
 
 fx_component_manifest(
@@ -656,8 +655,8 @@ fx_test_component(
 	name = "foo_test_component",
 	compiled_manifest = ":test_manifest",
 	deps = [
-		":foo_test_in_test_dir",
-		":bar_test_in_test_dir",
+		":foo_test_in_bin_dir",
+		":bar_test_in_bin_dir",
 	],
 )
 
@@ -665,16 +664,20 @@ fx_package(
 	name = "foo_test_pkg",
 	test_components = [":foo_test_component"],
 )`,
-			wantGN: `test("foo_test") {
+			wantGN: `cc_test_executable("foo_test") {
 	sources = [
 		"foo_test.cc",
 	]
+	testonly = true
+	emit_tool_path = false
 }
-test("bar_test_bin") {
+cc_test_executable("bar_test_bin") {
 	sources = [
 		"bar_test.cc",
 	]
 	output_name = "custom_bar_test"
+	testonly = true
+	emit_tool_path = false
 }
 fuchsia_component_manifest("test_manifest") {
 	testonly = true
@@ -695,22 +698,23 @@ fuchsia_test_package("foo_test_pkg") {
 }`,
 		},
 		{
-			name: "fx_packaged_binary wrapping fx_cc_test emits renamed_binary when install_root is bin/ or custom",
-			bazel: `fx_cc_test(
+			name: "fx_packaged_binary wrapping fx_cc_test_binary emits renamed_binary when install_root is test/ or custom",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	srcs = ["foo_test.cc"],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
 	name = "bar_test",
 	srcs = ["bar_test.cc"],
 )
 
 fx_packaged_binary(
-	name = "foo_test_in_bin_dir",
+	name = "foo_test_in_test_dir",
 	testonly = True,
 	binary = ":foo_test",
 	binary_name = "foo_test",
+	install_root = "test/",
 )
 
 fx_packaged_binary(
@@ -718,7 +722,6 @@ fx_packaged_binary(
 	testonly = True,
 	binary = ":bar_test",
 	binary_name = "renamed_bar_test",
-	install_root = "test/",
 )
 
 fx_component_manifest(
@@ -731,7 +734,7 @@ fx_test_component(
 	name = "foo_test_component",
 	compiled_manifest = ":test_manifest",
 	deps = [
-		":foo_test_in_bin_dir",
+		":foo_test_in_test_dir",
 		":bar_test_renamed",
 	],
 )
@@ -740,23 +743,27 @@ fx_package(
 	name = "foo_test_pkg",
 	test_components = [":foo_test_component"],
 )`,
-			wantGN: `test("foo_test") {
+			wantGN: `cc_test_executable("foo_test") {
 	sources = [
 		"foo_test.cc",
 	]
+	testonly = true
+	emit_tool_path = false
 }
-test("bar_test") {
+cc_test_executable("bar_test") {
 	sources = [
 		"bar_test.cc",
 	]
+	testonly = true
+	emit_tool_path = false
 }
-renamed_binary("foo_test_in_bin_dir") {
+renamed_binary("foo_test_in_test_dir") {
 	testonly = true
 	source = "$root_out_dir/foo_test"
 	source_deps = [
 		":foo_test",
 	]
-	dest = "bin/foo_test"
+	dest = "test/foo_test"
 }
 renamed_binary("bar_test_renamed") {
 	testonly = true
@@ -764,7 +771,7 @@ renamed_binary("bar_test_renamed") {
 	source_deps = [
 		":bar_test",
 	]
-	dest = "test/renamed_bar_test"
+	dest = "bin/renamed_bar_test"
 }
 fuchsia_component_manifest("test_manifest") {
 	testonly = true
@@ -773,7 +780,7 @@ fuchsia_component_manifest("test_manifest") {
 fuchsia_test_component("foo_test_component") {
 	cm_label = ":test_manifest"
 	deps = [
-		":foo_test_in_bin_dir",
+		":foo_test_in_test_dir",
 		":bar_test_renamed",
 	]
 }
@@ -967,8 +974,8 @@ fx_component(
 )`,
 		},
 		{
-			name: "skipped fx_packaged_binary wrapping fx_cc_test with default bin/ install_root",
-			bazel: `fx_cc_test(
+			name: "skipped fx_packaged_binary wrapping fx_cc_test_binary with test/ install_root",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	srcs = ["foo_test.cc"],
 )
@@ -979,6 +986,7 @@ fx_packaged_binary(
 	testonly = True,
 	binary = ":foo_test",
 	binary_name = "foo_test",
+	install_root = "test/",
 )
 
 fx_component_manifest(

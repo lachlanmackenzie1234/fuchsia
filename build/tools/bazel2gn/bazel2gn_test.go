@@ -1914,7 +1914,7 @@ executable("bar") {
 }`,
 		},
 		{
-			name: "fx_cc_binary and fx_cc_test with gn_output_name",
+			name: "fx_cc_binary and fx_cc_test_binary with gn_output_name",
 			bazel: `fx_cc_binary(
 	name = "bin",
 	srcs = ["main.cc"],
@@ -1928,7 +1928,7 @@ fx_cc_binary(
 	gn_output_name = "foo_module",
 )
 
-fx_cc_test(
+fx_cc_test_binary(
 	name = "foo_test_bin",
 	srcs = ["foo_test.cc"],
 	gn_output_name = "foo_test",
@@ -1945,16 +1945,18 @@ loadable_module("libfoo.so") {
 	]
 	output_name = "foo_module"
 }
-test("foo_test_bin") {
+cc_test_executable("foo_test_bin") {
 	sources = [
 		"foo_test.cc",
 	]
 	output_name = "foo_test"
+	testonly = true
+	emit_tool_path = false
 }`,
 		},
 		{
-			name: "fx_cc_test conversion with implicit and explicit testonly",
-			bazel: `fx_cc_test(
+			name: "fx_cc_test_binary conversion with implicit and explicit testonly",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	srcs = ["foo_test.cc"],
 	build_flags = [":config"],
@@ -1967,7 +1969,7 @@ test("foo_test_bin") {
 	deps = ["//third_party/googletest:gtest_main"],
 )
 
-fx_cc_test(
+fx_cc_test_binary(
 	name = "bar_lto_test",
 	testonly = True,
 	srcs = ["bar_test.cc"],
@@ -1979,7 +1981,7 @@ fx_unittest_package(
 	unit_tests = [":foo_test"],
 )
 `,
-			wantGN: `test("foo_test") {
+			wantGN: `cc_test_executable("foo_test") {
 	sources = [
 		"foo_test.cc",
 	]
@@ -2003,12 +2005,16 @@ fx_unittest_package(
 	deps = [
 		"//third_party/googletest:gtest_main",
 	]
+	testonly = true
+	emit_tool_path = false
 }
-test("bar_lto_test") {
+cc_test_executable("bar_lto_test") {
 	sources = [
 		"bar_test.cc",
 	]
 	disable_lto = false
+	testonly = true
+	emit_tool_path = false
 }
 fuchsia_unittest_package("foo-test-pkg") {
 	package_name = "foo-test-pkg-gn"
@@ -3431,16 +3437,24 @@ cc_binary(
 )`,
 		},
 		{
-			name: "fx_cc_test with testonly = False",
-			bazel: `fx_cc_test(
+			name: "fx_cc_test_binary with testonly = False",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	testonly = False,
 	srcs = ["foo_test.cc"],
 )`,
 		},
 		{
-			name: "fx_cc_test with non-boolean testonly",
-			bazel: `fx_cc_test(
+			name: "fx_cc_test_binary with raw_attribute emit_tool_path",
+			bazel: `# @bazel2gn:raw_attribute:emit_tool_path = true
+fx_cc_test_binary(
+	name = "foo_test",
+	srcs = ["foo_test.cc"],
+)`,
+		},
+		{
+			name: "fx_cc_test_binary with non-boolean testonly",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	testonly = "true",
 	srcs = ["foo_test.cc"],
@@ -3456,8 +3470,8 @@ fx_cc_binary(
 )`,
 		},
 		{
-			name: "fx_cc_test with non-literal gn_output_name",
-			bazel: `fx_cc_test(
+			name: "fx_cc_test_binary with non-literal gn_output_name",
+			bazel: `fx_cc_test_binary(
 	name = "foo_test",
 	srcs = ["foo_test.cc"],
 	gn_output_name = "foo" + "_test",

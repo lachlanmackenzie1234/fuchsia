@@ -27,7 +27,7 @@
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-test("fidl_cpp_natural_type_api_tests_bin") {
+cc_test_executable("fidl_cpp_natural_type_api_tests_bin") {
   sources = [
     "bits_test.cc",
     "box_test.cc",
@@ -42,6 +42,8 @@ test("fidl_cpp_natural_type_api_tests_bin") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 renamed_binary("fidl_cpp_natural_type_api_tests_packaged_bin") {
