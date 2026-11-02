@@ -1243,8 +1243,34 @@ TEST_F(MapGrowsdownTest, VmStkUpdatesOnGrowAndUnmap) {
   ASSERT_TRUE(grown_vm_stk_kb.has_value());
   EXPECT_EQ(*grown_vm_stk_kb, *initial_vm_stk_kb + 4 * page_size_kb);
 
-  // Unmap the entire 6-page MAP_GROWSDOWN region (2 initial + 4 grown pages).
-  ASSERT_THAT(munmap(OffsetToAddress(grow_offset), 6 * page_size()), SyscallSucceeds());
+  // Shrink the 6-page MAP_GROWSDOWN region in-place to 4 pages via mremap.
+  void* remapped =
+      mremap(OffsetToAddress(grow_offset), 6 * page_size(), 4 * page_size(), /*flags=*/0);
+  ASSERT_EQ(remapped, OffsetToAddress(grow_offset));
+
+  const std::optional<size_t> after_shrink_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(after_shrink_vm_stk_kb.has_value());
+  EXPECT_EQ(*after_shrink_vm_stk_kb, *main_stack_kb + (4 * page_size_kb));
+
+  // Split the 4-page MAP_GROWSDOWN mapping into three mappings via mprotect on the middle 2 pages;
+  // all resulting VMAs retain VM_GROWSDOWN so VmStk is unchanged.
+  const intptr_t middle_offset = grow_offset + static_cast<intptr_t>(page_size());
+  ASSERT_THAT(mprotect(OffsetToAddress(middle_offset), 2 * page_size(), PROT_READ),
+              SyscallSucceeds());
+
+  const std::optional<size_t> after_split_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(after_split_vm_stk_kb.has_value());
+  EXPECT_EQ(*after_split_vm_stk_kb, *main_stack_kb + (4 * page_size_kb));
+
+  // Unmap the middle 2-page split VMA and verify VmStk decreases by 2 pages.
+  ASSERT_THAT(munmap(OffsetToAddress(middle_offset), 2 * page_size()), SyscallSucceeds());
+
+  const std::optional<size_t> after_partial_unmap_vm_stk_kb = ReadVmStkKb();
+  ASSERT_TRUE(after_partial_unmap_vm_stk_kb.has_value());
+  EXPECT_EQ(*after_partial_unmap_vm_stk_kb, *main_stack_kb + (2 * page_size_kb));
+
+  // Unmap the remaining pages of the MAP_GROWSDOWN region.
+  ASSERT_THAT(munmap(OffsetToAddress(grow_offset), 4 * page_size()), SyscallSucceeds());
 
   const std::optional<size_t> after_unmap_vm_stk_kb = ReadVmStkKb();
   ASSERT_TRUE(after_unmap_vm_stk_kb.has_value());

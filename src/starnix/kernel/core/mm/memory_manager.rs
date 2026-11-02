@@ -263,6 +263,9 @@ struct Mappings {
 
     /// The cached sum of the lengths of all mapped ranges.
     total_usage: usize,
+
+    /// The cached sum of the lengths of all `MappingFlags::GROWSDOWN` ranges.
+    stack_usage: usize,
 }
 
 impl Deref for Mappings {
@@ -277,31 +280,34 @@ impl Mappings {
     pub fn insert(&mut self, range: std::ops::Range<UserAddress>, value: Mapping) -> Vec<Mapping> {
         self.generation = self.generation.wrapping_add(1);
         let range_len = range.end - range.start;
-        let removed_len: usize = self
-            .map
-            .range(range.clone())
-            .map(|(r, _)| {
+        let is_growsdown = value.flags().contains(MappingFlags::GROWSDOWN);
+        let (removed_len, removed_stack_len) =
+            self.map.range(range.clone()).fold((0usize, 0usize), |(total, stack), (r, m)| {
                 let intersection = r.intersect(&range);
-                intersection.end - intersection.start
-            })
-            .sum();
+                let len = intersection.end - intersection.start;
+                let stack_len = if m.flags().contains(MappingFlags::GROWSDOWN) { len } else { 0 };
+                (total + len, stack + stack_len)
+            });
         let removed = self.map.insert(range, value);
         self.total_usage = self.total_usage.saturating_add(range_len).saturating_sub(removed_len);
+        let added_stack_len = if is_growsdown { range_len } else { 0 };
+        self.stack_usage =
+            self.stack_usage.saturating_add(added_stack_len).saturating_sub(removed_stack_len);
         removed
     }
 
     pub fn remove(&mut self, range: std::ops::Range<UserAddress>) -> Vec<Mapping> {
         self.generation = self.generation.wrapping_add(1);
-        let removed_len: usize = self
-            .map
-            .range(range.clone())
-            .map(|(r, _)| {
+        let (removed_len, removed_stack_len) =
+            self.map.range(range.clone()).fold((0usize, 0usize), |(total, stack), (r, m)| {
                 let intersection = r.intersect(&range);
-                intersection.end - intersection.start
-            })
-            .sum();
+                let len = intersection.end - intersection.start;
+                let stack_len = if m.flags().contains(MappingFlags::GROWSDOWN) { len } else { 0 };
+                (total + len, stack + stack_len)
+            });
         let removed = self.map.remove(range);
         self.total_usage = self.total_usage.saturating_sub(removed_len);
+        self.stack_usage = self.stack_usage.saturating_sub(removed_stack_len);
         removed
     }
 
@@ -312,8 +318,12 @@ impl Mappings {
     ) -> bool {
         self.generation = self.generation.wrapping_add(1);
         let range_len = range.end - range.start;
+        let is_growsdown = value.flags().contains(MappingFlags::GROWSDOWN);
         if self.map.append_non_overlapping(range, value) {
             self.total_usage = self.total_usage.saturating_add(range_len);
+            if is_growsdown {
+                self.stack_usage = self.stack_usage.saturating_add(range_len);
+            }
             true
         } else {
             false
@@ -5631,6 +5641,8 @@ impl MemoryManager {
         // a read lock to the memory manager state.
         let state = self.state.read();
         let generation = state.mappings.generation;
+        let total_usage = state.mappings.total_usage;
+        let stack_usage = state.mappings.stack_usage;
         let now = zx::MonotonicInstant::get();
         if !(self_cache_mode == SelfStatsCacheMode::BypassCache && is_self_read) {
             const CACHE_TTL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(2000);
@@ -5643,12 +5655,21 @@ impl MemoryManager {
         }
 
         let mut stats = MemoryStats::default();
-        stats.vm_stack = state
-            .mappings
-            .iter()
-            .filter(|(_, m)| m.flags().contains(MappingFlags::GROWSDOWN))
-            .map(|(range, _)| range.end - range.start)
-            .sum();
+        debug_assert_eq!(
+            total_usage,
+            state.mappings.iter().map(|(range, _)| range.end - range.start).sum::<usize>(),
+        );
+        debug_assert_eq!(
+            stack_usage,
+            state
+                .mappings
+                .iter()
+                .filter(|(_, m)| m.flags().contains(MappingFlags::GROWSDOWN))
+                .map(|(range, _)| range.end - range.start)
+                .sum::<usize>(),
+        );
+        stats.vm_size = total_usage;
+        stats.vm_stack = stack_usage;
 
         self.with_zx_mappings(current_task, |zx_mappings| {
             let mut mappings_iter = state.mappings.iter().peekable();
@@ -5679,8 +5700,6 @@ impl MemoryManager {
                     zx_details.vmo_koid,
                     "MemoryManager and Zircon must agree on which VMO is mapped in this range",
                 );
-
-                stats.vm_size += zx_mapping.size;
 
                 stats.vm_rss += zx_details.committed_bytes;
                 stats.vm_swap += zx_details.populated_bytes - zx_details.committed_bytes;
@@ -7974,10 +7993,8 @@ mod tests {
                 let mm = current_task.mm().unwrap();
                 let page_size = *PAGE_SIZE as usize;
 
-                assert_eq!(
-                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_stack,
-                    0
-                );
+                let base_stats = mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(base_stats.vm_stack, 0);
 
                 // Regular anonymous mapping does not count toward vm_stack, even when adjacent to a
                 // MAP_GROWSDOWN mapping.
@@ -8003,11 +8020,80 @@ mod tests {
                     mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_stack,
                     3 * page_size
                 );
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache).vm_stack,
+                    3 * page_size
+                );
 
-                // Unmap the entire 3-page MAP_GROWSDOWN region.
-                mm.unmap(extended_low, 3 * page_size).unwrap();
+                // Forking preserves stack_usage via `Mappings::append_non_overlapping` and
+                // unmapping in the child decrements it back to 0.
+                let child = current_task.clone_task_for_test(0, None);
+                let child_mm = child.mm().unwrap();
+                assert_eq!(
+                    child_mm.get_stats(&child, SelfStatsCacheMode::AllowCached).vm_stack,
+                    3 * page_size
+                );
+                child_mm.unmap(extended_low, 3 * page_size).unwrap();
+                assert_eq!(child_mm.get_stats(&child, SelfStatsCacheMode::AllowCached).vm_stack, 0);
+                assert_eq!(child_mm.get_stats(&child, SelfStatsCacheMode::BypassCache).vm_stack, 0);
+
+                // Partial unmap: unmap the lowest page of the 3-page MAP_GROWSDOWN region.
+                mm.unmap(extended_low, page_size).unwrap();
                 assert_eq!(
                     mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_stack,
+                    2 * page_size
+                );
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache).vm_stack,
+                    2 * page_size
+                );
+
+                // Partial overwrite: replace the middle page with a non-GROWSDOWN mapping via
+                // MAP_FIXED (`Mappings::insert` subtracting `removed_stack_len`), then restore it
+                // as a GROWSDOWN mapping.
+                let middle_page = (extended_low + page_size).unwrap();
+                let vm_size_before_overwrite =
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_size;
+                assert_eq!(
+                    map_memory_with_flags(
+                        &current_task,
+                        middle_page,
+                        *PAGE_SIZE,
+                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+                    ),
+                    middle_page
+                );
+                let after_non_stack_overwrite =
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(after_non_stack_overwrite.vm_size, vm_size_before_overwrite);
+                assert_eq!(after_non_stack_overwrite.vm_stack, page_size);
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache).vm_stack,
+                    page_size
+                );
+
+                assert_eq!(
+                    map_memory_with_flags(
+                        &current_task,
+                        middle_page,
+                        *PAGE_SIZE,
+                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED | MAP_GROWSDOWN,
+                    ),
+                    middle_page
+                );
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_stack,
+                    2 * page_size
+                );
+
+                // Unmap the remaining 2-page MAP_GROWSDOWN region.
+                mm.unmap(middle_page, 2 * page_size).unwrap();
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached).vm_stack,
+                    0
+                );
+                assert_eq!(
+                    mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache).vm_stack,
                     0
                 );
             },
@@ -9178,7 +9264,8 @@ mod tests {
                 insert_lazy_mapping((mm.base_addr + 24 * page_size).unwrap());
 
                 let stats_after = mm.get_stats(&current_task, SelfStatsCacheMode::BypassCache);
-                assert_eq!(stats_after.vm_size - stats_before.vm_size, 7 * page_size);
+                // 7 pages of active mappings (3 + 2 + 2) plus 3 single-page lazy mappings.
+                assert_eq!(stats_after.vm_size - stats_before.vm_size, 10 * page_size);
                 assert_eq!(stats_after.vm_rss - stats_before.vm_rss, 3 * page_size);
                 assert_eq!(stats_after.rss_anonymous - stats_before.rss_anonymous, 3 * page_size);
             },
