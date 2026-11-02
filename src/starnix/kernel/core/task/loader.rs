@@ -13,6 +13,7 @@ use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
 use crate::vfs::{FdNumber, FileHandle, FileMapping};
 use process_builder::elf_load;
 use starnix_logging::{log_error, log_warn};
+use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_types::thread_start_info::ThreadStartInfo;
@@ -403,9 +404,14 @@ impl ResolvedProgram {
         }
     }
 
-    /// Returns the path string passed to `execve()`.
-    pub fn path(&self) -> &CStr {
-        &self.path
+    /// Returns the [`TaskCommand`] for the resolved program, extending the basename of `path` with
+    /// `argv[0]` when possible.
+    pub fn command_name(&self) -> TaskCommand {
+        let name = TaskCommand::from_path_bytes(self.path.to_bytes());
+        match self.argv.first() {
+            Some(argv0) => name.with_argv0(argv0.as_bytes()),
+            None => name,
+        }
     }
 
     /// Returns the [`ArchWidth`] of the resolved ELF executable, if resolved.
@@ -1026,8 +1032,15 @@ mod tests {
     #[fuchsia::test]
     async fn test_load_hello_starnix() {
         spawn_kernel_and_run_with_pkgfs(async |current_task| {
-            exec_hello_starnix(current_task).expect("failed to load executable");
+            let path = CString::new("data/tests/hello_starnix").unwrap();
+            let argv = vec![CString::new("/custom/hello_starnix_with_long_argv0").unwrap()];
+            let executable = current_task
+                .open_file_for_exec(FdNumber::AT_FDCWD, path.as_bytes().into(), OpenFlags::empty())
+                .expect("failed to open executable");
+            current_task.exec(executable, path, argv, vec![]).expect("failed to load executable");
             assert!(current_task.mm().unwrap().get_mapping_count() > 0);
+            assert_eq!(current_task.command().as_bytes(), b"hello_starnix_with_long_argv0");
+            assert_eq!(current_task.command().comm_name(), b"hello_starnix");
         })
         .await;
     }

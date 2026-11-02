@@ -1482,31 +1482,30 @@ impl Task {
         self.persistent_info.command.lock().clone()
     }
 
-    /// Sets the task's command name and returns the name that was stored, which for the
-    /// thread-group leader may be extended from argv[0]. Returns `None` for a dead task.
-    pub fn set_command_name(&self, mut new_name: TaskCommand) -> Option<TaskCommand> {
+    /// Constructs a [`TaskCommand`] from a Linux UAPI `comm` byte slice (`PR_SET_NAME` or
+    /// `/proc/<pid>/comm`). For the thread-group leader, extends the name from `argv[0]` in user
+    /// memory when `comm` is a substring of `argv[0]`'s basename.
+    pub fn command_from_comm(&self, comm: &[u8]) -> TaskCommand {
+        let name = TaskCommand::new(comm);
+        if self.is_leader()
+            && let Ok(argv0) = self.read_argv0()
+        {
+            name.with_argv0(&argv0)
+        } else {
+            name
+        }
+    }
+
+    /// Sets the task's command name. Returns `false` for a dead task.
+    pub fn set_command_name(&self, new_name: TaskCommand) -> bool {
         let Ok(running_state) = self.running_state() else {
             log_warn!("Cannot set command name for dead task {}", self.get_tid());
-            return None;
+            return false;
         };
 
         let is_leader = self.is_leader();
 
-        // If we're going to update the process name, see if we can get a longer one than normally
-        // provided in the Linux uapi. Only choose the argv0-based name if it's a superset of the
-        // uapi-provided name to avoid clobbering the name provided by the user.
-        if is_leader {
-            if let Ok(argv0) = self.read_argv0() {
-                let argv0 = TaskCommand::from_path_bytes(&argv0);
-                if let Some(embedded_name) = argv0.try_embed(&new_name) {
-                    new_name = embedded_name;
-                }
-            }
-        }
-
         // Acquire this before modifying Zircon state to ensure consistency under concurrent access.
-        // Ideally this would also guard the logic above to read argv[0] but we can't due to lock
-        // cycles with SELinux checks.
         let mut command_guard = self.persistent_info.command_guard();
 
         // Set the name on the Linux thread. If the thread has already exited concurrently in
@@ -1530,14 +1529,14 @@ impl Task {
         // the parent's `TaskCommand`.
         let name_changed = *command_guard != new_name;
         if name_changed {
-            *command_guard = new_name.clone();
+            *command_guard = new_name;
         }
         // Avoid a lock cycle by dropping the guard before notifying memory attribution of the
         // change.
         drop(command_guard);
 
         if !name_changed && self.scheduler_state.lock().has_committed_role() {
-            return Some(new_name);
+            return true;
         }
 
         if name_changed && is_leader {
@@ -1557,7 +1556,7 @@ impl Task {
         } else if let Err(err) = self.sync_scheduler_state_to_role() {
             log_warn!(err:?; "Failed to update scheduler role after thread name change.");
         }
-        Some(new_name)
+        true
     }
 
     pub fn set_seccomp_state(&self, state: SeccompStateValue) -> Result<(), Errno> {
@@ -1957,7 +1956,7 @@ mod test {
     }
 
     #[::fuchsia::test]
-    async fn test_set_command_name_only_embeds_argv0_on_leader() {
+    async fn test_command_from_comm_only_embeds_argv0_on_leader() {
         spawn_kernel_and_run(async |current_task| {
             let argv0_bytes = b"/bin/my_long_command_name\0";
             let addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
@@ -1971,7 +1970,7 @@ mod test {
 
             // Updating the leader task's command name embeds argv[0] when the truncated name is a
             // substring of argv[0].
-            current_task.set_command_name(TaskCommand::new(b"my_long_command"));
+            current_task.set_command_name(current_task.command_from_comm(b"my_long_command"));
             let cmd = current_task.command();
             assert_eq!(cmd.as_bytes(), b"my_long_command_name");
             assert_eq!(cmd.comm_name(), b"my_long_command");
@@ -1982,7 +1981,7 @@ mod test {
                 Some(SIGCHLD),
             );
             assert!(!thread.is_leader());
-            thread.set_command_name(TaskCommand::new(b"my_long_command"));
+            thread.set_command_name(thread.command_from_comm(b"my_long_command"));
             let cmd = thread.command();
             assert_eq!(cmd.as_bytes(), b"my_long_command");
             assert_eq!(cmd.comm_name(), b"my_long_command");

@@ -1308,7 +1308,7 @@ impl CurrentTask {
         self.thread_group().signal_actions.reset_for_exec();
         security::bprm_committed_creds(self)?;
 
-        let command_name = TaskCommand::from_path_bytes(resolved_program.path().to_bytes());
+        let command_name = resolved_program.command_name();
         let start_info = load_executable(self, resolved_program)?;
 
         let regs: zx_restricted_state_t = start_info.into();
@@ -1337,16 +1337,15 @@ impl CurrentTask {
     }
 
     pub fn set_command_name(&self, new_name: TaskCommand) {
-        // set_command_name needs to run before leader_command() in cases where self is the leader.
-        let Some(command) = self.task.set_command_name(new_name) else {
+        if !self.task.set_command_name(new_name.clone()) {
             return;
-        };
+        }
         let leader_command = if self.is_leader() {
-            command.clone()
+            new_name.clone()
         } else {
             self.thread_group().read().leader_command()
         };
-        starnix_logging::set_current_task_info(command, leader_command, self.pid.id, self.tid.id);
+        starnix_logging::set_current_task_info(new_name, leader_command, self.pid.id, self.tid.id);
     }
 
     pub fn add_seccomp_filter(

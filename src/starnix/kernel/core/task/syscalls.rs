@@ -21,7 +21,6 @@ use crate::vfs::{
 };
 use starnix_logging::{log_error, log_info, log_trace, track_stub};
 use starnix_syscalls::SyscallResult;
-use starnix_task_command::TaskCommand;
 use starnix_types::time::timeval_from_duration;
 use starnix_uapi::auth::{
     CAP_SETGID, CAP_SETPCAP, CAP_SETUID, CAP_SYS_ADMIN, CAP_SYS_NICE, CAP_SYS_RESOURCE,
@@ -1205,7 +1204,8 @@ pub fn sys_prctl(
         }
         PR_SET_NAME => {
             let addr = UserAddress::from(arg2);
-            let name = TaskCommand::new(&current_task.read_memory_to_array::<16>(addr)?);
+            let name =
+                current_task.command_from_comm(&current_task.read_memory_to_array::<16>(addr)?);
             current_task.set_command_name(name);
             if current_task.tid == current_task.pid {
                 current_task.thread_group.sync_syscall_log_level();

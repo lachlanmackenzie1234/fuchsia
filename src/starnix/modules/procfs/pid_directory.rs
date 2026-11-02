@@ -1064,7 +1064,7 @@ impl DynamicFileSource for CommFile {
         // What happens if userspace writes to this file in multiple syscalls? We need more
         // detailed tests to see when the data is actually committed back to the task.
         let bytes = data.read_all()?;
-        task.set_command_name(TaskCommand::new(&bytes));
+        task.set_command_name(task.command_from_comm(&bytes));
         Ok(bytes.len())
     }
 }
