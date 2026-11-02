@@ -6,12 +6,12 @@
 
 use libc::stdio::FILE;
 use object_constants_rs as object_constants;
-use zr::OpaqueBytes;
 
-#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_backtrace_print(bt: *const Backtrace);
     fn cpp_backtrace_print_without_version(bt: *const Backtrace, file: *mut FILE);
+    fn cpp_backtrace_data(bt: *const Backtrace) -> *const usize;
+    fn cpp_backtrace_size(bt: *const Backtrace) -> usize;
 }
 
 /// Contains an array of return address values representing a thread's backtrace.
@@ -19,7 +19,7 @@ unsafe extern "C" {
 /// This type is not thread-safe.
 #[repr(C, align(8))]
 pub struct Backtrace {
-    _opaque: OpaqueBytes<{ object_constants::kBacktraceSize }>,
+    _opaque: zr::OpaqueBytes<{ object_constants::kBacktraceSize }>,
 }
 
 zr::static_assert_size_and_align!(
@@ -29,10 +29,32 @@ zr::static_assert_size_and_align!(
 );
 
 impl Backtrace {
+    /// The maximum number of elements in a backtrace. The value should be large enough to capture
+    /// the full call stack for most kernel crashes, but also small enough that it's reasonable to
+    /// allocate a `Backtrace` on the stack.
+    pub const MAX_SIZE: usize = 32;
+
     /// Creates an empty `Backtrace`.
     #[inline]
     pub const fn new() -> Self {
-        Self { _opaque: OpaqueBytes::new([0; object_constants::kBacktraceSize]) }
+        Self { _opaque: zr::OpaqueBytes::new([0u8; object_constants::kBacktraceSize]) }
+    }
+
+    /// Returns the recorded frame addresses as a slice.
+    #[inline]
+    pub fn as_slice(&self) -> &[usize] {
+        // SAFETY: `self` is a valid `Backtrace` reference matching the C++ `Backtrace` layout.
+        let size = unsafe { cpp_backtrace_size(self).min(Self::MAX_SIZE) };
+        if size == 0 {
+            return &[];
+        }
+        // SAFETY: `cpp_backtrace_data(self)` returns a non-null, properly aligned pointer to
+        // the inline `vaddr_` array inside `self`. It is valid for reads of `size` elements
+        // (including when `size == 0`) for the lifetime of `self`.
+        unsafe {
+            let data = cpp_backtrace_data(self);
+            core::slice::from_raw_parts(data, size)
+        }
     }
 
     /// Pretty-prints this backtrace to `stdout`.

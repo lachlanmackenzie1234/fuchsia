@@ -103,12 +103,13 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use bitflags::bitflags;
 use ksync::lock;
 
-use super::cmpctmalloc_ffi;
-
 pub(crate) use platform::*;
 
 #[cfg(not(feature = "userspace"))]
 mod platform {
+    pub use crate::vm::heap::heap_wrapper::{
+        heap_page_alloc, heap_page_free, heap_report_alloc_failure,
+    };
     pub(crate) use debug::{dprintf, ltrace_entry, ltracef};
     #[cfg(feature = "heap_enable_tests")]
     pub(crate) use kprint::kprintln;
@@ -204,6 +205,8 @@ mod platform {
 
 #[cfg(feature = "userspace")]
 mod platform {
+    pub use crate::cmpctmalloc_ffi::{heap_page_alloc, heap_page_free, heap_report_alloc_failure};
+
     // When built in a host (aka non-kernel) environment it is assumed to be for testing and so we
     // want to make sure that debug assertions are correctly enabled. This is to prevent any
     // regressions due to libraries and build system changes.
@@ -840,37 +843,6 @@ macro_rules! assume {
 #[inline]
 const fn round_up(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
-}
-
-/// # Safety
-///
-/// The caller must ensure that `TheHeapLock` is held and `pages > 0`.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
-#[inline]
-unsafe fn heap_page_alloc(pages: usize) -> *mut c_void {
-    // SAFETY: Caller holds `TheHeapLock` and passes `pages > 0`.
-    unsafe { cmpctmalloc_ffi::heap_page_alloc(pages) }
-}
-
-/// # Safety
-///
-/// The caller must ensure that `TheHeapLock` is held, `ptr` is a page-aligned pointer previously
-/// returned by `heap_page_alloc`, and `pages > 0`.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
-#[inline]
-unsafe fn heap_page_free(ptr: *mut c_void, pages: usize) {
-    // SAFETY: Caller holds `TheHeapLock` and passes a valid page-aligned OS allocation.
-    unsafe { cmpctmalloc_ffi::heap_page_free(ptr, pages) }
-}
-
-/// # Safety
-///
-/// The caller must ensure that `TheHeapLock` is not held on the current thread.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
-#[inline]
-unsafe fn heap_report_alloc_failure(size: usize) {
-    // SAFETY: Caller has released `TheHeapLock`.
-    unsafe { cmpctmalloc_ffi::heap_report_alloc_failure(size) }
 }
 
 /// # Safety
@@ -2004,7 +1976,7 @@ pub fn cmpct_get_info() -> CmpctInfo {
         CmpctInfo { used_bytes, free_bytes, cached_bytes }
     }
 }
-
+#[allow(unused_imports)]
 pub use tests::cmpct_test;
 
 #[cfg(feature = "heap_enable_tests")]

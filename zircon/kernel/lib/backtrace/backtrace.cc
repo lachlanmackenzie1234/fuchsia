@@ -13,6 +13,7 @@
 
 static_assert(sizeof(Backtrace) == kBacktraceSize);
 static_assert(alignof(Backtrace) == kBacktraceAlign);
+static_assert(Backtrace::kMaxSize == 32);
 
 static constexpr const char* kFormat = "{{{bt:%zu:%p:%s}}}\n";
 static constexpr const char* kRa = "ra";
@@ -42,5 +43,9 @@ FFI_ALWAYS_INLINE void cpp_backtrace_print(const Backtrace* bt) { bt->Print(); }
 FFI_ALWAYS_INLINE void cpp_backtrace_print_without_version(const Backtrace* bt, FILE* file) {
   bt->PrintWithoutVersion(file);
 }
+
+FFI_ALWAYS_INLINE const vaddr_t* cpp_backtrace_data(const Backtrace* bt) { return bt->data(); }
+
+FFI_ALWAYS_INLINE size_t cpp_backtrace_size(const Backtrace* bt) { return bt->size(); }
 
 }  // extern "C"

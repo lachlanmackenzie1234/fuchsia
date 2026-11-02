@@ -5,14 +5,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-//! FFI bindings for `cmpctmalloc`.
+//! FFI bindings for `cmpctmalloc` (used by host userspace C++ tests).
 
 use core::ffi::c_void;
 
 use super::cmpctmalloc::{
-    CmpctDumpOptions, HEAP_MAX_ALLOC_SIZE, cmpct_alloc, cmpct_dump, cmpct_free, cmpct_get_cookie,
-    cmpct_get_info, cmpct_get_size, cmpct_init, cmpct_memalign, cmpct_set_cookie,
-    cmpct_set_fill_on_alloc_threshold, cmpct_sized_free, cmpct_test,
+    HEAP_MAX_ALLOC_SIZE, cmpct_alloc, cmpct_free, cmpct_get_cookie, cmpct_get_info, cmpct_get_size,
+    cmpct_init, cmpct_memalign, cmpct_set_cookie, cmpct_set_fill_on_alloc_threshold,
+    cmpct_sized_free,
 };
 
 /// C-visible maximum allocation size (`kHeapMaxAllocSize`).
@@ -26,7 +26,7 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// The caller must ensure that `TheHeapLock` is held and `pages > 0`.
-    pub(super) fn heap_page_alloc(pages: usize) -> *mut c_void;
+    pub fn heap_page_alloc(pages: usize) -> *mut c_void;
 
     /// Returns `pages` contiguous pages starting at `ptr` to the VM.
     ///
@@ -34,14 +34,14 @@ unsafe extern "C" {
     ///
     /// The caller must ensure that `TheHeapLock` is held, `ptr` is a page-aligned pointer
     /// previously returned by `heap_page_alloc`, and `pages > 0`.
-    pub(super) fn heap_page_free(ptr: *mut c_void, pages: usize);
+    pub fn heap_page_free(ptr: *mut c_void, pages: usize);
 
     /// Reports a heap allocation failure of `size` bytes to the PMM.
     ///
     /// # Safety
     ///
     /// The caller must ensure that `TheHeapLock` is not held on the current thread.
-    pub(super) fn heap_report_alloc_failure(size: usize);
+    pub fn heap_report_alloc_failure(size: usize);
 }
 
 /// FFI entry point for [`cmpct_alloc`].
@@ -50,7 +50,6 @@ unsafe extern "C" {
 ///
 /// The caller must ensure that `TheHeapLock` is not held on the current thread and the heap has
 /// been initialized via [`rust_cmpct_init`].
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_alloc(size: usize) -> *mut c_void {
@@ -64,7 +63,6 @@ pub unsafe extern "C" fn rust_cmpct_alloc(size: usize) -> *mut c_void {
 ///
 /// The caller must ensure that `payload` is either null or a pointer previously returned by
 /// `cmpct_alloc` or `cmpct_memalign` that has not yet been freed, and `TheHeapLock` is not held.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_free(payload: *mut c_void) {
@@ -79,7 +77,6 @@ pub unsafe extern "C" fn rust_cmpct_free(payload: *mut c_void) {
 /// The caller must ensure that `payload` is either null or a pointer previously returned by
 /// `cmpct_alloc` or `cmpct_memalign` with size `s` that has not yet been freed, and `TheHeapLock`
 /// is not held.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_sized_free(payload: *mut c_void, s: usize) {
@@ -93,7 +90,6 @@ pub unsafe extern "C" fn rust_cmpct_sized_free(payload: *mut c_void, s: usize) {
 ///
 /// The caller must ensure that `alignment` is a power of two (or `< 8`), `TheHeapLock` is not
 /// held on the current thread, and the heap has been initialized via [`rust_cmpct_init`].
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_memalign(alignment: usize, size: usize) -> *mut c_void {
@@ -114,27 +110,11 @@ pub extern "C" fn rust_cmpct_set_fill_on_alloc_threshold(size: usize) {
 ///
 /// The caller must ensure that `TheHeapLock` is not held and no concurrent heap operations are
 /// in flight.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_init() {
     // SAFETY: Caller upholds the safety requirements of `cmpct_init`.
     unsafe { cmpct_init() }
-}
-
-/// FFI entry point for [`cmpct_dump`].
-///
-/// # Safety
-///
-/// If `options` includes [`CmpctDumpOptions::PANIC_TIME`], the caller must ensure that all other
-/// CPUs are halted in a kernel panic with no concurrent mutation of `THE_HEAP`. Otherwise, the
-/// caller must ensure that `TheHeapLock` is not held on the current thread.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
-// SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_cmpct_dump(options: u8) {
-    // SAFETY: Caller upholds the safety requirements of `cmpct_dump`.
-    unsafe { cmpct_dump(CmpctDumpOptions::from_bits_retain(options)) };
 }
 
 /// FFI entry point for [`cmpct_get_info`].
@@ -143,7 +123,6 @@ pub unsafe extern "C" fn rust_cmpct_dump(options: u8) {
 ///
 /// The caller must ensure that each non-null pointer among `used_bytes`, `free_bytes`, and
 /// `cached_bytes` is properly aligned and valid for writes of `size_of::<usize>()` bytes.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_get_info(
@@ -166,19 +145,6 @@ pub unsafe extern "C" fn rust_cmpct_get_info(
     }
 }
 
-/// FFI entry point for [`cmpct_test`].
-///
-/// # Safety
-///
-/// The caller must ensure that the heap has been initialized and `TheHeapLock` is not held on the
-/// current thread.
-// SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_cmpct_test() {
-    // SAFETY: Caller upholds the safety requirements of `cmpct_test`.
-    unsafe { cmpct_test() };
-}
-
 /// FFI entry point for [`cmpct_set_cookie`].
 ///
 /// # Safety
@@ -186,7 +152,6 @@ pub unsafe extern "C" fn rust_cmpct_test() {
 /// The caller must ensure that `ptr` is non-null and points to a live allocation currently owned
 /// by the caller (returned by `cmpct_alloc` or `cmpct_memalign` and not yet freed), with no
 /// concurrent access to its header cookie.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_set_cookie(ptr: *mut c_void, cookie: u32) {
@@ -201,7 +166,6 @@ pub unsafe extern "C" fn rust_cmpct_set_cookie(ptr: *mut c_void, cookie: u32) {
 /// The caller must ensure that `ptr` is non-null and points to a live allocation currently owned
 /// by the caller (returned by `cmpct_alloc` or `cmpct_memalign` and not yet freed), with no
 /// concurrent mutation of its header cookie.
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_get_cookie(ptr: *mut c_void) -> u32 {
@@ -215,7 +179,6 @@ pub unsafe extern "C" fn rust_cmpct_get_cookie(ptr: *mut c_void) -> u32 {
 ///
 /// The caller must ensure that `ptr` is non-null and points to a live allocation currently owned
 /// by the caller (returned by `cmpct_alloc` or `cmpct_memalign` and not yet freed).
-#[cfg_attr(not(feature = "userspace"), sanitize(address = "off"))]
 // SAFETY: The symbol name is unique and matches the C FFI declaration in cmpctmalloc_ffi.h.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_cmpct_get_size(ptr: *mut c_void) -> u32 {

@@ -44,11 +44,9 @@ inline void cmpct_set_fill_on_alloc_threshold(size_t size) {
   rust_cmpct_set_fill_on_alloc_threshold(size);
 }
 inline void cmpct_init() { rust_cmpct_init(); }
-inline void cmpct_dump(CmpctDumpOptions options) { rust_cmpct_dump(std::to_underlying(options)); }
 inline void cmpct_get_info(size_t* used_bytes, size_t* free_bytes, size_t* cached_bytes) {
   rust_cmpct_get_info(used_bytes, free_bytes, cached_bytes);
 }
-inline void cmpct_test() { rust_cmpct_test(); }
 
 // Get and set a user defined cookie against an allocation returned from cmpct_alloc
 // or cmpct_memalign. |ptr| must be non-null and these methods are not thread

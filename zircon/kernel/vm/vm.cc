@@ -23,6 +23,7 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/vector.h>
+#include <kernel/ffi.h>
 #include <kernel/thread.h>
 #include <ktl/array.h>
 #include <phys/handoff/handoff.h>
@@ -230,6 +231,14 @@ paddr_t vaddr_to_paddr(const void* va) {
 }
 
 extern "C" {
-paddr_t cpp_vaddr_to_paddr(const void* va);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 paddr_t cpp_vaddr_to_paddr(const void* va) { return vaddr_to_paddr(va); }
-}
+
+FFI_ALWAYS_INLINE bool cpp_vm_using_virtual_heap() { return vm_using_virtual_heap(); }
+
+FFI_ALWAYS_INLINE vaddr_t cpp_vm_get_kernel_heap_base() { return vm_get_kernel_heap_base(); }
+
+FFI_ALWAYS_INLINE size_t cpp_vm_get_kernel_heap_size() { return vm_get_kernel_heap_size(); }
+
+}  // extern "C"

@@ -13,6 +13,9 @@ use vm_bindings as bindings;
 
 unsafe extern "C" {
     fn cpp_vaddr_to_paddr(va: *const c_void) -> PAddr;
+    fn cpp_vm_using_virtual_heap() -> bool;
+    fn cpp_vm_get_kernel_heap_base() -> usize;
+    fn cpp_vm_get_kernel_heap_size() -> usize;
 }
 
 // While this method is implemented using FFI clippy cannot observer that the pointer is not
@@ -21,6 +24,24 @@ unsafe extern "C" {
 /// Converts a kernel virtual address to a physical address.
 pub fn vaddr_to_paddr(va: *const c_void) -> PAddr {
     unsafe { cpp_vaddr_to_paddr(va) }
+}
+
+/// Whether the virtual heap is enabled.
+pub fn vm_using_virtual_heap() -> bool {
+    // SAFETY: The C++ function is safe to call at any time.
+    unsafe { cpp_vm_using_virtual_heap() }
+}
+
+/// Request the heap dimensions.
+pub fn vm_get_kernel_heap_base() -> usize {
+    // SAFETY: The C++ function asserts `vm_using_virtual_heap()` and returns a constant.
+    unsafe { cpp_vm_get_kernel_heap_base() }
+}
+
+/// Request the heap dimensions.
+pub fn vm_get_kernel_heap_size() -> usize {
+    // SAFETY: The C++ function asserts `vm_using_virtual_heap()` and returns a constant.
+    unsafe { cpp_vm_get_kernel_heap_size() }
 }
 
 /// Return the physical address of the zero page.

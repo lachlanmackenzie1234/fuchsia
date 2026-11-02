@@ -10,6 +10,7 @@
 
 #[cfg_attr(not(feature = "userspace"), expect(clippy::module_inception))]
 mod cmpctmalloc;
+#[cfg(feature = "userspace")]
 mod cmpctmalloc_ffi;
 
 pub use cmpctmalloc::*;

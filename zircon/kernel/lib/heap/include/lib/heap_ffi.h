@@ -7,20 +7,17 @@
 #ifndef ZIRCON_KERNEL_LIB_HEAP_INCLUDE_LIB_HEAP_FFI_H_
 #define ZIRCON_KERNEL_LIB_HEAP_INCLUDE_LIB_HEAP_FFI_H_
 
-#include <lib/heap.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 
-#include <kernel/ffi.h>
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+// TODO(https://fxbug.dev/565806419): Remove once callers of heap_init, profile_track_alloc, and
+// profile_track_free are migrated to Rust.
 __BEGIN_CDECLS
 
-FFI_ALWAYS_INLINE void cpp_get_heap_profile(const void** ptr, size_t* size);
-FFI_ALWAYS_INLINE uint32_t cpp_profile_track_alloc(size_t size);
-FFI_ALWAYS_INLINE void cpp_profile_track_free(uint32_t handle, size_t size);
-void cpp_heap_dump_stats();
+void rust_heap_init(void);
+uint32_t rust_profile_track_alloc(size_t size);
+void rust_profile_track_free(uint32_t handle, size_t size);
 
 __END_CDECLS
 
