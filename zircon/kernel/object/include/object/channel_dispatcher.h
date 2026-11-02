@@ -22,9 +22,6 @@ DECLARE_PEERED_DISPATCHER_RUST_PROTOS(ChannelDispatcher, rust_channel_dispatcher
 extern "C" {
 zx_status_t cpp_channel_dispatcher_create(
     void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out);
-zx_status_t rust_channel_dispatcher_create(KernelHandle<ChannelDispatcher>* handle0,
-                                           KernelHandle<ChannelDispatcher>* handle1,
-                                           zx_rights_t* rights);
 void rust_channel_dispatcher_get_message_counts(const ChannelDispatcher* disp, uint64_t* current,
                                                 uint64_t* max);
 }  // extern "C"
@@ -35,11 +32,6 @@ class ChannelDispatcher final : public Dispatcher {
     uint64_t current;
     uint64_t max;
   };
-
-  static zx_status_t Create(KernelHandle<ChannelDispatcher>* handle0,
-                            KernelHandle<ChannelDispatcher>* handle1, zx_rights_t* rights) {
-    return rust_channel_dispatcher_create(handle0, handle1, rights);
-  }
 
   ~ChannelDispatcher() final;
 

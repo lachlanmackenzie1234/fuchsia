@@ -240,7 +240,7 @@ impl PinnedDrop for Exceptionate {
 
 /// In-tree kernel unit tests for `Exceptionate`.
 #[cfg(ktest)]
-#[unittest::suite(name = "exception_rust")]
+#[unittest::suite(name = "exception")]
 mod tests {
     use super::Exceptionate;
     use crate::arch_rs::ArchExceptionContext;

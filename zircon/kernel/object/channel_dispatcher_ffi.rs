@@ -7,7 +7,7 @@
 use super::channel_dispatcher::{ChannelDispatcher, ChannelDispatcherState};
 use super::handle::KernelHandle;
 use core::mem::MaybeUninit;
-use zx_types::{zx_rights_t, zx_status_t};
+use zx_types::zx_status_t;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -27,24 +27,6 @@ crate::object::dispatcher::impl_peered_dispatcher_state_init!(
     ChannelDispatcher,
     ChannelDispatcherState,
 );
-
-/// Exports `rust_channel_dispatcher_create` to C++.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_channel_dispatcher_create(
-    handle0: &mut KernelHandle<ChannelDispatcher>,
-    handle1: &mut KernelHandle<ChannelDispatcher>,
-    rights: &mut zx_rights_t,
-) -> zx_status_t {
-    match ChannelDispatcher::create() {
-        Ok((h0, h1, r)) => {
-            *handle0 = h0;
-            *handle1 = h1;
-            *rights = r;
-            zx_types::ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
 
 /// Retrieves message counts for diagnostics.
 #[unsafe(no_mangle)]

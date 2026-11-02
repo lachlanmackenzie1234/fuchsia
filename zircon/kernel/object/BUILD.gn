@@ -124,7 +124,6 @@ library_headers("headers") {
 source_set("tests") {
   testonly = true
   sources = [
-    "test/exceptionate_tests.cc",
     "test/handle_tests.cc",
     "test/interrupt_event_dispatcher_tests.cc",
     "test/job_dispatcher_tests.cc",
