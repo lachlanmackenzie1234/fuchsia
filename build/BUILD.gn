@@ -320,7 +320,6 @@ group("non_hermetic_deps") {
     "//src/tests/kernel_lockup_detector/*",
     "//src/tests/kernel_panic/*",
     "//src/tests/limited_netsvc/image:*",
-    "//src/tests/memory_budget/*",
     "//src/tests/oom/*",
     "//src/tests/reboot/*",
     "//src/tests/shutdown/*",
