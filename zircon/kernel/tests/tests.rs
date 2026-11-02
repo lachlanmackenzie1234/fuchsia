@@ -11,6 +11,7 @@ mod cache_tests;
 mod clock_tests;
 mod fibo;
 mod mem_tests;
+mod mutex_spin_time_tests;
 mod owned_wait_queue_topology;
 mod pi_tests;
 mod sleep_tests;
