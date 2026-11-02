@@ -28,14 +28,14 @@ class _ExtractedLicense:
         compare=False, hash=False, default=None
     )
 
-    def __gt__(self, other: "_ExtractedLicense") -> bool:
+    def __gt__(self, other: _ExtractedLicense) -> bool:
         return (
             f"{self.path}-{self.name}-{self.text_hash}"
             > f"{other.path}-{other.name}-{other.text_hash}"
         )
 
     @staticmethod
-    def from_json_dict(input: dict[str, Any]) -> "_ExtractedLicense":
+    def from_json_dict(input: dict[str, Any]) -> _ExtractedLicense:
         # Example SPDX license dict:
         # {
         #     "name": "Bar Pkg",

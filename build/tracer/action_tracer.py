@@ -122,7 +122,7 @@ class ToolCommand(object):
         # processing.
         return _find_first_index(self.tokens, lambda x: x == "--")
 
-    def unwrap(self) -> "ToolCommand":
+    def unwrap(self) -> ToolCommand:
         # Assuming that '--' separates a wrapper from a command, this unwraps
         # a command one level.  (For example, this script is such a wrapper,
         # with the original command following '--' in trailing position.)
@@ -274,7 +274,7 @@ class DepEdges(object):
     ins: frozenset[str] = dataclasses.field(default_factory=set)
     outs: frozenset[str] = dataclasses.field(default_factory=set)
 
-    def abspaths(self) -> "DepEdges":
+    def abspaths(self) -> DepEdges:
         return DepEdges(ins=_abspaths(self.ins), outs=_abspaths(self.outs))
 
 

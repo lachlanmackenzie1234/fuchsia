@@ -180,7 +180,7 @@ class DebugManifest(object):
         return self._map.get(build_path, "")
 
     @staticmethod
-    def from_file(path: Path) -> "DebugManifest":
+    def from_file(path: Path) -> DebugManifest:
         """Create new instance from file path."""
         return DebugManifest(path.read_text())
 

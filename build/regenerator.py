@@ -264,7 +264,7 @@ def main() -> int:
 
     def run_cmd(
         args: T.Sequence[str], **kwd: T.Any
-    ) -> "subprocess.CompletedProcess[str]":
+    ) -> subprocess.CompletedProcess[str]:
         if verbose >= 2:
             log("CMD: %s" % " ".join(shlex.quote(str(a)) for a in args))
         return subprocess.run(args, text=True, **kwd)

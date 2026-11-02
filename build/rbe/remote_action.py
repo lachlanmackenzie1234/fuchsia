@@ -450,7 +450,7 @@ class ReproxyLogEntry(object):
         build_id: str,
         casfs_virtualize: bool,
         fallback_downloader: DownloaderCallback | None = None,
-    ) -> Optional["DownloadStubInfo"]:
+    ) -> Optional[DownloadStubInfo]:
         type = "file"
         if path in self.output_file_digests:
             digest = self.output_file_digests[path]
@@ -486,7 +486,7 @@ class ReproxyLogEntry(object):
         build_id: str,
         casfs_virtualize: bool,
         fallback_downloader: DownloaderCallback | None = None,
-    ) -> dict[Path, "DownloadStubInfo"]:
+    ) -> dict[Path, DownloadStubInfo]:
         """Construct a map of paths to DownloadStubInfo.
 
         Args:
@@ -524,7 +524,7 @@ class ReproxyLogEntry(object):
         return stubs
 
     @staticmethod
-    def parse_action_log(log: Path) -> "ReproxyLogEntry":
+    def parse_action_log(log: Path) -> ReproxyLogEntry:
         return ReproxyLogEntry(log.read_text())
 
 
@@ -910,7 +910,7 @@ class Ext4DownloadStubInfo(DownloadStubInfo):
         self.create(working_dir_abs, use_xattr=use_xattr)
 
     @staticmethod
-    def read_from_file(stub: Path) -> "Ext4DownloadStubInfo":
+    def read_from_file(stub: Path) -> Ext4DownloadStubInfo:
         with open(stub) as f:
             first = f.readline()
             if first.rstrip() != _RBE_DOWNLOAD_STUB_IDENTIFIER:

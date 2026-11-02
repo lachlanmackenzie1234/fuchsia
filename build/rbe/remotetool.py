@@ -134,7 +134,7 @@ class ShowActionResult(object):
             and self.output_files == other.output_files
         )
 
-    def diff(self, other: "ShowActionResult") -> ActionDifferences:
+    def diff(self, other: ShowActionResult) -> ActionDifferences:
         return ActionDifferences(
             command_unified_diffs=list(
                 difflib.unified_diff(

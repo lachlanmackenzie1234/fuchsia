@@ -56,7 +56,7 @@ class Dimensions:
         val: str | None = getattr(self, key, None)
         return val if val is not None else default
 
-    def is_subset_of(self, other: "Dimensions") -> bool:
+    def is_subset_of(self, other: Dimensions) -> bool:
         """Return True if all non-None dimensions in `self` are present with the same values in `other`.
 
         Because `dict.items()` returns a set-like `dict_items` view of `(key,
@@ -124,7 +124,7 @@ class Environment:
         if isinstance(self.tags, list):
             object.__setattr__(self, "tags", tuple(self.tags))
 
-    def __lt__(self, other: "Environment") -> bool:
+    def __lt__(self, other: Environment) -> bool:
         return json.dumps(self.to_dict(), sort_keys=True) < json.dumps(
             other.to_dict(), sort_keys=True
         )
@@ -187,7 +187,7 @@ class TestEntryKey:
     cpu: str
 
     @classmethod
-    def from_test(cls, test: dict[str, Any]) -> "TestEntryKey":
+    def from_test(cls, test: dict[str, Any]) -> TestEntryKey:
         """Return the key for a test entry.
 
         Runnable tests in a product_bundle_test_group have the product bundle's

@@ -28,7 +28,7 @@ class DummyProfile:
         self.auth_type = auth_type
 
     @classmethod
-    def from_dict(cls, data: service_profile.JSONObject) -> "DummyProfile":
+    def from_dict(cls, data: service_profile.JSONObject) -> DummyProfile:
         return cls(
             endpoint=str(data.get("endpoint", "")),
             threads=int(str(data.get("threads", 0))),

@@ -221,7 +221,7 @@ class CompareCommandsQuery:
         return self.bazel.config if (self.bazel is not None) else ""
 
     @classmethod
-    def from_dict(cls, data: JSONObject) -> "CompareCommandsQuery":
+    def from_dict(cls, data: JSONObject) -> CompareCommandsQuery:
         """Construct a CompareCommandsQuery from a dictionary.
 
         Supported dictionary keys:

@@ -778,8 +778,8 @@ def _normalize_label(label: str) -> str:
 def _find_bazel_wrapper_target(
     label: str,
     build_dir: Path,
-    outputs: "gn_ninja_outputs.NinjaOutputsBase",
-    qualifier: "gn_labels.GnLabelQualifier",
+    outputs: gn_ninja_outputs.NinjaOutputsBase,
+    qualifier: gn_labels.GnLabelQualifier,
 ) -> tuple[str, list[str], str]:
     """Find the GN wrapper target or direct Bazel command for a Bazel target.
 

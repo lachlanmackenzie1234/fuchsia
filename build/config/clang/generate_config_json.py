@@ -219,7 +219,7 @@ def get_shared_static_exts(clang_target: str) -> tuple[str, str]:
         return ".so", ".a"
 
 
-Tree = dict[str, T.Union[str, "Tree"]]
+type Tree = dict[str, T.Union[str, Tree]]
 
 
 def store_into_dict(d: Tree, path: str, value: str) -> None:
@@ -279,14 +279,14 @@ class CommandResult(object):
     def __init__(self) -> None:
         pass
 
-    def process(self, proc: "subprocess.Popen[str]") -> str:
+    def process(self, proc: subprocess.Popen[str]) -> str:
         if proc.returncode != 0:
             return self.process_error(proc)
         else:
             assert proc.stdout is not None
             return self.process_stdout(proc.stdout.read().strip())
 
-    def process_error(self, proc: "subprocess.Popen[str]") -> str:
+    def process_error(self, proc: subprocess.Popen[str]) -> str:
         """This method can be overridden by sub-classes"""
         return ""
 

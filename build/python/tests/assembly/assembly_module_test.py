@@ -459,7 +459,7 @@ class PackageManifestBuilder:
             self._name_counter += 1
         return format_merkle(idx)
 
-    def manifest_path(self, path: FilePath) -> "PackageManifestBuilder":
+    def manifest_path(self, path: FilePath) -> PackageManifestBuilder:
         """Set the path that the manifest should be written to."""
         self._manifest_path = path
         return self
@@ -470,7 +470,7 @@ class PackageManifestBuilder:
         merkle: str | None = None,
         size: int | None = None,
         source: FilePath | None = None,
-    ) -> "PackageManifestBuilder":
+    ) -> PackageManifestBuilder:
         """Add a blob to the package, creating fake data for any fields that
         aren't given.
         """
@@ -488,7 +488,7 @@ class PackageManifestBuilder:
         )
         return self
 
-    def fake_blob(self, id: int) -> "PackageManifestBuilder":
+    def fake_blob(self, id: int) -> PackageManifestBuilder:
         """Add a completely faked blob to the package, using a numeric id to
         provide a way of tracking which package it belongs to.
         """
