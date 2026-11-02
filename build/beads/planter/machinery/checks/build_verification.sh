@@ -628,6 +628,28 @@ def unconfigured_own_gn_note(unconfigured):
     )
 
 
+# Check whether the `test` host tool required by `fx test --dry` exists in the build directory.
+def missing_fx_test_tool():
+    build_dir = (read(".fx-build-dir") or "").strip()
+    if not build_dir:
+        return None
+    try:
+        with open(os.path.join(workdir, build_dir, "tool_paths.json")) as f:
+            tp_data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(tp_data, list):
+        return None
+    for entry in tp_data:
+        if not isinstance(entry, dict) or entry.get("name") != "test":
+            continue
+        rel_path = (entry.get("path") or "").strip()
+        lbl = (entry.get("label") or "//scripts/fxtest/python:install").strip()
+        if rel_path and not os.path.isfile(os.path.join(workdir, build_dir, rel_path)):
+            return f"{build_dir}/{rel_path}", lbl
+    return None
+
+
 def dependent_labels():
     """(labels, notes) for gn_build_dependents: the changed packages' `:tests` groups and test/binary/library targets,
     then GN targets of other packages that depend on a changed package (tests and binaries, `<name>_test` of
@@ -674,6 +696,13 @@ def dependent_labels():
             if tmpl in LIBRARY_TEMPLATES:
                 libraries.append(f"//{pkg}:{name}")
     labels = []
+    missing_tool = missing_fx_test_tool()
+    if missing_tool is not None and (
+        exported_tests["host_tests"]
+        or exported_tests["target_tests"]
+        or any(l.endswith(":tests") for l in own)
+    ):
+        labels.append(missing_tool[1])
     for label in dict.fromkeys(own + linked + unit_tests + libraries):
         keys = toolchains.get(label, [])
         key = label if label in keys else next((k for k in keys if "host" in k), keys[0] if keys else None)
@@ -1049,7 +1078,8 @@ worktree_dirty_vs_head = bool(
     git_lines(["diff", "--name-only", "HEAD", "--"])
     or [u for u in git_lines(["ls-files", "--others", "--exclude-standard"]) if any(u == d or u.startswith(d + "/") for d in dirs)]
 )
-if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit_env or head_sha != uploaded_commit_env):
+head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
+if (change_base != "HEAD" or "[bazel_migration]" in head_subj) and not worktree_dirty_vs_head:
     toolchains_map, _ = load_toolchains()
     tests_json_targets = None
     build_dir_rel = (read(".fx-build-dir") or "").strip()
@@ -1068,6 +1098,26 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
         except (OSError, ValueError):
             tests_json_targets = None
     commit_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
+    # Build the `test` host tool if a commit `Test:` footer runs `fx test` and a cached
+    # or target-scoped build left `<build dir>/host_*/test` unbuilt on disk.
+    if (
+        not skip_build
+        and not dry_run
+        and re.search(r"(?m)^\s*Test\s*:.*\bfx\s+(?:-t\s+\S+\s+)?test\b", commit_msg)
+    ):
+        missing_tool = missing_fx_test_tool()
+        if missing_tool is not None and workspace_write_probe_error() is None:
+            try:
+                subprocess.run(
+                    [fx, "build", missing_tool[1]],
+                    cwd=workdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                pass
     test_footer_lines = []
     for m_line in commit_msg.splitlines():
         tm = re.match(r"^\s*Test\s*:\s*(.+)$", m_line, re.I)
@@ -1167,10 +1217,10 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                 })
         # Check that fx test footers reference leaf test targets or test packages
         # rather than GN group("tests") (:tests), bazel_test_suite wrappers, or
-        # non-test library targets, while accepting valid test targets exported by
-        # bazel_test_suite or defined in BUILD.bazel/BUILD.gn even when args.gn
-        # does not include --with-test (leaving <build dir>/tests.json empty).
-        def is_valid_fx_test_label(lbl, tj_targets):
+        # non-test library targets, and verify that when <build dir>/tests.json is
+        # non-empty the target is actually present in <build dir>/tests.json so
+        # Planter's test_verifier (`fx test --dry`) does not fail.
+        def is_structural_fx_test_label(lbl):
             pkg_d, sep, t_name = lbl[2:].partition(":")
             pkg_d = pkg_d.strip("/")
             gn_txt = gn_code(read(f"{pkg_d}/BUILD.gn") or "")
@@ -1180,11 +1230,6 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     return False
                 if re.search(r'\bbazel_test_suite\(\s*"' + re.escape(t_name) + r'"\s*\)', gn_txt):
                     return False
-            if tj_targets:
-                return bool(
-                    lbl in tj_targets
-                    or any(t == lbl or (not sep and t.startswith(lbl + ":")) for t in tj_targets)
-                )
             bz_test_re = (
                 r"\b(?:fx_unittest_package|fx_unittest_component|fx_test|fx_test_package|"
                 r"host_rustc_test|wrap_host_rust_test|host_go_test|host_py_test|host_test|"
@@ -1229,15 +1274,53 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     return True
             return False
 
+        def is_in_tests_json(lbl, tj_targets):
+            if not tj_targets:
+                return True
+            _, sep, _ = lbl[2:].partition(":")
+            return bool(
+                lbl in tj_targets
+                or any(t == lbl or (not sep and t.startswith(lbl + ":")) for t in tj_targets)
+            )
+
         if re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", test_cmd):
+            missing_tool = missing_fx_test_tool()
+            if missing_tool is not None:
+                tool_rel, tool_lbl = missing_tool
+                findings.append({
+                    "source": "build_verification",
+                    "category": "unbuilt_fx_test_tool",
+                    "severity": "ERROR",
+                    "file": "COMMIT_MSG",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` runs `fx test`, "
+                        f"but the `test` host tool (`{tool_rel}`) has not been built, "
+                        "so Planter's `test_verifier` (`fx test --dry`) fails with "
+                        "`missing_fx_test_target` (`Tool \"test\" is required by this "
+                        "command and has not been built`)."
+                    ),
+                    "remediation": (
+                        "Replace `Test: fx test ...` in the commit message and "
+                        "`CoderReport.test_footers` with "
+                        "`Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` "
+                        "(for device tests) or `Test: fx bazel test --config=host "
+                        "@//<dir>:<test>` (for host tests), or build the `fx test` host "
+                        f"tool first with `fx build '{tool_lbl}'`."
+                    ),
+                })
             fx_test_lbls = [
                 re.sub(r"^@@?//", "//", lbl).split("(", 1)[0]
                 for lbl in re.findall(r"@?//[^\s,;\"'`]+", test_cmd)
             ]
-            missing_fx_tests = [
-                lbl for lbl in fx_test_lbls if not is_valid_fx_test_label(lbl, tests_json_targets)
+            non_test_lbls = [
+                lbl for lbl in fx_test_lbls if not is_structural_fx_test_label(lbl)
             ]
-            if missing_fx_tests:
+            unconfigured_lbls = [
+                lbl for lbl in fx_test_lbls
+                if lbl not in non_test_lbls and not is_in_tests_json(lbl, tests_json_targets)
+            ]
+            if non_test_lbls:
                 findings.append({
                     "source": "build_verification",
                     "category": "unconfigured_fx_test_footer_label",
@@ -1246,7 +1329,7 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     "line": 0,
                     "message": (
                         f"Commit `Test:` footer `{m_line.strip()}` passes non-test or "
-                        f"aggregator target(s) to `fx test`: {' '.join(missing_fx_tests)}. "
+                        f"aggregator target(s) to `fx test`: {' '.join(non_test_lbls)}. "
                         "`fx test` requires a leaf test target (exported by "
                         "`bazel_test_suite` or defined as a test rule in "
                         "`BUILD.bazel`/`BUILD.gn`) or a package directory with tests, "
@@ -1254,14 +1337,33 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                         "wrapper, or library target."
                     ),
                     "remediation": (
-                        "Pass the leaf test target `Test: fx test //<dir>:<test_target>` "
-                        "or the package path `Test: fx test //<dir>` (without `:tests`), "
-                        "or use a Bazel command such as "
-                        "`Test: fx bazel test --config=host @//<dir>:<test>` (or the ancestor `test_suite()`) for host "
-                        "tests or `Test: fx bazel build --config=fuchsia_platform "
-                        "@//<dir>:<test>` for device tests. "
-                        "Using `fx bazel test|build` when `<build dir>/tests.json` does not include the target is the "
-                        "required convention, not a `machinery_conflict` (do not report it in `disputed_findings`)."
+                        "Replace the `Test: fx test ...` footer with "
+                        "`Test: fx bazel test --config=host @//<dir>:<test>` (for host tests) or "
+                        "`Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` (for device tests), "
+                        "or pass a leaf test target present in `<build dir>/tests.json`."
+                    ),
+                })
+            if unconfigured_lbls:
+                findings.append({
+                    "source": "build_verification",
+                    "category": "unconfigured_fx_test_footer_label",
+                    "severity": "ERROR",
+                    "file": "",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` passes target(s) to `fx test` "
+                        f"that are not in the configured `<build dir>/tests.json`: {' '.join(unconfigured_lbls)}. "
+                        "When `<build dir>/tests.json` is non-empty (configured for a different area's tests in `args.gn`), "
+                        "Planter's `test_verifier` runs `fx test --dry` and fails with `missing_fx_test_target` on any "
+                        "`fx test` label or package path outside `<build dir>/tests.json`."
+                    ),
+                    "remediation": (
+                        "Do NOT use `Test: fx test ...` when the target is not in `<build dir>/tests.json`. "
+                        "Amend the commit `Test:` footer and `CoderReport.test_footers` to use "
+                        "`Test: fx bazel test --config=host @//<dir>:<test>` (for host tests) or "
+                        "`Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` (for device tests like `fx_test` / "
+                        "`fx_unittest_package`). Using `fx bazel test|build` when `<build dir>/tests.json` omits the target "
+                        "is the required convention, not a `machinery_conflict` (do not report it in `disputed_findings`)."
                     ),
                 })
     if len(test_footer_lines) > 3:
@@ -1509,6 +1611,30 @@ if (
         _add("build_dir", build_dir)
         if build_dir:
             _add("args.gn", _file_digest(os.path.join(workdir, build_dir, "args.gn")))
+            for hb in ("host_x64/bazel2gn", "host_arm64/bazel2gn"):
+                hb_path = os.path.join(workdir, build_dir, hb)
+                if os.path.isfile(hb_path):
+                    _add(f"b2gn:{hb}", _file_digest(hb_path))
+        fx_bin = next(
+            (
+                os.path.join(workdir, rel)
+                for rel in (".jiri_root/bin/fx", "scripts/fx")
+                if os.path.isfile(os.path.join(workdir, rel))
+            ),
+            None,
+        )
+        if fx_bin:
+            try:
+                gn_ver = subprocess.check_output(
+                    [fx_bin, "gn", "--version"],
+                    cwd=workdir,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=10,
+                ).strip()
+                _add("gn_version", gn_ver)
+            except Exception:
+                pass
         _add("jiri", _file_digest(os.path.join(workdir, ".jiri_root", "update_history", "latest")))
         return h.hexdigest()
 
@@ -1604,6 +1730,38 @@ NINJA_FAILED_PYTHON_STAMP = re.compile(
 NINJA_MISSING_RULE = re.compile(
     r"^ninja: error: '([^']+)', needed by '([^']+)', missing and no known rule to make it$"
 )
+NINJA_MISSING_PREBUILT = re.compile(
+    r"(?:\.\./)+(prebuilt/[A-Za-z0-9_./+-]+):\s*No such file or directory"
+)
+
+
+# Check whether Ninja failed because a CIPD prebuilt tool under `prebuilt/` is missing on disk
+# (for example after rebasing `fuchsia.git` onto a newer `origin/main` without `jiri update`).
+def unrelated_ninja_missing_prebuilt(lines):
+    failed_indices = [i for i, l in enumerate(lines) if l.startswith("FAILED:")]
+    if not failed_indices:
+        return None
+    missing_prebuilts = []
+    for idx in failed_indices:
+        window = "\n".join(lines[idx : min(len(lines), idx + 8)])
+        matches = NINJA_MISSING_PREBUILT.findall(window)
+        if not matches:
+            return None
+        for rel_prebuilt in matches:
+            rel_prebuilt = rel_prebuilt.strip("/")
+            if os.path.exists(os.path.join(workdir, rel_prebuilt)):
+                return None
+            if rel_prebuilt not in missing_prebuilts:
+                missing_prebuilts.append(rel_prebuilt)
+    if not missing_prebuilts:
+        return None
+    return (
+        f"Ninja failed on missing prebuilt tool(s) ({' '.join(missing_prebuilts)}) in the "
+        "checkout (e.g. after rebasing onto a newer `origin/main` revision whose CIPD "
+        "packages have not been fetched). Keep the commit based on the checkout's "
+        "jiri-synced revision unless a rebase is required; the changed packages are still "
+        "verified by the remaining steps."
+    )
 
 
 # Check whether a single failed Ninja step is in an unrelated GN target with no dependency path
@@ -1694,6 +1852,9 @@ def unrelated_gn_ninja_failure(output):
     lines = output.splitlines()
     if any("ninja: error:" in l for l in lines):
         return unrelated_ninja_missing_source(lines, rdep_pkgs)
+    missing_prebuilt_note = unrelated_ninja_missing_prebuilt(lines)
+    if missing_prebuilt_note:
+        return missing_prebuilt_note
     build_dir = (read(".fx-build-dir") or "").strip()
     failed_targets = []
     for i, l in enumerate(lines):

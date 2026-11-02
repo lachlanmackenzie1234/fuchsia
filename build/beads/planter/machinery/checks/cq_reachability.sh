@@ -611,6 +611,19 @@ def has_intermediate_test_suite_package(td, anc_pkg):
     return False
 
 
+# Check whether a Bazel test_suite aggregates tests from other packages rather than
+# only local targets within `pkg`.
+def is_cross_pkg_bazel_suite(pkg, suite_name):
+    members = bazel_suites_of(pkg).get(suite_name)
+    if not members:
+        return False
+    for lbl in members:
+        sp = split_label(lbl, pkg)
+        if sp and sp[0] != pkg:
+            return True
+    return False
+
+
 # Check whether an ancestor BUILD.bazel test_suite already aggregates tests from td's
 # child subtree under anc_pkg (or td is a direct child of anc_pkg).
 def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
@@ -639,6 +652,10 @@ def ancestor_suite_covers_subtree(anc_pkg, anc_suite, td):
             member_pkgs.add(m_pkg)
             if m_name in bazel_suites_of(m_pkg):
                 queue.append((m_pkg, m_name))
+                if cur_pkg == anc_pkg and not is_cross_pkg_bazel_suite(
+                    m_pkg, m_name
+                ):
+                    has_direct_leaf_member = True
             elif cur_pkg == anc_pkg:
                 has_direct_leaf_member = True
     if td in member_pkgs:
@@ -3206,12 +3223,27 @@ for td in target_dirs:
         if anc_suite_info is not None and not had_base_local_suite:
             anc_pkg, anc_suite = anc_suite_info
             req_vis = ancestor_suite_visibility(anc_pkg)
+            other_param = (
+                "host_tests" if param == "target_tests" else "target_tests"
+            )
+            other_has_local_only = bool(
+                re.search(
+                    r"\b" + other_param + r'\s*\+?=\s*\[[^\]]*"//',
+                    gn_code(gn_pre),
+                )
+                and nearest_ancestor_test_suite(td, other_param) is None
+                and preferred_ancestor_area_suite(td, other_param) is None
+            )
             rm_local_desc = (
-                "remove the per-package `bazel_test_suite`, unreachable `group(\"tests\")`, "
-                "and unused `//build/bazel/bazel_test_suite.gni` import"
-                if (gn_test_callers and not local_gn_tests_referenced)
-                else "remove the per-package `bazel_test_suite` "
-                "(and unused `//build/bazel/bazel_test_suite.gni` import)"
+                f"remove `{param}` from the per-package `bazel_test_suite`"
+                if other_has_local_only
+                else (
+                    "remove the per-package `bazel_test_suite`, unreachable `group(\"tests\")`, "
+                    "and unused `//build/bazel/bazel_test_suite.gni` import"
+                    if (gn_test_callers and not local_gn_tests_referenced)
+                    else "remove the per-package `bazel_test_suite` "
+                    "(and unused `//build/bazel/bazel_test_suite.gni` import)"
+                )
             )
             in_anc_suite = t_name in foreign_suite_tests(
                 f"//{anc_pkg}:{anc_suite}", anc_pkg, td, set()
@@ -3230,7 +3262,7 @@ for td in target_dirs:
                     f"`test_suite(name = \"{anc_suite}\", tests = [...])` in "
                     f"'{anc_pkg}/BUILD.bazel', set "
                     f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
-                    f"'{bazel_rel}', and {rm_local_desc} from '{gn_rel}'."
+                    f"'{bazel_rel}', and {rm_local_desc} in '{gn_rel}'."
                 )
                 findings.append({
                     "source": "cq_reachability",
@@ -3251,9 +3283,14 @@ for td in target_dirs:
                     f"'{anc_pkg}/BUILD.bazel'."
                 )
                 rem_text = (
-                    f"Remove `bazel_test_suite(\"{local_name_s}\")` (and "
-                    f"`\":{local_name_s}\"` from `group(\"tests\")`, plus any unused "
-                    f"`//build/bazel/bazel_test_suite.gni` import) from '{local_rel}'."
+                    f"Remove `\"//{td}:{t_name}\"` (and empty `{param}`) from "
+                    f"`bazel_test_suite(\"{local_name_s}\")` in '{local_rel}'."
+                    if other_has_local_only
+                    else (
+                        f"Remove `bazel_test_suite(\"{local_name_s}\")` (and "
+                        f"`\":{local_name_s}\"` from `group(\"tests\")`, plus any unused "
+                        f"`//build/bazel/bazel_test_suite.gni` import) from '{local_rel}'."
+                    )
                 )
                 findings.append({
                     "source": "cq_reachability",

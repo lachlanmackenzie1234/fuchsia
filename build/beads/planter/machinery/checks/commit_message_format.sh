@@ -78,14 +78,17 @@ raw_dirs = [
 dirs = [d[len("build/secondary/"):] if d.startswith("build/secondary/") else d for d in raw_dirs]
 check_dirs = list(dict.fromkeys(raw_dirs + dirs))
 
-# Match a package path against the //dir or //.../<suffix> path in a commit subject.
+# Match a package path against the //dir or //.../<suffix> path in a commit subject,
+# including parent/child subdirectories belonging to the same multi-directory task.
 def matches_subject_dir(pkg, sdir):
     if not pkg or not sdir:
         return False
     if sdir.startswith(".../"):
         suf = sdir[4:]
-        return bool(suf) and (pkg == suf or pkg.endswith("/" + suf))
-    return pkg == sdir
+        return bool(suf) and (
+            pkg == suf or pkg.endswith("/" + suf) or f"/{suf}/" in f"/{pkg}/"
+        )
+    return pkg == sdir or pkg.startswith(sdir + "/") or sdir.startswith(pkg + "/")
 
 
 # Verify that a migration HEAD commit belongs to this task's target
@@ -179,6 +182,30 @@ if is_task_migration_head(head, parent_rev, head_subj) and (not base_rev or base
 def advance_rebased_base(cur_head, cur_base):
     if not (cur_head and cur_base and cur_head != cur_base):
         return cur_base
+    is_mig = bool(
+        parent_rev
+        and (
+            is_task_migration_head(cur_head, parent_rev, head_subj)
+            or head_subj.startswith("[bazel_migration]")
+        )
+    )
+    if is_mig and cur_base != parent_rev:
+        base_subj = git("log", "-1", "--format=%s", cur_base)
+        if base_subj.startswith("[bazel_migration]"):
+            return parent_rev
+        try:
+            anc_parent = (
+                subprocess.run(
+                    ["git", "-C", workdir, "merge-base", "--is-ancestor", cur_base, parent_rev],
+                    capture_output=True,
+                    timeout=15,
+                ).returncode
+                == 0
+            )
+            if anc_parent:
+                return parent_rev
+        except Exception:
+            pass
     try:
         is_anc = (
             subprocess.run(
@@ -192,7 +219,7 @@ def advance_rebased_base(cur_head, cur_base):
         is_anc = True
     mb = git("merge-base", cur_head, "origin/main")
     if not is_anc:
-        if parent_rev and is_task_migration_head(cur_head, parent_rev, head_subj):
+        if is_mig:
             return parent_rev
         if mb and mb != cur_head:
             return mb
@@ -207,6 +234,8 @@ def advance_rebased_base(cur_head, cur_base):
             timeout=15,
         )
         if r.returncode == 0:
+            if is_mig:
+                return parent_rev
             return mb
     except Exception:
         pass
@@ -455,6 +484,24 @@ if head and base_rev and head != base_rev:
             "Commit subject has no subsystem tag although the directory's git log uses one.",
             f"Use '{pref_subj}'{alt_note}. {hint}")
 
+    tj_targets = None
+    try:
+        with open(f"{workdir}/.fx-build-dir") as fh:
+            bdir = fh.read().strip()
+        if bdir:
+            with open(f"{workdir}/{bdir}/tests.json") as fh:
+                tj_data = json.load(fh)
+            if isinstance(tj_data, list) and tj_data:
+                tj_targets = set()
+                for entry in tj_data:
+                    t_obj = entry.get("test", {}) if isinstance(entry, dict) else {}
+                    for k in ("label", "source_label", "name", "package_url"):
+                        val = t_obj.get(k)
+                        if isinstance(val, str) and val.strip():
+                            tj_targets.add(re.sub(r"^@@?//", "//", val.strip()).split("(", 1)[0])
+    except (OSError, ValueError):
+        tj_targets = None
+
     test_lines = [(i + 1, l) for i, l in enumerate(lines) if l.startswith("Test:")]
     for ln, l in test_lines:
         cmd = l[len("Test:"):].strip()
@@ -508,6 +555,35 @@ if head and base_rev and head != base_rev:
         # Check that `fx test` footers do not pass a GN `group("tests")` label (`//<dir>:tests`),
         # which is not a leaf test entry in `tests.json` and fails `fx test --dry`.
         if re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", cmd):
+            if tj_targets:
+                fx_lbls = [
+                    re.sub(r"^@@?//", "//", lbl).split("(", 1)[0]
+                    for lbl in re.findall(r"@?//[^\s,;\"'`]+", cmd)
+                ]
+                unconf = [
+                    lbl for lbl in fx_lbls
+                    if not (
+                        lbl in tj_targets
+                        or any(
+                            t == lbl or (":" not in lbl[2:] and t.startswith(lbl.rstrip("/") + ":"))
+                            for t in tj_targets
+                        )
+                    )
+                ]
+                if unconf:
+                    add(
+                        "test_footer_fx_test_not_in_tests_json",
+                        ln,
+                        f"`Test:` footer `{cmd}` passes target(s) to `fx test` that are not in "
+                        f"the configured `<build dir>/tests.json`: {' '.join(unconf)}. "
+                        "Planter's `test_verifier` runs `fx test --dry` and fails with "
+                        "`missing_fx_test_target` when `<build dir>/tests.json` is non-empty and "
+                        "does not contain the target.",
+                        "Replace `Test: fx test ...` in the commit message and `CoderReport.test_footers` "
+                        "with `Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` (for device "
+                        "tests) or `Test: fx bazel test --config=host @//<dir>:<test>` (for host tests).",
+                        severity="error",
+                    )
             for pkg_d, t_name in re.findall(r"(?<![@\w])//([\w./\-]+):([\w.\-]+)", cmd):
                 pkg_d = pkg_d.strip("/")
                 try:
@@ -785,19 +861,28 @@ if head and base_rev and head != base_rev:
             break
         return False
 
+    # Read post-change file contents from disk, falling back to HEAD when a concurrent
+    # check (such as tests_json_parity) has temporarily reverted the working tree.
+    def read_committed_or_wt(rel_path, base_content=""):
+        disk_path = os.path.join(workdir, rel_path)
+        disk_txt = ""
+        if os.path.isfile(disk_path):
+            try:
+                with open(disk_path) as fh:
+                    disk_txt = fh.read()
+            except OSError:
+                disk_txt = ""
+        if head and (not disk_txt or (rel_path in changed and disk_txt == base_content)):
+            head_txt = git("show", f"{head}:{rel_path}")
+            if head_txt:
+                return head_txt
+        return disk_txt
+
     def inspect_dir_migration(rel_dir):
-        gn_path = os.path.join(workdir, rel_dir, "BUILD.gn")
-        bz_path = os.path.join(workdir, rel_dir, "BUILD.bazel")
-        try:
-            with open(gn_path) as fh:
-                gtxt = fh.read()
-        except OSError:
-            gtxt = ""
-        try:
-            with open(bz_path) as fh:
-                btxt = fh.read()
-        except OSError:
-            btxt = ""
+        base_gtxt = git("show", f"{base_rev}:{rel_dir}/BUILD.gn")
+        base_btxt = git("show", f"{base_rev}:{rel_dir}/BUILD.bazel")
+        gtxt = read_committed_or_wt(f"{rel_dir}/BUILD.gn", base_gtxt)
+        btxt = read_committed_or_wt(f"{rel_dir}/BUILD.bazel", base_btxt)
         pre_gtxt = gtxt.split("## BAZEL2GN SENTINEL", 1)[0] if gtxt else ""
         suite_names = {
             gname
@@ -809,7 +894,6 @@ if head and base_rev and head != base_rev:
         for grule, gname, _ in iter_gn_targets(pre_gtxt):
             if grule not in gn_meta_constructs and gname not in suite_names:
                 kept_pre_gn[gname] = grule
-        base_btxt = git("show", f"{base_rev}:{rel_dir}/BUILD.bazel")
         bz_names = set()
         new_bz_labels = []
         base_bz_names = set()
@@ -887,7 +971,11 @@ if head and base_rev and head != base_rev:
         return s
 
     def is_dir_migrated_in_commit(rel_dir):
-        if not os.path.isfile(os.path.join(workdir, rel_dir, "BUILD.bazel")):
+        bz_rel = f"{rel_dir}/BUILD.bazel"
+        if not (
+            os.path.isfile(os.path.join(workdir, bz_rel))
+            or (head and git("show", f"{head}:{bz_rel}"))
+        ):
             return False
         _, _, new_bz_lbls = inspect_dir_migration(rel_dir)
         if new_bz_lbls:
@@ -898,14 +986,9 @@ if head and base_rev and head != base_rev:
         base_gtxt = git("show", f"{base_rev}:{gn_rel}")
         if not base_gtxt:
             return False
-        gn_path = os.path.join(workdir, gn_rel)
-        if not os.path.isfile(gn_path):
+        cur_gtxt = read_committed_or_wt(gn_rel, base_gtxt)
+        if not cur_gtxt:
             return True
-        try:
-            with open(gn_path) as fh:
-                cur_gtxt = fh.read()
-        except OSError:
-            return False
         if "## BAZEL2GN SENTINEL" in cur_gtxt and "## BAZEL2GN SENTINEL" not in base_gtxt:
             return True
         base_pre = base_gtxt.split("## BAZEL2GN SENTINEL", 1)[0]

@@ -1343,13 +1343,41 @@ else:
 head_subj = (git(["log", "-1", "--format=%s", "HEAD"]) or "").strip()
 head_sha = (git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) or "").strip()
 base_sha = (git(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"]) or "").strip()
-if (
-    change_base == "HEAD" or (head_sha and base_sha == head_sha)
-) and not changed and head_subj.startswith("[bazel_migration]"):
+parent_sha = (git(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"]) or "").strip()
+
+
+# Check whether `anc` is a git ancestor of `desc` in the checkout.
+def _is_git_ancestor(anc, desc):
+    if not anc or not desc:
+        return False
+    return (
+        subprocess.run(
+            ["git", "-C", workdir, "merge-base", "--is-ancestor", anc, desc],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+if head_subj.startswith("[bazel_migration]") and (
+    change_base == "HEAD"
+    or (head_sha and base_sha == head_sha and not changed)
+    or (head_sha and base_sha and not _is_git_ancestor(base_sha, head_sha))
+    or (
+        head_sha
+        and base_sha
+        and parent_sha
+        and base_sha != parent_sha
+        and _is_git_ancestor(base_sha, parent_sha)
+    )
+):
     head_files = (git(["diff", "--name-only", "HEAD~1", "HEAD"]) or "").split()
     if not target_dir or any(p.startswith(target_dir + "/") for p in head_files):
         change_base = "HEAD~1"
-        changed = head_files
+        changed = head_files + (
+            git(["ls-files", "--others", "--exclude-standard"]) or ""
+        ).split()
 dirs = {target_dir} if target_dir else set()
 for p in changed:
     if os.path.basename(p) in ("BUILD.gn", "BUILD.bazel") and os.path.dirname(p):
@@ -1981,7 +2009,6 @@ for pkg in sorted(d for d in dirs if d):
                 )
                 if dropped_name:
                     findings.append(dropped_name)
-
 
 # Check for GN root_out_dir binary output_name collisions on migrated rustc_test targets
 def check_rust_test_output_name_collision():

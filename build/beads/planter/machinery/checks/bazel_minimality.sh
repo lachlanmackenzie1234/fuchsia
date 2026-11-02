@@ -77,6 +77,8 @@ ALLOWED_GLOBAL_PREFIXES = (
     "build/images/",
 )
 
+RUST_CRATES = "third_party/rust_crates/"
+
 SHARED_BAZEL_RULE_PREFIXES = (
     "build/bazel/rules/",
     "build/bazel/aspects/",
@@ -132,11 +134,44 @@ def is_ancestor(anc: str, desc: str) -> bool:
 
 
 def normalize_git_rev(rev: str) -> str:
-    """Map jj relative revsets (@, @-, @--) to git HEAD equivalents for git commands."""
+    """Map jj relative revsets (@, @-, @--) to git HEAD equivalents and advance stale pre-rebase bases."""
     rev = (rev or "").strip() or "HEAD"
     m = re.fullmatch(r"@(-*)", rev)
     if m:
-        return f"HEAD~{len(m.group(1))}" if m.group(1) else "HEAD"
+        rev = f"HEAD~{len(m.group(1))}" if m.group(1) else "HEAD"
+    head_list = git_lines(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    base_list = git_lines(["rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"])
+    orig_list = git_lines(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+    head_sha = head_list[0] if head_list else ""
+    base_sha = base_list[0] if base_list else ""
+    orig_sha = orig_list[0] if orig_list else ""
+    if head_sha and orig_sha:
+        mb_list = git_lines(["merge-base", orig_sha, head_sha])
+        merge_base = mb_list[0] if mb_list else ""
+        if base_sha and merge_base and base_sha != merge_base:
+            is_anc = (
+                subprocess.run(
+                    ["git", "-C", workdir, "merge-base", "--is-ancestor", base_sha, merge_base],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                ).returncode
+                == 0
+            )
+            if is_anc:
+                return merge_base
+        if base_sha and merge_base:
+            in_head = (
+                subprocess.run(
+                    ["git", "-C", workdir, "merge-base", "--is-ancestor", base_sha, head_sha],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                ).returncode
+                == 0
+            )
+            if not in_head:
+                return merge_base
     return rev
 
 
@@ -245,6 +280,8 @@ def package_eliminated_gn_or_sentinel(pkg: str) -> bool:
     gn_path = os.path.join(workdir, pkg, "BUILD.gn")
     if not os.path.isfile(gn_path):
         return True
+    if f"{pkg}/BUILD.gn" not in changed:
+        return False
     try:
         with open(gn_path, encoding="utf-8") as f:
             return "BAZEL2GN SENTINEL" not in f.read()
@@ -401,7 +438,7 @@ def collect_non_visibility_dep_pkgs(pkg: str) -> set[str]:
 
 
 def migrated_dependency_packages():
-    """Packages outside target_dirs that are legitimately co-migrated per scoping_changelists.md.
+    """Returns (dependency_dirs, required_upstream_deps) for packages outside target_dirs.
 
     Per //build/beads/references/migration/scoping_changelists.md Section 2 & Section 3:
     - Never co-migrate cross-area packages, third_party/ packages (with first-party), or
@@ -409,7 +446,11 @@ def migrated_dependency_packages():
     - Allowed co-migrations:
       1. Subdirectories of an in-scope migrated directory (`cand_pkg.startswith(td + "/")`, e.g.
          internal helpers `//<dir>/<helper>` or direct test dirs `//<dir>/tests`, Patterns 2.B & 2.D).
-      2. A sole same-area GN consumer of `td` ONLY when co-migrating it eliminates `td/BUILD.gn` or
+      2. Unmigrated upstream dependency packages (`td` -> ... -> `cand_pkg`) in the same
+         third_party scope that had no migrated BUILD.bazel at `change_base` and must be
+         co-migrated in this change so `target_dirs` can resolve its Bazel dependencies without
+         failing `cq_reachability` (`missing_bazel_dependency_package`) or `fx bazel build`.
+      3. A sole same-area GN consumer of `td` ONLY when co-migrating it eliminates `td/BUILD.gn` or
          avoids `bazel2gn` in `td/BUILD.gn` (Pattern 2.A).
       3. An unmigrated same-area dependency package required to compile an in-scope target in Bazel
          (even when `bazel2gn` is kept for remaining GN consumers, or when `<pkg>/BUILD.bazel` at
@@ -426,7 +467,7 @@ def migrated_dependency_packages():
     )
     candidates = {
         os.path.dirname(p)
-        for p in added
+        for p in changed
         if os.path.basename(p) == "BUILD.bazel"
         and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
         and not p.strip("/").startswith("bundles/")
@@ -827,7 +868,9 @@ def count_authored_added_lines(norm: str) -> int:
 
 
 # Enforce CL directory count (<= 5) and added-line count (<= ~500 for multi-directory CLs)
-# per //build/beads/references/migration/scoping_changelists.md.
+# per //build/beads/references/migration/scoping_changelists.md when discretionary
+# co-migrated directories (consumers or siblings not required as upstream dependencies
+# of target_dirs) are included.
 def check_cl_scoping_guidelines():
     migrated_pkgs = set()
     for p in sorted(changed):
@@ -842,6 +885,18 @@ def check_cl_scoping_guidelines():
         if norm in newly_added_files or pkg in target_dirs or pkg in dependency_dirs:
             migrated_pkgs.add(pkg)
     if len(migrated_pkgs) <= 1:
+        return
+    discretionary_pkgs = {
+        pkg
+        for pkg in migrated_pkgs
+        if pkg not in target_dirs
+        and pkg not in required_upstream_deps
+        and not any(
+            pkg.startswith(td + "/") and is_same_third_party_scope(pkg, td)
+            for td in target_dirs
+        )
+    }
+    if not discretionary_pkgs:
         return
     added_lines = 0
     for p in sorted(changed):

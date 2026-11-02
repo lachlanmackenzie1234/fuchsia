@@ -74,6 +74,7 @@ fi
 # exec, so that whoever stops this check signals the process that edits the
 # working tree, and its `finally` restores it.
 exec python3 - "$WORKDIR" "$TARGET_DIRS" <<'PYEOF'
+import base64
 import fcntl
 import hashlib
 import json
@@ -109,6 +110,8 @@ MAX_DROPPED_FINDINGS = 25
 # they are build files.
 BUILD_FILE = re.compile(r"(^|/)(BUILD|BUILD\.gn|BUILD\.bazel|MODULE\.bazel|[^/]+\.gni|[^/]+\.bzl)$")
 ROOTS_MARKER = "# Added by planter's tests_json_parity check; it restores this file."
+PRODUCT_TARGET_ROOT = "//build/images/fuchsia"
+PRODUCT_HOST_ROOT = "//:host"
 
 findings = []
 
@@ -134,6 +137,54 @@ for sig in (signal.SIGTERM, signal.SIGHUP):
 
 def git(args, text=True):
     return subprocess.check_output(["git", "-C", workdir] + args, stderr=subprocess.DEVNULL, text=text)
+
+
+# Advance change_base when HEAD was rebased onto a newer origin/main after
+# PLANTER_CHANGE_BASE was pinned, so baseline revert only touches the change's files.
+def resolve_effective_change_base(raw_base):
+    def _git_str(cmd_args):
+        try:
+            return git(cmd_args).strip()
+        except (OSError, subprocess.CalledProcessError):
+            return ""
+
+    def _is_anc(anc_ref, desc_ref):
+        if not anc_ref or not desc_ref:
+            return False
+        return (
+            subprocess.run(
+                ["git", "-C", workdir, "merge-base", "--is-ancestor", anc_ref, desc_ref],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    base = (raw_base or "").strip() or "HEAD"
+    head_sha = _git_str(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+    base_sha = _git_str(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    origin_main = _git_str(
+        ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]
+    )
+    merge_base = (
+        _git_str(["merge-base", origin_main, head_sha])
+        if (origin_main and head_sha)
+        else ""
+    )
+    if (
+        base_sha
+        and merge_base
+        and base_sha != merge_base
+        and _is_anc(base_sha, merge_base)
+    ):
+        return merge_base
+    if head_sha and base_sha and not _is_anc(base_sha, head_sha):
+        return merge_base or "HEAD~1"
+    return base
+
+
+change_base = resolve_effective_change_base(change_base)
 
 
 def read(rel):
@@ -183,6 +234,24 @@ except (OSError, subprocess.CalledProcessError):
 state_dir = os.path.join(git_dir, "planter-tests-json-parity")
 journal_path = os.path.join(state_dir, "restore.json")
 backup_dir = os.path.join(state_dir, "backup")
+lock_path = os.path.join(state_dir, "lock")
+
+# Serialize concurrent tests_json_parity invocations across background and post-report
+# check runs so an overlapping run never restores or deletes an active run's backup_dir.
+os.makedirs(state_dir, exist_ok=True)
+lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+if skip_build:
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        add(
+            "tests_json_parity_skipped",
+            "INFO",
+            "PLANTER_SKIP_BUILD is set; tests.json parity was not checked.",
+        )
+        finish()
+else:
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
 
 def remove_file(path):
@@ -206,6 +275,149 @@ class RestoreConflict(Exception):
     pass
 
 
+# Reconstruct `<build_dir>/args.gn` from `<build_dir>/args.json` when an interrupted
+# prior run lost its backup copy of `args.gn`.
+def reconstruct_args_gn_from_json(rel_build_dir, expected_state=""):
+    args_json_path = os.path.join(workdir, rel_build_dir, "args.json")
+    if not os.path.isfile(args_json_path):
+        return None
+    try:
+        with open(args_json_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    board = data.get("build_info_board", "")
+    product = data.get("build_info_product", "")
+    imported_vars = set()
+    imports = []
+    for sub, name in (("boards", board), ("products", product)):
+        if name and isinstance(name, str):
+            rel_gni = f"{sub}/{name}.gni"
+            gni_path = os.path.join(workdir, rel_gni)
+            if os.path.isfile(gni_path):
+                imports.append(f'import("//{rel_gni}")')
+                try:
+                    with open(gni_path, encoding="utf-8", errors="replace") as gf:
+                        for m in re.finditer(
+                            r"^\s*([A-Za-z_]\w*)\s*=", gf.read(), re.M
+                        ):
+                            imported_vars.add(m.group(1))
+                except OSError:
+                    pass
+    target_list_keys = (
+        "build_only_labels",
+        "developer_test_labels",
+        "e2e_test_labels",
+        "hermetic_test_package_labels",
+        "host_labels",
+        "host_test_labels",
+        "target_labels",
+        "universe_package_labels",
+    )
+    fx_bin = next(
+        (
+            os.path.join(workdir, rel)
+            for rel in (".jiri_root/bin/fx", "scripts/fx")
+            if os.path.isfile(os.path.join(workdir, rel))
+        ),
+        None,
+    )
+    cands = []
+    for drop_dev in (True, False):
+        for strip_prod_roots in (True, False):
+            for include_overrides in (False, True):
+                lines = list(imports)
+                if "compilation_mode" in data:
+                    lines.append("\n# Compilation args:")
+                    cm = json.dumps(data["compilation_mode"])
+                    lines.append(f"compilation_mode = {cm}")
+                basic = []
+                for k, v in sorted(data.items()):
+                    if (
+                        k in imported_vars
+                        or k == "compilation_mode"
+                        or k in target_list_keys
+                        or k == "product_assembly_overrides"
+                    ):
+                        continue
+                    basic.append(f"{k} = {json.dumps(v)}")
+                if basic:
+                    lines.append("\n# Basic args:")
+                    lines.extend(basic)
+                tlists = []
+                for k in sorted(target_list_keys):
+                    if k not in data:
+                        continue
+                    if k == "developer_test_labels" and drop_dev:
+                        continue
+                    vals = list(data[k]) if isinstance(data[k], list) else []
+                    if strip_prod_roots and k == "target_labels":
+                        vals = [x for x in vals if x != PRODUCT_TARGET_ROOT]
+                    if strip_prod_roots and k == "host_labels":
+                        vals = [x for x in vals if x != PRODUCT_HOST_ROOT]
+                    tlists.append(f"{k} = {json.dumps(vals)}")
+                if tlists:
+                    lines.append("\n# Target lists:")
+                    lines.extend(tlists)
+                if include_overrides:
+                    ov = data.get("product_assembly_overrides", [])
+                    lines.append(f"\nproduct_assembly_overrides = {json.dumps(ov)}")
+                raw = "\n".join(lines) + "\n"
+                cur_cands = [raw.encode("utf-8")]
+                if fx_bin:
+                    try:
+                        fmt = subprocess.check_output(
+                            [fx_bin, "gn", "format", "--stdin"],
+                            cwd=workdir,
+                            input=raw,
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                        )
+                        cur_cands.insert(0, fmt.encode("utf-8"))
+                    except (OSError, subprocess.CalledProcessError):
+                        pass
+                for c in cur_cands:
+                    cands.append(c)
+                    if expected_state and ("file:" + sha(c)) == expected_state:
+                        return c
+    return cands[0] if cands else None
+
+
+# Recover backup bytes for a journal entry when `backup_dir` is missing.
+def recover_missing_backup_bytes(entry):
+    rel = entry["path"]
+    expected = entry.get("backup_state", "")
+    b64 = entry.get("backup_b64")
+    if isinstance(b64, str) and b64:
+        try:
+            return base64.b64decode(b64)
+        except ValueError:
+            pass
+    dst = os.path.join(workdir, rel)
+    if rel.endswith("/args.gn"):
+        if os.path.isfile(dst):
+            cur_txt = read(rel) or ""
+            marker = f"\n{ROOTS_MARKER}"
+            if marker in cur_txt:
+                stripped = cur_txt.split(marker, 1)[0].encode("utf-8")
+                if not expected or ("file:" + sha(stripped)) == expected:
+                    return stripped
+        reconstructed = reconstruct_args_gn_from_json(
+            os.path.dirname(rel), expected
+        )
+        if reconstructed is not None:
+            return reconstructed
+    try:
+        blob = git(["cat-file", "blob", f"HEAD:{rel}"], text=False)
+        if not expected or ("file:" + sha(blob)) == expected:
+            return blob
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return None
+
+
 def write_journal(entries):
     fd, tmp = tempfile.mkstemp(dir=state_dir, prefix=".restore.")
     with os.fdopen(fd, "w") as f:
@@ -224,6 +436,15 @@ def back_up(entries):
             dst = os.path.join(backup_dir, e["path"])
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst, follow_symlinks=False)
+            if os.path.isfile(src) and not os.path.islink(src):
+                try:
+                    if os.path.getsize(src) <= 2 * 1024 * 1024:
+                        with open(src, "rb") as bf:
+                            e["backup_b64"] = base64.b64encode(
+                                bf.read()
+                            ).decode("ascii")
+                except OSError:
+                    pass
     write_journal(entries)
 
 
@@ -236,17 +457,33 @@ def restore_from_journal():
         rel = e["path"]
         dst = os.path.join(workdir, rel)
         current = state(dst)
-        if current == e["backup_state"]:
+        backup_st = e.get("backup_state", "absent")
+        written_sts = e.get("written_states") or []
+        lost_during_restore = (
+            current == "absent"
+            and backup_st.startswith("file:")
+            and "absent" not in written_sts
+        )
+        if current == backup_st or (
+            current not in written_sts and not lost_during_restore
+        ):
+            # Already restored or superseded by a newer working-tree edit/rebase.
             continue
-        if current not in e["written_states"]:
-            conflicts.append(e)
-            continue
-        remove_file(dst)
-        if e["backup_state"] == "absent":
+        if backup_st == "absent":
+            remove_file(dst)
             prune_empty_dirs(rel)
         else:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(os.path.join(backup_dir, rel), dst, follow_symlinks=False)
+            bkp_src = os.path.join(backup_dir, rel)
+            if os.path.lexists(bkp_src):
+                shutil.copy2(bkp_src, dst, follow_symlinks=False)
+            else:
+                recovered = recover_missing_backup_bytes(e)
+                if recovered is not None:
+                    with open(dst, "wb") as wf:
+                        wf.write(recovered)
+                else:
+                    conflicts.append(e)
     if conflicts:
         write_journal(conflicts)
         raise RestoreConflict(", ".join(e["path"] for e in conflicts))
