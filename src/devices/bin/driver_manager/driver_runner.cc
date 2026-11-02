@@ -383,7 +383,7 @@ DriverRunner::DriverRunner(
 
   power_manager_ = std::make_unique<PowerManager>(dispatcher_, std::move(topology_client),
                                                   std::move(cpu_element_mgr),
-                                                  wait_for_storage_token_from_driver_);
+                                                  wait_for_storage_token_from_driver_, root_node_);
 }
 
 // fidl::WireServer<fuchsia_driver_token::Debug>
@@ -1003,7 +1003,7 @@ void DriverRunner::CreatePowerElement(
 
 void DriverRunner::OnBootupComplete() {
   if (power_manager_) {
-    power_manager_->OnBootupComplete(root_node_);
+    power_manager_->OnBootupComplete();
   }
 }
 

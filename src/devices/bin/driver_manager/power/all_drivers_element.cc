@@ -76,8 +76,9 @@ bool HasPowerEnabledDescendants(const std::shared_ptr<const Node>& start_node) {
 
 }  // namespace
 
-AllDriversElement::AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root)
-    : root_(root), power_manager_(power_manager) {}
+AllDriversElement::AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root,
+                                     zx::eventpair bootup_lease)
+    : bootup_lease_(std::move(bootup_lease)), root_(root), power_manager_(power_manager) {}
 
 void AllDriversElement::AttachElement(async_dispatcher_t* dispatcher, PowerElementHandles handles) {
   element_control_ = std::move(handles.element_control);
@@ -85,6 +86,13 @@ void AllDriversElement::AttachElement(async_dispatcher_t* dispatcher, PowerEleme
   if (handles.element_runner.is_valid()) {
     element_runner_bindings_.AddBinding(dispatcher, std::move(handles.element_runner), this,
                                         fidl::kIgnoreBindingClosure);
+  }
+}
+
+void AllDriversElement::OnBootupComplete() {
+  bootup_complete_ = true;
+  if (!transition_complete_) {
+    CompleteStartupTransition();
   }
 }
 
@@ -108,11 +116,12 @@ void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
     return;
   }
 
-  AddDependency(node, std::move(startup_lease));
+  AddDependency(node, std::move(startup_lease), /*bootup_lease=*/nullptr);
 }
 
 void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
-                                      std::optional<zx::eventpair> startup_lease) {
+                                      std::optional<zx::eventpair> startup_lease,
+                                      std::shared_ptr<zx::eventpair> bootup_lease) {
   if (!element_control_.is_valid()) {
     return;
   }
@@ -135,7 +144,8 @@ void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
   }};
 
   element_control_->AddDependency(std::move(dep))
-      .Then([name = node->name(), startup_lease = std::move(startup_lease)](
+      .Then([name = node->name(), startup_lease = std::move(startup_lease),
+             bootup_lease = std::move(bootup_lease)](
                 fidl::Result<fuchsia_power_broker::ElementControl::AddDependency>& result) {
         if (result.is_error()) {
           // A node can be added twice. Node::is_bound() becomes true as soon as we ask the driver
@@ -159,7 +169,8 @@ void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
 }
 
 void AllDriversElement::ProcessStartupNode(const std::shared_ptr<const Node>& node,
-                                           bool has_power_enabled_descendant) {
+                                           bool has_power_enabled_descendant,
+                                           const std::shared_ptr<zx::eventpair>& bootup_lease) {
   // We only process nodes that have a power element. Nodes without power elements do not take
   // startup leases or get added as dependencies of AllDrivers.
   if (!node->HasActivePowerElement()) {
@@ -184,7 +195,7 @@ void AllDriversElement::ProcessStartupNode(const std::shared_ptr<const Node>& no
     return;
   }
 
-  AddDependency(node, std::move(startup_lease));
+  AddDependency(node, std::move(startup_lease), bootup_lease);
 }
 
 void AllDriversElement::CompleteStartupTransition() {
@@ -193,6 +204,10 @@ void AllDriversElement::CompleteStartupTransition() {
   }
 
   transition_complete_ = true;
+  std::shared_ptr<zx::eventpair> bootup_lease;
+  if (bootup_lease_.is_valid()) {
+    bootup_lease = std::make_shared<zx::eventpair>(std::move(bootup_lease_));
+  }
 
   // Identify all power-enabled leaf nodes and safely transfer their startup leases.
   if (auto root = root_.lock()) {
@@ -201,34 +216,34 @@ void AllDriversElement::CompleteStartupTransition() {
     // all of its children, allowing O(1) checks for power-enabled descendants.
     std::unordered_set<const Node*> has_power_enabled_descendant_set;
 
-    PerformPostOrderDFS(
-        root, [this, &has_power_enabled_descendant_set](const std::shared_ptr<const Node>& node) {
-          // Check if this node has any descendants with a power element.
-          bool has_power_enabled_descendant = false;
-          for (const auto& child : node->children()) {
-            if (child->HasActivePowerElement() ||
-                has_power_enabled_descendant_set.contains(child.get())) {
-              has_power_enabled_descendant = true;
-              has_power_enabled_descendant_set.insert(node.get());
-              break;
-            }
-          }
+    PerformPostOrderDFS(root, [this, &has_power_enabled_descendant_set,
+                               &bootup_lease](const std::shared_ptr<const Node>& node) {
+      // Check if this node has any descendants with a power element.
+      bool has_power_enabled_descendant = false;
+      for (const auto& child : node->children()) {
+        if (child->HasActivePowerElement() ||
+            has_power_enabled_descendant_set.contains(child.get())) {
+          has_power_enabled_descendant = true;
+          has_power_enabled_descendant_set.insert(node.get());
+          break;
+        }
+      }
 
-          ProcessStartupNode(node, has_power_enabled_descendant);
-        });
+      ProcessStartupNode(node, has_power_enabled_descendant, bootup_lease);
+    });
   }
 }
 
 void AllDriversElement::SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) {
   current_level_ = request->level;
 
-  if (!transition_complete_) {
+  if (bootup_complete_ && !transition_complete_) {
     CompleteStartupTransition();
   }
 
   // We can reply before the AddDependency() calls in CompleteStartupTransition() are complete
-  // because the leaf driver's startup lease will keep its power element on unti the dependencies
-  // are added.
+  // because the bootup lease and each leaf driver's startup lease will keep power elements on
+  // until the dependencies are added.
   completer.Reply();
 }
 

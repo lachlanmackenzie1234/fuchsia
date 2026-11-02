@@ -24,7 +24,8 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
  public:
   friend class AllDriversElementTest;
 
-  AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root);
+  AllDriversElement(PowerManager* power_manager, std::shared_ptr<Node> root,
+                    zx::eventpair bootup_lease = {});
 
   void SetLevel(SetLevelRequestView request, SetLevelCompleter::Sync& completer) override;
 
@@ -33,6 +34,10 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
   void AttachElement(async_dispatcher_t* dispatcher, PowerElementHandles handles);
+
+  // Marks driver bootup complete and triggers the initial leaf-driver dependency sweep once the
+  // element is at the active power level.
+  void OnBootupComplete();
 
   // Called by DriverRunner whenever a new node is bound. If the node is a leaf driver, adds a
   // power dependency on the node to the AllDrivers element, passing the startup lease to be held
@@ -53,15 +58,18 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   //   - If |has_power_enabled_descendant| is true, the node is not a leaf; its startup lease is
   //     dropped.
   void ProcessStartupNode(const std::shared_ptr<const Node>& node,
-                          bool has_power_enabled_descendant);
+                          bool has_power_enabled_descendant,
+                          const std::shared_ptr<zx::eventpair>& bootup_lease);
 
   // Adds a power dependency on a leaf driver node to the AllDrivers element.
-  // The optional |startup_lease| is held until the AddDependency call completes asynchronously,
-  // preventing the node from dropping power before the dependency is established.
+  // The optional |startup_lease| and |bootup_lease| are held until the AddDependency call completes
+  // asynchronously, preventing the node and AllDrivers from dropping power before the dependency is
+  // established. |bootup_lease| is only set during the startup transition.
   // Adding a dependency that already exists is harmless: Power Broker rejects it with
   // ALREADY_EXISTS, which is ignored.
   void AddDependency(const std::shared_ptr<const Node>& node,
-                     std::optional<zx::eventpair> startup_lease = std::nullopt);
+                     std::optional<zx::eventpair> startup_lease,
+                     std::shared_ptr<zx::eventpair> bootup_lease);
 
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> element_runner_bindings_;
   fidl::Client<fuchsia_power_broker::ElementControl> element_control_;
@@ -71,9 +79,15 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   // state.
   uint32_t current_level_ = 0;
 
-  // Set to true when the element first transitions to the "on" level (level 1), marking the
-  // completion of the initial startup transition.
+  // Set to true once BootupTracker signals that initial driver binding has settled.
+  bool bootup_complete_ = false;
+
+  // Set to true when the element completes its initial leaf-driver startup transition.
   bool transition_complete_ = false;
+
+  // Initial lease keeping AllDrivers at level 1 until OnBootupComplete() establishes all leaf
+  // driver dependencies.
+  zx::eventpair bootup_lease_;
 
   // A weak pointer to the root of the node topology, used to discover all nodes during the
   // startup transition.
