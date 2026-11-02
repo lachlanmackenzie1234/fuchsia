@@ -708,7 +708,6 @@ group("swd_trust_store_public") {
 
 group("core_realm_development_access") {
   deps = [
-    "//bundles/assembly/bazel_inputs/src/developer/forensics/snapshot:pkg",
     "//bundles/assembly/bazel_inputs/src/developer/remote-control:remote-control-package",
     "//bundles/assembly/bazel_inputs/src/developer/sshd-host",
     "//bundles/assembly/bazel_inputs/src/diagnostics/log_listener:log_listener_shell_pkg",

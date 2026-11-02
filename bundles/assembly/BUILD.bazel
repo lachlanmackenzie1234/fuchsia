@@ -1910,7 +1910,7 @@ assembly_input_bundle(
         # ffx's remote-control (remote access) components:
         "//bundles/assembly/bazel_inputs/src/developer/remote-control:remote-control-package",
         # The developer snapshot tool.
-        "//bundles/assembly/bazel_inputs/src/developer/forensics/snapshot:pkg",
+        "//src/developer/forensics/snapshot:pkg",
         # log_listener shell tool.
         "//bundles/assembly/bazel_inputs/src/diagnostics/log_listener:log_listener_shell_pkg",
     ],
