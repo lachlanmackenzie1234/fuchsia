@@ -565,7 +565,7 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
   bool completed = false;
   {
     std::scoped_lock lock(slot_lock_);
-    if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff() ||
+    if (controller_.IsHardwarePoweredOff() ||
         slots_.GetSlot(kAdminCommandSlotNumber).state != SlotState::kScheduled) {
       return 0;
     }
@@ -590,7 +590,7 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   uint32_t doorbell = 0;
   {
     std::scoped_lock lock(slot_lock_);
-    if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
+    if (controller_.IsHardwarePoweredOff()) {
       return 0;
     }
     ForEachAllocatedSlotLocked(
@@ -614,8 +614,7 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
     zx_status_t status = ZX_OK;
     {
       std::scoped_lock lock(slot_lock_);
-      if (disable_completion_.load(std::memory_order_acquire) ||
-          controller_.IsHardwarePoweredOff()) {
+      if (controller_.IsHardwarePoweredOff()) {
         return completion_count;
       }
       if (ProcessSlotCompletion(slot_num, doorbell, cb, status)) {

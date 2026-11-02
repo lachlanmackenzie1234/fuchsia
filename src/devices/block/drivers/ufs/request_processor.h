@@ -57,16 +57,8 @@ class RequestProcessor {
   std::mutex &GetSlotLock() const TA_RET_CAP(slot_lock_) { return slot_lock_; }
   void SetTimeout(zx::duration timeout) { timeout_ = timeout; }
   zx::duration GetTimeout() const { return timeout_; }
-  // Serialized with slot_lock_ so that once DisableCompletion() returns, no in-flight completion
-  // pass can read the doorbell register or complete slots until EnableCompletion() is called.
-  void DisableCompletion() TA_EXCL(slot_lock_) {
-    std::scoped_lock lock(slot_lock_);
-    disable_completion_.store(true, std::memory_order_release);
-  }
-  void EnableCompletion() TA_EXCL(slot_lock_) {
-    std::scoped_lock lock(slot_lock_);
-    disable_completion_.store(false, std::memory_order_release);
-  }
+  void DisableCompletion() { disable_completion_.store(true, std::memory_order_release); }
+  void EnableCompletion() { disable_completion_.store(false, std::memory_order_release); }
 
   // Stops ReserveSlot() from handing out any further slots and waits until the slots that are
   // already allocated have been released, i.e. their requests have completed. The flag and the

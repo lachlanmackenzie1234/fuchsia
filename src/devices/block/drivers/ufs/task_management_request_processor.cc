@@ -45,7 +45,7 @@ uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
   }
 
   std::scoped_lock lock(slot_lock_);
-  if (disable_completion_.load(std::memory_order_acquire) || controller_.IsHardwarePoweredOff()) {
+  if (controller_.IsHardwarePoweredOff()) {
     return 0;
   }
   uint32_t active_slots = 0;
