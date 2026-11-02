@@ -127,6 +127,12 @@
             "script_file": "cc_header_deps_and_annotations.sh",
             "enabled": true,
             "description": "Requires comments on new @bazel2gn directives and public header deps in `deps` (undocumented_bazel2gn_directive)."
+        },
+        {
+            "name": "package_boundary_labels",
+            "script_file": "package_boundary_labels.sh",
+            "enabled": true,
+            "description": "Flags ancestor BUILD.bazel files naming files under a newly added Bazel package by relative path (crossed_package_boundary)."
         }
     ]
 }

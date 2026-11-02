@@ -600,6 +600,35 @@ def is_relocated_in_scope_cml(norm: str) -> bool:
     return False
 
 
+# Allow registration-list .gni edits that only add or remove an in-scope package by its
+# path relative to the .gni's directory (e.g. a `"<subdir>",` entry in a list of library
+# subdirectories whose `<subdir>:tests` groups an ancestor BUILD.gn expands). Such lists
+# name packages without a `//` label, so references_in_scope_package_at_base misses them.
+def is_relative_name_registration_edit(norm: str) -> bool:
+    if not norm.endswith(".gni"):
+        return False
+    gni_dir = os.path.dirname(norm)
+    rel_names = set()
+    for td in list(target_dirs) + sorted(dependency_dirs):
+        if gni_dir and td.startswith(gni_dir + "/"):
+            rel_names.add(td[len(gni_dir) + 1:])
+    if not rel_names:
+        return False
+    diff = git_lines(["diff", "--unified=0", change_base, "--", norm])
+    edited = [
+        ln[1:].strip()
+        for ln in diff
+        if ln[:1] in ("+", "-") and not ln.startswith(("+++", "---"))
+    ]
+    edited = [ln for ln in edited if ln and not ln.startswith("#")]
+    if not edited:
+        return False
+    return all(
+        re.fullmatch(r'"([^"]+)",?', ln) and re.fullmatch(r'"([^"]+)",?', ln).group(1) in rel_names
+        for ln in edited
+    )
+
+
 def is_allowed_scope(path: str) -> bool:
     if not target_dirs:
         return True
@@ -643,6 +672,8 @@ def is_allowed_scope(path: str) -> bool:
     ):
         return True
     if norm in allowed_gni_files:
+        return True
+    if is_relative_name_registration_edit(norm):
         return True
     if pkg_dir in allowed_lint_pkgs and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
         return True
