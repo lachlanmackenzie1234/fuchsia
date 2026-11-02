@@ -4,9 +4,9 @@ description: >
   Performs an AI code review of Fuchsia changes (fuchsia.git and
   vendor/google) using the same Fuchsia review skills as the Gerrit CL Review
   Agent. Use when asked to review, self-review, or `/review` changes in a
-  Fuchsia checkout. Self-contained: filters non-reviewable files up-front,
-  runs one read-only reviewer per skill, and verifies findings via an
-  adversarial challenger pass.
+  Fuchsia checkout. Supports `quick`, `standard`, and `deep` effort levels,
+  up-front skip globs, an adversarial challenger pass, and `[Pre-existing]`
+  tagging.
 ---
 
 # Fuchsia code review
@@ -22,22 +22,35 @@ named `review` so that `/review` in a Fuchsia checkout runs it.
 
 ## Overview & Flow
 
-1.  **Scope & Up-Front Skip Globs**: Detects `fuchsia.git` and `vendor/google`
-    changes (`jj` or `git`) and filters out non-reviewable files (`Cargo.lock`,
-    `*.golden`, `*.pb.*`, binaries, `out/**`) before dispatching reviewers.
-1.  **Parallel Round-1 Review**: Resolves domain skills from
-    `.agents/code-review/agent_configs.textproto` via `resolve_skills.py` and
-    runs one read-only `fuchsia_code_reviewer` per skill plus a `general`
-    reviewer in parallel on the retained files.
-1.  **Adversarial Challenger Pass (Round 2)**: Deduplicates Round-1 candidate
-    findings and runs `fuchsia_code_challenger` (`references/challenger.md`) to
-    score each finding 0-100, pruning false positives, pre-existing code, and
-    findings below confidence `80`.
-1.  **Merge & Render**: Writes verified findings and `skipped_files` to
-    `review.json` and renders the Markdown report via `render_report.py`.
+1.  **Scope, Effort & Skip Globs**: Detects `fuchsia.git` and `vendor/google`
+    changes (`jj` or `git`), picks the effort level (`quick`, `standard`, or
+    `deep`), and filters out non-reviewable files (`Cargo.lock`, `*.golden`,
+    `*.pb.*`, binaries, `out/**`) before dispatching reviewers.
+1.  **Round-1 Review**: Resolves domain skills from
+    `.agents/code-review/agent_configs.textproto` via `resolve_skills.py`.
+    `quick` runs a single diff-focused pass per repository for `blocking` bugs
+    (`confidence >= 90`); `standard` and `deep` run parallel skill + `general`
+    reviewers (`deep` also traces cross-file callers, callees, and invariants).
+1.  **Adversarial Challenger Pass (Round 2, `standard` & `deep`)**: Deduplicates
+    Round-1 candidate findings and runs `fuchsia_code_challenger`
+    (`references/challenger.md`) to score confidence (`0-100`, keeping `>= 80`),
+    prune false positives, and tag exposed legacy bugs as `[Pre-existing]`
+    non-blocking suggestions.
+1.  **Merge & Render**: Writes verified findings, `effort`, and `skipped_files`
+    to `review.json` and renders the Markdown report via `render_report.py`.
 
-## Step 1: Determine the scope
+## Step 1: Determine the scope and effort level
 
+1.  Select the effort level from the user's request (`standard` when
+    unspecified):
+    - `quick` (if the user asks for `quick`, `fast`, or a quick sanity check):
+      single-pass diff check per repository for high-certainty `blocking`
+      defects (`confidence >= 90`), skipping Round 2.
+    - `standard` (default): parallel domain-skill + `general` reviewers followed
+      by the Round-2 adversarial challenger (`confidence >= 80`).
+    - `deep` (if the user asks for `deep` or `thorough`): `standard` plus
+      cross-file caller/callee, invariant, concurrency, and wire-contract
+      tracing in both Round 1 and Round 2 (`confidence >= 80`).
 1.  Check each repository in the checkout separately: the fuchsia.git root, and
     `vendor/google` inside it if that directory exists. Detect the VCS at each
     repository's root (`jj` if a `.jj` directory exists there, otherwise `git`).
@@ -104,17 +117,25 @@ comes from `uuidgen`. Never write review files inside the checkout.
 
 If `define_subagent` and `invoke_subagent` are available:
 
-1.  **Round 1 (Reviewers)**: Define a subagent named `fuchsia_code_reviewer`
-    with write tools enabled (so it can run VCS diff commands and write its
-    result file). Its system prompt must say that it is a strictly read-only
-    reviewer: it never edits files in the checkout and never runs builds or
-    tests. It must read and follow
+1.  **Define `fuchsia_code_reviewer`**: Enable write tools (so it can run VCS
+    diff commands and write its result file). Its system prompt must state that
+    it is a strictly read-only reviewer: it never edits files in the checkout
+    and never runs builds or tests, and it must read and follow
     `.agents/skills/review/references/reviewer.md`.
-1.  In a single turn, invoke one `fuchsia_code_reviewer` per task (across all
-    repositories in scope) so they run in parallel. Give each one: its
-    repository root and VCS, that repository's target scope and commit hash(es),
-    the intent summary, its task (`skill_path` and `files`, or `general` with
-    `retained_files`), and its output file `<out_dir>/task_<n>.json`.
+1.  **If `effort == "quick"`**: Invoke one `fuchsia_code_reviewer` per
+    repository in scope in parallel with `effort: quick`, its repository root,
+    VCS, target scope and commit hash(es), intent summary, `retained_files`, all
+    resolved `skill_path`s for that repository, and output file
+    `<out_dir>/quick_<repo>.json`. Wait for all of them (retrying once on
+    failure or missing/invalid output as below), keep only `blocking` findings
+    with `confidence >= 90`, and skip deduplication and Round 2 (proceed to Step
+    5).
+1.  **Round 1 (`standard` and `deep` Reviewers)**: In a single turn, invoke one
+    `fuchsia_code_reviewer` per task (across all repositories in scope) in
+    parallel. Pass its repository root and VCS, target scope and commit
+    hash(es), effort level (`standard` or `deep`), intent summary, its task
+    (`skill_path` and `files`, or `general` with `retained_files`), and its
+    output file `<out_dir>/task_<n>.json`.
 1.  Wait for all of them. If a reviewer fails or its output file is missing or
     invalid, invoke it once more; if it fails again, leave it out and say so in
     the report summary.
@@ -123,9 +144,10 @@ If `define_subagent` and `invoke_subagent` are available:
     `file_path`, overlapping lines, and the same defect (file-level findings
     with no location: same `file_path` and defect). Keep the one from a skill
     task over `general`; between skills, keep the one whose `rule_reference`
-    cites the rule that is violated; otherwise keep the more detailed comment.
-    Never merge different defects at the same line. If no candidate findings
-    remain, skip Round 2 and proceed to Step 5.
+    cites the rule that is violated; otherwise keep the more detailed comment
+    (Round 2 determines the authoritative `pre_existing` value). Never merge
+    different defects at the same line. If no candidate findings remain, skip
+    Round 2 and proceed to Step 5.
 1.  **Round 2 (Adversarial Challenger Pass)**: For each repository with
     candidate findings, write `<out_dir>/draft_findings_<repo>.json` with a
     0-based `finding_index` on each candidate finding. Define a **separate**
@@ -133,19 +155,25 @@ If `define_subagent` and `invoke_subagent` are available:
     read-only on the checkout; never runs builds or tests) that must read and
     follow `.agents/skills/review/references/challenger.md`. Invoke one
     `fuchsia_code_challenger` per repository in parallel with its repository
-    root, VCS, target scope and commit hash(es), intent summary,
-    `<out_dir>/draft_findings_<repo>.json`, and output file
-    `<out_dir>/evaluations_<repo>.json`.
+    root, VCS, target scope and commit hash(es), effort level (`standard` or
+    `deep`), intent summary, `<out_dir>/draft_findings_<repo>.json`, and output
+    file `<out_dir>/evaluations_<repo>.json`.
 1.  Join `<out_dir>/evaluations_<repo>.json` back onto the candidate findings by
     `finding_index`: keep only findings where `verdict == "accept"` and
-    `confidence >= 80`, copy `confidence` onto each surviving finding, and apply
-    `adjusted_severity` when set to `blocking` or `suggestion`.
+    `confidence >= 80`, set `confidence` and `pre_existing` (`true` or `false`,
+    overwriting any Round-1 value) on each surviving finding, and apply
+    `adjusted_severity` when set to `blocking` or `suggestion` (with
+    `pre_existing: true` always downgraded to `suggestion`).
 
-Otherwise, follow `references/reviewer.md` yourself once per task in sequence,
-deduplicate candidate findings, and then follow `references/challenger.md` to
-challenge and score each candidate finding (`confidence` 0-100, keeping only
-`verdict == "accept"` and `confidence >= 80`). Reviewing your own change in the
-same session is not independent; say so in the report summary.
+Otherwise, follow `references/reviewer.md` yourself: in `quick` mode, run one
+combined pass per repository and keep only `blocking` findings with `confidence
+>= 90`; in `standard` and `deep` modes, run once per task in sequence,
+deduplicate candidate findings, follow `references/challenger.md` to challenge
+and score each candidate finding (`0-100`), and apply the same join rules
+(`verdict == "accept"` and `confidence >= 80`, setting `confidence` and
+`pre_existing`, applying `adjusted_severity`, and downgrading `pre_existing:
+true` to `suggestion`). Reviewing your own change in the same session is not
+independent; say so in the report summary.
 
 ## Step 5: Merge, render, and present
 
@@ -154,31 +182,36 @@ same session is not independent; say so in the report summary.
     `skipped_files`, and `findings` with `vendor/google/` (if not already
     prefixed) so all paths are relative to the fuchsia.git root. Write one
     merged JSON object to `<out_dir>/review.json` with:
-    - `decision`: `changes_requested` if any surviving finding is `blocking`,
-      `approved_with_suggestions` if there are only suggestions, `approved` if
-      there are none, or `not_applicable` if there were no tasks
-      (`retained_files` was empty).
-    - `summary`: one paragraph summarizing the verified findings (and noting how
-      many draft findings the challenger pruned, plus any reviewer that failed
-      twice).
+    - `decision`: `changes_requested` if any surviving finding is `blocking`
+      (and not `pre_existing`), `approved_with_suggestions` if there are only
+      suggestions (including `[Pre-existing]` findings), `approved` if there are
+      none, or `not_applicable` if there were no tasks (`retained_files` was
+      empty; `render_report.py` also re-derives `decision` from surviving
+      findings).
+    - `summary`: one paragraph summarizing the verified findings (noting how
+      many draft findings the challenger pruned in `standard`/`deep`, any
+      `[Pre-existing]` findings surfaced, and any reviewer that failed twice).
     - `scope`: the reviewed target per repository in scope (name both when the
       review spans both), for example `fuchsia.git` commit `1a2b3c4d` and
       `vendor/google` working copy (`git diff HEAD`).
+    - `effort`: `"quick"`, `"standard"`, or `"deep"`.
     - `agent_skills`: the union of all reviewers' `agent_skills`.
     - `reviewed_files`: the union of all reviewers' `reviewed_files` (with
       `vendor/google/` prefixes applied).
     - `skipped_files`: all files matched by up-front skip globs (with
       `vendor/google/` prefixes applied).
-    - `findings`: all surviving findings (with `vendor/google/` prefixes and
-      `confidence` scores applied).
-1.  Render the report with `--workspace` set to the fuchsia.git root and
-    `--min_confidence=80`:
+    - `findings`: all surviving findings (with `vendor/google/` prefixes,
+      `confidence`, and `pre_existing` applied).
+1.  Render the report with `--workspace` set to the fuchsia.git root,
+    `--effort=<quick|standard|deep>`, and `--min_confidence=90` (for `quick`) or
+    `--min_confidence=80` (for `standard` and `deep`):
 
     ```bash
     fuchsia-vendored-python .agents/skills/review/scripts/render_report.py \
       --review_result_file=<out_dir>/review.json \
       --workspace=<fuchsia.git root> \
-      --min_confidence=80
+      --effort=<quick|standard|deep> \
+      --min_confidence=<90|80>
     ```
 
     If it reports a validation error, fix `review.json` and run it again.

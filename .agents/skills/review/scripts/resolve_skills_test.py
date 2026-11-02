@@ -280,8 +280,27 @@ class ResolveSkillsTest(unittest.TestCase):
         if not os.path.isfile(path):
             self.skipTest("agent_configs.textproto not checked out")
         with open(path, encoding="utf-8") as f:
-            configs = resolve_skills.parse_textproto(f.read())["configs"]
+            text = f.read()
+        configs = resolve_skills.parse_textproto(text)["configs"]
         self.assertTrue(all("id" in c for c in configs))
+        dts_files = [
+            "src/devices/board/drivers/vim3/vim3.dts",
+            "src/devices/board/drivers/vim3/vim3.dtsi",
+            "src/devices/board/drivers/sorrel/sorrel.dts.S",
+            "src/devices/board/drivers/sorrel/sorrel-common.dtsi.S",
+        ]
+        resolved = {
+            os.path.relpath(r["skill_path"], root): r["files"]
+            for r in resolve_skills.resolve(
+                text, dts_files, root, project="fuchsia"
+            )
+        }
+        for skill in (
+            "src/devices/skills/driver_bind_devicetree/SKILL.md",
+            "src/devices/skills/driver_bind_find_instance_name/SKILL.md",
+            "src/devices/skills/devicetree_schema/SKILL.md",
+        ):
+            self.assertEqual(resolved.get(skill), sorted(dts_files))
 
     def test_filter_skipped_files_defaults_and_custom(self):
         retained, skipped = resolve_skills.filter_skipped_files(

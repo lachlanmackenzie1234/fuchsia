@@ -10,6 +10,7 @@ numbered in display order.
 
 Usage:
   render_report.py --review_result_file=FILE [--workspace=DIR]
+      [--min_confidence=N] [--effort=quick|standard|deep]
 """
 
 import argparse
@@ -39,6 +40,16 @@ SEVERITIES = {
     "suggestion": "**💡 Suggestion**",
 }
 
+EFFORTS = {
+    "quick": "Quick",
+    "standard": "Standard",
+    "deep": "Deep",
+}
+
+_PRE_EXISTING_PREFIX_RE = re.compile(
+    r"^(?:\[pre-?existing\]\s*:?\s*)+", re.IGNORECASE
+)
+
 
 class ReportError(ValueError):
     """Raised when the review result JSON is invalid."""
@@ -60,7 +71,8 @@ def _positive_int_or_none(finding, key, index):
 def validate(payload):
     """Validates `payload` in place and returns it.
 
-    Normalizes `decision` and each finding's `severity` to lower case.
+    Normalizes `decision`, optional `effort`, and each finding's `severity` to
+    lower case, and downgrades any `pre_existing: true` finding to `suggestion`.
 
     Raises:
       ReportError: if a required field is missing or invalid.
@@ -74,7 +86,26 @@ def validate(payload):
             f" of: {', '.join(sorted(DECISIONS))}"
         )
     payload["decision"] = decision
-    findings = payload.get("findings") or []
+    effort = payload.get("effort")
+    if effort is not None:
+        if not isinstance(effort, str):
+            raise ReportError(
+                f"unsupported effort {effort!r}; expected one of:"
+                f" {', '.join(sorted(EFFORTS))}"
+            )
+        norm_effort = _normalize(effort)
+        if not norm_effort:
+            payload.pop("effort", None)
+        elif norm_effort not in EFFORTS:
+            raise ReportError(
+                f"unsupported effort {effort!r}; expected one of:"
+                f" {', '.join(sorted(EFFORTS))}"
+            )
+        else:
+            payload["effort"] = norm_effort
+    findings = payload.get("findings")
+    if findings is None:
+        findings = []
     if not isinstance(findings, list):
         raise ReportError("findings must be a list")
     for index, finding in enumerate(findings):
@@ -86,8 +117,16 @@ def validate(payload):
                 f"findings[{index}].severity must be one of:"
                 f" {', '.join(sorted(SEVERITIES))}"
             )
-        finding["severity"] = severity
-        if not str(finding.get("comment") or "").strip():
+        pre_existing = finding.get("pre_existing")
+        if pre_existing is not None and not isinstance(pre_existing, bool):
+            raise ReportError(
+                f"findings[{index}].pre_existing must be a boolean"
+            )
+        finding["severity"] = "suggestion" if pre_existing else severity
+        raw_comment = str(finding.get("comment") or "").strip()
+        if pre_existing:
+            raw_comment = _PRE_EXISTING_PREFIX_RE.sub("", raw_comment).strip()
+        if not raw_comment:
             raise ReportError(f"findings[{index}].comment must not be empty")
         confidence = finding.get("confidence")
         if confidence is not None:
@@ -173,10 +212,14 @@ def _render_finding(finding, workspace_root):
         if finding.get("file_path")
         else ""
     )
+    comment = str(finding["comment"]).strip()
+    if finding.get("pre_existing"):
+        body = _PRE_EXISTING_PREFIX_RE.sub("", comment).strip()
+        comment = f"[Pre-existing] {body}"
     lines = [
         f"- **#{finding['finding_id']}**{loc}",
         "",
-        f"  {badge}{conf}{_render_rule(finding)}: {finding['comment']}",
+        f"  {badge}{conf}{_render_rule(finding)}: {comment}",
     ]
     diff = finding.get("suggested_diff")
     if diff:
@@ -199,6 +242,13 @@ def _recompute_decision(current_decision, findings):
     return "approved"
 
 
+def _meets_min_confidence(finding, min_confidence, require_score):
+    score = finding.get("confidence")
+    if score is None:
+        return not require_score
+    return score >= min_confidence
+
+
 def _format_skipped_files(skipped):
     count = len(skipped)
     noun = "file" if count == 1 else "files"
@@ -208,31 +258,44 @@ def _format_skipped_files(skipped):
     return f"- **Skipped Files**: {count} {noun} matched skip globs ({preview})"
 
 
-def render(payload, workspace_root="", min_confidence=None):
+def render(payload, workspace_root="", min_confidence=None, effort=None):
     """Validates `payload`, numbers its findings, and returns Markdown.
 
     Sets sequential `finding_id`s ("1", "2", ...) on the findings in display
     order so follow-up fixes can refer to the numbers shown in the report.
     """
     report = validate(payload)
+    if effort is not None:
+        norm_effort = _normalize(effort)
+        if norm_effort not in EFFORTS:
+            raise ReportError(
+                f"unsupported effort {effort!r}; expected one of:"
+                f" {', '.join(sorted(EFFORTS))}"
+            )
+        report["effort"] = norm_effort
+    is_quick = report.get("effort") == "quick"
+    if is_quick:
+        report["findings"] = [
+            f for f in report["findings"] if f["severity"] == "blocking"
+        ]
     if min_confidence is not None:
         if not 0 <= min_confidence <= 100:
             raise ReportError("min_confidence must be between 0 and 100")
-        filtered = [
+        report["findings"] = [
             f
             for f in report["findings"]
-            if f.get("confidence") is None or f["confidence"] >= min_confidence
+            if _meets_min_confidence(f, min_confidence, require_score=is_quick)
         ]
-        if len(filtered) != len(report["findings"]):
-            report["findings"] = filtered
-            report["decision"] = _recompute_decision(
-                report["decision"], filtered
-            )
+    report["decision"] = _recompute_decision(
+        report["decision"], report["findings"]
+    )
     lines = ["## Code Review", "", DECISIONS[report["decision"]], ""]
     if report.get("summary"):
         lines.extend([report["summary"], ""])
     if report.get("scope"):
         lines.append(f"- **Scope**: {report['scope']}")
+    if report.get("effort"):
+        lines.append(f"- **Effort**: {EFFORTS[report['effort']]}")
     skills = report.get("agent_skills") or []
     if skills:
         lines.append(
@@ -284,6 +347,13 @@ def main(argv=None):
         default=None,
         help="Drop findings whose confidence is below this 0-100 threshold.",
     )
+    parser.add_argument(
+        "--effort",
+        type=_normalize,
+        choices=tuple(EFFORTS),
+        default=None,
+        help="Set or override the effort level shown in the report header.",
+    )
     args = parser.parse_args(argv)
     with open(args.review_result_file, encoding="utf-8") as f:
         payload = json.load(f)
@@ -292,6 +362,7 @@ def main(argv=None):
             payload,
             os.path.abspath(args.workspace) if args.workspace else "",
             min_confidence=args.min_confidence,
+            effort=args.effort,
         )
     except ReportError as e:
         print(f"error: {e}", file=sys.stderr)

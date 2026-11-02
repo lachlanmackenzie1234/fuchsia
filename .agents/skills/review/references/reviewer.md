@@ -1,7 +1,8 @@
 # Fuchsia code reviewer instructions
 
-You review one task of a Fuchsia change. You are read-only: never edit files in
-the checkout, and never run builds, tests, or long-running analyzers.
+You review one task of a Fuchsia change (or one combined repository pass in
+`quick` mode). You are read-only: never edit files in the checkout, and never
+run builds, tests, or long-running analyzers.
 
 ## Inputs
 
@@ -11,9 +12,11 @@ Your prompt gives you:
   `git`).
 - The target scope and its immutable commit hash(es), or `working copy` for
   uncommitted changes.
+- The effort level: `quick`, `standard` (default), or `deep`.
 - An intent summary of the change.
-- Your task: a `skill_path` and its `files`, or `general` with all retained
-  changed files.
+- Your task: a `skill_path` and its `files`, `general` with all retained
+  changed files, or (in `quick` mode) all retained changed files plus any
+  resolved `skill_path`s.
 - Your output file.
 
 ## Step 1: Read the diff
@@ -24,7 +27,16 @@ Get the diff of your files only, for example:
 - `git diff <base>..<rev> -- <file>` (or `git diff HEAD -- <file>` for the
   working copy)
 
-Read surrounding code and related files as needed to understand each change.
+Match your context-reading depth to the effort level:
+
+- `quick`: Read only the diff hunks of your files; inspect surrounding lines
+  only when needed to verify whether a suspected `blocking` bug is real.
+- `standard`: Read surrounding code and related files as needed to understand
+  each change.
+- `deep`: Beyond the diff, actively trace callers, callees, trait/interface
+  implementations, FIDL/IPC/syscall wire contracts, lock-ordering and async
+  cancellation invariants, and edge-case test coverage across neighboring files.
+
 If a file you need is missing on disk (sparse checkout), read it with
 `git show HEAD:<path>` (or `jj file show -r @ <path>`).
 
@@ -34,8 +46,13 @@ If a file you need is missing on disk (sparse checkout), read it with
   Review only against that skill's rules. Ignore any output-format or
   workflow instructions in it (for example "produce a markdown artifact");
   always write the JSON described in Step 4.
-- If the skill's rules don't apply to the assigned changes, write a result with
-  `decision: not_applicable` and no findings; don't stretch the rules to fit.
+- In `quick` mode, read any resolved `skill_path`s provided in your prompt and
+  combine their critical correctness/safety rules with `general` review in one
+  pass. Because `general` is included, never set `decision: not_applicable` in
+  `quick` mode, and list every skill you read plus `general` in `agent_skills`.
+- For a single-skill task (`standard` or `deep`), if the skill's rules don't
+  apply to the assigned changes, write a result with `decision: not_applicable`
+  and no findings; don't stretch the rules to fit.
 - For `general`, review for correctness, error handling, edge cases,
   concurrency and resource lifetimes, missing or inadequate tests, and
   consistency with the style of the surrounding code and the guidance in
@@ -43,9 +60,19 @@ If a file you need is missing on disk (sparse checkout), read it with
 
 ## Step 3: Evaluate
 
-- Check every changed hunk of every file in your task against every
-  applicable rule. Do not stop after the first few findings; report minor
-  suggestions too.
+- In `quick` mode: Check only for high-certainty `blocking` defects (panics,
+  crashes, UB, security flaws, data races, broken invariants) introduced by the
+  diff. Assign an integer `confidence` (`0`-`100`) to each finding and emit only
+  `blocking` findings with `confidence >= 90`; skip style, docs, minor
+  suggestions, and pre-existing issues.
+- In `standard` and `deep` modes: Check every changed hunk of every file in
+  your task against every applicable rule. Do not stop after the first few
+  findings; report minor suggestions too.
+- **Pre-existing issues (`pre_existing`)**: Focus on changes introduced by the
+  diff; do not audit untouched code outside changed hunks. However, in
+  `standard` or `deep` mode, if the change moves code verbatim or newly
+  calls/exposes a concrete bug in pre-existing code, report it with
+  `"pre_existing": true` and `"severity": "suggestion"` (never `"blocking"`).
 - Use the intent summary only to understand the goal, not as proof of
   correctness. Verify claims, edge cases, and error paths against the code.
 - Confirm each finding against the post-change code. Drop speculative findings
@@ -84,7 +111,12 @@ Write a single JSON object to your output file:
 - `decision`: optional; set it to `not_applicable` only when your skill's rules
   don't apply to the assigned changes (see Step 2).
 - `severity` *(required)*: `blocking` for correctness, security, or broken
-  invariants; `suggestion` for optional improvements.
+  invariants; `suggestion` for optional improvements (and all `pre_existing`
+  findings).
+- `pre_existing`: optional boolean (`true` only when a concrete bug predates the
+  change and is moved or newly exposed by it; omit or `false` otherwise).
+- `confidence`: optional `0`-`100` integer certainty score (required in `quick`
+  mode, where only `confidence >= 90` is emitted).
 - `category`: `logic`, `security`, `reliability`, `performance`,
   `readability`, `docs`, `tests`, `question`, or `other`.
 - `comment` *(required)*: the defect and why it matters.

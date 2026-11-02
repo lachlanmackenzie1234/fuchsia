@@ -82,7 +82,7 @@ configs: {
     project: "fuchsia"
     project: "vendor/google"
     path_regex: ".*\\.bind"
-    path_regex: ".*\\.dtsi?"
+    path_regex: ".*\\.dtsi?(\\.S)?"
   }
 }
 
@@ -96,7 +96,7 @@ configs: {
     project: "fuchsia"
     project: "vendor/google"
     path_regex: "(.*/)?[^/]*devicetree[^/]*/.*\\.yaml"
-    path_regex: ".*\\.dtsi?"
+    path_regex: ".*\\.dtsi?(\\.S)?"
   }
 }
 
