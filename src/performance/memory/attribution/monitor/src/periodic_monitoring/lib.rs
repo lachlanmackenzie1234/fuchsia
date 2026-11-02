@@ -19,23 +19,34 @@ use log::warn;
 use stalls::StallProvider;
 use stalls::refaults::PageFaultProvider;
 use std::convert::Infallible;
-use std::future::Future;
 use traces::{CATEGORY_MEMORY_CAPTURE, CATEGORY_MEMORY_SUPPRESS_PERIODIC};
 
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_metrics as fmetrics;
 
-/// Waits while periodic monitoring is suppressed (`is_suppressed() == true`), awaiting
-/// `on_state_changed()` between checks. Breaks out and falls through if `on_state_changed()`
-/// returns an error.
-async fn wait_while_periodic_suppressed<Fut, T, E>(
+trait TraceStateObserver {
+    async fn wait_for_state_change(&self) -> Result<(), zx::Status>;
+}
+
+impl TraceStateObserver for TraceObserver {
+    async fn wait_for_state_change(&self) -> Result<(), zx::Status> {
+        self.on_state_changed().await.map(|_| ())
+    }
+}
+
+/// Waits while periodic monitoring is suppressed (`is_suppressed() == true`), lazily creating an
+/// observer via `make_observer()` only when suppression is active and dropping it before
+/// returning so no `TraceObserver` remains registered while `periodic_monitoring` is idle.
+async fn wait_while_periodic_suppressed<O: TraceStateObserver>(
     mut is_suppressed: impl FnMut() -> bool,
-    mut on_state_changed: impl FnMut() -> Fut,
-) where
-    Fut: Future<Output = Result<T, E>>,
-{
+    make_observer: impl FnOnce() -> O,
+) {
+    if !is_suppressed() {
+        return;
+    }
+    let observer = make_observer();
     while is_suppressed() {
-        if on_state_changed().await.is_err() {
+        if observer.wait_for_state_change().await.is_err() {
             break;
         }
     }
@@ -124,7 +135,6 @@ pub async fn periodic_monitoring(
     let mut bucket_list_node = std::cell::OnceCell::new();
     let bucket_names = std::cell::OnceCell::new();
     let bucket_codes = cobalt::prepare_bucket_codes(bucket_definitions);
-    let trace_observer = TraceObserver::new();
     let mut manual_events = manual_events.fuse();
     let mut manual_collection: Option<Box<ManualMonitoringData>> = None;
     loop {
@@ -133,7 +143,7 @@ pub async fn periodic_monitoring(
             // actively recording so the expensive VMO/VMAR walk does not perturb traced benchmarks.
             wait_while_periodic_suppressed(
                 || category_enabled(CATEGORY_MEMORY_SUPPRESS_PERIODIC),
-                || trace_observer.on_state_changed(),
+                TraceObserver::new,
             )
             .await;
         }
@@ -375,7 +385,9 @@ mod tests {
         PrincipalType, Resource, ResourceReference, ZXName,
     };
     use diagnostics_assertions::{NonZeroIntProperty, assert_data_tree};
+    use std::cell::{Cell, RefCell};
     use std::num::NonZero;
+    use std::rc::Rc;
     use std::time::Duration;
 
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
@@ -621,46 +633,118 @@ mod tests {
         Ok(())
     }
 
+    struct FakeTraceStateObserver {
+        state_changes:
+            Rc<RefCell<futures::channel::mpsc::UnboundedReceiver<Result<(), zx::Status>>>>,
+        alive_count: Rc<Cell<usize>>,
+    }
+
+    impl TraceStateObserver for FakeTraceStateObserver {
+        async fn wait_for_state_change(&self) -> Result<(), zx::Status> {
+            self.state_changes.borrow_mut().next().await.unwrap_or(Err(zx::Status::PEER_CLOSED))
+        }
+    }
+
+    impl Drop for FakeTraceStateObserver {
+        fn drop(&mut self) {
+            self.alive_count.set(self.alive_count.get() - 1);
+        }
+    }
+
     #[test]
     fn test_wait_while_periodic_suppressed_defers_while_category_enabled() {
-        use std::cell::{Cell, RefCell};
-
         let mut exec = fuchsia_async::TestExecutor::new();
-        let is_suppressed = Cell::new(true);
+        let is_suppressed = Cell::new(false);
+        let created_count = Rc::new(Cell::new(0usize));
+        let alive_count = Rc::new(Cell::new(0usize));
         let (tx, rx) = futures::channel::mpsc::unbounded::<Result<(), zx::Status>>();
-        let rx = RefCell::new(rx);
+        let state_changes = Rc::new(RefCell::new(rx));
 
+        let make_observer = || {
+            created_count.set(created_count.get() + 1);
+            alive_count.set(alive_count.get() + 1);
+            FakeTraceStateObserver {
+                state_changes: Rc::clone(&state_changes),
+                alive_count: Rc::clone(&alive_count),
+            }
+        };
+
+        // 1. When `memory:suppress_periodic` is not enabled, no observer is created or registered.
         {
             let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
                 || is_suppressed.get(),
-                || async { rx.borrow_mut().next().await.unwrap_or(Err(zx::Status::PEER_CLOSED)) },
+                &make_observer,
+            ));
+            assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+            assert_eq!(created_count.get(), 0);
+            assert_eq!(alive_count.get(), 0);
+        }
+
+        // 2. When `memory:suppress_periodic` is enabled, an observer is lazily created, waits
+        // across intermediate state changes, and is dropped (unregistered) before returning.
+        is_suppressed.set(true);
+        {
+            let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
+                || is_suppressed.get(),
+                &make_observer,
             ));
 
-            // While `memory:suppress_periodic` is enabled, the future stays pending.
+            // While `memory:suppress_periodic` is enabled, the future stays pending and the
+            // observer remains alive.
             assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+            assert_eq!(created_count.get(), 1);
+            assert_eq!(alive_count.get(), 1);
 
             // A state change notification while `memory:suppress_periodic` is still enabled
-            // keeps waiting.
+            // keeps waiting with the same observer.
             tx.unbounded_send(Ok(())).unwrap();
             assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+            assert_eq!(created_count.get(), 1);
+            assert_eq!(alive_count.get(), 1);
 
             // Once the trace stops (or `memory:suppress_periodic` is disabled) and the observer
-            // signals, the wait completes.
+            // signals, the wait completes and drops the observer immediately.
             is_suppressed.set(false);
             tx.unbounded_send(Ok(())).unwrap();
             assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+            assert_eq!(created_count.get(), 1);
+            assert_eq!(alive_count.get(), 0);
         }
 
-        // If `on_state_changed` returns an error while suppressed, `wait_while_periodic_suppressed`
-        // breaks out of the loop and completes instead of busy-waiting.
+        // 3. If suppression ends between the initial check and observer registration, the loop
+        // exits without awaiting `wait_for_state_change` and drops the observer immediately.
+        {
+            let checks = Cell::new(0usize);
+            let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
+                || {
+                    let check_index = checks.get();
+                    checks.set(check_index + 1);
+                    check_index == 0
+                },
+                &make_observer,
+            ));
+            assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+            assert_eq!(checks.get(), 2);
+            assert_eq!(created_count.get(), 2);
+            assert_eq!(alive_count.get(), 0);
+        }
+
+        // 4. If `wait_for_state_change` returns an error while suppressed,
+        // `wait_while_periodic_suppressed` breaks out of the loop, completes, and drops the
+        // observer instead of busy-waiting.
         is_suppressed.set(true);
-        let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
-            || is_suppressed.get(),
-            || async { rx.borrow_mut().next().await.unwrap_or(Err(zx::Status::PEER_CLOSED)) },
-        ));
-        assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
-        tx.unbounded_send(Err(zx::Status::BAD_STATE)).unwrap();
-        assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+        {
+            let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
+                || is_suppressed.get(),
+                &make_observer,
+            ));
+            assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+            assert_eq!(created_count.get(), 3);
+            assert_eq!(alive_count.get(), 1);
+            tx.unbounded_send(Err(zx::Status::BAD_STATE)).unwrap();
+            assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+            assert_eq!(alive_count.get(), 0);
+        }
     }
 
     struct CountingAttributionDataProvider {
