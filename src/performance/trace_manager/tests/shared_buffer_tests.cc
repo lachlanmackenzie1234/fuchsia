@@ -25,6 +25,7 @@ namespace test {
 namespace {
 
 using testing::ElementsAre;
+using testing::IsEmpty;
 
 constexpr size_t kBufferSize = 64 * 1024;
 constexpr size_t kHeaderSize = sizeof(trace::internal::trace_buffer_header);
@@ -43,6 +44,8 @@ constexpr char kProviderName[] = "test-provider";
 // Distinct values stored in each test record so tests can tell which records were forwarded.
 constexpr trace_ticks_t kDurableTicks = 333;
 constexpr trace_ticks_t kValidTicks = 222;
+constexpr trace_ticks_t kStaleTicks = 111;
+constexpr trace_ticks_t kNewTicks = 444;
 
 void SetupStreamingBufferHeader(zx::unowned_vmo vmo, uint32_t wrapped_count,
                                 uint64_t durable_data_end, uint64_t rolling_data_end_0,
@@ -185,6 +188,127 @@ TEST_F(SharedBufferTest, DurableEndBeforeTransferredOffsetReportsProviderError) 
   auto [status, stats] = buffer_->TransferAll(forwarder_);
 
   EXPECT_EQ(status, TransferStatus::kProviderError);
+}
+
+TEST_F(SharedBufferTest, StreamingFlushThenStopDoesNotResendUnchangedBuffer) {
+  // Buffers 0 and 1 are each filled and saved. A Flush then switches back to buffer 0 (wrap 2) and
+  // tracing stops before anything new is written, so buffer 0 still holds its wrap 0 record and
+  // the finalized header reports it as empty.
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  AdvanceStreamingState(/*wrapped_count=*/1, kTestRecordSizeBytes);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/2, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+
+  auto [status, stats] = buffer_->TransferAll(forwarder_);
+
+  ASSERT_EQ(status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), IsEmpty());
+}
+
+TEST_F(SharedBufferTest, StreamingBufferWrittenAfterSaveIsScanned) {
+  // Buffer 0 is saved with two records, then written again (wrap 2) by a provider that exits
+  // without updating the header. The first record at offset 0 is identical to wrap 0 and only the
+  // second record at offset 16 differs, exercising the fingerprint window past the first record.
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kStaleTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset + kTestRecordSizeBytes, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/2 * kTestRecordSizeBytes,
+                             /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  AdvanceStreamingState(/*wrapped_count=*/1, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset + kTestRecordSizeBytes, kNewTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/2, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+
+  auto [status, stats] = buffer_->TransferAll(forwarder_);
+
+  ASSERT_EQ(status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), ElementsAre(kStaleTicks, kNewTicks));
+}
+
+TEST_F(SharedBufferTest, StreamingEmptySaveDoesNotMarkUnsavedBufferAsSaved) {
+  // If StreamingTransfer() receives rolling_data_end == 0 (for example from a racing Flush or a
+  // provider that has not updated rolling_data_end), it forwards nothing and must not record the
+  // unforwarded buffer's fingerprint as saved.
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+
+  auto [status, stats] = buffer_->TransferAll(forwarder_);
+
+  ASSERT_EQ(status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), ElementsAre(kValidTicks));
+}
+
+TEST_F(SharedBufferTest, StreamingNeverSavedBufferIsScannedEvenIfItMatchesTheOtherBuffer) {
+  // Only buffer 0 has been saved. Buffer 1 starts with the same bytes buffer 0 did, but it was
+  // never forwarded, so its zero end must still be treated as an unfinalized header and scanned.
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+
+  auto [status, stats] = buffer_->TransferAll(forwarder_);
+
+  ASSERT_EQ(status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), ElementsAre(kStaleTicks));
+}
+
+TEST_F(SharedBufferTest, StreamingUnchangedBufferFromPreviousRunIsNotResent) {
+  // Run 1 saves buffer 0 via StreamingTransfer() and forwards buffer 1 via TransferAll() at Stop.
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kStaleTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  auto [run1_status, run1_stats] = buffer_->TransferAll(forwarder_);
+  ASSERT_EQ(run1_status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), ElementsAre(kStaleTicks));
+
+  // Run 2 (CLEAR_ENTIRE) stops completely idle. Buffer 0 still holds run 1's record, which was
+  // already forwarded by StreamingTransfer(), so only the durable buffer is transferred.
+  buffer_->OnStart(fuchsia_tracing::BufferDisposition::kClearEntire);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+  auto [run2_status, run2_stats] = buffer_->TransferAll(forwarder_);
+  ASSERT_EQ(run2_status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), ElementsAre(kDurableTicks));
+
+  // Run 3 (CLEAR_ENTIRE) saves buffer 0, then a Flush switches to buffer 1 and tracing stops
+  // before anything is written to it. Buffer 1 still holds run 1's record, which was only ever
+  // forwarded by TransferAll() at the end of run 1.
+  buffer_->OnStart(fuchsia_tracing::BufferDisposition::kClearEntire);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/0, /*rolling_data_end_1=*/0);
+
+  auto [run3_status, run3_stats] = buffer_->TransferAll(forwarder_);
+
+  ASSERT_EQ(run3_status, TransferStatus::kComplete);
+  EXPECT_THAT(ForwardedTicks(ReadRecordsFromSocket()), IsEmpty());
 }
 
 TEST_F(SharedBufferTest, OnStartClearEntireResetsStreamingOffsets) {
