@@ -187,6 +187,22 @@ pub struct AdvertisingProxyHost {
     publisher_notifier: futures::future::Shared<futures::channel::oneshot::Receiver<()>>,
 }
 
+impl AdvertisingProxyHost {
+    fn is_same_publishing_service(
+        &self,
+        service_instance_name: &CStr,
+        expected_tracker: &Arc<Mutex<Option<UpdateTracker>>>,
+    ) -> bool {
+        self.services.get(service_instance_name).is_some_and(|state| {
+            matches!(
+                state,
+                AdvertisingProxyServiceState::Publishing { tracker, .. }
+                    if Arc::ptr_eq(tracker, expected_tracker)
+            )
+        })
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AdvertisingProxyServiceInfo {
     name: CString,
@@ -248,10 +264,10 @@ pub struct AdvertisingProxyService {
 /// Represents the state of an advertised service instance.
 ///
 /// When a service is first sent to mDNS for publication, it enters the `Publishing`
-/// state which holds its `fuchsia_async::Task`. If the service is deleted by the
-/// client before the mDNS FIDL call completes, this task is simply dropped from the
-/// map and automatically aborted. Once publication completes successfully, it
-/// transitions to the `Active` state.
+/// state which holds its `fuchsia_async::Task` and `UpdateTracker`. When the mDNS
+/// FIDL call completes, if the entry in `host.services` still matches this publication
+/// attempt, it transitions to the `Active` state on success or is removed from the map
+/// on failure.
 #[derive(Debug)]
 pub enum AdvertisingProxyServiceState {
     #[allow(dead_code)]
@@ -1194,7 +1210,7 @@ impl AdvertisingProxyInner {
                         )
                         .await;
 
-                    let result = match res {
+                    let mut result = match res {
                         Ok(Ok(())) => {
                             debug!(tag = "srp_advertising_proxy"; "publish_service_instance: \
                             success");
@@ -1315,7 +1331,12 @@ impl AdvertisingProxyInner {
                             );
 
                         let mut inner = inner_arc.lock();
-                        if let Some(host) = inner.hosts.get_mut(&host_full_name) {
+                        if let Some(host) = inner.hosts.get_mut(&host_full_name)
+                            && host.is_same_publishing_service(
+                                &service_instance_name,
+                                &tracker_for_future,
+                            )
+                        {
                             let svc = AdvertisingProxyService {
                                 info: service_info,
                                 control_handle: pub_responder_control,
@@ -1337,6 +1358,20 @@ impl AdvertisingProxyInner {
                                 service_instance_name.clone(),
                                 AdvertisingProxyServiceState::Active(svc),
                             );
+                        } else {
+                            // The host or `Publishing` entry was removed or replaced before
+                            // publication finished; report failure for this attempt.
+                            result = Err(ot::Error::Failed);
+                        }
+                    } else {
+                        let mut inner = inner_arc.lock();
+                        if let Some(host) = inner.hosts.get_mut(&host_full_name)
+                            && host.is_same_publishing_service(
+                                &service_instance_name,
+                                &tracker_for_future,
+                            )
+                        {
+                            host.services.remove(&service_instance_name);
                         }
                     }
 
@@ -1755,5 +1790,42 @@ mod tests {
             current_host.service_publisher.as_channel(),
             new_service_publisher_check.as_channel()
         ));
+    }
+
+    #[fuchsia::test]
+    async fn test_is_same_publishing_service() {
+        let (service_publisher, _stream) =
+            fidl::endpoints::create_proxy_and_stream::<ServiceInstancePublisherMarker>();
+        let (_tx, rx) = futures::channel::oneshot::channel::<()>();
+        let service_name =
+            CString::new("my-service._test._tcp.default.service.arpa.").expect("valid CString");
+
+        let tracker_1 = Arc::new(Mutex::new(None));
+        let tracker_2 = Arc::new(Mutex::new(None));
+
+        let mut host = AdvertisingProxyHost {
+            services: HashMap::new(),
+            service_publisher,
+            addresses: Vec::new(),
+            publisher_notifier: rx.shared(),
+        };
+
+        host.services.insert(
+            service_name.clone(),
+            AdvertisingProxyServiceState::Publishing {
+                task: fasync::Task::spawn(async {}),
+                tracker: tracker_1.clone(),
+            },
+        );
+
+        // Matches the current `Publishing` service entry.
+        assert!(host.is_same_publishing_service(&service_name, &tracker_1));
+        // Does not match a different publication attempt's tracker.
+        assert!(!host.is_same_publishing_service(&service_name, &tracker_2));
+
+        // If the service is deleted while publishing, `is_same_publishing_service` returns false
+        // so neither a late `Ok` nor a late `Err` mutates `host.services`.
+        host.services.remove(&service_name);
+        assert!(!host.is_same_publishing_service(&service_name, &tracker_1));
     }
 }
