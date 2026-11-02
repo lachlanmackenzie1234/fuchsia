@@ -19,7 +19,7 @@ use crate::registers::{
     AutoHibernateIdleTimerReg, CapabilityReg, HostControllerEnableReg, HostControllerStatusReg,
     HostUicErrorCodeDataLinkLayerReg, HostUicErrorCodeDmeReg, HostUicErrorCodeNetworkLayerReg,
     HostUicErrorCodePhyAdapterLayerReg, HostUicErrorCodeTransportLayerReg, InterruptEnableReg,
-    InterruptStatusReg, PowerModeStatus, UtrListDoorBellReg,
+    InterruptStatusReg, PowerModeStatus, UtrListDoorBellReg, VersionReg,
 };
 use crate::uic::{UicCommand, UicCommandOpcode};
 use crate::{UfsError, uic};
@@ -166,6 +166,45 @@ impl<M: Mmio> UfsController<M> {
             #[cfg(test)]
             host_controller_timeout_ns: AtomicU64::new(0),
         }
+    }
+
+    /// Records the static `version` and `capabilities` child nodes of `ufs_node` from `VER` and
+    /// `CAP`.
+    pub fn record_inspect(&self, ufs_node: &fuchsia_inspect::Node) {
+        let (version, cap) = {
+            let state = self.state.lock();
+            (VersionReg::read(&state.mmio), CapabilityReg::read(&state.mmio))
+        };
+        ufs_node.record_child("version", |node| {
+            node.record_uint("major_version_number", u64::from(version.major_version_number()));
+            node.record_uint("minor_version_number", u64::from(version.minor_version_number()));
+            node.record_uint("version_suffix", u64::from(version.version_suffix()));
+        });
+        ufs_node.record_child("capabilities", |node| {
+            node.record_bool("crypto_support", cap.crypto_support());
+            node.record_bool(
+                "uic_dme_test_mode_command_supported",
+                cap.uic_dme_test_mode_command_supported(),
+            );
+            node.record_bool(
+                "out_of_order_data_delivery_supported",
+                cap.out_of_order_data_delivery_supported(),
+            );
+            node.record_bool("64_bit_addressing_supported", cap.addressing_64_bit_supported());
+            node.record_bool("auto_hibernation_support", cap.auto_hibernation_support());
+            node.record_uint(
+                "number_of_utp_task_management_request_slots",
+                u64::from(cap.number_of_utp_task_management_request_slots()),
+            );
+            node.record_uint(
+                "number_of_outstanding_rtt_requests_supported",
+                u64::from(cap.number_of_outstanding_rtt_requests_supported()),
+            );
+            node.record_uint(
+                "number_of_utp_transfer_request_slots",
+                u64::from(cap.number_of_utp_transfer_request_slots()),
+            );
+        });
     }
 
     /// Marks the controller and link as needing full recovery (`https://fxbug.dev/572019773`).

@@ -100,6 +100,17 @@ impl BlockIoStats {
             None => {}
         }
     }
+
+    pub(crate) fn record_inspect(&self, node: &fuchsia_inspect::Node) {
+        node.record_uint("block.read.count", self.read_ops.load(Ordering::Relaxed));
+        node.record_uint("block.write.count", self.write_ops.load(Ordering::Relaxed));
+        node.record_uint("block.flush.count", self.flush_ops.load(Ordering::Relaxed));
+        node.record_uint("block.trim.count", self.trim_ops.load(Ordering::Relaxed));
+        node.record_uint("block.read.kib", self.read_bytes.load(Ordering::Relaxed) / 1024);
+        node.record_uint("block.write.kib", self.write_bytes.load(Ordering::Relaxed) / 1024);
+        node.record_uint("block.flush.kib", 0);
+        node.record_uint("block.trim.kib", self.trim_bytes.load(Ordering::Relaxed) / 1024);
+    }
 }
 
 /// Bitmask of all slots in the request list (`0..SDB_SLOTS`).
@@ -472,6 +483,29 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// Returns the shared controller.
     pub fn controller(&self) -> &Arc<UfsController<M>> {
         &self.controller
+    }
+
+    /// Records lazy block I/O and Auto-Hibernate error counters directly on `ufs_node`.
+    pub fn record_inspect(self: &Arc<Self>, ufs_node: &fuchsia_inspect::Node)
+    where
+        M: Send + Sync + 'static,
+    {
+        let this = Arc::downgrade(self);
+        ufs_node.record_lazy_values("io_and_error_counters", move || {
+            let this = this.clone();
+            Box::pin(async move {
+                let inspector = fuchsia_inspect::Inspector::default();
+                if let Some(processor) = this.upgrade() {
+                    let root = inspector.root();
+                    processor.io_stats.record_inspect(root);
+                    root.record_uint(
+                        "auto_hibern8_error_count",
+                        processor.controller.auto_hibern8_error_count(),
+                    );
+                }
+                Ok(inspector)
+            })
+        });
     }
 
     /// Marks the controller as needing link recovery and wakes any task awaiting
@@ -946,27 +980,22 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
     /// Submits a SCSI command to `lun` synchronously and returns as soon as its doorbell has been
     /// rung. Blocks the calling thread while all I/O slots are busy (pushback). The outcome is
-    /// delivered through `completion` from the completion path once the controller finishes or is
-    /// quiesced (`IO`); transient SCSI statuses are reported, not retried.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidParameter` for a misaligned or oversized buffer (validated before reserving
-    /// a slot), or `IoError` on a pin failure or after [`Self::close_submissions`] /
-    /// [`Self::quiesce`]. On error `completion` has already been delivered with the matching
-    /// `zx::Status`.
+    /// always delivered through `completion` (either inline on validation/reservation/pin failure,
+    /// or from the completion path once the controller finishes or is quiesced); transient SCSI
+    /// statuses are reported, not retried.
     pub fn submit_io(
         &self,
         lun: u8,
         cdb: [u8; 16],
         data: Option<DataTransfer<'_>>,
         completion: IoCompletion,
-    ) -> Result<(), UfsError> {
+    ) {
         let data = data.filter(|d| !matches!(d.buffer, TransferBuffer::Vmo(_)) || d.length != 0);
         if let Some(ref transfer) = data {
             if let Err(e) = self.validate_transfer(transfer) {
+                warn!(lun, err:% = e; "Failed to validate block request");
                 self.complete_io(lun, completion, Err(zx::Status::from(e)));
-                return Err(e);
+                return;
             }
         }
         let expected_transfer_len = data.as_ref().map_or(0, |data| data.length);
@@ -994,8 +1023,9 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 Ok(reserved) => reserved,
                 Err(e) => {
                     drop(list);
+                    warn!(lun, err:% = e; "Failed to reserve slot for block request");
                     self.complete_io(lun, completion, Err(zx::Status::from(e)));
-                    return Err(e);
+                    return;
                 }
             }
         };
@@ -1034,11 +1064,11 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         });
         drop(reserved);
         if let Err(e) = result {
+            warn!(lun, err:% = e; "Failed to schedule block request");
             if let Some(completion) = completion {
                 self.complete_io(lun, completion, Err(zx::Status::from(e)));
             }
         }
-        result
     }
 
     /// Delivers the outcome of a synchronous I/O request submitted for `lun`.
@@ -2066,7 +2096,7 @@ mod tests {
     fn submit_tur(processor: &TransferRequestProcessor<FakeMmio>, lun: u8) -> IoOutcomeReceiver {
         let (completion, rx) = io_callback();
         let cdb = ScsiOpcode::build_test_unit_ready_cdb();
-        processor.submit_io(lun, cdb, None, completion).unwrap();
+        processor.submit_io(lun, cdb, None, completion);
         rx
     }
 
@@ -2080,7 +2110,7 @@ mod tests {
         // The submitter returns as soon as the doorbell is rung and does not wait.
         let (completion, mut rx) = io_callback();
         let transfer = DataTransfer::read(Arc::clone(&data_vmo), 0, 4096);
-        assert_eq!(processor.submit_io(3, cdb, Some(transfer), completion), Ok(()));
+        processor.submit_io(3, cdb, Some(transfer), completion);
         assert_eq!(utp.doorbell(), 1);
         assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
         assert!(slot_pinned(&processor, 0));
@@ -2159,10 +2189,7 @@ mod tests {
 
         let (completion, mut rx) = io_callback();
         let unaligned = DataTransfer::read(Arc::clone(&data_vmo), 2, 4096);
-        assert_eq!(
-            processor.submit_io(0, cdb, Some(unaligned), completion),
-            Err(UfsError::InvalidParameter)
-        );
+        processor.submit_io(0, cdb, Some(unaligned), completion);
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
         assert_eq!(processor.request_list.lock().blocked_reservers, 0);
 
@@ -2220,14 +2247,14 @@ mod tests {
             std::thread::spawn(move || {
                 let (completion, rx) = io_callback();
                 let cdb = ScsiOpcode::build_test_unit_ready_cdb();
-                (processor.submit_io(0, cdb, None, completion), rx)
+                processor.submit_io(0, cdb, None, completion);
+                rx
             })
         };
         assert!(wait_until(|| processor.request_list.lock().blocked_reservers == 1));
 
         assert_eq!(processor.quiesce().await, Ok(()));
-        let (result, mut rx) = blocked.join().unwrap();
-        assert_eq!(result, Err(UfsError::IoError));
+        let mut rx = blocked.join().unwrap();
         assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
         for rx in &mut inflight {
             assert_eq!(delivered(rx), Err(zx::Status::IO));
@@ -2240,7 +2267,7 @@ mod tests {
         // Later synchronous submissions fail immediately.
         let (completion, mut rx) = io_callback();
         let cdb = ScsiOpcode::build_test_unit_ready_cdb();
-        assert_eq!(processor.submit_io(0, cdb, None, completion), Err(UfsError::IoError));
+        processor.submit_io(0, cdb, None, completion);
         assert_eq!(delivered(&mut rx), Err(zx::Status::IO));
     }
 
@@ -2252,10 +2279,7 @@ mod tests {
         let cdb = ScsiOpcode::build_unmap_cdb(payload.len() as u16);
 
         let (completion, mut rx) = io_callback();
-        assert_eq!(
-            processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&payload)), completion),
-            Ok(())
-        );
+        processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&payload)), completion);
         assert_eq!(utp.doorbell(), 1);
         assert!(!slot_pinned(&processor, 0));
 
@@ -2277,21 +2301,15 @@ mod tests {
 
         // Non-dword-aligned or oversized inline slices fail and release the reserved slot.
         let (completion, mut rx) = io_callback();
-        assert_eq!(
-            processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&[1u8; 6])), completion),
-            Err(UfsError::InvalidParameter)
-        );
+        processor.submit_io(0, cdb, Some(DataTransfer::inline_write(&[1u8; 6])), completion);
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
 
         let (completion, mut rx) = io_callback();
-        assert_eq!(
-            processor.submit_io(
-                0,
-                cdb,
-                Some(DataTransfer::inline_write(&[1u8; INLINE_DATA_SIZE + 4])),
-                completion
-            ),
-            Err(UfsError::InvalidParameter)
+        processor.submit_io(
+            0,
+            cdb,
+            Some(DataTransfer::inline_write(&[1u8; INLINE_DATA_SIZE + 4])),
+            completion,
         );
         assert_eq!(delivered(&mut rx), Err(zx::Status::INVALID_ARGS));
         assert_eq!(slot_state(&processor, 0), SlotState::Free);
@@ -2351,9 +2369,12 @@ mod tests {
 
         // 2. Sync read: same `finish_slot_locked` + `Deferred::complete_after_dma` path.
         let (completion, mut rx) = io_callback();
-        processor
-            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
-            .unwrap();
+        processor.submit_io(
+            0,
+            cdb,
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
+            completion,
+        );
         assert_eq!(slot_state(&processor, 0), SlotState::Scheduled);
         assert!(slot_pinned(&processor, 0));
         utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
@@ -2375,9 +2396,12 @@ mod tests {
         };
 
         let (completion, mut rx) = io_callback();
-        processor
-            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
-            .unwrap();
+        processor.submit_io(
+            0,
+            cdb,
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
+            completion,
+        );
         expire_deadline(&processor, 0);
         processor.timeout_waker.wake();
 
@@ -2473,7 +2497,7 @@ mod tests {
         // New sync and async submissions are rejected immediately while in-flight slots drain.
         let (completion, mut rejected_rx) = io_callback();
         let cdb = ScsiOpcode::build_test_unit_ready_cdb();
-        assert_eq!(processor.submit_io(0, cdb, None, completion), Err(UfsError::IoError));
+        processor.submit_io(0, cdb, None, completion);
         assert_eq!(delivered(&mut rejected_rx), Err(zx::Status::IO));
         assert_eq!(processor.send_nop_out_upiu().await, Err(UfsError::IoError));
 
@@ -2511,9 +2535,12 @@ mod tests {
         assert!(poll!(async_req.as_mut()).is_pending());
 
         let (completion, mut sync_rx) = io_callback();
-        processor
-            .submit_io(0, cdb, Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)), completion)
-            .unwrap();
+        processor.submit_io(
+            0,
+            cdb,
+            Some(DataTransfer::read(Arc::clone(&data_vmo), 0, 4096)),
+            completion,
+        );
         assert!(slot_pinned(&processor, 0) && slot_pinned(&processor, 1));
 
         assert_eq!(processor.quiesce().await, Err(UfsError::Timeout));

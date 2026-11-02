@@ -7,15 +7,23 @@
 
 pub mod fake_ufs;
 
-use crate::constants::ADMIN_COMMAND_SLOT_NUMBER;
+use crate::constants::{ADMIN_COMMAND_SLOT_NUMBER, PA_PWRMODE};
 use crate::controller::UfsController;
+use crate::device_manager::{DeviceManager, Quirks};
+use crate::query::QueryUpiu;
+use crate::registers::{UicCommandArgument1Reg, UicCommandArgument3Reg};
 use crate::request_list::{OverallCommandStatus, SlotState};
 use crate::scsi::ScsiStatus;
 use crate::transfer_request_processor::{IoCompletion, TransferRequestProcessor};
+use crate::uic::UicCommandOpcode;
 use crate::upiu::{NopInUpiu, NopOutUpiu, ResponseUpiu, UpiuHeader, UpiuTransactionCode};
 use fake_bti::FakeBti;
-use fake_ufs::{FakeMmio, FakeUtp, wait_until};
+use fake_ufs::{
+    FakeMmio, FakeUfs, FakeUtp, complete_uic_command, uic_hardware, uic_opcode, wait_until,
+};
+use mmio::ReadableRegister;
 use std::sync::Arc;
+use zerocopy::IntoBytes;
 use zerocopy::byteorder::big_endian::U16;
 
 /// A processor over the fake register block.
@@ -125,4 +133,68 @@ pub(crate) async fn wait_async(mut condition: impl FnMut() -> bool) -> bool {
 pub(crate) fn wait_for_any_doorbell(utp: &FakeUtp) -> u8 {
     assert!(wait_until(|| utp.doorbell() != 0), "No doorbell rung");
     utp.doorbell().trailing_zeros() as u8
+}
+
+/// A device manager populated with `fake_ufs`'s device and geometry descriptors.
+pub(crate) fn create_test_device_manager(fake_ufs: &FakeUfs) -> DeviceManager {
+    let mut device_manager = DeviceManager::new(Quirks::default());
+    device_manager.set_descriptors(fake_ufs.device_desc, fake_ufs.geometry_desc);
+    device_manager
+}
+
+/// A UIC command (`UICCMD`, `UICCMDARG1`, `UICCMDARG3`) seen by [`fake_uic_device`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UicRecord {
+    pub opcode: u32,
+    pub attribute: u16,
+    pub arg3: u32,
+}
+
+/// Answers `count` UIC commands on `vmo`, returning `answer(opcode, attribute)` in `UICCMDARG3`. A
+/// `PA_PWRMode` `DME_SET` also sets `IS.UPMS`. `HCS` is set to `hcs` (plus `UCRDY`).
+pub(crate) fn fake_uic_device(
+    vmo: &zx::Vmo,
+    hcs: u32,
+    count: usize,
+    answer: impl Fn(u32, u16) -> u32 + Send + 'static,
+) -> std::thread::JoinHandle<Vec<UicRecord>> {
+    let mut regs = uic_hardware(vmo, hcs);
+    std::thread::spawn(move || {
+        let mut records = Vec::new();
+        for _ in 0..count {
+            assert!(wait_until(|| uic_opcode(&regs) != 0), "Only {} UIC commands", records.len());
+            let opcode = uic_opcode(&regs);
+            let attribute = UicCommandArgument1Reg::read(&regs).mib_attribute() as u16;
+            let arg3 = UicCommandArgument3Reg::read(&regs).value();
+            records.push(UicRecord { opcode, attribute, arg3 });
+            let power_mode = opcode == UicCommandOpcode::DmeSet as u32 && attribute == PA_PWRMODE;
+            complete_uic_command(&mut regs, 0, answer(opcode, attribute), |is| {
+                if power_mode {
+                    is.set_uic_power_mode_status(true);
+                }
+            });
+        }
+        records
+    })
+}
+
+/// Answers `count` admin queries, letting `respond` edit each response (a copy of the request).
+pub(crate) fn answer_queries(
+    mut utp: FakeUtp,
+    count: usize,
+    respond: impl Fn(&mut QueryUpiu) + Send + 'static,
+) -> std::thread::JoinHandle<Vec<QueryUpiu>> {
+    std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for _ in 0..count {
+            assert!(utp.wait_for_doorbell(ADMIN_SLOT));
+            let request: QueryUpiu = utp.request(ADMIN_SLOT);
+            let mut response = request;
+            response.header.trans_type = UpiuTransactionCode::QueryResponse as u8;
+            respond(&mut response);
+            utp.complete(ADMIN_SLOT, response.as_bytes(), OCS_SUCCESS);
+            requests.push(request);
+        }
+        requests
+    })
 }
