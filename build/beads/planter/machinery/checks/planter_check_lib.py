@@ -24,7 +24,7 @@ EXCLUDED_GLOBAL_DIRS = {
 
 BAZEL_TEST_RULES = {
     "cc_test",
-    "fx_cc_test",
+    "fx_cc_test_binary",
     "fx_test",
     "fx_test_component",
     "fx_unittest_component",

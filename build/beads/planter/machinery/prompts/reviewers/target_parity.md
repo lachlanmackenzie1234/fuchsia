@@ -28,7 +28,7 @@ emit findings to re-litigate rules owned by passing checks:
 ## 1. Target Completeness & Dual-Build Sentinel Sync
 1. **Complete Migration of Convertible Targets**:
    - Reject (`passed=false`) any `bazel2gn`-convertible target (`fx_cc_library`, `cc_library`,
-     `fx_cc_library_headers`, `fx_cc_binary`, `fx_cc_test`, `cc_binary`, `rustc_library`,
+     `fx_cc_library_headers`, `fx_cc_binary`, `fx_cc_test_binary`, `cc_binary`, `rustc_library`,
      `rustc_binary`, `rustc_proc_macro`, `go_library`, `go_binary`, `py_library`, `py_binary`,
      `fidl_library`, `zither_fidl_library`, `fuchsia_structured_config_rust_lib`,
      `fx_component_manifest`, `fx_compiled_manifest`, `fx_component`, `ffx_plugin`, `idk_cc_*`) left hand-written
@@ -109,8 +109,9 @@ emit findings to re-litigate rules owned by passing checks:
    - Device unit tests without custom `.cml` manifests or extra capability shards must use
      `fx_unittest_package` (or `fx_unittest_component`), NOT an unrolled `fx_test_component` with a
      newly added boilerplate `.cml`.
-   - C++ `test("<name>")` must migrate to `fx_cc_test` (never `fx_cc_binary(testonly = True)`), and
-     `cc_test_executable()` to `fx_cc_binary(testonly = True, build_flags = ["//build/config/lto:no-fat-lto-objects-linking"])`.
+   - C++ `test("<name>")` and `cc_test_executable()` must migrate to `fx_cc_test_binary` (never
+     `fx_cc_binary(testonly = True)`); bazel2gn generates GN `cc_test_executable()`. A GN `test()`
+     that GN built on host also needs a hand-written GN `host_test()` that runs the generated binary.
    - Preserve `package_name`, `max_log_severity`, test `args` (`test_args` on `host_*_test`), and
      host vs. device execution. For host tests with `host_test_data`, stage files via
      `host_test_data_files`/`host_test_data_map` passed in `test_data` (never `data`) on

@@ -36,7 +36,7 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
 
 ### 1. C/C++ (`fx_cc_*`, `idk_cc_*`)
 - Load `fx_cc_library` (`//build/bazel/rules/cc:fx_cc_library.bzl`), `fx_cc_binary`
-  (`:fx_cc_binary.bzl`), or `fx_cc_test` (`:fx_cc_test.bzl`); never use raw `@rules_cc` rules.
+  (`:fx_cc_binary.bzl`), or `fx_cc_test_binary` (`:fx_cc_test_binary.bzl`); never use raw `@rules_cc` rules.
 - Set `alwayslink = True` on `fx_cc_library` iff the GN target was `source_set()` (omit for
   `static_library()`). Add `"//sdk/lib/fdio"` to `fx_cc_binary` `deps` (automatic in `rustc_*`).
 - **Platform constraints**: Targets guarded by `if (is_fuchsia)`/`assert(is_fuchsia)` or using
@@ -133,12 +133,17 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
 - **Default unit test packaging**: Use `fx_unittest_package`
   (`//build/bazel/rules/testing:fx_unittest_package.bzl`) or `fx_unittest_component` when no custom
   `.cml` is needed (put GN `expect_includes` deps in the test binary's `aspect_hints`).
-- **C++ test binaries**: Migrate GN `test("<name>")` to `fx_cc_test` (never
-  `fx_cc_binary(testonly = True)`). Migrate `cc_test_executable()` to
-  `fx_cc_binary(testonly = True, build_flags = ["//build/config/lto:no-fat-lto-objects-linking"])`
-  (omit `build_flags` if `disable_lto = false`).
+- **C++ test binaries**: Migrate GN `test("<name>")` and `cc_test_executable("<name>")` to
+  `fx_cc_test_binary` (never `fx_cc_binary(testonly = True)`; set `disable_lto = False` only if GN
+  set `disable_lto = false`). bazel2gn generates GN `cc_test_executable()`, which installs to
+  `bin/` and doesn't register a host test. For a GN `test()` built on host (`:<name>($host_toolchain)`
+  in a GN group), add a Bazel `host_test(binary = ":<name>")` and a hand-written GN
+  `host_test("<name>_host_test")` above the sentinel, in `if (is_host)`, with
+  `binary_path = "$root_out_dir/<output_name>"`, `deps = [ ":<name>" ]` and
+  `target = get_label_info(":<name>", "label_with_toolchain")`, and point the GN group at it
+  (otherwise ERROR `host_test_lost`).
 - **Custom `.cml` tests**: Only when a test requires a custom `.cml` or non-default capability
-  shards, unroll `fx_packaged_binary` (`install_root = "test/"` for `fx_cc_test` when `.cml` uses
+  shards, unroll `fx_packaged_binary` (`install_root = "test/"` for `fx_cc_test_binary` when `.cml` uses
   `test/<bin>`) + `fx_component_manifest` (runner shard:
   `//src/sys/test_runners/{rust/default,gtest/default,gtest/zxtest}.shard.cml` or
   `//sdk/lib/sys/testing/elf_test_runner.shard.cml`, plus `syslog/client.shard.cml`) +

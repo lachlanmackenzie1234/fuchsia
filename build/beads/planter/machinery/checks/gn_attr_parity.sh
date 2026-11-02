@@ -1065,7 +1065,7 @@ CC_RULES = {
     "cc_library",
     "fx_cc_binary",
     "cc_binary",
-    "fx_cc_test",
+    "fx_cc_test_binary",
     "cc_test",
 }
 CC_SRC_EXTS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".inl", ".inc", ".S")
@@ -1373,7 +1373,7 @@ BAZEL_TEST_RULES = (
     "fx_unittest_component",
     "fx_test_component",
     "cc_test",
-    "fx_cc_test",
+    "fx_cc_test_binary",
     "host_cc_test",
     "host_py_test",
     "host_go_test",

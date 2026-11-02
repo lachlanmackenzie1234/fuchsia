@@ -110,7 +110,7 @@ BAZEL_NON_GN_SYNCED_RULES = {
     "cc_test",
     "cml_shard",
     "expect_includes",
-    "fx_cc_test",
+    "fx_cc_test_binary",
     "fx_packaged_binary",
     "fx_test_component",
     "fx_unittest_component",

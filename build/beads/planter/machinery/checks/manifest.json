@@ -36,7 +36,7 @@
             "name": "gn_target_type_parity",
             "script_file": "gn_target_type_parity.sh",
             "enabled": true,
-            "description": "Checks GN templates: alwayslink, test vs executable, LTO config (source_set_without_alwayslink, test_became_executable, cc_test_executable_lost_lto_config)."
+            "description": "Checks GN templates: alwayslink, test vs executable, LTO config (source_set_without_alwayslink, test_became_executable, cc_test_executable_lost_lto_config, host_test_lost; INFO test_became_cc_test_executable, executable_became_cc_test_executable)."
         },
         {
             "name": "visibility_audit",

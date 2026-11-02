@@ -377,7 +377,7 @@ for rel_path in sorted(candidate_files):
             func_name in (
                 "host_rustc_test", "host_test", "wrap_host_rust_test",
                 "fx_test", "fx_unittest_package", "fx_test_package",
-                "rustc_test", "rust_test", "cc_test", "fx_cc_test", "go_test",
+                "rustc_test", "rust_test", "cc_test", "fx_cc_test_binary", "go_test",
             )
             or func_name.startswith("wrap_host_")
             or func_name.endswith("_test")

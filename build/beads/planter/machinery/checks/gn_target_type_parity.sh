@@ -48,12 +48,20 @@ set -euo pipefail
 #      `fuchsia_test_component` via `fx_test_component`), because
 #      `//build/components/fuchsia_test_component.gni` only adds
 #      `testonly = true` and `test_type` metadata to `fuchsia_component`.
+#      A GN C++ `test` may become the `cc_test_executable` that bazel2gn emits
+#      for `fx_cc_test_binary` (INFO test_became_cc_test_executable: it installs
+#      to `bin/` and no longer registers a host test by itself; ERROR
+#      host_test_lost when GN built it on host and no hand-written GN
+#      `host_test()` in the BUILD.gn runs it anymore). A testonly GN
+#      `executable` may likewise become that `cc_test_executable` (INFO
+#      executable_became_cc_test_executable).
 #      A GN `cc_test_executable` may become the testonly `executable` that
 #      bazel2gn emits for `fx_cc_binary(testonly = True)`, but:
 #   6. cc_test_executable_lost_lto_config (error): the `executable` lacks the
 #      `//build/config/lto:no-fat-lto-objects-linking` config that
-#      `cc_test_executable` adds unless `disable_lto = false`; set it with
-#      `build_flags` on the `fx_cc_binary`.
+#      `cc_test_executable` adds unless `disable_lto = false`; use
+#      `fx_cc_test_binary` (or set the config with `build_flags` on the
+#      `fx_cc_binary`).
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -520,13 +528,12 @@ def type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types):
             category="test_became_executable",
             message=(
                 f"`{label}` was a GN C++ `test()` and is now an `executable()`, usually because BUILD.bazel uses "
-                "`fx_cc_binary(testonly = True)`. GN `test()` disables FatLTO linking, installs the binary to "
-                "`test/<output_name>` in packages and adds a `host_test()` on host; `executable()` does none of these."
+                "`fx_cc_binary(testonly = True)`. GN `test()` disables FatLTO linking; `executable()` doesn't."
             ),
             remediation=(
-                f"Replace the `{name}` `fx_cc_binary(testonly = True)` in {pkg}/BUILD.bazel with `fx_cc_test` (load "
-                "`//build/bazel/rules/cc:fx_cc_test.bzl`, drop `testonly`) so bazel2gn generates `test()`, and run "
-                f"`fx bazel2gn -d {pkg}`. Do not dispute this finding."
+                f"Replace the `{name}` `fx_cc_binary(testonly = True)` in {pkg}/BUILD.bazel with `fx_cc_test_binary` (load "
+                "`//build/bazel/rules/cc:fx_cc_test_binary.bzl`, drop `testonly`) so bazel2gn generates "
+                f"`cc_test_executable()`, and run `fx bazel2gn -d {pkg}`. Do not dispute this finding."
             ),
         )
     else:
@@ -720,9 +727,40 @@ def append_lost_lto_config_error(
         f"`{label}` was GN `{was_tmpl}`, which links with `{NO_FAT_LTO_LINKING}`\n"
         "unless it sets `disable_lto = false`, but the bazel2gn-generated `executable`\n"
         "does not, so the migration changes how the test links in GN and Bazel.",
-        f'Add `build_flags = ["{NO_FAT_LTO_LINKING}"]` to the Bazel\n'
-        "`fx_cc_binary(testonly = True)`; bazel2gn turns it into `configs +=`.",
+        "Replace the Bazel `fx_cc_binary(testonly = True)` with `fx_cc_test_binary`\n"
+        "(load `//build/bazel/rules/cc:fx_cc_test_binary.bzl`, drop `testonly`), which\n"
+        "links with that config and makes bazel2gn generate `cc_test_executable()`.",
     )
+
+
+# GN `test()` registers a host test when built on host; the `cc_test_executable()` that bazel2gn
+# generates for a Bazel `fx_cc_test_binary` doesn't. Returns True when a GN file at the change
+# base listed `//<pkg>:<name>($host_toolchain)` (in any spelling) and the current BUILD.gn has no
+# hand-written `host_test()` that depends on `:<name>`.
+def host_test_lost(pkg, name, after):
+    lines = git_lines(["grep", "-n", "-F", f":{name}($host_toolchain)", change_base, "--", "*.gn", "*.gni"])
+    host_ref = False
+    for l in lines:
+        parts = l.split(":", 3)  # <rev>:<path>:<line>:<text>
+        if len(parts) < 4:
+            continue
+        ref_dir = os.path.dirname(parts[1])
+        for m in re.finditer(r'"((?://)?[^":]*):' + re.escape(name) + r'\(\$host_toolchain\)"', parts[3]):
+            target_dir = m.group(1)
+            if target_dir.startswith("//"):
+                target_dir = target_dir[2:]
+            else:
+                target_dir = os.path.normpath(os.path.join(ref_dir, target_dir)) if target_dir else ref_dir
+            if target_dir == pkg:
+                host_ref = True
+    if not host_ref:
+        return False
+    code = blank_comments(after or "")
+    for m in re.finditer(r'\bhost_test\(\s*"[^"]+"\s*\)\s*\{', code):
+        body = code[m.end() - 1 : call_end(code, m.end() - 1)]
+        if re.search(r'"(?://' + re.escape(pkg) + r')?:' + re.escape(name) + r'"', body):
+            return False
+    return True
 
 
 # Check whether a pre-migration GN target was a unittest/test component that maps to
@@ -873,9 +911,9 @@ for pkg in sorted(candidate_dirs):
                     "rustc_library" in new.get(v, (set(), 0))[0] for v in variant_names
                 )
             # Accept a GN cc_test_executable converted from a Bazel fx_cc_binary(testonly = True):
-            # bazel2gn maps fx_cc_binary/cc_binary to executable() and has no form that emits
-            # cc_test_executable(). The executable must keep cc_test_executable's LTO config
-            # (see append_lost_lto_config_error).
+            # bazel2gn maps fx_cc_binary/cc_binary to executable(). The executable must keep
+            # cc_test_executable's LTO config (see append_lost_lto_config_error); prefer
+            # fx_cc_test_binary, which bazel2gn turns into cc_test_executable().
             is_cc_test_executable_conversion = (
                 old_types == {"cc_test_executable"}
                 and new_types == {"executable"}
@@ -891,13 +929,75 @@ for pkg in sorted(candidate_dirs):
                     gn_rel,
                     line,
                     f"`{label}` was GN `{was_tmpl}` and is now a bazel2gn-generated\n"
-                    "testonly `executable` from a Bazel fx_cc_binary(testonly = True); bazel2gn\n"
-                    f"has no form for {was_tmpl}, so this type change is expected.",
+                    "testonly `executable` from a Bazel fx_cc_binary(testonly = True); this type\n"
+                    "change is accepted as long as the LTO config is kept.",
                     "None needed for the type change; do not dispute or work around this\n"
-                    "INFO. Keep the LTO config (`cc_test_executable_lost_lto_config`).",
+                    "INFO. Keep the LTO config (`cc_test_executable_lost_lto_config`), or\n"
+                    "use `fx_cc_test_binary`, which keeps GN `cc_test_executable()`.",
                 )
                 append_lost_lto_config_error(
                     findings, before, after, gn_rel, label, name, line, was_tmpl, old_name=orig_name
+                )
+            # Accept a GN C++ `test` that becomes the `cc_test_executable` bazel2gn generates
+            # for a Bazel `fx_cc_test_binary`. Both link with the no-FatLTO config; the GN copy
+            # installs to `bin/` instead of `test/` and doesn't register a host test by itself.
+            is_test_to_cc_test_executable = (
+                old_types == {"test"}
+                and new_types == {"cc_test_executable"}
+                and name in bazel_names
+            )
+            if is_test_to_cc_test_executable and host_test_lost(pkg, orig_name, after):
+                _emit(
+                    findings,
+                    "host_test_lost",
+                    "ERROR",
+                    gn_rel,
+                    line,
+                    f"`{label}` was GN `test()`, which GN built on host as a host test\n"
+                    "(a GN file listed it with `($host_toolchain)`), but the generated\n"
+                    "`cc_test_executable()` doesn't register a host test and no GN `host_test()`\n"
+                    "in this BUILD.gn runs it, so GN silently stops running it.",
+                    "Add a Bazel host test for it and a hand-written GN `host_test()` above the\n"
+                    f'BAZEL2GN SENTINEL with `deps = [ ":{name}" ]`, `binary_path` set to the binary\n'
+                    f'and `target = get_label_info(":{name}", "label_with_toolchain")`, and point\n'
+                    "the GN group at it with `($host_toolchain)`, as in the coder instructions.",
+                )
+            elif is_test_to_cc_test_executable:
+                _emit(
+                    findings,
+                    "test_became_cc_test_executable",
+                    "INFO",
+                    gn_rel,
+                    line,
+                    f"`{label}` was GN `test()` and is now the `cc_test_executable()` bazel2gn\n"
+                    "generates for a Bazel fx_cc_test_binary, so this type change is expected.\n"
+                    "Unlike `test()`, it installs to `bin/<output_name>` in packages and doesn't\n"
+                    "register a host test on host.",
+                    "None needed for the type change. Custom manifests that run\n"
+                    "`test/<output_name>` need `fx_packaged_binary(install_root = \"test/\")` or\n"
+                    "`bin/` paths.",
+                )
+            # Also accept a testonly GN `executable` (e.g. from an earlier
+            # fx_cc_binary(testonly = True) migration of a cc_test_executable) that becomes the
+            # `cc_test_executable` of a Bazel fx_cc_test_binary: `cc_test_executable()` is an
+            # `executable()` that only adds the no-FatLTO link config.
+            is_executable_to_cc_test_executable = (
+                old_types == {"executable"}
+                and new_types == {"cc_test_executable"}
+                and name in bazel_names
+                and is_testonly_target(before, orig_name)
+            )
+            if is_executable_to_cc_test_executable:
+                _emit(
+                    findings,
+                    "executable_became_cc_test_executable",
+                    "INFO",
+                    gn_rel,
+                    line,
+                    f"`{label}` was a testonly GN `executable()` and is now the\n"
+                    "`cc_test_executable()` bazel2gn generates for a Bazel fx_cc_test_binary,\n"
+                    "which only adds the no-FatLTO link config, so this type change is expected.",
+                    "None needed; do not dispute or work around this INFO.",
                 )
             # Accept a GN `fuchsia_unittest_package` or `fuchsia_unittest_component` that
             # becomes `fuchsia_test_package` or `fuchsia_test_component` below the sentinel
@@ -952,6 +1052,8 @@ for pkg in sorted(candidate_dirs):
             )
             if new_types != old_types and not (
                 is_cc_test_executable_conversion
+                or is_test_to_cc_test_executable
+                or is_executable_to_cc_test_executable
                 or is_test_suite_conversion
                 or is_host_tool_conversion
                 or is_bazel_input_transition
