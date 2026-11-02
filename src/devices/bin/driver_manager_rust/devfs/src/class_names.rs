@@ -43,9 +43,6 @@ pub static CLASS_NAME_TO_SERVICE: phf::Map<&'static str, ServiceEntry> = phf_map
         service_name: "fuchsia.power.battery.InfoService",
         member_name: "device",
     },
-    "block-partition" => ServiceEntry { state: State::Devfs, service_name: "", member_name: "" },
-    "block" => ServiceEntry { state: State::Devfs, service_name: "", member_name: "" },
-    "block-volume" => ServiceEntry { state: State::Devfs, service_name: "", member_name: "" },
     "bt-emulator" => ServiceEntry {
         state: State::DevfsAndService,
         service_name: "fuchsia.hardware.bluetooth.EmulatorService",
@@ -161,7 +158,6 @@ pub static CLASS_NAME_TO_SERVICE: phf::Map<&'static str, ServiceEntry> = phf_map
         service_name: "fuchsia.hardware.midi.Service",
         member_name: "controller",
     },
-    "nand" => ServiceEntry { state: State::Devfs, service_name: "", member_name: "" },
     "network" => ServiceEntry {
         state: State::DevfsAndService,
         service_name: "fuchsia.hardware.network.Service",
@@ -268,7 +264,6 @@ pub static CLASS_NAME_TO_SERVICE: phf::Map<&'static str, ServiceEntry> = phf_map
 
 pub static CLASSES_THAT_ASSUME_ORDERING: phf::Set<&'static str> = phf_set! {
     "adc",
-    "block",
     "goldfish-address-space",
     "goldfish-control",
     "goldfish-pipe",
@@ -278,7 +273,6 @@ pub static CLASSES_THAT_ASSUME_ORDERING: phf::Set<&'static str> = phf_set! {
 };
 
 pub static CLASSES_THAT_ALLOW_TOPOLOGICAL_PATH: phf::Set<&'static str> = phf_set! {
-    "block",
     "devfs_service_test",
     "network",
 };
