@@ -67,18 +67,8 @@ use core::pin::Pin;
 use core::ptr::{NonNull, drop_in_place, write};
 use kalloc::AllocError;
 pub use ksync::RawLock;
-use ksync::{KCell, KMutex, RawMutex, guarded, lock};
+use ksync::{ConstRawLock, KCell, KMutex, RawMutex, guarded, lock};
 use pin_init::{pin_data, pin_init, pinned_drop};
-
-mod sealed {
-    pub trait Sealed {}
-    impl Sealed for super::RawMutex {}
-}
-
-/// Helper trait to restrict SlabAllocator lock to RawMutex.
-/// TODO(https://fxbug.dev/541903019): Support generic mutex types.
-pub trait IsRawMutex: sealed::Sealed {}
-impl IsRawMutex for RawMutex {}
 
 /// The default slab size in bytes (16KB).
 pub const DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE: usize = 16384;
@@ -106,7 +96,7 @@ impl SlabHeader {
         if self.bytes_used + alloc_size > slab_size {
             return None;
         }
-        let self_ptr = self as *mut SlabHeader as *mut u8;
+        let self_ptr = ::core::ptr::from_mut(self).cast::<u8>();
         // SAFETY: `self.bytes_used` is guaranteed to be within `slab_size`.
         let ret = unsafe { self_ptr.add(self.bytes_used) };
         self.bytes_used += alloc_size;
@@ -192,19 +182,22 @@ struct FreeListEntry {
 ///     // obj will automatically recycle back to MY_ALLOCATOR.
 /// }
 /// ```
+///
+/// Note: Because `SlabAllocator` is generic over `L: RawLock`, it relies on `Default::default()`
+/// to supply acquisition arguments (`AcquireArgs`) to `lock_mu_with`. For lock types like
+/// `RawMonitoredSpinlock` whose arguments are `SourceTag`, this results in `<unknown>` attribution
+/// instead of file/line location. External callers initializing a static allocator can use
+/// `const_new_default` to initialize `L` with the allocator's lock class.
 #[guarded]
 #[pin_data(PinnedDrop)]
 pub struct SlabAllocator<
     T,
-    L: RawLock + IsRawMutex = RawMutex,
+    L: RawLock = RawMutex,
     const SLAB_SIZE: usize = DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
     const TRACK_OBJECT_COUNT: bool = false,
 > {
     #[mutex]
-    // TODO(https://fxbug.dev/541903019): Currently generic mutex types are not supported and so
-    // this is forced to be RawMutex. The IsRawMutex trait bound above ensures that no other type is
-    // attempted to be used.
-    mu: KMutex<RawMutex>,
+    mu: KMutex<L>,
 
     #[guarded_by(mu)]
     free_list: SinglyLinkedList<NonNull<FreeListEntry>>,
@@ -220,23 +213,26 @@ pub struct SlabAllocator<
     max_obj_count: usize,
 
     max_slabs: usize,
-    _phantom: PhantomData<(T, L)>,
+    _phantom: PhantomData<T>,
 }
 
-unsafe impl<
-    T,
-    L: RawLock + IsRawMutex + Sync,
-    const SLAB_SIZE: usize,
-    const TRACK_OBJECT_COUNT: bool,
-> Sync for SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
+// SAFETY: `SlabAllocator` contains `!Send`/`!Sync` fields (`free_list` and `slab_list` holding
+// `NonNull`).
+// These are exclusively accessed through `L` via `L::DefaultPolicy: ExclusiveLockPolicy<L>`,
+// providing
+// mutual exclusion. Thus, `SlabAllocator` is `Sync` as long as `L` is `Sync`. `T` requires no
+// bounds because `SlabAllocator` only manages raw memory; typed smart pointers (`UniquePtr<T>`,
+// etc.)
+// enforce their own bounds.
+unsafe impl<T, L: RawLock + Sync, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> Sync
+    for SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
 }
-unsafe impl<
-    T,
-    L: RawLock + IsRawMutex + Send,
-    const SLAB_SIZE: usize,
-    const TRACK_OBJECT_COUNT: bool,
-> Send for SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
+// SAFETY: See `Sync` implementation. `Send` requires `L: Send` (to move the lock) and `L: Sync`
+// because `new_unique` hands out an unscoped `SlabOrigin` that can be dropped on another thread,
+// which accesses the allocator concurrently.
+unsafe impl<T, L: RawLock + Send + Sync, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
+    Send for SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
 }
 
@@ -246,14 +242,14 @@ unsafe impl<
 /// implementations, allowing the containing object to be shared across threads.
 pub struct SlabOrigin<
     T,
-    L: RawLock + IsRawMutex = RawMutex,
+    L: RawLock = RawMutex,
     const SLAB_SIZE: usize = DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
     const TRACK_OBJECT_COUNT: bool = false,
 > {
     origin: Option<NonNull<SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>>>,
 }
 
-impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
+impl<T, L: RawLock, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
     SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
     /// Creates a new, uninitialized `SlabOrigin`.
@@ -272,7 +268,7 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
     }
 }
 
-impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> Default
+impl<T, L: RawLock, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> Default
     for SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
     fn default() -> Self {
@@ -281,20 +277,14 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
 }
 
 // SAFETY: SlabOrigin only holds a pointer to SlabAllocator which is Send/Sync if L is Send/Sync.
-unsafe impl<
-    T,
-    L: RawLock + IsRawMutex + Sync,
-    const SLAB_SIZE: usize,
-    const TRACK_OBJECT_COUNT: bool,
-> Sync for SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
+unsafe impl<T, L: RawLock + Sync, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> Sync
+    for SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
 }
-unsafe impl<
-    T,
-    L: RawLock + IsRawMutex + Send,
-    const SLAB_SIZE: usize,
-    const TRACK_OBJECT_COUNT: bool,
-> Send for SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
+// SAFETY: SlabOrigin acts as an unscoped reference to the SlabAllocator; therefore, sending it
+// across threads requires `L: Sync`, matching the bounds for `&SlabAllocator`.
+unsafe impl<T, L: RawLock + Sync, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> Send
+    for SlabOrigin<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
 }
 
@@ -303,7 +293,7 @@ unsafe impl<
 /// Implementing this trait allows `UniquePtr` and `RefPtr` to automatically return
 /// their memory to the originating allocator on drop.
 pub trait InstancedSlabAllocated<
-    L: RawLock + IsRawMutex,
+    L: RawLock,
     const SLAB_SIZE: usize,
     const TRACK_OBJECT_COUNT: bool = false,
 >: Sized
@@ -323,7 +313,7 @@ pub trait InstancedSlabAllocated<
 /// Implementing this trait allows `UniquePtr` and `RefPtr` to automatically return
 /// their memory to the global static allocator on drop.
 pub trait StaticSlabAllocated<
-    L: RawLock + IsRawMutex,
+    L: RawLock,
     const SLAB_SIZE: usize,
     const TRACK_OBJECT_COUNT: bool = false,
 >: Sized
@@ -342,12 +332,12 @@ macro_rules! impl_instanced_slab_allocatable {
         $crate::impl_instanced_slab_allocatable!($ty, $lock, $slab_size, false);
     };
     ($ty:ty, $lock:ty, $slab_size:expr, $track_obj_count:expr) => {
-        impl $crate::InstancedSlabAllocated<$lock, $slab_size, $track_obj_count> for $ty {
+        impl $crate::InstancedSlabAllocated<$lock, { $slab_size }, { $track_obj_count }> for $ty {
             fn slab_origin(
                 &self,
             ) -> Option<
                 ::core::ptr::NonNull<
-                    $crate::SlabAllocator<Self, $lock, $slab_size, $track_obj_count>,
+                    $crate::SlabAllocator<Self, $lock, { $slab_size }, { $track_obj_count }>,
                 >,
             > {
                 self.slab_origin.get()
@@ -356,7 +346,7 @@ macro_rules! impl_instanced_slab_allocatable {
             fn set_slab_origin(
                 &mut self,
                 origin: ::core::ptr::NonNull<
-                    $crate::SlabAllocator<Self, $lock, $slab_size, $track_obj_count>,
+                    $crate::SlabAllocator<Self, $lock, { $slab_size }, { $track_obj_count }>,
                 >,
             ) {
                 self.slab_origin.set(origin);
@@ -389,9 +379,10 @@ macro_rules! impl_static_slab_allocatable {
         $crate::impl_static_slab_allocatable!($ty, $lock, $slab_size, $allocator, false);
     };
     ($ty:ty, $lock:ty, $slab_size:expr, $allocator:expr, $track_obj_count:expr) => {
-        impl $crate::StaticSlabAllocated<$lock, $slab_size, $track_obj_count> for $ty {
+        impl $crate::StaticSlabAllocated<$lock, { $slab_size }, { $track_obj_count }> for $ty {
             fn get_allocator()
-            -> &'static $crate::SlabAllocator<Self, $lock, $slab_size, $track_obj_count> {
+            -> &'static $crate::SlabAllocator<Self, $lock, { $slab_size }, { $track_obj_count }>
+            {
                 &$allocator
             }
         }
@@ -400,8 +391,8 @@ macro_rules! impl_static_slab_allocatable {
             fn allocate(value: Self) -> Result<::core::ptr::NonNull<Self>, ::kalloc::AllocError> {
                 let allocator = <Self as $crate::StaticSlabAllocated<
                     $lock,
-                    $slab_size,
-                    $track_obj_count,
+                    { $slab_size },
+                    { $track_obj_count },
                 >>::get_allocator();
                 let ptr = allocator.alloc_raw()?;
                 // SAFETY: `ptr` points to valid, uninitialized memory allocated from the slab.
@@ -415,8 +406,8 @@ macro_rules! impl_static_slab_allocatable {
             unsafe fn recycle(ptr: ::core::ptr::NonNull<Self>) {
                 let allocator = <Self as $crate::StaticSlabAllocated<
                     $lock,
-                    $slab_size,
-                    $track_obj_count,
+                    { $slab_size },
+                    { $track_obj_count },
                 >>::get_allocator();
                 // SAFETY: The global static allocator is guaranteed to live forever (static
                 // lifetime).  Dropping the object in-place before returning memory prevents
@@ -430,7 +421,7 @@ macro_rules! impl_static_slab_allocatable {
     };
 }
 
-impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
+impl<T, L: RawLock, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
     SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
     pub const ALLOC_ALIGN: usize = if align_of::<FreeListEntry>() > align_of::<T>() {
@@ -473,29 +464,53 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
         );
     };
 
-    /// Pre-allocates the first slab.
+    /// Pre-allocates a slab, allocating outside the lock.
     ///
     /// This can be used to guarantee O(1) execution times for all future allocations
-    /// if `max_slabs` is at least 1.
+    /// if `max_slabs` is at least 1. Callers in IRQ/spinlock context must call `preallocate()`
+    /// up to `max_slabs` before acquiring spinlocks/disabling IRQs, because allocating
+    /// memory grabs `TheHeapLock` (which panics if a spinlock is held).
     pub fn preallocate(&self) -> Result<(), AllocError> {
-        let ptr = self.alloc_raw()?;
-        // SAFETY: `ptr` was just allocated and is valid.
-        unsafe {
-            self.return_to_free_list(ptr);
-        }
-        if TRACK_OBJECT_COUNT {
-            lock!(let guard = self.lock_mu());
+        let slab_ptr = Self::alloc_slab()?;
+
+        let mut needs_dealloc = false;
+        {
+            lock!(let guard = self.lock_mu_with(Default::default()));
             let fields = guard.fields_mut();
-            *fields.obj_count = 0;
-            *fields.max_obj_count = 0;
+            if *fields.slab_count >= self.max_slabs {
+                needs_dealloc = true;
+            } else {
+                *fields.slab_count += 1;
+                // SAFETY: `slab_ptr` is newly initialized.
+                unsafe {
+                    fields.slab_list.push_front_raw(slab_ptr);
+                }
+            }
+        }
+
+        if needs_dealloc {
+            // SAFETY: Slab was not used.
+            unsafe { Self::dealloc_slab(slab_ptr) };
         }
         Ok(())
     }
 
-    /// Creates a new `SlabAllocator` that can be initialized in const contexts.
+    /// Creates a new `SlabAllocator` that can be initialized in const contexts using the default
+    /// lockdep class generated for `SlabAllocator`.
     ///
     /// Note: Slabs are not pre-allocated during const-construction.
-    pub const fn const_new(max_slabs: usize, lock: RawMutex) -> Self {
+    pub const fn const_new_default(max_slabs: usize) -> Self
+    where
+        L: ConstRawLock,
+    {
+        Self::const_new(max_slabs, L::INIT)
+    }
+
+    /// Creates a new `SlabAllocator` that can be initialized in const contexts with an explicit
+    /// physical lock instance.
+    ///
+    /// Note: Slabs are not pre-allocated during const-construction.
+    pub const fn const_new(max_slabs: usize, lock: L) -> Self {
         const { Self::_ASSERT };
         Self {
             mu: KMutex::new(lock),
@@ -560,42 +575,85 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
 
     /// Allocates raw, uninitialized memory for a single object of type `T`.
     pub fn alloc_raw(&self) -> Result<NonNull<T>, AllocError> {
-        lock!(let guard = self.lock_mu());
-        let mut fields = guard.fields_mut();
-
-        // 1. Try free list
-        if let Some(entry_ptr) = fields.free_list.pop_front() {
-            fields.record_allocation();
-            return Ok(entry_ptr.cast::<T>());
-        }
-
-        // 2. Try active slab
-        if let Some(active_slab) = fields.slab_list.front_mut()
-            && let Some(mem) = active_slab.allocate(Self::ALLOC_SIZE, SLAB_SIZE)
+        // Fast path: Try free list or active slab while holding the lock.
         {
-            let ptr = mem.cast::<T>();
-            fields.record_allocation();
-            return Ok(ptr);
-        }
+            lock!(let guard = self.lock_mu_with(Default::default()));
+            let mut fields = guard.fields_mut();
 
-        // 3. Try allocate new slab
-        if *fields.slab_count < self.max_slabs {
-            let mut slab_ptr = Self::alloc_slab()?;
-            *fields.slab_count += 1;
-            // SAFETY: `slab_ptr` is newly initialized.
-            unsafe {
-                fields.slab_list.push_front_raw(slab_ptr);
+            // 1. Try free list
+            if let Some(entry_ptr) = fields.free_list.pop_front() {
+                fields.record_allocation();
+                return Ok(entry_ptr.cast::<T>());
             }
 
-            // SAFETY: Allocate from this new slab.
-            let active_slab = unsafe { slab_ptr.as_mut() };
-            let mem = active_slab.allocate(Self::ALLOC_SIZE, SLAB_SIZE).unwrap();
-            let ptr = mem.cast::<T>();
-            fields.record_allocation();
-            return Ok(ptr);
+            // 2. Try active slab
+            if let Some(active_slab) = fields.slab_list.front_mut()
+                && let Some(mem) = active_slab.allocate(Self::ALLOC_SIZE, SLAB_SIZE)
+            {
+                let ptr = mem.cast::<T>();
+                fields.record_allocation();
+                return Ok(ptr);
+            }
+
+            // If we've reached max_slabs, fail immediately.
+            if *fields.slab_count >= self.max_slabs {
+                return Err(AllocError);
+            }
         }
 
-        Err(AllocError)
+        // 3. Try allocate new slab OUTSIDE the lock to avoid kernel panic under spinlocks.
+        let mut slab_ptr = Self::alloc_slab()?;
+
+        // 4. Re-lock and check again.
+        let mut allocated_ptr = None;
+        let mut needs_dealloc = false;
+
+        {
+            lock!(let guard = self.lock_mu_with(Default::default()));
+            let mut fields = guard.fields_mut();
+
+            // 4a. Check free list again.
+            if let Some(entry_ptr) = fields.free_list.pop_front() {
+                fields.record_allocation();
+                allocated_ptr = Some(entry_ptr.cast::<T>());
+                needs_dealloc = true;
+            }
+            // 4b. Check active slab again.
+            else if let Some(active_slab) = fields.slab_list.front_mut()
+                && let Some(mem) = active_slab.allocate(Self::ALLOC_SIZE, SLAB_SIZE)
+            {
+                let ptr = mem.cast::<T>();
+                fields.record_allocation();
+                allocated_ptr = Some(ptr);
+                needs_dealloc = true;
+            }
+            // 4c. Verify we haven't hit max_slabs while lock was dropped.
+            else if *fields.slab_count >= self.max_slabs {
+                needs_dealloc = true;
+            }
+            // 4d. Use the newly allocated slab.
+            else {
+                *fields.slab_count += 1;
+                // SAFETY: `slab_ptr` is newly initialized.
+                unsafe {
+                    fields.slab_list.push_front_raw(slab_ptr);
+                }
+
+                // SAFETY: Allocate from this new slab.
+                let active_slab = unsafe { slab_ptr.as_mut() };
+                let mem = active_slab.allocate(Self::ALLOC_SIZE, SLAB_SIZE).unwrap();
+                let ptr = mem.cast::<T>();
+                fields.record_allocation();
+                allocated_ptr = Some(ptr);
+            }
+        }
+
+        if needs_dealloc {
+            // SAFETY: We didn't need the slab.
+            unsafe { Self::dealloc_slab(slab_ptr) };
+        }
+
+        allocated_ptr.ok_or(AllocError)
     }
 
     /// Returns raw memory to the free list.
@@ -611,7 +669,7 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
             write(entry_ptr.as_ptr(), FreeListEntry { node: SinglyLinkedListNode::new() });
         }
 
-        lock!(let guard = self.lock_mu());
+        lock!(let guard = self.lock_mu_with(Default::default()));
         let mut fields = guard.fields_mut();
         // SAFETY: `entry_ptr` is a valid NonNull pointer.
         unsafe {
@@ -669,7 +727,7 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
         const {
             assert!(TRACK_OBJECT_COUNT, "Error accessing obj_count: Object counter not enabled");
         }
-        lock!(let guard = self.lock_mu());
+        lock!(let guard = self.lock_mu_with(Default::default()));
         *guard.fields().obj_count
     }
 
@@ -682,13 +740,13 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
                 "Error accessing max_obj_count: Object counter not enabled"
             );
         }
-        lock!(let guard = self.lock_mu());
+        lock!(let guard = self.lock_mu_with(Default::default()));
         *guard.fields().max_obj_count
     }
 
     /// Returns the number of slabs allocated.
     pub fn slab_count(&self) -> usize {
-        lock!(let guard = self.lock_mu());
+        lock!(let guard = self.lock_mu_with(Default::default()));
         *guard.fields().slab_count
     }
 
@@ -705,13 +763,13 @@ impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUN
                 "Error performing reset_max_obj_count: Object counter not enabled"
             );
         }
-        lock!(let guard = self.lock_mu());
+        lock!(let guard = self.lock_mu_with(Default::default()));
         let fields = guard.fields_mut();
         *fields.max_obj_count = *fields.obj_count;
     }
 }
 
-impl<'b, T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
+impl<'b, T, L: RawLock, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool>
     SlabAllocatorMuFieldsMut<'b, T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
     #[inline(always)]
@@ -731,7 +789,7 @@ impl<'b, T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_
 }
 
 #[pinned_drop]
-impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> PinnedDrop
+impl<T, L: RawLock, const SLAB_SIZE: usize, const TRACK_OBJECT_COUNT: bool> PinnedDrop
     for SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>
 {
     fn drop(self: Pin<&mut Self>) {
@@ -812,9 +870,7 @@ mod tests {
         fn maybe_reset_max_obj_count(&self);
     }
 
-    impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize> MaybeTracked
-        for SlabAllocator<T, L, SLAB_SIZE, true>
-    {
+    impl<T, L: RawLock, const N: usize> MaybeTracked for SlabAllocator<T, L, N, true> {
         fn maybe_obj_count(&self) -> usize {
             self.obj_count()
         }
@@ -826,9 +882,7 @@ mod tests {
         }
     }
 
-    impl<T, L: RawLock + IsRawMutex, const SLAB_SIZE: usize> MaybeTracked
-        for SlabAllocator<T, L, SLAB_SIZE, false>
-    {
+    impl<T, L: RawLock, const N: usize> MaybeTracked for SlabAllocator<T, L, N, false> {
         fn maybe_obj_count(&self) -> usize {
             0
         }
@@ -848,7 +902,7 @@ mod tests {
             + InstancedSlabAllocated<L, SLAB_SIZE, TRACK_OBJECT_COUNT>
             + TestConstructors
             + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -948,7 +1002,7 @@ mod tests {
             + InstancedSlabAllocated<L, SLAB_SIZE, TRACK_OBJECT_COUNT>
             + TestConstructors
             + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -1050,7 +1104,7 @@ mod tests {
         test_allocs: usize,
     ) where
         T: TestConstructors + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -1156,7 +1210,7 @@ mod tests {
             + StaticSlabAllocated<L, SLAB_SIZE, TRACK_OBJECT_COUNT>
             + TestConstructors
             + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -1255,7 +1309,7 @@ mod tests {
             + StaticSlabAllocated<L, SLAB_SIZE, TRACK_OBJECT_COUNT>
             + TestConstructors
             + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -1357,7 +1411,7 @@ mod tests {
         test_allocs: usize,
     ) where
         T: TestConstructors + 'static,
-        L: RawLock + IsRawMutex + 'static,
+        L: RawLock + 'static,
         SlabAllocator<T, L, SLAB_SIZE, TRACK_OBJECT_COUNT>: MaybeTracked,
     {
         allocated_obj_count.store(0, Ordering::SeqCst);
@@ -1452,7 +1506,14 @@ mod tests {
     }
 
     macro_rules! define_instanced_unique_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1529,7 +1590,14 @@ mod tests {
     }
 
     macro_rules! define_instanced_ref_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1616,7 +1684,14 @@ mod tests {
     }
 
     macro_rules! define_unmanaged_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1675,7 +1750,14 @@ mod tests {
     }
 
     macro_rules! define_static_unique_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1750,7 +1832,14 @@ mod tests {
     }
 
     macro_rules! define_static_ref_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1860,7 +1949,14 @@ mod tests {
     }
 
     macro_rules! define_static_unmanaged_test {
-        ($name:ident, $lock:ty, $lock_init:expr, $slab_size:expr, $track_obj_count:expr, $max_slabs:expr) => {
+        (
+            $name:ident,
+            $lock:ty,
+            $lock_init:expr,
+            $slab_size:literal,
+            $track_obj_count:literal,
+            $max_slabs:literal
+        ) => {
             #[test]
             fn $name() {
                 static ALLOCATED_OBJ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -2024,7 +2120,8 @@ mod tests {
     #[test]
     fn test_constructor_statistics_fix() {
         // With TRACK_OBJECT_COUNT = true, and preallocate.
-        // The obj_count and max_obj_count should remain exactly 0 after construction and preallocation.
+        // The obj_count and max_obj_count should remain exactly 0 after construction and
+        // preallocation.
         let init = SlabAllocator::<TestObjectDummy, RawMutex, 1024, true>::init(1);
         stack_pin_init!(let allocator = init);
         allocator.preallocate().unwrap();

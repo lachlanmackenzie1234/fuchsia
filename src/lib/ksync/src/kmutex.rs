@@ -933,6 +933,38 @@ mod tests {
     }
 
     #[guarded]
+    struct MyGenericLockGuardedStruct<L: RawLock> {
+        #[mutex]
+        mu: KMutex<L>,
+        #[guarded_by(mu)]
+        data: u32,
+    }
+
+    #[test]
+    fn test_macro_generic_lock_guarded() {
+        fn lock_generic<L: RawLock>(s: &MyGenericLockGuardedStruct<L>) -> u32
+        where
+            L::DefaultPolicy: ExclusiveLockPolicy<L>,
+            <L::DefaultPolicy as LockPolicy<L>>::AcquireArgs: Default,
+        {
+            lock!(let guard = s.lock_mu_with(Default::default()));
+            *guard.data()
+        }
+
+        stack_pin_init!(let s1 = pin_init!(MyGenericLockGuardedStruct::<RawMutex> {
+            mu <- KMutex::init(),
+            data: 100.into(),
+        }));
+        assert_eq!(lock_generic(&s1), 100);
+
+        stack_pin_init!(let s2 = pin_init!(MyGenericLockGuardedStruct::<RawMutex> {
+            mu <- KMutex::init(),
+            data: 200.into(),
+        }));
+        assert_eq!(lock_generic(&s2), 200);
+    }
+
+    #[guarded]
     struct MyGenericGuardedStruct<T> {
         #[mutex]
         mu: KMutex,

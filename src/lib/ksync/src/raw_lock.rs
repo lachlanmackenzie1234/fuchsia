@@ -23,7 +23,7 @@ use pin_init::PinInit;
 ///    [`reacquire`](Self::reacquire), respectively.
 pub unsafe trait LockPolicy<L: RawLock> {
     /// Arguments passed when acquiring the lock under this policy.
-    type AcquireArgs: Copy;
+    type AcquireArgs: Default + Copy;
 
     /// State stored in the pinned guard across lock acquisition and release.
     type GuardState: Default;
@@ -173,6 +173,9 @@ pub unsafe trait ExclusiveLockPolicy<L: RawLock>: LockPolicy<L> {}
 /// [`as_mut_ptr`](Self::as_mut_ptr) uniquely identifies the underlying lock storage for the
 /// lifetime of `&self`.
 pub unsafe trait RawLock: Sized {
+    /// Flags specifying validation rules for the lock class.
+    const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_TRACKING_DISABLED;
+
     /// Default policy that should be used when acquiring this lock.
     type DefaultPolicy: ExclusiveLockPolicy<Self>;
 

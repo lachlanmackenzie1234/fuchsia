@@ -688,6 +688,7 @@ pub(crate) use impl_lockdep_tracked_lock_policy;
 unsafe impl<L: RawLock, P: ExclusiveLockPolicy<L>, const LOCK_FLAGS: lockdep::LockFlags> RawLock
     for LockdepTracked<L, P, LOCK_FLAGS>
 {
+    const LOCK_FLAGS: lockdep::LockFlags = LOCK_FLAGS;
     type DefaultPolicy = Self;
 
     #[inline]

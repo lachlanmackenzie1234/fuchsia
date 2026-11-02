@@ -24,7 +24,7 @@
 mod ksync_tests {
     use kprint::kprintln;
     use pin_init::{pin_data, pin_init, stack_pin_init};
-    use unittest::{assert_true, expect_true};
+    use unittest::{assert_true, expect_eq, expect_true};
 
     #[ksync::guarded]
     #[fbl::ref_counted]
@@ -269,7 +269,7 @@ mod ksync_tests {
         // SAFETY: `obj.mu` is an initialized `KMutex`.
         unsafe {
             assert_true!(cpp_verify_mutex_id(
-                &obj.mu as *const _ as *const core::ffi::c_void,
+                (&raw const obj.mu).cast::<core::ffi::c_void>(),
                 <GuardedMutexObjMuClass as ksync::LockClass>::ID,
             ));
         }
@@ -285,7 +285,7 @@ mod ksync_tests {
         // SAFETY: `obj.mu` is an initialized `KMutex<_, RawCriticalMutex>`.
         unsafe {
             assert_true!(cpp_verify_critical_mutex_id(
-                &obj.mu as *const _ as *const core::ffi::c_void,
+                (&raw const obj.mu).cast::<core::ffi::c_void>(),
                 <GuardedCriticalMutexObjMuClass as ksync::LockClass>::ID,
             ));
         }
@@ -460,7 +460,7 @@ mod ksync_tests {
         // SAFETY: `obj.mu` is an initialized `KMutex<_, RawSpinlock>`.
         unsafe {
             assert_true!(cpp_verify_spinlock_id(
-                &obj.mu as *const _ as *const core::ffi::c_void,
+                (&raw const obj.mu).cast::<core::ffi::c_void>(),
                 <GuardedSpinlockObjMuClass as ksync::LockClass>::ID,
             ));
         }
@@ -476,7 +476,7 @@ mod ksync_tests {
         // SAFETY: `obj.mu` is an initialized `KMutex<_, RawMonitoredSpinlock>`.
         unsafe {
             assert_true!(cpp_verify_monitored_spinlock_id(
-                &obj.mu as *const _ as *const core::ffi::c_void,
+                (&raw const obj.mu).cast::<core::ffi::c_void>(),
                 <GuardedMonitoredSpinlockObjMuClass as ksync::LockClass>::ID,
             ));
         }
@@ -484,9 +484,9 @@ mod ksync_tests {
         // Acquire with default IrqSavePolicy and source_tag!
         {
             ksync::lock!(let mut guard = obj.lock_mu(ksync::source_tag!()));
-            expect_true!(*guard.value() == 10);
+            expect_eq!(*guard.value(), 10);
             *guard.as_mut().value_mut() = 20;
-            expect_true!(*guard.value() == 20);
+            expect_eq!(*guard.value(), 20);
         }
 
         // Verify persistence and acquire with explicit policy
@@ -494,7 +494,7 @@ mod ksync_tests {
             ksync::lock!(
                 let guard = obj.lock_mu_policy::<ksync::IrqSavePolicy>(ksync::source_tag!())
             );
-            expect_true!(*guard.value() == 20);
+            expect_eq!(*guard.value(), 20);
         }
     }
 
@@ -508,7 +508,7 @@ mod ksync_tests {
         // SAFETY: `obj.lock` is an initialized `BrwLockPi`.
         unsafe {
             assert_true!(cpp_verify_brwlock_id(
-                &obj.lock as *const _ as *const core::ffi::c_void,
+                (&raw const obj.lock).cast::<core::ffi::c_void>(),
                 <GuardedBrwLockObjLockClass as ksync::LockClass>::ID,
             ));
         }
@@ -528,13 +528,13 @@ mod ksync_tests {
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
-            expect_true!(*guard.value() == 100);
+            expect_eq!(*guard.value(), 100);
             *guard.as_mut().value_mut() = 101;
         }
 
         {
             ksync::lock!(let guard = obj.lock_mu());
-            expect_true!(*guard.value() == 101);
+            expect_eq!(*guard.value(), 101);
         }
         {
             ksync::lock!(let guard = obj.mu.lock());
@@ -561,13 +561,13 @@ mod ksync_tests {
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
-            expect_true!(*guard.value() == 42);
+            expect_eq!(*guard.value(), 42);
             *guard.as_mut().value_mut() = 43;
         }
 
         {
             ksync::lock!(let guard = obj.lock_mu());
-            expect_true!(*guard.value() == 43);
+            expect_eq!(*guard.value(), 43);
         }
     }
 
@@ -583,21 +583,21 @@ mod ksync_tests {
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
-            expect_true!(*guard.value() == 10);
+            expect_eq!(*guard.value(), 10);
             *guard.as_mut().value_mut() = 20;
             let res = guard.as_mut().call_unlocked(|| 99);
-            expect_true!(res == 99);
+            expect_eq!(res, 99);
         }
 
         {
             ksync::lock!(let mut guard = obj.lock_mu_policy::<ksync::RawCriticalMutexPolicy>());
-            expect_true!(*guard.value() == 20);
+            expect_eq!(*guard.value(), 20);
             *guard.as_mut().value_mut() = 30;
         }
 
         {
             ksync::lock!(let guard = obj.lock_mu());
-            expect_true!(*guard.value() == 30);
+            expect_eq!(*guard.value(), 30);
         }
     }
 
@@ -615,27 +615,27 @@ mod ksync_tests {
 
         {
             ksync::lock!(let mut guard = obj.lock_mu());
-            expect_true!(*guard.value() == 10);
+            expect_eq!(*guard.value(), 10);
             *guard.as_mut().value_mut() = 20;
 
             ksync::lock!(let mut mguard = mobj.lock_mu_policy::<ksync::NoIrqSavePolicy>(ksync::source_tag!()));
-            expect_true!(*mguard.value() == 50);
+            expect_eq!(*mguard.value(), 50);
             *mguard.as_mut().value_mut() = 60;
         }
 
         {
             ksync::lock!(let mut mguard = mobj.lock_mu(ksync::source_tag!()));
-            expect_true!(*mguard.value() == 60);
+            expect_eq!(*mguard.value(), 60);
             let res = mguard.as_mut().call_unlocked(|| 77);
-            expect_true!(res == 77);
+            expect_eq!(res, 77);
             *mguard.as_mut().value_mut() = 70;
         }
 
         {
             ksync::lock!(let guard = obj.lock_mu());
-            expect_true!(*guard.value() == 20);
+            expect_eq!(*guard.value(), 20);
             ksync::lock!(let mguard = mobj.lock_mu(ksync::source_tag!()));
-            expect_true!(*mguard.value() == 70);
+            expect_eq!(*mguard.value(), 70);
         }
     }
 
@@ -672,7 +672,7 @@ mod ksync_tests {
             // Using the proof token from `guard`, read `target.value`.
             // SAFETY: `guard` holds `real_obj.mu`, which protects `target`.
             unsafe {
-                expect_true!(*target.guard_mu(guard.token()).value() == 1);
+                expect_eq!(*target.guard_mu(guard.token()).value(), 1);
 
                 // Modify `target.value` using the mutable token from `guard`.
                 *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 200;
@@ -683,7 +683,7 @@ mod ksync_tests {
             // Lock `real_obj` directly using `GuardedMutexObj`'s own guard to verify
             // that we read back the same value (200) that was written via `phantom_obj`.
             ksync::lock!(let guard = real_obj.lock_mu());
-            expect_true!(*guard.value() == 200);
+            expect_eq!(*guard.value(), 200);
         }
     }
 
@@ -708,14 +708,14 @@ mod ksync_tests {
             let target = guard.target().clone();
             // SAFETY: `guard` holds `real_obj.mu`, which protects `target`.
             unsafe {
-                expect_true!(*target.guard_mu(guard.token()).value() == 42);
+                expect_eq!(*target.guard_mu(guard.token()).value(), 42);
                 *target.guard_mu_mut(guard.as_mut().token_mut()).value_mut() = 99;
             }
         }
 
         {
             ksync::lock!(let guard = real_obj.lock_mu());
-            expect_true!(*guard.value() == 99);
+            expect_eq!(*guard.value(), 99);
         }
     }
 
@@ -729,18 +729,18 @@ mod ksync_tests {
 
         {
             ksync::lock!(let guard = obj.read_lock());
-            expect_true!(*guard.value() == 10);
+            expect_eq!(*guard.value(), 10);
         }
 
         {
             ksync::lock!(let mut guard = obj.write_lock());
-            expect_true!(*guard.value() == 10);
+            expect_eq!(*guard.value(), 10);
             *guard.as_mut().value_mut() = 20;
         }
 
         {
             ksync::lock!(let guard = obj.read_lock());
-            expect_true!(*guard.value() == 20);
+            expect_eq!(*guard.value(), 20);
         }
     }
 
@@ -754,13 +754,13 @@ mod ksync_tests {
         .unwrap();
 
         ksync::lock!(let mut guard = obj.lock_mu());
-        expect_true!(*guard.value() == 10);
+        expect_eq!(*guard.value(), 10);
 
         let res = guard.as_mut().call_unlocked(|| 42);
-        expect_true!(res == 42);
+        expect_eq!(res, 42);
 
         *guard.as_mut().value_mut() = 25;
-        expect_true!(*guard.value() == 25);
+        expect_eq!(*guard.value(), 25);
     }
 
     /// test AliasedLock in kernel
@@ -785,7 +785,7 @@ mod ksync_tests {
             // SAFETY: `real_obj` and `phantom_obj` are both protected by `real_obj.mu`, and
             // `_t2_mut` is unused.
             unsafe {
-                expect_true!(*real_obj.guard_mu(t1).value() == 10);
+                expect_eq!(*real_obj.guard_mu(t1).value(), 10);
                 expect_true!(core::ptr::eq(&**phantom_obj.guard_mu(t2).target(), &*real_obj));
 
                 let (t1_mut, _t2_mut) = guard.as_mut().tokens_mut();
@@ -793,17 +793,17 @@ mod ksync_tests {
             }
 
             let res = guard.as_mut().call_unlocked(|| 99);
-            expect_true!(res == 99);
+            expect_eq!(res, 99);
 
             let (t1, _t2) = guard.tokens();
             // SAFETY: `t1` is backed by `real_obj.mu`.
             unsafe {
-                expect_true!(*real_obj.guard_mu(t1).value() == 55);
+                expect_eq!(*real_obj.guard_mu(t1).value(), 55);
             }
         }
 
         ksync::lock!(let guard = real_obj.lock_mu());
-        expect_true!(*guard.value() == 55);
+        expect_eq!(*guard.value(), 55);
     }
 
     #[ksync::guarded]
@@ -823,9 +823,9 @@ mod ksync_tests {
         }));
 
         ksync::lock!(let mut guard = obj.lock_seek_lock());
-        expect_true!(*guard.seek() == 0);
+        expect_eq!(*guard.seek(), 0);
         *guard.as_mut().seek_mut() = 4096;
-        expect_true!(*guard.seek() == 4096);
+        expect_eq!(*guard.seek(), 4096);
     }
 
     ksync::declare_singleton_mutex!(TestKernelSingletonMutex);
@@ -842,27 +842,27 @@ mod ksync_tests {
         // SAFETY: All singleton locks and C++ test helper pointers/sizes are valid static objects.
         unsafe {
             expect_true!(cpp_verify_mutex_id(
-                lock1 as *const _ as *const core::ffi::c_void,
+                (&raw const *lock1).cast::<core::ffi::c_void>(),
                 <TestKernelSingletonMutex as ksync::LockClass>::ID,
             ));
             expect_true!(cpp_verify_critical_mutex_id(
-                TestKernelSingletonCriticalMutex::Get() as *const _ as *const core::ffi::c_void,
+                (&raw const *TestKernelSingletonCriticalMutex::Get()).cast::<core::ffi::c_void>(),
                 <TestKernelSingletonCriticalMutex as ksync::LockClass>::ID,
             ));
             expect_true!(cpp_verify_spinlock_id(
-                TestKernelSingletonSpinlock::Get() as *const _ as *const core::ffi::c_void,
+                (&raw const *TestKernelSingletonSpinlock::Get()).cast::<core::ffi::c_void>(),
                 <TestKernelSingletonSpinlock as ksync::LockClass>::ID,
             ));
 
             // Compare total sizes of Rust-declared singletons vs C++-declared singletons.
             let rust_mutex_size = core::mem::size_of_val(lock1);
             let cpp_mutex_size = cpp_get_test_singleton_mutex_size();
-            expect_true!(rust_mutex_size == cpp_mutex_size);
+            expect_eq!(rust_mutex_size, cpp_mutex_size);
 
             let rust_critical_size =
                 core::mem::size_of_val(TestKernelSingletonCriticalMutex::Get());
             let cpp_critical_size = cpp_get_test_singleton_critical_mutex_size();
-            expect_true!(rust_critical_size == cpp_critical_size);
+            expect_eq!(rust_critical_size, cpp_critical_size);
 
             // Compare raw mutex storage byte-by-byte between Rust and C++.
             let cpp_raw_ptr = cpp_get_test_singleton_mutex_raw_lock_ptr();
@@ -955,7 +955,7 @@ mod ksync_tests {
 
             let token_mut = guard.as_mut().token_mut();
             let val = TEST_CELL.get_or_init(|| 12345u64, token_mut);
-            expect_true!(*val == 12345);
+            expect_eq!(*val, 12345);
 
             let token = guard.token();
             expect_true!(TEST_CELL.is_initialized(token));
@@ -985,7 +985,7 @@ mod ksync_tests {
             ksync::lock!(let mut guard = obj.lock_mu());
             let mut once_cell = guard.as_mut().once_val_cell();
             let val = once_cell.get_or_init(|| 42);
-            expect_true!(*val == 42);
+            expect_eq!(*val, 42);
 
             // Read after init
             expect_true!(guard.once_val() == Some(&42));
@@ -1033,7 +1033,7 @@ mod ksync_tests {
             g.as_mut().release();
 
             ksync::lock!(let g2 = s1.lock_mu());
-            expect_true!(*g2.value() == 11);
+            expect_eq!(*g2.value(), 11);
         }
 
         // Test multi-lock in [s1, s2] and [s2, s1] order with early release
@@ -1057,15 +1057,15 @@ mod ksync_tests {
             let [t1, t2] = guards.tokens();
             // SAFETY: Both `s1.mu` and `s2.mu` are held by `guards`.
             unsafe {
-                expect_true!(*s1.guard_mu(t1).value() == 100);
-                expect_true!(*s2.guard_mu(t2).value() == 200);
+                expect_eq!(*s1.guard_mu(t1).value(), 100);
+                expect_eq!(*s2.guard_mu(t2).value(), 200);
             }
             guards.as_mut().release();
 
             ksync::lock!(let g1 = s1.lock_mu());
             ksync::lock!(let g2 = s2.lock_mu());
-            expect_true!(*g1.value() == 100);
-            expect_true!(*g2.value() == 200);
+            expect_eq!(*g1.value(), 100);
+            expect_eq!(*g2.value(), 200);
         }
     }
 
@@ -1096,25 +1096,25 @@ mod ksync_tests {
 
         {
             ksync::lock!(let g1 = obj.lock_mu1());
-            expect_true!(*g1.val1() == 1);
-            expect_true!(*g1.shared() == 10);
+            expect_eq!(*g1.val1(), 1);
+            expect_eq!(*g1.shared(), 10);
         }
 
         {
             ksync::lock!(let g2 = obj.lock_mu2());
-            expect_true!(*g2.val2() == 2);
-            expect_true!(*g2.shared() == 10);
+            expect_eq!(*g2.val2(), 2);
+            expect_eq!(*g2.shared(), 10);
         }
 
         {
             ksync::lock!(let mut g1 = obj.lock_mu1());
             ksync::lock!(let mut g2 = obj.lock_mu2());
             *g1.as_mut().shared_mut(&mut g2) = 20;
-            expect_true!(*g1.shared() == 20);
-            expect_true!(*g2.shared() == 20);
+            expect_eq!(*g1.shared(), 20);
+            expect_eq!(*g2.shared(), 20);
 
             *g2.as_mut().shared_mut(&mut g1) = 30;
-            expect_true!(*g1.shared() == 30);
+            expect_eq!(*g1.shared(), 30);
         }
     }
 
@@ -1127,6 +1127,108 @@ mod ksync_tests {
         }));
 
         ksync::lock!(let guard = obj.read_lock());
-        expect_true!(*guard.value() == 42);
+        expect_eq!(*guard.value(), 42);
+    }
+
+    #[ksync::guarded]
+    struct GuardedGenericLockObj<L: ksync::RawLock> {
+        #[mutex]
+        mu: ksync::KMutex<L>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    /// test #[ksync::guarded] with generic lock types
+    #[test]
+    fn generic_lock_guarded_test() {
+        stack_pin_init!(let mutex_obj = pin_init!(GuardedGenericLockObj::<ksync::RawMutex> {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+        stack_pin_init!(let crit_obj = pin_init!(GuardedGenericLockObj::<ksync::RawCriticalMutex> {
+            mu <- ksync::KMutex::init(),
+            value: 20.into(),
+        }));
+        stack_pin_init!(let spin_obj = pin_init!(GuardedGenericLockObj::<ksync::RawSpinlock> {
+            mu <- ksync::KMutex::init(),
+            value: 30.into(),
+        }));
+        stack_pin_init!(
+            let mon_obj = pin_init!(GuardedGenericLockObj::<ksync::RawMonitoredSpinlock> {
+                mu <- ksync::KMutex::init(),
+                value: 40.into(),
+            })
+        );
+
+        // SAFETY: All four objects have initialized `KMutex` instances of the corresponding raw
+        // lock types.
+        unsafe {
+            assert_true!(cpp_verify_mutex_id(
+                core::ptr::from_ref(&mutex_obj.mu).cast::<core::ffi::c_void>(),
+                <GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID,
+            ));
+            assert_true!(cpp_verify_critical_mutex_id(
+                core::ptr::from_ref(&crit_obj.mu).cast::<core::ffi::c_void>(),
+                <GuardedGenericLockObjMuClass<ksync::RawCriticalMutex> as ksync::LockClass>::ID,
+            ));
+            assert_true!(cpp_verify_spinlock_id(
+                core::ptr::from_ref(&spin_obj.mu).cast::<core::ffi::c_void>(),
+                <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID,
+            ));
+            assert_true!(cpp_verify_monitored_spinlock_id(
+                core::ptr::from_ref(&mon_obj.mu).cast::<core::ffi::c_void>(),
+                <GuardedGenericLockObjMuClass<ksync::RawMonitoredSpinlock> as ksync::LockClass>::ID,
+            ));
+        }
+
+        // Verify that IRQ-safe and non-IRQ-safe instantiations select distinct LockClass IDs
+        // when lockdep metadata/validation is enabled.
+        if !<GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID.is_null() {
+            expect_true!(
+                <GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID
+                    != <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID
+            );
+        } else {
+            expect_true!(
+                <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID
+                    .is_null()
+            );
+        }
+
+        {
+            ksync::lock!(let mut g = mutex_obj.lock_mu());
+            expect_eq!(*g.value(), 10);
+            *g.as_mut().value_mut() = 11;
+            expect_eq!(*g.value(), 11);
+        }
+
+        {
+            ksync::lock!(let mut g = crit_obj.lock_mu());
+            expect_eq!(*g.value(), 20);
+            *g.as_mut().value_mut() = 21;
+            expect_eq!(*g.value(), 21);
+        }
+
+        // Verify that GuardedGenericLockObj<RawSpinlock> registers LOCK_FLAGS_IRQ_SAFE so it can
+        // be acquired while holding another IRQ-safe spinlock without triggering a lockdep
+        // violation.
+        stack_pin_init!(let outer = pin_init!(GuardedSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 0.into(),
+        }));
+        {
+            ksync::lock!(let _outer_guard = outer.lock_mu());
+            ksync::lock!(let mut g = spin_obj.lock_mu());
+            expect_eq!(*g.value(), 30);
+            *g.as_mut().value_mut() = 31;
+            expect_eq!(*g.value(), 31);
+        }
+
+        {
+            ksync::lock!(let mut g = mon_obj.lock_mu_with(ksync::source_tag!()));
+            expect_eq!(*g.value(), 40);
+            *g.as_mut().value_mut() = 41;
+            expect_eq!(*g.value(), 41);
+        }
     }
 }

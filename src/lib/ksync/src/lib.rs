@@ -152,8 +152,9 @@ pub use kmutex::{
 };
 pub use lock_token::{ExclusiveLockToken, LockToken, LockTokenRead, LockTokenWrite};
 pub use lockdep::{
-    LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_NESTABLE, LOCK_FLAGS_NONE, LOCK_FLAGS_SINGLETON_LOCK,
-    LockClass, LockClassRegistration, LockFlags,
+    LOCK_FLAGS_IRQ_SAFE, LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_NESTABLE, LOCK_FLAGS_NONE,
+    LOCK_FLAGS_SINGLETON_LOCK, LOCK_FLAGS_TRACKING_DISABLED, LockClass, LockClassRegistration,
+    LockFlags,
 };
 pub use lockdep_tracked::{
     LockdepTracked, LockdepTrackedGuardState, OrderedGuardState, OrderedLockPolicy,
