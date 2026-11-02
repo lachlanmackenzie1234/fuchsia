@@ -35,6 +35,7 @@ if (is_host) {
       "handlers/driver_list.py",
       "handlers/evaluate.py",
       "handlers/finish.py",
+      "handlers/frame_utils.py",
       "handlers/get_state.py",
       "handlers/handles.py",
       "handlers/hello.py",

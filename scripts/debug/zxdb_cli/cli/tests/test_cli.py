@@ -9,7 +9,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
 
 from cli.cli import main, send_command
-from cli.commands.break_cmd import resolve_path
+from cli.commands.location_utils import resolve_path
 from cli.commands.stop import stop_daemon
 from daemon_manager.manager import (
     UDS_PATH,
@@ -512,7 +512,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             VariablesRequest(thread_id=1, frame_index=2)
         )
 
-    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.commands.location_utils.resolve_path", autospec=True)
     @patch("cli.cli.send_command")
     async def test_break_command(
         self, mock_send: Mock, mock_resolve: Mock
@@ -527,7 +527,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             BreakRequest(file="/path/to/fuchsia/src/main.rs", line=12)
         )
 
-    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.commands.location_utils.resolve_path", autospec=True)
     @patch("cli.cli.send_command")
     async def test_break_command_aliases(
         self, mock_send: Mock, mock_resolve: Mock
@@ -565,7 +565,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             BreakRequest(file="/path/to/file.rs", line=12)
         )
 
-    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.commands.location_utils.resolve_path", autospec=True)
     async def test_break_command_invalid_format(
         self, mock_resolve: Mock
     ) -> None:
@@ -611,7 +611,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         res = resolve_path("missing/foo.rs")
         self.assertIsNone(res)
 
-    @patch("cli.commands.break_cmd.resolve_path")
+    @patch("cli.commands.location_utils.resolve_path", autospec=True)
     @patch("cli.cli.send_command")
     async def test_break_command_delete(
         self, mock_send: Mock, mock_resolve: Mock
