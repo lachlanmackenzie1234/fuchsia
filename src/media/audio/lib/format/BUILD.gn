@@ -65,6 +65,7 @@ fuchsia_unittest_package("audio_lib_format_unittests") {
 
   test_specs = {
     environments = basic_envs
+    parallel = 4
   }
 }
 

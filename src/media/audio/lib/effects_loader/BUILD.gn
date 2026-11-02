@@ -69,6 +69,7 @@ fuchsia_unittest_package("audio_effects_loader_unittests") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }
 

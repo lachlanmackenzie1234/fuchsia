@@ -37,5 +37,6 @@ fuchsia_unittest_package("audio_lib_simple_audio_stream_unittests") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }

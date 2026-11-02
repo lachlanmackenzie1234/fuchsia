@@ -68,4 +68,7 @@ cc_test_executable("unittest-bin") {
 
 fuchsia_unittest_package("audio_lib_format2_unittests") {
   deps = [ ":unittest-bin" ]
+  test_specs = {
+    parallel = 4
+  }
 }
