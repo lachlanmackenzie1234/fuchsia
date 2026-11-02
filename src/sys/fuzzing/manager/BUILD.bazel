@@ -80,7 +80,6 @@ rustc_test(
     crate = ":bin",
     # Needed for bazel2gn output_name to match meta/unittests.cml program.binary.
     crate_name = "fuzz_manager_bin_test",
-    tags = ["manual"],
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ["//sdk/fidl/fuchsia.mem:fuchsia.mem_rust"],
 )

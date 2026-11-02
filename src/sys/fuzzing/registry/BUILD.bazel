@@ -74,7 +74,6 @@ rustc_test(
     crate = ":bin",
     # Needed for bazel2gn output_name to match meta/unittests.cml program.binary.
     crate_name = "fuzz_registry_bin_test",
-    tags = ["manual"],
     target_compatible_with = ["@platforms//os:fuchsia"],
 )
 
