@@ -1040,6 +1040,12 @@
             ]
         },
         {
+            "name": "MountTest.MountSocketDenied",
+            "audit_expectations": [
+                "avc:  denied  { setopt } for path=\"socket:[947]\" dev=\"sockfs\" ino=947 scontext=test_u:test_r:test_mount_relabel_self_allowed_t:s0 tcontext=test_u:test_r:test_mount_relabel_self_allowed_t:s0 tclass=unix_stream_socket permissive=0"
+            ]
+        },
+        {
             "name": "MountTest.RootContextRequiresRelabelFromAndAssociate",
             "audit_expectations": [
                 "avc:  denied  { relabelfrom } for scontext=test_u:test_r:test_mount_relabelfrom_denied_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=0",
