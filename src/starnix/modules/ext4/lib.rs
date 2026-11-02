@@ -160,9 +160,10 @@ impl FsNodeOps for ExtDirectory {
             .iter()
             .find(|e| e.name_bytes() == name)
             .ok_or_else(|| errno!(ENOENT, name))?;
-        let ext_node = ExtNode::new(fs_ops, entry.e2d_ino.into())?;
-        let inode_num = ext_node.inode_num as ino_t;
+        let raw_inode_num: u32 = entry.e2d_ino.into();
+        let inode_num = raw_inode_num as ino_t;
         fs.get_or_create_node(inode_num, || {
+            let ext_node = ExtNode::new(fs_ops, raw_inode_num)?;
             let entry_type = EntryType::from_u8(entry.e2d_type).map_err(|e| errno!(EIO, e))?;
             let info = fs_node_info_from_ext_node(&ext_node);
 
