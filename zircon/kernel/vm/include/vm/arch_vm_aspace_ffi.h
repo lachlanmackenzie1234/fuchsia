@@ -45,6 +45,7 @@ zx_status_t cpp_arch_vm_aspace_mark_accessed(ArchVmAspace* aspace, vaddr_t vaddr
 bool cpp_arch_vm_aspace_accessed_since_last_check(ArchVmAspace* aspace, bool clear);
 paddr_t cpp_arch_vm_aspace_arch_table_phys(ArchVmAspace* aspace);
 vaddr_t cpp_arch_vm_aspace_next_user_page_table_offset(vaddr_t va);
+void cpp_arch_vm_aspace_handoff_page_tables_from_physboot(VmPageDoublyLinkedList* mmu_pages);
 
 __END_CDECLS
 

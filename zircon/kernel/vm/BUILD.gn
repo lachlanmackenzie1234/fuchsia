@@ -534,6 +534,7 @@ kernel_bindgen_crate("arch-vm-aspace-bindings") {
     "cpp_arch_vm_aspace_arch_table_phys",
     "cpp_arch_vm_aspace_destroy",
     "cpp_arch_vm_aspace_disable_updates",
+    "cpp_arch_vm_aspace_handoff_page_tables_from_physboot",
     "cpp_arch_vm_aspace_harvest_accessed",
     "cpp_arch_vm_aspace_init",
     "cpp_arch_vm_aspace_init_restricted",
@@ -565,6 +566,7 @@ kernel_bindgen_crate("arch-vm-aspace-bindings") {
   function_blocklist = [ "ArchVmAspace_.*" ]
   type_blocklist = [
     "ArchVmAspace_.*",
+    "VmPageDoublyLinkedList",
     "paddr_t",
     "vaddr_t",
     "zx_paddr_t",
@@ -582,6 +584,7 @@ kernel_bindgen_crate("arch-vm-aspace-bindings") {
   raw_lines = [
     "#![no_std]",
     "pub use zx_types::{zx_paddr_t as paddr_t, zx_status_t, zx_vaddr_t as vaddr_t};",
+    "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
   ]
   expect_lints = [
     "non_camel_case_types",

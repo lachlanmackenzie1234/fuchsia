@@ -94,6 +94,10 @@ FFI_ALWAYS_INLINE paddr_t cpp_arch_vm_aspace_arch_table_phys(ArchVmAspace* aspac
 FFI_ALWAYS_INLINE vaddr_t cpp_arch_vm_aspace_next_user_page_table_offset(vaddr_t va) {
   return ArchVmAspace::NextUserPageTableOffset(va);
 }
+FFI_ALWAYS_INLINE void cpp_arch_vm_aspace_handoff_page_tables_from_physboot(
+    VmPageDoublyLinkedList* mmu_pages) {
+  ArchVmAspace::HandoffPageTablesFromPhysboot(mmu_pages);
+}
 
 FFI_ALWAYS_INLINE paddr_t cpp_kernel_physical_address_of(uintptr_t va) {
   return KernelPhysicalAddressOf(va);

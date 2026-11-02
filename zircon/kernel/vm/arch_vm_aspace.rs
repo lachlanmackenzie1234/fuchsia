@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::types::PAddr;
+use crate::vm::page::VmPageDoublyLinkedList;
 use arch_vm_aspace_bindings as bindings;
 use bindings::zx_status_t;
 use core::ptr;
@@ -470,5 +471,25 @@ impl ArchVmAspace {
     pub fn next_user_page_table_offset(va: usize) -> usize {
         // SAFETY: This has no preconditions.
         unsafe { bindings::cpp_arch_vm_aspace_next_user_page_table_offset(va) }
+    }
+
+    /// Transfer ownership of pre-PMM kernel page table pages from physboot to the arch VM
+    /// backend.
+    ///
+    /// # Safety
+    ///
+    /// Every page in `mmu_pages` must be a valid allocated kernel page table page handed off from
+    /// physboot during early boot.
+    pub unsafe fn handoff_page_tables_from_physboot(
+        mmu_pages: core::pin::Pin<&mut VmPageDoublyLinkedList>,
+    ) {
+        // SAFETY: `VmPageDoublyLinkedList` is binary layout compatible with C++'s
+        // `DoublyLinkedList`, so a typecast here is fine.  The called function also does not move
+        // the mmu_pages list, so the pinned invariant is maintained.
+        unsafe {
+            bindings::cpp_arch_vm_aspace_handoff_page_tables_from_physboot(
+                (mmu_pages.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
+            );
+        }
     }
 }
