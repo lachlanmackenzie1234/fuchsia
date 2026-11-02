@@ -133,7 +133,6 @@ inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     "#meta/qemu-arm64.cm",
     "#meta/qemu-audio-codec.cm",
     "#meta/qmi-fake-transport.cm",
-    "#meta/qmi-transport.cm",
     "#meta/ram-nand.cm",
     "#meta/ramdisk.cm",
     "#meta/realtek-audio-codec.cm",

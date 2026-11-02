@@ -30,7 +30,6 @@ fidl("fuchsia.hardware.ethernet") {
     "//src/connectivity/ethernet/drivers/realtek-8111:*",
     "//src/connectivity/ethernet/drivers/rndis-host:*",
     "//src/connectivity/ethernet/drivers/usb-cdc-ecm:*",
-    "//src/connectivity/telephony/drivers/qmi-usb-transport:*",
     "//src/connectivity/wlan/drivers/wlansoftmac:*",
     "//src/lib/ddktl/tests:ddktl-test",
   ]

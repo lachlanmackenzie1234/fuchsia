@@ -60,7 +60,6 @@ shared_library("driver") {
     "//src/connectivity/openthread/drivers/ot-radio:*",
     "//src/connectivity/openthread/tests/fake-drivers/fake-ot-radio:*",
     "//src/connectivity/telephony/drivers/qmi-fake-transport:*",
-    "//src/connectivity/telephony/drivers/qmi-usb-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/at-fake-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/fake-transport-base:*",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:*",
