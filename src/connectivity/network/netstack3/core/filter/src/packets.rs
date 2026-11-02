@@ -2549,10 +2549,7 @@ impl<I: IpExt, B: BufferMut> PartialSerializer<NetworkSerializationContext> for 
         buffer.with_parts_mut(|_prefix, mut body, _suffix| {
             body.copy_from_slice(&self.body.as_ref()[..bytes_to_copy]);
         });
-        let total_size = cmp::max(
-            constraints.min_body_len(),
-            cmp::min(self.body.len(), constraints.max_body_len()),
-        );
+        let total_size = cmp::min(self.body.len(), constraints.max_body_len());
         Ok((buffer, total_size))
     }
 }
