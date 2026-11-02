@@ -225,7 +225,7 @@ sapphire-hci = "0.1.0"
 sapphire-host = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
-schemars = { version = "1.2.2", features = ["chrono04", "preserve_order"] }
+schemars = { version = "1.2.3", features = ["chrono04", "preserve_order"] }
 scopeguard = "1.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_derive = "1.0.229"

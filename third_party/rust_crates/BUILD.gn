@@ -2077,11 +2077,11 @@ group("sapphire-sync-0.1.0") {
 }
 
 group("schemars") {
-  public_deps = [ ":schemars-v1_2_2" ]
+  public_deps = [ ":schemars-v1_2_3" ]
 }
 
-group("schemars-1.2.2") {
-  public_deps = [ ":schemars-v1_2_2" ]
+group("schemars-1.2.3") {
+  public_deps = [ ":schemars-v1_2_3" ]
 }
 
 group("scopeguard") {
@@ -20302,15 +20302,15 @@ rustc_library("schannel-v0_1_29") {
   applicable_licenses = [ ":schannel-v0_1_29.license" ]
 }
 
-license("schemars-v1_2_2.license") {
+license("schemars-v1_2_3.license") {
   public_package_name = "schemars"
-  license_files = [ "//third_party/rust_crates/vendor/schemars-1.2.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/schemars-1.2.3/LICENSE" ]
 }
 
-rustc_library("schemars-v1_2_2") {
+rustc_library("schemars-v1_2_3") {
   crate_name = "schemars"
-  source_root = "//third_party/rust_crates/vendor/schemars-1.2.2/src/lib.rs"
-  output_name = "schemars-f5cb02840e5408d4"
+  source_root = "//third_party/rust_crates/vendor/schemars-1.2.3/src/lib.rs"
+  output_name = "schemars-6daca7d91e2b59b7"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20320,7 +20320,7 @@ rustc_library("schemars-v1_2_2") {
   deps += [ ":chrono-v0_4_45" ]
   deps += [ ":dyn-clone-v1_0_20" ]
   deps += [ ":ref-cast-v1_0_27" ]
-  deps += [ ":schemars_derive-v1_2_2($host_toolchain)" ]
+  deps += [ ":schemars_derive-v1_2_3($host_toolchain)" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_154" ]
 
@@ -20328,8 +20328,8 @@ rustc_library("schemars-v1_2_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f5cb02840e5408d4",
-    "-Cextra-filename=-f5cb02840e5408d4",
+    "-Cmetadata=6daca7d91e2b59b7",
+    "-Cextra-filename=-6daca7d91e2b59b7",
     "--cfg=feature=\"chrono04\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
@@ -20343,20 +20343,20 @@ rustc_library("schemars-v1_2_2") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":schemars-v1_2_2.license" ]
+  applicable_licenses = [ ":schemars-v1_2_3.license" ]
 }
 
-license("schemars_derive-v1_2_2.license") {
+license("schemars_derive-v1_2_3.license") {
   public_package_name = "schemars_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/schemars_derive-1.2.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/schemars_derive-1.2.3/LICENSE" ]
 }
 
-rustc_macro("schemars_derive-v1_2_2") {
+rustc_macro("schemars_derive-v1_2_3") {
   crate_name = "schemars_derive"
   source_root =
-      "//third_party/rust_crates/vendor/schemars_derive-1.2.2/src/lib.rs"
-  output_name = "schemars_derive-d830646030d2416a"
+      "//third_party/rust_crates/vendor/schemars_derive-1.2.3/src/lib.rs"
+  output_name = "schemars_derive-3b85329ba3641c11"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20372,13 +20372,13 @@ rustc_macro("schemars_derive-v1_2_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d830646030d2416a",
-    "-Cextra-filename=-d830646030d2416a",
+    "-Cmetadata=3b85329ba3641c11",
+    "-Cextra-filename=-3b85329ba3641c11",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":schemars_derive-v1_2_2.license" ]
+  applicable_licenses = [ ":schemars_derive-v1_2_3.license" ]
 }
 
 license("scoped-tls-v1_0_1.license") {
