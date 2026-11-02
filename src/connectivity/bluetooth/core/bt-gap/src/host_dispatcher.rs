@@ -229,7 +229,12 @@ enum SuppressConnectionsState {
     NotSuppressed,
     Pending {
         session: Weak<SuppressConnectionsSession>,
+        // The host on which SetConnectable(false) is in flight or SetConnectable(true) was
+        // deferred.
         host_id: Option<HostId>,
+        // True if a bredr_connectable_mode: Some(true) update was inhibited on `host_id` while
+        // suppression was pending and must be restored if the pending suppression fails.
+        deferred_connectable: bool,
         // Additional client requests for connection suppression made while suppression is
         // asynchronously starting.
         session_receiver: Shared<oneshot::Receiver<Arc<SuppressConnectionsSession>>>,
@@ -342,14 +347,8 @@ impl Drop for SuppressConnectionsSession {
     fn drop(&mut self) {
         let mut write = self.dispatcher_state.write();
         if let Some(host_id) = write.suppress_connections.stop_suppression_session() {
-            if let Some(host) = write.host_devices.get(&host_id).cloned() {
-                let fut = host.set_connectable(true);
-                fasync::Task::spawn(async move {
-                    if let Err(e) = fut.await {
-                        warn!("Unexpected error response when enabling connectable: {:?}", e);
-                    }
-                })
-                .detach();
+            if let Some(fut) = write.restore_host_connectable(host_id) {
+                fasync::Task::spawn(fut).detach();
             }
         }
     }
@@ -723,6 +722,24 @@ impl HostDispatcherState {
         })
         .detach();
     }
+
+    /// Returns a future that re-enables connectability on `host_id` if policy
+    /// (`config_settings.bredr.connectable`) permits it.
+    fn restore_host_connectable(
+        &self,
+        host_id: HostId,
+    ) -> Option<impl Future<Output = ()> + use<>> {
+        if !self.config_settings.bredr.connectable {
+            return None;
+        }
+        let host = self.host_devices.get(&host_id)?;
+        let fut = host.set_connectable(true);
+        Some(async move {
+            if let Err(e) = fut.await {
+                warn!("Unexpected error response when enabling connectable: {:?}", e);
+            }
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -838,13 +855,49 @@ impl HostDispatcher {
     }
 
     pub async fn apply_sys_settings(&self, new_settings: sys::Settings) -> build_config::Config {
-        let (host_devices, new_config) = {
+        let (apply_futs, new_config) = {
             let mut state = self.state.write();
             state.config_settings = state.config_settings.update_with_sys_settings(&new_settings);
-            (state.host_devices.clone(), state.config_settings.clone())
+            let active_id = state.active_id;
+            let suppressed_host_id = match &mut state.suppress_connections {
+                SuppressConnectionsState::NotSuppressed => None,
+                SuppressConnectionsState::Pending { host_id, deferred_connectable, .. } => {
+                    let target_id = (*host_id).or(active_id);
+                    if let Some(connectable) = new_settings.bredr_connectable_mode {
+                        if connectable && target_id.is_some() {
+                            *host_id = target_id;
+                            *deferred_connectable = true;
+                        } else {
+                            *deferred_connectable = false;
+                        }
+                    }
+                    target_id
+                }
+                SuppressConnectionsState::Suppressed { host_id, .. } => Some(*host_id),
+            };
+            let mut suppressed_settings = new_settings.clone();
+            if suppressed_settings.bredr_connectable_mode == Some(true) {
+                // Connections are currently suppressed by active procedure tokens.
+                // Inhibit enabling connectability on the suppressed host controller now so the
+                // suppression policy remains in effect. The new policy has been recorded
+                // in config_settings and will take effect when the suppression tokens are dropped.
+                suppressed_settings.bredr_connectable_mode = None;
+            }
+            let apply_futs: Vec<_> = state
+                .host_devices
+                .iter()
+                .map(|(host_id, device)| {
+                    let settings = if suppressed_host_id == Some(*host_id) {
+                        &suppressed_settings
+                    } else {
+                        &new_settings
+                    };
+                    (*host_id, device.clone(), device.apply_sys_settings(settings))
+                })
+                .collect();
+            (apply_futs, state.config_settings.clone())
         };
-        for (host_id, device) in host_devices {
-            let fut = device.apply_sys_settings(&new_settings);
+        for (host_id, device, fut) in apply_futs {
             if let Err(e) = fut.await {
                 warn!("Unable to apply new settings to host {}: {:?}", host_id, e);
                 let failed_host_path = device.path();
@@ -1061,11 +1114,28 @@ impl HostDispatcher {
         fasync::Task::spawn(async move {
             debug!("suppress_connections_task: waiting for suppress_connections_on_active_host");
             let Ok(host) = hd.suppress_connections_on_active_host(&session).await else {
-                // On failure (host init timeout), revert state to NotSuppressed if still in the
-                // Pending state for this session, and drop Pending state outside the write lock to
-                // notify Receivers.
-                let _old_state =
-                    hd.state.write().suppress_connections.clear_pending_if_matching(&session);
+                // On failure (host init timeout or FIDL error), revert state to NotSuppressed if
+                // still in the Pending state for this session, and drop Pending state outside the
+                // write lock to notify Receivers.
+                let (old_state, restore_fut) = {
+                    let mut write = hd.state.write();
+                    let old_state = write.suppress_connections.clear_pending_if_matching(&session);
+                    let restore_fut = if let Some(SuppressConnectionsState::Pending {
+                        host_id: Some(target_id),
+                        deferred_connectable: true,
+                        ..
+                    }) = &old_state
+                    {
+                        write.restore_host_connectable(*target_id)
+                    } else {
+                        None
+                    };
+                    (old_state, restore_fut)
+                };
+                drop(old_state);
+                if let Some(fut) = restore_fut {
+                    fut.await;
+                }
                 return;
             };
             debug!("suppress_connections_task: suppressed connections on host successfully");
@@ -1128,6 +1198,7 @@ impl HostDispatcher {
         self.state.write().suppress_connections = SuppressConnectionsState::Pending {
             session: weak_session,
             host_id: None,
+            deferred_connectable: false,
             session_receiver: session_receiver.clone(),
             session_sender,
             _start_suppression_task: start_suppression_task,
@@ -1635,6 +1706,7 @@ impl HostDispatcher {
             SuppressConnectionsState::Pending {
                 session,
                 host_id,
+                deferred_connectable,
                 session_receiver,
                 session_sender,
                 _start_suppression_task,
@@ -1647,16 +1719,14 @@ impl HostDispatcher {
                         write.suppress_connections = SuppressConnectionsState::Pending {
                             session,
                             host_id,
+                            deferred_connectable,
                             session_receiver,
                             session_sender,
                             _start_suppression_task,
                         };
                         return;
                     }
-                    restore_fut = write
-                        .host_devices
-                        .get(&old_host_id)
-                        .map(|old_host| old_host.set_connectable(true));
+                    restore_fut = write.restore_host_connectable(old_host_id);
                 }
                 // Stop the old suppression task, and restart suppression on the new host.
                 let session = session.upgrade().unwrap_or_else(|| {
@@ -1668,14 +1738,13 @@ impl HostDispatcher {
                 self.state.write().suppress_connections = SuppressConnectionsState::Pending {
                     session: weak_session,
                     host_id: None,
+                    deferred_connectable: false,
                     session_receiver,
                     session_sender,
                     _start_suppression_task: start_suppression_task,
                 };
                 if let Some(fut) = restore_fut {
-                    if let Err(e) = fut.await {
-                        warn!("Unexpected error response when enabling connectable: {:?}", e);
-                    }
+                    fut.await;
                 }
             }
             SuppressConnectionsState::Suppressed { session, host_id } => {
@@ -1686,10 +1755,7 @@ impl HostDispatcher {
                             SuppressConnectionsState::Suppressed { session, host_id };
                         return;
                     }
-                    let restore_fut = write
-                        .host_devices
-                        .get(&host_id)
-                        .map(|old_host| old_host.set_connectable(true));
+                    let restore_fut = write.restore_host_connectable(host_id);
                     info!("migrating Suppressed connection suppression to new host");
                     if let Some(strong_session) = session.upgrade() {
                         let (session_sender, session_receiver) = oneshot::channel();
@@ -1699,6 +1765,7 @@ impl HostDispatcher {
                         write.suppress_connections = SuppressConnectionsState::Pending {
                             session,
                             host_id: None,
+                            deferred_connectable: false,
                             session_receiver,
                             session_sender,
                             _start_suppression_task: start_suppression_task,
@@ -1707,9 +1774,7 @@ impl HostDispatcher {
                     restore_fut
                 };
                 if let Some(fut) = restore_fut {
-                    if let Err(e) = fut.await {
-                        warn!("Unexpected error response when enabling connectable: {:?}", e);
-                    }
+                    fut.await;
                 }
             }
         }
@@ -1990,6 +2055,7 @@ pub(crate) mod test {
 
     async fn handle_host_server_init(
         mut host_server: HostRequestStream,
+        expected_connectable: bool,
         restore_bonds_behavior: RestoreBondsBehavior,
     ) -> (HostRequestStream, GasEndpoints, BondingDelegateRequestStream) {
         let mut gas_endpoints = GasEndpoints::default();
@@ -2031,8 +2097,9 @@ pub(crate) mod test {
                         }
                         gas_endpoints.gatt_server = Some(gatt_server);
                     }
-                    Some(Ok(HostRequest::SetConnectable { responder, .. })) => {
-                        info!("Setting connectable");
+                    Some(Ok(HostRequest::SetConnectable { enabled, responder })) => {
+                        info!("Setting connectable: {}", enabled);
+                        assert_eq!(enabled, expected_connectable);
                         let _ = responder.send(Ok(()));
                     }
                     Some(Ok(HostRequest::SetBondingDelegate { delegate, .. })) => {
@@ -2081,8 +2148,10 @@ pub(crate) mod test {
         restore_bonds_behavior: RestoreBondsBehavior,
     ) -> types::Result<(HostRequestStream, HostDevice, GasEndpoints, BondingDelegateRequestStream)>
     {
+        let expected_connectable = dispatcher.state.read().config_settings.bredr.connectable;
         let (host_server, host_device) = HostDevice::mock_from_id(id);
-        let host_server_init_handler = handle_host_server_init(host_server, restore_bonds_behavior);
+        let host_server_init_handler =
+            handle_host_server_init(host_server, expected_connectable, restore_bonds_behavior);
         let (res, (host_server, gas_endpoints, bonding_delegate)) =
             join(dispatcher.add_host_device(&host_device), host_server_init_handler).await;
         res?;

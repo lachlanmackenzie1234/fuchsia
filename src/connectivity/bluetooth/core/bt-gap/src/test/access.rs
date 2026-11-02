@@ -1421,3 +1421,344 @@ async fn discovery_over_set_active_host() {
     .map(|_: ((), (), (), ())| ())
     .expect("successful execution")
 }
+
+#[fuchsia::test]
+async fn suppression_inhibits_config_update_connectable_true_until_token_drop() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    // Start with connectable configuration set to false.
+    let initial_config = hd
+        .apply_sys_settings(sys::Settings {
+            bredr_connectable_mode: Some(false),
+            ..Default::default()
+        })
+        .await;
+    assert!(!initial_config.bredr.connectable);
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    // Add a secondary inactive host (Host 2) to verify its connectability is updated directly
+    // even while Host 1 is suppressed.
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 receives SetConnectable(false) when suppression session is established
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Update configuration policy to connectable: true while suppression is active on Host 1.
+    let hd_clone = hd.clone();
+    let update_task = fuchsia_async::Task::spawn(async move {
+        hd_clone
+            .apply_sys_settings(sys::Settings {
+                bredr_connectable_mode: Some(true),
+                ..Default::default()
+            })
+            .await
+    });
+
+    // Inactive Host 2 immediately receives SetConnectable(true).
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on inactive host 2, got: {x:?}"),
+    }
+
+    let new_config = update_task.await;
+
+    // The baseline configuration was updated to true...
+    assert!(new_config.bredr.connectable);
+
+    // ...but SetConnectable(true) was inhibited on active Host 1 because suppression is active.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host_server_1 while suppressed"
+    );
+
+    // Dropping the suppression token should now restore connectability to Host 1.
+    drop(token);
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) upon token drop, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn config_update_connectable_false_persists_after_suppression_token_drop() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Host 1 receives SetConnectable(false) when suppression session is established
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Update configuration policy to connectable: false while suppression is active.
+    let hd_clone = hd.clone();
+    let update_task = fuchsia_async::Task::spawn(async move {
+        hd_clone
+            .apply_sys_settings(sys::Settings {
+                bredr_connectable_mode: Some(false),
+                ..Default::default()
+            })
+            .await
+    });
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    }
+    let new_config = update_task.await;
+    assert!(!new_config.bredr.connectable);
+
+    // Add Host 2 while suppression is active and switch active host to Host 2.
+    // Host 1 must receive Shutdown and must NOT have connectability re-enabled during migration
+    // because config_settings.bredr.connectable is false.
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    hd.set_active_host(HostId(2)).await.expect("set_active_host succeeds");
+
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 1, got: {x:?}"),
+    }
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after set_active_host when connectable config is false"
+    );
+
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false) on host 2 after migration, got: {x:?}"),
+    }
+
+    // Dropping the suppression token should NOT restore connectability to Host 2,
+    // because the configured policy is connectable: false.
+    drop(token);
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+
+    // Verify that dropping the token did NOT re-enable connectable because the configured
+    // policy is false.
+    assert!(
+        host_server_2.next().now_or_never().is_none(),
+        "Unexpected message received on host 2 after token drop"
+    );
+}
+
+#[fuchsia::test]
+async fn pending_suppression_failure_restores_deferred_connectable_true() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    // Start with connectable configuration set to false.
+    let initial_config = hd
+        .apply_sys_settings(sys::Settings {
+            bredr_connectable_mode: Some(false),
+            ..Default::default()
+        })
+        .await;
+    assert!(!initial_config.bredr.connectable);
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (_token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let fut = client.set_connection_policy(policy);
+
+    // Hold the SetConnectable(false) responder so suppression remains Pending on Host 1.
+    let responder_1 = match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => responder,
+        x => panic!("Expected SetConnectable(false), got: {x:?}"),
+    };
+
+    // Update configuration policy to connectable: true while suppression is Pending on Host 1.
+    let new_config = hd
+        .apply_sys_settings(sys::Settings {
+            bredr_connectable_mode: Some(true),
+            ..Default::default()
+        })
+        .await;
+    assert!(new_config.bredr.connectable);
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected SetConnectable(true) on host 1 while suppression is Pending"
+    );
+
+    // Fail the pending SetConnectable(false) request; deferred connectable: true must now be
+    // restored on Host 1.
+    responder_1.send(Err(sys::Error::Failed)).expect("valid response");
+    assert_matches!(fut.await, Ok(Err(sys::Error::Failed)));
+
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) after Pending suppression failure, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn pending_suppression_migration_restores_deferred_connectable_true() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    // Start with connectable configuration set to false.
+    let initial_config = hd
+        .apply_sys_settings(sys::Settings {
+            bredr_connectable_mode: Some(false),
+            ..Default::default()
+        })
+        .await;
+    assert!(!initial_config.bredr.connectable);
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let mut run_access_fut = Box::pin(access::run(hd.clone(), server));
+    // Poll once to enqueue watch_peers() registration before host creation runs the broker task.
+    assert!(futures::poll!(&mut run_access_fut).is_pending());
+
+    let (mut host_server_1, _host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let policy = AccessSetConnectionPolicyRequest {
+        suppress_bredr_connections: Some(server_token),
+        ..Default::default()
+    };
+    let mut fut = std::pin::pin!(client.set_connection_policy(policy));
+    assert!(futures::poll!(&mut fut).is_pending());
+    // Drive access::run once so suppress_connections() enters Pending { host_id: None, .. }
+    // before _start_suppression_task runs.
+    assert!(futures::poll!(&mut run_access_fut).is_pending());
+    let run_access_task = fuchsia_async::Task::spawn(run_access_fut);
+
+    // Update configuration policy to connectable: true while suppression is Pending on Host 1
+    // (before _start_suppression_task has run).
+    let mut update_fut = std::pin::pin!(hd.apply_sys_settings(sys::Settings {
+        bredr_connectable_mode: Some(true),
+        ..Default::default()
+    }));
+    assert!(futures::poll!(&mut update_fut).is_pending());
+
+    // Inactive Host 2 immediately receives SetConnectable(true).
+    match host_server_2.next().now_or_never().expect("request ready").expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on inactive host 2, got: {x:?}"),
+    }
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 while suppression is Pending"
+    );
+
+    // Migrate active adapter to Host 2 while suppression is still Pending on Host 1
+    // (before _start_suppression_task has run). Host 1 must receive Shutdown and have its
+    // inhibited SetConnectable(true) restored.
+    let mut set_active_fut = std::pin::pin!(hd.set_active_host(HostId(2)));
+    assert!(futures::poll!(&mut set_active_fut).is_pending());
+
+    let new_config = update_fut.await;
+    assert!(new_config.bredr.connectable);
+
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::Shutdown { .. }) => {}
+        x => panic!("Expected Shutdown on host 1, got: {x:?}"),
+    }
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on host 1 after migration, got: {x:?}"),
+    }
+    set_active_fut.await.expect("set_active_host succeeds");
+
+    // Host 2 receives SetConnectable(false) for the migrated Pending suppression session.
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(false) on host 2 after migration, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Dropping the token restores connectability on Host 2.
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetConnectable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetConnectable(true) on host 2 after token drop, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
