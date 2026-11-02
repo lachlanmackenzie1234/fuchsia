@@ -1297,11 +1297,6 @@
                 // Depend on missing timer feature.
                 "FifoTest.OpenBlockedAndInterrupted",
 
-                // TODO(https://fxbug.dev/328693993) Re-enable once flake is resolved.
-                "NetdeviceTest.InterfaceFlags",
-                "NetdeviceTest.InterfaceMTU",
-                "NetdeviceTest.Loopback",
-
                 // TODO(https://fxbug.dev/339238239) Re-enable once flake is resolved.
                 "IntervalTimerTest.PeriodicGroupDirectedSignal",
                 "IntervalTimerTest.NegativeInterval",
