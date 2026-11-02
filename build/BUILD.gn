@@ -443,6 +443,8 @@ group("non_hermetic_deps") {
     "//src/connectivity/policy/socket-proxy/integration/fake-socket-proxy:pkg.package",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg",
     "//src/connectivity/wlan/tools/third_party/broadcom:wl_pkg.package",
+    "//src/devices/haptics/testing/fake_haptics_service:package",
+    "//src/devices/haptics/testing/fake_haptics_service:package.package",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0",
     "//src/graphics/drivers/arm-mali/icd:libvulkan_arm_g52_r0p0.package",
     "//src/hwinfo/mock:package",
