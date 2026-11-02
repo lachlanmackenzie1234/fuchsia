@@ -7,7 +7,10 @@ load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
 exports_files(
     ["test_data/virtual_device.json"],
-    visibility = ["//src/developer/ffx/plugins/product/show:__pkg__"],
+    visibility = [
+        "//src/developer/ffx/plugins/emulator/configuration:__pkg__",
+        "//src/developer/ffx/plugins/product/show:__pkg__",
+    ],
 )
 
 # This list should only contain schemas that are currently exported outside of
