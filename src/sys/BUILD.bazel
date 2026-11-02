@@ -20,6 +20,7 @@ test_suite(
     tests = [
         "//src/sys/fuzzing/manager:fuzz-manager-unittests",
         "//src/sys/fuzzing/registry:fuzz-registry-unittests",
+        "//src/sys/lib/elf_runner/tests/environ:elf_runner_environ_test",
         "//src/sys/run_test_suite/directory:test-output-directory-unit-tests",
         "//src/sys/service-broker:service-broker-unittests",
         "//src/sys/test_manager/tests/test_data:debug-data-test_test",
