@@ -45,6 +45,7 @@ load(
     "FuchsiaPackageResourcesInfo",
 )
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
 load("@rules_rust//rust:defs.bzl", "rust_common")
 
 def _get_rust_runtime_shared_libraries(binary):
@@ -92,10 +93,21 @@ def _fx_packaged_binary_impl(ctx):
 
     target_in = binary_outputs[0]
 
+    # If the binary is wrapped by a transition rule (e.g., for `transitive_features`),
+    # `DefaultInfo.files` contains an executable symlink in the outer configuration,
+    # whereas the actual unstripped ELF binary is exposed via `DebugPackageInfo` (C++)
+    # or `CrateInfo` (Rust) and is what `collect_debug_symbols_manifest_aspect` records.
+    if DebugPackageInfo in ctx.attr.binary:
+        unstripped_file = ctx.attr.binary[DebugPackageInfo].unstripped_file
+    elif rust_common.crate_info in ctx.attr.binary:
+        unstripped_file = ctx.attr.binary[rust_common.crate_info].output
+    else:
+        unstripped_file = target_in
+
     unstripped_binaries = [
         make_fuchsia_unstripped_binary_info(
             dest = ctx.attr.install_root + ctx.attr.binary_name,
-            unstripped_file = target_in,
+            unstripped_file = unstripped_file,
         ),
     ] + get_runfiles_shared_lib_binary_info(
         # TODO(https://fxbug.dev/532024842): Consider collecting from @rules_cc providers instead.
@@ -105,6 +117,7 @@ def _fx_packaged_binary_impl(ctx):
         shared_lib_dest = ctx.attr.shared_lib_dest,
         exclude_libs = [
             target_in.basename,
+            unstripped_file.basename,
         ],
     )
 
@@ -138,7 +151,7 @@ def _fx_packaged_binary_impl(ctx):
         }))
 
     return [
-        DefaultInfo(files = depset([target_in])),
+        DefaultInfo(files = depset([unstripped_file])),
         merge_debug_symbol_infos(debug_symbol_infos),
         # The wrapped binary is newly built, so stripping and debug symbol extraction are consolidated
         # in fx_package, and this rule only propagates the unstripped binaries.
