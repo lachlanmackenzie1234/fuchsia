@@ -8,6 +8,7 @@
 
 #include <lib/arch/intrin.h>
 #include <lib/fasttime/clock.h>
+#include <lib/page/size.h>
 
 #include <platform/timer.h>
 
@@ -39,8 +40,8 @@ struct ClockTransformationLayoutCheck {
   using Transformation = ClockTransformation<KernelClockTransformationAdapter>;
   using Params = Transformation::Params;
 
-  static_assert(sizeof(Transformation) <= ClockDispatcher::kMappedSize);
-  static_assert(alignof(Transformation) <= ClockDispatcher::kMappedSize);
+  static_assert(sizeof(Transformation) <= kPageSize);
+  static_assert(alignof(Transformation) <= kPageSize);
 
   static_assert(sizeof(Transformation) == 112);
   static_assert(alignof(Transformation) == 8);

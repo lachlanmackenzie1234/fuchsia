@@ -91,7 +91,6 @@ source_set("object") {
     "//zircon/kernel/lib/object_cache",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/stall:headers",
-    "//zircon/kernel/lib/thread_sampler",
     "//zircon/system/ulib/pretty",
     "//zircon/system/ulib/zx",
   ]
@@ -115,9 +114,6 @@ library_headers("headers") {
     # <object/log_dispatcher.h> and <object/counter_dispatcher.h> have #include
     # <lib/object-constants.h>.
     "//zircon/kernel/lib/object-constants:headers",
-
-    # <object/clock_dispatcher.h> has #include <lib/page/size.h>.
-    "//zircon/kernel/lib/page:headers",
 
     # <object/process_dispatcher.h> has #include <vm/vm_aspace.h>.
     "//zircon/kernel/vm:headers",
