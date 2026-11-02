@@ -8,10 +8,8 @@ import shlex
 import typing as T
 from pathlib import Path
 
+from build.api import gn_ninja_outputs
 from build.bazel.scripts import build_utils
-
-if T.TYPE_CHECKING:
-    from build.api.gn_ninja_outputs import NinjaOutputsBase
 
 
 class FileToTestPackageFinder:
@@ -34,7 +32,7 @@ class FileToTestPackageFinder:
         self,
         build_dir: Path,
         fuchsia_dir: Path,
-        outputs_database: "NinjaOutputsBase",
+        outputs_database: gn_ninja_outputs.NinjaOutputsBase,
         log_func: T.Callable[[str], None],
         host_tag: str = "linux-x64",
         command_runner: build_utils.CommandRunner | None = None,

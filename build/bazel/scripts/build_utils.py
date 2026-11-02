@@ -25,10 +25,6 @@ import typing as T
 from collections.abc import Sequence
 from pathlib import Path
 
-if T.TYPE_CHECKING:
-    import argparse
-
-
 # A type that describes either a path string of a Path instance.
 FilePath: T.TypeAlias = str | os.PathLike[T.Any]
 

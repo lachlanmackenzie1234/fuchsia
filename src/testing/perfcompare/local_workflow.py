@@ -9,18 +9,7 @@ import os
 import pathlib
 import statistics
 import subprocess
-from typing import TYPE_CHECKING, Any, TextIO, Tuple
-
-if TYPE_CHECKING:
-    # The object returned by ArgumentParser.add_subparsers().
-    # This is the most accurate type for static analysis.
-    # We conditionalize on TYPE_CHECKING because _SubParsersAction is a private field
-    # and we don't want to depend on implementation details at runtime.
-    SubParsersAction = argparse._SubParsersAction
-else:
-    # Fallback for runtime, Any is sufficient.
-    SubParsersAction = Any
-
+from typing import TextIO, Tuple
 
 _DEFAULT_STATE_FILE = (
     "/google/data/ro/teams/tq-performance/sample_builds_state.json"
@@ -53,7 +42,12 @@ def extract_metrics(args, out_fh: TextIO) -> None:
     _extract_metrics(args.suite_prefix, args.data_dir, args.out_file, out_fh)
 
 
-def register_subparsers(subparsers: SubParsersAction, out_fh: TextIO) -> None:
+# TODO(https://github.com/python/cpython/issues/101503): Fix the visibility
+# violation by changing the type specification of "subparsers" to whatever
+# publicly-available type is determined for it to have.
+def register_subparsers(
+    subparsers: argparse._SubParsersAction, out_fh: TextIO
+) -> None:
     """Registers subparsers for workflow commands."""
     subparser = subparsers.add_parser(
         "download_metrics",

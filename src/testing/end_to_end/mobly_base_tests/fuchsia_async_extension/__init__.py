@@ -73,28 +73,7 @@ def _make_sync_wrapper(
     return wrapper
 
 
-if typing.TYPE_CHECKING:
-    from _typeshed import Incomplete
-    from mobly import base_test, controller_manager, records, runtime_test_info
-
-    # LINT.IfChange
-    class _MoblyStub(base_test.BaseTestClass):
-        TAG: str
-        tests: list[str]
-        root_output_path: str
-        log_path: str
-        user_params: dict[str, Any]
-        controller_configs: dict[str, Any]
-        current_test_info: Any
-        _controller_manager: controller_manager.ControllerManager
-
-    # LINT.ThenChange(//src/testing/end_to_end/stubs/mobly/base_test.pyi)
-    _BaseTestClass = _MoblyStub
-else:
-    _BaseTestClass = base_test.BaseTestClass
-
-
-class _AsyncBaseTestClassMeta(_BaseTestClass):
+class _AsyncBaseTestClassMeta(base_test.BaseTestClass):
     _MOBLY_INHERITED_METHOD_NAMES = [
         "pre_run",
         "setup_generated_tests",
