@@ -8,11 +8,15 @@
 #include <fuchsia/logger/cpp/fidl.h>
 
 #include <string>
+#include <string_view>
 
 namespace forensics {
 
 // Format a log message as a string. Inserts a "dropped log" message if |message.dropped_logs| > 0.
 std::string Format(const fuchsia::logger::LogMessage& message);
+
+// Returns true if |str| starts like a log message.
+bool MatchesLogMessage(std::string_view str);
 
 }  // namespace forensics
 

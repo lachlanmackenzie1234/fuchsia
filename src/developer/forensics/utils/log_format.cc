@@ -9,7 +9,9 @@
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <cctype>
 #include <cinttypes>
+#include <string_view>
 
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -65,6 +67,40 @@ std::string Format(const fuchsia::logger::LogMessage& message) {
   log += format(message.severity, message.msg);
 
   return log;
+}
+
+// Returns true if |str| starts like a log message.
+bool MatchesLogMessage(std::string_view str) {
+  auto MatchOpenBr = [&str] {
+    if (str.empty() || str.front() != '[') {
+      return false;
+    }
+
+    str.remove_prefix(1);
+    return true;
+  };
+
+  auto MatchDigitsPlus = [&str](const char c) {
+    std::string_view new_str(str);
+    while (!new_str.empty() && std::isdigit(new_str.front())) {
+      new_str.remove_prefix(1);
+    }
+
+    if (new_str == str || (!new_str.empty() && new_str.front() != c)) {
+      return false;
+    }
+
+    str = new_str.substr(1);
+    return true;
+  };
+
+  return
+      // The timestamp is like [$secs.$msecs]
+      MatchOpenBr() && MatchDigitsPlus('.') && MatchDigitsPlus(']') &&
+      // The process koid is like [$pid]
+      MatchOpenBr() && MatchDigitsPlus(']') &&
+      // The thread koid is like [$tid]
+      MatchOpenBr() && MatchDigitsPlus(']');
 }
 
 }  // namespace forensics

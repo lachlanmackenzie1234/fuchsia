@@ -8,10 +8,17 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
+#include <string>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 namespace forensics {
 namespace {
+
+using ::testing::TestParamInfo;
+using ::testing::TestWithParam;
+using ::testing::ValuesIn;
 
 constexpr zx::duration kLogMessageBaseTimestamp = zx::sec(15604);
 constexpr uint64_t kLogMessageProcessId = 7559;
@@ -92,6 +99,101 @@ TEST(LogFormatTest, Check_InsertsDroppedLogMessageMultiple) {
       Format(message),
       "[15604.001][07559][07687][foo, bar] WARN: !!! DROPPED 2 LOGS !!!\n[15604.001][07559][07687][foo, bar] INFO: line 1\n");
 }
+
+struct MatchesLogMessageTestCase {
+  std::string test_name;
+  std::string input;
+  bool expected;
+};
+
+using MatchesLogMessageTest = TestWithParam<MatchesLogMessageTestCase>;
+
+TEST_P(MatchesLogMessageTest, MatchesLogMessage) {
+  const MatchesLogMessageTestCase& test_case = GetParam();
+  EXPECT_EQ(MatchesLogMessage(test_case.input), test_case.expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(WithVariousInputs, MatchesLogMessageTest,
+                         ValuesIn(std::vector<MatchesLogMessageTestCase>({
+                             {
+                                 .test_name = "FormattedMessage",
+                                 .input = Format(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")),
+                                 .expected = true,
+                             },
+                             {
+                                 .test_name = "HeaderOnly",
+                                 .input = "[15604.000][07559][07687]",
+                                 .expected = true,
+                             },
+                             {
+                                 .test_name = "EmptyString",
+                                 .input = "",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "CannotDecodeMessage",
+                                 .input = "!!! CANNOT DECODE!!!\n",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingSeconds",
+                                 .input = "[.000][07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "NonDigitInSeconds",
+                                 .input = "[156a4.000][07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingTimestampDot",
+                                 .input = "[15604][07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingMilliseconds",
+                                 .input = "[15604.][07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "NonDigitInMilliseconds",
+                                 .input = "[15604.0a0][07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingProcessKoidOpenBracket",
+                                 .input = "[15604.000]07559][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingProcessKoid",
+                                 .input = "[15604.000][][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "NonDigitInProcessKoid",
+                                 .input = "[15604.000][075a9][07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingThreadKoidOpenBracket",
+                                 .input = "[15604.000][07559]07687]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "MissingThreadKoid",
+                                 .input = "[15604.000][07559][]",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "NonDigitInThreadKoid",
+                                 .input = "[15604.000][07559][076a7]",
+                                 .expected = false,
+                             },
+                         })),
+                         [](const TestParamInfo<MatchesLogMessageTestCase>& info) {
+                           return info.param.test_name;
+                         });
 
 }  // namespace
 }  // namespace forensics
