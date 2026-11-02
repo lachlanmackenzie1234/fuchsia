@@ -106,8 +106,4 @@ fuchsia_unittest_package("bt-avctp-tests") {
       max_severity = "ERROR"
     }
   }
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

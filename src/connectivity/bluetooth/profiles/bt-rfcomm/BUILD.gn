@@ -164,8 +164,4 @@ fuchsia_unittest_package("bt-rfcomm-tests") {
   package_name = "bt-rfcomm-tests-gn"
   component_name = "bt-rfcomm-tests"
   deps = [ ":bt_rfcomm_bin_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

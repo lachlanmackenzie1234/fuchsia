@@ -10,6 +10,13 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-map-mce-unittests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 exports_files(
     ["meta/bt-map-mce.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
@@ -95,5 +102,4 @@ fx_unittest_package(
     name = "bt-map-mce-unittests",
     max_log_severity = "ERROR",
     unit_tests = [":bt_map_mce_bin_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

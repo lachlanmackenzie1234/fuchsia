@@ -10,6 +10,13 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-peripheral-hub-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 rustc_binary(
     name = "bin",
     srcs = [
@@ -78,5 +85,4 @@ rustc_test(
 fx_unittest_package(
     name = "bt-peripheral-hub-tests",
     unit_tests = [":bt_peripheral_hub_bin_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

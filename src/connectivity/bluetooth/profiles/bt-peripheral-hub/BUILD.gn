@@ -121,8 +121,4 @@ fuchsia_unittest_package("bt-peripheral-hub-tests") {
   package_name = "bt-peripheral-hub-tests-gn"
   component_name = "bt-peripheral-hub-tests"
   deps = [ ":bt_peripheral_hub_bin_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

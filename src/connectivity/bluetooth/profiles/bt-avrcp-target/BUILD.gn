@@ -129,8 +129,4 @@ fuchsia_unittest_package("bt-avrcp-target-tests") {
   package_name = "bt-avrcp-target-tests-gn"
   component_name = "bt-avrcp-target-tests"
   deps = [ ":bt_avrcp_target_bin_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

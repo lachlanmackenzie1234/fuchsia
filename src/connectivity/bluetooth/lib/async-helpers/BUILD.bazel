@@ -8,6 +8,13 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":async-helpers-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 rustc_library(
     name = "async-helpers",
     srcs = [
@@ -57,5 +64,4 @@ fx_unittest_package(
     name = "async-helpers-tests",
     package_name = "async-helpers-tests",
     unit_tests = [":async_helpers_lib_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

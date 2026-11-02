@@ -23,6 +23,13 @@ load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-fastpair-provider-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 rustc_binary(
     name = "bin",
     srcs = [
@@ -170,5 +177,4 @@ fx_package(
 fx_test(
     name = "bt-fastpair-provider-tests",
     package = ":bt-fastpair-provider-tests-package",
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

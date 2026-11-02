@@ -96,8 +96,4 @@ fuchsia_unittest_package("async-helpers-tests") {
   package_name = "async-helpers-tests-gn"
   component_name = "async-helpers-tests"
   deps = [ ":async_helpers_lib_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

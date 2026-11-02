@@ -11,6 +11,13 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-hfp-hands-free-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 exports_files(
     ["meta/bt-hfp-hands-free.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
@@ -129,5 +136,4 @@ rustc_test(
 fx_unittest_package(
     name = "bt-hfp-hands-free-tests",
     unit_tests = [":bt_hfp_hands_free_bin_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

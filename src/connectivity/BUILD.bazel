@@ -10,7 +10,6 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
-        "//src/connectivity/bluetooth:target_tests",
         "//src/connectivity/location:target_tests",
         "//src/connectivity/lowpan/lib/spinel_pack:spinel-pack-tests",
         "//src/connectivity/network:target_tests",

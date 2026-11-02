@@ -17,6 +17,13 @@ load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-hfp-audio-gateway-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 exports_files(
     ["meta/bt-hfp-audio-gateway.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
@@ -216,5 +223,4 @@ fx_test(
     name = "bt-hfp-audio-gateway-tests",
     package = ":bt-hfp-audio-gateway-tests-package",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

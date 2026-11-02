@@ -99,8 +99,4 @@ fuchsia_unittest_package("bt-gatt-fuchsia-tests") {
   package_name = "bt-gatt-fuchsia-tests-gn"
   component_name = "bt-gatt-fuchsia-tests"
   deps = [ ":bt-gatt-fuchsia_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

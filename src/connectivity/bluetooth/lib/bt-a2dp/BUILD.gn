@@ -143,8 +143,4 @@ fuchsia_unittest_package("bt-a2dp-lib-tests") {
       max_severity = "ERROR"
     }
   }
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

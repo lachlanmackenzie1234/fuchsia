@@ -136,8 +136,4 @@ fuchsia_unittest_package("bt-device-id-tests") {
   package_name = "bt-device-id-tests-gn"
   component_name = "bt-device-id-tests"
   deps = [ ":bt_device_id_bin_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

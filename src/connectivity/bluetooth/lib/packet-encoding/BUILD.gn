@@ -54,8 +54,4 @@ fuchsia_unittest_package("packet-encoding-tests") {
   package_name = "packet-encoding-tests-gn"
   component_name = "packet-encoding-tests"
   deps = [ ":packet-encoding_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

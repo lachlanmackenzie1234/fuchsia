@@ -140,8 +140,4 @@ fuchsia_unittest_package("bt-map-mce-unittests") {
       max_severity = "ERROR"
     }
   }
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

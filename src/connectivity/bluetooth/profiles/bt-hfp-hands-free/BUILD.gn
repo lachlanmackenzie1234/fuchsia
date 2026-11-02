@@ -202,8 +202,4 @@ fuchsia_unittest_package("bt-hfp-hands-free-tests") {
   package_name = "bt-hfp-hands-free-tests-gn"
   component_name = "bt-hfp-hands-free-tests"
   deps = [ ":bt_hfp_hands_free_bin_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

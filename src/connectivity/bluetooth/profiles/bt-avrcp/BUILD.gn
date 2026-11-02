@@ -229,8 +229,4 @@ fuchsia_unittest_package("bt-avrcp-tests") {
       max_severity = "ERROR"
     }
   }
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

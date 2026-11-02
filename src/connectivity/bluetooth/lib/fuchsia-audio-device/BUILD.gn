@@ -112,8 +112,4 @@ fuchsia_unittest_package("fuchsia-audio-device-tests") {
   package_name = "fuchsia-audio-device-tests-gn"
   component_name = "fuchsia-audio-device-tests"
   deps = [ ":fuchsia-audio-device_test" ]
-  visibility = [
-    ":*",
-    "//src/connectivity/bluetooth:*",
-  ]
 }

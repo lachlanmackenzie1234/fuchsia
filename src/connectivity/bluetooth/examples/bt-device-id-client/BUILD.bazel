@@ -21,6 +21,12 @@ load(
 
 package(default_applicable_licenses = ["//:license"])
 
+test_suite(
+    name = "tests",
+    tests = [":bt-device-id-client-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 rustc_binary(
     name = "bin",
     srcs = ["src/main.rs"],
@@ -80,5 +86,4 @@ rustc_test(
 fx_unittest_package(
     name = "bt-device-id-client-tests",
     unit_tests = [":bin_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

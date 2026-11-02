@@ -11,6 +11,13 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
+# @bazel2gn:skip
+test_suite(
+    name = "tests",
+    tests = [":bt-device-id-tests"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
+
 exports_files(
     ["meta/bt-device-id.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
@@ -92,5 +99,4 @@ rustc_test(
 fx_unittest_package(
     name = "bt-device-id-tests",
     unit_tests = [":bt_device_id_bin_test"],
-    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
