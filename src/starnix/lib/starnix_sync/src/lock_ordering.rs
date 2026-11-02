@@ -422,6 +422,7 @@ lock_ordering! {
     Terminal(TraceFsDataLock),
     Terminal(TunDevTunLock),
     Terminal(UinputDeviceStateLock),
+    Terminal(UsbFsDevicesLock),
     Terminal(UtsNamespaceLock),
     Terminal(VmspliceSegmentsLock),
     Terminal(WakeSourcesLock),

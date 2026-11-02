@@ -23,7 +23,7 @@ use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::NamespaceNode;
 use starnix_logging::{log_error, log_info};
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, Mutex, UsbFsDevicesLock};
 use starnix_uapi::device_id::{DeviceId, USB_DEVICE_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -94,7 +94,7 @@ impl DevNumAllocator {
 #[derive(Clone)]
 pub struct UsbDeviceManager {
     pub(crate) bus: Bus,
-    pub(crate) devices: Arc<Mutex<BTreeMap<DeviceId, Arc<UsbDevice>>>>,
+    pub(crate) devices: Arc<LockDepMutex<BTreeMap<DeviceId, Arc<UsbDevice>>, UsbFsDevicesLock>>,
     pub(crate) allocator: Arc<Mutex<DevNumAllocator>>,
 }
 
@@ -102,7 +102,7 @@ impl UsbDeviceManager {
     pub(crate) fn new(bus: Bus) -> Self {
         Self {
             bus,
-            devices: Arc::new(Mutex::new(BTreeMap::new())),
+            devices: Arc::new(LockDepMutex::new(BTreeMap::new())),
             allocator: Arc::new(Mutex::new(DevNumAllocator::new())),
         }
     }
