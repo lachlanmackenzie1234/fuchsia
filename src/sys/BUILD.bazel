@@ -27,6 +27,7 @@ test_suite(
         "//src/sys/service-broker:service-broker-unittests",
         "//src/sys/stash:stash-tests",
         "//src/sys/stash/tests/inspect:stash-integration-tests",
+        "//src/sys/test_manager/tests/chromium_tests:chromium-routing-test",
         "//src/sys/test_manager/tests/test_data:debug-data-test_test",
         "//src/sys/test_runners/lib_loader_cache:lib_loader_runner_cache_unit_tests",
         "//src/sys/time/httpsdate_time_source:httpsdate-time-source-tests",
