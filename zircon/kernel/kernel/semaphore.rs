@@ -658,8 +658,6 @@ impl Semaphore {
 /// - `semaphore` must point to a live `Semaphore` that remains allocated at least until the count
 ///   has been updated without waking a waiter, or until a waiter has been dequeued and `waitq`'s
 ///   lock released (a woken waiter may then destroy it, as with C++ `Semaphore::Post`).
-/// - `queue_to_own` must be null or point to a live [`OwnedWaitQueue`] that remains allocated
-///   until this call returns.
 /// - If any spinlocks are held, preemption must have been disabled outside of the outermost one.
 ///
 /// # Panics
@@ -669,20 +667,14 @@ impl Semaphore {
 // SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
 // `zircon/kernel/include/kernel/semaphore.h`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_semaphore_post(
-    semaphore: *const Semaphore,
-    queue_to_own: *mut OwnedWaitQueue,
-) {
+pub unsafe extern "C" fn rust_semaphore_post(semaphore: *const Semaphore) {
     debug_assert!(!semaphore.is_null());
-    // SAFETY: Per this function's `# Safety`, `queue_to_own` is null or points to a live
-    // `OwnedWaitQueue` which remains allocated until this call returns.
-    let queue_to_own: Option<&OwnedWaitQueue> = unsafe { queue_to_own.as_ref() };
     // SAFETY: Forwarded from this function's `# Safety`. `semaphore` is passed as a raw pointer so
     // that no `&Semaphore` outlives `waitq`'s lock inside `post_worker`.
-    unsafe { Semaphore::post_worker(semaphore, queue_to_own) };
+    unsafe { Semaphore::post_worker(semaphore, None) };
 }
 
-/// C++ FFI entry point for `Semaphore::WaitInternal()`.
+/// C++ FFI entry point for `Semaphore::Wait()`.
 ///
 /// # Safety
 ///
@@ -692,7 +684,6 @@ pub unsafe extern "C" fn rust_semaphore_post(
 ///   wait queue and the queue's lock released.
 /// - The current thread is running in thread context (after threading has been initialized)
 ///   where blocking is permitted (no spinlocks held and blocking not disallowed).
-/// - If `deadline` is not infinite, it uses the monotonic timeline.
 ///
 /// # Panics
 ///
@@ -701,57 +692,19 @@ pub unsafe extern "C" fn rust_semaphore_post(
 // SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
 // `zircon/kernel/include/kernel/semaphore.h`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_semaphore_wait_internal(
-    semaphore: *const Semaphore,
-    deadline: &Deadline,
-    interruptible: Interruptible,
-) -> zx_status_t {
+pub unsafe extern "C" fn rust_semaphore_wait_infinite(semaphore: *const Semaphore) -> zx_status_t {
     debug_assert!(!semaphore.is_null());
-    // SAFETY: Forwarded from this function's `# Safety`. `semaphore` is passed as a raw pointer so
-    // that no `&Semaphore` lives across `scheduler::block` inside `wait_worker`.
-    Status::result_into_raw(unsafe { Semaphore::wait_worker(semaphore, deadline, interruptible) })
+    // SAFETY: Forwarded from this function's `# Safety` (`Deadline::infinite()` has no timeline).
+    // `semaphore` is passed as a raw pointer so that no `&Semaphore` lives across
+    // `scheduler::block` inside `wait_worker`.
+    Status::result_into_raw(unsafe {
+        Semaphore::wait_worker(semaphore, &const { Deadline::infinite() }, Interruptible::No)
+    })
 }
 
-/// C++ FFI entry point for `Semaphore::count()`.
-///
-/// # Safety
-///
-/// `semaphore` must point to a live `Semaphore` which remains valid until this call returns.
-// SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
-// `zircon/kernel/include/kernel/semaphore.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_semaphore_count(semaphore: *const Semaphore) -> i64 {
-    debug_assert!(!semaphore.is_null());
-    // SAFETY: Per this function's `# Safety`, `semaphore` points to a live `Semaphore` which
-    // remains valid until this call returns.
-    let semaphore: &Semaphore = unsafe { &*semaphore };
-    semaphore.count()
-}
-
-/// C++ FFI entry point for `Semaphore::num_waiters()`.
-///
-/// # Safety
-///
-/// `semaphore` must point to a live `Semaphore` which remains valid until this call returns.
-///
-/// # Panics
-///
-/// Panics if a [`ChainLockTransaction`] is active on the current CPU.
-// SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
-// `zircon/kernel/include/kernel/semaphore.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_semaphore_num_waiters(semaphore: *const Semaphore) -> u64 {
-    debug_assert!(!semaphore.is_null());
-    // SAFETY: Per this function's `# Safety`, `semaphore` points to a live `Semaphore` which
-    // remains valid until this call returns.
-    let semaphore: &Semaphore = unsafe { &*semaphore };
-    // `num_waiters` is safe; it asserts that no transaction is active (`TA_EXCL` in C++).
-    semaphore.num_waiters()
-}
-
-/// Semaphore unit tests for the Rust-native API (the C++ `semaphore` suite covers the C++ API).
+/// Semaphore tests
 #[cfg(ktest)]
-#[unittest::suite(name = "semaphore_rust")]
+#[unittest::suite(name = "semaphore")]
 mod tests {
     use crate::kernel::deadline::TimerSlack;
     use crate::kernel::thread::{self, DEFAULT_PRIORITY};
@@ -763,7 +716,7 @@ mod tests {
         unwrap_ok,
     };
 
-    /// Mirrors the C++ `semaphore::smoke_test` against Rust-initialized semaphores.
+    /// Exercises basic semaphore initialization, posting, and non-blocking waits.
     #[test]
     fn smoke_test() {
         for initial_count in [0, 5, -2] {
@@ -797,7 +750,7 @@ mod tests {
         }
     }
 
-    /// Mirrors the C++ `semaphore::timeout_test` against a Rust-initialized semaphore.
+    /// Verifies that a timed-out wait returns `TIMED_OUT` and the next `post` repairs the count.
     #[test]
     fn timeout_test() {
         let deadline = Deadline::after_mono(DurationMono(zx_usec(10)), TimerSlack::none());
@@ -834,7 +787,7 @@ mod tests {
             scope,
             owq,
             IRQ_SAVE_OPTION,
-            clt_tag!("semaphore_rust_test_observe_owner")
+            clt_tag!("semaphore_test_observe_owner")
         );
         scope.proof().queue_owner()
     }
@@ -983,8 +936,8 @@ mod tests {
         Suspend,
     }
 
-    /// Mirrors the C++ `semaphore::signal_test`: tests waking or signaling a thread blocked in
-    /// `wait` (`Interruptible::Yes`) or `wait_infinite` (`Interruptible::No`).
+    /// Tests waking or signaling a thread blocked in `wait` (`Interruptible::Yes`) or
+    /// `wait_infinite` (`Interruptible::No`).
     fn run_signal_test(signal: Signal, interruptible: Interruptible) -> bool {
         (subtest!(|signal: Signal, interruptible: Interruptible| {
             stack_pin_init!(let sema = Semaphore::new(0));
@@ -995,15 +948,8 @@ mod tests {
             // SAFETY: `wait_sema_thread` only reads `args`, and `waiter` is joined below before
             // `args` or `sema` go out of scope.
             let waiter = unwrap_ok!(unsafe {
-                thread::create_with_priority(
-                    c"test semaphore".as_ptr(),
-                    wait_sema_thread,
-                    core::ptr::from_ref(&args).cast_mut().cast(),
-                    DEFAULT_PRIORITY,
-                )
+                spawn_waiter(wait_sema_thread, core::ptr::from_ref(&args).cast_mut().cast())
             });
-            // SAFETY: `waiter` was just created and has not been resumed or joined yet.
-            unsafe { waiter.resume() };
 
             // SAFETY: `waiter` has not been joined yet.
             while !unsafe { waiter.is_blocked() } {

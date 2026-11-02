@@ -23,7 +23,6 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/arena.h>
 #include <kernel/ffi.h>
-#include <kernel/semaphore.h>
 #include <ktl/utility.h>
 #include <lk/init.h>
 #include <object/process_dispatcher.h>

@@ -98,7 +98,6 @@ source_set("tests") {
     "idle_power_thread_tests.cc",
     "intensive_thread_test.cc",
     "mutex_tests.cc",
-    "semaphore_tests.cc",
     "spinlock_tests.cc",
     "thread_test.cc",
   ]

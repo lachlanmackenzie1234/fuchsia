@@ -20,7 +20,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/vector.h>
-#include <kernel/semaphore.h>
 #include <ktl/algorithm.h>
 #include <ktl/iterator.h>
 #include <ktl/utility.h>

@@ -11,20 +11,15 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
-#include <kernel/thread.h>
 #include <kernel/wait.h>
 #include <ktl/atomic.h>
 
-class OwnedWaitQueue;
 class Semaphore;
 
 // The implementation of Semaphore lives in Rust (zircon/kernel/kernel/semaphore.rs).
 extern "C" {
-void rust_semaphore_post(const Semaphore* semaphore, OwnedWaitQueue* queue_to_own);
-zx_status_t rust_semaphore_wait_internal(const Semaphore* semaphore, const Deadline& deadline,
-                                         Interruptible interruptible);
-int64_t rust_semaphore_count(const Semaphore* semaphore);
-uint64_t rust_semaphore_num_waiters(const Semaphore* semaphore);
+void rust_semaphore_post(const Semaphore* semaphore);
+zx_status_t rust_semaphore_wait_infinite(const Semaphore* semaphore);
 }  // extern "C"
 
 // A basic counting semaphore used to control access to a shared resource.
@@ -54,14 +49,7 @@ class Semaphore {
   // may return without blocking.
   //
   // |Post| has release memory order semantics and synchronizes with |Wait|.
-  //
-  // |queue_to_own| is the OwnedWaitQueue that the unblocked thread will take
-  // ownership of. If this is not-null, then we will perform an assign-owner
-  // operation on the queue. If there is no thread waiting, then no
-  // assign-owner operation will occur.
-  void Post(OwnedWaitQueue* queue_to_own = nullptr) TA_EXCL(chainlock_transaction_token) {
-    rust_semaphore_post(this, queue_to_own);
-  }
+  void Post() TA_EXCL(chainlock_transaction_token) { rust_semaphore_post(this); }
 
   // If the count is positive, decrement the count and return ZX_OK.  Otherwise,
   // decrement the count and wait (uninterruptibly) until some other thread
@@ -69,36 +57,10 @@ class Semaphore {
   //
   // |Wait| has acquire memory order semantics and synchronizes with |Post|.
   zx_status_t Wait() TA_EXCL(chainlock_transaction_token) {
-    return WaitInternal(Deadline::infinite(), Interruptible::No);
-  }
-
-  // Just like Wait(), but interruptible.  In addition to ZX_OK, the return
-  // value can be ZX_ERR_TIMED_OUT if the deadline had passed or one of the
-  // ZX_ERR_INTERNAL_INTR errors if the thread had a signal delivered.
-  //
-  // |Wait| has acquire memory order semantics and synchronizes with |Post|.
-  zx_status_t Wait(const Deadline& deadline) TA_EXCL(chainlock_transaction_token) {
-    return WaitInternal(deadline, Interruptible::Yes);
-  }
-
-  // Observe the current internal count of the semaphore.
-  //
-  // This should only be used for testing/diagnostic purposes.
-  int64_t count() const { return rust_semaphore_count(this); }
-
-  // Observe the current internal count of waiters.
-  //
-  // This should only be used for testing/diagnostic purposes.
-  uint64_t num_waiters() const TA_EXCL(chainlock_transaction_token, waitq_.get_lock()) {
-    return rust_semaphore_num_waiters(this);
+    return rust_semaphore_wait_infinite(this);
   }
 
  private:
-  zx_status_t WaitInternal(const Deadline& deadline, Interruptible interruptible)
-      TA_EXCL(chainlock_transaction_token) {
-    return rust_semaphore_wait_internal(this, deadline, interruptible);
-  }
-
   // This class has two fields that must be kept in sync, a count and a
   // WaitQueue.  There are some rules for keeping them in sync.  See the
   // implementation comments of |Post| and |Wait| (in semaphore.rs) for details.
