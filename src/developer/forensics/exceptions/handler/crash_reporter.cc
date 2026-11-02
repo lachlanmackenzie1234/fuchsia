@@ -5,7 +5,6 @@
 
 #include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
-#include <lib/fidl/cpp/string.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/promise.h>
 #include <lib/fpromise/result.h>
@@ -14,6 +13,7 @@
 #include <zircon/syscalls/object.h>
 
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "src/developer/forensics/exceptions/constants.h"
@@ -144,15 +144,15 @@ CrashReporter::CrashReporter(
   }
 }
 
-void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
-                         zx::thread crashed_thread, SendCallback callback) {
+void CrashReporter::Send(SendRequest& request, SendCompleter::Sync& completer) {
   CrashReportBuilder builder;
-  builder.SetProcess(crashed_process).SetThread(crashed_thread);
+  builder.SetProcess(request.crashed_process()).SetThread(request.crashed_thread());
 
-  if (exception.is_valid()) {
+  if (request.exception().is_valid()) {
     std::optional<ExceptionReason> exception_reason{std::nullopt};
     std::optional<std::string> gwp_asan_exception_type;
-    zx::vmo minidump = GenerateMinidump(exception, &exception_reason, &gwp_asan_exception_type);
+    zx::vmo minidump =
+        GenerateMinidump(request.exception(), &exception_reason, &gwp_asan_exception_type);
 
     if (minidump.is_valid()) {
       builder.SetMinidump(std::move(minidump));
@@ -169,7 +169,7 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
     builder.SetExceptionExpired();
   }
 
-  if (IsProcessTerminated(crashed_process)) {
+  if (IsProcessTerminated(request.crashed_process())) {
     builder.SetProcessTerminated();
   }
 
@@ -180,8 +180,8 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
           ? wake_lease_->Acquire(kWakeLeaseAcquisitionTimeout)
           : fpromise::make_result_promise<LeaseToken, Error>(fpromise::ok(LeaseToken()));
 
-  const zx_koid_t thread_koid = fsl::GetKoid(crashed_thread.get());
-  const zx_koid_t process_koid = fsl::GetKoid(crashed_process.get());
+  const zx_koid_t thread_koid = fsl::GetKoid(request.crashed_thread().get());
+  const zx_koid_t process_koid = fsl::GetKoid(request.crashed_process().get());
 
   auto join = fpromise::join_promises(
       std::move(wake_lease_promise),
@@ -190,8 +190,8 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
 
   auto join_promise = join.and_then(
       [dispatcher = dispatcher_, services = services_, builder = std::move(builder),
-       exception = std::move(exception), crashed_process = std::move(crashed_process),
-       callback = std::move(callback)](
+       exception = std::move(request.exception()),
+       crashed_process = std::move(request.crashed_process()), completer = completer.ToAsync()](
           std::tuple<fpromise::result<LeaseToken, Error>, fpromise::result<ComponentInfo>>&
               results) mutable {
         fpromise::result<LeaseToken, Error>& wake_lease_result = std::get<0>(results);
@@ -222,13 +222,13 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
               return FileCrashReport(dispatcher, services, builder.Consume());
             })
             .then([wake_lease_result = std::move(wake_lease_result),
-                   component_info = std::move(component_info),
-                   callback = std::move(callback)](const fpromise::result<void, Error>& result) {
-              ::fidl::StringPtr moniker = std::nullopt;
+                   component_info = std::move(component_info), completer = std::move(completer)](
+                      const fpromise::result<void, Error>& result) mutable {
+              std::optional<std::string> moniker;
               if (!component_info.moniker.empty()) {
-                moniker = component_info.moniker;
+                moniker = std::move(component_info.moniker);
               }
-              callback(std::move(moniker));
+              completer.Reply({{.moniker = std::move(moniker)}});
 
               return ::fpromise::ok();
             });

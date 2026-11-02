@@ -5,10 +5,12 @@
 
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <fidl/fuchsia.driver.crash/cpp/fidl.h>
+#include <fidl/fuchsia.exception.internal/cpp/fidl.h>
 #include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <fidl/fuchsia.feedback/cpp/test_base.h>
 #include <fidl/fuchsia.sys2/cpp/fidl.h>
 #include <fidl/fuchsia.sys2/cpp/test_base.h>
+#include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
@@ -17,7 +19,9 @@
 #include <zircon/types.h>
 
 #include <memory>
+#include <optional>
 #include <queue>
+#include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -29,17 +33,11 @@
 #include "src/developer/forensics/testing/stubs/fidl_server.h"
 #include "src/developer/forensics/testing/stubs/wake_lease.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/fostr/fidl/fuchsia/exception/formatting.h"
 #include "src/lib/fsl/handles/object_info.h"
 
 namespace forensics {
 namespace exceptions {
 namespace handler {
-
-inline void ToString(const fuchsia::exception::ExceptionType& value, std::ostream* os) {
-  *os << value;
-}
-
 namespace {
 
 using ::testing::UnorderedElementsAreArray;
@@ -139,39 +137,28 @@ class DriverCrashIntrospect final : public fidl::Server<fuchsia_driver_crash::Cr
 
 class HandlerTest : public UnitTestFixture {
  public:
+  using SendCallback = fit::function<void(const std::optional<std::string>&)>;
+
   void HandleException(
       zx::exception exception, zx::duration component_lookup_timeout,
-      CrashReporter::SendCallback callback = [](const ::fidl::StringPtr& moniker) {},
+      SendCallback callback = [](const std::optional<std::string>& moniker) {},
       bool driver_introspect = true) {
-    handler_ = std::make_unique<CrashReporter>(
-        dispatcher(), services(), component_lookup_timeout,
-        /*wake_lease=*/nullptr,
-        driver_introspect ? driver_introspect_.GetClient(dispatcher())
-                          : fidl::ClientEnd<fuchsia_driver_crash::CrashIntrospect>{});
-
     zx::process process;
     exception.get_process(&process);
 
     zx::thread thread;
     exception.get_thread(&thread);
 
-    handler_->Send(std::move(exception), std::move(process), std::move(thread),
-                   std::move(callback));
-    RunLoopUntilIdle();
+    SendToHandler(std::move(exception), std::move(process), std::move(thread),
+                  component_lookup_timeout, std::move(callback), driver_introspect);
   }
 
   void HandleException(
       zx::process process, zx::thread thread, zx::duration component_lookup_timeout,
-      CrashReporter::SendCallback callback = [](const ::fidl::StringPtr& moniker) {},
+      SendCallback callback = [](const std::optional<std::string>& moniker) {},
       bool driver_introspect = true) {
-    handler_ = std::make_unique<CrashReporter>(
-        dispatcher(), services(), component_lookup_timeout,
-        /*wake_lease=*/nullptr,
-        driver_introspect ? driver_introspect_.GetClient(dispatcher())
-                          : fidl::ClientEnd<fuchsia_driver_crash::CrashIntrospect>{});
-
-    handler_->Send(zx::exception{}, std::move(process), std::move(thread), std::move(callback));
-    RunLoopUntilIdle();
+    SendToHandler(/*exception=*/zx::exception{}, std::move(process), std::move(thread),
+                  component_lookup_timeout, std::move(callback), driver_introspect);
   }
 
   void SetUpCrashReporter() { InjectServiceProvider(&crash_reporter_); }
@@ -185,7 +172,38 @@ class HandlerTest : public UnitTestFixture {
   const StubCrashIntrospect& introspect() const { return introspect_; }
 
  private:
+  void SendToHandler(zx::exception exception, zx::process process, zx::thread thread,
+                     zx::duration component_lookup_timeout, SendCallback callback,
+                     bool driver_introspect) {
+    handler_ = std::make_unique<CrashReporter>(
+        dispatcher(), services(), component_lookup_timeout,
+        /*wake_lease=*/nullptr,
+        driver_introspect ? driver_introspect_.GetClient(dispatcher())
+                          : fidl::ClientEnd<fuchsia_driver_crash::CrashIntrospect>{});
+
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_exception_internal::CrashReporter>::Create();
+    handler_binding_.emplace(dispatcher(), std::move(server_end), handler_.get(),
+                             fidl::kIgnoreBindingClosure);
+    handler_client_.Bind(std::move(client_end), dispatcher());
+
+    handler_client_
+        ->Send({{
+            .exception = std::move(exception),
+            .crashed_process = std::move(process),
+            .crashed_thread = std::move(thread),
+        }})
+        .Then([callback = std::move(callback)](
+                  fidl::Result<fuchsia_exception_internal::CrashReporter::Send>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          callback(result->moniker());
+        });
+    RunLoopUntilIdle();
+  }
+
   std::unique_ptr<CrashReporter> handler_{nullptr};
+  std::optional<fidl::ServerBinding<fuchsia_exception_internal::CrashReporter>> handler_binding_;
+  fidl::Client<fuchsia_exception_internal::CrashReporter> handler_client_;
 
   StubCrashReporter crash_reporter_;
   StubCrashIntrospect introspect_;
@@ -251,7 +269,7 @@ TEST_F(HandlerTest, NoIntrospectConnection) {
   bool called = false;
   std::optional<std::string> out_moniker{std::nullopt};
   HandleException(std::move(exception.exception), kDefaultTimeout,
-                  [&called, &out_moniker](const ::fidl::StringPtr& moniker) {
+                  [&called, &out_moniker](const std::optional<std::string>& moniker) {
                     called = true;
                     if (moniker.has_value()) {
                       out_moniker = moniker.value();
@@ -289,7 +307,7 @@ TEST_F(HandlerTest, NoCrashReporterConnection) {
   bool called = false;
   std::optional<std::string> out_moniker{std::nullopt};
   HandleException(std::move(exception.exception), kDefaultTimeout,
-                  [&called, &out_moniker](const ::fidl::StringPtr& moniker) {
+                  [&called, &out_moniker](const std::optional<std::string>& moniker) {
                     called = true;
                     if (moniker.has_value()) {
                       out_moniker = moniker.value();
@@ -338,7 +356,7 @@ TEST_F(HandlerTest, NoException) {
   bool called = false;
   std::optional<std::string> out_moniker{std::nullopt};
   HandleException(std::move(process), std::move(thread), zx::duration::infinite(),
-                  [&called, &out_moniker](const ::fidl::StringPtr& moniker) {
+                  [&called, &out_moniker](const std::optional<std::string>& moniker) {
                     called = true;
                     if (moniker.has_value()) {
                       out_moniker = moniker.value();
@@ -393,7 +411,7 @@ TEST_F(HandlerTest, ProcessTerminated) {
 
   bool called = false;
   HandleException(std::move(exception.exception), zx::duration::infinite(),
-                  [&called](const ::fidl::StringPtr& moniker) { called = true; });
+                  [&called](const std::optional<std::string>& moniker) { called = true; });
 
   ASSERT_TRUE(called);
 
@@ -435,7 +453,7 @@ TEST_F(HandlerTest, DelayForFeedbackCrash) {
 
   bool called = false;
   HandleException(std::move(exception.exception), zx::duration::infinite(),
-                  [&called](const ::fidl::StringPtr& moniker) { called = true; });
+                  [&called](const std::optional<std::string>& moniker) { called = true; });
 
   ASSERT_FALSE(called);
   RunLoopFor(zx::sec(5));
@@ -482,7 +500,7 @@ TEST_F(HandlerTest, DriverHostCrash) {
 
   bool called = false;
   HandleException(std::move(exception.exception), zx::duration::infinite(),
-                  [&called](const ::fidl::StringPtr& moniker) {
+                  [&called](const std::optional<std::string>& moniker) {
                     EXPECT_EQ(kDriverMoniker, moniker.value());
                     called = true;
                   });
@@ -533,7 +551,7 @@ TEST_F(HandlerTest, DriverHostCrashFallback) {
 
   bool called = false;
   HandleException(std::move(exception.exception), zx::duration::infinite(),
-                  [&called, kComponentMoniker](const ::fidl::StringPtr& moniker) {
+                  [&called, kComponentMoniker](const std::optional<std::string>& moniker) {
                     EXPECT_EQ(kComponentMoniker.substr(1), moniker.value());
                     called = true;
                   });
@@ -583,7 +601,7 @@ TEST_F(HandlerTest, DriverHostCrashNoDriverIntrospect) {
   // Setup without a valid driver introspect channel will cause fallback to component attribution.
   HandleException(
       std::move(exception.exception), zx::duration::infinite(),
-      [&called, kComponentMoniker](const ::fidl::StringPtr& moniker) {
+      [&called, kComponentMoniker](const std::optional<std::string>& moniker) {
         EXPECT_EQ(kComponentMoniker.substr(1), moniker.value());
         called = true;
       },
@@ -641,9 +659,24 @@ TEST_F(HandlerTestWithPF, HoldsWakeLeaseUntilFeedbackResponse) {
   zx::thread thread;
   exception_context.exception.get_thread(&thread);
 
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_exception_internal::CrashReporter>::Create();
+  fidl::ServerBinding<fuchsia_exception_internal::CrashReporter> binding(
+      dispatcher(), std::move(server_end), &handler, fidl::kIgnoreBindingClosure);
+  fidl::Client<fuchsia_exception_internal::CrashReporter> client(std::move(client_end),
+                                                                 dispatcher());
+
   bool called = false;
-  handler.Send(std::move(exception_context.exception), std::move(process), std::move(thread),
-               [&called](const ::fidl::StringPtr& moniker) { called = true; });
+  client
+      ->Send({{
+          .exception = std::move(exception_context.exception),
+          .crashed_process = std::move(process),
+          .crashed_thread = std::move(thread),
+      }})
+      .Then([&called](fidl::Result<fuchsia_exception_internal::CrashReporter::Send>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        called = true;
+      });
   RunLoopUntilIdle();
 
   EXPECT_FALSE(called);

@@ -106,7 +106,6 @@ cc_test_executable("exception_broker_unittest_exe") {
     "//src/developer/forensics/testing:unit_test_fixture",
     "//src/developer/forensics/testing/stubs:fidl_server",
     "//src/developer/forensics/testing/stubs:wake_lease",
-    "//src/lib/fostr/fidl/fuchsia.exception",
     "//src/lib/fxl",
     "//src/lib/fxl/test:test_settings",
     "//third_party/googletest:gtest",
