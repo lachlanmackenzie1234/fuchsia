@@ -1821,6 +1821,21 @@ impl MemoryManagerState {
         Ok(())
     }
 
+    fn flush_private_anonymous_unmap_range(mm: &MemoryManager, range: Range<UserAddress>) {
+        if let Err(e) = mm
+            .inflight_vmspliced_payloads
+            .handle_unmapping(&mm.mapping_context.private_anonymous.backing, &range)
+        {
+            log_error!("Failed to handle vmsplice unmapping: {:?}", e);
+        }
+
+        if let Err(e) =
+            mm.mapping_context.private_anonymous.zero(range.start, range.end - range.start)
+        {
+            log_error!("Failed to zero private anonymous memory: {:?}", e);
+        }
+    }
+
     // Updates `self.mappings` after the specified range was unmaped.
     //
     // The range to unmap can span multiple mappings, and can split mappings if
@@ -1845,26 +1860,29 @@ impl MemoryManagerState {
         // Remove any shadow mappings for mlock()'d pages that are now unmapped.
         released_mappings.extend_pins(self.shadow_mappings_for_mlock.remove(unmap_range.clone()));
 
+        let mut pending_anon_range: Option<Range<UserAddress>> = None;
         for (range, mapping) in self.mappings.range(unmap_range.clone()) {
-            // Deallocate any pages in the private, anonymous backing that are now unreachable.
+            // Deallocate any pages in the private, anonymous backing that are now unreachable,
+            // coalescing contiguous private-anonymous sub-ranges (such as regions split by
+            // `mprotect` or `PR_SET_VMA`) into a single VMO zero operation.
             if let MappingBacking::PrivateAnonymous = self.get_mapping_backing(mapping) {
-                let unmapped_range = &unmap_range.intersect(range);
-
-                if let Err(e) = mm
-                    .inflight_vmspliced_payloads
-                    .handle_unmapping(&mm.mapping_context.private_anonymous.backing, unmapped_range)
-                {
-                    log_error!("Failed to handle vmsplice unmapping: {:?}", e);
-                }
-
-                if let Err(e) = mm
-                    .mapping_context
-                    .private_anonymous
-                    .zero(unmapped_range.start, unmapped_range.end - unmapped_range.start)
-                {
-                    log_error!("Failed to zero private anonymous memory: {:?}", e);
+                let unmapped_range = unmap_range.intersect(range);
+                match &mut pending_anon_range {
+                    Some(prev) if prev.end == unmapped_range.start => {
+                        prev.end = unmapped_range.end;
+                    }
+                    Some(prev) => {
+                        let flushed = std::mem::replace(prev, unmapped_range);
+                        Self::flush_private_anonymous_unmap_range(mm, flushed);
+                    }
+                    None => {
+                        pending_anon_range = Some(unmapped_range);
+                    }
                 }
             }
+        }
+        if let Some(flushed) = pending_anon_range {
+            Self::flush_private_anonymous_unmap_range(mm, flushed);
         }
         released_mappings.extend(self.mappings.remove(unmap_range));
     }
@@ -8671,6 +8689,39 @@ mod tests {
                 assert_eq!(range.end, (base + 3 * page_size).unwrap());
                 assert_eq!(mapping.name(), MappingName::Vma("merged".into()));
             }
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_unmap_coalesces_split_private_anonymous_ranges() {
+        spawn_kernel_and_run(async |current_task| {
+            let page_size = *PAGE_SIZE as usize;
+            let mm = current_task.mm().unwrap();
+            let base = map_memory(&current_task, UserAddress::default(), 5 * *PAGE_SIZE);
+
+            for idx in 0..5 {
+                let page_addr = (base + idx * page_size).unwrap();
+                current_task.write_memory(page_addr, &[0xaau8; 8]).unwrap();
+                mm.set_mapping_name(page_addr, page_size, Some(format!("split-{idx}").into()))
+                    .unwrap();
+            }
+
+            // Create a gap at page 1 so pages [0] and [2, 3] form two separate runs when unmapping
+            // the first 4 pages, while page 4 remains mapped and intact.
+            mm.unmap((base + page_size).unwrap(), page_size).unwrap();
+            mm.unmap(base, 4 * page_size).unwrap();
+
+            for idx in 0..4 {
+                let page_addr = (base + idx * page_size).unwrap();
+                let mut raw = [MaybeUninit::uninit(); 8];
+                let bytes =
+                    mm.mapping_context.private_anonymous.read_memory(page_addr, &mut raw).unwrap();
+                assert_eq!(bytes, &[0u8; 8], "page {idx} should be zeroed in backing VMO");
+            }
+
+            let kept_addr = (base + 4 * page_size).unwrap();
+            assert_eq!(current_task.read_memory_to_array::<8>(kept_addr).unwrap(), [0xaau8; 8]);
         })
         .await;
     }
