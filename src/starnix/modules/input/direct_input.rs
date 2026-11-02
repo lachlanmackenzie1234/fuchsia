@@ -724,7 +724,11 @@ impl DirectInputManager {
                     last_report_stamp,
                 }) => {
                     if ownership_active.load(Ordering::SeqCst) {
+                        fuchsia_trace::duration!("input", "input-device-process-reports");
                         for report in &reports {
+                            if let Some(trace_id) = report.trace_id {
+                                fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
+                            }
                             process_input_report(
                                 report,
                                 &converter,
@@ -1942,6 +1946,99 @@ mod tests {
             }
 
             assert_eq!(manager.num_devices(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reports_reader_v2_with_trace_id() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            let manager = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            manager.set_ownership_active(true);
+            let mut _tasks = Vec::new();
+
+            let (device_client, device_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+            let (reader_sender, reader_receiver) =
+                futures::channel::oneshot::channel::<ServerEnd<fir::InputReportsReaderV2Marker>>();
+            let mut reader_sender_opt = Some(reader_sender);
+
+            _tasks.push(fasync::Task::local(async move {
+                let mut stream = device_server.into_stream();
+                while let Some(request) = stream.next().await {
+                    match request.unwrap() {
+                        fir::InputDeviceRequest::GetDescriptor { responder } => {
+                            responder.send(&make_test_descriptor()).unwrap();
+                        }
+                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
+                            reader,
+                            responder,
+                            ..
+                        } => {
+                            if let Some(s) = reader_sender_opt.take() {
+                                let _ = s.send(reader);
+                            }
+                            responder.send(16).unwrap();
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let device_proxy = device_client.into_proxy();
+            let device_id =
+                manager.add_device(device_proxy, Some("touch0".to_string())).await.unwrap();
+            let dev = manager.device(device_id).expect("device added");
+
+            let file_handle = dev.input_device.open_test(&current_task).expect("open input device");
+
+            let reader_server = reader_receiver.await.unwrap();
+            let (_, reader_control) = reader_server.into_stream_and_control_handle();
+
+            let contact = fir::ContactInputReport {
+                contact_id: Some(1),
+                position_x: Some(300),
+                position_y: Some(600),
+                ..Default::default()
+            };
+            let report = fir::InputReport {
+                event_time: Some(100_000_000),
+                trace_id: Some(12345),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![contact]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            reader_control.send_on_input_reports(vec![report], 1).expect("send report");
+
+            let mut received_events = Vec::new();
+            for _ in 0..100 {
+                received_events = read_uapi_events(&file_handle, &current_task);
+                if !received_events.is_empty() {
+                    break;
+                }
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(5),
+                ))
+                .await;
+            }
+
+            assert!(!received_events.is_empty());
+            let has_x = received_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_ABS as u16
+                    && e.code == starnix_uapi::ABS_MT_POSITION_X as u16
+                    && e.value == 300
+            });
+            let has_y = received_events.iter().any(|e| {
+                e.type_ == starnix_uapi::EV_ABS as u16
+                    && e.code == starnix_uapi::ABS_MT_POSITION_Y as u16
+                    && e.value == 600
+            });
+            assert!(has_x);
+            assert!(has_y);
         })
         .await;
     }
