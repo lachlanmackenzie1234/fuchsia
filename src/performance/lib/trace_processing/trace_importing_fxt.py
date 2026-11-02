@@ -20,9 +20,12 @@ from trace_processing.trace_importing import construct_model
 _T = TypeVar("_T", bound=tuple[Any, ...])
 
 
-class _SchedRow(NamedTuple):
-    ts: int
+class _CpuRow(NamedTuple):
     cpu: int
+
+
+class _CpuSchedRow(NamedTuple):
+    ts: int
     dur: int
     end_state: str
     priority: int
@@ -587,39 +590,14 @@ class _FxtImporter:
     def get_scheduling_records(
         self,
     ) -> _SchedulingRecords:
-        sql = """
-        WITH cs AS (
-          SELECT
-            s.ts AS ts,
-            COALESCE(s.cpu, 0) AS cpu,
-            COALESCE(s.dur, 0) AS dur,
-            COALESCE(s.end_state, '') AS end_state,
-            COALESCE(s.priority, 0) AS priority,
-            COALESCE(t.tid, 0) AS tid,
-            'Running' AS state
-          FROM sched s
-          LEFT JOIN thread t ON s.utid = t.utid
-        ),
-        waking AS (
-          SELECT
-            ts.ts AS ts,
-            COALESCE(ts.cpu, ts.ucpu, 0) AS cpu,
-            0 AS dur,
-            '' AS end_state,
-            0 AS priority,
-            COALESCE(t.tid, 0) AS tid,
-            'W' AS state
-          FROM thread_state ts
-          JOIN thread t ON ts.utid = t.utid
-          WHERE ts.state = 'W'
-        )
-        SELECT ts, cpu, dur, end_state, priority, tid, state
+        cpu_sql = """
+        SELECT DISTINCT cpu
         FROM (
-          SELECT * FROM cs
-          UNION ALL
-          SELECT * FROM waking
-          ORDER BY ts
+          SELECT COALESCE(s.cpu, 0) AS cpu FROM sched s
+          UNION
+          SELECT COALESCE(ts.cpu, ts.ucpu, 0) AS cpu FROM thread_state ts WHERE ts.state = 'W'
         )
+        ORDER BY cpu ASC
         """
         scheduling_records: dict[
             int, list[trace_model.SchedulingRecord]
@@ -648,7 +626,6 @@ class _FxtImporter:
             last_prio=None,
             last_end_state=END_STATE_MAP["R"],
         )
-        cpu_states: dict[int, CpuState] = {}
 
         def make_idle_switch(state: CpuState) -> trace_model.ContextSwitch:
             assert state.last_end_ts is not None
@@ -666,72 +643,105 @@ class _FxtImporter:
                 args={},
             )
 
-        for row in self._query_as(_SchedRow, sql):
-            cpu = row.cpu
-            ts_ns = row.ts
-            state = row.state
-
+        for cpu_row in self._query_as(_CpuRow, cpu_sql):
+            cpu = cpu_row.cpu
             records = scheduling_records[cpu]
-            timestamp = trace_time.TimePoint.from_epoch_delta(
-                trace_time.TimeDelta.from_nanoseconds(float(ts_ns))
+            cpu_state = default_cpu_state
+
+            sql = f"""
+            WITH cs AS (
+              SELECT
+                s.ts AS ts,
+                COALESCE(s.dur, 0) AS dur,
+                COALESCE(s.end_state, '') AS end_state,
+                COALESCE(s.priority, 0) AS priority,
+                COALESCE(t.tid, 0) AS tid,
+                'Running' AS state
+              FROM sched s
+              LEFT JOIN thread t ON s.utid = t.utid
+              WHERE COALESCE(s.cpu, 0) = {cpu}
+            ),
+            waking AS (
+              SELECT
+                ts.ts AS ts,
+                0 AS dur,
+                '' AS end_state,
+                0 AS priority,
+                COALESCE(t.tid, 0) AS tid,
+                'W' AS state
+              FROM thread_state ts
+              JOIN thread t ON ts.utid = t.utid
+              WHERE ts.state = 'W' AND COALESCE(ts.cpu, ts.ucpu, 0) = {cpu}
             )
+            SELECT ts, dur, end_state, priority, tid, state
+            FROM (
+              SELECT * FROM cs
+              UNION ALL
+              SELECT * FROM waking
+              ORDER BY ts
+            )
+            """
 
-            cpu_state = cpu_states.get(cpu, default_cpu_state)
-            if (
-                cpu_state.last_end_ts is not None
-                and ts_ns > cpu_state.last_end_ts
-                and cpu_state.last_tid != IDLE_TID
-            ):
-                records.append(make_idle_switch(cpu_state))
-                cpu_state = cpu_state._replace(
-                    last_tid=IDLE_TID,
-                    last_prio=IDLE_PRIO,
-                    last_end_state=END_STATE_MAP["R"],
+            for row in self._query_as(_CpuSchedRow, sql):
+                ts_ns = row.ts
+                state = row.state
+                timestamp = trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_nanoseconds(float(ts_ns))
                 )
-                cpu_states[cpu] = cpu_state
 
-            if state == "W":
+                if (
+                    cpu_state.last_end_ts is not None
+                    and ts_ns > cpu_state.last_end_ts
+                    and cpu_state.last_tid != IDLE_TID
+                ):
+                    records.append(make_idle_switch(cpu_state))
+                    cpu_state = cpu_state._replace(
+                        last_tid=IDLE_TID,
+                        last_prio=IDLE_PRIO,
+                        last_end_state=END_STATE_MAP["R"],
+                    )
+
+                if state == "W":
+                    records.append(
+                        trace_model.Waking(
+                            start=timestamp,
+                            tid=row.tid,
+                            prio=0,
+                            args={},
+                        )
+                    )
+                    continue
+
+                raw_dur = row.dur
+                tid = row.tid
+                prio = row.priority
+
                 records.append(
-                    trace_model.Waking(
+                    trace_model.ContextSwitch(
                         start=timestamp,
-                        tid=row.tid,
-                        prio=0,
+                        incoming_tid=tid,
+                        outgoing_tid=cpu_state.last_tid,
+                        incoming_prio=prio,
+                        outgoing_prio=cpu_state.last_prio,
+                        outgoing_state=cpu_state.last_end_state,
                         args={},
                     )
                 )
-                continue
 
-            raw_dur = row.dur
-            tid = row.tid
-            prio = row.priority
-
-            records.append(
-                trace_model.ContextSwitch(
-                    start=timestamp,
-                    incoming_tid=tid,
-                    outgoing_tid=cpu_state.last_tid,
-                    incoming_prio=prio,
-                    outgoing_prio=cpu_state.last_prio,
-                    outgoing_state=cpu_state.last_end_state,
-                    args={},
+                cpu_state = CpuState(
+                    last_end_ts=ts_ns + raw_dur if raw_dur >= 0 else None,
+                    last_tid=tid,
+                    last_prio=prio,
+                    last_end_state=END_STATE_MAP.get(
+                        row.end_state, END_STATE_MAP["R"]
+                    ),
                 )
-            )
 
-            cpu_states[cpu] = CpuState(
-                last_end_ts=ts_ns + raw_dur if raw_dur >= 0 else None,
-                last_tid=tid,
-                last_prio=prio,
-                last_end_state=END_STATE_MAP.get(
-                    row.end_state, END_STATE_MAP["R"]
-                ),
-            )
-
-        for cpu, cpu_state in cpu_states.items():
             if (
                 cpu_state.last_end_ts is not None
                 and cpu_state.last_tid != IDLE_TID
             ):
-                scheduling_records[cpu].append(make_idle_switch(cpu_state))
+                records.append(make_idle_switch(cpu_state))
 
         return self._SchedulingRecords(scheduling_records)
 

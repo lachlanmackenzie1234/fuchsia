@@ -7,6 +7,7 @@
 import contextlib
 import pathlib
 import unittest
+from typing import Any
 from unittest import mock
 
 from tp_shell import PerfettoTraceProcessor
@@ -207,33 +208,57 @@ class QueriesTest(unittest.TestCase):
         first_switch = scheduling.records[0][0]
         self.assertIsInstance(first_switch, trace_model.ContextSwitch)
 
+    def test_get_scheduling_records_queries_per_cpu(self) -> None:
+        fresh_importer = trace_importing_fxt._FxtImporter(self.session)
+        with mock.patch.object(
+            fresh_importer, "_query_as", wraps=fresh_importer._query_as
+        ) as mock_query_as:
+            scheduling = fresh_importer.get_scheduling_records()
+
+        first_call = mock_query_as.call_args_list[0]
+        self.assertIs(first_call[0][0], trace_importing_fxt._CpuRow)
+
+        cpus = list(scheduling.records.keys())
+        sched_calls = [
+            c
+            for c in mock_query_as.call_args_list[1:]
+            if c[0][0] is trace_importing_fxt._CpuSchedRow
+        ]
+        self.assertEqual(len(sched_calls), len(cpus))
+
     def test_get_scheduling_records_end_states(self) -> None:
         mock_rows = [
-            trace_importing_fxt._SchedRow(
-                1000, 0, 100, "R", 3122, 101, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1000, 100, "R", 3122, 101, "Running"
             ),
-            trace_importing_fxt._SchedRow(
-                1100, 0, 100, "S", 3122, 102, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1100, 100, "S", 3122, 102, "Running"
             ),
-            trace_importing_fxt._SchedRow(
-                1200, 0, 100, "D", 3122, 103, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1200, 100, "D", 3122, 103, "Running"
             ),
-            trace_importing_fxt._SchedRow(
-                1300, 0, 100, "T", 3122, 104, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1300, 100, "T", 3122, 104, "Running"
             ),
-            trace_importing_fxt._SchedRow(
-                1400, 0, 100, "Z", 3122, 105, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1400, 100, "Z", 3122, 105, "Running"
             ),
             # Gap from 1500 to 1600 exercises outgoing_state across an idle gap.
-            trace_importing_fxt._SchedRow(
-                1600, 0, 100, "X", 3122, 106, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1600, 100, "X", 3122, 106, "Running"
             ),
-            trace_importing_fxt._SchedRow(
-                1700, 0, 100, "R", 3122, 107, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1700, 100, "R", 3122, 107, "Running"
             ),
         ]
+
+        def fake_query_as(row_type: Any, sql: str) -> Any:
+            if row_type is trace_importing_fxt._CpuRow:
+                return iter([trace_importing_fxt._CpuRow(0)])
+            return iter(mock_rows)
+
         with mock.patch.object(
-            self.importer, "_query_as", return_value=iter(mock_rows)
+            self.importer, "_query_as", side_effect=fake_query_as
         ):
             scheduling = self.importer.get_scheduling_records()
 
@@ -260,16 +285,22 @@ class QueriesTest(unittest.TestCase):
 
     def test_get_scheduling_records_waking_during_idle_gap(self) -> None:
         mock_rows = [
-            trace_importing_fxt._SchedRow(
-                1000, 0, 500, "S", 3122, 101, "Running"
+            trace_importing_fxt._CpuSchedRow(
+                1000, 500, "S", 3122, 101, "Running"
             ),
-            trace_importing_fxt._SchedRow(2000, 0, 0, "", 0, 102, "W"),
-            trace_importing_fxt._SchedRow(
-                2500, 0, 500, "R", 3122, 102, "Running"
+            trace_importing_fxt._CpuSchedRow(2000, 0, "", 0, 102, "W"),
+            trace_importing_fxt._CpuSchedRow(
+                2500, 500, "R", 3122, 102, "Running"
             ),
         ]
+
+        def fake_query_as(row_type: Any, sql: str) -> Any:
+            if row_type is trace_importing_fxt._CpuRow:
+                return iter([trace_importing_fxt._CpuRow(0)])
+            return iter(mock_rows)
+
         with mock.patch.object(
-            self.importer, "_query_as", return_value=iter(mock_rows)
+            self.importer, "_query_as", side_effect=fake_query_as
         ):
             scheduling = self.importer.get_scheduling_records()
 
@@ -355,16 +386,33 @@ class QueriesTest(unittest.TestCase):
         )
 
     def test_get_scheduling_records_final_outgoing_switch(self) -> None:
-        mock_rows = [
-            trace_importing_fxt._SchedRow(
-                1000, 0, 500, "S", 3122, 101, "Running"
-            ),
-            trace_importing_fxt._SchedRow(
-                1000, 1, -1, "", 3122, 201, "Running"
-            ),
-        ]
+        def fake_query_as(row_type: Any, sql: str) -> Any:
+            if row_type is trace_importing_fxt._CpuRow:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuRow(0),
+                        trace_importing_fxt._CpuRow(1),
+                    ]
+                )
+            if "COALESCE(s.cpu, 0) = 0" in sql:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuSchedRow(
+                            1000, 500, "S", 3122, 101, "Running"
+                        )
+                    ]
+                )
+            else:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuSchedRow(
+                            1000, -1, "", 3122, 201, "Running"
+                        )
+                    ]
+                )
+
         with mock.patch.object(
-            self.importer, "_query_as", return_value=iter(mock_rows)
+            self.importer, "_query_as", side_effect=fake_query_as
         ):
             scheduling = self.importer.get_scheduling_records()
 
@@ -392,6 +440,69 @@ class QueriesTest(unittest.TestCase):
         self.assertIsInstance(cpu1_records[0], trace_model.ContextSwitch)
         assert isinstance(cpu1_records[0], trace_model.ContextSwitch)
         self.assertEqual(cpu1_records[0].tid, 201)
+
+    def test_get_scheduling_records_sparse_cpus(self) -> None:
+        def fake_query_as(row_type: Any, sql: str) -> Any:
+            if row_type is trace_importing_fxt._CpuRow:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuRow(0),
+                        trace_importing_fxt._CpuRow(4),
+                    ]
+                )
+            if "COALESCE(s.cpu, 0) = 0" in sql:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuSchedRow(
+                            1000, -1, "", 3122, 101, "Running"
+                        )
+                    ]
+                )
+            if "COALESCE(s.cpu, 0) = 4" in sql:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuSchedRow(
+                            2000, -1, "", 3122, 102, "Running"
+                        )
+                    ]
+                )
+            return iter([])
+
+        with mock.patch.object(
+            self.importer, "_query_as", side_effect=fake_query_as
+        ):
+            scheduling = self.importer.get_scheduling_records()
+
+        self.assertEqual(sorted(scheduling.records.keys()), [0, 4])
+        self.assertEqual(len(scheduling.records[0]), 1)
+        self.assertEqual(scheduling.records[0][0].tid, 101)
+        self.assertEqual(len(scheduling.records[4]), 1)
+        self.assertEqual(scheduling.records[4][0].tid, 102)
+
+    def test_get_scheduling_records_waking_only_cpu(self) -> None:
+        def fake_query_as(row_type: Any, sql: str) -> Any:
+            if row_type is trace_importing_fxt._CpuRow:
+                return iter([trace_importing_fxt._CpuRow(2)])
+            if "COALESCE(s.cpu, 0) = 2" in sql:
+                return iter(
+                    [
+                        trace_importing_fxt._CpuSchedRow(
+                            5000, 0, "", trace_model.INT32_MIN, 301, "W"
+                        )
+                    ]
+                )
+            return iter([])
+
+        with mock.patch.object(
+            self.importer, "_query_as", side_effect=fake_query_as
+        ):
+            scheduling = self.importer.get_scheduling_records()
+
+        self.assertEqual(sorted(scheduling.records.keys()), [2])
+        cpu2_records = scheduling.records[2]
+        self.assertEqual(len(cpu2_records), 1)
+        self.assertIsInstance(cpu2_records[0], trace_model.Waking)
+        self.assertEqual(cpu2_records[0].tid, 301)
 
     def test_get_flow_events(self) -> None:
         (
