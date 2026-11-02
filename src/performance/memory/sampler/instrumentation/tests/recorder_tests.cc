@@ -54,7 +54,7 @@ class SamplerImpl : public fidl::testing::WireTestBase<fuchsia_memory_sampler::S
     std::cerr << "Not implemented: " << name << '\n';
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   void SetSharedSocket(fuchsia_memory_sampler::wire::SamplerSetSharedSocketRequest* request,
                        SetSharedSocketCompleter::Sync& completer) override {
     socket_ = std::move(request->socket);
@@ -69,6 +69,7 @@ class SamplerImpl : public fidl::testing::WireTestBase<fuchsia_memory_sampler::S
   zx::socket socket_;
 };
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 std::vector<uint8_t> ReadDatagram(zx::socket& socket) {
   std::vector<uint8_t> buf(65536);
   size_t actual = 0;
@@ -80,7 +81,6 @@ std::vector<uint8_t> ReadDatagram(zx::socket& socket) {
   return buf;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 void VerifyAllocationDatagram(const std::vector<uint8_t>& datagram, void* expected_address,
                               size_t expected_size, uint64_t expected_interval = 1) {
   auto unpersisted = fidl::InplaceUnpersist<fuchsia_memory_sampler::wire::SamplerDatagram>(
@@ -119,6 +119,7 @@ PoissonSampler& GetSamplerThatAlwaysSamples() {
   return sampler;
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 PoissonSampler& GetSamplerThatNeverSamples() {
   class SamplerIntervalGenerator : public PoissonSampler::SampleIntervalGenerator {
    public:
@@ -129,7 +130,6 @@ PoissonSampler& GetSamplerThatNeverSamples() {
   return sampler;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 // Recorder consulted by `GetSamplerThatFollowsBackpressure`. Tests that
 // exercise backpressure install the recorder under test for their duration
 // using `ScopedBackpressureRecorder`.
@@ -258,7 +258,7 @@ TEST(RecorderTest, SetModulesInfo) {
   loop.RunUntilIdle();
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 TEST(RecorderTest, SampledAllocationCausesSampledDeallocation) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
@@ -310,7 +310,7 @@ TEST(RecorderTest, MaybeRecordAllocationFidlFallback) {
   class Sampler : public SamplerImpl {
    public:
     using SamplerImpl::SamplerImpl;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
     void RecordAllocation(fuchsia_memory_sampler::wire::RecordAllocationEvent* request,
                           RecordAllocationCompleter::Sync& completer) override {
       called_ = true;
@@ -353,7 +353,7 @@ TEST(RecorderTest, ForgetAllocationFidlFallback) {
   class Sampler : public SamplerImpl {
    public:
     using SamplerImpl::SamplerImpl;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
     void RecordAllocation(fuchsia_memory_sampler::wire::RecordAllocationEvent* request,
                           RecordAllocationCompleter::Sync& completer) override {}
     void RecordDeallocation(fuchsia_memory_sampler::wire::RecordDeallocationEvent* request,
@@ -392,7 +392,7 @@ TEST(RecorderTest, ForgetAllocationFidlFallback) {
   loop.RunUntilIdle();
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 TEST(RecorderTest, DisconnectsOnSocketPeerClosed) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
@@ -542,7 +542,7 @@ TEST(RecorderTest, DisconnectsOnFidlPeerClosed) {
   EXPECT_TRUE(recorder.is_disabled());
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 // Tests that socket fullness detection via `zx_info_socket_t` functions as expected
 // under `ZX_SOCKET_DATAGRAM`.
 //

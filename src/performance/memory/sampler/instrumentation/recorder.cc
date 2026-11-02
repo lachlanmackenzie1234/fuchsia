@@ -69,7 +69,7 @@ void Recorder::InitSingletonOnce() {
   fidl::SyncClient client{std::move(result.value())};
   zx::socket client_socket;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   zx::socket server_socket;
   zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &client_socket, &server_socket);
   ZX_ASSERT(status == ZX_OK);
@@ -153,7 +153,7 @@ bool Recorder::RecordAllocation(void* address, size_t size, uint64_t sampling_in
   uint64_t pc_buffer[kMaxStackFramesLength]{};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   fuchsia_memory_sampler::RecordAllocationEvent event{{
       .address = std::optional{reinterpret_cast<uint64_t>(address)},
       .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{{{
@@ -271,7 +271,7 @@ void Recorder::ForgetAllocation(void* address) {
   uint64_t pc_buffer[kMaxStackFramesLength]{};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   fuchsia_memory_sampler::RecordDeallocationEvent event{{
       .address = std::optional{reinterpret_cast<uint64_t>(address)},
       .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{{{
@@ -446,7 +446,7 @@ Recorder::Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client, zx:
 Recorder Recorder::CreateRecorderForTesting(
     fidl::SyncClient<fuchsia_memory_sampler::Sampler> client,
     std::function<PoissonSampler&()> get_poisson_sampler, bool use_socket) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   if (use_socket) {
     zx::socket client_socket, server_socket;
     zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &client_socket, &server_socket);
