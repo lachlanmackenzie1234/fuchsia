@@ -90,12 +90,6 @@ constexpr memalloc::Range AsMemrange(  //
 
 }  // namespace
 
-// A default, weak definition that may be overrode to perform other relevant
-// initialization.
-[[gnu::weak]] void LegacyBootSetUartConsole(const uart::all::Config<>& uart_config) {
-  SetUartConsole(uart_config);
-}
-
 void LegacyBootInitMemory(AddressSpace* aspace) {
   // Note that these are done before paging is enabled with new
   // identity-mapping page tables, because the fixed-address regions they
