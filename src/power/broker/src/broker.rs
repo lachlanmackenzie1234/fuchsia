@@ -2159,6 +2159,61 @@ mod tests {
         }
     }
 
+    /// Adds an element with the given levels and dependencies (dependent level, required element's
+    /// token, required level), registers a dependency token for it, and returns both.
+    fn add_test_element_with_token(
+        broker: &mut Broker,
+        name: &str,
+        levels: &[fpb::PowerLevel],
+        deps: &[(fpb::PowerLevel, &DependencyToken, fpb::PowerLevel)],
+    ) -> (ElementID, DependencyToken) {
+        let level_deps = deps
+            .iter()
+            .map(|(dependent_level, token, requires_level)| fpb::LevelDependency {
+                dependent_level: Some(*dependent_level),
+                requires_token: Some(
+                    token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
+                ),
+                requires_level_by_preference: Some(vec![*requires_level]),
+                ..Default::default()
+            })
+            .collect();
+        let id = broker
+            .add_element(name, levels[0], levels.to_vec(), level_deps)
+            .expect("add_element failed");
+        let token = DependencyToken::create();
+        broker
+            .register_dependency_token(
+                id,
+                token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
+            )
+            .expect("register_dependency_token failed");
+        (id, token)
+    }
+
+    /// Makes each element in `elements` report its required level until nothing changes, as
+    /// well-behaved elements would.
+    #[track_caller]
+    fn settle_levels(broker: &mut Broker, elements: &[ElementID]) {
+        // Only a safety bound, so that a test that never settles fails instead of hanging.
+        const MAX_SETTLE_ROUNDS: usize = 32;
+        for _ in 0..MAX_SETTLE_ROUNDS {
+            let mut changed = false;
+            for id in elements {
+                let required =
+                    broker.get_required_level(id).expect("element has no required level");
+                if broker.get_current_level(id) != Some(required) {
+                    broker.update_current_level(*id, required);
+                    changed = true;
+                }
+            }
+            if !changed {
+                return;
+            }
+        }
+        panic!("levels did not settle");
+    }
+
     // When claims are added, activated, marked to deactivate, and dropped, the Catalog's counts
     // and indexes should track each transition, and dropping the last claim on a dependency
     // should leave no entry behind.
@@ -2307,49 +2362,20 @@ mod tests {
     fn test_add_dependency_while_lease_powering_down() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let token_b = DependencyToken::create();
-        let token_c = DependencyToken::create();
-
-        let element_c = broker
-            .add_element("C", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_c,
-                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let element_b = broker
-            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let element_a = broker
-            .add_element(
-                "A",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (element_c, token_c) =
+            add_test_element_with_token(&mut broker, "C", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, token_b) =
+            add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
+        let (element_a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_b, ON.level)],
+        );
 
         // Acquire lease on A(ON); B and A turn ON.
         let lease_a = broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).unwrap();
-        broker.update_current_level(element_b, ON);
-        broker.update_current_level(element_a, ON);
+        settle_levels(&mut broker, &[element_a, element_b]);
         assert_eq!(broker.get_lease_status(lease_a.id), Some(LeaseStatus::Satisfied));
 
         // Drop lease_a while A has not yet completed transitioning to OFF.
@@ -2404,8 +2430,7 @@ mod tests {
         broker.drop_lease(provisional_lease.id).unwrap();
 
         // Complete power-down of A and B to OFF.
-        broker.update_current_level(element_a, OFF);
-        broker.update_current_level(element_b, OFF);
+        settle_levels(&mut broker, &[element_a, element_b]);
 
         // C is left at OFF because the only claim on it belonged to the provisional lease, and
         // lease_a vacates cleanly once its own claims drop.
@@ -2420,60 +2445,20 @@ mod tests {
     fn test_disorderly_drop_while_lease_powering_down() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let token_a = DependencyToken::create();
-        let token_b = DependencyToken::create();
-
-        let element_a = broker
-            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let element_b = broker
-            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let element_x = broker
-            .add_element(
-                "X",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, token_b) =
+            add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
+        let (element_x, _) = add_test_element_with_token(
+            &mut broker,
+            "X",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level), (ON.level, &token_b, ON.level)],
+        );
 
         // Acquire lease_x1 on X(ON); A, B, and X turn ON.
         let lease_x1 = broker.acquire_lease(element_x, ON, zx::Koid::from_raw(1)).unwrap();
-        broker.update_current_level(element_a, ON);
-        broker.update_current_level(element_b, ON);
-        broker.update_current_level(element_x, ON);
+        settle_levels(&mut broker, &[element_a, element_b, element_x]);
         assert_eq!(broker.get_lease_status(lease_x1.id), Some(LeaseStatus::Satisfied));
 
         // Drop lease_x1 while X stays in transition to OFF (so X->A and X->B are in powering_down).
@@ -2713,17 +2698,9 @@ mod tests {
     async fn test_add_element_dependency_never_and_unregistered() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let token_mithril = DependencyToken::create();
         let never_registered_token = DependencyToken::create();
-        let mithril = broker
-            .add_element("Mithril", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                mithril,
-                token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
+        let (mithril, token_mithril) =
+            add_test_element_with_token(&mut broker, "Mithril", &BINARY_POWER_LEVELS, &[]);
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
         assert_data_tree!(inspect, root: {
             test: {
@@ -2798,23 +2775,12 @@ mod tests {
         assert!(matches!(add_element_not_authorized_res, Err(AddElementError::NotAuthorized)));
 
         // Add element with a valid token should succeed.
-        let silver = broker
-            .add_element(
-                "Silver",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_mithril
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (silver, _) = add_test_element_with_token(
+            &mut broker,
+            "Silver",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_mithril, ON.level)],
+        );
         assert_data_tree!(inspect, root: {
         test: {
             leases: {},
@@ -2926,9 +2892,8 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let inspect_node = inspect.root().create_child("test");
         let mut broker = Broker::new(inspect_node);
-        let unobtanium = broker
-            .add_element("Unobtainium", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
+        let (unobtanium, _) =
+            add_test_element_with_token(&mut broker, "Unobtainium", &BINARY_POWER_LEVELS, &[]);
         assert_eq!(broker.element_exists(unobtanium), true);
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
         assert_data_tree!(inspect, root: {
@@ -3113,13 +3078,8 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let a = broker
-            .add_element("a", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-
-        let b = broker
-            .add_element("b", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
+        let (a, _) = add_test_element_with_token(&mut broker, "a", &BINARY_POWER_LEVELS, &[]);
+        let (b, _) = add_test_element_with_token(&mut broker, "b", &BINARY_POWER_LEVELS, &[]);
 
         assert_eq!(broker.adjust_lease_counter(a, 5, 1), 1);
         // a:5: 1
@@ -3148,55 +3108,16 @@ mod tests {
         // P1 <= C => P2
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let parent1_token = DependencyToken::create();
-        let parent1: ElementID = broker
-            .add_element("P1", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent1,
-                parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent2_token = DependencyToken::create();
-        let parent2: ElementID = broker
-            .add_element("P2", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent2,
-                parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let child = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            parent1_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            parent2_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
+        let (parent1, parent1_token) =
+            add_test_element_with_token(&mut broker, "P1", &BINARY_POWER_LEVELS, &[]);
+        let (parent2, parent2_token) =
+            add_test_element_with_token(&mut broker, "P2", &BINARY_POWER_LEVELS, &[]);
+        let (child, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent1_token, ON.level), (ON.level, &parent2_token, ON.level)],
+        );
 
         let mut broker_status = BrokerStatusMatcher::new();
 
@@ -3527,44 +3448,16 @@ mod tests {
         // C => P => GP
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let grandparent_token = DependencyToken::create();
-        let grandparent: ElementID = broker
-            .add_element("GP", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                grandparent,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent_token = DependencyToken::create();
-        let parent: ElementID = broker
-            .add_element("P", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent,
-                parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let child = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (grandparent, grandparent_token) =
+            add_test_element_with_token(&mut broker, "GP", &BINARY_POWER_LEVELS, &[]);
+        let (parent, parent_token) =
+            add_test_element_with_token(&mut broker, "P", &BINARY_POWER_LEVELS, &[]);
+        let (child, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent_token, ON.level)],
+        );
         let dep = fpb::LevelDependency {
             dependent_level: Some(ON.level),
             requires_token: Some(
@@ -3641,88 +3534,26 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let greatgrandparent_token = DependencyToken::create();
-        let greatgrandparent: ElementID = broker
-            .add_element("GGP", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                greatgrandparent,
-                greatgrandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let grandparent_token = DependencyToken::create();
-        let grandparent: ElementID = broker
-            .add_element("GP", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                grandparent,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let parent_token = DependencyToken::create();
-        let parent: ElementID = broker
-            .add_element("P", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent,
-                parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
-        let child = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-
-        // P depends on GP
-        let dep_p_gp = fpb::LevelDependency {
-            dependent_level: Some(ON.level),
-            requires_token: Some(
-                grandparent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-            ),
-            requires_level_by_preference: Some(vec![ON.level]),
-            ..Default::default()
-        };
-        broker
-            .add_dependency(parent, dep_p_gp, &mut EagerInspectWriter)
-            .expect("add_dependency failed");
-
-        // GP depends on GGP
-        let dep_gp_ggp = fpb::LevelDependency {
-            dependent_level: Some(ON.level),
-            requires_token: Some(
-                greatgrandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed"),
-            ),
-            requires_level_by_preference: Some(vec![ON.level]),
-            ..Default::default()
-        };
-        broker
-            .add_dependency(grandparent, dep_gp_ggp, &mut EagerInspectWriter)
-            .expect("add_dependency failed");
+        let (greatgrandparent, greatgrandparent_token) =
+            add_test_element_with_token(&mut broker, "GGP", &BINARY_POWER_LEVELS, &[]);
+        let (grandparent, grandparent_token) = add_test_element_with_token(
+            &mut broker,
+            "GP",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &greatgrandparent_token, ON.level)],
+        );
+        let (parent, parent_token) = add_test_element_with_token(
+            &mut broker,
+            "P",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &grandparent_token, ON.level)],
+        );
+        let (child, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent_token, ON.level)],
+        );
 
         let mut broker_status = BrokerStatusMatcher::new();
 
@@ -3805,84 +3636,18 @@ mod tests {
         // All other elements have a minimum of 0.
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let grandparent_token = DependencyToken::create();
-        let grandparent: ElementID =
-            broker.add_element("GP", 10, vec![10, 90, 200], vec![]).expect("add_element failed");
-        broker
-            .register_dependency_token(
-                grandparent,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent_token = DependencyToken::create();
-        let parent: ElementID = broker
-            .add_element(
-                "P",
-                0,
-                vec![0, 30, 50],
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(50),
-                        requires_token: Some(
-                            grandparent_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![200]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(30),
-                        requires_token: Some(
-                            grandparent_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![90]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent,
-                parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let child1 = broker
-            .add_element(
-                "C1",
-                0,
-                vec![0, 5],
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(5),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![50]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let child2 = broker
-            .add_element(
-                "C2",
-                0,
-                vec![0, 3],
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(3),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![30]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (grandparent, grandparent_token) =
+            add_test_element_with_token(&mut broker, "GP", &[10, 90, 200], &[]);
+        let (parent, parent_token) = add_test_element_with_token(
+            &mut broker,
+            "P",
+            &[0, 30, 50],
+            &[(50, &grandparent_token, 200), (30, &grandparent_token, 90)],
+        );
+        let (child1, _) =
+            add_test_element_with_token(&mut broker, "C1", &[0, 5], &[(5, &parent_token, 50)]);
+        let (child2, _) =
+            add_test_element_with_token(&mut broker, "C2", &[0, 3], &[(3, &parent_token, 30)]);
 
         // Initially, all elements should be at their default required levels.
         // Grandparent should have a default required level of 10
@@ -4007,73 +3772,26 @@ mod tests {
         // C2 =>  P => GP
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let grandparent_token = DependencyToken::create();
-        let grandparent: ElementID = broker
-            .add_element("GP", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                grandparent,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent_token = DependencyToken::create();
-        let parent: ElementID = broker
-            .add_element(
-                "P",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        grandparent_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent,
-                parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let child1 = broker
-            .add_element(
-                "C1",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let child2 = broker
-            .add_element(
-                "C2",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (grandparent, grandparent_token) =
+            add_test_element_with_token(&mut broker, "GP", &BINARY_POWER_LEVELS, &[]);
+        let (parent, parent_token) = add_test_element_with_token(
+            &mut broker,
+            "P",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &grandparent_token, ON.level)],
+        );
+        let (child1, _) = add_test_element_with_token(
+            &mut broker,
+            "C1",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent_token, ON.level)],
+        );
+        let (child2, _) = add_test_element_with_token(
+            &mut broker,
+            "C2",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent_token, ON.level)],
+        );
 
         // Initially, all elements should be OFF.
         let mut broker_status = BrokerStatusMatcher::new();
@@ -4178,107 +3896,32 @@ mod tests {
         // D ON requires C ON.
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let element_c_token = DependencyToken::create();
-        let element_c: ElementID = broker
-            .add_element("C", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_c,
-                element_c_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_b_token = DependencyToken::create();
-        let element_b: ElementID = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        element_c_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_b,
-                element_b_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_a = broker
-            .add_element(
-                "A",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        element_b_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_d = broker
-            .add_element(
-                "D",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        element_c_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_d_token = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_d,
-                element_d_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_e = broker
-            .add_element(
-                "E",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        element_d_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (element_c, element_c_token) =
+            add_test_element_with_token(&mut broker, "C", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, element_b_token) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &element_c_token, ON.level)],
+        );
+        let (element_a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &element_b_token, ON.level)],
+        );
+        let (element_d, element_d_token) = add_test_element_with_token(
+            &mut broker,
+            "D",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &element_c_token, ON.level)],
+        );
+        let (element_e, _) = add_test_element_with_token(
+            &mut broker,
+            "E",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &element_d_token, ON.level)],
+        );
 
         log::warn!("a: {element_a}\nb: {element_b}\nc:{element_c}\nd:{element_d}\ne:{element_e}");
 
@@ -4394,96 +4037,26 @@ mod tests {
         // Parent 2 ON requires Grandparent ON.
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let grandparent_token = DependencyToken::create();
-        let grandparent: ElementID = broker
-            .add_element("GP", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                grandparent,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent1_token = DependencyToken::create();
-        let parent1: ElementID = broker
-            .add_element(
-                "P",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        grandparent_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent1,
-                parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let parent2_token = DependencyToken::create();
-        let parent2: ElementID = broker
-            .add_element(
-                "P",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        grandparent_token
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                parent2,
-                parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let child = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            parent1_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            parent2_token
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed"),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
+        let (grandparent, grandparent_token) =
+            add_test_element_with_token(&mut broker, "GP", &BINARY_POWER_LEVELS, &[]);
+        let (parent1, parent1_token) = add_test_element_with_token(
+            &mut broker,
+            "P",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &grandparent_token, ON.level)],
+        );
+        let (parent2, parent2_token) = add_test_element_with_token(
+            &mut broker,
+            "P",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &grandparent_token, ON.level)],
+        );
+        let (child, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &parent1_token, ON.level), (ON.level, &parent2_token, ON.level)],
+        );
 
         // Initially, all elements should be OFF.
         let mut broker_status = BrokerStatusMatcher::new();
@@ -4571,64 +4144,18 @@ mod tests {
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
         let v012_u8: Vec<u8> = vec![0, 1, 2];
-
-        let token_b = DependencyToken::create();
-        let token_c = DependencyToken::create();
-        let element_b =
-            broker.add_element("B", 0, v012_u8.clone(), vec![]).expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_c =
-            broker.add_element("C", 0, v012_u8.clone(), vec![]).expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_c,
-                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_a = broker
-            .add_element(
-                "A",
-                0,
-                v012_u8.clone(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(1),
-                        requires_token: Some(
-                            token_b
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed")
-                                .into(),
-                        ),
-                        requires_level_by_preference: Some(vec![1]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(2),
-                        requires_token: Some(
-                            token_c
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed")
-                                .into(),
-                        ),
-                        requires_level_by_preference: Some(vec![1]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
+        let (element_b, token_b) = add_test_element_with_token(&mut broker, "B", &v012_u8, &[]);
+        let (element_c, token_c) = add_test_element_with_token(&mut broker, "C", &v012_u8, &[]);
+        let (element_a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &v012_u8,
+            &[(1, &token_b, 1), (2, &token_c, 1)],
+        );
 
         let mut broker_status = BrokerStatusMatcher::new();
 
-        // Initial required levels for all elements should be 0.
-        // Set all current levels to 0.
-        broker.update_current_level(element_a, ZERO);
-        broker.update_current_level(element_b, ZERO);
-        broker.update_current_level(element_c, ZERO);
+        // All elements start with current and required level 0.
         broker_status.required_level.update(element_a, ZERO);
         broker_status.required_level.update(element_b, ZERO);
         broker_status.required_level.update(element_c, ZERO);
@@ -4656,8 +4183,7 @@ mod tests {
         // B and C's current level should not change.
         //
         // A's lease should be satisfied.
-        broker.update_current_level(element_b, ONE);
-        broker.update_current_level(element_c, ONE);
+        settle_levels(&mut broker, &[element_b, element_c]);
         broker_status.required_level.update(element_a, TWO);
         broker_status.assert_matches(&broker);
 
@@ -4706,60 +4232,24 @@ mod tests {
         // ON <======= ON
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let token_a = DependencyToken::create();
-        let element_a = broker
-            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_a
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_c = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_a
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, _) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
+        let (element_c, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
 
         let mut broker_status = BrokerStatusMatcher::new();
 
-        // Initial required levels for all elements should be 0.
-        // Set all current levels to 0.
-        broker.update_current_level(element_a, ZERO);
-        broker.update_current_level(element_b, ZERO);
-        broker.update_current_level(element_c, ZERO);
+        // All elements start with current and required level 0.
         broker_status.required_level.update(element_a, ZERO);
         broker_status.required_level.update(element_b, ZERO);
         broker_status.required_level.update(element_c, ZERO);
@@ -4800,8 +4290,7 @@ mod tests {
         // Create a topology of one element.
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let element =
-            broker.add_element("E", 0, vec![0, 1, 2], vec![]).expect("add_element failed");
+        let (element, _) = add_test_element_with_token(&mut broker, "E", &[0, 1, 2], &[]);
         let mut broker_status = BrokerStatusMatcher::new();
 
         // Initial required level should be 0.
@@ -4860,16 +4349,8 @@ mod tests {
     async fn test_add_element_dependency_list_of_levels() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
-        let token_mithril = DependencyToken::create();
-        let mithril = broker
-            .add_element("Mithril", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                mithril,
-                token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
+        let (mithril, token_mithril) =
+            add_test_element_with_token(&mut broker, "Mithril", &BINARY_POWER_LEVELS, &[]);
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
 
         // Add an element with a dependency with a list of requires_level_by_preference.
@@ -4998,187 +4479,63 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let token_gp1 = DependencyToken::create();
-        let token_gp2 = DependencyToken::create();
-        let token_x = DependencyToken::create();
-        let token_p1: fidl::Event = DependencyToken::create();
-        let token_p2 = DependencyToken::create();
-
-        let element_gp1 = broker
-            .add_element("GP1", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_gp1,
-                token_gp1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_gp2 = broker
-            .add_element("GP2", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_gp2,
-                token_gp2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_x = broker
-            .add_element(
-                "X",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            token_gp1
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed")
-                                .into(),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(ON.level),
-                        requires_token: Some(
-                            token_gp2
-                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                                .expect("dup failed")
-                                .into(),
-                        ),
-                        requires_level_by_preference: Some(vec![ON.level]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_x,
-                token_x.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_p1 = broker
-            .add_element(
-                "P1",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_x
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_p1,
-                token_p1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_p2 = broker
-            .add_element(
-                "P2",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_x
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_p2,
-                token_p2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        let element_c1 = broker
-            .add_element(
-                "C1",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_p1
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_c2 = broker
-            .add_element(
-                "C2",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_p1
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_c3 = broker
-            .add_element(
-                "C3",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_p2
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let element_c4 = broker
-            .add_element(
-                "C4",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_p2
-                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                            .expect("dup failed")
-                            .into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
+        let (element_gp1, token_gp1) =
+            add_test_element_with_token(&mut broker, "GP1", &BINARY_POWER_LEVELS, &[]);
+        let (element_gp2, token_gp2) =
+            add_test_element_with_token(&mut broker, "GP2", &BINARY_POWER_LEVELS, &[]);
+        let (element_x, token_x) = add_test_element_with_token(
+            &mut broker,
+            "X",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_gp1, ON.level), (ON.level, &token_gp2, ON.level)],
+        );
+        let (element_p1, token_p1) = add_test_element_with_token(
+            &mut broker,
+            "P1",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_x, ON.level)],
+        );
+        let (element_p2, token_p2) = add_test_element_with_token(
+            &mut broker,
+            "P2",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_x, ON.level)],
+        );
+        let (element_c1, _) = add_test_element_with_token(
+            &mut broker,
+            "C1",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_p1, ON.level)],
+        );
+        let (element_c2, _) = add_test_element_with_token(
+            &mut broker,
+            "C2",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_p1, ON.level)],
+        );
+        let (element_c3, _) = add_test_element_with_token(
+            &mut broker,
+            "C3",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_p2, ON.level)],
+        );
+        let (element_c4, _) = add_test_element_with_token(
+            &mut broker,
+            "C4",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_p2, ON.level)],
+        );
+        let all = [
+            element_gp1,
+            element_gp2,
+            element_x,
+            element_p1,
+            element_p2,
+            element_c1,
+            element_c2,
+            element_c3,
+            element_c4,
+        ];
 
         let mut broker_status = BrokerStatusMatcher::new();
 
@@ -5193,15 +4550,7 @@ mod tests {
             broker.acquire_lease(element_c3, ON, zx::Koid::from_raw(4)).expect("acquire failed");
         let lease_c4 =
             broker.acquire_lease(element_c4, ON, zx::Koid::from_raw(5)).expect("acquire failed");
-        broker.update_current_level(element_gp1, ON);
-        broker.update_current_level(element_gp2, ON);
-        broker.update_current_level(element_x, ON);
-        broker.update_current_level(element_p1, ON);
-        broker.update_current_level(element_p2, ON);
-        broker.update_current_level(element_c1, ON);
-        broker.update_current_level(element_c2, ON);
-        broker.update_current_level(element_c3, ON);
-        broker.update_current_level(element_c4, ON);
+        settle_levels(&mut broker, &all);
 
         // At this point, all elements should have required level ON.
         broker_status.required_level.update(element_gp1, ON);
@@ -5238,12 +4587,10 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Turn off all parent/child elements to preserve ordering.
-        broker.update_current_level(element_p1, OFF);
-        broker.update_current_level(element_p2, OFF);
-        broker.update_current_level(element_c1, OFF);
-        broker.update_current_level(element_c2, OFF);
-        broker.update_current_level(element_c3, OFF);
-        broker.update_current_level(element_c4, OFF);
+        settle_levels(
+            &mut broker,
+            &[element_p1, element_p2, element_c1, element_c2, element_c3, element_c4],
+        );
         broker_status.assert_matches(&broker);
 
         // Update X to ON.
@@ -5254,8 +4601,7 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Update P1 and P2 to ON.
-        broker.update_current_level(element_p1, ON);
-        broker.update_current_level(element_p2, ON);
+        settle_levels(&mut broker, &[element_p1, element_p2]);
         broker_status.required_level.update(element_c1, ON);
         broker_status.required_level.update(element_c2, ON);
         broker_status.required_level.update(element_c3, ON);
@@ -5264,10 +4610,7 @@ mod tests {
 
         // Update C1, C2, C3, and C4 to ON.
         // All leases should now be satisfied.
-        broker.update_current_level(element_c1, ON);
-        broker.update_current_level(element_c2, ON);
-        broker.update_current_level(element_c3, ON);
-        broker.update_current_level(element_c4, ON);
+        settle_levels(&mut broker, &[element_c1, element_c2, element_c3, element_c4]);
         broker_status.lease.update(lease_c1.id, LeaseStatus::Satisfied);
         broker_status.lease.update(lease_c2.id, LeaseStatus::Satisfied);
         broker_status.lease.update(lease_c3.id, LeaseStatus::Satisfied);
@@ -5292,16 +4635,12 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Power down all elements to remove activated claims.
-        broker.update_current_level(element_c1, OFF);
-        broker.update_current_level(element_c2, OFF);
-        broker.update_current_level(element_c3, OFF);
-        broker.update_current_level(element_c4, OFF);
+        settle_levels(&mut broker, &[element_c1, element_c2, element_c3, element_c4]);
         broker_status.required_level.update(element_p1, OFF);
         broker_status.required_level.update(element_p2, OFF);
         broker_status.assert_matches(&broker);
 
-        broker.update_current_level(element_p1, OFF);
-        broker.update_current_level(element_p2, OFF);
+        settle_levels(&mut broker, &[element_p1, element_p2]);
         broker_status.required_level.update(element_x, OFF);
         broker_status.assert_matches(&broker);
 
@@ -5327,67 +4666,22 @@ mod tests {
         // C has a dependency on D.
         // We will directly lease both B and C.
         // A <= B <= L => C => D
-        let element_a =
-            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_a.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_d =
-            broker.add_element("D", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
-        let token_d = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_d,
-                token_d.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_c = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_d.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
-        let token_c = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_c,
-                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, token_b) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
+        let (element_d, token_d) =
+            add_test_element_with_token(&mut broker, "D", &BINARY_POWER_LEVELS, &[]);
+        let (element_c, token_c) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_d, ON.level)],
+        );
 
         // Direct Lease L depends on B and C.
         let dependencies = vec![
@@ -5418,8 +4712,7 @@ mod tests {
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
 
         // Now satisfy A and D.
-        broker.update_current_level(element_a, ON);
-        broker.update_current_level(element_d, ON);
+        settle_levels(&mut broker, &[element_a, element_d]);
 
         // Now B and C should have their required levels updated to ON.
         assert_eq!(broker.get_required_level(&element_b), Some(ON));
@@ -5427,8 +4720,7 @@ mod tests {
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
 
         // Now satisfy B and C.
-        broker.update_current_level(element_b, ON);
-        broker.update_current_level(element_c, ON);
+        settle_levels(&mut broker, &[element_b, element_c]);
         // Now all dependencies are satisfied.
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
@@ -5442,8 +4734,7 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_d), Some(ON));
 
         // Power down B and C.
-        broker.update_current_level(element_b, OFF);
-        broker.update_current_level(element_c, OFF);
+        settle_levels(&mut broker, &[element_b, element_c]);
 
         // Now A and D's required levels levels should drop to OFF.
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));
@@ -5480,95 +4771,29 @@ mod tests {
         //
         //   A <= M <= B <= L
         //        M <= C <= L
-        let levels = vec![0, 1, 2];
-        let element_a = broker
-            .add_element("A", ZERO.level, levels.clone(), vec![])
-            .expect("add_element failed");
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
+        let levels = [0, 1, 2];
+        let (element_a, token_a) = add_test_element_with_token(&mut broker, "A", &levels, &[]);
         // M at 1 requires A at 1, and M at 2 requires A at 2.
-        let element_m = broker
-            .add_element(
-                "M",
-                ZERO.level,
-                levels.clone(),
-                vec![
-                    fpb::LevelDependency {
-                        dependent_level: Some(ONE.level),
-                        requires_token: Some(
-                            token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-                        ),
-                        requires_level_by_preference: Some(vec![ONE.level]),
-                        ..Default::default()
-                    },
-                    fpb::LevelDependency {
-                        dependent_level: Some(TWO.level),
-                        requires_token: Some(token_a.into()),
-                        requires_level_by_preference: Some(vec![TWO.level]),
-                        ..Default::default()
-                    },
-                ],
-            )
-            .expect("add_element failed");
-        let token_m = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_m,
-                token_m.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
+        let (element_m, token_m) = add_test_element_with_token(
+            &mut broker,
+            "M",
+            &levels,
+            &[(ONE.level, &token_a, ONE.level), (TWO.level, &token_a, TWO.level)],
+        );
         // B at ON requires M at 1.
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(
-                        token_m.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-                    ),
-                    requires_level_by_preference: Some(vec![ONE.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
+        let (element_b, token_b) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_m, ONE.level)],
+        );
         // C at ON requires M at 2.
-        let element_c = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_m.into()),
-                    requires_level_by_preference: Some(vec![TWO.level]),
-                    ..Default::default()
-                }],
-            )
-            .expect("add_element failed");
-        let token_c = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_c,
-                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
+        let (element_c, token_c) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_m, TWO.level)],
+        );
 
         let dependencies = vec![
             fpb::LeaseDependency {
@@ -5615,8 +4840,7 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_b), Some(ON));
         assert_eq!(broker.get_required_level(&element_c), Some(ON));
 
-        broker.update_current_level(element_b, ON);
-        broker.update_current_level(element_c, ON);
+        settle_levels(&mut broker, &[element_b, element_c]);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
         // The lease is recorded under each of its target elements, and only
@@ -5667,8 +4891,7 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_c), Some(OFF));
         assert_eq!(broker.get_required_level(&element_m), Some(TWO));
 
-        broker.update_current_level(element_b, OFF);
-        broker.update_current_level(element_c, OFF);
+        settle_levels(&mut broker, &[element_b, element_c]);
         assert_eq!(broker.get_required_level(&element_m), Some(ZERO));
 
         broker.update_current_level(element_m, ZERO);
@@ -5727,15 +4950,7 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a =
-            broker.add_element("A", ZERO.level, vec![0, 1, 2], vec![]).expect("add_element failed");
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
+        let (element_a, token_a) = add_test_element_with_token(&mut broker, "A", &[0, 1, 2], &[]);
 
         // The same element at the same level twice.
         let dependencies = vec![
@@ -5845,36 +5060,14 @@ mod tests {
 
         // A <= B <= L. B is the lease target, so the lease holds a root claim
         // on B. Removing B must drop the lease along with its claims on B and A.
-        let element_a =
-            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_a.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, token_b) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
 
         let dependencies = vec![fpb::LeaseDependency {
             requires_token: Some(token_b.into()),
@@ -5965,35 +5158,19 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a =
-            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_a.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, _) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
 
         let lease =
             broker.acquire_lease(element_b, ON, zx::Koid::from_raw(456)).expect("acquire failed");
 
-        broker.update_current_level(element_a, ON);
-        broker.update_current_level(element_b, ON);
+        settle_levels(&mut broker, &[element_a, element_b]);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
         broker.remove_element(&element_b);
@@ -6077,71 +5254,26 @@ mod tests {
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
         // D(ON) -> C(ON) -> B(ON) -> A(ON).
-        let element_a =
-            broker.add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![]).unwrap();
-        let token_a = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_b = broker
-            .add_element(
-                "B",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_a.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_c = broker
-            .add_element(
-                "C",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_b.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
-        let token_c = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_c,
-                token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
-            )
-            .unwrap();
-
-        let element_d = broker
-            .add_element(
-                "D",
-                OFF.level,
-                BINARY_POWER_LEVELS.to_vec(),
-                vec![fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_c.into()),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                }],
-            )
-            .unwrap();
+        let (element_a, token_a) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, token_b) = add_test_element_with_token(
+            &mut broker,
+            "B",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_a, ON.level)],
+        );
+        let (element_c, token_c) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_b, ON.level)],
+        );
+        let (element_d, _) = add_test_element_with_token(
+            &mut broker,
+            "D",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_c, ON.level)],
+        );
 
         // Acquire a lease on D(ON). Initially `[B(ON) -> A(ON)]` is activated (requiring A(ON)),
         // while `[C(ON) -> B(ON)]`, `[D(ON) -> C(ON)]`, and `[None -> D(ON)]` are pending.
@@ -6181,12 +5313,10 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a = broker
-            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        let element_b = broker
-            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
+        let (element_a, _) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
+        let (element_b, _) =
+            add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
 
         // Create a lease for A at ON and verify that A's required level is now ON.
         let lease =
@@ -6233,17 +5363,12 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let levels = vec![0, 1, 2];
-        let level_0 = IndexedPowerLevel::from_same_level_and_index(0);
+        let levels = [0, 1, 2];
         let level_1 = IndexedPowerLevel::from_same_level_and_index(1);
         let level_2 = IndexedPowerLevel::from_same_level_and_index(2);
 
-        let element_a = broker
-            .add_element("A", level_0.level, levels.clone(), vec![])
-            .expect("add_element failed");
-        let element_b = broker
-            .add_element("B", level_0.level, levels.clone(), vec![])
-            .expect("add_element failed");
+        let (element_a, _) = add_test_element_with_token(&mut broker, "A", &levels, &[]);
+        let (element_b, _) = add_test_element_with_token(&mut broker, "B", &levels, &[]);
 
         // Create a lease for A at 1.
         let lease = broker
@@ -6284,14 +5409,7 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let token_a = DependencyToken::create();
-        let element_a = broker.add_element("A", 0, vec![0, 1], vec![]).expect("add_element failed");
-        broker
-            .register_dependency_token(
-                element_a,
-                token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register failed");
+        let (element_a, token_a) = add_test_element_with_token(&mut broker, "A", &[0, 1], &[]);
 
         let dep = fpb::LevelDependency {
             dependent_level: Some(1),
@@ -6342,42 +5460,22 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a = broker
-            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-        let element_b = broker
-            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
-
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
+        let (element_b, token_b) =
+            add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
         // A at ON requires B at ON.
-        broker
-            .add_dependency(
-                element_a,
-                fpb::LevelDependency {
-                    dependent_level: Some(ON.level),
-                    requires_token: Some(token_b),
-                    requires_level_by_preference: Some(vec![ON.level]),
-                    ..Default::default()
-                },
-                &mut EagerInspectWriter,
-            )
-            .expect("add_dependency failed");
+        let (element_a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &token_b, ON.level)],
+        );
 
         // Acquire lease on A at ON.
         let lease =
             broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
 
         // Satisfy dependencies.
-        broker.update_current_level(element_b, ON);
-        broker.update_current_level(element_a, ON);
+        settle_levels(&mut broker, &[element_b, element_a]);
 
         // Verify lease is Satisfied.
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
@@ -6404,50 +5502,17 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a = broker
-            .add_element("A", OFF.level, vec![0, 10, 20], vec![])
-            .expect("add_element failed");
-        let element_b = broker
-            .add_element("B", OFF.level, vec![0, 10, 20], vec![])
-            .expect("add_element failed");
-
-        let token_b = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                element_b,
-                token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-
+        let levels = [0, 10, 20];
+        let (element_b, token_b) = add_test_element_with_token(&mut broker, "B", &levels, &[]);
         // A     B
         // 20 -> 20
         // 10 -> 10
-        broker
-            .add_dependency(
-                element_a,
-                fpb::LevelDependency {
-                    dependent_level: Some(10),
-                    requires_token: Some(
-                        token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                    ),
-                    requires_level_by_preference: Some(vec![10]),
-                    ..Default::default()
-                },
-                &mut EagerInspectWriter,
-            )
-            .expect("add_dependency failed");
-        broker
-            .add_dependency(
-                element_a,
-                fpb::LevelDependency {
-                    dependent_level: Some(20),
-                    requires_token: Some(token_b),
-                    requires_level_by_preference: Some(vec![20]),
-                    ..Default::default()
-                },
-                &mut EagerInspectWriter,
-            )
-            .expect("add_dependency failed");
+        let (element_a, _) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &levels,
+            &[(10, &token_b, 10), (20, &token_b, 20)],
+        );
 
         let level_10 = IndexedPowerLevel::new(10, 1);
         let level_20 = IndexedPowerLevel::new(20, 2);
@@ -6455,8 +5520,7 @@ mod tests {
         // Acquire Lease 1 on A at level 10.
         let lease1 =
             broker.acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(1)).unwrap();
-        broker.update_current_level(element_b, level_10.clone());
-        broker.update_current_level(element_a, level_10.clone());
+        settle_levels(&mut broker, &[element_b, element_a]);
         assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
 
         // Acquire Lease 2 on A at level 10.
@@ -6501,9 +5565,8 @@ mod tests {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
 
-        let element_a = broker
-            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
-            .expect("add_element failed");
+        let (element_a, _) =
+            add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
 
         let lease1 =
             broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
@@ -6521,61 +5584,6 @@ mod tests {
         assert!(!broker.catalog.leases.contains_key(&lease1.id));
 
         assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
-    }
-
-    /// Adds an element with the given levels and dependencies (dependent level, required element's
-    /// token, required level), registers a dependency token for it, and returns both.
-    fn add_test_element_with_token(
-        broker: &mut Broker,
-        name: &str,
-        levels: &[fpb::PowerLevel],
-        deps: &[(fpb::PowerLevel, &DependencyToken, fpb::PowerLevel)],
-    ) -> (ElementID, DependencyToken) {
-        let level_deps = deps
-            .iter()
-            .map(|(dependent_level, token, requires_level)| fpb::LevelDependency {
-                dependent_level: Some(*dependent_level),
-                requires_token: Some(
-                    token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed"),
-                ),
-                requires_level_by_preference: Some(vec![*requires_level]),
-                ..Default::default()
-            })
-            .collect();
-        let id = broker
-            .add_element(name, levels[0], levels.to_vec(), level_deps)
-            .expect("add_element failed");
-        let token = DependencyToken::create();
-        broker
-            .register_dependency_token(
-                id,
-                token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
-            )
-            .expect("register_dependency_token failed");
-        (id, token)
-    }
-
-    /// Makes each element in `elements` report its required level until nothing changes, as
-    /// well-behaved elements would.
-    #[track_caller]
-    fn settle_levels(broker: &mut Broker, elements: &[ElementID]) {
-        // Only a safety bound, so that a test that never settles fails instead of hanging.
-        const MAX_SETTLE_ROUNDS: usize = 32;
-        for _ in 0..MAX_SETTLE_ROUNDS {
-            let mut changed = false;
-            for id in elements {
-                let required =
-                    broker.get_required_level(id).expect("element has no required level");
-                if broker.get_current_level(id) != Some(required) {
-                    broker.update_current_level(*id, required);
-                    changed = true;
-                }
-            }
-            if !changed {
-                return;
-            }
-        }
-        panic!("levels did not settle");
     }
 
     #[fuchsia::test]
