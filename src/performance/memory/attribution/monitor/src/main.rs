@@ -170,7 +170,6 @@ async fn main() -> Result<()> {
             )
             .await
         }
-        .inspect_ok(|_| error!("Periodic collection unexpectedly exited without error"))
         .inspect_err(|e| error!("Periodic collection unexpectedly failed: {:?}", e))
     })
     .fuse();
@@ -186,7 +185,7 @@ async fn main() -> Result<()> {
         collect_stalls_forever(stall_provider, page_fault_tracker, metric_event_logger)
     })
     .fuse();
-    let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
+    let _collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
 
     let thrashing_config = thrashing::read_thrashing_config();
     let mut thrashing_detector = thrashing::ThrashingDetector::new(
@@ -258,13 +257,11 @@ async fn main() -> Result<()> {
             },
             _ = inspect_nodes_service => error!("No longer serving inspect!"),
             result = periodic_collection => {
-                periodic_collection_health.set(&result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err)));
+                let Err(err) = result;
+                periodic_collection_health.set(&format!("{:?}", err));
                 error!("Stopped periodic collection");
             },
-            result = collect_stalls_task => {
-                collect_stalls_health.set(&(result.err().map_or_else(||"stopped".to_string(), |err| format!("{:?}", err))));
-                error!("Stopped collecting stalls");
-            },
+            infallible = collect_stalls_task => match infallible {},
             _ = thrashing_loop => {
                  thrashing_health.set("stopped");
                  error!("Stopped thrashing loop");

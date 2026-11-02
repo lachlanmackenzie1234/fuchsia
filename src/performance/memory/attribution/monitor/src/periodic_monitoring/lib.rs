@@ -15,8 +15,10 @@ use fuchsia_trace_observer::TraceObserver;
 use futures::stream::FusedStream;
 use futures::{FutureExt, Stream, StreamExt, TryFutureExt, join, select, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
+use log::warn;
 use stalls::StallProvider;
 use stalls::refaults::PageFaultProvider;
+use std::convert::Infallible;
 use std::future::Future;
 use traces::{CATEGORY_MEMORY_CAPTURE, CATEGORY_MEMORY_SUPPRESS_PERIODIC};
 
@@ -117,7 +119,7 @@ pub async fn periodic_monitoring(
     inspect_root: Node,
     manual_events: impl Stream<Item = ManualMonitoringEvent> + Unpin,
     interval: zx::MonotonicDuration,
-) -> Result<()> {
+) -> Result<Infallible> {
     let mut _current: Option<StringProperty> = None; // Ensure the inspect property is kept as long as necessary.
     let mut bucket_list_node = std::cell::OnceCell::new();
     let bucket_names = std::cell::OnceCell::new();
@@ -182,14 +184,6 @@ pub async fn periodic_monitoring(
                 &kmem_stats,
                 &inspect_root,
             ));
-            cobalt::upload_metrics(
-                timestamp,
-                &kmem_stats,
-                metric_event_logger,
-                &digest,
-                &bucket_codes,
-            )
-            .await?;
             {
                 // Initialize the inspect property containing the buckets names, if necessary.
                 let _ = bucket_names.get_or_init(|| {
@@ -212,6 +206,17 @@ pub async fn periodic_monitoring(
                 &mut bucket_list_node,
                 &inspect_root,
             )?;
+            if let Err(err) = cobalt::upload_metrics(
+                timestamp,
+                &kmem_stats,
+                metric_event_logger,
+                &digest,
+                &bucket_codes,
+            )
+            .await
+            {
+                warn!("Failed to upload memory metrics to Cobalt: {:?}", err);
+            }
             timestamp
         };
         let (_, next) = join!(
@@ -835,6 +840,111 @@ mod tests {
                         "3": contains {
                             timestamp: NonZeroIntProperty,
                         },
+                    },
+                },
+            });
+        });
+        assert!(exec.run_until_stalled(&mut assert_fut).is_ready());
+        Ok(())
+    }
+
+    #[test]
+    fn test_periodic_monitoring_continues_on_cobalt_upload_error() -> Result<()> {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        let start = exec.now();
+
+        let (kernel_stats_proxy, mut kernel_stats_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fkernel::StatsMarker>();
+        let _kernel_stats_task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(request)) = kernel_stats_stream.next().await {
+                let (mem_stats, comp_stats) = get_kernel_stats();
+                match request {
+                    fkernel::StatsRequest::GetMemoryStats { responder } => {
+                        let _ = responder.send(&mem_stats);
+                    }
+                    fkernel::StatsRequest::GetMemoryStatsCompression { responder } => {
+                        let _ = responder.send(&comp_stats);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        });
+
+        let (metric_event_logger, mut metric_event_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
+        let _metrics_task = fuchsia_async::Task::local(async move {
+            let mut attempt = 0usize;
+            while let Some(Ok(request)) = metric_event_stream.next().await {
+                if let fmetrics::MetricEventLoggerRequest::LogMetricEvents { responder, .. } =
+                    request
+                {
+                    let res = match attempt {
+                        0 => Err(fmetrics::Error::BufferFull),
+                        1 => Err(fmetrics::Error::InternalError),
+                        _ => Ok(()),
+                    };
+                    attempt += 1;
+                    let _ = responder.send(res);
+                }
+            }
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let attribution_provider =
+            CountingAttributionDataProvider { call_count: std::sync::atomic::AtomicUsize::new(0) };
+        let stall_provider = FakeStallProvider {};
+        let page_fault_provider = FakePageFaultProvider { refault_count: 300, fault_count: 400 };
+        let bucket_definitions = BucketDefinitions::default();
+        let (_tx, rx) = futures::channel::mpsc::unbounded::<ManualMonitoringEvent>();
+
+        let mut monitoring_fut = std::pin::pin!(periodic_monitoring(
+            kernel_stats_proxy,
+            &attribution_provider,
+            &stall_provider,
+            &page_fault_provider,
+            &metric_event_logger,
+            &bucket_definitions,
+            inspector.root().create_child("logger"),
+            rx,
+            zx::MonotonicDuration::from_minutes(5),
+        ));
+
+        // Sample 1 at t = 0 encounters BufferFull: monitoring stays alive and updates Inspect.
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Sample 2 at t = 5m encounters InternalError: monitoring still stays alive.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(5));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+        // Sample 3 at t = 10m succeeds.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(10));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        drop(monitoring_fut);
+
+        let mut assert_fut = std::pin::pin!(async {
+            assert_data_tree!(inspector, root: {
+                logger: contains {
+                    buckets: vec![
+                        "Undigested",
+                        "Orphaned",
+                        "Kernel",
+                        "Free",
+                        "[Addl]PagerTotal",
+                        "[Addl]PagerNewest",
+                        "[Addl]PagerOldest",
+                        "[Addl]DiscardableLocked",
+                        "[Addl]DiscardableUnlocked",
+                        "[Addl]ZramCompressedBytes",
+                        "[Addl]PopulatedAnonymousBytes",
+                    ],
+                    measurements: {
+                        "0": contains { timestamp: NonZeroIntProperty },
+                        "1": contains { timestamp: NonZeroIntProperty },
+                        "2": contains { timestamp: NonZeroIntProperty },
                     },
                 },
             });
