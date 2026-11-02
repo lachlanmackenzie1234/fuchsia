@@ -305,6 +305,47 @@ class OdpmPowerTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         self._assert_power_budget(results, BUDGET_ACTIVE_IDLE_W)
 
+    async def test_active_wlan_tx_traffic_power(self) -> None:
+        """Measure power impact of heavy WLAN Tx traffic via wlanix."""
+
+        ap = self.access_point
+        if not ap:
+            raise signals.TestSkip(
+                "No Access Point available in environment. Skipping Tx test."
+            )
+
+        # Connect to the AP using the wlanix Supplicant interface
+        ssid, password = self._setup_ap_and_get_credentials()
+        await self._connect_via_wlanix(ssid, password)
+
+        # Start an iperf3 server on the Host/AP, and an iperf3 client on the DUT
+        ap = self.access_point
+        ap.iperf_server.start()
+        iperf_server_addr = ap.iperf_server.get_addr()
+
+        # Start capturing ODPM power metrics
+        await odpm_utils.start_trace(self.dut.tracing)
+        _LOGGER.info(
+            "ODPM trace started, waiting for steady state power measurement..."
+        )
+
+        # Run iperf3 Tx on the device (async to prevent blocking tracing loop)
+        await asyncio.to_thread(
+            self.dut.ffx.run_ssh_cmd,
+            f"iperf3 -c {iperf_server_addr} -u -b 50M -t {DURATION_WLAN_TX_SEC}",
+        )
+
+        # Stop ODPM trace and process metrics
+        results = await odpm_utils.stop_trace_and_save_metrics(
+            tracing=self.dut.tracing,
+            test_case_path=self.log_path,
+            test_name=self.current_test_info.name,
+            rail=odpm_utils.ODPM_WLAN_RAIL,
+        )
+        ap.iperf_server.stop()
+
+        self._assert_power_budget(results, BUDGET_WLAN_TX_W)
+
 
 if __name__ == "__main__":
     test_runner.main()
