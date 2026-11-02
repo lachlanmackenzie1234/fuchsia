@@ -771,8 +771,6 @@ variant("frame_pointers") {
   }
 }
 
-# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
-
 variant("no_frame_pointers") {
   cflags = [ "-fomit-frame-pointer" ]
   ldflags = cflags
@@ -783,6 +781,11 @@ variant("no_frame_pointers") {
     defines = [ "WITH_FRAME_POINTERS=0" ]
   }
 }
+
+# LINT.ThenChange(
+#   BUILD.bazel:frame_pointers,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer,
+# )
 
 config("suppress_iterator_warnings") {
   defines = [ "_LIBCPP_DISABLE_DEPRECATION_WARNINGS" ]
@@ -1388,9 +1391,12 @@ config("no-template-backtrace-limit") {
 
 # LINT.ThenChange(//build/config/BUILD.bazel:no-template-backtrace-limit)
 
+# LINT.IfChange(no-stack-protector)
 compiler_config("no-stack-protector") {
   c_family_flags = [ "-fno-stack-protector" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:no-stack-protector)
 
 variant("no-safe-stack") {
   no_sanitize = [ "safe-stack" ]

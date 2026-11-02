@@ -416,6 +416,36 @@ build_flags(
 )
 # LINT.ThenChange(BUILD.gn:default_debuginfo)
 
+# LINT.IfChange(frame_pointers)
+# NOTE: This assumes zircon_toolchain == false in Bazel.
+build_flags(
+    name = "frame_pointers",
+    cflags = [
+        "-fno-omit-frame-pointer",
+        "-momit-leaf-frame-pointer",
+    ],
+    ldflags = [
+        "-fno-omit-frame-pointer",
+        "-momit-leaf-frame-pointer",
+    ],
+    rustflags = ["-Cforce-frame-pointers"],
+    visibility = ["//visibility:public"],
+)
+
+# NOTE: This assumes zircon_toolchain == false in Bazel.
+build_flags(
+    name = "no_frame_pointers",
+    cflags = ["-fomit-frame-pointer"],
+    ldflags = ["-fomit-frame-pointer"],
+    # rustc automatically does this for release builds, and there's no way to
+    # force it for non-release.
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(
+#   BUILD.gn:frame_pointers,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer,
+# )
+
 # LINT.IfChange(standalone)
 # This should be used by executables that avoid the normal libc dependencies.
 # These must also omit toolchain-provided instrumentation runtimes that will
@@ -631,3 +661,11 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:optimize_coverage)
+
+# LINT.IfChange(no-stack-protector)
+compiler_build_flags(
+    name = "no-stack-protector",
+    c_family_flags = ["-fno-stack-protector"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:no-stack-protector)
