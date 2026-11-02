@@ -582,6 +582,18 @@ def is_phy_rate_below_target(measurement: MeasurementRecord) -> bool:
     return avg_rate is None or avg_rate < phy_rate_target_mbps(phy_max)
 
 
+def has_phy_rate_below_target(measurements: MeasurementsByDirection) -> bool:
+    return any(
+        is_phy_rate_below_target(measurement)
+        for measurement in (
+            measurements["tcp_tx"],
+            measurements["tcp_rx"],
+            measurements["udp_tx"],
+            measurements["udp_rx"],
+        )
+    )
+
+
 def build_tcp_measurement_record(
     direction: Literal["tx", "rx"],
     iperf_res: IperfTcpResult,
@@ -1256,6 +1268,12 @@ class ThroughputReporter:
         entries_by_label: dict[str, dict[str, Any]] = {}
         for test_case in test_cases:
             measurements = test_case["measurements"]
+            if has_phy_rate_below_target(measurements):
+                logger.info(
+                    f"Skipping fuchsiaperf publish for ch{test_case['channel']}_"
+                    f"{test_case['channel_bandwidth']}mhz: PHY rate below target"
+                )
+                continue
             for proto, measurement in (
                 ("tcp", measurements["tcp_tx"]),
                 ("tcp", measurements["tcp_rx"]),
@@ -1295,6 +1313,9 @@ class ThroughputReporter:
             return
 
         fuchsiaperf_data = self._build_fuchsiaperf_data(test_cases)
+        if not fuchsiaperf_data:
+            return
+
         with open(self.fuchsiaperf_file_path, "w", encoding="utf-8") as f:
             json.dump(fuchsiaperf_data, f, indent=2)
             f.write("\n")

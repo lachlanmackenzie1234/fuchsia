@@ -28,4 +28,17 @@ if (is_host) {
     main_source = "odpm_utils_test.py"
     libraries = [ ":wlan_test_utils" ]
   }
+
+  python_host_test("throughput_utils_test") {
+    main_source = "throughput_utils_test.py"
+    libraries = [ ":wlan_test_utils" ]
+  }
+}
+
+group("tests_host") {
+  testonly = true
+  public_deps = [
+    ":odpm_utils_test($host_toolchain)",
+    ":throughput_utils_test($host_toolchain)",
+  ]
 }

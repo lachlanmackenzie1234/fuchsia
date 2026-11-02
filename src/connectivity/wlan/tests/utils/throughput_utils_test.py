@@ -1,0 +1,377 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import json
+import os
+import tempfile
+import unittest
+from typing import Literal
+from unittest import mock
+
+import perf_publish.publish as perf_publish
+from mobly import signals
+from openwrt_access_point.lib.access_point_config import Band, SecurityWpa2
+from wlan_test_utils import throughput_utils
+
+
+def _stat(val: float | None) -> throughput_utils.MetricStatsDict:
+    return {"avg": val, "min": val, "max": val}
+
+
+def _link_metrics(
+    ap_tx_rate: float | None,
+    ap_rx_rate: float | None,
+) -> throughput_utils.LinkMetricsDict:
+    return {
+        "ap_rssi": _stat(-45.0),
+        "ap_snr": _stat(40.0),
+        "ap_tx_rate_mbps": _stat(ap_tx_rate),
+        "ap_rx_rate_mbps": _stat(ap_rx_rate),
+        "dut_rssi": _stat(-44.0),
+        "dut_tx_rate_mbps": _stat(ap_rx_rate),
+        "dut_rx_rate_mbps": _stat(None),
+    }
+
+
+def _make_measurements(
+    *,
+    phy_max_mbps: float = 100.0,
+    tcp_tx_phy: float | None = 90.0,
+    tcp_rx_phy: float | None = 90.0,
+    udp_tx_phy: float | None = 90.0,
+    udp_rx_phy: float | None = 90.0,
+    throughput_mbps: float = 65.0,
+) -> throughput_utils.MeasurementsByDirection:
+    raw_bps = int(throughput_mbps * 1_000_000)
+    return {
+        "tcp_tx": {
+            "protocol": "tcp",
+            "direction": "tx",
+            "throughput_mbps": throughput_mbps,
+            "phy_mode": "he",
+            "nss": 2,
+            "phy_max_mbps": phy_max_mbps,
+            "link_metrics": _link_metrics(
+                ap_tx_rate=90.0, ap_rx_rate=tcp_tx_phy
+            ),
+            "iperf_details": {
+                "server_cpu_utilization_percent": 5.0,
+                "raw_bps": raw_bps,
+            },
+        },
+        "tcp_rx": {
+            "protocol": "tcp",
+            "direction": "rx",
+            "throughput_mbps": throughput_mbps + 1.0,
+            "phy_mode": "he",
+            "nss": 2,
+            "phy_max_mbps": phy_max_mbps,
+            "link_metrics": _link_metrics(
+                ap_tx_rate=tcp_rx_phy, ap_rx_rate=90.0
+            ),
+            "iperf_details": {
+                "server_cpu_utilization_percent": 5.0,
+                "raw_bps": raw_bps,
+            },
+        },
+        "udp_tx": {
+            "protocol": "udp",
+            "direction": "tx",
+            "throughput_mbps": throughput_mbps + 2.0,
+            "phy_mode": "he",
+            "nss": 2,
+            "phy_max_mbps": phy_max_mbps,
+            "link_metrics": _link_metrics(
+                ap_tx_rate=90.0, ap_rx_rate=udp_tx_phy
+            ),
+            "iperf_details": {
+                "server_cpu_utilization_percent": 5.0,
+                "raw_bps": raw_bps,
+                "corrected_bps": float(raw_bps),
+                "loss_percent": 0.0,
+            },
+        },
+        "udp_rx": {
+            "protocol": "udp",
+            "direction": "rx",
+            "throughput_mbps": throughput_mbps + 3.0,
+            "phy_mode": "he",
+            "nss": 2,
+            "phy_max_mbps": phy_max_mbps,
+            "link_metrics": _link_metrics(
+                ap_tx_rate=udp_rx_phy, ap_rx_rate=90.0
+            ),
+            "iperf_details": {
+                "server_cpu_utilization_percent": 5.0,
+                "raw_bps": raw_bps,
+                "corrected_bps": float(raw_bps),
+                "loss_percent": 0.0,
+            },
+        },
+    }
+
+
+def _test_params(
+    band: Band,
+    channel: int,
+    bw: Literal[20, 40, 80, 160],
+) -> throughput_utils.TestParams:
+    return throughput_utils.TestParams(
+        security_mode=SecurityWpa2(),
+        band=band,
+        channel=channel,
+        channel_bandwidth=bw,
+    )
+
+
+class ThroughputUtilsTest(unittest.TestCase):
+    def test_has_phy_rate_below_target_matches_assert_phy_rate_targets(
+        self,
+    ) -> None:
+        passing = _make_measurements(
+            phy_max_mbps=100.0,
+            tcp_tx_phy=80.0,
+            tcp_rx_phy=85.0,
+            udp_tx_phy=90.0,
+            udp_rx_phy=80.0,
+        )
+        self.assertFalse(throughput_utils.has_phy_rate_below_target(passing))
+        throughput_utils.assert_phy_rate_targets(passing, 100.0, "iris")
+
+        failing_direction = _make_measurements(
+            phy_max_mbps=100.0,
+            udp_rx_phy=79.9,
+        )
+        self.assertTrue(
+            throughput_utils.has_phy_rate_below_target(failing_direction)
+        )
+        with self.assertRaises(signals.TestFailure):
+            throughput_utils.assert_phy_rate_targets(
+                failing_direction, 100.0, "iris"
+            )
+
+        missing_rate = _make_measurements(
+            phy_max_mbps=100.0,
+            tcp_tx_phy=None,
+        )
+        self.assertTrue(
+            throughput_utils.has_phy_rate_below_target(missing_rate)
+        )
+        with self.assertRaises(signals.TestFailure):
+            throughput_utils.assert_phy_rate_targets(
+                missing_rate, 100.0, "iris"
+            )
+
+    def test_finalize_reports_publishes_all_when_phy_rates_meet_target(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                perf_publish, "publish_fuchsiaperf"
+            ) as mock_publish,
+        ):
+            reporter = throughput_utils.ThroughputReporter(
+                tmpdir,
+                fuchsiaperf_suite_name="fuchsia.wlan.throughput_test_adb",
+            )
+            reporter.write_initial_json()
+            reporter.record_test_case(
+                _test_params(Band.BAND_2G, 1, 20),
+                _make_measurements(throughput_mbps=50.0),
+            )
+            reporter.record_test_case(
+                _test_params(Band.BAND_5G, 165, 20),
+                _make_measurements(throughput_mbps=80.0),
+            )
+
+            reporter.finalize_reports()
+
+            mock_publish.assert_called_once_with(
+                [reporter.fuchsiaperf_file_path],
+                throughput_utils.EXPECTED_METRICS_FILENAME,
+                runtime_deps_dir=tmpdir,
+            )
+            with open(reporter.fuchsiaperf_file_path, encoding="utf-8") as f:
+                perf_entries = json.load(f)
+            self.assertEqual(
+                [entry["label"] for entry in perf_entries],
+                [
+                    "ch1_20mhz/tcp_tx",
+                    "ch1_20mhz/tcp_rx",
+                    "ch1_20mhz/udp_tx",
+                    "ch1_20mhz/udp_rx",
+                    "ch165_20mhz/tcp_tx",
+                    "ch165_20mhz/tcp_rx",
+                    "ch165_20mhz/udp_tx",
+                    "ch165_20mhz/udp_rx",
+                ],
+            )
+            self.assertTrue(
+                all(
+                    entry["test_suite"] == "fuchsia.wlan.throughput_test_adb"
+                    for entry in perf_entries
+                )
+            )
+
+    def test_finalize_reports_skips_fuchsiaperf_for_failed_phy_rate_cases(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                perf_publish, "publish_fuchsiaperf"
+            ) as mock_publish,
+        ):
+            reporter = throughput_utils.ThroughputReporter(tmpdir)
+            reporter.write_initial_json()
+            # Ch 1 fails PHY target in a single direction; entire case is red.
+            reporter.record_test_case(
+                _test_params(Band.BAND_2G, 1, 20),
+                _make_measurements(
+                    phy_max_mbps=100.0,
+                    tcp_tx_phy=60.0,
+                    throughput_mbps=30.0,
+                ),
+            )
+            # Ch 36 fails PHY target across directions.
+            reporter.record_test_case(
+                _test_params(Band.BAND_5G, 36, 80),
+                _make_measurements(
+                    phy_max_mbps=1200.0,
+                    tcp_tx_phy=500.0,
+                    tcp_rx_phy=500.0,
+                    udp_tx_phy=500.0,
+                    udp_rx_phy=500.0,
+                    throughput_mbps=200.0,
+                ),
+            )
+            # Ch 165 meets PHY targets in all directions.
+            reporter.record_test_case(
+                _test_params(Band.BAND_5G, 165, 20),
+                _make_measurements(
+                    phy_max_mbps=100.0,
+                    throughput_mbps=75.0,
+                ),
+            )
+
+            reporter.finalize_reports()
+
+            mock_publish.assert_called_once_with(
+                [reporter.fuchsiaperf_file_path],
+                throughput_utils.EXPECTED_METRICS_FILENAME,
+                runtime_deps_dir=tmpdir,
+            )
+            with open(reporter.fuchsiaperf_file_path, encoding="utf-8") as f:
+                perf_entries = json.load(f)
+            self.assertEqual(
+                [entry["label"] for entry in perf_entries],
+                [
+                    "ch165_20mhz/tcp_tx",
+                    "ch165_20mhz/tcp_rx",
+                    "ch165_20mhz/udp_tx",
+                    "ch165_20mhz/udp_rx",
+                ],
+            )
+
+            expected_path = os.path.join(
+                tmpdir, throughput_utils.EXPECTED_METRICS_FILENAME
+            )
+            with open(expected_path, encoding="utf-8") as f:
+                expected_lines = f.read().splitlines()
+            self.assertEqual(
+                expected_lines,
+                [
+                    "[no-summarize-metrics]",
+                    "fuchsia.wlan.throughput_test: ch165_20mhz/tcp_rx",
+                    "fuchsia.wlan.throughput_test: ch165_20mhz/tcp_tx",
+                    "fuchsia.wlan.throughput_test: ch165_20mhz/udp_rx",
+                    "fuchsia.wlan.throughput_test: ch165_20mhz/udp_tx",
+                ],
+            )
+
+            # JSON and HTML diagnostic reports still preserve all recorded cases.
+            with open(reporter.json_file_path, encoding="utf-8") as f:
+                json_report = json.load(f)
+            self.assertEqual(
+                [tc["channel"] for tc in json_report["test_cases"]],
+                [1, 36, 165],
+            )
+            with open(reporter.html_file_path, encoding="utf-8") as f:
+                html_report = f.read()
+            self.assertIn('<tr class="fail">', html_report)
+
+    def test_finalize_reports_skips_publish_when_all_cases_fail_phy_rate(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                perf_publish, "publish_fuchsiaperf"
+            ) as mock_publish,
+        ):
+            reporter = throughput_utils.ThroughputReporter(tmpdir)
+            reporter.write_initial_json()
+            reporter.record_test_case(
+                _test_params(Band.BAND_2G, 1, 20),
+                _make_measurements(phy_max_mbps=100.0, tcp_tx_phy=50.0),
+            )
+            reporter.record_test_case(
+                _test_params(Band.BAND_5G, 36, 80),
+                _make_measurements(phy_max_mbps=1200.0, udp_rx_phy=400.0),
+            )
+
+            reporter.finalize_reports()
+
+            mock_publish.assert_not_called()
+            self.assertFalse(os.path.exists(reporter.fuchsiaperf_file_path))
+            self.assertFalse(
+                os.path.exists(
+                    os.path.join(
+                        tmpdir, throughput_utils.EXPECTED_METRICS_FILENAME
+                    )
+                )
+            )
+            self.assertTrue(os.path.exists(reporter.json_file_path))
+            self.assertTrue(os.path.exists(reporter.html_file_path))
+
+    def test_finalize_reports_from_json_fallback_filters_failed_cases(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                perf_publish, "publish_fuchsiaperf"
+            ) as mock_publish,
+        ):
+            writer = throughput_utils.ThroughputReporter(tmpdir)
+            writer.write_initial_json()
+            writer.record_test_case(
+                _test_params(Band.BAND_2G, 1, 20),
+                _make_measurements(phy_max_mbps=100.0, tcp_rx_phy=60.0),
+            )
+            writer.record_test_case(
+                _test_params(Band.BAND_5G, 165, 20),
+                _make_measurements(phy_max_mbps=100.0),
+            )
+
+            reloaded = throughput_utils.ThroughputReporter(tmpdir)
+            reloaded.finalize_reports()
+
+            mock_publish.assert_called_once()
+            with open(reloaded.fuchsiaperf_file_path, encoding="utf-8") as f:
+                perf_entries = json.load(f)
+            self.assertEqual(
+                [entry["label"] for entry in perf_entries],
+                [
+                    "ch165_20mhz/tcp_tx",
+                    "ch165_20mhz/tcp_rx",
+                    "ch165_20mhz/udp_tx",
+                    "ch165_20mhz/udp_rx",
+                ],
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
