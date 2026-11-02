@@ -1,0 +1,7 @@
+{
+    "registry": {
+        "category": "Source tree",
+        "script": "//tools/devshell/fx_cli/registry.py",
+        "summary": "List, validate, and manage registered fx host tools."
+    }
+}

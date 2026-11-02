@@ -36,6 +36,7 @@ Global fx options: fx [OPTION] ${cmd} ...
                                    out/.
   -x                               Print commands and their arguments as they are executed.
   -xx                              Print extra logging of the fx tool itself (implies -x)
+  --no-build                       Skip building registered Bazel/GN host tools; fail if missing.
   --invoker=INVOKER                Override the command invoker for metrics and logging.
 END
   if [[ -n "$(list_optional_features)" ]]; then
@@ -57,13 +58,18 @@ function help_list_commands {
   done
 
   # list all subcommands with summaries, grouped by categories
+  local _help_records
+  _help_records="$(list_registered_host_tools_help_records)"
   commands | xargs awk \
     -v hide_contrib=${hide_contrib} \
     -v show_deprecated=${show_deprecated} \
+    -v registry_tsv_file=<(printf '%s\n' "${_help_records}") \
     -f "${fuchsia_dir}/scripts/fx-help.awk"
 
   # list host tools build artifacts without corresponding metadata
-  host_tools="$(find_host_tools)"
+  local _reg_names
+  _reg_names="$(printf '%s\n' "${_help_records}" | cut -f1)"
+  host_tools="$(find_host_tools "" "${_reg_names}")"
   if [[ -n "${host_tools}" ]]; then
     echo "Host binaries produced by the build with no metadata (more info at //tools/devshell/README.md):"
     for i in ${host_tools}; do
@@ -78,23 +84,32 @@ function help_list_commands {
 
 function help_command {
   local cmd="$*"
-  local cmd_path
-  cmd_path="$(commands "${cmd}" | head -1)"
+  local -a _help_args=("help-command" "${cmd}")
+  if fx-build-dir-if-present >/dev/null 2>&1 && [[ -n "${FUCHSIA_BUILD_DIR:-}" ]]; then
+    _help_args+=("--build-dir" "${FUCHSIA_BUILD_DIR}")
+  fi
+  local _help_rc=0
+  _fx_cli_locator "${_help_args[@]}" || _help_rc=$?
+  if [[ ${_help_rc} -eq 0 ]]; then
+    help_global_options
+    return 0
+  elif [[ ${_help_rc} -eq 2 ]]; then
+    return 2
+  fi
+  local cmd_path="$(commands "${cmd}" | head -1)"
   if [[ -z "${cmd_path}" ]]; then
-    local cmd_path
-    cmd_path="$(find_host_tools "${cmd}" | head -1)"
-    if [[ -z "${cmd_path}" ]]; then
-      echo "Command ${cmd} not found. Try \`fx help\`"
-    else
-      echo "'$(_relative "${cmd_path}")' is a host tool and no metadata" \
-        "was found. Try running \`fx ${cmd} -h\`"
-    fi
-  elif [[ $(file -b --mime "${cmd_path}" | cut -d / -f 1) == "text" ]]; then
+    cmd_path="$(find_host_tools "${cmd}" " " | head -1)"
+  fi
+  if [[ -n "${cmd_path}" && $(file -b --mime "${cmd_path}" | cut -d / -f 1) == "text" ]]; then
     fx-print-command-help "${cmd_path}"
     help_global_options
-  else
-    echo "No help found. Try \`fx ${cmd} -h\`"
+    return 0
+  elif [[ -n "${cmd_path}" ]]; then
+    echo "'$(_relative "${cmd_path}")' is a host tool and no metadata" \
+      "was found. Try running \`fx ${cmd} -h\`"
+    return 0
   fi
+  echo "Command ${cmd} not found. Try \`fx help\`"
 }
 
 function helpheader {
@@ -169,7 +184,7 @@ END
 
 function usage {
   cat <<END
-usage: fx [--dir BUILD_DIR] [-t DEVICE_NAME] [-i] [-x] COMMAND [...]
+usage: fx [--dir BUILD_DIR] [-t DEVICE_NAME] [-i] [-x] [--no-build] COMMAND [...]
 END
   shorthelp
 }
@@ -390,6 +405,9 @@ while [[ $# -ne 0 ]]; do
       set -x
       export FUCHSIA_DEVSHELL_VERBOSITY=1
       ;;
+    --no-build)
+      export FX_NO_BUILD_HOST_TOOL=1
+      ;;
     --)
       shift
       break
@@ -404,6 +422,7 @@ while [[ $# -ne 0 ]]; do
       else
         shift
         help_command "$@"
+        exit $?
       fi
       exit 0
       ;;
@@ -448,18 +467,60 @@ if is_invoked_by_agent; then
 fi
 
 command_name="$1"
-read -r -a command_path <<< "$(find_executable "${command_name}")"
+_raw_command_path=""
+_find_status=1
+_dispatch_info="$(resolve_fx_command_dispatch "${command_name}")"
+_dispatch_rc=$?
+if [[ ${_dispatch_rc} -eq 2 ]]; then
+  exit 2
+elif [[ ${_dispatch_rc} -eq 0 ]]; then
+  mapfile -t _df <<< "${_dispatch_info}"
+  _d_kind="${_df[0]:-}"
+  _d_vendor="${_df[1]:-}"
+  _d_target="${_df[2]:-}"
+  _d_script_or_path="${_df[3]:-}"
+  _d_inject="${_df[4]:-1}"
+  if [[ "${_d_kind}" == "registered" ]]; then
+    _ensure_rc=0
+    fx-ensure-registered-host-tool "${command_name}" "${_d_vendor}" "${_d_target}" "${_d_script_or_path}" || _ensure_rc=$?
+    if [[ ${_ensure_rc} -ne 0 ]]; then
+      if [[ "${FX_NO_BUILD_HOST_TOOL:-0}" != "1" ]]; then
+        for _sub_arg in "${@:2}"; do
+          if [[ "${_sub_arg}" == "--no-build" ]]; then
+            fx-warn "Note: '--no-build' is a global fx option and must precede '${command_name}': fx --no-build ${command_name} ..."
+            break
+          fi
+        done
+      fi
+      exit "${_ensure_rc}"
+    fi
+    _fx_apply_prebuilt_paths "${_d_inject}"
+    _raw_command_path="$(_find_registered_executable_from_entry "${command_name}" "${_d_target}" "${_d_script_or_path}" "${_d_vendor}")"
+    _find_status=$?
+    if [[ -n "${_raw_command_path}" ]]; then
+      mapfile -t command_path <<< "${_raw_command_path}"
+    else
+      command_path=()
+    fi
+  else
+    _fx_apply_prebuilt_paths 1
+    _raw_command_path="$(find_exec_from_path "${_d_script_or_path}")"
+    _find_status=$?
+    read -r -a command_path <<< "${_raw_command_path}"
+  fi
+fi
 
-if [[ $? -ne 0 || ! -x "${command_path[0]}" ]]; then
+if [[ ${_find_status} -ne 0 || ${#command_path[@]} -eq 0 || ! -x "${command_path[0]}" ]]; then
   if [[ -n "${command_path[*]}" ]]; then
     _path_message=" in the expected location $(_relative "${command_path[0]}")"
   fi
 
   _commands=$(commands)
-  _host_tools=$(find_host_tools)
+  _registered=$(list_registered_host_tools)
+  _host_tools=$(find_host_tools "" "${_registered}")
 
   # If the command is not found look for suggestions to help direct to the correct command.
-  _suggestion=$(printf "%b\n%b" "${_commands}" "${_host_tools}" | "${suggest_py}" "${command_name}")
+  _suggestion=$(printf "%b\n%b\n%b" "${_commands}" "${_registered}" "${_host_tools}" | "${suggest_py}" "${command_name}")
 
   # If no suggestions are found fall back to the old error message.
   if [ -z "$_suggestion" ]; then
@@ -499,7 +560,6 @@ fi
 mkdir -p "${FX_CACHE_DIR}"
 
 track-command-execution "${metric_name}" "$@" &
-export PATH="${PREBUILT_ALL_PATHS}:${PATH}"
 "${command_path[@]}" "$@"
 declare -r retval=$?
 
@@ -567,4 +627,4 @@ monitor_and_run() {
   done
 }
 
-monitor_and_run <(monitor_source_changes) "${cmd_and_args}" "${command_path}" "$@"
+monitor_and_run <(monitor_source_changes) "${cmd_and_args}" "${command_path[@]}" "$@"

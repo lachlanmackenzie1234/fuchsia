@@ -1,0 +1,841 @@
+#!/bin/bash
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+### Test fx_host_tool registry lookup, script mode, PATH isolation, and vendor precedence
+
+BT_FILE_DEPS=(
+  "build/bazel/config/bazel_top_dir"
+  "scripts/fx"
+  "scripts/fx-env.sh"
+  "scripts/fx-help.awk"
+  "scripts/hermetic-env"
+  "tools/devshell/fx_cli/__init__.py"
+  "tools/devshell/fx_cli/locator.py"
+  "tools/devshell/fx_cli/registry.py"
+  "tools/devshell/fx_host_tools.json"
+  "tools/devshell/lib/bazel_utils.sh"
+  "tools/devshell/lib/fx-cmd-locator.sh"
+  "tools/devshell/lib/fx-optional-features.sh"
+  "tools/devshell/lib/generate-ssh-config.sh"
+  "tools/devshell/lib/host_symbolizer.sh"
+  "tools/devshell/lib/is_invoked_by_agent.sh"
+  "tools/devshell/lib/agents.txt"
+  "tools/devshell/lib/metrics.sh"
+  "tools/devshell/lib/platform.sh"
+  "tools/devshell/lib/style.sh"
+  "tools/devshell/lib/vars.sh"
+  "tools/devshell/rbe"
+  "tools/devshell/sync"
+  "tools/devshell/test"
+  "tools/devshell/vendor"
+)
+
+BT_MOCKED_TOOLS=(
+  "tools/devshell/build"
+)
+
+declare fx
+
+BT_SET_UP() {
+  source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
+  fx="$(btf::setup_fx)"
+  FUCHSIA_DIR="${BT_TEMP_DIR}"
+  mkdir -p "${BT_TEMP_DIR}/.git" \
+    "${BT_TEMP_DIR}/manifests" \
+    "${BT_TEMP_DIR}/integration" \
+    "${BT_TEMP_DIR}/scripts/developer"
+  echo "rev-initial-1111" > "${BT_TEMP_DIR}/.git/JIRI_HEAD"
+  echo '[{"package":"initial-lock-v1"}]' > "${BT_TEMP_DIR}/manifests/jiri.lock"
+  echo '[{"package":"integration-lock-v1"}]' > "${BT_TEMP_DIR}/integration/jiri.lock"
+  cp -f "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json.orig"
+
+  source "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh"
+  local py_var="PREBUILT_""PYTHON3"
+  local paths_var="PREBUILT_""ALL_PATHS"
+  _TEST_PY3="${!py_var}"
+  _TEST_ALL_PATHS="${!paths_var}"
+  mkdir -p "$(dirname "${_TEST_PY3}")"
+  ln -sf "$(command -v python3)" "${_TEST_PY3}"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "my-reg-tool": "//scripts/developer:my-reg-tool",
+  "other-tool": {
+    "target": "//tools/other:other_bin"
+  }
+}
+EOF
+}
+
+TEST_registry_lookup() {
+  source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/fx-cmd-locator.sh"
+
+  if declare -f get_registered_host_tool_scope >/dev/null 2>&1; then
+    BT_FAIL "get_registered_host_tool_scope should not exist; all tools live in \$FUCHSIA_BUILD_DIR/host-tools"
+  fi
+
+  local target
+  target="$(get_registered_host_tool_target "my-reg-tool")"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${target}" "//scripts/developer:my-reg-tool"
+
+  target="$(get_registered_host_tool_target "other-tool")"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${target}" "//tools/other:other_bin"
+
+  BT_EXPECT_FAIL get_registered_host_tool_target "nonexistent-tool"
+
+  mkdir -p "${BT_TEMP_DIR}/vendor/acme/scripts/devshell"
+  cat > "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/fx_host_tools.json" <<'EOF'
+{
+  "acme-tool": "//vendor/acme/tools:acme-tool"
+}
+EOF
+  target="$(get_registered_host_tool_target "acme-tool" "acme")"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${target}" "//vendor/acme/tools:acme-tool"
+
+  rm -rf "${BT_TEMP_DIR}/out/default/host-tools"
+  BT_EXPECT_EQ "$(get_registered_host_tool_install_path "my-reg-tool")" "${BT_TEMP_DIR}/out/default/host-tools/my-reg-tool"
+}
+
+TEST_fails_cleanly_without_build_dir() {
+  rm -rf "${BT_TEMP_DIR}/.fx-build-dir" "${BT_TEMP_DIR}/out"
+  local err_out
+  err_out="$("${fx}" my-reg-tool 2>&1)"
+  [[ $? -ne 0 ]]
+  BT_EXPECT_GOOD_STATUS $?
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${err_out}" "No build directory found"
+}
+
+TEST_fx_command_run_and_vendor_dispatch_registered_tools() {
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/reg_run"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/reg_run/reg_run.sh" <<'EOF'
+#!/bin/bash
+echo "CALLED_CMD:reg-run|$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/reg_run/reg_run.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "reg-run": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/reg_run/reg_run.sh",
+    "summary": "reg-run tool"
+  }
+}
+EOF
+
+  local caller_script="${BT_TEMP_DIR}/tools/devshell/my-caller-subcmd"
+  cat > "${caller_script}" <<EOF
+#!/bin/bash
+source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh" || exit \$?
+fx-command-run reg-run pass_arg1 pass_arg2
+EOF
+  chmod +x "${caller_script}"
+
+  local out
+  out="$("${fx}" my-caller-subcmd 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out}" "CALLED_CMD:reg-run|pass_arg1 pass_arg2"
+
+  mkdir -p "${BT_TEMP_DIR}/vendor/google/scripts/devshell"
+  cat > "${BT_TEMP_DIR}/vendor/google/scripts/devshell/vendor_sh.sh" <<'EOF'
+#!/bin/bash
+echo "VENDOR_CALLED:vendor_sh|$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/vendor/google/scripts/devshell/vendor_sh.sh"
+  cat > "${BT_TEMP_DIR}/vendor/google/scripts/devshell/fx_host_tools.json" <<'EOF'
+{
+  "vendor-sh": {
+    "script": "//vendor/google/scripts/devshell/vendor_sh.sh",
+    "summary": "vendor registered shell tool"
+  }
+}
+EOF
+
+  out="$("${fx}" vendor google vendor-sh v_arg1 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out}" "VENDOR_CALLED:vendor_sh|v_arg1"
+}
+
+TEST_skips_legacy_path_injection_by_default_and_honors_incremental_opt_in() {
+  local fake_clang_bin="${BT_TEMP_DIR}/pre""built/third_party/clang/linux-x64/bin"
+  local fake_rt_bin="${BT_TEMP_DIR}/out/default/host-tools/parent.runtime_dir/.bin"
+  mkdir -p "${fake_clang_bin}" "${fake_rt_bin}"
+  touch "${fake_clang_bin}/clang" "${fake_rt_bin}/staged_tool"
+  chmod +x "${fake_clang_bin}/clang" "${fake_rt_bin}/staged_tool"
+
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/path_test"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/path_test/clean_tool.sh" <<'EOF'
+#!/bin/bash
+echo "CLEAN|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}|PATH=${PATH}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/path_test/clean_tool.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/path_test/optin_tool.sh" <<'EOF'
+#!/bin/bash
+echo "OPTIN|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}|PATH=${PATH}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/path_test/optin_tool.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "clean-reg-tool": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/path_test/clean_tool.sh",
+    "summary": "clean registered tool"
+  },
+  "optin-reg-tool": {
+    "category": "Build",
+    "inject_prebuilt_paths": true,
+    "script": "//tools/devshell/host_tools/path_test/optin_tool.sh",
+    "summary": "optin registered tool"
+  }
+}
+EOF
+
+  local out_clean
+  out_clean="$(PATH="/usr/bin:/bin" "${fx}" clean-reg-tool 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out_clean}" "CLEAN|FLAG=0|"
+  if [[ "${out_clean}" == *"/third_party/clang/"* ]]; then
+    BT_FAIL "Expected clean-reg-tool to omit /third_party/clang/ from PATH, got: ${out_clean}"
+  fi
+
+  local out_optin
+  out_optin="$(PATH="/usr/bin:/bin" "${fx}" optin-reg-tool 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out_optin}" "OPTIN|FLAG=1|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out_optin}" "/third_party/clang/"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "clean-reg-tool": {
+    "script": "//tools/devshell/host_tools/path_test/clean_tool.sh"
+  },
+  "optin-reg-tool": {
+    "inject_prebuilt_paths": true,
+    "script": "//tools/devshell/host_tools/path_test/optin_tool.sh"
+  },
+  "hop-0-to-1": {
+    "script": "//tools/devshell/hop_0_to_1.sh"
+  },
+  "hop-1-to-0": {
+    "script": "//tools/devshell/hop_1_to_0.sh",
+    "inject_prebuilt_paths": true
+  }
+}
+EOF
+  cat > "${BT_TEMP_DIR}/tools/devshell/hop_0_to_1.sh" <<EOF
+#!/bin/bash
+source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh" || exit \$?
+echo "OUTER_0|FLAG=\${FX_INJECT_PREBUILT_PATHS}"
+fx-command-run optin-reg-tool
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/hop_0_to_1.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/hop_1_to_0.sh" <<EOF
+#!/bin/bash
+source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh" || exit \$?
+echo "OUTER_1|FLAG=\${FX_INJECT_PREBUILT_PATHS}"
+fx-command-run clean-reg-tool
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/hop_1_to_0.sh"
+
+  local hop_01 hop_10
+  hop_01="$(PATH="/usr/bin:/bin" "${fx}" hop-0-to-1 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${hop_01}" "OUTER_0|FLAG=0"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${hop_01}" "FLAG=1"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${hop_01}" "/third_party/clang/"
+
+  hop_10="$(PATH="/usr/bin:/bin" "${fx}" hop-1-to-0 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${hop_10}" "OUTER_1|FLAG=1"
+  local inner_10_line
+  inner_10_line="$(printf '%s\n' "${hop_10}" | tail -n 1)"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${inner_10_line}" "FLAG=0"
+  if [[ "${inner_10_line}" == *"/third_party/clang/"* ]]; then
+    BT_FAIL "Expected hop 1->0 child clean-reg-tool to omit /third_party/clang/, got: ${inner_10_line}"
+  fi
+
+  local legacy_cmd="${BT_TEMP_DIR}/tools/devshell/legacy-path-cmd"
+  cat > "${legacy_cmd}" <<'EOF'
+#!/bin/bash
+echo "PATH=${PATH}"
+EOF
+  chmod +x "${legacy_cmd}"
+  local out_legacy
+  out_legacy="$(PATH="/usr/bin:/bin" "${fx}" legacy-path-cmd 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out_legacy}" "/third_party/clang/"
+}
+
+TEST_locates_and_prints_help_from_registry_without_fx_files() {
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "reg-build-tool": {
+    "category": "Build",
+    "summary": "build widget from registry",
+    "target": "//scripts/developer:reg-build-tool"
+  },
+  "reg-contrib-tool": {
+    "category": "Testing",
+    "contrib": true,
+    "summary": "contrib widget from registry",
+    "target": "//scripts/developer:reg-contrib-tool"
+  }
+}
+EOF
+
+  local cmd_help
+  cmd_help="$("${fx}" help reg-build-tool 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${cmd_help}" "build widget from registry"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${cmd_help}" "Run fx reg-build-tool --help to build and view full flag documentation."
+
+  local full_help
+  full_help="$("${fx}" help --full 2>/dev/null)"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "reg-build-tool"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "build widget from registry"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "(contrib) contrib widget from registry"
+  if [[ "${full_help}" == *"Host binaries produced by the build with no metadata"* ]]; then
+    BT_FAIL "Registered tools should not be listed as lacking metadata: ${full_help}"
+  fi
+
+  local no_contrib_help
+  no_contrib_help="$("${fx}" help --full --no-contrib 2>/dev/null)"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${no_contrib_help}" "reg-build-tool"
+  if [[ "${no_contrib_help}" == *"reg-contrib-tool"* ]]; then
+    BT_FAIL "--no-contrib should hide contrib registered tools: ${no_contrib_help}"
+  fi
+}
+
+TEST_default_registry_contains_registry() {
+  cp -f "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json.orig" "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/fx-cmd-locator.sh"
+
+  local reg_script
+  reg_script="$(get_registered_host_tool_script "registry")"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${reg_script}" "//tools/devshell/fx_cli/registry.py"
+
+  BT_ASSERT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/tools/devshell/registry.fx"
+
+  local reg_list
+  reg_list="$("${fx}" registry list)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${reg_list}" "registry"
+}
+
+TEST_script_mode_executes_without_build_dir_for_sh_and_py() {
+  rm -rf "${BT_TEMP_DIR}/.fx-build-dir" "${BT_TEMP_DIR}/out"
+
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_sh"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_sh/mock_sh.sh" <<'EOF'
+#!/bin/bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "usage: fx mock-sh [--arg]"
+  exit 0
+fi
+echo "SH_OK|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}|ARGS=$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_sh/mock_sh.sh"
+
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_py"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_py/helper_mod.py" <<'EOF'
+TAG = "PY_SIBLING_OK"
+EOF
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_py/mock_py.py" <<'EOF'
+import os
+import sys
+import helper_mod
+
+if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+    print("usage: fx mock-py [--arg]")
+    sys.exit(0)
+print(f"{helper_mod.TAG}|FLAG={os.environ.get('FX_INJECT_PREBUILT_PATHS', 'unset')}|ARGS={' '.join(sys.argv[1:])}")
+EOF
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "mock-sh": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/mock_sh/mock_sh.sh",
+    "summary": "mock shell bootstrap command"
+  },
+  "mock-py": {
+    "category": "Source tree",
+    "script": "//tools/devshell/host_tools/mock_py/mock_py.py",
+    "summary": "mock python bootstrap command"
+  }
+}
+EOF
+
+  source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/fx-cmd-locator.sh"
+
+  BT_EXPECT_EQ "$(get_registered_host_tool_script "mock-sh")" "//tools/devshell/host_tools/mock_sh/mock_sh.sh"
+  BT_EXPECT_FAIL get_registered_host_tool_target "mock-sh"
+  BT_EXPECT_EQ "$(get_registered_host_tool_install_path "mock-sh")" "${BT_TEMP_DIR}/tools/devshell/host_tools/mock_sh/mock_sh.sh"
+
+  local out_sh out_py help_sh help_py full_help caller_out
+  out_sh="$(PATH="/usr/bin:/bin" "${fx}" mock-sh --alpha 1 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_sh}" "SH_OK|FLAG=0|ARGS=--alpha 1"
+
+  out_py="$(PATH="/usr/bin:/bin" "${fx}" mock-py --beta 2 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_py}" "PY_SIBLING_OK|FLAG=0|ARGS=--beta 2"
+
+  help_sh="$("${fx}" help mock-sh 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_sh}" "usage: fx mock-sh [--arg]"
+
+  help_py="$("${fx}" help mock-py 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_py}" "usage: fx mock-py [--arg]"
+
+  full_help="$("${fx}" help --full 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "mock-sh"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "mock shell bootstrap command"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${full_help}" "mock-py"
+
+  local caller_script="${BT_TEMP_DIR}/tools/devshell/caller-script-cmd"
+  cat > "${caller_script}" <<EOF
+#!/bin/bash
+source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh" || exit \$?
+fx-command-run mock-sh from-run
+fx-command-run mock-py from-py-run
+EOF
+  chmod +x "${caller_script}"
+  caller_out="$("${fx}" caller-script-cmd 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${caller_out}" "SH_OK|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${caller_out}" "ARGS=from-run"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${caller_out}" "PY_SIBLING_OK|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${caller_out}" "ARGS=from-py-run"
+
+  BT_ASSERT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/.fx-build-dir"
+}
+
+TEST_large_registry_no_build_dispatch_stays_subsecond() {
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/fast_sh"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/fast_sh/fast.sh" <<'EOF'
+#!/bin/bash
+echo "fast-v1|args=$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/fast_sh/fast.sh"
+
+  "${_TEST_PY3}" - "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json.orig" "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'PY'
+import json
+import sys
+
+data = json.loads(open(sys.argv[1], encoding="utf-8").read())
+data["my-fast-tool"] = {
+    "category": "Build",
+    "summary": "Target under \"latency\" test",
+    "script": "//tools/devshell/host_tools/fast_sh/fast.sh",
+}
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+  "${fx}" my-fast-tool warmup >/dev/null 2>&1
+  BT_EXPECT_EQ $? 0
+
+  local start_us="${EPOCHREALTIME/./}"
+  local out
+  out="$(LC_ALL=C.UTF-8 "${fx}" my-fast-tool --ping 2>/dev/null)"
+  local rc=$?
+  local end_us="${EPOCHREALTIME/./}"
+  local elapsed_ms=$(( (10#${end_us} - 10#${start_us}) / 1000 ))
+
+  BT_EXPECT_EQ "${rc}" 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "fast-v1|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "args=--ping"
+  if (( elapsed_ms >= 1000 )); then
+    BT_FAIL "Expected 'fx' dispatch with full registry to finish in <1000ms, took ${elapsed_ms}ms"
+  fi
+}
+
+TEST_vendor_first_precedence_collision_and_oss_no_vendor() {
+  rm -rf "${BT_TEMP_DIR}/vendor"
+  local oss_vendor_err
+  oss_vendor_err="$("${fx}" vendor 2>&1)"
+  [[ $? -ne 0 ]]
+  BT_EXPECT_GOOD_STATUS $?
+  if [[ "${oss_vendor_err}" == *"vendor/*"* || "${oss_vendor_err}" == *"*"* ]]; then
+    BT_FAIL "Expected clean OSS 'fx vendor' output without unexpanded glob, got: ${oss_vendor_err}"
+  fi
+
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/flash_kola"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/flash_kola/core_flash.sh" <<'EOF'
+#!/bin/bash
+echo "CORE_FLASH_KOLA|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/flash_kola/core_flash.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "flash-kola": {
+    "category": "Device management",
+    "script": "//tools/devshell/host_tools/flash_kola/core_flash.sh",
+    "summary": "core oss stub flash-kola"
+  },
+  "vendor": {
+    "category": "Other",
+    "script": "//tools/devshell/vendor",
+    "summary": "forward commands to vendor/*/scripts/devshell"
+  }
+}
+EOF
+
+  local out
+  out="$(PATH="/usr/bin:/bin" "${fx}" flash-kola 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out}" "CORE_FLASH_KOLA|FLAG=0"
+
+  mkdir -p "${BT_TEMP_DIR}/vendor/google/scripts/devshell"
+  cat > "${BT_TEMP_DIR}/vendor/google/scripts/devshell/flash-kola" <<'EOF'
+#!/bin/bash
+echo "LEGACY_VENDOR_FLASH_KOLA|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}|PATH=${PATH}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/vendor/google/scripts/devshell/flash-kola"
+
+  out="$(PATH="/usr/bin:/bin" "${fx}" flash-kola 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "LEGACY_VENDOR_FLASH_KOLA|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "/third_party/clang/"
+
+  out="$(PATH="/usr/bin:/bin" "${fx}" vendor google flash-kola 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "LEGACY_VENDOR_FLASH_KOLA|"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "/third_party/clang/"
+
+  cat > "${BT_TEMP_DIR}/vendor/google/scripts/devshell/reg_flash.sh" <<'EOF'
+#!/bin/bash
+echo "REG_GOOGLE_FLASH_KOLA|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}|PATH=${PATH}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/vendor/google/scripts/devshell/reg_flash.sh"
+  cat > "${BT_TEMP_DIR}/vendor/google/scripts/devshell/fx_host_tools.json" <<'EOF'
+{
+  "flash-kola": {
+    "script": "//vendor/google/scripts/devshell/reg_flash.sh",
+    "summary": "google registered flash-kola"
+  },
+  "google-only-cmd": {
+    "script": "//vendor/google/scripts/devshell/reg_flash.sh",
+    "summary": "google top-level registered tool"
+  }
+}
+EOF
+
+  out="$(PATH="/usr/bin:/bin" "${fx}" flash-kola 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "REG_GOOGLE_FLASH_KOLA|FLAG=0|"
+  if [[ "${out}" == *"/third_party/clang/"* ]]; then
+    BT_FAIL "Expected registered vendor tool to have FX_INJECT_PREBUILT_PATHS=0, got: ${out}"
+  fi
+
+  local vendor_help
+  vendor_help="$("${fx}" vendor 2>&1)"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${vendor_help}" "vendor google flash-kola"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${vendor_help}" "google registered flash-kola"
+  local occ_flash
+  occ_flash="$(printf '%s\n' "${vendor_help}" | grep -c "vendor google flash-kola" || true)"
+  BT_EXPECT_EQ "${occ_flash}" 1
+
+  out="$(PATH="/usr/bin:/bin" "${fx}" google-only-cmd 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "REG_GOOGLE_FLASH_KOLA|FLAG=0|"
+
+  source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/fx-cmd-locator.sh"
+  local all_reg
+  all_reg="$(list_registered_host_tools)"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${all_reg}" "google-only-cmd"
+
+  mkdir -p "${BT_TEMP_DIR}/vendor/acme/scripts/devshell"
+  cat > "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/acme_flash.sh" <<'EOF'
+#!/bin/bash
+echo "REG_ACME_FLASH_KOLA|FLAG=${FX_INJECT_PREBUILT_PATHS:-unset}"
+EOF
+  chmod +x "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/acme_flash.sh"
+  cat > "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/fx_host_tools.json" <<'EOF'
+{
+  "flash-kola": {
+    "script": "//vendor/acme/scripts/devshell/acme_flash.sh",
+    "summary": "acme registered flash-kola"
+  }
+}
+EOF
+
+  local coll_err
+  coll_err="$("${fx}" flash-kola 2>&1)"
+  local coll_rc=$?
+  BT_EXPECT_EQ "${coll_rc}" 2
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${coll_err}" "acme"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${coll_err}" "google"
+
+  local help_coll_err
+  help_coll_err="$("${fx}" help flash-kola 2>&1)"
+  local help_coll_rc=$?
+  BT_EXPECT_EQ "${help_coll_rc}" 2
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_coll_err}" "acme"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_coll_err}" "google"
+
+  out="$(PATH="/usr/bin:/bin" "${fx}" vendor acme flash-kola 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out}" "REG_ACME_FLASH_KOLA|FLAG=0"
+}
+
+TEST_strict_schema_fail_closed() {
+  source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+  source "${BT_TEMP_DIR}/tools/devshell/lib/fx-cmd-locator.sh"
+
+  cat > "${BT_TEMP_DIR}/_bad1.json" <<'EOF'
+{"unclosed": "//scripts/developer:tool"
+EOF
+  BT_EXPECT_FAIL "${_TEST_PY3}" "${BT_TEMP_DIR}/tools/devshell/fx_cli/registry.py" --registry-file "${BT_TEMP_DIR}/_bad1.json" check
+
+  cat > "${BT_TEMP_DIR}/_bad2.json" <<'EOF'
+{"BadUpper": "//scripts/developer:tool"}
+EOF
+  BT_EXPECT_FAIL "${_TEST_PY3}" "${BT_TEMP_DIR}/tools/devshell/fx_cli/registry.py" --registry-file "${BT_TEMP_DIR}/_bad2.json" check
+
+  cat > "${BT_TEMP_DIR}/_bad3.json" <<'EOF'
+{"bad-target": "//scripts/developer_missing_colon"}
+EOF
+  BT_EXPECT_FAIL "${_TEST_PY3}" "${BT_TEMP_DIR}/tools/devshell/fx_cli/registry.py" --registry-file "${BT_TEMP_DIR}/_bad3.json" check
+
+  cat > "${BT_TEMP_DIR}/_bad4.json" <<'EOF'
+{"bad-script": {"script": "//tools/../escape.sh"}}
+EOF
+  BT_EXPECT_FAIL "${_TEST_PY3}" "${BT_TEMP_DIR}/tools/devshell/fx_cli/registry.py" --registry-file "${BT_TEMP_DIR}/_bad4.json" check
+}
+
+TEST_hermetic_env_preserves_fx_host_tool_vars() {
+  local herm_out
+  herm_out="$(
+    cd "${BT_TEMP_DIR}" && \
+    PATH="/usr/bin:/bin" \
+    FX_INJECT_PREBUILT_PATHS=0 \
+    FX_RUNTIME_TOOLS_DIR="/tmp/rt_tools" \
+    RUNFILES_DIR="/tmp/rf_dir" \
+    RUNFILES_MANIFEST_FILE="/tmp/rf_manifest" \
+    XDG_CACHE_HOME="/tmp/xdg_cache" \
+    JIRI_PROXY_SOCKET="/tmp/jiri.sock" \
+    "${BT_TEMP_DIR}/scripts/hermetic-env" /usr/bin/env
+  )"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "FX_INJECT_PREBUILT_PATHS=0"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "FX_RUNTIME_TOOLS_DIR=/tmp/rt_tools"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "RUNFILES_DIR=/tmp/rf_dir"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "RUNFILES_MANIFEST_FILE=/tmp/rf_manifest"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "XDG_CACHE_HOME=/tmp/xdg_cache"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${herm_out}" "JIRI_PROXY_SOCKET=/tmp/jiri.sock"
+  if [[ "${herm_out}" == *"/third_party/clang/"* ]]; then
+    BT_FAIL "Expected hermetic-env to omit PREBUILT_ALL_PATHS when FX_INJECT_PREBUILT_PATHS=0, got: ${herm_out}"
+  fi
+}
+
+TEST_single_python_invocation_per_command_dispatch() {
+  local real_py3
+  real_py3="$(command -v python3)"
+  local py_wrapper="${BT_TEMP_DIR}/_mock_bin/py3_spy"
+  mkdir -p "$(dirname "${py_wrapper}")"
+  cat > "${py_wrapper}" <<EOF
+#!/bin/bash
+for arg in "\$@"; do
+  if [[ "\${arg}" == *"locator.py"* || "\${arg}" == *"registry.py"* ]]; then
+    printf '%s\n' "\$*" >> "${BT_TEMP_DIR}/_py_calls.log"
+    break
+  fi
+done
+exec "${real_py3}" "\$@"
+EOF
+  chmod +x "${py_wrapper}"
+  ln -sf "${py_wrapper}" "${_TEST_PY3}"
+
+  _count_py_calls() {
+    if [[ -f "${BT_TEMP_DIR}/_py_calls.log" ]]; then
+      wc -l < "${BT_TEMP_DIR}/_py_calls.log" | tr -d ' '
+    else
+      echo 0
+    fi
+  }
+
+  mkdir -p "${BT_TEMP_DIR}/tools/devshell/host_tools/single_sh"
+  cat > "${BT_TEMP_DIR}/tools/devshell/host_tools/single_sh/single_sh.sh" <<'EOF'
+#!/bin/bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "usage: fx single-sh [--flag]"
+  exit 0
+fi
+echo "SINGLE_SH_OK|$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/tools/devshell/host_tools/single_sh/single_sh.sh"
+
+  cat > "${BT_TEMP_DIR}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "single-sh": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/single_sh/single_sh.sh",
+    "summary": "single-sh tool summary"
+  },
+  "single-target-unbuilt": {
+    "category": "Build",
+    "summary": "unbuilt target summary",
+    "target": "//scripts/developer:single-target-unbuilt"
+  },
+  "single-target-built": {
+    "category": "Build",
+    "summary": "built target summary",
+    "target": "//scripts/developer:single-target-built"
+  }
+}
+EOF
+
+  # Set up built mock binary in both host-tools (Commit 1) and _fx_host_tools (Commit 3+)
+  mkdir -p "${BT_TEMP_DIR}/out/default/host-tools" "${BT_TEMP_DIR}/out/_fx_host_tools"
+  cat > "${BT_TEMP_DIR}/out/default/host-tools/single-target-built" <<'EOF'
+#!/bin/bash
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "BUILT_TARGET_HELP"
+  exit 0
+fi
+echo "BUILT_TARGET_OK"
+EOF
+  chmod +x "${BT_TEMP_DIR}/out/default/host-tools/single-target-built"
+  cp -f "${BT_TEMP_DIR}/out/default/host-tools/single-target-built" "${BT_TEMP_DIR}/out/_fx_host_tools/single-target-built"
+
+  # Vendor setup
+  mkdir -p "${BT_TEMP_DIR}/vendor/acme/scripts/devshell"
+  cat > "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/v_single.sh" <<'EOF'
+#!/bin/bash
+echo "V_SINGLE_OK|$*"
+EOF
+  chmod +x "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/v_single.sh"
+  cat > "${BT_TEMP_DIR}/vendor/acme/scripts/devshell/fx_host_tools.json" <<'EOF'
+{
+  "v-single-sh": {
+    "category": "Build",
+    "script": "//vendor/acme/scripts/devshell/v_single.sh",
+    "summary": "vendor single-sh summary"
+  }
+}
+EOF
+
+  # 1. fx <registered-script-cmd>
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local out_cmd
+  out_cmd="$("${fx}" single-sh arg1 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_cmd}" "SINGLE_SH_OK|arg1"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 2. fx help <registered-script-cmd>
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local help_sh
+  help_sh="$("${fx}" help single-sh 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_sh}" "usage: fx single-sh [--flag]"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 3. fx help <registered-target-cmd> (unbuilt)
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local help_unbuilt
+  help_unbuilt="$("${fx}" help single-target-unbuilt 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_unbuilt}" "unbuilt target summary"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_unbuilt}" "Run fx single-target-unbuilt --help"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 4. fx help <registered-target-cmd> (built)
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local help_built
+  help_built="$("${fx}" help single-target-built 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_built}" "BUILT_TARGET_HELP"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 5. fx help --full
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local help_full
+  help_full="$("${fx}" help --full 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${help_full}" "single-sh"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 6. fx-command-run <registered-script-cmd>
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local out_run
+  out_run="$(
+    source "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh" || exit $?
+    fx-command-run single-sh from-run 2>/dev/null
+  )"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_run}" "SINGLE_SH_OK|from-run"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+
+  # 7. tools/devshell/vendor direct invocation
+  : > "${BT_TEMP_DIR}/_py_calls.log"
+  local out_vendor
+  out_vendor="$("${BT_TEMP_DIR}/tools/devshell/vendor" acme v-single-sh 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_vendor}" "V_SINGLE_OK|"
+  BT_EXPECT_EQ "$(_count_py_calls)" 1
+}
+
+TEST_supports_spaces_in_fuchsia_dir() {
+  local spaced_dir="${BT_TEMP_DIR}/dir with spaces"
+  mkdir -p "${spaced_dir}"
+  cp -a "${BT_TEMP_DIR}/scripts" "${BT_TEMP_DIR}/tools" "${BT_TEMP_DIR}/.fx-root" "${spaced_dir}/"
+  mkdir -p "$(dirname "${spaced_dir}/${_TEST_PY3#"${BT_TEMP_DIR}/"}")"
+  ln -sf "$(command -v python3)" "${spaced_dir}/${_TEST_PY3#"${BT_TEMP_DIR}/"}"
+
+  mkdir -p "${spaced_dir}/tools/devshell/host_tools/space_test"
+  cat > "${spaced_dir}/tools/devshell/host_tools/space_test/space_py.py" <<'EOF'
+import sys
+print("SPACE_PY_OK|" + " ".join(sys.argv[1:]))
+EOF
+  cat > "${spaced_dir}/tools/devshell/host_tools/space_test/space_sh.sh" <<'EOF'
+#!/bin/bash
+echo "SPACE_SH_OK|$*"
+EOF
+  chmod +x "${spaced_dir}/tools/devshell/host_tools/space_test/space_sh.sh"
+
+  cat > "${spaced_dir}/tools/devshell/fx_host_tools.json" <<'EOF'
+{
+  "space-py": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/space_test/space_py.py",
+    "summary": "python script in checkout with spaces"
+  },
+  "space-sh": {
+    "category": "Build",
+    "script": "//tools/devshell/host_tools/space_test/space_sh.sh",
+    "summary": "shell script in checkout with spaces"
+  }
+}
+EOF
+
+  local out_py out_sh
+  out_py="$(cd "${spaced_dir}" && "${spaced_dir}/scripts/fx" space-py --arg "val with space" 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_py}" "SPACE_PY_OK|--arg val with space"
+
+  out_sh="$(cd "${spaced_dir}" && "${spaced_dir}/scripts/fx" space-sh --arg "val with space" 2>/dev/null)"
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_EQ "${out_sh}" "SPACE_SH_OK|--arg val with space"
+}
+
+BT_RUN_TESTS "$@"
