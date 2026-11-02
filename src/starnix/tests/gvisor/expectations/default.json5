@@ -1302,9 +1302,6 @@
                 "NetdeviceTest.InterfaceMTU",
                 "NetdeviceTest.Loopback",
 
-                // TODO(https://fxbug.dev/328690451) Re-enable once flake is resolved.
-                "InotifyTest.InotifyAndTargetDestructionDoNotDeadlock",
-
                 // TODO(https://fxbug.dev/339238239) Re-enable once flake is resolved.
                 "IntervalTimerTest.PeriodicGroupDirectedSignal",
                 "IntervalTimerTest.NegativeInterval",
