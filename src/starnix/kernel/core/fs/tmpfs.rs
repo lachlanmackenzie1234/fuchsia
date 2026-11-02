@@ -148,7 +148,11 @@ pub fn tmp_fs(
     current_task: &CurrentTask,
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
-    TmpFs::new_fs_with_options(&current_task.kernel(), options)
+    TmpFs::new_fs_with_options_and_cred(
+        &current_task.kernel(),
+        options,
+        current_task.current_fscred(),
+    )
 }
 
 /// Registers a `TmpFs`-backed `"ramfs"` filesystem for use by the SELinux test suite.
@@ -177,13 +181,30 @@ impl TmpFs {
         kernel: &Kernel,
         options: FileSystemOptions,
     ) -> Result<FileSystemHandle, Errno> {
-        Self::new_fs_with_options_and_name(kernel, options, "tmpfs".into())
+        Self::new_fs_with_options_and_cred(kernel, options, FsCred::root())
+    }
+
+    pub fn new_fs_with_options_and_cred(
+        kernel: &Kernel,
+        options: FileSystemOptions,
+        default_cred: FsCred,
+    ) -> Result<FileSystemHandle, Errno> {
+        Self::new_fs_with_options_name_and_cred(kernel, options, "tmpfs".into(), default_cred)
     }
 
     fn new_fs_with_options_and_name(
         kernel: &Kernel,
         options: FileSystemOptions,
         name: &'static FsStr,
+    ) -> Result<FileSystemHandle, Errno> {
+        Self::new_fs_with_options_name_and_cred(kernel, options, name, FsCred::root())
+    }
+
+    fn new_fs_with_options_name_and_cred(
+        kernel: &Kernel,
+        options: FileSystemOptions,
+        name: &'static FsStr,
+        default_cred: FsCred,
     ) -> Result<FileSystemHandle, Errno> {
         let mut mount_options = options.params.clone();
         let mode = if let Some(mode) = mount_options.remove(b"mode") {
@@ -194,12 +215,12 @@ impl TmpFs {
         let uid = if let Some(uid) = mount_options.remove(b"uid") {
             fs_args::parse::<uid_t>(uid.as_ref())?
         } else {
-            0
+            default_cred.uid
         };
         let gid = if let Some(gid) = mount_options.remove(b"gid") {
             fs_args::parse::<gid_t>(gid.as_ref())?
         } else {
-            0
+            default_cred.gid
         };
         let casefold = mount_options.remove(b"casefold").is_some();
         let fs = FileSystem::new(

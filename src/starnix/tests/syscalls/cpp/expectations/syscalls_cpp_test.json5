@@ -164,9 +164,6 @@
                 // userfaultfd-registered ranges due to how it implements userfaultfd page fault
                 // interception by removing VMAR protections.
                 "UffdTest.MprotectRegisteredRange",
-
-                // TODO(https://fxbug.dev/575527159): Default tmpfs root uid and gid to caller fscred.
-                "TmpfsTest.DefaultUidAndGidUseCallerFsCred",
             ],
         },
     ],
