@@ -3185,10 +3185,18 @@ mod pi_tests {
         assert_true!(blocking_thread.create(fair_profile.clone()));
         assert_true!(pressure_thread.create(fair_profile));
 
-        // Have each fair thread spin for `long_capacity` (2ms, or 20% of the 10ms
-        // default fair period) before blocking so that proportional time-slice
-        // carryover is distinguishable from both resetting `time_slice_used_ns` to
-        // zero and leaving it unscaled.
+        // Have each fair thread spin for `long_capacity` (2ms) before blocking so that
+        // some of its fair time slice is consumed and proportional time-slice carryover
+        // is distinguishable from both resetting `time_slice_used_ns` to zero and leaving
+        // it unscaled.
+        //
+        // How much of the slice the spin consumes is not fixed: a fair thread's slice and
+        // used time are rescaled whenever the CPU's fair bandwidth changes
+        // (`adjust_fair_bandwidth`), and on a single CPU this test's own thread shares
+        // the fair queue with the workers, so the carried fraction can be anywhere in
+        // (0, 1). The checks below therefore only require that it is carried (remaining
+        // strictly between zero and the capacity) and that the second transition
+        // carries the same fraction as the first, which is deterministic.
         let spin = || {
             let _eager_resched_disabler = AnnotatedAutoEagerReschedDisabler::new();
             let spin_until = current_mono_time().0 + long_capacity;
@@ -3221,6 +3229,10 @@ mod pi_tests {
         // 1. Fair -> Deadline (8ms period) transition, and
         // 2. Deadline (8ms period) -> Deadline (2ms period) transition where
         //    `finish_time - 2ms > mono_now`.
+        //
+        // Remaining time slice after the long transition, per thread, to check that the
+        // short transition carries the same consumed fraction.
+        let mut long_remaining: [zx_duration_mono_t; 2] = [0; 2];
         for (profile, capacity, period) in [
             (&long_deadline_profile, long_capacity, long_period),
             (&short_deadline_profile, short_capacity, short_period),
@@ -3229,14 +3241,25 @@ mod pi_tests {
             profile.apply(pressure_thread.thread());
             let after_apply: zx_instant_mono_t = current_mono_time().0;
 
-            for t in [&pressure_thread, &blocking_thread] {
+            for (i, t) in [&pressure_thread, &blocking_thread].into_iter().enumerate() {
                 let snap = t.snapshot();
                 expect_ge!(snap.start_time.raw_value(), before_apply);
                 expect_le!(snap.start_time.raw_value(), after_apply);
                 expect_eq!(snap.finish_time.raw_value() - snap.start_time.raw_value(), period);
                 expect_eq!(snap.time_slice_ns.raw_value(), capacity);
-                expect_gt!(snap.remaining_time_slice_ns.raw_value(), 0);
-                expect_le!(snap.remaining_time_slice_ns.raw_value(), capacity * 4 / 5);
+                // Carried, not reset to the full capacity and not left unscaled (which
+                // would leave nothing of a capacity no larger than the spin).
+                let remaining = snap.remaining_time_slice_ns.raw_value();
+                expect_gt!(remaining, 0);
+                expect_lt!(remaining, capacity);
+                if capacity == long_capacity {
+                    long_remaining[i] = remaining;
+                } else {
+                    // The same fraction of the short capacity remains as of the long one,
+                    // up to fixed-point rounding of the fraction.
+                    let expected = long_remaining[i] * short_capacity / long_capacity;
+                    expect_le!((remaining - expected).abs(), zx_usec(1));
+                }
             }
         }
     }
