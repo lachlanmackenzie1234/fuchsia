@@ -1070,6 +1070,27 @@
                 // TODO(https://fxbug.dev/507936011): Fix and re-enable.
                 // Truncation on getsockopt is supported, but this test uses TCP options that aren't supported yet.
                 "AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer*",
+
+                // TODO(https://fxbug.dev/580284822): Sign-extend oparg/cmparg and use signed comparisons in FUTEX_WAKE_OP.
+                "PrivateFutexTest.WakeOpNegativeOparg",
+                "PrivateFutexTest.WakeOpShiftMasked",
+                "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondNegativeCmparg/0",
+                "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondNegativeCmparg/1",
+                "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSignedCompare/0",
+                "SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSignedCompare/1",
+
+                // TODO(https://fxbug.dev/580284383): Enforce mnt_too_revealing checks for userns proc and sysfs mounts.
+                "MountTest.InitUserNamespaceProcMountWithoutVisibleProc",
+                "MountTest.UserNamespaceProcBindMountIsNotVisible",
+                "MountTest.UserNamespaceProcMount",
+                "MountTest.UserNamespaceProcMountIgnoresUnlockedMount",
+                "MountTest.UserNamespaceProcMountLockedReadOnly",
+                "MountTest.UserNamespaceProcMountRevealingLockedMount",
+                "MountTest.UserNamespaceSysfsMountOverEmptyDir",
+                "MountTest.UserNamespaceSysfsMountRevealingLockedMount",
+
+                // TODO(https://fxbug.dev/580284958): Round up sysinfo uptime when tv_nsec is non-zero.
+                "SysinfoTest.UptimeRoundsUp",
             ],
         },
         {
