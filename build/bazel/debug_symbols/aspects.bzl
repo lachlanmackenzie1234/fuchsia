@@ -245,15 +245,15 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
             for dep in attr.executable_link_deps
             if DebugSymbolManifestInfo in dep
         ]
-    elif kind == "_final_cc_build_flags":
-        # Mirror `_final_cc_build_flags_impl` in `cc.bzl`:
-        # - `cxx_common` (`fx_cc_library`) does not link `link_deps` or
+    elif kind in ("_final_cc_build_flags", "_final_rust_build_flags"):
+        # Mirror `_final_cc_build_flags_impl` in `cc.bzl` and `_final_rust_build_flags_impl` in `rust.bzl`:
+        # - `cxx_common` (`fx_cc_library`) and `rust_common` (`rustc_library`) do not link `link_deps` or
         #   `executable_link_deps`.
         # - `cxx_shared_library` and `cxx_executable` link `link_deps` from
         #   active (non-disabled) `build_flags` in `BuildFlagsListInfo.infos`.
-        # - Only `cxx_executable` links `executable_link_deps`.
+        # - Only `cxx_executable` and `rust_executable` link `executable_link_deps`.
         dep_infos = []
-        if attr.target_type != "cxx_common":
+        if attr.target_type not in ("cxx_common", "rust_common"):
             active_labels = [info.label for info in target[BuildFlagsListInfo].infos]
             active_deps = [
                 dep[DebugSymbolManifestInfo]
@@ -261,7 +261,7 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
                 if DebugSymbolManifestInfo in dep and BuildFlagsInfo in dep and dep[BuildFlagsInfo].label in active_labels
             ]
             dep_infos.extend(active_deps)
-            if attr.target_type == "cxx_executable":
+            if attr.target_type in ("cxx_executable", "rust_executable"):
                 for info in active_deps:
                     dep_infos.extend(info.executable_link_dep_infos.to_list())
     else:
