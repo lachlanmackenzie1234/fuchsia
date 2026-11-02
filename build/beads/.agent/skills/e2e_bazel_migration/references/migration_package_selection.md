@@ -15,12 +15,12 @@ Select the **migration packages** one at a time:
 3. While the number of **migration packages** is below the **migration package count** (which defaults to 5 for batching by default, or up to the requested count if specified):
    * Select another package and claim its ownership (steps 5, 2, 3 and 4).
    * If the **migration package count** is 5 or less, the package must be able to be migrated in the same CL as the **migration packages** according to the [Grouping Rules](#grouping-rules). Greedily search the **control table** for ready packages in the same area and target type that form a cohesive unit with the selected packages.
-   * If it is more than 5, any package can be selected, because the **migration packages** are split into several **migration groups** in step 8.
-4. Stop selecting when the number of **migration packages** reaches the **migration package count**, no more package can be selected, or a [selection failure](#selection-failures) happens. Then run steps 6 and 7 for each **migration package**, and step 8 to split the **migration packages** into **migration groups**.
+   * If it is more than 5, any package can be selected, because the **migration packages** are split into several **migration groups** in step 7.
+4. Stop selecting when the number of **migration packages** reaches the **migration package count**, no more package can be selected, or a [selection failure](#selection-failures) happens. Then run step 6 for each **migration package**, and step 7 to split the **migration packages** into **migration groups**.
 
 The **migration package count** is checked only before selecting a new package. After a new package and the packages that have to be migrated together with it are added, the number of **migration packages** may exceed the **migration package count**; this is expected.
 
-If there is a **migration directory**, follow [Directory Selection](#directory-selection) instead of steps 1 to 5, and then run steps 6 and 7 for each **migration package**, and step 8.
+If there is a **migration directory**, follow [Directory Selection](#directory-selection) instead of steps 1 to 5, and then run step 6 for each **migration package**, and step 7.
 
 ## Directory Selection
 
@@ -41,15 +41,15 @@ Select packages under the **migration directory** as the **migration packages**.
    * If a specific package count was requested and the number of claimed **migration packages** reaches that count, stop claiming and continue to step 5.
 5. When all the candidate packages are handled:
    * If no **migration package** has been selected, fail the Migration Package Selection step with the reason: "No migration package is found under `<migration directory>`."
-   * Otherwise, continue to [Check the Buganizer Tickets](#6-check-the-buganizer-tickets).
+   * Otherwise, continue to [Update Control Table](#6-update-control-table).
 
-In Directory Selection, all candidate packages under the **migration directory** (up to the requested count, if specified) are partitioned into **migration groups** in step 8 according to the [Grouping Rules](#grouping-rules) (`<= 5` cohesive packages of the same area and target type and `<= ~500` new lines per group, forming a single **migration group** / CL whenever all selected packages satisfy the [Grouping Rules](#grouping-rules) together).
+In Directory Selection, all candidate packages under the **migration directory** (up to the requested count, if specified) are partitioned into **migration groups** in step 7 according to the [Grouping Rules](#grouping-rules) (`<= 5` cohesive packages of the same area and target type and `<= ~500` new lines per group, forming a single **migration group** / CL whenever all selected packages satisfy the [Grouping Rules](#grouping-rules) together).
 
 ## Grouping Rules
 
 Read and follow the CL scoping guidelines in [scoping_changelists.md](../../../../references/migration/scoping_changelists.md) to decide which packages can be migrated in the same CL. The rules below summarize them; if they differ, [scoping_changelists.md](../../../../references/migration/scoping_changelists.md) takes precedence.
 
-When the **migration packages** are split into **migration groups** in step 8, apply the rules within each **migration group**: read "the **migration packages**" as "the packages of the **migration group**", and "the first **migration package**" as "the first package of the **migration group**".
+When the **migration packages** are split into **migration groups** in step 7, apply the rules within each **migration group**: read "the **migration packages**" as "the packages of the **migration group**", and "the first **migration package**" as "the first package of the **migration group**".
 
 A candidate package can be added to the **migration packages** only when all of the following hold:
 1. **Same area:** It is in the same subsystem or area as the **migration packages** (e.g., under the same `//src/<area>/...` subtree), or in the same generic parent directory (e.g., `//sdk/lib`). `OWNERS` files are a useful indicator of areas and subtrees. Never combine directories from different areas, even if one depends on another.
@@ -82,7 +82,7 @@ When a selection failure happens:
       * Do not change the row of a candidate package whose ownership was not claimed (e.g., the "Owner" column could not be updated or re-checked in step 2), because another user may own it. Do not change the rows of the **migration packages** either.
    2. Then:
       * If no **migration package** has been selected yet, fail the Migration Package Selection step with the reason of the selection failure.
-      * Otherwise, do not fail the Migration Package Selection step. Stop selecting packages and continue to [Check the Buganizer Tickets](#6-check-the-buganizer-tickets) with the **migration packages** selected so far. Do not change the status of these **migration packages** to "blocked"; they are migrated as usual.
+      * Otherwise, do not fail the Migration Package Selection step. Stop selecting packages and continue to [Update Control Table](#6-update-control-table) with the **migration packages** selected so far. Do not change the status of these **migration packages** to "blocked"; they are migrated as usual.
 
 ## 1. Find the first package
 
@@ -126,26 +126,18 @@ When all of them, including the packages added transitively, are handled, contin
 * If the number of **migration packages** has reached the **migration package count**, continue to the next step.
 * Otherwise, use the "gsheets" skill: In the **control table**, find the rows where the "Migration Status" column is "ready_for_migration", the "Owner" column is empty, and the row is not already one of the **migration packages**.
    * If the **migration package count** is 5 or less (including the default batching behavior), greedily search the rows from top to bottom to find rows that can be grouped with the **migration packages** according to the [Grouping Rules](#grouping-rules) (matching Pattern A, B, C, or D). Pick the first such row.
-   * If the **migration package count** is more than 5, take the first of these rows from the top. It does not need to be able to be grouped with the **migration packages**; it will be partitioned into **migration groups** in step 8.
+   * If the **migration package count** is more than 5, take the first of these rows from the top. It does not need to be able to be grouped with the **migration packages**; it will be partitioned into **migration groups** in step 7.
    * If the **control table** cannot be read, it's a [selection failure](#selection-failures) with the reason: "Failed to read the control table."
    * If such a row is found, it's the candidate package. Refer to [Claim migration ownership](#2-claim-migration-ownership) to claim it.
    * If no such row is found, stop selecting packages and continue to the next step with the **migration packages** selected so far.
 
 
-## 6. Check the Buganizer Tickets
-
-Each **migration package** has its own Buganizer ticket, even though several **migration packages** are migrated in the same CL.
-
-For each **migration package**, if the "Buganizer Ticket" column is empty, refer to [Buganizer ticket template](../assets/buganizer_ticket_template.md) to create a Buganizer ticket for the migration of that package with "buganizer-cli" agent skill, and use the "gsheets" skill to write it to the "Buganizer Ticket" column of that package in the **control table**.
-   * If it fails to create the ticket, use the "Parent ID" defined in the [Buganizer ticket template](../assets/buganizer_ticket_template.md) as the Buganizer ticket number of that package and write it to the "Buganizer Ticket" column.
-   * If the "Buganizer Ticket" column is not empty, keep using that ticket for the package.
-
-## 7. Update Control Table
+## 6. Update Control Table
 
 Use the "gsheets" skill: In the **control table**, change "Migration Status" of each **migration package** to "in-progress" and set "Last Status Update" to the **status timestamp**.
 
 
-## 8. Split into migration groups
+## 7. Split into migration groups
 
 Each **migration group** is migrated by one Planter task and uploaded as one CL. Every **migration package** is in exactly one **migration group**.
 

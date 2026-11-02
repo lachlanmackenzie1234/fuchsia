@@ -58,5 +58,5 @@ This checklist defines the universal review criteria and standards for code chan
 * [ ] **Subject Tag:** Subject line includes the `[bazel_migration]` prefix tag *(e.g., `[bazel_migration] Migrate <target_path> to Bazel`)*.
 * [ ] **Subject Line Length:** The first line of the commit message is fewer than 64 characters and uses the imperative mood.
 * [ ] **Body Line Length:** Body lines are wrapped at fewer than 70 characters.
-* [ ] **Bug Footer:** Commit message includes a `Bug: <issue-id>` footer linking to the tracking issue.
+* [ ] **Bug Footer (Optional):** A `Bug:`/`Fixed:` footer is not required; omitting it is valid. If present, it references a valid, relevant issue (see [determining_appropriate_bug_footer.md](../../../../../references/migration/commit_message/determining_appropriate_bug_footer.md)), never the former parent tracking bug 571374004. `Bug:`/`Fixed:` footers for the packages' **buganizer ticket numbers** from the **control table** are valid by definition; do not look them up.
 * [ ] **Test Footer:** Commit message includes a `Test:` footer documenting how the migration was verified.

@@ -3,12 +3,12 @@ name: e2e-bazel-migration
 description: >
   Performs an end-to-end migration of GN packages to Bazel using Planter,
   covering pre-migration checks, workspace branching, migration package
-  selection from the control table, Buganizer ticket creation, package
-  migration/verification, CL creation, review, and status reporting. Use this
-  skill whenever the user asks to migrate targets using Planter (e.g.,
-  "migrate X using planter", "migrate the next X targets", "migrate targets in
-  using planter"), run the automated GN-to-Bazel package migration workflow,
-  or migrate packages from the control table.
+  selection from the control table, package migration/verification, CL
+  creation, review, and status reporting. Use this skill whenever the user
+  asks to migrate targets using Planter (e.g., "migrate X using planter",
+  "migrate the next X targets", "migrate targets in using planter"), run the
+  automated GN-to-Bazel package migration workflow, or migrate packages from
+  the control table.
 ---
 
 ## Terminology
@@ -81,11 +81,14 @@ description: >
   [migration_commit_message_guidelines.md](../../../references/migration/commit_message/guidelines.md)
   file.
 
-* **buganizer ticket number** : For a **migration package**, the number in the
-  "Buganizer Ticket" column of its row in the **control table**. Each
-  **migration package** has its own ticket. If it's a URL, strip the
-  "http://b/". (e.g., "http://b/1234567", the buganizer ticket number is
-  "1234567")
+* **buganizer ticket numbers** : For a **migration package**, the numeric issue
+  IDs in the "Buganizer Ticket" column of its row in the **control table**.
+  Accept bare numbers and any URL form ending in the numeric ID (e.g., `b/`,
+  `fxbug.dev/`, `issues/`), and split on commas, semicolons, and whitespace
+  (e.g., "http://b/1234567" gives "1234567"). Drop 571374004, the former parent
+  tracking bug that earlier runs wrote when ticket creation failed. A package
+  may have none. This skill never creates Buganizer tickets and never writes
+  the "Buganizer Ticket" column.
 
 * **status timestamp** : The current time in UTC, formatted as `YYYY-MM-DD HH:MM
   UTC` (e.g., `2026-10-16 04:31 UTC`).

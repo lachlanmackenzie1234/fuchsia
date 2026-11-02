@@ -6,8 +6,6 @@ In the templates below:
   separated by `, `.
 * `<paths_of_the_migrating_targets>`: The paths of the **migration packages**,
   separated by `, `.
-* `<Buganizer_ticket_numbers>`: The **buganizer ticket numbers** of the
-  **migration packages**, separated by `, `, with duplicates removed.
 * `<Fuchsia_Gerrit_CLs>`: One line for each **migration group** whose CL is
   created, in the form `<CL number>: <paths of its packages>`. If there is one
   **migration group**, only its CL number. If **assign reviewer** is enabled,
@@ -35,7 +33,6 @@ In the templates below:
 ```
 The migration for <migrating_target_name> started at <current_time>.
 Migrated Targets: <paths_of_the_migrating_targets>
-Buganizer Tickets: <Buganizer_ticket_numbers>
 ```
 
 ## Completed Notification Template
@@ -47,7 +44,6 @@ Buganizer Tickets: <Buganizer_ticket_numbers>
 ```
 The migration for <migrating_target_name> was completed at <current_time>.
 Migrated Targets: <paths_of_the_migrating_targets>
-Buganizer Tickets: <Buganizer_ticket_numbers>
 Fuchsia Gerrit CLs:
 <Fuchsia_Gerrit_CLs>
 Failed Migration Groups:
@@ -81,7 +77,6 @@ These migration CL reviewers were out of office, so they were swapped at
 The migration for <migrating_target_name> was interrupted at <current_time>
 because of <reason>.
 Migrated Targets: <paths_of_the_migrating_targets>
-Buganizer Tickets: <Buganizer_ticket_numbers>
 Control Table: <the_go_link_of_fuchsia-bazel-migration-control-table>
 Planter Warnings:
 <planter_warnings>

@@ -11,7 +11,6 @@ The Bazel migration uses the skills below.
 | `gmail` | Sending notifications | Use the `skill_search` tool to find it |
 | `gsheets` | Reading and updating the **control table** | Use the `skill_search` tool to find it |
 | `fuchsia-gerrit-cli` | Getting the CL number and posting CL review results | `//.agents/skills/fuchsia-gerrit-cli` |
-| `buganizer-cli` | Creating the Buganizer ticket | Use the `skill_search` tool to find it |
 | `go-links` | Resolving go links | Use the `skill_search` tool to find it |
 | `fx-worktree` | Allocating worktree slots for the Planter fleet | `//.agents/skills/fx-worktree` |
 
@@ -27,11 +26,11 @@ The Bazel migration uses the skills below.
 
 1. For each missing skill, get the directory that contains its `SKILL.md` from the "Location" column above.
    * If the location is a directory in the Fuchsia checkout (e.g. `//.agents/skills/fx-worktree`), use that directory. Check that its `SKILL.md` exists and has the same skill name.
-   * Otherwise, use the `skill_search` tool to search for it by name. The search result must have the same skill name (e.g. `buganizer-cli`).
+   * Otherwise, use the `skill_search` tool to search for it by name. The search result must have the same skill name (e.g. `go-links`).
    * If the skill is not found, fail the Pre-Migration Checks step with the reason: "Failed to find the `<skill>` skill".
 
 2. Register the skill in `~/.gemini/config/skills.json` so that it is available in later sessions.
-   * Add an entry whose `path` is the parent directory of the skill directory and whose `include_only` lists the skill directory name (e.g. `{"path": "<skills_parent_dir>", "include_only": ["<skill_dir_name>"]}`). The skill directory name can differ from the skill name (e.g. directory `buganizer_cli` for skill `buganizer-cli`). If an entry with the same `path` already exists, add the skill directory name to its `include_only` instead.
+   * Add an entry whose `path` is the parent directory of the skill directory and whose `include_only` lists the skill directory name (e.g. `{"path": "<skills_parent_dir>", "include_only": ["<skill_dir_name>"]}`). The skill directory name can differ from the skill name (e.g. directory `foo_bar` for skill `foo-bar`). If an entry with the same `path` already exists, add the skill directory name to its `include_only` instead.
    * Create the file with `{"entries": []}` if it does not exist. Keep all existing entries.
    * If it fails to update the file, fail the Pre-Migration Checks step with the reason: "Failed to install the `<skill>` skill".
 

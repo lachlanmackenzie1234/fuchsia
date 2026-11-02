@@ -76,7 +76,7 @@ targets into deterministic migration waves before authoring `BUILD.bazel` files.
 4.  **Stacked CL Strategy (Max 4-5 Cohesive Packages per CL):**
     - Plan multi-target migrations as **stacked Git commits on a single local
       Git branch (`migrate-<target_name>`)** ordered from Wave 0 up to the root
-      target, sharing the same `Bug: <id>` footer.
+      target.
     - Keep each commit/CL small, cohesive, and reviewable per
       [`scoping_changelists.md`](../../../references/migration/scoping_changelists.md):
       at most **4-5 packages** and **~500 new lines** per CL, same subsystem
