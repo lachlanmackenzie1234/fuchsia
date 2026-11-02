@@ -188,7 +188,7 @@ pub mod socket {
         DeviceIpSocketHandler, IpSock, IpSockCreateAndSendError, IpSockCreationError,
         IpSockDefinition, IpSockSendError, IpSocketArgs, IpSocketBindingsContext, IpSocketContext,
         IpSocketHandler, MmsError, RouteResolutionOptions, SendOneShotIpPacketError, SendOptions,
-        SocketHopLimits,
+        SocketHopLimits, TransportGsoInfo,
     };
 
     /// IP Socket test utilities.

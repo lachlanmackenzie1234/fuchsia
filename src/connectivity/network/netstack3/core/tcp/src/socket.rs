@@ -5787,8 +5787,10 @@ fn send_tcp_segment<'a, WireI, SockI, CC, BC, D>(
     let result = match ip_sock {
         Some(ip_sock) => {
             let body = tcp_serialize_segment(&header, data, conn_addr);
+            // TODO(https://fxbug.dev/565891068): Support TCP GSO by providing
+            // GSO metadata when segment offloading is enabled for the socket.
             core_ctx
-                .send_ip_packet(bindings_ctx, ip_sock, body, ip_sock_options, tx_metadata)
+                .send_ip_packet(bindings_ctx, ip_sock, body, None, ip_sock_options, tx_metadata)
                 .map_err(|err| IpSockCreateAndSendError::Send(err))
         }
         None => {
@@ -5889,7 +5891,9 @@ mod tests {
     use netstack3_ip::nud::LinkResolutionContext;
     use netstack3_ip::nud::testutil::FakeLinkResolutionNotifier;
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeDualStackIpSocketCtx};
-    use netstack3_ip::socket::{IpSockSendError, MmsError, RouteResolutionOptions, SendOptions};
+    use netstack3_ip::socket::{
+        IpSockSendError, MmsError, RouteResolutionOptions, SendOptions, TransportGsoInfo,
+    };
     use netstack3_ip::testutil::DualStackSendIpPacketMeta;
     use netstack3_ip::{
         BaseTransportIpContext, HopLimits, IpTransportContext, LocalDeliveryPacketInfo,
@@ -6363,6 +6367,7 @@ mod tests {
             bindings_ctx: &mut BC,
             socket: &IpSock<I, Self::WeakDeviceId>,
             body: S,
+            gso_info: Option<TransportGsoInfo>,
             options: &O,
             tx_meta: BC::TxMetadata,
         ) -> Result<(), IpSockSendError>
@@ -6371,7 +6376,14 @@ mod tests {
             S::Buffer: BufferMut,
             O: SendOptions<I> + RouteResolutionOptions<I>,
         {
-            self.ip_socket_ctx.send_ip_packet(bindings_ctx, socket, body, options, tx_meta)
+            self.ip_socket_ctx.send_ip_packet(
+                bindings_ctx,
+                socket,
+                body,
+                gso_info,
+                options,
+                tx_meta,
+            )
         }
 
         fn confirm_reachable<O>(

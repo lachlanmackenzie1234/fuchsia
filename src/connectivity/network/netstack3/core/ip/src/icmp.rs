@@ -2722,6 +2722,7 @@ mod tests {
     use crate::internal::socket::testutil::{FakeDeviceConfig, FakeIpSocketCtx};
     use crate::internal::socket::{
         IpSock, IpSockCreationError, IpSockSendError, IpSocketHandler, SendOptions,
+        TransportGsoInfo,
     };
     use crate::socket::RouteResolutionOptions;
 
@@ -3124,6 +3125,7 @@ mod tests {
             bindings_ctx: &mut FakeIcmpBindingsCtx<I>,
             socket: &IpSock<I, Self::WeakDeviceId>,
             body: S,
+            gso_info: Option<TransportGsoInfo>,
             options: &O,
             tx_meta: FakeTxMetadata,
         ) -> Result<(), IpSockSendError>
@@ -3132,7 +3134,14 @@ mod tests {
             S::Buffer: BufferMut,
             O: SendOptions<I> + RouteResolutionOptions<I>,
         {
-            self.ip_socket_ctx.send_ip_packet(bindings_ctx, socket, body, options, tx_meta)
+            self.ip_socket_ctx.send_ip_packet(
+                bindings_ctx,
+                socket,
+                body,
+                gso_info,
+                options,
+                tx_meta,
+            )
         }
 
         fn confirm_reachable<O>(

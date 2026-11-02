@@ -4218,7 +4218,16 @@ where
                     DatagramBoundStateContext::with_transport_context(core_ctx, |core_ctx| {
                         let tx_metadata = core_ctx.convert_tx_meta(tx_metadata);
                         core_ctx
-                            .send_ip_packet(bindings_ctx, &socket, packet, &options, tx_metadata)
+                            .send_ip_packet(
+                                bindings_ctx,
+                                &socket,
+                                packet,
+                                // TODO(https://fxbug.dev/566314871): Support
+                                // UDP GSO.
+                                None,
+                                &options,
+                                tx_metadata,
+                            )
                             .map_err(|send_error| SendError::IpSock(send_error))
                     })
                 }
@@ -4234,6 +4243,9 @@ where
                                     bindings_ctx,
                                     &socket,
                                     packet,
+                                    // TODO(https://fxbug.dev/566314871):
+                                    // Support UDP GSO.
+                                    None,
                                     &options,
                                     tx_metadata,
                                 )
