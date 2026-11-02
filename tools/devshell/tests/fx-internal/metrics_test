@@ -760,4 +760,43 @@ EOF
   BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"exit_status":"0"'
 }
 
+TEST_is_abfs_user_property() {
+  set_up_environment "1" "1" "N" "1"
+  metrics-read-config
+
+  # Default temp dir has no .abfs.ws marker and is not under /google/cartfs/mount/
+  metrics_init
+  (track-command-execution "build" "something")
+  metrics_wait
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_abfs":{"value":0}'
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_cog":{"value":0}'
+
+  # Simulate CartFS workspace: is_cog=1, is_abfs=0
+  rm -f "${metrics_log}"
+  local orig_pwd="${PWD}"
+  PWD="/google/cartfs/mount/ws/fuchsia"
+  metrics_init
+  (track-command-execution "build" "something")
+  metrics_wait
+  PWD="${orig_pwd}"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_abfs":{"value":0}'
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_cog":{"value":1}'
+
+  # Simulate an ABFS mount marker (.abfs.ws) in the parent of FUCHSIA_DIR: is_cog=0, is_abfs=1
+  rm -f "${metrics_log}"
+  local orig_fuchsia_dir="${FUCHSIA_DIR}"
+  local abfs_mount_dir="${BT_TEMP_DIR}/abfs_mount"
+  local abfs_fuchsia_dir="${abfs_mount_dir}/fuchsia"
+  mkdir -p "${abfs_fuchsia_dir}"
+  touch "${abfs_mount_dir}/.abfs.ws"
+  FUCHSIA_DIR="${abfs_fuchsia_dir}"
+  metrics_init
+  (track-command-execution "build" "something")
+  metrics_wait
+  FUCHSIA_DIR="${orig_fuchsia_dir}"
+  rm -f "${abfs_mount_dir}/.abfs.ws"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_abfs":{"value":1}'
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_cog":{"value":0}'
+}
+
 BT_RUN_TESTS "$@"
