@@ -53,6 +53,7 @@ test_suite(
         "//src/lib/fidl/llcpp/tests/transport:fidl_llcpp_transport_tests",
         "//src/lib/fidl/rust/fidl_test_util:fidl_test_util_target_test",
         "//src/lib/fidl_server:fidl-server-tests",
+        "//src/lib/fidl_table_validation/fidl_table_validation_tests:tests",
         "//src/lib/fuchsia-image-format:fuchsia-image-format-tests",
         "//src/lib/inet:libinet_tests",
         "//src/lib/listnode:listnode-package",
