@@ -16,6 +16,7 @@
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/zxdb/client/fdf_dispatcher_task_provider.h"
 #include "src/developer/debug/zxdb/client/fuchsia_async_rust_task_provider.h"
 #include "src/developer/debug/zxdb/client/memory_dump.h"
 #include "src/developer/debug/zxdb/client/process.h"
@@ -54,10 +55,9 @@ ProcessImpl::ProcessImpl(TargetImpl* target, uint64_t koid, const std::string& n
 
   async_task_providers_.emplace(ExprLanguage::kRust, std::move(rust_providers));
 
-  // We don't have any C or C++ providers yet, but make the language available to query the empty
-  // vector.
-  async_task_providers_.emplace(ExprLanguage::kC,
-                                std::vector<std::unique_ptr<AsyncTaskProvider>>{});
+  std::vector<std::unique_ptr<AsyncTaskProvider>> c_providers;
+  c_providers.emplace_back(std::make_unique<FdfDispatcherTaskProvider>());
+  async_task_providers_.emplace(ExprLanguage::kC, std::move(c_providers));
 }
 
 ProcessImpl::~ProcessImpl() {

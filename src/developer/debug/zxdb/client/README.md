@@ -149,9 +149,10 @@ Public headers expose these client classes and observers:
   `GetSymbolDataProvider`, `GetEvalContext`, `GetSourceFileProvider`,
   `GetLocalVariables`) (`frame.h`).
 - `zxdb::AsyncTask`, `zxdb::AsyncTaskProvider`, `zxdb::AsyncTaskTree`,
-  `zxdb::FuchsiaAsyncRustTaskProvider`: Interfaces and tree container for
-  inspecting async tasks (such as Rust futures) on a `Thread` (`async_task.h`,
-  `async_task_tree.h`).
+  `zxdb::FuchsiaAsyncRustTaskProvider`, `zxdb::FdfDispatcherTaskProvider`:
+  Interfaces and tree container for inspecting async tasks (such as Rust futures
+  and C++ driver dispatcher tasks) on a `Thread` (`async_task.h`,
+  `async_task_provider.h`, `async_task_tree.h`, `fdf_dispatcher_task_provider.h`).
 - `zxdb::Breakpoint`, `zxdb::BreakpointSettings`, `zxdb::BreakpointLocation`,
   `zxdb::BreakpointObserver`, `zxdb::ExecutionScope`: Global and scoped
   breakpoints with per-process `BreakpointLocation` controls (`breakpoint.h`,
@@ -213,6 +214,11 @@ Callers and implementations must preserve these invariants:
   the same address.
 - `Tracepoint` automatically disables after reaching `max_hits` to prevent
   runaway target tracing.
+- `AsyncTaskProvider` implementations inspect target executor state through
+  `Frame::GetEvalContext()`, DWARF type definitions, and member resolution
+  helpers instead of hardcoded struct byte offsets. When a caller-saved `this`
+  register is unavailable in an inner stack frame, examine outer candidate
+  frames on the stack.
 
 ## Side Effects
 
