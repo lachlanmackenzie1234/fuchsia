@@ -86,7 +86,7 @@ bool MatchesLogMessage(std::string_view str) {
       new_str.remove_prefix(1);
     }
 
-    if (new_str == str || (!new_str.empty() && new_str.front() != c)) {
+    if (new_str == str || new_str.empty() || new_str.front() != c) {
       return false;
     }
 

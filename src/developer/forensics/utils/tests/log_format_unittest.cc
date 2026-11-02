@@ -190,6 +190,26 @@ INSTANTIATE_TEST_SUITE_P(WithVariousInputs, MatchesLogMessageTest,
                                  .input = "[15604.000][07559][076a7]",
                                  .expected = false,
                              },
+                             {
+                                 .test_name = "EndsInSeconds",
+                                 .input = "[15604",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "EndsInMilliseconds",
+                                 .input = "[15604.000",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "EndsInProcessKoid",
+                                 .input = "[15604.000][07559",
+                                 .expected = false,
+                             },
+                             {
+                                 .test_name = "EndsInThreadKoid",
+                                 .input = "[15604.000][07559][07687",
+                                 .expected = false,
+                             },
                          })),
                          [](const TestParamInfo<MatchesLogMessageTestCase>& info) {
                            return info.param.test_name;
