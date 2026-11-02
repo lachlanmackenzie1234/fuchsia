@@ -186,6 +186,9 @@ ebpf_api::ebpf_program_context_type!(SockAddrProgram, CgroupSockAddrProgramConte
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SockAddrProgramResult {
     Allow,
+    /// Allows `SockAddrOp::Bind` and bypasses the `CAP_NET_BIND_SERVICE` check for privileged
+    /// ports (`< 1024`), corresponding to `BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE`.
+    AllowNoCapNetBindService,
     Block,
 }
 
@@ -205,15 +208,13 @@ impl SockAddrProgram {
         match op {
             // BPF_CGROUP_INET{4,6}_BIND programs encode optional flags in `result >> 1`
             // (`BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE`) and the allow/reject verdict in `result & 1`.
-            // TODO(https://fxbug.dev/580742235): Plumb `BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE`
-            // through `SockAddrProgramResult` to `ZxioBackedSocket::bind` and move the
-            // `CAP_NET_BIND_SERVICE` check for privileged ports (`< 1024`) from `sys_bind` so the
-            // flag bypasses it.
             SockAddrOp::Bind if (result >> 1) & !BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE == 0 => {
-                if result & 1 == 1 {
-                    SockAddrProgramResult::Allow
-                } else {
+                if result & 1 == 0 {
                     SockAddrProgramResult::Block
+                } else if (result >> 1) & BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE != 0 {
+                    SockAddrProgramResult::AllowNoCapNetBindService
+                } else {
+                    SockAddrProgramResult::Allow
                 }
             }
             SockAddrOp::Connect | SockAddrOp::UdpSendMsg if result == 0 => {
@@ -1548,12 +1549,16 @@ mod tests {
                 sockaddr_in6 { sin6_family: AF_INET6 as u16, ..Default::default() };
 
             // BPF_CGROUP_INET{4,6}_BIND accepts verdicts 0..=3, where bit 0 is Allow/Block and
-            // bit 1 is BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE.
+            // bit 1 is BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE; out-of-range values with unrecognized
+            // flag bits (such as 4 and 7) fall back to Allow rather than Block or
+            // AllowNoCapNetBindService.
             for (return_value, expected) in [
                 (0, SockAddrProgramResult::Block),
                 (1, SockAddrProgramResult::Allow),
                 (2, SockAddrProgramResult::Block),
-                (3, SockAddrProgramResult::Allow),
+                (3, SockAddrProgramResult::AllowNoCapNetBindService),
+                (4, SockAddrProgramResult::Allow),
+                (7, SockAddrProgramResult::Allow),
             ] {
                 let bind4_prog = make_cgroup_program(
                     current_task,

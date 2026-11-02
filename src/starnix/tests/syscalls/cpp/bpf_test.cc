@@ -1908,6 +1908,31 @@ class BpfCgroupTest : public BpfTestBase {
                        BPF_PROG_TYPE_CGROUP_SOCK_ADDR, expected_attach_type);
   }
 
+  fbl::unique_fd LoadConstSockAddrProgram(uint32_t expected_attach_type, int32_t return_value) {
+    bpf_insn program[] = {
+        BPF_MOV_IMM(0, return_value),
+        BPF_RETURN(),
+    };
+
+    return LoadProgram(program, sizeof(program) / sizeof(program[0]),
+                       BPF_PROG_TYPE_CGROUP_SOCK_ADDR, expected_attach_type);
+  }
+
+  std::optional<uint16_t> FindAvailablePrivilegedPort(int domain, int upper_bound) {
+    int limit = std::min(upper_bound, 1024);
+    for (int port = std::min(600, limit); port < limit; ++port) {
+      if (TryBind(static_cast<uint16_t>(port), 0, domain)) {
+        return static_cast<uint16_t>(port);
+      }
+    }
+    for (int port = 1; port < std::min(600, limit); ++port) {
+      if (TryBind(static_cast<uint16_t>(port), 0, domain)) {
+        return static_cast<uint16_t>(port);
+      }
+    }
+    return std::nullopt;
+  }
+
   fbl::unique_fd LoadCgroupSkbProgram(uint32_t expected_attach_type) {
     bpf_insn program[] = {
         BPF_MOV_IMM(0, 1),
@@ -2068,6 +2093,85 @@ TEST_F(BpfCgroupTest, BlockBindWithReturnFlags) {
     EXPECT_TRUE(TryBind(BLOCKED_PORT + 1, 0, AF_INET6));
     DetachFromRootCgroup(BPF_CGROUP_INET6_BIND);
     EXPECT_TRUE(TryBind(BLOCKED_PORT, 0, AF_INET6));
+  }
+}
+
+TEST_F(BpfCgroupTest, BindBypassCapNetBindService) {
+  if (!test_helper::IsStarnix() && !test_helper::IsKernelVersionAtLeast(5, 12)) {
+    GTEST_SKIP() << "BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE requires Linux >= 5.12.";
+  }
+  if (!test_helper::HasCapability(CAP_NET_BIND_SERVICE)) {
+    GTEST_SKIP() << "Test requires CAP_NET_BIND_SERVICE initially.";
+  }
+
+  int unprivileged_port_start = 1024;
+  if (!test_helper::IsStarnix()) {
+    std::ifstream sysctl_file("/proc/sys/net/ipv4/ip_unprivileged_port_start");
+    if (sysctl_file.is_open()) {
+      sysctl_file >> unprivileged_port_start;
+    }
+    if (unprivileged_port_start <= 1) {
+      GTEST_SKIP() << "ip_unprivileged_port_start=" << unprivileged_port_start
+                   << " leaves no privileged ports to test.";
+    }
+  }
+
+  constexpr int32_t kAllowDefault = 1;
+  constexpr int32_t kRejectWithNoCapNetBindService = 2;
+  constexpr int32_t kAllowWithNoCapNetBindService = 3;
+
+  struct Case {
+    const char* name;
+    int domain;
+    uint32_t attach_type;
+  };
+  for (const auto& tc : {
+           Case{"BPF_CGROUP_INET4_BIND", AF_INET, BPF_CGROUP_INET4_BIND},
+           Case{"BPF_CGROUP_INET6_BIND", AF_INET6, BPF_CGROUP_INET6_BIND},
+       }) {
+    SCOPED_TRACE(tc.name);
+    auto priv_port = FindAvailablePrivilegedPort(tc.domain, unprivileged_port_start);
+    ASSERT_TRUE(priv_port.has_value()) << "No available privileged port found";
+
+    auto expect_unprivileged_bind = [&](int expected_errno) {
+      test_helper::ForkHelper fork_helper;
+      fork_helper.RunInForkedProcess([&]() {
+        test_helper::UnsetCapabilityEffective(CAP_NET_BIND_SERVICE);
+        EXPECT_TRUE(TryBind(*priv_port, expected_errno, tc.domain));
+      });
+      EXPECT_TRUE(fork_helper.WaitForChildren());
+    };
+
+    // 1. Without a cgroup bind program, binding < 1024 without CAP_NET_BIND_SERVICE fails with
+    // EACCES.
+    expect_unprivileged_bind(EACCES);
+
+    // 2. Returning 1 (Allow without BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE) still enforces
+    // CAP_NET_BIND_SERVICE -> EACCES.
+    {
+      auto allow_prog = LoadConstSockAddrProgram(tc.attach_type, kAllowDefault);
+      AttachToRootCgroup(tc.attach_type, allow_prog.get());
+      expect_unprivileged_bind(EACCES);
+      DetachFromRootCgroup(tc.attach_type);
+    }
+
+    // 3. Returning 3 (Allow with BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE) bypasses
+    // CAP_NET_BIND_SERVICE -> bind succeeds.
+    {
+      auto bypass_prog = LoadConstSockAddrProgram(tc.attach_type, kAllowWithNoCapNetBindService);
+      AttachToRootCgroup(tc.attach_type, bypass_prog.get());
+      expect_unprivileged_bind(0);
+      DetachFromRootCgroup(tc.attach_type);
+    }
+
+    // 4. Returning 2 (Block with BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE) rejects in eBPF before
+    // CAP_NET_BIND_SERVICE -> EPERM.
+    {
+      auto reject_prog = LoadConstSockAddrProgram(tc.attach_type, kRejectWithNoCapNetBindService);
+      AttachToRootCgroup(tc.attach_type, reject_prog.get());
+      expect_unprivileged_bind(EPERM);
+      DetachFromRootCgroup(tc.attach_type);
+    }
   }
 }
 
