@@ -556,6 +556,18 @@ def _consume_json_for_trace_events(
         if "args" in json_trace_event:
             _validate_field_type(json_trace_event, "args", dict)
 
+    # `DurationEvent.child_durations` and `DurationEvent.child_flows` are
+    # read-only tuples that default to the empty singleton `()` so leaf events
+    # do not allocate per-instance empty lists. Accumulate children and flows in
+    # temporary lists keyed by their parent/enclosing event and assign the
+    # frozen tuples once at the end of import.
+    children_by_parent: dict[
+        trace_model.DurationEvent, list[trace_model.DurationEvent]
+    ] = defaultdict(list)
+    flows_by_enclosing: dict[
+        trace_model.DurationEvent, list[trace_model.FlowEvent]
+    ] = defaultdict(list)
+
     # A helper lambda to add duration events to the appropriate duration stack
     # and do the appropriate duration/flow graph setup.  It is used for both
     # begin/end pairs and complete events.
@@ -568,7 +580,7 @@ def _consume_json_for_trace_events(
             top = duration_stack[-1]
             top_parent = duration_stack[-2]
             top.parent = top_parent
-            top_parent.child_durations.append(duration_event)
+            children_by_parent[top_parent].append(duration_event)
 
     # Obtain the overall list of trace events.
     _validate_field_type(root_object, "traceEvents", list)
@@ -748,7 +760,7 @@ def _consume_json_for_trace_events(
                 flow_key.id, enclosing_duration, trace_event
             )
             if enclosing_duration:
-                enclosing_duration.child_flows.append(flow_event)
+                flows_by_enclosing[enclosing_duration].append(flow_event)
             else:
                 unbound_flow_events[track_key].append(flow_event)
 
@@ -853,6 +865,11 @@ def _consume_json_for_trace_events(
             f"Warning, dropped {dropped_nested_async_event_counter} nested "
             f"async events"
         )
+
+    for parent_event, children in children_by_parent.items():
+        parent_event.child_durations = children
+    for enclosing_event, flows in flows_by_enclosing.items():
+        enclosing_event.child_flows = flows
 
     return result_events
 

@@ -491,9 +491,48 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
     return trace_model.Model(processes, scheduling_records)
 
 
-def assertEventsEqual(
-    test: unittest.TestCase, a: trace_model.Event, b: trace_model.Event
+def _assert_event_links_in_model(
+    test: unittest.TestCase, model: trace_model.Model
 ) -> None:
+    """Asserts that every event neighbor reference points to an event in `model`."""
+    model_events = set(model.all_events())
+    for event in model.all_events():
+        if isinstance(event, trace_model.DurationEvent):
+            if event.parent is not None:
+                test.assertIn(event.parent, model_events)
+            for child in event.child_durations:
+                test.assertIn(child, model_events)
+            for flow in event.child_flows:
+                test.assertIn(flow, model_events)
+        elif isinstance(event, trace_model.FlowEvent):
+            if event.enclosing_duration is not None:
+                test.assertIn(event.enclosing_duration, model_events)
+            if event.previous_flow is not None:
+                test.assertIn(event.previous_flow, model_events)
+            if event.next_flow is not None:
+                test.assertIn(event.next_flow, model_events)
+
+
+def assertEventsEqual(
+    test: unittest.TestCase,
+    a: trace_model.Event | None,
+    b: trace_model.Event | None,
+    visited: set[tuple[trace_model.Event, trace_model.Event]] | None = None,
+) -> None:
+    test.assertEqual(a is None, b is None)
+    if a is None or b is None:
+        return
+    # Event links form cycles (e.g. `parent <-> child_durations`,
+    # `enclosing_duration <-> child_flows`, `previous_flow <-> next_flow`), so
+    # record `(a, b)` before recursing to avoid infinite recursion.
+    if visited is None:
+        visited = set()
+    pair = (a, b)
+    if pair in visited:
+        # We have already checked (or are already checking) that a and b are equal.
+        return
+    visited.add(pair)
+
     test.assertIs(type(a), type(b))
 
     # Check basic [trace_model.Event] fields.
@@ -547,9 +586,17 @@ def assertEventsEqual(
         test.assertAlmostEqual(
             a.duration.to_microseconds(), b.duration.to_microseconds()
         )
-        test.assertEqual(a.parent is None, b.parent is None)
+        assertEventsEqual(test, a.parent, b.parent, visited)
         test.assertEqual(len(a.child_durations), len(b.child_durations))
+        for ca, cb in zip(a.child_durations, b.child_durations):
+            test.assertIs(ca.parent, a)
+            test.assertIs(cb.parent, b)
+            assertEventsEqual(test, ca, cb, visited)
         test.assertEqual(len(a.child_flows), len(b.child_flows))
+        for fa, fb in zip(a.child_flows, b.child_flows):
+            test.assertIs(fa.enclosing_duration, a)
+            test.assertIs(fb.enclosing_duration, b)
+            assertEventsEqual(test, fa, fb, visited)
     elif isinstance(a, trace_model.AsyncEvent) and isinstance(
         b, trace_model.AsyncEvent
     ):
@@ -563,10 +610,11 @@ def assertEventsEqual(
     ):
         test.assertEqual(a.id, b.id)
         test.assertEqual(a.phase, b.phase)
-        test.assertIsNotNone(a.enclosing_duration)
-        test.assertIsNotNone(b.enclosing_duration)
-        test.assertEqual(a.previous_flow is None, b.previous_flow is None)
-        test.assertEqual(a.next_flow is None, b.next_flow is None)
+        assertEventsEqual(
+            test, a.enclosing_duration, b.enclosing_duration, visited
+        )
+        assertEventsEqual(test, a.previous_flow, b.previous_flow, visited)
+        assertEventsEqual(test, a.next_flow, b.next_flow, visited)
     else:
         test.fail(f"event {a} and event {b} were unrecognized types")
 
@@ -646,6 +694,9 @@ def assertSchedulingRecordEqual(
 def assertModelsEqual(
     test: unittest.TestCase, a: trace_model.Model, b: trace_model.Model
 ) -> None:
+    _assert_event_links_in_model(test, a)
+    _assert_event_links_in_model(test, b)
+
     # Ignore process 0 (kernel/idle) when comparing processes. Perfetto
     # automatically creates a placeholder process with PID 0 to associate scheduling
     # and global events, which is not present in legacy JSON models.

@@ -334,8 +334,8 @@ class _FxtImporter:
                 event = trace_model.DurationEvent(
                     duration=dur_delta,
                     parent=None,
-                    child_durations=[],
-                    child_flows=[],
+                    child_durations=(),
+                    child_flows=(),
                     base=base,
                 )
             slice_events.append(event)
@@ -479,6 +479,11 @@ class _FxtImporter:
         """
         flow_events: list[trace_model.Event] = []
         key_to_flow_event: dict[tuple[int, int], trace_model.FlowEvent] = {}
+        # Accumulate flows in temporary lists keyed by enclosing DurationEvent
+        # and assign the frozen `child_flows` tuples once at the end.
+        flows_by_enclosing: dict[
+            trace_model.DurationEvent, list[trace_model.FlowEvent]
+        ] = defaultdict(list)
 
         def get_or_create_flow_event(
             slice_id: int, flow_trace_id: int, is_out: bool
@@ -544,7 +549,7 @@ class _FxtImporter:
                 base=base_event,
             )
             if enclosing is not None:
-                enclosing.child_flows.append(flow_event)
+                flows_by_enclosing[enclosing].append(flow_event)
 
             key_to_flow_event[key] = flow_event
             flow_events.append(flow_event)
@@ -573,6 +578,9 @@ class _FxtImporter:
             ):
                 flow_event_out.next_flow = flow_event_in
                 flow_event_in.previous_flow = flow_event_out
+
+        for enclosing_event, attached_flows in flows_by_enclosing.items():
+            enclosing_event.child_flows = attached_flows
 
         return self._Flows(flow_events)
 
@@ -737,12 +745,18 @@ class _FxtImporter:
         Perfetto's `slice` table represents slice nesting via `parent_id` foreign
         keys. However, `trace_model.DurationEvent` objects rely on explicit object-level
         tree relationships (`child.parent` references and `parent_event.child_durations`
-        lists) so that metrics processors and model utilities can traverse nested duration
+        tuples) so that metrics processors and model utilities can traverse nested duration
         stacks and sub-events.
 
         This method iterates over the slice parent mappings to construct those
         bidirectional parent-child links between instanced DurationEvent objects.
         """
+        # Accumulate child durations in temporary lists keyed by parent
+        # DurationEvent and assign the frozen `child_durations` tuples once at
+        # the end.
+        children_by_parent: dict[
+            trace_model.DurationEvent, list[trace_model.DurationEvent]
+        ] = defaultdict(list)
         for slice_id, parent_id in slice_parent_map.items():
             if slice_id in slice_id_to_event and parent_id in slice_id_to_event:
                 child = slice_id_to_event[slice_id]
@@ -751,7 +765,10 @@ class _FxtImporter:
                     parent_event, trace_model.DurationEvent
                 ):
                     child.parent = parent_event
-                    parent_event.child_durations.append(child)
+                    children_by_parent[parent_event].append(child)
+
+        for parent_event, children in children_by_parent.items():
+            parent_event.child_durations = children
 
     def get_events(self) -> _Events:
         slices = self.get_slices()

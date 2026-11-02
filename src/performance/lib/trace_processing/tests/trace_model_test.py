@@ -7,6 +7,7 @@
 import types
 import typing
 import unittest
+from collections.abc import Sequence
 
 import test_utils
 import trace_processing.trace_model as trace_model
@@ -29,6 +30,67 @@ class TraceModelTest(unittest.TestCase):
         """Asserts that in-place modification of `obj.args` is rejected."""
         with self.assertRaises(TypeError):
             _set_item(obj.args, "k", "new")
+
+    def assert_event_children(
+        self,
+        event: trace_model.DurationEvent,
+        durations: tuple[trace_model.DurationEvent, ...],
+        flows: tuple[trace_model.FlowEvent, ...],
+    ) -> None:
+        """Asserts that `event`'s child durations and flows match and are immutable tuples."""
+        # `child_durations` and `child_flows` are meant to be immutable tuples
+        # (reusing the empty singleton `()` when empty).
+        self.assertIsInstance(event.child_durations, tuple)
+        self.assertIsInstance(event.child_flows, tuple)
+        self.assertEqual(event.child_durations, durations)
+        self.assertEqual(event.child_flows, flows)
+
+    def _make_duration(
+        self,
+        name: str = "dur",
+        start: int = 0,
+        duration: int = 10,
+        parent: trace_model.DurationEvent | None = None,
+        child_durations: Sequence[trace_model.DurationEvent] = (),
+        child_flows: Sequence[trace_model.FlowEvent] = (),
+    ) -> trace_model.DurationEvent:
+        base = trace_model.Event(
+            "cat", name, trace_time.TimePoint(start), 1, 2, None
+        )
+        return trace_model.DurationEvent(
+            duration=trace_time.TimeDelta(duration),
+            parent=parent,
+            child_durations=child_durations,
+            child_flows=child_flows,
+            base=base,
+        )
+
+    def _make_flow(
+        self,
+        name: str = "flow",
+        start: int = 0,
+        flow_id: str = "f1",
+        phase: trace_model.FlowEventPhase = trace_model.FlowEventPhase.START,
+        enclosing_duration: trace_model.DurationEvent | None = None,
+        previous_flow: trace_model.FlowEvent | None = None,
+        next_flow: trace_model.FlowEvent | None = None,
+    ) -> trace_model.FlowEvent:
+        base = trace_model.Event(
+            "cat", name, trace_time.TimePoint(start), 1, 2, None
+        )
+        return trace_model.FlowEvent(
+            id=flow_id,
+            phase=phase,
+            enclosing_duration=enclosing_duration,
+            previous_flow=previous_flow,
+            next_flow=next_flow,
+            base=base,
+        )
+
+    def _make_model(self, events: list[trace_model.Event]) -> trace_model.Model:
+        thread = trace_model.Thread(2, "t", events)
+        proc = trace_model.Process(1, "p", [thread])
+        return trace_model.Model([proc], {})
 
     def test_trace_slicing(self) -> None:
         model: trace_model.Model = test_utils.get_test_model()
@@ -262,9 +324,7 @@ class TraceModelTest(unittest.TestCase):
         t2 = trace_time.TimePoint(200)
         e_empty = trace_model.Event("cat", "e_empty", t1, 1, 2, None)
         e_with_args = trace_model.Event("cat", "e_args", t1, 1, 2, {"k": "v"})
-        thread = trace_model.Thread(2, "t", [e_empty, e_with_args])
-        proc = trace_model.Process(1, "p", [thread])
-        model = trace_model.Model([proc], {})
+        model = self._make_model([e_empty, e_with_args])
 
         sliced = model.slice(t0, t2)
 
@@ -279,3 +339,162 @@ class TraceModelTest(unittest.TestCase):
 
         self.assert_args_not_modifiable(sliced_empty)
         self.assert_args_not_modifiable(sliced_with_args)
+
+    def test_duration_event_empty_children_and_flows(self) -> None:
+        from_list = self._make_duration(child_durations=[], child_flows=[])
+        from_tuple = self._make_duration(child_durations=(), child_flows=())
+        from_dict = trace_model.DurationEvent.consume_dict(
+            {"cat": "c", "name": "n", "ts": 0, "pid": 1, "tid": 2, "dur": 10}
+        )
+
+        for event in (from_list, from_tuple, from_dict):
+            self.assert_event_children(event, (), ())
+
+    def test_duration_event_init_copies_into_read_only_sequences(self) -> None:
+        child1 = self._make_duration("c1")
+        child2 = self._make_duration("c2")
+        flow1 = self._make_flow("f1")
+        flow2 = self._make_flow("f2")
+        caller_children = [child1]
+        caller_flows = [flow1]
+
+        event = self._make_duration(
+            child_durations=caller_children, child_flows=caller_flows
+        )
+        caller_children.append(child2)
+        caller_flows.append(flow2)
+
+        # These stay the same despite us having modified caller_children and
+        # caller_flows.
+        self.assert_event_children(event, (child1,), (flow1,))
+
+    def test_duration_event_setters_replace_and_isolate_sequences(self) -> None:
+        child1 = self._make_duration("c1")
+        child2 = self._make_duration("c2")
+        flow1 = self._make_flow("f1")
+        flow2 = self._make_flow("f2")
+        event = self._make_duration()
+        caller_children = [child1]
+        caller_flows = [flow1]
+
+        event.child_durations = caller_children
+        event.child_flows = caller_flows
+        caller_children.append(child2)
+        caller_flows.append(flow2)
+
+        # These stay the same despite us having modified caller_children and
+        # caller_flows.
+        self.assert_event_children(event, (child1,), (flow1,))
+
+        event.child_durations = []
+        event.child_flows = []
+        self.assert_event_children(event, (), ())
+
+    def test_slice_filters_out_of_window_children_and_flows(self) -> None:
+        # Make an example set of events where `parent` lies inside the
+        # `[100, 200]` slice interval, `child_in` (`[110, 130]`) and `flow_in`
+        # (`115`) also lie inside `[100, 200]`, and `child_out` (`[180, 220]`)
+        # and `flow_out` (`210`) end outside `[100, 200]`.
+        parent = self._make_duration("parent", start=100, duration=100)
+        child_in = self._make_duration(
+            "child_in", start=110, duration=20, parent=parent
+        )
+        child_out = self._make_duration(
+            "child_out", start=180, duration=40, parent=parent
+        )
+        flow_in = self._make_flow(
+            "flow_in", start=115, flow_id="f1", enclosing_duration=parent
+        )
+        flow_out = self._make_flow(
+            "flow_out",
+            start=210,
+            flow_id="f1",
+            phase=trace_model.FlowEventPhase.END,
+            enclosing_duration=parent,
+            previous_flow=flow_in,
+        )
+        flow_in.next_flow = flow_out
+        parent.child_durations = [child_in, child_out]
+        parent.child_flows = [flow_in, flow_out]
+        model = self._make_model(
+            [parent, child_in, child_out, flow_in, flow_out]
+        )
+
+        sliced = model.slice(
+            trace_time.TimePoint(100), trace_time.TimePoint(200)
+        )
+
+        # Check that slice() kept only the in-range child and flow (and cleared
+        # `flow_in.next_flow` since `flow_out` was excluded).
+        expected_parent = self._make_duration("parent", start=100, duration=100)
+        expected_child = self._make_duration(
+            "child_in", start=110, duration=20, parent=expected_parent
+        )
+        expected_flow = self._make_flow(
+            "flow_in",
+            start=115,
+            flow_id="f1",
+            enclosing_duration=expected_parent,
+        )
+        expected_parent.child_durations = [expected_child]
+        expected_parent.child_flows = [expected_flow]
+        expected = self._make_model(
+            [expected_parent, expected_child, expected_flow]
+        )
+        test_utils.assertModelsEqual(self, sliced, expected)
+
+    def test_slice_clears_children_and_flows_when_all_excluded(self) -> None:
+        parent = self._make_duration("parent", start=100, duration=50)
+        # These end outside the `[100, 200]` range that we apply slice() to
+        # below.
+        child_out = self._make_duration(
+            "child_out", start=180, duration=40, parent=parent
+        )
+        flow_out = self._make_flow(
+            "flow_out", start=210, enclosing_duration=parent
+        )
+        parent.child_durations = [child_out]
+        parent.child_flows = [flow_out]
+        model = self._make_model([parent, child_out, flow_out])
+
+        sliced = model.slice(
+            trace_time.TimePoint(100), trace_time.TimePoint(200)
+        )
+
+        expected = self._make_model(
+            [self._make_duration("parent", start=100, duration=50)]
+        )
+        test_utils.assertModelsEqual(self, sliced, expected)
+        [sliced_parent] = list(sliced.all_events())
+        assert isinstance(sliced_parent, trace_model.DurationEvent)
+        self.assert_event_children(sliced_parent, (), ())
+
+    def test_slice_clears_parent_and_enclosing_duration_when_parent_excluded(
+        self,
+    ) -> None:
+        # We apply slice() to `[100, 200]`, which is strictly within
+        # `parent_out`'s `[50, 250]` interval; slice() excludes (rather than
+        # truncates) events that start before `start` or end after `end`, so
+        # `parent_out` gets excluded while `child_in` and `flow_in` are kept.
+        parent_out = self._make_duration("parent_out", start=50, duration=200)
+        child_in = self._make_duration(
+            "child_in", start=110, duration=20, parent=parent_out
+        )
+        flow_in = self._make_flow(
+            "flow_in", start=115, enclosing_duration=parent_out
+        )
+        parent_out.child_durations = [child_in]
+        parent_out.child_flows = [flow_in]
+        model = self._make_model([parent_out, child_in, flow_in])
+
+        sliced = model.slice(
+            trace_time.TimePoint(100), trace_time.TimePoint(200)
+        )
+
+        expected = self._make_model(
+            [
+                self._make_duration("child_in", start=110, duration=20),
+                self._make_flow("flow_in", start=115),
+            ]
+        )
+        test_utils.assertModelsEqual(self, sliced, expected)

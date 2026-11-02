@@ -21,6 +21,9 @@
 #     distinct values for these, but the importers create a new string object
 #     for every event, so without interning each event carries its own copy.
 #     Interned strings are not immortal, so they are freed with the model.
+#   * DurationEvent stores child_durations and child_flows as tuples (defaulting
+#     to the singleton `()`), avoiding two empty list allocations per leaf
+#     slice.
 #
 # Nothing enforces the __slots__ convention. If that ever becomes necessary,
 # add a test that walks Event.__subclasses__() and
@@ -227,19 +230,19 @@ class DurationEvent(Event):
     """
 
     # See "Memory layout of the model classes" at the top of this file.
-    __slots__ = ("duration", "parent", "child_durations", "child_flows")
+    __slots__ = ("duration", "parent", "_child_durations", "_child_flows")
 
     duration: trace_time.TimeDelta | None
     parent: Self | None
-    child_durations: list[Self]
-    child_flows: list[FlowEvent]
+    _child_durations: tuple[Self, ...]
+    _child_flows: tuple[FlowEvent, ...]
 
     def __init__(
         self,
         duration: trace_time.TimeDelta | None,
         parent: Self | None,
-        child_durations: list[Self],
-        child_flows: list[FlowEvent],
+        child_durations: Sequence[Self],
+        child_flows: Sequence[FlowEvent],
         base: Event,
     ) -> None:
         super().__init__(
@@ -247,8 +250,24 @@ class DurationEvent(Event):
         )
         self.duration = duration
         self.parent = parent
-        self.child_durations = child_durations
-        self.child_flows = child_flows
+        self._child_durations = tuple(child_durations)
+        self._child_flows = tuple(child_flows)
+
+    @property
+    def child_durations(self) -> tuple[Self, ...]:
+        return self._child_durations
+
+    @child_durations.setter
+    def child_durations(self, rhs: Sequence[Self]) -> None:
+        self._child_durations = tuple(rhs)
+
+    @property
+    def child_flows(self) -> tuple[FlowEvent, ...]:
+        return self._child_flows
+
+    @child_flows.setter
+    def child_flows(self, rhs: Sequence[FlowEvent]) -> None:
+        self._child_flows = tuple(rhs)
 
     @classmethod
     def consume_dict(cls, event_dict: dict[str, Any]) -> Self:
@@ -269,8 +288,8 @@ class DurationEvent(Event):
         return cls(
             duration=duration,
             parent=None,
-            child_durations=[],
-            child_flows=[],
+            child_durations=(),
+            child_flows=(),
             base=Event._consume_dict(event_dict),
         )
 
