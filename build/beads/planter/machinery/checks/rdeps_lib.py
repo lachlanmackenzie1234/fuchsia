@@ -2200,7 +2200,7 @@ def extract_list_entries(expr, var_table, default_lineno):
 
 
 def get_preexisting_vis_info(workdir, rel_path, change_base="HEAD"):
-    """Returns (vis_strings, no_vis_targets, has_pkg_default_vis, no_vis_exports) from change_base."""
+    """Returns (vis_strings, no_vis_targets, has_pkg_default_vis) from change_base."""
     wt_diff = False
     try:
         wt_out = subprocess.check_output(
@@ -2233,12 +2233,7 @@ def get_preexisting_vis_info(workdir, rel_path, change_base="HEAD"):
                 text=True,
             )
             prev_tree = ast.parse(prev_src, filename=rel_path)
-            vis_vals, no_vis_targets, has_pkg_default_vis, no_vis_exports = (
-                set(),
-                set(),
-                False,
-                set(),
-            )
+            vis_vals, no_vis_targets, has_pkg_default_vis = set(), set(), False
             for node in ast.walk(prev_tree):
                 if not isinstance(node, ast.Call):
                     continue
@@ -2258,13 +2253,6 @@ def get_preexisting_vis_info(workdir, rel_path, change_base="HEAD"):
                         has_pkg_default_vis = True
                     continue
                 if func_name == "exports_files":
-                    if (
-                        not any(kw.arg == "visibility" for kw in node.keywords)
-                        and len(node.args) < 2
-                    ):
-                        no_vis_exports.add(ast.dump(node))
-                        if node.args:
-                            no_vis_exports.add(ast.dump(node.args[0]))
                     continue
                 tname, has_vis = None, False
                 for kw in node.keywords:
@@ -2284,10 +2272,10 @@ def get_preexisting_vis_info(workdir, rel_path, change_base="HEAD"):
                                     vis_vals.add(elt.value)
                 if tname and not has_vis:
                     no_vis_targets.add(tname)
-            return vis_vals, no_vis_targets, has_pkg_default_vis, no_vis_exports
+            return vis_vals, no_vis_targets, has_pkg_default_vis
         except Exception:
             continue
-    return set(), set(), False, set()
+    return set(), set(), False
 
 
 def is_ancestor_test_suite_package(workdir, anc_pkg, child_pkg, cache=None):

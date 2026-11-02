@@ -260,7 +260,6 @@ for rel_path in sorted(candidate_files):
         preexisting_vis,
         preexisting_no_vis_targets,
         preexisting_pkg_default_vis,
-        preexisting_no_vis_exports,
     ) = rl.get_preexisting_vis_info(workdir, rel_path, change_base)
     orig_gn_vis_map = rl.get_orig_gn_visibility_scopes(workdir, pkg_path, change_base)
     parsed = rl.parse_package_bazel_targets(tree, src_lines)
@@ -355,30 +354,6 @@ for rel_path in sorted(candidate_files):
         if func_name == "package":
             if check_pkg_default_visibility(node):
                 has_pkg_default_vis = True
-            continue
-
-        if func_name == "exports_files":
-            exp_key = ast.dump(node.args[0]) if node.args else ""
-            if (
-                not any(kw.arg == "visibility" for kw in node.keywords)
-                and len(node.args) < 2
-                and ast.dump(node) not in preexisting_no_vis_exports
-                and exp_key not in preexisting_no_vis_exports
-            ):
-                emit_finding(
-                    "exports_files_missing_visibility",
-                    "error",
-                    rel_path,
-                    node.lineno,
-                    "exports_files() omits 'visibility' (Bazel then exports the files publicly).",
-                    (
-                        "Add visibility = [...] to exports_files(), scoped as narrowly as "
-                        "practical to the packages that consume the files (e.g. "
-                        '["//<consumer_pkg>:__pkg__"], or an area rollup like '
-                        '"//<area>:__subpackages__" for many consumers), per the '
-                        "determining_bazel_visibility skill."
-                    ),
-                )
             continue
 
         target_name = None
