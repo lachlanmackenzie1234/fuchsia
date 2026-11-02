@@ -17,7 +17,7 @@ use fuchsia_component::client as fclient;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use futures::{StreamExt as _, TryStreamExt as _};
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::{LockDepMutex, Mutex, ServiceWatcherInnerLock};
+use starnix_sync::{LockDepMutex, ServiceWatcherDriverStateLock, ServiceWatcherInnerLock};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -154,7 +154,7 @@ struct DriverEntry<S: ServiceMarker, P, Probe, ProbeFut, Bind> {
     /// To prevent lock inversion with [`ServiceWatcherState::inner`], code holding `state` must
     /// never lock `ServiceWatcherState::inner`; instance liveness and channel closure are checked
     /// via lock-free atomics (`InstanceEntry::active`) and kernel handle signals.
-    state: Mutex<DriverState<Bind>>,
+    state: LockDepMutex<DriverState<Bind>, ServiceWatcherDriverStateLock>,
     _marker: PhantomData<fn(S, P, ProbeFut)>,
 }
 
@@ -170,7 +170,7 @@ where
         Arc::new(Self {
             singleton,
             probe,
-            state: Mutex::new(DriverState { bind, active_bindings: Vec::new() }),
+            state: LockDepMutex::new(DriverState { bind, active_bindings: Vec::new() }),
             _marker: PhantomData,
         })
     }
@@ -689,6 +689,7 @@ mod tests {
     use crate::testing::spawn_kernel_and_run;
     use fidl_fuchsia_hardware_power_stats as fpowerstats;
     use futures::channel::{mpsc, oneshot};
+    use starnix_sync::Mutex;
     use starnix_uapi::error;
     use std::collections::HashSet;
     use vfs::directory::helper::DirectlyMutable as _;
