@@ -13,6 +13,7 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/storage/benchmarks:storage-benchmarks-framework-tests",
+        "//src/storage/conformance:tests",
         "//src/storage/fxfs/trace:fxfs-trace-tests-package",
         "//src/storage/lib/range/test:range-test-pkg",
         "//src/storage/lib/sparse/rust:sparse-test",
