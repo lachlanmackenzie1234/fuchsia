@@ -265,6 +265,93 @@ if (is_host) {
 	}
 }
 
+func TestRustTestDsoAndCdylibCrates(t *testing.T) {
+	bazel := `fuchsia_rust_dso(
+	name = "my_dso",
+	srcs = ["src/lib.rs"],
+	edition = "2024",
+	public_deps = [":dso_c_api"],
+	deps = ["//sdk/rust/zx"],
+)
+
+rustc_test(
+	name = "my_dso_unit_test",
+	crate = ":my_dso",
+	deps = [":extra_test_dep"],
+)
+
+rustc_cdylib(
+	name = "my_cdylib",
+	srcs = ["src/cdylib.rs"],
+	edition = "2024",
+	link_deps = [":c_priv"],
+	public_deps = [":c_pub"],
+)
+
+rustc_test(
+	name = "my_cdylib_unit_test",
+	crate = ":my_cdylib",
+)`
+	wantGN := `fuchsia_rust_dso("my_dso") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+	public_deps = [
+		":dso_c_api",
+	]
+	deps = [
+		"//sdk/rust/zx",
+	]
+}
+rustc_test("my_dso_unit_test") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+	link_deps = [
+		":dso_c_api",
+	]
+	deps = [
+		"//sdk/rust/zx",
+		"//src/lib/fuchsia",
+		"//src/lib/dso/rust",
+	] + [
+		":extra_test_dep",
+	]
+}
+rustc_cdylib("my_cdylib") {
+	sources = [
+		"src/cdylib.rs",
+	]
+	edition = "2024"
+	link_deps = [
+		":c_priv",
+	]
+	public_deps = [
+		":c_pub",
+	]
+}
+rustc_test("my_cdylib_unit_test") {
+	sources = [
+		"src/cdylib.rs",
+	]
+	edition = "2024"
+	link_deps = [
+		":c_priv",
+		":c_pub",
+	]
+}`
+	f := toSyntaxFile(t, bazel)
+	lines, err := bazel2gn.FileToGN(f)
+	if err != nil {
+		t.Fatalf("FileToGN() failed: %s", err)
+	}
+	if diff := cmp.Diff(strings.Join(lines, "\n"), wantGN); diff != "" {
+		t.Errorf("FileToGN() diff (-got +want):\n%s", diff)
+	}
+}
+
 func TestRustTestCrateErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

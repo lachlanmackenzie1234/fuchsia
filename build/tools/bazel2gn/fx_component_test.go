@@ -495,6 +495,111 @@ cm("default_name") {
 }`,
 		},
 		{
+			name: "DSO and cdylib fx_packaged_binary unwrapping and renamed_binary",
+			bazel: `fuchsia_cc_dso(
+	name = "cc_dso",
+	is_async = True,
+	srcs = ["main.cc"],
+	output_name = "custom_cc_dso",
+)
+
+fx_packaged_binary(
+	name = "cc_dso_packaged",
+	binary = ":cc_dso",
+	binary_name = "libcustom_cc_dso.so",
+	install_root = "lib/",
+)
+
+fuchsia_rust_dso(
+	name = "rust_dso",
+	srcs = ["src/lib.rs"],
+	edition = "2024",
+)
+
+fx_packaged_binary(
+	name = "rust_dso_packaged",
+	binary = ":rust_dso",
+	binary_name = "librust_dso.so",
+	install_root = "lib/",
+)
+
+rustc_cdylib(
+	name = "plugin_cdylib",
+	srcs = ["src/plugin.rs"],
+	crate_name = "my-plugin",
+	edition = "2024",
+)
+
+fx_packaged_binary(
+	name = "plugin_cdylib_default_packaged",
+	binary = ":plugin_cdylib",
+	binary_name = "libmy_plugin.so",
+	install_root = "lib/",
+)
+
+fx_packaged_binary(
+	name = "plugin_cdylib_renamed_packaged",
+	binary = ":plugin_cdylib",
+	binary_name = "plugin.so",
+	install_root = "plugins/",
+)
+
+fx_component_manifest(
+	name = "dso_manifest",
+	manifest = "meta/dso.cml",
+)
+
+fx_component(
+	name = "dso_component",
+	compiled_manifest = ":dso_manifest",
+	deps = [
+		":cc_dso_packaged",
+		":rust_dso_packaged",
+		":plugin_cdylib_default_packaged",
+		":plugin_cdylib_renamed_packaged",
+	],
+)`,
+			wantGN: `fuchsia_cc_dso("cc_dso") {
+	async = true
+	sources = [
+		"main.cc",
+	]
+	output_name = "custom_cc_dso"
+}
+fuchsia_rust_dso("rust_dso") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+}
+rustc_cdylib("plugin_cdylib") {
+	sources = [
+		"src/plugin.rs",
+	]
+	crate_name = "my-plugin"
+	edition = "2024"
+}
+renamed_binary("plugin_cdylib_renamed_packaged") {
+	source = "$root_out_dir/libmy_plugin.so"
+	source_deps = [
+		":plugin_cdylib",
+	]
+	dest = "plugins/plugin.so"
+}
+fuchsia_component_manifest("dso_manifest") {
+	manifest = "meta/dso.cml"
+}
+fuchsia_component("dso_component") {
+	cm_label = ":dso_manifest"
+	deps = [
+		":cc_dso",
+		":rust_dso",
+		":plugin_cdylib",
+		":plugin_cdylib_renamed_packaged",
+	]
+}`,
+		},
+		{
 			name: "skipped fx_component using fx_compiled_manifest",
 			bazel: `fx_compiled_manifest(
 	name = "manifest",
@@ -822,6 +927,31 @@ fx_component(
 	name = "manifest",
 	component_name = NAME,
 	manifest = "meta/foo.cml",
+)`,
+		},
+		{
+			name: "fx_packaged_binary with non-default destination for fuchsia_cc_dso",
+			bazel: `fuchsia_cc_dso(
+	name = "my_dso",
+	is_async = True,
+	srcs = ["main.cc"],
+)
+
+fx_packaged_binary(
+	name = "my_dso_packaged",
+	binary = ":my_dso",
+	binary_name = "libmy_dso.so",
+)
+
+fx_component_manifest(
+	name = "manifest",
+	manifest = "meta/dso.cml",
+)
+
+fx_component(
+	name = "component",
+	compiled_manifest = ":manifest",
+	deps = [":my_dso_packaged"],
 )`,
 		},
 		{

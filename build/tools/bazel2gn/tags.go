@@ -28,10 +28,12 @@ const excludeToolchainTagsTagPrefix = "exclude_toolchain_tags="
 // `exclude_toolchain_tags` from `excludeToolchainTagsTagPrefix` tags. C++
 // binaries use `disable_instrumentation` instead.
 var excludeToolchainTagsGNTemplates = map[string]bool{
-	"rustc_binary":  true,
-	"rustc_dylib":   true,
-	"rustc_library": true,
-	"rustc_test":    true,
+	"fuchsia_rust_dso": true,
+	"rustc_binary":     true,
+	"rustc_cdylib":     true,
+	"rustc_dylib":      true,
+	"rustc_library":    true,
+	"rustc_test":       true,
 }
 
 // tagsToGN converts Bazel tags attribute to GN assignments if known syncable tags are found.

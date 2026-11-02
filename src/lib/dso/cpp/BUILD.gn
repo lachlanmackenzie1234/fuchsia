@@ -2,20 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/503359085): Migrate to Bazel once
-# //src/devices/bin/driver_runtime is available in Bazel.
-source_set("async") {
-  sources = [
-    "async.cc",
-    "async.h",
-  ]
-  public_deps = [
-    "//sdk/lib/driver/runtime:driver_runtime",
-    "//zircon/system/public",
-  ]
-  deps = [ "//src/devices/bin/driver_runtime" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -41,16 +27,36 @@ source_set("async") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-source_set("sync") {
-  sources = [ "sync.cc" ]
-  public = [ "sync.h" ]
-  deps = [ "//zircon/system/public" ]
-  visibility = [
-    ":*",
-    "//examples/components/dso:*",
-    "//src/lib/dso:*",
-    "//src/sys/runners/dso/*",
-    "//src/ui/bin/scene_manager:*",
-    "//src/ui/scenic/bin:*",
-  ]
+if (is_fuchsia) {
+  source_set("sync") {
+    sources = [ "sync.cc" ]
+    public = [ "sync.h" ]
+    deps = [ "//zircon/system/public" ]
+    visibility = [
+      ":*",
+      "//examples/components/dso:*",
+      "//src/lib/dso:*",
+      "//src/sys/runners/dso/*",
+      "//src/ui/bin/scene_manager:*",
+      "//src/ui/scenic/bin:*",
+    ]
+  }
+}
+if (is_fuchsia) {
+  source_set("async") {
+    sources = [ "async.cc" ]
+    public = [ "async.h" ]
+    deps = [ "//src/devices/bin/driver_runtime" ]
+    visibility = [
+      ":*",
+      "//examples/components/dso:*",
+      "//src/lib/dso:*",
+      "//src/sys/runners/dso/*",
+      "//src/ui/scenic/bin:*",
+    ]
+    public_deps = [
+      "//sdk/lib/driver/runtime:driver_runtime",
+      "//zircon/system/public",
+    ]
+  }
 }

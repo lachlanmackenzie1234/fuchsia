@@ -56,6 +56,37 @@ func TestExecPropertiesConversion(t *testing.T) {
 }`,
 		},
 		{
+			name: "large RBE worker on rustc_cdylib and fuchsia_rust_dso",
+			bazel: `rustc_cdylib(
+    name = "cdylib",
+    srcs = ["src/lib.rs"],
+    exec_properties = RBE_USE_LARGE_WORKER,
+)
+
+fuchsia_rust_dso(
+    name = "dso",
+    srcs = ["src/lib.rs"],
+    exec_properties = RBE_USE_LARGE_WORKER,
+)
+`,
+			wantGN: `rustc_cdylib("cdylib") {
+	sources = [
+		"src/lib.rs",
+	]
+	_concurrent_jobs = concurrent_jobs.rust_highmem
+	configs += _concurrent_jobs.configs
+	forward_variables_from(_concurrent_jobs.vars, "*")
+}
+fuchsia_rust_dso("dso") {
+	sources = [
+		"src/lib.rs",
+	]
+	_concurrent_jobs = concurrent_jobs.rust_highmem
+	configs += _concurrent_jobs.configs
+	forward_variables_from(_concurrent_jobs.vars, "*")
+}`,
+		},
+		{
 			name: "skipped exec_properties",
 			bazel: `rustc_library(
     name = "lib",

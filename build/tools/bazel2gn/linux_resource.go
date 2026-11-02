@@ -126,8 +126,8 @@ func resolveLinuxResourceTargets(f *syntax.File) error {
 				if binTarget, ok := localTargetFromLinuxResourceExpr(kv, kv.Y); ok {
 					linuxResBins[binTarget] = true
 					if !stmtSkipped {
-						if binInfo, exists := gnBins[binTarget]; exists && binInfo.outputName != binTarget {
-							extraArgs = append(extraArgs, attrExpr(internalBinOutputNameAttr, stringLiteral(binInfo.outputName)))
+						if gnOut, exists := gnBins[binTarget]; exists && gnOut.allowRenamed && gnOut.outFile != binTarget {
+							extraArgs = append(extraArgs, attrExpr(internalBinOutputNameAttr, stringLiteral(gnOut.outFile)))
 						}
 					}
 				}
@@ -135,8 +135,8 @@ func resolveLinuxResourceTargets(f *syntax.File) error {
 				if binTarget, ok := localTargetFromArch32Expr(kv, kv.Y); ok {
 					linuxResBins[binTarget] = true
 					if !stmtSkipped {
-						if binInfo, exists := gnBins[binTarget]; exists && binInfo.outputName != binTarget {
-							extraArgs = append(extraArgs, attrExpr(internalArch32BinOutputNameAttr, stringLiteral(binInfo.outputName)))
+						if gnOut, exists := gnBins[binTarget]; exists && gnOut.allowRenamed && gnOut.outFile != binTarget {
+							extraArgs = append(extraArgs, attrExpr(internalArch32BinOutputNameAttr, stringLiteral(gnOut.outFile)))
 						}
 					}
 				}

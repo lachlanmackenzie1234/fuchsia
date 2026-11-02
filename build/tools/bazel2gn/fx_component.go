@@ -326,10 +326,12 @@ type packagedBinaryRecord struct {
 //     requires the manifest target to be evaluated earlier in `BUILD.gn`.
 //  3. Resolves `fx_packaged_binary()` targets referenced by converted
 //     component `deps`: unwrapping directly to `:<binary>` when
-//     `install_root + binary_name` matches the GN binary's default
-//     destination (`"test/<output_name>"` for `fx_cc_test()`, or
-//     `"bin/<output_name>"` otherwise), or rewriting the
-//     `fx_packaged_binary()` into a GN `renamed_binary()` target otherwise.
+//     `install_root + binary_name` matches the GN target's default
+//     distribution destination (e.g. `"test/<output_name>"` for `fx_cc_test()`,
+//     `"bin/<output_name>"` for other executables, or `"lib/lib<output_name>.so"`
+//     for `rustc_cdylib`, `fuchsia_cc_dso`, and `fuchsia_rust_dso`), or
+//     rewriting the `fx_packaged_binary()` into a GN `renamed_binary()` target
+//     otherwise (when supported by the rule).
 func resolveComponentTargets(f *syntax.File) error {
 	if err := checkCompiledManifestConsumers(f); err != nil {
 		return err
@@ -666,18 +668,29 @@ func hoistComponentManifests(f *syntax.File) error {
 	return nil
 }
 
-// gnBinaryInfo describes the output binary name in `$root_out_dir` and the
-// default package destination directory (`"bin/"` or `"test/"`) produced by an
-// un-skipped binary target in `BUILD.gn`.
-type gnBinaryInfo struct {
-	outputName         string
-	defaultInstallRoot string
+type gnBinaryOutput struct {
+	// outFile is the output filename produced in `$root_out_dir` (for targets
+	// built directly in `$root_out_dir`).
+	outFile string
+	// defaultDest is the default package installation path emitted by the GN
+	// target's `distribution_entries` metadata (e.g. `"bin/<output_name>"`,
+	// `"test/<output_name>"`, or `"lib/lib<output_name>.so"`).
+	defaultDest string
+	// ruleName is the Bazel rule name defining this target.
+	ruleName string
+	// allowRenamed reports whether a non-default `fx_packaged_binary`
+	// destination can be emitted as a GN `renamed_binary()` reading
+	// `"$root_out_dir/" + outFile`. C++ `shared_library()` targets
+	// (`fuchsia_cc_dso`) redirect to `$shlib_toolchain`, so they cannot use a
+	// `$root_out_dir` `renamed_binary()`.
+	allowRenamed bool
 }
 
-// indexGNBinaries maps each un-skipped binary target name defined in `f` to
-// its converted GN output binary name and default package install root.
-func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
-	outputs := map[string]gnBinaryInfo{}
+// indexGNBinaries maps each un-skipped binary or shared-object target name
+// defined in `f` to the output filename and default distribution destination
+// produced by its converted GN target.
+func indexGNBinaries(f *syntax.File) (map[string]gnBinaryOutput, error) {
+	outputs := map[string]gnBinaryOutput{}
 	for _, stmt := range f.Stmts {
 		call, ok := callOfStmt(stmt)
 		if !ok {
@@ -716,7 +729,12 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 			if unskippedCallBoolTrue(call, "linkshared") {
 				outName = strings.TrimSuffix(outName, ".so") + ".so"
 			}
-			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
+			outputs[name] = gnBinaryOutput{
+				outFile:      outName,
+				defaultDest:  "bin/" + outName,
+				ruleName:     fn.Name,
+				allowRenamed: true,
+			}
 		case "fx_cc_test":
 			// GN `test()` (from //build/test.gni) sets `destination = "test/<output_file>"`
 			// in `distribution_entries`, unlike `executable()` which installs to `"bin/"`.
@@ -724,14 +742,24 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "test/"}
+			outputs[name] = gnBinaryOutput{
+				outFile:      outName,
+				defaultDest:  "test/" + outName,
+				ruleName:     fn.Name,
+				allowRenamed: true,
+			}
 		case "cc_binary_host_tool", "idk_cc_binary_host_tool",
 			"go_binary", "go_binary_host_tool", "idk_go_binary_host_tool":
 			outName := name
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
+			outputs[name] = gnBinaryOutput{
+				outFile:      outName,
+				defaultDest:  "bin/" + outName,
+				ruleName:     fn.Name,
+				allowRenamed: true,
+			}
 		case "rustc_binary", "rust_binary", "idk_rustc_binary_host_tool":
 			outName := name
 			if bn, ok := unskippedCallStringAttr(call, "binary_name"); ok {
@@ -742,11 +770,19 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = gnBinaryInfo{outputName: outName, defaultInstallRoot: "bin/"}
+			outputs[name] = gnBinaryOutput{
+				outFile:      outName,
+				defaultDest:  "bin/" + outName,
+				ruleName:     fn.Name,
+				allowRenamed: true,
+			}
 			if unskippedCallBoolTrue(call, "with_unit_tests") {
-				outputs[name+"_test"] = gnBinaryInfo{
-					outputName:         strings.ReplaceAll(outName+"_bin_test", "-", "_"),
-					defaultInstallRoot: "bin/",
+				testOut := strings.ReplaceAll(outName+"_bin_test", "-", "_")
+				outputs[name+"_test"] = gnBinaryOutput{
+					outFile:      testOut,
+					defaultDest:  "bin/" + testOut,
+					ruleName:     fn.Name,
+					allowRenamed: true,
 				}
 			}
 		case "rustc_test":
@@ -759,9 +795,12 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 			if hasRawOut {
 				outName = rawOut
 			}
-			outputs[name] = gnBinaryInfo{
-				outputName:         strings.ReplaceAll(outName, "-", "_"),
-				defaultInstallRoot: "bin/",
+			testOut := strings.ReplaceAll(outName, "-", "_")
+			outputs[name] = gnBinaryOutput{
+				outFile:      testOut,
+				defaultDest:  "bin/" + testOut,
+				ruleName:     fn.Name,
+				allowRenamed: true,
 			}
 		case "rustc_library", "rust_library":
 			if unskippedCallBoolTrue(call, "with_unit_tests") {
@@ -769,10 +808,45 @@ func indexGNBinaries(f *syntax.File) (map[string]gnBinaryInfo, error) {
 				if cn, ok := unskippedCallStringAttr(call, "crate_name"); ok {
 					crateName = cn
 				}
-				outputs[name+"_test"] = gnBinaryInfo{
-					outputName:         strings.ReplaceAll(crateName, "-", "_") + "_lib_test",
-					defaultInstallRoot: "bin/",
+				testOut := strings.ReplaceAll(crateName, "-", "_") + "_lib_test"
+				outputs[name+"_test"] = gnBinaryOutput{
+					outFile:      testOut,
+					defaultDest:  "bin/" + testOut,
+					ruleName:     fn.Name,
+					allowRenamed: true,
 				}
+			}
+		case "fuchsia_cc_dso":
+			outName := name
+			if on, ok := unskippedCallStringAttr(call, "output_name"); ok && on != "" {
+				outName = on
+			}
+			if hasRawOut {
+				outName = rawOut
+			}
+			soFile := "lib" + outName + ".so"
+			outputs[name] = gnBinaryOutput{
+				outFile:      soFile,
+				defaultDest:  "lib/" + soFile,
+				ruleName:     fn.Name,
+				allowRenamed: false,
+			}
+		case "rustc_cdylib", "fuchsia_rust_dso":
+			outName := name
+			if on, ok := unskippedCallStringAttr(call, "output_name"); ok && on != "" {
+				outName = on
+			} else if cn, ok := unskippedCallStringAttr(call, "crate_name"); ok && cn != "" {
+				outName = strings.ReplaceAll(cn, "-", "_")
+			}
+			if hasRawOut {
+				outName = rawOut
+			}
+			soFile := "lib" + outName + ".so"
+			outputs[name] = gnBinaryOutput{
+				outFile:      soFile,
+				defaultDest:  "lib/" + soFile,
+				ruleName:     fn.Name,
+				allowRenamed: true,
 			}
 		}
 	}
@@ -823,7 +897,7 @@ func resolveComponentDepsExpr(
 	expr syntax.Expr,
 	compName string,
 	pkgBins map[string]*packagedBinaryRecord,
-	gnBins map[string]gnBinaryInfo,
+	gnBins map[string]gnBinaryOutput,
 	varStmts map[string]*syntax.AssignStmt,
 	visitedVars map[string]bool,
 ) (syntax.Expr, error) {
@@ -937,7 +1011,7 @@ func resolvePackagedBinaryRecord(
 	rec *packagedBinaryRecord,
 	pkgBinName string,
 	compName string,
-	gnBins map[string]gnBinaryInfo,
+	gnBins map[string]gnBinaryOutput,
 ) (string, error) {
 	if rec.emittedName {
 		return ":" + pkgBinName, nil
@@ -1005,19 +1079,21 @@ func resolvePackagedBinaryRecord(
 	}
 
 	binTarget := strings.TrimPrefix(binaryLabel, ":")
-	binInfo, ok := gnBins[binTarget]
+	gnOut, ok := gnBins[binTarget]
 	if !ok {
 		return "", fmt.Errorf("fx_packaged_binary %q binary %q (used by fx_component %q) does not refer to an unskipped binary target in the same BUILD.bazel; use # @bazel2gn:skip on fx_component %q and write the GN copy by hand", pkgBinName, binaryLabel, compName, compName)
 	}
 
 	dest := installRoot + binaryName
-	defaultDest := binInfo.defaultInstallRoot + binInfo.outputName
-	if dest == defaultDest {
+	if dest == gnOut.defaultDest {
 		return ":" + binTarget, nil
+	}
+	if !gnOut.allowRenamed {
+		return "", fmt.Errorf("fx_packaged_binary %q (wrapping %s %q, used by fx_component %q) installs to %q, but GN %s only supports its default destination %q (set install_root = \"lib/\" and binary_name = %q)", pkgBinName, gnOut.ruleName, binaryLabel, compName, dest, gnOut.ruleName, gnOut.defaultDest, gnOut.outFile)
 	}
 
 	if rec.skipped {
-		return "", fmt.Errorf("fx_packaged_binary %q is referenced by fx_component %q and requires a GN renamed_binary target (dest %q != default %q), so it cannot have # @bazel2gn:skip", pkgBinName, compName, dest, defaultDest)
+		return "", fmt.Errorf("fx_packaged_binary %q is referenced by fx_component %q and requires a GN renamed_binary target (dest %q != default %q), so it cannot have # @bazel2gn:skip", pkgBinName, compName, dest, gnOut.defaultDest)
 	}
 	if hasRawAttributeAnnotation(rec.stmt) {
 		return "", errors.New("raw_attribute annotation is not supported on fx_packaged_binary")
@@ -1028,7 +1104,7 @@ func resolvePackagedBinaryRecord(
 		newArgs = append(newArgs, testonlyArg)
 	}
 	newArgs = append(newArgs,
-		attrExpr("source", stringLiteral("$root_out_dir/"+binInfo.outputName)),
+		attrExpr("source", stringLiteral("$root_out_dir/"+gnOut.outFile)),
 		attrExpr("source_deps", &syntax.ListExpr{List: []syntax.Expr{stringLiteral(":" + binTarget)}}),
 		attrExpr("dest", stringLiteral(dest)),
 	)

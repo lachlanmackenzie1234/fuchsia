@@ -1049,6 +1049,133 @@ rustc_dylib(
 	}
 }`,
 		}, {
+			name: "rustc_cdylib",
+			bazel: `
+rustc_cdylib(
+	name = "foo_cdylib",
+	srcs = ["src/lib.rs"],
+	hdrs = ["include/foo.h"],
+	build_flags = ["//build/config/rust:bootfs"],
+	crate_features = ["bar"],
+	crate_name = "foo",
+	disable_clippy = True,
+	edition = "2024",
+	link_deps = [":c_helper"],
+	output_name = "foo_rust",
+	proc_macro_deps = [":my_macro"],
+	public_deps = [":c_api"],
+	tags = ["assert_no_deps=//sdk/lib/fdio"],
+	target_compatible_with = ["@platforms//os:fuchsia"],
+	validations = [":validate"],
+	deps = ["//third_party/rust_crates/vendor:anyhow"],
+)`,
+			wantGN: `if (is_fuchsia) {
+	rustc_cdylib("foo_cdylib") {
+		sources = [
+			"src/lib.rs",
+		]
+		public = [
+			"include/foo.h",
+		]
+		configs += [
+			"//build/config/rust:bootfs",
+		]
+		features = [
+			"bar",
+		]
+		crate_name = "foo"
+		disable_clippy = true
+		edition = "2024"
+		link_deps = [
+			":c_helper",
+		]
+		output_name = "foo_rust"
+		proc_macro_deps = [
+			":my_macro",
+		]
+		public_deps = [
+			":c_api",
+		]
+		assert_no_deps = [
+			"//sdk/lib/fdio",
+		]
+		validations = [
+			":validate",
+		]
+		deps = [
+			"//third_party/rust_crates:anyhow",
+		]
+	}
+}`,
+		}, {
+			name: "fuchsia_cc_dso and fuchsia_rust_dso",
+			bazel: `
+fuchsia_cc_dso(
+	name = "async_cc_dso",
+	is_async = True,
+	srcs = ["main.cc"],
+	aspect_hints = [":expect_syslog"],
+	build_flags = ["//build/config:all_source"],
+	disable_build_flags = ["//build/config:no_rtti"],
+	disable_instrumentation = True,
+	linkopts = ["-Wl,-z,defs"],
+	output_name = "custom_async_dso",
+	deps = ["//zircon/system/ulib/zx"],
+)
+
+fuchsia_cc_dso(
+	name = "sync_cc_dso",
+	is_async = False,
+	srcs = ["sync_main.cc"],
+)
+
+fuchsia_rust_dso(
+	name = "my_rust_dso",
+	srcs = ["src/lib.rs"],
+	edition = "2024",
+	output_name = "custom_rust_dso",
+	deps = ["//sdk/rust/zx"],
+)`,
+			wantGN: `fuchsia_cc_dso("async_cc_dso") {
+	async = true
+	sources = [
+		"main.cc",
+	]
+	configs += [
+		"//build/config:all_source",
+	]
+	configs -= [
+		"//build/config:no_rtti",
+	]
+	exclude_toolchain_tags = [ "instrumented" ]
+	ldflags = [
+		"-Wl,-z,defs",
+	]
+	output_name = "custom_async_dso"
+	deps = [
+		"//zircon/system/ulib/zx",
+	]
+	deps += [
+		":expect_syslog",
+	]
+}
+fuchsia_cc_dso("sync_cc_dso") {
+	async = false
+	sources = [
+		"sync_main.cc",
+	]
+}
+fuchsia_rust_dso("my_rust_dso") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+	output_name = "custom_rust_dso"
+	deps = [
+		"//sdk/rust/zx",
+	]
+}`,
+		}, {
 			name: "rustc_disable_clippy",
 			bazel: `
 rustc_library(

@@ -250,6 +250,9 @@ shared_library("driver") {
 }
 
 # LINT.IfChange
+# Bazel visibility (`//:__subpackages__`, matching GN's default public
+# visibility) is maintained on //src/devices/lib/driver:driver_runtime in
+# BUILD.bazel.
 ifs_shared_library("driver_runtime") {
   abi = "//src/devices/bin/driver_runtime/libdriver_runtime.ifs"
 }

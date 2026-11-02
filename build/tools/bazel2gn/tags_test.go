@@ -196,6 +196,37 @@ func TestTagsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "sync exclude_toolchain_tags on rustc_cdylib and fuchsia_rust_dso",
+			bazel: `rustc_cdylib(
+    name = "cdylib",
+    srcs = ["src/lib.rs"],
+    tags = ["exclude_toolchain_tags=heapdump"],
+)
+
+fuchsia_rust_dso(
+    name = "dso",
+    srcs = ["src/lib.rs"],
+    tags = ["exclude_toolchain_tags=instrumented"],
+)
+`,
+			wantGN: `rustc_cdylib("cdylib") {
+	sources = [
+		"src/lib.rs",
+	]
+	exclude_toolchain_tags = [
+		"heapdump",
+	]
+}
+fuchsia_rust_dso("dso") {
+	sources = [
+		"src/lib.rs",
+	]
+	exclude_toolchain_tags = [
+		"instrumented",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -272,6 +303,16 @@ func TestTagsConversionErrors(t *testing.T) {
     tags = ["exclude_toolchain_tags=heapdump"],
 )`,
 			wantErr: `the "exclude_toolchain_tags=heapdump" tag is only supported on rust_library when with_unit_tests is set`,
+		},
+		{
+			name: "exclude_toolchain_tags on fuchsia_cc_dso",
+			bazel: `fuchsia_cc_dso(
+    name = "dso",
+    is_async = True,
+    srcs = ["main.cc"],
+    tags = ["exclude_toolchain_tags=instrumented"],
+)`,
+			wantErr: `the "exclude_toolchain_tags=instrumented" tag is only supported on Rust binary, library, and test rules, got fuchsia_cc_dso`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

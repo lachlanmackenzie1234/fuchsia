@@ -166,9 +166,32 @@ rustc_binary("bin") {
 ```
 
 `exec_properties` is never emitted verbatim. Other values, other rules (only
-`rustc_binary()`, `rustc_library()`, `rustc_test()` and their aliases are
-supported), and overwrite annotations on `exec_properties` are errors; use `#
-@bazel2gn:skip` and `# @bazel2gn:raw_attribute:` instead.
+`rustc_binary()`, `rustc_cdylib()`, `fuchsia_rust_dso()`, `rustc_library()`,
+`rustc_test()` and their aliases are supported), and overwrite annotations on
+`exec_properties` are errors; use `# @bazel2gn:skip` and `#
+@bazel2gn:raw_attribute:` instead.
+
+#### `rustc_cdylib()`, `fuchsia_cc_dso()`, and `fuchsia_rust_dso()`
+
+Rust `cdylib` shared libraries (`rustc_cdylib()` from
+`//build/bazel/rules/rust:rustc_cdylib.bzl`) and Fuchsia DSO component shared
+libraries (`fuchsia_cc_dso()` and `fuchsia_rust_dso()` from
+`//src/lib/dso:fuchsia_dso.bzl`) sync directly to their GN counterparts in
+`//build/rust/rustc_cdylib.gni` and `//src/lib/dso/fuchsia_dso.gni`:
+
+*   On `fuchsia_cc_dso()`, `is_async` (named `is_async` because `async` is a
+    reserved keyword in Starlark) maps to GN `async`, and `linkopts` maps to GN
+    `ldflags`.
+*   On `rustc_cdylib()`, `hdrs` maps to GN `public`, and `public_deps` passes
+    through.
+*   To include a `rustc_cdylib()`, `fuchsia_cc_dso()`, or `fuchsia_rust_dso()`
+    in an `fx_component()` (or converted `fx_test_component()`), wrap it with
+    `fx_packaged_binary(binary = ":<dso>", binary_name = "lib<output_name>.so",
+    install_root = "lib/")`. Because `"lib/lib<output_name>.so"` matches the GN
+    shared library's default `distribution_entries` destination, `bazel2gn`
+    unwraps `:<packaged_dso>` in component `deps` directly to `:<dso>`.
+    (`fuchsia_cc_dso()` builds in GN's `$shlib_toolchain`, so non-default
+    `fx_packaged_binary` destinations on `fuchsia_cc_dso()` are rejected.)
 
 #### Components
 
@@ -202,13 +225,18 @@ to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
 *   `fx_packaged_binary()` has no standalone GN equivalent, but when an
     `fx_component()` (or a converted `fx_test_component()`) depends on a
     `:<packaged_bin>` defined in the same
-    `BUILD.bazel` wrapping an un-skipped binary target in the same file:
-    *   If `install_root + binary_name` matches the GN binary's default
-        destination (`"test/<output_name>"` for `fx_cc_test()`, or
-        `"bin/<output_name>"` otherwise), `:<packaged_bin>` in `deps` unwraps
-        directly to the underlying `:<binary>` target.
+    `BUILD.bazel` wrapping an un-skipped binary or shared-object target in the
+    same file:
+    *   If `install_root + binary_name` matches the GN target's default
+        distribution destination (`"test/<output_name>"` for `fx_cc_test()`,
+        `"bin/<output_name>"` for other executables, or
+        `"lib/lib<output_name>.so"` for `rustc_cdylib()`, `fuchsia_cc_dso()`,
+        and `fuchsia_rust_dso()`), `:<packaged_bin>` in `deps` unwraps directly
+        to the underlying `:<binary>` target.
     *   Otherwise, `bazel2gn` emits a GN `renamed_binary("<packaged_bin>")`
-        target and keeps `:<packaged_bin>` in `deps`.
+        target and keeps `:<packaged_bin>` in `deps` (except for
+        `fuchsia_cc_dso()`, which builds in `$shlib_toolchain` and only supports
+        its default `"lib/lib<output_name>.so"` destination).
 
 Put `# @bazel2gn:skip` (with a brief explanatory comment) on an `fx_component()`
 when its package is Bazel-only and has no GN consumer (its
@@ -316,10 +344,13 @@ so `bazel2gn` translates test rules too:
     crate must be defined in the same `BUILD.bazel`, and its `srcs`,
     `crate_root`, `edition`, `rustc_env`, `deps`, `proc_macro_deps`,
     `link_deps`, and `compile_data` are inlined into the GN test, like
-    `rules_rust` does. Generic undisambiguated test binary names (such as
-    `lib_test` or `bin_test`) are rejected so test binaries from different
-    packages do not collide in `${root_out_dir}`; name the test after the crate
-    (or set `crate_name`, which maps to GN's `output_name`).
+    `rules_rust` does (including `fuchsia_rust_dso()`'s implicit DSO runtime
+    dependencies and `public_deps` -> `link_deps` on `rustc_cdylib()`,
+    `rustc_dylib()`, and `fuchsia_rust_dso()`). Generic undisambiguated test
+    binary names (such as `lib_test` or `bin_test`) are rejected so test
+    binaries from different packages do not collide in `${root_out_dir}`; name
+    the test after the crate (or set `crate_name`, which maps to GN's
+    `output_name`).
 *   `host_rustc_test()` and `host_go_test()` map to GN `rustc_test()` and
     `go_test()` inside `if (is_host)`. `data`, `test_data`, and `test_label`
     are errors, because the GN templates have no equivalent.
@@ -371,13 +402,13 @@ Most Bazel `tags` have no GN equivalent and are ignored, except:
     Comment annotations such as `# @bazel2gn:path_overwrite:` and
     `# @bazel2gn:raw_overwrite:` are forwarded onto the generated GN
     dependencies, allowing toolchain qualifiers (e.g. `($current_toolchain)`).
-*   `exclude_toolchain_tags=<tag>` on Rust binary, dylib, and test rules (and on
-    library rules with `with_unit_tests`, where it only affects the unit test) is
-    ignored by Bazel, and converted to GN `exclude_toolchain_tags`, so the GN
-    target isn't built in toolchains (variants) with `<tag>`, such as
-    `heapdump`. This is the Rust counterpart of `disable_instrumentation = True`
-    on `fx_cc_binary()`, which becomes `exclude_toolchain_tags = [
-    "instrumented" ]`.
+*   `exclude_toolchain_tags=<tag>` on Rust binary, cdylib/dylib/DSO, and test
+    rules (and on library rules with `with_unit_tests`, where it only affects
+    the unit test) is ignored by Bazel, and converted to GN
+    `exclude_toolchain_tags`, so the GN target isn't built in toolchains
+    (variants) with `<tag>`, such as `heapdump`. This is the Rust counterpart of
+    `disable_instrumentation = True` on `fx_cc_binary()` / `fuchsia_cc_dso()`,
+    which becomes `exclude_toolchain_tags = [ "instrumented" ]`.
     TODO(https://fxbug.dev/578022348): Add canonical Bazel support for excluding
     Rust targets from toolchain variants (e.g. heapdump).
 

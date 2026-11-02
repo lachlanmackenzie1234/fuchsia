@@ -21,7 +21,12 @@ fx_cc_library(
     name = "sync",
     srcs = ["sync.cc"],
     hdrs = ["sync.h"],
-    implementation_deps = ["//zircon/system/public"],
+    implementation_deps = [
+        # On Fuchsia, //zircon/system/public would shadow the sysroot's
+        # <zircon/syscalls.h> without the generated syscalls/gen/*.inc files.
+        "//src/zircon/lib/zircon:headers",  # @bazel2gn:path_overwrite://zircon/system/public
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
     # fuchsia_cc_dso() in //src/lib/dso/fuchsia_dso.gni expands in callers' GN packages.
     visibility = [
         "//examples/components/dso:__pkg__",
@@ -29,6 +34,32 @@ fx_cc_library(
         "//src/sys/runners/dso:__subpackages__",
         "//src/ui/bin/scene_manager:__pkg__",
         "//src/ui/scenic/bin:__pkg__",
+    ],
+    alwayslink = True,
+)
+
+# TODO(https://fxbug.dev/503359085): Migrate to Bazel once
+# //src/devices/bin/driver_runtime is available in Bazel.
+fx_cc_library(
+    name = "async",
+    srcs = ["async.cc"],
+    hdrs = ["async.h"],
+    implementation_deps = [
+        "//src/devices/lib/driver:driver_runtime",  # @bazel2gn:path_overwrite://src/devices/bin/driver_runtime
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    # fuchsia_cc_dso() in //src/lib/dso/fuchsia_dso.gni expands in callers' GN packages.
+    visibility = [
+        "//examples/components/dso:__pkg__",
+        "//src/lib/dso:__pkg__",
+        "//src/sys/runners/dso:__subpackages__",
+        "//src/ui/scenic/bin:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/driver/runtime:driver_runtime",
+        # On Fuchsia, //zircon/system/public would shadow the sysroot's
+        # <zircon/syscalls.h> without the generated syscalls/gen/*.inc files.
+        "//src/zircon/lib/zircon:headers",  # @bazel2gn:path_overwrite://zircon/system/public
     ],
     alwayslink = True,
 )

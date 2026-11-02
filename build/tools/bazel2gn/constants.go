@@ -81,9 +81,11 @@ var bazelRuleToGNTemplate = map[string]string{
 	"py_binary":  "python_binary",
 
 	// Rust
+	"fuchsia_rust_dso":     "fuchsia_rust_dso",
 	"rust_binary":          "rustc_binary",
 	"rust_library":         "rustc_library",
 	"rustc_binary":         "rustc_binary",
+	"rustc_cdylib":         "rustc_cdylib",
 	"rustc_dylib":          "rustc_dylib",
 	"rustc_library":        "rustc_library",
 	"rustc_proc_macro":     "rustc_macro",
@@ -95,6 +97,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	// C++
 	"cc_library":            "static_library",
 	"cc_binary":             "executable",
+	"fuchsia_cc_dso":        "fuchsia_cc_dso",
 	"fx_cc_binary":          "executable",
 	"fx_cc_library_headers": "library_headers",
 	"fx_cc_library":         "static_library",
@@ -466,6 +469,13 @@ var pythonBinAttrMap = map[string]string{
 	"main": "main_source",
 }
 
+// fuchsiaCcDsoAttrMap maps from attribute names in Bazel `fuchsia_cc_dso()` to
+// GN `fuchsia_cc_dso()` parameter names. `async` is a reserved keyword in
+// Starlark, so Bazel uses `is_async`.
+var fuchsiaCcDsoAttrMap = mustMergeMaps(fxCcBinaryAttrMap, map[string]string{
+	"is_async": "async",
+})
+
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
 var attrMapsByRules = map[string]map[string]string{
@@ -479,6 +489,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_library":          ccLibAttrMap,
 	"cc_binary":           ccBinAttrMap,
 	"cc_binary_host_tool": ccBinAttrMap,
+	"fuchsia_cc_dso":      fuchsiaCcDsoAttrMap,
 	"fx_cc_binary":        fxCcBinaryAttrMap,
 	"fx_cc_library":       fxCcLibAttrMap,
 	"fx_cc_test":          fxCcBinaryAttrMap,
@@ -489,10 +500,12 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_static_library_zx": ccLibAttrMap,
 
 	// Rust
+	"fuchsia_rust_dso": rustCommonAttrMap,
 	"rust_binary":      rustBinAttrMap,
 	"rust_library":     rustCommonAttrMap,
 	"rust_proc_macro":  rustCommonAttrMap,
 	"rustc_binary":     rustBinAttrMap,
+	"rustc_cdylib":     rustCommonAttrMap,
 	"rustc_dylib":      rustCommonAttrMap,
 	"rustc_library":    rustCommonAttrMap,
 	"rustc_proc_macro": rustCommonAttrMap,
@@ -678,9 +691,11 @@ var rustHighmemGN = []string{
 // rustHighmemGNTemplates are the GN templates that accept the `configs` and
 // `pool` set by `rustHighmemGN`.
 var rustHighmemGNTemplates = map[string]bool{
-	"rustc_binary":  true,
-	"rustc_library": true,
-	"rustc_test":    true,
+	"fuchsia_rust_dso": true,
+	"rustc_binary":     true,
+	"rustc_cdylib":     true,
+	"rustc_library":    true,
+	"rustc_test":       true,
 }
 
 // goThirdPartyAggregateDeps lists known third-party GN targets that include sources of multiple Go

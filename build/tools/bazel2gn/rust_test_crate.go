@@ -6,6 +6,7 @@ package bazel2gn
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -23,6 +24,25 @@ var rustTestRules = map[string]bool{
 var procMacroRules = map[string]bool{
 	"rustc_proc_macro": true,
 	"rust_proc_macro":  true,
+}
+
+// rustSharedLibWithPublicDepsRules are Bazel Rust shared-library rules whose
+// `public_deps` are native link dependencies that must be propagated as
+// `link_deps` when a `rustc_test` / `host_rustc_test` tests them via `crate`.
+var rustSharedLibWithPublicDepsRules = map[string]bool{
+	"fuchsia_rust_dso": true,
+	"rustc_cdylib":     true,
+	"rustc_dylib":      true,
+}
+
+// fuchsiaRustDsoImplicitDeps are the implicit Rust dependencies added by
+// `fuchsia_rust_dso()` in `//src/lib/dso/fuchsia_dso.bzl` and `.gni`. When a
+// `rustc_test` compiles a `fuchsia_rust_dso` crate via `crate = ":<dso>"`, the
+// inlined GN `rustc_test()` must include these dependencies explicitly.
+var fuchsiaRustDsoImplicitDeps = []string{
+	"//src/lib/fuchsia",
+	"//src/lib/dso/rust",
+	"//sdk/rust/zx",
 }
 
 // rustBinaryRules are the Bazel rules for Rust binary crates. In Bazel, a
@@ -158,6 +178,7 @@ func inlineRustTestCrates(f *syntax.File) error {
 				testArgs[attr] = arg.(*syntax.BinaryExpr)
 			}
 		}
+		crateCall = prepareCrateForInlining(crateCall, testArgs["deps"])
 
 		var newArgs []syntax.Expr
 		for _, arg := range crateCall.Args {
@@ -211,6 +232,140 @@ func inlineRustTestCrates(f *syntax.File) error {
 		call.Args = newArgs
 	}
 	return nil
+}
+
+// prepareCrateForInlining returns a synthetic crate call with rule-specific
+// implicit dependencies and native link dependencies materialized so
+// `inlineRustTestCrates` propagates them into the generated GN `rustc_test()`.
+//
+// In particular:
+//   - `fuchsia_rust_dso()` implicitly adds `fuchsiaRustDsoImplicitDeps` to
+//     `deps`; any of those not already present as string literals in the
+//     crate's `deps` or the test's `deps` are appended.
+//   - `rustc_cdylib()`, `rustc_dylib()`, and `fuchsia_rust_dso()` treat
+//     `public_deps` as native link dependencies; any un-skipped `public_deps`
+//     are folded into `link_deps`.
+func prepareCrateForInlining(crateCall *syntax.CallExpr, testDeps *syntax.BinaryExpr) *syntax.CallExpr {
+	cfn, ok := crateCall.Fn.(*syntax.Ident)
+	if !ok || (cfn.Name != "fuchsia_rust_dso" && !rustSharedLibWithPublicDepsRules[cfn.Name]) {
+		return crateCall
+	}
+
+	var crateDepsArg, linkDepsArg, pubDepsArg *syntax.BinaryExpr
+	for _, arg := range crateCall.Args {
+		if skip, err := hasSkipAnnotation(arg); err != nil || skip {
+			continue
+		}
+		attr, ok := attrName(arg)
+		if !ok {
+			continue
+		}
+		kv := arg.(*syntax.BinaryExpr)
+		switch attr {
+		case "deps":
+			crateDepsArg = kv
+		case "link_deps":
+			linkDepsArg = kv
+		case "public_deps":
+			pubDepsArg = kv
+		}
+	}
+
+	var missingImplicitDeps []syntax.Expr
+	if cfn.Name == "fuchsia_rust_dso" {
+		existing := map[string]bool{}
+		if crateDepsArg != nil {
+			collectLiteralLabels(crateDepsArg.Y, existing)
+		}
+		if testDeps != nil {
+			collectLiteralLabels(testDeps.Y, existing)
+		}
+		for _, dep := range fuchsiaRustDsoImplicitDeps {
+			if !existing[normalizeLabel(dep)] {
+				missingImplicitDeps = append(missingImplicitDeps, stringLiteral(dep))
+			}
+		}
+	}
+
+	foldPublicDeps := rustSharedLibWithPublicDepsRules[cfn.Name] && pubDepsArg != nil
+	if len(missingImplicitDeps) == 0 && !foldPublicDeps {
+		return crateCall
+	}
+
+	var args []syntax.Expr
+	addedDeps := false
+	for _, arg := range crateCall.Args {
+		if skip, err := hasSkipAnnotation(arg); err != nil || skip {
+			args = append(args, arg)
+			continue
+		}
+		attr, ok := attrName(arg)
+		if !ok {
+			args = append(args, arg)
+			continue
+		}
+		kv := arg.(*syntax.BinaryExpr)
+		switch {
+		case attr == "deps" && len(missingImplicitDeps) > 0:
+			copied := *kv
+			copied.Y = concatListExpr(kv.Y, &syntax.ListExpr{List: missingImplicitDeps})
+			args = append(args, &copied)
+			addedDeps = true
+		case attr == "link_deps" && foldPublicDeps:
+			copied := *kv
+			copied.Y = concatListExpr(kv.Y, pubDepsArg.Y)
+			args = append(args, &copied)
+		case attr == "public_deps" && foldPublicDeps:
+			if linkDepsArg == nil {
+				args = append(args, renameAttrExpr(kv, "link_deps"))
+			}
+		default:
+			args = append(args, arg)
+		}
+	}
+	if len(missingImplicitDeps) > 0 && !addedDeps {
+		args = append(args, attrExpr("deps", &syntax.ListExpr{List: missingImplicitDeps}))
+	}
+	return &syntax.CallExpr{Fn: crateCall.Fn, Args: args}
+}
+
+func collectLiteralLabels(expr syntax.Expr, out map[string]bool) {
+	switch e := unwrapParenExpr(expr).(type) {
+	case *syntax.ListExpr:
+		for _, elem := range e.List {
+			if skip, err := hasSkipAnnotation(elem); err != nil || skip {
+				continue
+			}
+			if val, err := stringLiteralValue(elem); err == nil {
+				out[normalizeLabel(val)] = true
+			}
+		}
+	case *syntax.BinaryExpr:
+		if e.Op == syntax.PLUS {
+			collectLiteralLabels(e.X, out)
+			collectLiteralLabels(e.Y, out)
+		}
+	}
+}
+
+func normalizeLabel(label string) string {
+	pkg, target, ok := strings.Cut(label, ":")
+	if ok && pkg != "" && path.Base(pkg) == target {
+		return pkg
+	}
+	return label
+}
+
+func concatListExpr(a, b syntax.Expr) syntax.Expr {
+	la, oka := unwrapParenExpr(a).(*syntax.ListExpr)
+	lb, okb := unwrapParenExpr(b).(*syntax.ListExpr)
+	if oka && okb {
+		combined := make([]syntax.Expr, 0, len(la.List)+len(lb.List))
+		combined = append(combined, la.List...)
+		combined = append(combined, lb.List...)
+		return &syntax.ListExpr{List: combined}
+	}
+	return &syntax.BinaryExpr{X: a, Op: syntax.PLUS, Y: b}
 }
 
 // ffxPluginExecCrate returns a synthetic call representing the `<name>`
