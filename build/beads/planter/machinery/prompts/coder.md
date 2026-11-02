@@ -29,7 +29,9 @@ new custom test `.cml` when required). Never edit `.rs`/`.cc`/`.h` sources excep
 `build_only_scope` allowances (`LINT.IfChange`/`LINT.ThenChange`, `clippy_warn_all` test lints,
 `<sdk/lib/...>` include fixes, or `#[cfg(test)]`/test-file `host_test_data` `runtime_dir` path
 fallbacks, explained in commit body); otherwise fix `BUILD.bazel` attrs. Omit unbuilt template
-tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrated (note in
+tests that fail to compile (`# TODO(https://fxbug.dev/<id>)` + commit note; verify the bug is open
+and matches the subsystem, never citing WLAN bug `543568916` outside `//src/connectivity/wlan/**`;
+use `570694755` for general Bazel migration tech debt) and leave dead code unmigrated (note in
 `summary`). Carry target comments into `BUILD.bazel`; pair path-sync comments with `LINT.IfChange`.
 
 ## Target & Language Recipes
@@ -38,18 +40,19 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
 - Load `fx_cc_library` (`//build/bazel/rules/cc:fx_cc_library.bzl`), `fx_cc_binary`
   (`:fx_cc_binary.bzl`), or `fx_cc_test_binary` (`:fx_cc_test_binary.bzl`); never use raw `@rules_cc` rules.
 - Set `alwayslink = True` on `fx_cc_library` iff the GN target was `source_set()` (omit for
-  `static_library()`). Add `"//sdk/lib/fdio"` to `fx_cc_binary` `deps` (automatic in `rustc_*`).
+  `static_library()`), and `gn_output_name = "<out>"` on `fx_cc_binary`/`fx_cc_test_binary` when GN
+  `output_name != name` (never `# @bazel2gn:raw_attribute:output_name`). Add `"//sdk/lib/fdio"` to
+  `fx_cc_binary` `deps` (automatic in `rustc_*`).
 - **GN `shared_library` is never `fx_cc_binary(linkshared = True)`**: In-tree C/C++ is built
   statically. Mapping to `fx_cc_binary(linkshared = True)` drops `CcInfo` headers and breaks Bazel
   dependents. Map in-tree libraries to `fx_cc_library`, system libraries to `cc_shared_library_zx`,
   and drivers to `fuchsia_cc_driver`. Only standalone test fixture `.so` files loaded via `dlopen()`
   may use `fx_cc_binary(linkshared = True)`.
-- **Platform constraints**: Targets guarded by `if (is_fuchsia)`/`assert(is_fuchsia)` or using
-  unguarded Zircon/FIDL headers set `target_compatible_with = ["@platforms//os:fuchsia"]`
-  (`bazel2gn` emits `if (is_fuchsia)`). For `if (is_host)`/`assert(is_host)` targets (except
-  host-only macros like `ffx_plugin`/`ffx_tool`/`*_host_tool`), set
-  `target_compatible_with = HOST_OS_CONSTRAINTS` (`//build/bazel/platforms:constraints.bzl`).
-  Never add `@rules_cc//cc/compiler:gcc` branches.
+- **Platform constraints**: Guarded `if (is_fuchsia)`/`assert(is_fuchsia)` targets or unguarded
+  Zircon/FIDL headers set `target_compatible_with = ["@platforms//os:fuchsia"]` (`bazel2gn` emits
+  `if (is_fuchsia)`). Guarded `if (is_host)`/`assert(is_host)` targets (except host-only macros
+  `ffx_plugin`/`ffx_tool`/`*_host_tool`) set `target_compatible_with = HOST_OS_CONSTRAINTS`
+  (`//build/bazel/platforms:constraints.bzl`). Never add `@rules_cc//cc/compiler:gcc` branches.
 - **`copts` mapping to GN `configs`**: Keep local `config(...)` above the sentinel, list the flags
   in `copts`, and annotate the closing `],`:
   `],  # @bazel2gn:raw_overwrite:[ "//build/config:optimize_speed", "//build/config:frame_pointers" ]`
@@ -107,9 +110,6 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
      when the generated target already assigns that attribute). Use `# @bazel2gn:value_overwrite:$var`
      on `rustc_env` entries and `# @bazel2gn:raw_overwrite:[ var ]` on `compile_data`'s closing `],`
      for GN path variables above the sentinel.
-- **Raw executable `output_name`**: When an un-packaged `fx_cc_binary`'s GN `output_name` differs
-  from its target name, annotate `# @bazel2gn:raw_attribute:output_name = "<name>"` with an
-  explanatory comment above the target so `bazel2gn` preserves the binary name.
 - **Compiled manifests (`cm()`)**: Migrate GN `cm("<name>")` to `fx_compiled_manifest(...)` from
   `//build/bazel/rules/components:fx_component.bzl` (use `fx_component_manifest` for packaged
   `fx_component`s; update `//tools/cmc/build/restricted_features` for `restricted_features`).

@@ -1925,6 +1925,16 @@ if head and base_rev and head != base_rev:
                     )
 
         check_cq_include_trybots(lines)
+        if check_dirs and not any(d.startswith("src/connectivity/wlan") for d in check_dirs):
+            for idx_b, raw_b in enumerate(lines, start=1):
+                if "543568916" in raw_b:
+                    add(
+                        "wrong_subsystem_bug_footer",
+                        idx_b,
+                        f"Commit message line `{raw_b.strip()}` cites WLAN-only tracking bug `543568916` on a non-WLAN migration (`{', '.join('//' + d for d in check_dirs)}`).",
+                        "Remove `Bug: 543568916` (or replace `543568916` with `570694755` or the verified open bug for the migrated subsystem).",
+                        severity="error",
+                    )
         nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
         if nonempty_idxs:
             final_start = nonempty_idxs[-1]

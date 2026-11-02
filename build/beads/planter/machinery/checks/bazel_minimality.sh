@@ -1351,8 +1351,10 @@ for rel_path, full_path in bazel_files:
     # BUILD.bazel (e.g. widening visibility) does not demand renaming existing targets
     # (which would violate migration_sanity/dropped_preexisting_bazel_target).
     def check_rustc_test_raw_output_name(call_node, r_name, t_name):
-        """Flag `# @bazel2gn:raw_attribute:output_name` on newly added Rust test targets."""
-        if r_name not in ("rustc_test", "rust_test", "host_rustc_test") or not t_name:
+        """Flag `# @bazel2gn:raw_attribute:output_name` on newly added Rust test and C++ binary/test targets."""
+        is_rust_test = r_name in ("rustc_test", "rust_test", "host_rustc_test")
+        is_cc_bin = r_name in ("fx_cc_binary", "fx_cc_test_binary", "fx_cc_test")
+        if (not is_rust_test and not is_cc_bin) or not t_name:
             return
         idx = getattr(call_node, "lineno", 1) - 2
         raw_out_re = re.compile(
@@ -1373,31 +1375,60 @@ for rel_path, full_path in bazel_files:
                         continue
                     out_name = m.group(1)
                     annot_line = idx + 1
-                    msg_text = (
-                        f"Target '{t_name}' ({r_name}) uses "
-                        f"`# @bazel2gn:raw_attribute:output_name = \"{out_name}\"`, "
-                        f"which is unnecessary when the test target is named "
-                        f"`\"{out_name}\"` (giving GN `bin/{out_name}` by default to "
-                        "match any `.cml` manifest while `wrap_host_rust_test` keeps "
-                        "its `tests.json` name)."
-                    )
-                    rem_text = (
-                        f"Remove `# @bazel2gn:raw_attribute:output_name = \"{out_name}\"` "
-                        f"above `{t_name}` in '{rel_path}', rename the `{r_name}` target "
-                        f"to `name = \"{out_name}\"`, update any in-package test wrappers "
-                        f"(`binary_name = \"{out_name}\"` on `wrap_host_rust_test` while "
-                        f"keeping its `name`, `binary = \":{out_name}\"` on "
-                        f"`fx_packaged_binary`, or `unit_tests = [\":{out_name}\"]` on "
-                        f"`fx_unittest_package` / `fx_unittest_component`), re-run "
-                        f"`fx bazel2gn -d {pkg_dir}`, and update any hand-written "
-                        f"`{pkg_dir}/BUILD.gn` references (`\":{t_name}\"` and "
-                        f"`\":{t_name}($host_toolchain)\"`) to `\":{out_name}\"` and "
-                        f"`\":{out_name}($host_toolchain)\"`."
-                    )
-                    _emit(findings, "rustc_test_raw_output_name_annotation", "error", rel_path, annot_line, msg_text, rem_text)
+                    if is_cc_bin:
+                        msg_text = (
+                            f"Target '{t_name}' ({r_name}) uses "
+                            f"`# @bazel2gn:raw_attribute:output_name = \"{out_name}\"` "
+                            f"instead of the native `gn_output_name = \"{out_name}\"` attribute."
+                        )
+                        rem_text = (
+                            f"Remove `# @bazel2gn:raw_attribute:output_name = \"{out_name}\"` "
+                            f"(and any comment justifying it) above `{t_name}` in '{rel_path}', "
+                            f"set `gn_output_name = \"{out_name}\"` on `{r_name}(name = \"{t_name}\")` "
+                            f"(omit if `{out_name}` equals `{t_name}`), and re-run "
+                            f"`fx bazel2gn -d {pkg_dir}`."
+                        )
+                        _emit(findings, "cc_binary_raw_output_name_annotation", "error", rel_path, annot_line, msg_text, rem_text)
+                    else:
+                        msg_text = (
+                            f"Target '{t_name}' ({r_name}) uses "
+                            f"`# @bazel2gn:raw_attribute:output_name = \"{out_name}\"`, "
+                            f"which is unnecessary when the test target is named "
+                            f"`\"{out_name}\"` (giving GN `bin/{out_name}` by default to "
+                            "match any `.cml` manifest while `wrap_host_rust_test` keeps "
+                            "its `tests.json` name)."
+                        )
+                        rem_text = (
+                            f"Remove `# @bazel2gn:raw_attribute:output_name = \"{out_name}\"` "
+                            f"above `{t_name}` in '{rel_path}', rename the `{r_name}` target "
+                            f"to `name = \"{out_name}\"`, update any in-package test wrappers "
+                            f"(`binary_name = \"{out_name}\"` on `wrap_host_rust_test` while "
+                            f"keeping its `name`, `binary = \":{out_name}\"` on "
+                            f"`fx_packaged_binary`, or `unit_tests = [\":{out_name}\"]` on "
+                            f"`fx_unittest_package` / `fx_unittest_component`), re-run "
+                            f"`fx bazel2gn -d {pkg_dir}`, and update any hand-written "
+                            f"`{pkg_dir}/BUILD.gn` references (`\":{t_name}\"` and "
+                            f"`\":{t_name}($host_toolchain)\"`) to `\":{out_name}\"` and "
+                            f"`\":{out_name}($host_toolchain)\"`."
+                        )
+                        _emit(findings, "rustc_test_raw_output_name_annotation", "error", rel_path, annot_line, msg_text, rem_text)
                 idx -= 1
                 continue
             break
+
+    # Flag WLAN-only tracking bug 543568916 when cited in non-WLAN packages.
+    if pkg_dir and not pkg_dir.startswith("src/connectivity/wlan"):
+        for idx_l, raw_l in enumerate(src_lines, start=1):
+            if "543568916" in raw_l and re.sub(r"\s+", "", raw_l) not in base_bazel_flat:
+                _emit(
+                    findings,
+                    "wrong_subsystem_todo_bug",
+                    "error",
+                    rel_path,
+                    idx_l,
+                    f"Line cites `543568916` (the WLAN-only Bazel migration tracking bug) in non-WLAN package `//{pkg_dir}`.",
+                    f"Replace `543568916` in '{rel_path}' with `570694755` (general Bazel migration tech debt) or a verified open bug for `//{pkg_dir}`.",
+                )
 
     # Check that newly added top-level _-prefixed variables are shared across >= 2 references.
     def check_single_use_private_vars(tree_node):
@@ -2360,8 +2391,8 @@ for rel_path, full_path in bazel_files:
                 _emit(findings, "redundant_default_attribute", "error", rel_path, lineno, f"Target '{target_name}' ({rule_name}) specifies redundant `crate_root = \"{c_root}\"`, "
                         f"which is the default for `{rule_name}`.", "Remove `crate_root` from BUILD.bazel and re-run `fx bazel2gn`.")
 
-        # 3b. Redundant output_name / out matching name (or unsupported output_name on go_binary / go_binary_host_tool)
-        for out_attr in ("output_name", "out"):
+        # 3b. Redundant output_name / gn_output_name / out matching name (or unsupported output_name on go_binary / fx_cc_*)
+        for out_attr in ("output_name", "gn_output_name", "out"):
             if out_attr not in kw_map:
                 continue
             out_val, lineno = kw_map[out_attr]
@@ -2377,6 +2408,9 @@ for rel_path, full_path in bazel_files:
                 _emit(findings, "redundant_default_attribute", "error", rel_path, lineno, f"Target '{target_name}' ({rule_name}) specifies `output_name = \"{out_val}\"`, "
                         f"which is not a valid attribute on `{rule_name}` (`go_binary` uses `out` when a custom binary name is needed).", f"Omit `output_name` when it matches `name`, or use `out = \"{out_val}\"` if a custom binary name is required, "
                         "without modifying shared macros in `//build/bazel/rules/host:defs.bzl`.")
+            elif out_attr == "output_name" and rule_name in ("fx_cc_binary", "fx_cc_test_binary", "fx_cc_test"):
+                _emit(findings, "unsupported_cc_output_name_attribute", "error", rel_path, lineno, f"Target '{target_name}' ({rule_name}) specifies `output_name = \"{out_val}\"`, "
+                        f"which is not a valid attribute on `{rule_name}`; use `gn_output_name = \"{out_val}\"` instead.", f"Replace `output_name = \"{out_val}\"` with `gn_output_name = \"{out_val}\"` on `{target_name}` in '{rel_path}' and re-run `fx bazel2gn`.")
 
         # 3c. Legacy host-tool macros (go_binary_host_tool, py_binary_host_tool) require
         #     caller package visibility on //build/bazel/versioning:is_api_level_PLATFORM.

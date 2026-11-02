@@ -1053,8 +1053,10 @@ def check_custom_output_or_crate_name_dropped(
                 f"at the change base, but the migrated target in '{gn_rel}' dropped it."
             ),
             "remediation": (
-                f'Preserve `output_name = "{expected}"` on `{name}` in `{bazel_rel}` / '
-                f"`{gn_rel}` and re-run `fx bazel2gn -d {pkg}`."
+                f'Set `gn_output_name = "{expected}"` on `{bt_rule}(name = "{name}")` in '
+                f"'{bazel_rel}' (and `binary_name = \"{expected}\"` on `fx_packaged_binary` "
+                f"when packaged; never `# @bazel2gn:raw_attribute:output_name`) and re-run "
+                f"`fx bazel2gn -d {pkg}`."
             ),
         }
     return None
