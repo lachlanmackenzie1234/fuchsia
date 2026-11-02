@@ -17,7 +17,7 @@ use fuchsia_component::client as fclient;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use futures::{StreamExt as _, TryStreamExt as _};
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::Mutex;
+use starnix_sync::{LockDepMutex, Mutex, ServiceWatcherInnerLock};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -373,14 +373,14 @@ impl<S: ServiceMarker> Default for ServiceWatcherInner<S> {
 
 struct ServiceWatcherState<S: ServiceMarker> {
     watch_started: AtomicBool,
-    inner: Mutex<ServiceWatcherInner<S>>,
+    inner: LockDepMutex<ServiceWatcherInner<S>, ServiceWatcherInnerLock>,
 }
 
 impl<S: ServiceMarker> Default for ServiceWatcherState<S> {
     fn default() -> Self {
         Self {
             watch_started: AtomicBool::new(false),
-            inner: Mutex::new(ServiceWatcherInner::default()),
+            inner: LockDepMutex::new(ServiceWatcherInner::default()),
         }
     }
 }

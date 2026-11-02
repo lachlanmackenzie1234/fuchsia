@@ -397,6 +397,7 @@ lock_ordering! {
     Terminal(SeLinuxPendingFileSystemsLock),
     Terminal(SeLinuxSecurityServerStateLock),
     Terminal(SeLinuxUpdateLock),
+    Terminal(ServiceWatcherInnerLock),
     Terminal(SignalActionsLock),
     Terminal(SocketStateLock),
     Terminal(StarnixKernelWakeLeaseLock),
