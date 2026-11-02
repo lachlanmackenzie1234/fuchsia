@@ -232,6 +232,7 @@ lock_ordering! {
     ThreadGroupMutableStateLock => DeviceTerminalsLock,
     ThreadGroupMutableStateLock => TaskSchedulerStateLock,
     ThreadGroupPtraceesLock => ThreadGroupMutableStateLock,
+    ThreadLockupDetectorFirstSeenLock => ThreadLockupDetectorRegistryLock,
     TimerFileInfoLock => HrTimerManagerStateLock,
     TimerFileInfoLock => MemoryManagerStateLock,
     TimerFileInfoLock => TaskMutableStateLock,

@@ -9,7 +9,10 @@
 //! It uses a global registry to track active operations across all threads.
 
 use pin_project::pin_project;
-use starnix_sync::{LockDepRwLock, ThreadLockupDetectorRegistryLock};
+use starnix_sync::{
+    LockDepMutex, LockDepRwLock, ThreadLockupDetectorFirstSeenLock,
+    ThreadLockupDetectorRegistryLock,
+};
 use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -133,8 +136,9 @@ pub struct ThreadLockupInfo {
 
 /// For each thread running an operation, the generation of that operation and the time at which
 /// `get_long_running_threads` first observed it.
-static FIRST_SEEN: LazyLock<fuchsia_sync::Mutex<HashMap<zx::Koid, (u64, zx::MonotonicInstant)>>> =
-    LazyLock::new(|| Default::default());
+static FIRST_SEEN: LazyLock<
+    LockDepMutex<HashMap<zx::Koid, (u64, zx::MonotonicInstant)>, ThreadLockupDetectorFirstSeenLock>,
+> = LazyLock::new(|| Default::default());
 
 /// Global registry of all tracked threads.
 static REGISTRY: LazyLock<
@@ -184,8 +188,8 @@ impl ThreadLockupDetector {
     /// When called periodically, this delays reports by at most one period.
     pub fn get_long_running_threads(threshold: zx::MonotonicDuration) -> Vec<ThreadLockupInfo> {
         let now = zx::MonotonicInstant::get();
-        let registry = REGISTRY.read();
         let mut first_seen = FIRST_SEEN.lock();
+        let registry = REGISTRY.read();
         // Forget threads that are idle or gone.
         first_seen.retain(|koid, _| {
             registry.get(koid).is_some_and(|registered| {
