@@ -61,13 +61,34 @@ headers, and metadata directly in a single graph without sub-builds:
    `obj/<cpu>-api-<level>/sysroot/` using relative symlinks, and validates the
    result against `//build/sdk/meta/sysroot.json`.
 
-Note: While `//zircon/public/sysroot_sdk:sysroot_sdk_export` generates the
-complete sysroot atom from the top-level build (and `//build/sdk/generate_idk`
-supports merging multi-version/multi-variant sysroot atoms), wiring IDK
-sub-builds and the final IDK export to consume it directly is performed in
-follow-up changes. Recursive GN/Ninja sub-builds remain in use for non-sysroot
-prebuilt libraries (such as `libfdio.so`) and SDK packages, which genuinely
-depend on both the target CPU architecture and the target API level.
+Note: While the sysroot artifacts are generated from the top-level build,
+recursive GN/Ninja sub-builds are still used for non-sysroot prebuilt libraries
+(such as `libfdio.so`) and SDK packages, which genuinely depend on both the
+target CPU architecture and the target API level.
+
+3. **Sub-Build Prebuilt Sysroot Re-use**:
+   IDK sub-builds do not compile Musl libc or regenerate headers and linker
+   stubs. Instead, `idk_subbuilds()` configures each sub-build with:
+   ```gn
+   target_sysroot = "//<top_build_dir>/sysroot_idk_export/arch/<target_cpu>/sysroot"
+   ```
+   When `target_sysroot` is non-empty:
+   - Clang and Rustc compile with `--sysroot` pointing directly to the
+     top-level exported sysroot directory.
+   - Toolchain dependencies in `//build/config/fuchsia:source_deps` and
+     `//build/config/fuchsia:link_deps` do not depend on
+     `//zircon/public/sysroot`.
+   - `terminal_link_deps` provides runtime `distribution_entries` for `ld.so.1`
+     directly from `${target_sysroot}/dist/lib/ld.so.1` instead of compiling
+     `//sdk/lib/c:libc`.
+   - `generate_sysroot_idk_atom.py` creates `dist/lib/ld.so.1.debug` (and
+     `dist/lib/{asan,hwasan}/ld.so.1.debug`) symlinks pointing to the
+     unstripped `debug/libc.so` binaries so package ELF verification
+     (`verify_manifest_elf_binaries.py`) in sub-builds can locate the
+     unstripped dynamic linker.
+   - The sub-build action in top-level Ninja takes an order-only dependency on
+     `//zircon/public/sysroot_sdk:sysroot_sdk_export`.
+   This eliminates dozens of redundant libc compilations across sub-builds.
 
 ---
 

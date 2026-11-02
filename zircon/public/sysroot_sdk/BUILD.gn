@@ -386,6 +386,7 @@ action("sysroot_sdk_export") {
   script = "//build/sdk/generate_sysroot_idk_atom.py"
   _export_dir = "$root_build_dir/sysroot_idk_export"
   _meta_json = "$_export_dir/pkg/sysroot/meta.json"
+  _manifest_json = "$_export_dir/meta/manifest.json"
   _stamp_file = "$target_gen_dir/$target_name.stamp"
   _depfile = "$target_gen_dir/$target_name.d"
   _validator_tool =
@@ -403,6 +404,7 @@ action("sysroot_sdk_export") {
 
   outputs = [
     _meta_json,
+    _manifest_json,
     _stamp_file,
   ]
 

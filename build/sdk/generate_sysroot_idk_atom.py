@@ -99,23 +99,23 @@ def main() -> int:
 
     headers = manifest["headers"]
     ifs_files = manifest["ifs_files"]
-    musl_lib_ld = pathlib.Path(manifest["musl_lib_ld"]).resolve()
+    musl_lib_ld = pathlib.Path(manifest["musl_lib_ld"])
 
     dest_to_src: dict[pathlib.Path, pathlib.Path] = {}
     input_files: set[pathlib.Path] = {
-        args.manifest.resolve(),
-        args.schema.resolve(),
+        args.manifest,
+        args.schema,
     }
     if args.manifest_schema:
-        input_files.add(args.manifest_schema.resolve())
+        input_files.add(args.manifest_schema)
 
     # Map IFS files
     dest_to_src[args.output_dir / "pkg/sysroot/libc.ifs"] = pathlib.Path(
         ifs_files["libc"]
-    ).resolve()
+    )
     dest_to_src[args.output_dir / "pkg/sysroot/zircon.ifs"] = pathlib.Path(
         ifs_files["zircon"]
-    ).resolve()
+    )
 
     versions = {}
     variants = []
@@ -170,18 +170,18 @@ def main() -> int:
 
         # Per-CPU file mappings for arch/<cpu>/sysroot
         for h in headers:
-            src = pathlib.Path(h["source"]).resolve()
+            src = pathlib.Path(h["source"])
             dest_to_src[args.output_dir / arch_base / h["dest"]] = src
 
         dest_to_src[args.output_dir / arch_base / "lib/libc.so"] = pathlib.Path(
             cpu_info["stubs"]["libc"]
-        ).resolve()
+        )
         dest_to_src[
             args.output_dir / arch_base / "lib/libzircon.so"
-        ] = pathlib.Path(cpu_info["stubs"]["libzircon"]).resolve()
+        ] = pathlib.Path(cpu_info["stubs"]["libzircon"])
         dest_to_src[args.output_dir / arch_base / "lib/Scrt1.o"] = pathlib.Path(
             cpu_info["startfiles"]["scrt1"]
-        ).resolve()
+        )
 
         for lib_name in ["libdl.so", "libm.so", "libpthread.so", "librt.so"]:
             dest_to_src[
@@ -190,25 +190,34 @@ def main() -> int:
 
         dest_to_src[
             args.output_dir / arch_base / "dist/lib/ld.so.1"
-        ] = pathlib.Path(cpu_info["dist_libs"]["ld_so"]).resolve()
+        ] = pathlib.Path(cpu_info["dist_libs"]["ld_so"])
+        dest_to_src[
+            args.output_dir / arch_base / "dist/lib/ld.so.1.debug"
+        ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"])
         dest_to_src[
             args.output_dir / arch_base / "dist/lib/asan/ld.so.1"
-        ] = pathlib.Path(cpu_info["dist_libs"]["asan_ld_so"]).resolve()
+        ] = pathlib.Path(cpu_info["dist_libs"]["asan_ld_so"])
+        dest_to_src[
+            args.output_dir / arch_base / "dist/lib/asan/ld.so.1.debug"
+        ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"])
         if "hwasan_ld_so" in cpu_info["dist_libs"]:
             dest_to_src[
                 args.output_dir / arch_base / "dist/lib/hwasan/ld.so.1"
-            ] = pathlib.Path(cpu_info["dist_libs"]["hwasan_ld_so"]).resolve()
+            ] = pathlib.Path(cpu_info["dist_libs"]["hwasan_ld_so"])
+            dest_to_src[
+                args.output_dir / arch_base / "dist/lib/hwasan/ld.so.1.debug"
+            ] = pathlib.Path(cpu_info["debug_libs"]["hwasan_libc_so"])
 
         dest_to_src[
             args.output_dir / arch_base / "debug/libc.so"
-        ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"]).resolve()
+        ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"])
         dest_to_src[
             args.output_dir / arch_base / "debug/asan/libc.so"
-        ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"]).resolve()
+        ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"])
         if "hwasan_libc_so" in cpu_info["debug_libs"]:
             dest_to_src[
                 args.output_dir / arch_base / "debug/hwasan/libc.so"
-            ] = pathlib.Path(cpu_info["debug_libs"]["hwasan_libc_so"]).resolve()
+            ] = pathlib.Path(cpu_info["debug_libs"]["hwasan_libc_so"])
 
         # Per (CPU, API Level) variants
         for api_level in args.api_levels:
@@ -248,18 +257,18 @@ def main() -> int:
 
             # Files for obj/<cpu>-api-<level>/sysroot
             for h in headers:
-                src = pathlib.Path(h["source"]).resolve()
+                src = pathlib.Path(h["source"])
                 dest_to_src[args.output_dir / obj_base / h["dest"]] = src
 
             dest_to_src[
                 args.output_dir / obj_base / "lib/libc.so"
-            ] = pathlib.Path(cpu_info["stubs"]["libc"]).resolve()
+            ] = pathlib.Path(cpu_info["stubs"]["libc"])
             dest_to_src[
                 args.output_dir / obj_base / "lib/libzircon.so"
-            ] = pathlib.Path(cpu_info["stubs"]["libzircon"]).resolve()
+            ] = pathlib.Path(cpu_info["stubs"]["libzircon"])
             dest_to_src[
                 args.output_dir / obj_base / "lib/Scrt1.o"
-            ] = pathlib.Path(cpu_info["startfiles"]["scrt1"]).resolve()
+            ] = pathlib.Path(cpu_info["startfiles"]["scrt1"])
 
             for lib_name in [
                 "libdl.so",
@@ -273,29 +282,34 @@ def main() -> int:
 
             dest_to_src[
                 args.output_dir / obj_base / "dist/lib/ld.so.1"
-            ] = pathlib.Path(cpu_info["dist_libs"]["ld_so"]).resolve()
+            ] = pathlib.Path(cpu_info["dist_libs"]["ld_so"])
+            dest_to_src[
+                args.output_dir / obj_base / "dist/lib/ld.so.1.debug"
+            ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"])
             dest_to_src[
                 args.output_dir / obj_base / "dist/lib/asan/ld.so.1"
-            ] = pathlib.Path(cpu_info["dist_libs"]["asan_ld_so"]).resolve()
+            ] = pathlib.Path(cpu_info["dist_libs"]["asan_ld_so"])
+            dest_to_src[
+                args.output_dir / obj_base / "dist/lib/asan/ld.so.1.debug"
+            ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"])
             if "hwasan_ld_so" in cpu_info["dist_libs"]:
                 dest_to_src[
                     args.output_dir / obj_base / "dist/lib/hwasan/ld.so.1"
-                ] = pathlib.Path(
-                    cpu_info["dist_libs"]["hwasan_ld_so"]
-                ).resolve()
+                ] = pathlib.Path(cpu_info["dist_libs"]["hwasan_ld_so"])
+                dest_to_src[
+                    args.output_dir / obj_base / "dist/lib/hwasan/ld.so.1.debug"
+                ] = pathlib.Path(cpu_info["debug_libs"]["hwasan_libc_so"])
 
             dest_to_src[
                 args.output_dir / obj_base / "debug/libc.so"
-            ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"]).resolve()
+            ] = pathlib.Path(cpu_info["debug_libs"]["libc_so"])
             dest_to_src[
                 args.output_dir / obj_base / "debug/asan/libc.so"
-            ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"]).resolve()
+            ] = pathlib.Path(cpu_info["debug_libs"]["asan_libc_so"])
             if "hwasan_libc_so" in cpu_info["debug_libs"]:
                 dest_to_src[
                     args.output_dir / obj_base / "debug/hwasan/libc.so"
-                ] = pathlib.Path(
-                    cpu_info["debug_libs"]["hwasan_libc_so"]
-                ).resolve()
+                ] = pathlib.Path(cpu_info["debug_libs"]["hwasan_libc_so"])
 
     meta = {
         "name": "sysroot",
@@ -316,8 +330,8 @@ def main() -> int:
     # Validate pkg/sysroot/meta.json
     res = subprocess.run(
         [
-            str(args.json_validator.resolve()),
-            str(args.schema.resolve()),
+            str(args.json_validator),
+            str(args.schema),
             str(meta_json_path),
         ],
         capture_output=True,
@@ -354,8 +368,8 @@ def main() -> int:
         if args.manifest_schema:
             res = subprocess.run(
                 [
-                    str(args.json_validator.resolve()),
-                    str(args.manifest_schema.resolve()),
+                    str(args.json_validator),
+                    str(args.manifest_schema),
                     str(manifest_path),
                 ],
                 capture_output=True,
@@ -378,12 +392,12 @@ def main() -> int:
 
     if args.depfile:
         args.depfile.parent.mkdir(parents=True, exist_ok=True)
-        target_output = str(
+        target_output = os.path.relpath(
             args.stamp_file if args.stamp_file else meta_json_path
         )
         deps_str = " ".join(
             sorted(
-                str(f).replace(" ", "\\ ")
+                os.path.relpath(f).replace(" ", "\\ ")
                 for f in input_files
                 if f.exists() or f.is_symlink()
             )
