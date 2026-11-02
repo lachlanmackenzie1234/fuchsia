@@ -900,9 +900,11 @@ mod tests {
     /// started, the way a driver's own background task would.
     static ALERTING_DRIVER_REPORTER: std::sync::Mutex<Option<HealthAlertReporter>> =
         std::sync::Mutex::new(None);
+    static ALERTING_DRIVER_LATCH: std::sync::Mutex<Option<crate::HealthAlertLatch>> =
+        std::sync::Mutex::new(None);
 
-    /// Reports an alert from inside `start` and publishes its reporter for the test to report
-    /// another later.
+    /// Reports an alert from inside `start` and publishes its reporter and shared latch for the
+    /// test to use later.
     struct AlertingDriver;
 
     impl Driver for AlertingDriver {
@@ -913,6 +915,10 @@ mod tests {
                 HealthCheckResponse::default(),
             ));
             *ALERTING_DRIVER_REPORTER.lock().unwrap() = Some(context.health_alert_reporter());
+            // Every call returns a handle onto the same per-driver latch.
+            let latch = context.health_alert_latch();
+            latch.raise_degraded("BUS_RETRIES", "retrying bus transfer");
+            *ALERTING_DRIVER_LATCH.lock().unwrap() = Some(context.health_alert_latch());
             Ok(Self)
         }
         async fn stop(&self) {}
@@ -926,6 +932,14 @@ mod tests {
                 client.start(DriverStartArgs::default()).await.unwrap().unwrap();
                 // The alert reported during `start` is sent over the `Driver` channel.
                 assert!(matches!(alerts.next().await, Some(HealthAlert::UpstreamNeighborFault(_))));
+                // So is the latch's first raise.
+                let Some(HealthAlert::SelfFault(latched)) = alerts.next().await else {
+                    panic!("expected latched SelfFault");
+                };
+                assert_eq!(
+                    latched.conditions.unwrap()[0].reason_code.as_deref(),
+                    Some("BUS_RETRIES")
+                );
 
                 let reporter =
                     ALERTING_DRIVER_REPORTER.lock().unwrap().take().expect("driver started");
@@ -944,6 +958,17 @@ mod tests {
                     details.conditions.unwrap()[0].reason_code.as_deref(),
                     Some("DMA_STALLED")
                 );
+
+                // The second handle shares state with the one used in `start`: a duplicate raise
+                // is deduplicated (no alert), and clearing the only condition emits a recovery.
+                let latch = ALERTING_DRIVER_LATCH.lock().unwrap().take().expect("driver started");
+                latch.raise_degraded("BUS_RETRIES", "retrying bus transfer");
+                assert_eq!(latch.snapshot()[0].occurrence_count, Some(2));
+                latch.clear("BUS_RETRIES");
+                let Some(HealthAlert::SelfFault(recovered)) = alerts.next().await else {
+                    panic!("expected recovery SelfFault");
+                };
+                assert!(recovered.conditions.is_none());
 
                 client.stop().await.unwrap();
             },
