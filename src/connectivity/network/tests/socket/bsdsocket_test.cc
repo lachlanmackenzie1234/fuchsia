@@ -1179,6 +1179,34 @@ TEST_P(SocketOptsTest, GetTcpCongestionWithZeroOptLen) {
   ASSERT_STREQ(buf, "TEST");
 }
 
+TEST_P(SocketOptsTest, ResetTcpMaxSegToDefault) {
+  if (!IsTCP()) {
+    GTEST_SKIP() << "Skip TCP_MAXSEG tests for non TCP sockets";
+  }
+
+  fbl::unique_fd s;
+  ASSERT_TRUE(s = NewSocket()) << strerror(errno);
+
+  constexpr int kCustomMss = 1024;
+  ASSERT_EQ(setsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &kCustomMss, sizeof(kCustomMss)), 0)
+      << strerror(errno);
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  ASSERT_EQ(getsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &get, &get_len), 0) << strerror(errno);
+  ASSERT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kCustomMss);
+
+  constexpr int kResetMss = 0;
+  constexpr int kDefaultMss = 536;
+  ASSERT_EQ(setsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &kResetMss, sizeof(kResetMss)), 0)
+      << strerror(errno);
+  ASSERT_EQ(getsockopt(s.get(), SOL_TCP, TCP_MAXSEG, &get, &get_len), 0) << strerror(errno);
+  ASSERT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kDefaultMss);
+
+  EXPECT_EQ(close(s.release()), 0) << strerror(errno);
+}
+
 TEST_P(SocketOptsTest, GetsockoptTruncation) {
   fbl::unique_fd s;
   ASSERT_TRUE(s = NewSocket()) << strerror(errno);

@@ -10011,6 +10011,90 @@ mod tests {
     }
 
     #[ip_test(I)]
+    #[test_case(Some(1000), None, 1000; "client_user_mss")]
+    #[test_case(None, Some(800), 800; "server_user_mss")]
+    #[test_case(Some(1000), Some(800), 800; "both_user_mss")]
+    #[test_case(
+        Some(2000),
+        Some(2000),
+        Mss::from_mms(Mms::from_mtu::<I>(LINK_MTU, 0).unwrap()).unwrap().get();
+        "clamped_to_device_mss"
+    )]
+    fn tcp_user_mss<I: TcpTestIpExt>(
+        client_user_mss: Option<u16>,
+        server_user_mss: Option<u16>,
+        expected_mss: u16,
+    ) where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+        let mut net = new_test_net::<I>();
+        let backlog = NonZeroUsize::new(1).unwrap();
+        let server_port = NonZeroU16::new(1234).unwrap();
+
+        let server = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let server = api.create(Default::default());
+            if let Some(user_mss) = server_user_mss {
+                api.with_socket_options_mut(&server, |so| {
+                    so.user_mss = Some(Mss::new(user_mss).unwrap());
+                });
+            }
+            api.bind(&server, None, Some(server_port)).expect("failed to bind server");
+            api.listen(&server, backlog).expect("can listen");
+            server
+        });
+
+        let client = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let client = api.create(Default::default());
+            if let Some(user_mss) = client_user_mss {
+                api.with_socket_options_mut(&client, |so| {
+                    so.user_mss = Some(Mss::new(user_mss).unwrap());
+                });
+            }
+            api.connect(&client, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), server_port)
+                .expect("failed to connect");
+            client
+        });
+
+        net.run_until_idle();
+
+        let accepted = net.with_context(REMOTE, |ctx| {
+            let (accepted, _addr, _accepted_ends) =
+                ctx.tcp_api::<I>().accept(&server).expect("failed to accept");
+            accepted
+        });
+
+        // Timestamps are enabled by default and reduce the negotiated MSS.
+        const TIMESTAMP_OPTION_LEN: u32 =
+            packet_formats::tcp::options::ALIGNED_TIMESTAMP_OPTION_LENGTH as u32;
+        let expected_snd_mss = u32::from(expected_mss) - TIMESTAMP_OPTION_LEN;
+
+        net.with_context(LOCAL, |ctx| {
+            let client_info = ctx.tcp_api::<I>().get_tcp_info(&client);
+            assert_eq!(client_info.snd_mss, Some(expected_snd_mss));
+            ctx.tcp_api::<I>().with_socket_options_mut(&client, |so| so.user_mss = Some(Mss::MIN));
+            let client_info = ctx.tcp_api::<I>().get_tcp_info(&client);
+            assert_eq!(client_info.snd_mss, Some(expected_snd_mss));
+        });
+
+        net.with_context(REMOTE, |ctx| {
+            let accepted_info = ctx.tcp_api::<I>().get_tcp_info(&accepted);
+            assert_eq!(accepted_info.snd_mss, Some(expected_snd_mss));
+            ctx.tcp_api::<I>()
+                .with_socket_options_mut(&accepted, |so| so.user_mss = Some(Mss::MIN));
+            let accepted_info = ctx.tcp_api::<I>().get_tcp_info(&accepted);
+            assert_eq!(accepted_info.snd_mss, Some(expected_snd_mss));
+        });
+    }
+
+    #[ip_test(I)]
     fn do_send_can_remove_sockets_from_demux_state<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<

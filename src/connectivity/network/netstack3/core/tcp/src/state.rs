@@ -135,8 +135,10 @@ impl Closed<Initial> {
             fin_wait2_timeout: _,
             max_syn_retries,
             ip_options: _,
+            user_mss,
         }: &SocketOptions,
     ) -> (SynSent<I, ActiveOpen>, Segment<()>) {
+        let device_mss = user_mss.map_or(device_mss, |user_mss| device_mss.min(user_mss));
         let rcv_wnd_scale = buffer_sizes.rwnd().scale();
         // RFC 7323 Section 2.2:
         //  The window field in a segment where the SYN bit is set (i.e., a
@@ -185,9 +187,26 @@ impl Closed<Initial> {
         buffer_sizes: BufferSizes,
         device_mss: Mss,
         default_mss: Mss,
-        user_timeout: Option<NonZeroDuration>,
+        SocketOptions {
+            keep_alive: _,
+            nagle_enabled: _,
+            user_timeout,
+            delayed_ack: _,
+            fin_wait2_timeout: _,
+            max_syn_retries: _,
+            ip_options: _,
+            user_mss,
+        }: &SocketOptions,
     ) -> Listen {
-        Listen { iss, timestamp_offset, buffer_sizes, device_mss, default_mss, user_timeout }
+        let device_mss = user_mss.map_or(device_mss, |user_mss| device_mss.min(user_mss));
+        Listen {
+            iss,
+            timestamp_offset,
+            buffer_sizes,
+            device_mss,
+            default_mss,
+            user_timeout: *user_timeout,
+        }
     }
 }
 
@@ -1642,6 +1661,7 @@ impl<I: Instant, S: SendBuffer> SendInner<I, S> {
             fin_wait2_timeout: _,
             max_syn_retries: _,
             ip_options: _,
+            user_mss: _,
         }: &SocketOptions,
     ) -> Option<Segment<S::Payload<'_>>> {
         let Self {
@@ -2008,6 +2028,7 @@ impl<I: Instant, S: SendBuffer> SendInner<I, S> {
             fin_wait2_timeout: _,
             max_syn_retries: _,
             ip_options: _,
+            user_mss: _,
         }: &SocketOptions,
     ) -> (Option<Segment<()>>, DataAcked) {
         let Self {
@@ -2631,6 +2652,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             fin_wait2_timeout,
             max_syn_retries: _,
             ip_options: _,
+            user_mss: _,
         }: &SocketOptions,
         defunct: bool,
     ) -> (Option<Segment<()>>, Option<BP::PassiveOpen>, DataAcked, NewlyClosed)
@@ -3574,6 +3596,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             fin_wait2_timeout: _,
             max_syn_retries: _,
             ip_options: _,
+            user_mss: _,
         }: &SocketOptions,
     ) -> NewlyClosed {
         let timed_out = match self {
@@ -4702,7 +4725,7 @@ mod test {
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
             Mss::DEFAULT_IPV4,
-            None,
+            &SocketOptions::default(),
         );
         listen.on_segment(incoming, FakeInstant::default())
     }
@@ -5247,7 +5270,7 @@ mod test {
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
             Mss::DEFAULT_IPV4,
-            None,
+            &SocketOptions::default(),
         ));
         clock.sleep(RTT / 2);
 
@@ -9988,7 +10011,7 @@ mod test {
                 Default::default(),
                 DEVICE_MAXIMUM_SEGMENT_SIZE,
                 Mss::DEFAULT_IPV4,
-                None,
+                &SocketOptions::default(),
             ));
         let syn_ack_seg = assert_matches!(
             bob_state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
@@ -10328,7 +10351,7 @@ mod test {
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
             Mss::DEFAULT_IPV4,
-            None,
+            &SocketOptions::default(),
         ));
         clock.sleep(RTT / 2);
         let (seg, _) = bob.on_segment_with_default_options::<_, ClientlessBufferProvider>(

@@ -11,7 +11,7 @@ use derivative::Derivative;
 use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::{
-    ChecksumOffloadResult, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms,
+    ChecksumOffloadResult, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms, Mss,
     UnscaledWindowSize, WeakDeviceIdentifier, WindowSize,
 };
 use netstack3_ip::socket::{RouteResolutionOptions, SendOptions};
@@ -397,6 +397,8 @@ pub struct SocketOptions {
     pub max_syn_retries: NonZeroU8,
     /// Ip socket options.
     pub ip_options: TcpIpSockOptions,
+    /// The user-configured maximum segment size.
+    pub user_mss: Option<Mss>,
 }
 
 impl Default for SocketOptions {
@@ -412,6 +414,7 @@ impl Default for SocketOptions {
             fin_wait2_timeout: Some(DEFAULT_FIN_WAIT2_TIMEOUT),
             max_syn_retries: DEFAULT_MAX_SYN_RETRIES,
             ip_options: TcpIpSockOptions::default(),
+            user_mss: None,
         }
     }
 }

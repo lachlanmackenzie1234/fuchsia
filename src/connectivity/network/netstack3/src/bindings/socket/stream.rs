@@ -17,7 +17,7 @@ use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
-use log::{debug, error, warn};
+use log::{debug, error};
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6};
 use net_types::{NonMappedAddr, SpecifiedAddr, ZonedAddr};
 use netstack3_core::IpExt;
@@ -25,7 +25,7 @@ use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
     self, AcceptError, AcceptQueueChange, BindError, BoundInfo, BufferSizes, ConnectError,
-    ConnectionError, ConnectionInfo, IntoBuffers, ListenError, ListenerNotifier, NoConnection,
+    ConnectionError, ConnectionInfo, IntoBuffers, ListenError, ListenerNotifier, Mss, NoConnection,
     OriginalDestinationError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions,
     TcpBindingsTypes, UnboundInfo,
 };
@@ -1313,12 +1313,34 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 let nagle_enabled = self.with_socket_options(|so| so.nagle_enabled);
                 responder.send(Ok(!nagle_enabled)).unwrap_or_log("failed to respond");
             }
-            fposix_socket::StreamSocketRequest::SetTcpMaxSegment { value_bytes: _, responder } => {
-                warn!("stream::SetTcpMaxSegment is not supported, returning Ok(())");
-                responder.send(Ok(())).unwrap_or_log("failed to respond");
+            fposix_socket::StreamSocketRequest::SetTcpMaxSegment { value_bytes, responder } => {
+                let result = match u16::try_from(value_bytes).ok_checked::<TryFromIntError>() {
+                    // Linux treats 0 as resetting the user MSS to the default.
+                    Some(0) => Ok(None),
+                    Some(v) => Mss::new(v).map(Some).ok_or(fposix::Errno::Einval),
+                    None => Err(fposix::Errno::Einval),
+                }
+                .map(|user_mss| {
+                    self.with_socket_options_mut(|so| {
+                        so.user_mss = user_mss;
+                    });
+                });
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::GetTcpMaxSegment { responder } => {
-                respond_not_supported!("stream::GetTcpMaxSegment", responder);
+                let Self { data: BindingData { id, .. }, ctx } = self;
+                let mss = ctx.api().tcp().get_tcp_info(id).snd_mss.unwrap_or_else(|| {
+                    u32::from(
+                        ctx.api()
+                            .tcp()
+                            .with_socket_options(id, |so| so.user_mss)
+                            // Linux returns the IPv4 default MSS on unconnected sockets
+                            // regardless of the socket's domain.
+                            .unwrap_or(Mss::DEFAULT_IPV4)
+                            .get(),
+                    )
+                });
+                responder.send(Ok(mss)).unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetTcpCork { value: _, responder } => {
                 respond_not_supported!("stream::SetTcpCork", responder);

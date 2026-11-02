@@ -239,7 +239,7 @@ pub mod sync {
 
 /// Methods for dealing with TCP sockets.
 pub mod tcp {
-    pub use netstack3_base::{FragmentedPayload, Payload, PayloadLen, TcpSocketState};
+    pub use netstack3_base::{FragmentedPayload, Mss, Payload, PayloadLen, TcpSocketState};
     pub use netstack3_tcp::{
         AcceptError, AcceptQueueChange, BindError, BoundInfo, Buffer, BufferLimits, BufferSizes,
         CongestionControlState, ConnectError, ConnectionError, ConnectionInfo,
