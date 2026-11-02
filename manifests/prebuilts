@@ -237,10 +237,11 @@
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/test_data/media/third_party/chromium_media_test_data_downstream"/>
     <!--   ADB -->
-    <package name="fuchsia/third_party/3pp/platform_tools/adb/${platform}"
-             version="version:2@37.0.0"
+    <!--     Version 37.0.2-16797903 (from git_main-throttled) -->
+    <package name="fuchsia/third_party/android/adb/${platform}"
+             version="bid:2@16797903"
              path="prebuilt/third_party/adb"
-             platforms="linux-amd64,linux-arm64"/>
+             platforms="linux-amd64"/>
 
     <!--   Fastboot -->
     <package name="fuchsia/third_party/fastboot/${platform}"
