@@ -44,8 +44,11 @@ use starnix_modules_gpu::gpu_device_init;
 use starnix_modules_gralloc::gralloc_device_init;
 use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_inotify::inotify::inotify_init;
+pub use starnix_modules_input::serve_input_device_registry;
 use starnix_modules_input::uinput::register_uinput_device;
-use starnix_modules_input::{DirectInputManager, EventProxyMode, StartRelaysArgs, new_input_relay};
+use starnix_modules_input::{
+    EventProxyMode, StartRelaysArgs, get_or_init_direct_input, new_input_relay,
+};
 use starnix_modules_kgsl::kgsl_device_init;
 pub use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_loop::{create_loop_control_device, loop_device_init};
@@ -445,8 +448,7 @@ fn init_framebuffer_module(
     };
 
     let (input_events_relay, input_events_relay_handle) = new_input_relay();
-    let direct_input_manager =
-        DirectInputManager::connect_and_start(kernel.weak_self.clone(), None);
+    let direct_input_manager = get_or_init_direct_input(kernel);
     let input_events_relay = input_events_relay.with_direct_input_manager(direct_input_manager);
     input_events_relay.start_relays(
         kernel,

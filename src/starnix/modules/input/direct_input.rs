@@ -120,6 +120,7 @@ struct DirectInputState {
     is_paused: bool,
     devices: HashMap<u32, DirectInputDevice>,
     abort_handles: HashMap<u32, AbortHandle>,
+    watcher_abort_handles: HashMap<u32, AbortHandle>,
 }
 
 /// Manages direct hardware input report reading, device lifecycle, shortcut detection,
@@ -149,6 +150,9 @@ impl Drop for DirectInputManager {
     fn drop(&mut self) {
         let mut state = self.state.lock();
         for (_, handle) in state.abort_handles.drain() {
+            handle.abort();
+        }
+        for (_, handle) in state.watcher_abort_handles.drain() {
             handle.abort();
         }
         if let Some(kernel) = self.kernel.upgrade() {
@@ -210,6 +214,7 @@ impl DirectInputManager {
                 is_paused: !initial_active,
                 devices: HashMap::new(),
                 abort_handles: HashMap::new(),
+                watcher_abort_handles: HashMap::new(),
             }),
             reserved_minors: Mutex::new(HashSet::new()),
             scope: fasync::Scope::new(),
@@ -253,6 +258,7 @@ impl DirectInputManager {
                 is_paused: true,
                 devices: HashMap::new(),
                 abort_handles: HashMap::new(),
+                watcher_abort_handles: HashMap::new(),
             }),
             reserved_minors: Mutex::new(HashSet::new()),
             scope: fasync::Scope::new(),
@@ -492,9 +498,7 @@ impl DirectInputManager {
         }
     }
 
-    /// Explicitly updates ownership state (useful in test harnesses).
-    #[cfg(test)]
-    pub fn set_ownership_active(self: &Arc<Self>, active: bool) {
+    fn update_ownership_active(self: &Arc<Self>, active: bool) {
         if active {
             self.resume();
         } else {
@@ -502,16 +506,18 @@ impl DirectInputManager {
         }
     }
 
+    /// Explicitly updates ownership state (useful in test harnesses).
+    #[cfg(test)]
+    pub fn set_ownership_active(self: &Arc<Self>, active: bool) {
+        self.update_ownership_active(active);
+    }
+
     /// Synchronizes ownership status with the underlying `ownership_event` (if available, either
     /// passed at construction or retrieved via `InputOwnership`).
     pub fn sync_ownership(self: &Arc<Self>) {
         if let Some(event) = self.ownership_event.get() {
             let active = evaluate_ownership(current_signals(event));
-            if active {
-                self.resume();
-            } else {
-                self.pause();
-            }
+            self.update_ownership_active(active);
         }
     }
 
@@ -618,6 +624,15 @@ impl DirectInputManager {
         };
 
         let mut conv = InputReportConverter::from_device_descriptor(&descriptor);
+
+        let this_weak = Arc::downgrade(self);
+        let watcher_proxy = device_proxy.clone();
+        let (watcher_task, watcher_abort_handle) = abortable(async move {
+            let _ = watcher_proxy.on_closed().await;
+            if let Some(this) = this_weak.upgrade() {
+                this.remove_device(device_id);
+            }
+        });
         {
             let mut state = self.state.lock();
             conv.paused = state.is_paused;
@@ -634,6 +649,7 @@ impl DirectInputManager {
             };
 
             state.devices.insert(device_id, direct_device);
+            state.watcher_abort_handles.insert(device_id, watcher_abort_handle);
 
             if !state.is_paused {
                 let handle =
@@ -641,6 +657,10 @@ impl DirectInputManager {
                 state.abort_handles.insert(device_id, handle);
             }
         }
+
+        self.scope.spawn(async move {
+            let _ = watcher_task.await;
+        });
 
         Ok(device_id)
     }
@@ -758,13 +778,17 @@ impl DirectInputManager {
 
     /// Removes and unregisters a device by its ID.
     pub fn remove_device(&self, device_id: u32) {
-        let (removed, handle) = {
+        let (removed, reader_handle, watcher_handle) = {
             let mut state = self.state.lock();
-            let handle = state.abort_handles.remove(&device_id);
+            let reader_handle = state.abort_handles.remove(&device_id);
+            let watcher_handle = state.watcher_abort_handles.remove(&device_id);
             let dev = state.devices.remove(&device_id);
-            (dev, handle)
+            (dev, reader_handle, watcher_handle)
         };
-        if let Some(handle) = handle {
+        if let Some(handle) = reader_handle {
+            handle.abort();
+        }
+        if let Some(handle) = watcher_handle {
             handle.abort();
         }
         if let Some(device) = removed {

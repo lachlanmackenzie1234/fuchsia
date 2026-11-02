@@ -19,4 +19,15 @@ pub use direct_input::{ButtonShortcutProcessor, DirectInputManager, query_owners
 pub use input_device::*;
 pub use input_event_relay::*;
 pub use input_file::*;
-pub use test_injection::{InjectedDevice, InputDeviceRegistry};
+pub use test_injection::{InputDeviceRegistry, serve_input_device_registry};
+
+use starnix_core::task::Kernel;
+use std::sync::Arc;
+
+/// Helper to obtain or initialize the shared `DirectInputManager` for a `Kernel`.
+pub fn get_or_init_direct_input(kernel: &Kernel) -> Arc<DirectInputManager> {
+    (*kernel
+        .expando
+        .get_or_init(|| DirectInputManager::connect_and_start(kernel.weak_self.clone(), None)))
+    .clone()
+}

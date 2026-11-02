@@ -2,110 +2,42 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::InputDevice;
-use fidl::endpoints::ClientEnd;
+#[cfg(test)]
+use crate::direct_input::DirectInputDevice;
+use crate::direct_input::DirectInputManager;
+use fidl::endpoints::{ClientEnd, RequestStream as _};
 use fidl_fuchsia_input_injection::{
     InputDeviceRegistryRegisterAndGetDeviceInfoResponse, InputDeviceRegistryRequest,
     InputDeviceRegistryRequestStream,
 };
 use fidl_fuchsia_input_report as fir;
-use fuchsia_async as fasync;
 use futures::StreamExt;
-use futures::future::{AbortHandle, Abortable};
-use starnix_core::device::kobject::Device;
 use starnix_core::task::Kernel;
-use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_logging::{log_debug, log_warn};
-use starnix_modules_input_report_event_conversion::InputReportConverter;
-use starnix_sync::Mutex;
+use starnix_logging::log_warn;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, error};
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Weak};
-
-const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 16;
-
-/// Represents an injected device currently registered in the test injection registry.
-#[derive(Clone)]
-pub struct InjectedDevice {
-    pub device_id: u32,
-    pub minor: u32,
-    pub input_device: InputDevice,
-    pub(crate) starnix_device: Device,
-    pub device_proxy: fir::InputDeviceProxy,
-    pub(crate) reader_abort_handle: AbortHandle,
-}
-
-impl std::fmt::Debug for InjectedDevice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InjectedDevice")
-            .field("device_id", &self.device_id)
-            .field("minor", &self.minor)
-            .field("starnix_device", &self.starnix_device)
-            .finish()
-    }
-}
-
-/// Internal state for `InputDeviceRegistry`.
-#[derive(Default, Debug)]
-pub(crate) struct RegistryState {
-    pub(crate) devices: HashMap<u32, InjectedDevice>,
-    pub(crate) reserved_minors: HashSet<u32>,
-}
+use std::sync::Arc;
+use zx;
 
 /// Server implementing `fuchsia.input.injection.InputDeviceRegistry`.
 ///
 /// Enables test frameworks (such as `input-helper`) to dynamically inject input
-/// devices and report streams into Starnix without hardcoded device configs.
+/// devices and report streams into Starnix without hardcoded device configs,
+/// delegating device creation, minor allocation, reader loops, and ownership gating
+/// to [`DirectInputManager`].
 pub struct InputDeviceRegistry {
-    kernel: Weak<Kernel>,
-    next_device_id: AtomicU32,
-    pub(crate) state: Arc<Mutex<RegistryState>>,
-    scope: fasync::Scope,
+    direct_input: Arc<DirectInputManager>,
 }
 
 impl std::fmt::Debug for InputDeviceRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InputDeviceRegistry")
-            .field("devices", &self.state.lock().devices.keys().collect::<Vec<_>>())
-            .finish()
-    }
-}
-
-impl Drop for InputDeviceRegistry {
-    fn drop(&mut self) {
-        if let Some(kernel) = self.kernel.upgrade() {
-            let devices = {
-                let mut state = self.state.lock();
-                let devices = std::mem::take(&mut state.devices);
-                for (_, injected) in &devices {
-                    state.reserved_minors.insert(injected.minor);
-                }
-                devices
-            };
-            for (_, injected) in devices {
-                injected.reader_abort_handle.abort();
-                unregister_device(
-                    &kernel,
-                    injected.starnix_device,
-                    self.state.clone(),
-                    injected.minor,
-                );
-            }
-        }
+        f.debug_struct("InputDeviceRegistry").field("direct_input", &self.direct_input).finish()
     }
 }
 
 impl InputDeviceRegistry {
-    /// Creates a new `InputDeviceRegistry`.
-    pub fn new(kernel: Weak<Kernel>) -> Arc<Self> {
-        Arc::new(Self {
-            kernel,
-            next_device_id: AtomicU32::new(1),
-            state: Arc::new(Mutex::new(RegistryState::default())),
-            scope: fasync::Scope::new(),
-        })
+    /// Creates a new `InputDeviceRegistry` backed by `direct_input`.
+    pub fn new(direct_input: Arc<DirectInputManager>) -> Arc<Self> {
+        Arc::new(Self { direct_input })
     }
 
     /// Serves incoming requests from an `InputDeviceRegistryRequestStream`.
@@ -146,186 +78,59 @@ impl InputDeviceRegistry {
         Ok(())
     }
 
-    /// Registers an input device client, obtains its descriptor, instantiates an
-    /// `InputDevice`, and spawns an asynchronous reader loop.
+    /// Registers an input device client by delegating to [`DirectInputManager::add_device`].
     pub async fn register_device(
-        self: &Arc<Self>,
+        &self,
         device_client_end: ClientEnd<fir::InputDeviceMarker>,
     ) -> Result<u32, Errno> {
-        let device_proxy = device_client_end.into_proxy();
-        let descriptor = device_proxy.get_descriptor().await.map_err(|_| errno!(EIO))?;
-
-        let (v2_client, v2_server) =
-            fidl::endpoints::create_endpoints::<fir::InputReportsReaderV2Marker>();
-        if let Err(e) = device_proxy
-            .get_input_reports_reader_v2(v2_server, MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
-            .await
-        {
-            log_warn!("Failed to obtain InputReportsReaderV2: {:?}", e);
-            return error!(EIO);
-        }
-
-        let device_id = self.next_device_id.fetch_add(1, Ordering::Relaxed);
-
-        let kernel = self.kernel.upgrade().ok_or_else(|| errno!(ENODEV))?;
-        let inspect_node = kernel.inspect_node.clone_weak();
-
-        let input_device = InputDevice::from_device_descriptor(
-            &descriptor,
-            None,
-            &format!("test_input_device_{device_id}"),
-            &inspect_node,
-        );
-
-        let mut next_candidate = 0u32;
-        let (starnix_device, minor) = loop {
-            let candidate_minor = {
-                let mut state = self.state.lock();
-                while state.reserved_minors.contains(&next_candidate)
-                    || state.devices.values().any(|d| d.minor == next_candidate)
-                {
-                    next_candidate += 1;
-                }
-                let cand = next_candidate;
-                next_candidate += 1;
-                state.reserved_minors.insert(cand);
-                cand
-            };
-
-            match input_device.clone().register(&kernel, candidate_minor) {
-                Ok(dev) => break (dev, candidate_minor),
-                Err(e) => {
-                    self.state.lock().reserved_minors.remove(&candidate_minor);
-                    if e == errno!(EEXIST) {
-                        continue;
-                    }
-                    return Err(e);
-                }
-            }
-        };
-
-        let (reader_abort_handle, reader_registration) = AbortHandle::new_pair();
-        let injected = InjectedDevice {
-            device_id,
-            minor,
-            input_device: input_device.clone(),
-            starnix_device,
-            device_proxy,
-            reader_abort_handle,
-        };
-        {
-            let mut state = self.state.lock();
-            state.devices.insert(device_id, injected);
-            state.reserved_minors.remove(&minor);
-        }
-
-        let reader_proxy = v2_client.into_proxy();
-        let self_weak = Arc::downgrade(self);
-        let reader_future = Abortable::new(
-            Self::run_reports_reader_v2(reader_proxy, input_device),
-            reader_registration,
-        );
-        self.scope.spawn(async move {
-            let _ = reader_future.await;
-            if let Some(this) = self_weak.upgrade() {
-                this.remove_device(device_id);
-            }
-        });
-
-        Ok(device_id)
-    }
-
-    /// Asynchronous report processing loop for `fuchsia.input.report.InputReportsReaderV2`.
-    async fn run_reports_reader_v2(
-        reader_proxy: fir::InputReportsReaderV2Proxy,
-        input_device: InputDevice,
-    ) {
-        let mut converter = InputReportConverter::new();
-        let mut event_stream = reader_proxy.take_event_stream();
-
-        while let Some(event) = event_stream.next().await {
-            match event {
-                Ok(fir::InputReportsReaderV2Event::OnInputReports {
-                    reports,
-                    last_report_stamp,
-                }) => {
-                    for report in reports {
-                        let events = converter.handle_report(&report);
-                        input_device.dispatch_events(&events);
-                    }
-                    if let Err(e) = reader_proxy.acknowledge_reports(last_report_stamp) {
-                        log_debug!("Failed to acknowledge input reports: {:?}", e);
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    log_debug!("InputReportsReaderV2 event error: {:?}", e);
-                    break;
-                }
-            }
-        }
+        self.direct_input.add_device(device_client_end.into_proxy(), None).await
     }
 
     /// Removes and unregisters an injected device.
+    #[cfg(test)]
     pub fn remove_device(&self, device_id: u32) {
-        let removed = {
-            let mut state = self.state.lock();
-            let removed = state.devices.remove(&device_id);
-            if let Some(ref injected) = removed {
-                state.reserved_minors.insert(injected.minor);
-            }
-            removed
-        };
-        if let Some(injected) = removed {
-            injected.reader_abort_handle.abort();
-            if let Some(kernel) = self.kernel.upgrade() {
-                unregister_device(
-                    &kernel,
-                    injected.starnix_device,
-                    self.state.clone(),
-                    injected.minor,
-                );
-            } else {
-                self.state.lock().reserved_minors.remove(&injected.minor);
-            }
-        }
+        self.direct_input.remove_device(device_id);
     }
 
     /// Returns an injected device if it is currently registered.
-    pub fn device(&self, device_id: u32) -> Option<InjectedDevice> {
-        self.state.lock().devices.get(&device_id).cloned()
+    #[cfg(test)]
+    pub(crate) fn device(&self, device_id: u32) -> Option<DirectInputDevice> {
+        self.direct_input.device(device_id)
     }
 }
 
-fn unregister_device(
-    kernel: &Arc<Kernel>,
-    event_device: Device,
-    state: Arc<Mutex<RegistryState>>,
-    minor: u32,
-) {
-    if !kernel.is_shutting_down() {
-        let req = SpawnRequestBuilder::new()
-            .with_sync_closure(move |current_task| {
-                InputDevice::unregister(current_task, event_device);
-                state.lock().reserved_minors.remove(&minor);
-            })
-            .build();
-        kernel.kthreads.spawner().spawn_from_request(req);
+/// Serves `fuchsia.input.injection.InputDeviceRegistry` on the given request stream
+/// using the kernel's active `DirectInputManager`.
+pub fn serve_input_device_registry(kernel: &Kernel, stream: InputDeviceRegistryRequestStream) {
+    let Some(direct_input) = kernel.expando.peek::<Arc<DirectInputManager>>() else {
+        log_warn!("DirectInputManager not available; rejecting InputDeviceRegistry request");
+        stream.control_handle().shutdown_with_epitaph(zx::Status::NOT_SUPPORTED);
         return;
-    }
-    state.lock().reserved_minors.remove(&minor);
+    };
+    let registry = InputDeviceRegistry::new((*direct_input).clone());
+    kernel.kthreads.spawn_future(
+        move || async move {
+            if let Err(e) = registry.serve_stream(stream).await {
+                log_warn!("InputDeviceRegistry serve error: {e:?}");
+            }
+        },
+        "input_device_registry",
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use fidl::endpoints::{self, RequestStream, ServerEnd};
-    use fidl_fuchsia_input_injection::InputDeviceRegistryMarker;
+    use fidl_fuchsia_input_injection::{self as finputinjection, InputDeviceRegistryMarker};
+    use fuchsia_async as fasync;
     use starnix_core::device::DeviceMode;
     use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::{FileHandle, VecOutputBuffer};
+    use starnix_sync::Mutex;
     use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
+    use starnix_uapi::errno;
     use starnix_uapi::errors::{EAGAIN, Errno};
     use zerocopy::FromBytes;
 
@@ -390,11 +195,30 @@ mod tests {
         }
     }
 
+    fn make_keyboard_descriptor() -> fir::DeviceDescriptor {
+        fir::DeviceDescriptor {
+            device_information: Some(fir::DeviceInformation {
+                vendor_id: Some(0x18d1),
+                product_id: Some(0x1234),
+                version: Some(1),
+                product_name: Some("Test Keyboard".to_string()),
+                ..Default::default()
+            }),
+            keyboard: Some(fir::KeyboardDescriptor {
+                input: Some(fir::KeyboardInputDescriptor::default()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
     #[::fuchsia::test]
     async fn test_registration_and_event_dispatch_v2() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (device_client, device_server) =
@@ -425,7 +249,7 @@ mod tests {
                             if let Some(sender) = reader_sender_opt.take() {
                                 let _ = sender.send(control_handle);
                             }
-                            responder.send(16).unwrap();
+                            responder.send(1).unwrap();
 
                             let ack_sender_opt_inner = ack_sender_opt.take();
                             inner_tasks.push(fasync::Task::local(async move {
@@ -493,7 +317,9 @@ mod tests {
     async fn test_pre_open_buffering() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (device_client, device_server) =
@@ -523,7 +349,7 @@ mod tests {
                             if let Some(sender) = reader_sender_opt.take() {
                                 let _ = sender.send(control_handle);
                             }
-                            responder.send(16).unwrap();
+                            responder.send(1).unwrap();
 
                             let ack_inner = ack_sender_opt.take();
                             inner_tasks.push(fasync::Task::local(async move {
@@ -589,43 +415,166 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn test_rollback_on_reader_failure() {
+    async fn test_injected_device_minor_in_direct_input_minor_range() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (device_client, device_server) =
                 endpoints::create_endpoints::<fir::InputDeviceMarker>();
 
-            // Mock InputDevice server that returns descriptor and immediately closes connection
             _tasks.push(fasync::Task::local(async move {
                 let mut stream = device_server.into_stream();
                 while let Some(request) = stream.next().await {
                     match request.unwrap() {
                         fir::InputDeviceRequest::GetDescriptor { responder } => {
                             responder.send(&make_test_descriptor()).unwrap();
-                            // Close stream after descriptor so reader setup fails
-                            break;
+                        }
+                        fir::InputDeviceRequest::GetInputReportsReaderV2 { responder, .. } => {
+                            responder.send(16).unwrap();
                         }
                         _ => {}
                     }
                 }
             }));
 
-            let result = registry.register_device(device_client).await;
-            assert!(result.is_err());
-            assert_eq!(result.unwrap_err(), errno!(EIO));
-            assert!(registry.device(1).is_none());
-            assert!(registry.state.lock().reserved_minors.is_empty());
-            let root = &kernel.device_registry.objects.root;
-            assert!(root.lookup("devices/virtual/input/input0".into()).is_none());
+            let device_id = registry.register_device(device_client).await.unwrap();
+            let dev = registry.device(device_id).expect("device should be registered");
+
+            assert!(crate::DIRECT_INPUT_MINOR_RANGE.contains(&dev.minor));
+            assert_eq!(dev.minor, crate::DIRECT_INPUT_MINOR_RANGE.start);
             assert!(
                 kernel
                     .device_registry
-                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, 0), DeviceMode::Char)
-                    .is_err()
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, dev.minor), DeviceMode::Char)
+                    .is_ok()
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reports_not_delivered_when_ownership_inactive() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            // Explicitly inactive ownership
+            direct_input.set_ownership_active(false);
+            let registry = InputDeviceRegistry::new(direct_input.clone());
+            let mut _tasks = Vec::new();
+
+            let (device_client, device_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+
+            let (reader_sender, reader_receiver) =
+                futures::channel::oneshot::channel::<fir::InputReportsReaderV2ControlHandle>();
+            let mut reader_sender_opt = Some(reader_sender);
+            let (ack_sender, mut ack_receiver) = futures::channel::mpsc::channel::<()>(16);
+
+            _tasks.push(fasync::Task::local(async move {
+                let mut stream = device_server.into_stream();
+                let mut inner_tasks = Vec::new();
+                while let Some(request) = stream.next().await {
+                    match request.unwrap() {
+                        fir::InputDeviceRequest::GetDescriptor { responder } => {
+                            responder.send(&make_test_descriptor()).unwrap();
+                        }
+                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
+                            reader,
+                            responder,
+                            ..
+                        } => {
+                            let reader_stream = reader.into_stream();
+                            let control_handle = reader_stream.control_handle();
+                            if let Some(sender) = reader_sender_opt.take() {
+                                let _ = sender.send(control_handle);
+                            }
+                            responder.send(1).unwrap();
+
+                            let mut ack_sender_clone = ack_sender.clone();
+                            inner_tasks.push(fasync::Task::local(async move {
+                                let mut reader_stream = reader_stream;
+                                while let Some(req) = reader_stream.next().await {
+                                    match req.unwrap() {
+                                        fir::InputReportsReaderV2Request::AcknowledgeReports {
+                                            ..
+                                        } => {
+                                            let _ = ack_sender_clone.try_send(());
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }));
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let device_id = registry.register_device(device_client).await.unwrap();
+            let injected = registry.device(device_id).expect("device should be registered");
+            let file = injected.input_device.open_test(&current_task).unwrap();
+
+            // While ownership is inactive, reader task is not spawned and no reports are delivered.
+            let events = read_uapi_events(&file, &current_task);
+            assert!(events.is_empty(), "reports must not be delivered when ownership is inactive");
+
+            // Now activate ownership, which resumes readers and spawns the reader task
+            direct_input.set_ownership_active(true);
+
+            let control_handle = reader_receiver.await.unwrap();
+
+            // Inject a touch report
+            let touch_report = fir::InputReport {
+                event_time: Some(200_000_000),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(1),
+                        position_x: Some(400),
+                        position_y: Some(500),
+                        pressure: Some(30),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            control_handle.send_on_input_reports(vec![touch_report], 1).unwrap();
+
+            // Wait for reader acknowledgment
+            ack_receiver.next().await.unwrap();
+
+            let events_after = read_uapi_events(&file, &current_task);
+            assert!(
+                !events_after.is_empty(),
+                "reports must be delivered after ownership is activated"
+            );
+            assert!(events_after.iter().any(|e| e.type_ == starnix_uapi::EV_ABS as u16
+                && e.code == starnix_uapi::ABS_MT_POSITION_X as u16
+                && e.value == 400));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_rollback_on_closed_channel() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
+
+            let (closed_client, closed_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+            drop(closed_server);
+
+            let result = registry.register_device(closed_client).await;
+            assert!(result.is_err());
+            assert_eq!(result.unwrap_err(), errno!(EIO));
+            assert!(registry.device(1).is_none());
         })
         .await;
     }
@@ -634,7 +583,9 @@ mod tests {
     async fn test_register_and_get_device_info_fidl() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (registry_client, registry_server) =
@@ -687,7 +638,9 @@ mod tests {
     async fn test_register_one_way_fidl() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (registry_client, registry_server) =
@@ -728,7 +681,6 @@ mod tests {
             }));
 
             let proxy = registry_client.into_proxy();
-            // Call the one-way `register` FIDL method
             proxy.register(device_client).unwrap();
 
             // Wait deterministically for registration to complete
@@ -747,7 +699,9 @@ mod tests {
     async fn test_disconnect_teardown() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (device_client, device_server) =
@@ -799,28 +753,13 @@ mod tests {
         .await;
     }
 
-    fn make_keyboard_descriptor() -> fir::DeviceDescriptor {
-        fir::DeviceDescriptor {
-            device_information: Some(fir::DeviceInformation {
-                vendor_id: Some(0x18d1),
-                product_id: Some(0x1234),
-                version: Some(1),
-                product_name: Some("Test Keyboard".to_string()),
-                ..Default::default()
-            }),
-            keyboard: Some(fir::KeyboardDescriptor {
-                input: Some(fir::KeyboardInputDescriptor::default()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }
-    }
-
     #[::fuchsia::test]
     async fn test_multi_device_registration_and_minor_allocation() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input.clone());
             let mut _tasks = Vec::new();
             let readers = Arc::new(Mutex::new(Vec::new()));
 
@@ -885,12 +824,14 @@ mod tests {
             let dev_2 = registry.device(id_2).expect("device 2 registered");
 
             assert_ne!(dev_1.minor, dev_2.minor);
-            assert_eq!(registry.state.lock().devices.len(), 2);
+            assert!(crate::DIRECT_INPUT_MINOR_RANGE.contains(&dev_1.minor));
+            assert!(crate::DIRECT_INPUT_MINOR_RANGE.contains(&dev_2.minor));
+            assert_eq!(direct_input.num_devices(), 2);
 
             registry.remove_device(id_1);
             assert!(registry.device(id_1).is_none());
             assert!(registry.device(id_2).is_some());
-            assert_eq!(registry.state.lock().devices.len(), 1);
+            assert_eq!(direct_input.num_devices(), 1);
         })
         .await;
     }
@@ -899,7 +840,9 @@ mod tests {
     async fn test_registry_drop_unregisters_devices() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input.clone());
             let mut _tasks = Vec::new();
             let readers = Arc::new(Mutex::new(Vec::new()));
 
@@ -927,143 +870,29 @@ mod tests {
             }));
 
             let id = registry.register_device(device_client).await.unwrap();
-            assert!(registry.device(id).is_some());
-
-            let state = registry.state.clone();
-            // Dropping the registry must cleanly unregister devices
-            drop(registry);
-
-            while !state.lock().reserved_minors.is_empty() {
-                fasync::Timer::new(fasync::MonotonicInstant::after(
-                    zx::MonotonicDuration::from_millis(2),
-                ))
-                .await;
-            }
-
-            let root = &kernel.device_registry.objects.root;
-            assert!(root.lookup("devices/virtual/input/input0".into()).is_none());
+            let dev = registry.device(id).expect("device should be registered");
+            let minor = dev.minor;
             assert!(
                 kernel
                     .device_registry
-                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, 0), DeviceMode::Char)
-                    .is_err()
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                    .is_ok()
             );
-        })
-        .await;
-    }
 
-    #[::fuchsia::test]
-    async fn test_minor_reserved_during_async_unregistration_and_reused_after() {
-        spawn_kernel_and_run(async move |current_task| {
-            let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
-            let mut _tasks = Vec::new();
-            let readers = Arc::new(Mutex::new(Vec::new()));
+            // Dropping the registry and direct_input must cleanly unregister devices
+            drop(registry);
+            drop(direct_input);
 
-            // Setup device 1
-            let (device_client_1, device_server_1) =
-                endpoints::create_endpoints::<fir::InputDeviceMarker>();
-            let readers_1 = readers.clone();
-            _tasks.push(fasync::Task::local(async move {
-                let mut stream = device_server_1.into_stream();
-                while let Some(request) = stream.next().await {
-                    match request.unwrap() {
-                        fir::InputDeviceRequest::GetDescriptor { responder } => {
-                            responder.send(&make_test_descriptor()).unwrap();
-                        }
-                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
-                            reader,
-                            responder,
-                            ..
-                        } => {
-                            readers_1.lock().push(reader);
-                            responder.send(16).unwrap();
-                        }
-                        _ => {}
-                    }
-                }
-            }));
-
-            let id_1 = registry.register_device(device_client_1).await.unwrap();
-            let dev_1 = registry.device(id_1).unwrap();
-            assert_eq!(dev_1.minor, 0);
-
-            // Simulate an in-flight background unregistration where minor 0 remains in reserved_minors.
-            registry.state.lock().reserved_minors.insert(0);
-
-            // Register device 2 while minor 0 is reserved.
-            let (device_client_2, device_server_2) =
-                endpoints::create_endpoints::<fir::InputDeviceMarker>();
-            let readers_2 = readers.clone();
-            _tasks.push(fasync::Task::local(async move {
-                let mut stream = device_server_2.into_stream();
-                while let Some(request) = stream.next().await {
-                    match request.unwrap() {
-                        fir::InputDeviceRequest::GetDescriptor { responder } => {
-                            responder.send(&make_keyboard_descriptor()).unwrap();
-                        }
-                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
-                            reader,
-                            responder,
-                            ..
-                        } => {
-                            readers_2.lock().push(reader);
-                            responder.send(16).unwrap();
-                        }
-                        _ => {}
-                    }
-                }
-            }));
-
-            let id_2 = registry.register_device(device_client_2).await.unwrap();
-            let dev_2 = registry.device(id_2).unwrap();
-
-            // Device 2 must not collide with minor 0 because it was in reserved_minors.
-            assert_ne!(dev_2.minor, 0);
-            assert_eq!(dev_2.minor, 1);
-            assert!(registry.device(id_2).is_some());
-
-            // Release simulated in-flight reservation on minor 0.
-            registry.state.lock().reserved_minors.remove(&0);
-
-            registry.remove_device(id_1);
-            registry.remove_device(id_2);
-
-            while !registry.state.lock().reserved_minors.is_empty() {
+            while kernel
+                .device_registry
+                .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                .is_ok()
+            {
                 fasync::Timer::new(fasync::MonotonicInstant::after(
                     zx::MonotonicDuration::from_millis(2),
                 ))
                 .await;
             }
-
-            // Now register device 3: minor 0 is free and should be reused.
-            let (device_client_3, device_server_3) =
-                endpoints::create_endpoints::<fir::InputDeviceMarker>();
-            let readers_3 = readers.clone();
-            _tasks.push(fasync::Task::local(async move {
-                let mut stream = device_server_3.into_stream();
-                while let Some(request) = stream.next().await {
-                    match request.unwrap() {
-                        fir::InputDeviceRequest::GetDescriptor { responder } => {
-                            responder.send(&make_test_descriptor()).unwrap();
-                        }
-                        fir::InputDeviceRequest::GetInputReportsReaderV2 {
-                            reader,
-                            responder,
-                            ..
-                        } => {
-                            readers_3.lock().push(reader);
-                            responder.send(16).unwrap();
-                        }
-                        _ => {}
-                    }
-                }
-            }));
-
-            let id_3 = registry.register_device(device_client_3).await.unwrap();
-            let dev_3 = registry.device(id_3).unwrap();
-            assert_eq!(dev_3.minor, 0);
-            registry.remove_device(id_3);
         })
         .await;
     }
@@ -1072,13 +901,14 @@ mod tests {
     async fn test_immediate_reader_termination_does_not_leak() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
-            let mut _tasks = Vec::new();
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input.clone());
 
             let (device_client, device_server) =
                 endpoints::create_endpoints::<fir::InputDeviceMarker>();
 
-            _tasks.push(fasync::Task::local(async move {
+            let server_task = fasync::Task::local(async move {
                 let mut stream = device_server.into_stream();
                 while let Some(request) = stream.next().await {
                     match request.unwrap() {
@@ -1097,9 +927,18 @@ mod tests {
                         _ => {}
                     }
                 }
-            }));
+            });
 
             let id = registry.register_device(device_client).await.unwrap();
+            let minor = registry.device(id).expect("device should be registered").minor;
+
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                    .is_ok(),
+                "char device should be present in device registry"
+            );
 
             // Wait deterministically for reader loop termination and remove_device to complete.
             while registry.device(id).is_some() {
@@ -1110,15 +949,30 @@ mod tests {
             }
 
             assert!(registry.device(id).is_none());
-            assert!(registry.state.lock().devices.is_empty());
+            assert_eq!(direct_input.num_devices(), 0);
 
-            // Wait for kthread unregistration to release reserved_minors
-            while !registry.state.lock().reserved_minors.is_empty() {
+            // Assert that the mock InputDevice server's request stream ends (channel closed).
+            server_task.await;
+
+            // Wait for the async kthread unregistration to complete and remove the char device.
+            while kernel
+                .device_registry
+                .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                .is_ok()
+            {
                 fasync::Timer::new(fasync::MonotonicInstant::after(
                     zx::MonotonicDuration::from_millis(2),
                 ))
                 .await;
             }
+
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                    .is_err(),
+                "char device must be unregistered"
+            );
         })
         .await;
     }
@@ -1127,7 +981,9 @@ mod tests {
     async fn test_register_and_get_device_info_failure_does_not_close_stream() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input);
             let mut _tasks = Vec::new();
 
             let (registry_client, registry_server) =
@@ -1181,7 +1037,9 @@ mod tests {
     async fn test_remove_device_aborts_reader_task() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel().clone();
-            let registry = InputDeviceRegistry::new(Arc::downgrade(&kernel));
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            direct_input.set_ownership_active(true);
+            let registry = InputDeviceRegistry::new(direct_input.clone());
             let mut _tasks = Vec::new();
 
             let (device_client, device_server) =
@@ -1203,11 +1061,174 @@ mod tests {
             }));
 
             let id = registry.register_device(device_client).await.unwrap();
-            let dev = registry.device(id).expect("device should exist");
-            assert!(!dev.reader_abort_handle.is_aborted());
+            assert!(registry.device(id).is_some());
 
             registry.remove_device(id);
-            assert!(dev.reader_abort_handle.is_aborted());
+            assert!(registry.device(id).is_none());
+            assert_eq!(direct_input.num_devices(), 0);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_while_ownership_inactive_removes_device() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            // Ownership starts inactive (!is_ownership_active() and is_paused: true).
+            let direct_input = DirectInputManager::new(Arc::downgrade(&kernel), None, None);
+            assert!(!direct_input.is_ownership_active());
+            let registry = InputDeviceRegistry::new(direct_input.clone());
+            let mut _tasks = Vec::new();
+
+            let (device_client, device_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+
+            _tasks.push(fasync::Task::local(async move {
+                let mut stream = device_server.into_stream();
+                if let Some(request) = stream.next().await {
+                    match request.unwrap() {
+                        fir::InputDeviceRequest::GetDescriptor { responder } => {
+                            responder.send(&make_test_descriptor()).unwrap();
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let device_id = registry.register_device(device_client).await.unwrap();
+            let dev = registry.device(device_id).expect("device must be registered");
+            let minor = dev.minor;
+            assert_eq!(direct_input.num_devices(), 1);
+
+            // Assert that the char device is registered in device_registry.
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                    .is_ok(),
+                "char device should be present in device registry"
+            );
+
+            // Wait for disconnect handler to trigger and remove the device while inactive.
+            while registry.device(device_id).is_some() {
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(2),
+                ))
+                .await;
+            }
+
+            assert!(registry.device(device_id).is_none());
+            assert_eq!(direct_input.num_devices(), 0);
+
+            // Wait for the async kthread unregistration to complete and remove the char device.
+            while kernel
+                .device_registry
+                .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                .is_ok()
+            {
+                fasync::Timer::new(fasync::MonotonicInstant::after(
+                    zx::MonotonicDuration::from_millis(2),
+                ))
+                .await;
+            }
+
+            assert!(
+                kernel
+                    .device_registry
+                    .get_device(StarnixDeviceId::new(INPUT_MAJOR, minor), DeviceMode::Char)
+                    .is_err(),
+                "char device must be unregistered"
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_serve_input_device_registry_without_manager_closes_stream() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+            // Verify that no DirectInputManager exists in expando initially.
+            assert!(kernel.expando.peek::<Arc<DirectInputManager>>().is_none());
+
+            let (client, server) =
+                endpoints::create_endpoints::<finputinjection::InputDeviceRegistryMarker>();
+
+            serve_input_device_registry(&kernel, server.into_stream());
+
+            // Since no manager exists, the stream must be closed with NOT_SUPPORTED epitaph.
+            let proxy = client.into_proxy();
+            let mut event_stream = proxy.take_event_stream();
+            let event = event_stream.next().await;
+            assert_matches!(
+                event,
+                Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. })) if epitaph == zx::Status::NOT_SUPPORTED
+            );
+
+            // Serving the registry without a manager must NOT lazily initialize one.
+            assert!(kernel.expando.peek::<Arc<DirectInputManager>>().is_none());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_framebuffer_and_registry_share_same_direct_input_manager() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel().clone();
+
+            // Simulate framebuffer module initializing the DirectInputManager via get_or_init_direct_input.
+            let fb_manager = crate::get_or_init_direct_input(&kernel);
+
+            // Repeated calls return the identical instance.
+            let fb_manager_second = crate::get_or_init_direct_input(&kernel);
+            assert!(Arc::ptr_eq(&fb_manager, &fb_manager_second));
+
+            // Peek into expando to ensure the registry path accesses the exact same manager.
+            let peeked = kernel
+                .expando
+                .peek::<Arc<DirectInputManager>>()
+                .expect("DirectInputManager should be present in expando");
+            assert!(Arc::ptr_eq(&fb_manager, &peeked));
+
+            // Serve the registry and verify it operates on the shared manager.
+            let (client, server) =
+                endpoints::create_endpoints::<finputinjection::InputDeviceRegistryMarker>();
+            serve_input_device_registry(&kernel, server.into_stream());
+
+            let mut _tasks = Vec::new();
+            let proxy = client.into_proxy();
+            let (device_client, device_server) =
+                endpoints::create_endpoints::<fir::InputDeviceMarker>();
+
+            _tasks.push(fasync::Task::local(async move {
+                let mut stream = device_server.into_stream();
+                while let Some(request) = stream.next().await {
+                    match request.unwrap() {
+                        fir::InputDeviceRequest::GetDescriptor { responder } => {
+                            responder.send(&make_test_descriptor()).unwrap();
+                        }
+                        _ => {}
+                    }
+                }
+            }));
+
+            let response = proxy.register_and_get_device_info(device_client).await.unwrap();
+            let device_id = response.device_id.unwrap();
+
+            // The registered device must exist in the shared fb_manager!
+            assert!(fb_manager.device(device_id).is_some());
+            assert_eq!(fb_manager.num_devices(), 1);
+
+            // Clean up resources before executor terminates so no receivers outlive it.
+            drop(proxy);
+            drop(_tasks);
+            fasync::Timer::new(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(50),
+            ))
+            .await;
+            drop(fb_manager);
+            drop(fb_manager_second);
+            drop(peeked);
+            kernel.expando.remove::<Arc<DirectInputManager>>();
         })
         .await;
     }
