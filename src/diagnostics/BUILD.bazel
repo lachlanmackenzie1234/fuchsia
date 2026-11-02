@@ -20,9 +20,9 @@ test_suite(
 # //src/diagnostics/BUILD.gn.
 test_suite(
     name = "target_tests",
-    target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/diagnostics/lib/ring-buffer:ring-buffer-tests",
         "//src/diagnostics/lib/sampler-config:sampler-config-tests",
+        "//src/diagnostics/tests/inspect-system:tests",
     ],
 )
