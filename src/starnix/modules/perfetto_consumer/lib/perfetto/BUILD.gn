@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_test_suite.gni")
-import("//build/rust/rustc_library.gni")
-import("//tools/protobuf/rust_proto_library.gni")
 
 bazel_test_suite("merge_extension_test") {
   host_tests = [
@@ -81,7 +79,6 @@ action("merge_perfetto_trace_extensions") {
     "//third_party/perfetto/protos/third_party/android/frameworks/native/tracing/frameworks_native_trace_packet.proto",
   ]
   outputs = [ "$target_gen_dir/perfetto_trace_modified.proto" ]
-  visibility = [ ":*" ]
   script = "merge_extension.py"
   args = [
     "--input-proto",
@@ -105,7 +102,6 @@ action("merge_perfetto_trace_extensions") {
 
 rust_proto_library("perfetto_trace_protos") {
   sources = [ "$target_gen_dir/perfetto_trace_modified.proto" ]
-  include_dirs = [ "//third_party/perfetto" ]
   packages = [ "perfetto.protos" ]
   visibility = [
     ":*",

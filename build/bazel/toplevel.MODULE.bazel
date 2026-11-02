@@ -405,3 +405,19 @@ register_toolchains("//:fuchsia_sdk_devicetree_toolchain")
 
 # Register the default build_flags() toolchain definitions
 register_toolchains("@fuchsia_build_info//default_build_flags:all")
+
+# Exposes the .proto sources under //third_party/perfetto as labels, so that
+# actions consuming them can declare them as inputs. The upstream
+# third_party/perfetto/BUILD file cannot be loaded in this workspace (it
+# depends on perfetto_cfg and other upstream-only repositories), so it is
+# replaced by a Fuchsia-provided BUILD file.
+new_local_repository = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:local.bzl",
+    "new_local_repository",
+)
+
+new_local_repository(
+    name = "fuchsia_perfetto_protos",
+    build_file = "//tools/protobuf:third-party-perfetto-protos.BUILD.bazel",
+    path = "third_party/perfetto",
+)
