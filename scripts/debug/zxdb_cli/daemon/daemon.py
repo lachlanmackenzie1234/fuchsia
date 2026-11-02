@@ -37,6 +37,7 @@ from daemon.handlers import (
     step_in,
     stop,
     threads,
+    tracepoint,
     variables,
     wait_for_event,
     watch_req,
@@ -50,6 +51,7 @@ from shared.protocol import (
     BaseRequest,
     Response,
     T_Resp,
+    TracepointInfo,
     WatchpointInfo,
     deserialize_request,
     serialize,
@@ -191,6 +193,8 @@ class Daemon:
         self.event_waiter = DapEventWaiter()
         self.active_breakpoints: dict[str, set[int]] = {}
         self.active_watchpoints: dict[str, WatchpointInfo] = {}
+        self.tracepoints: dict[int, TracepointInfo] = {}
+        self.next_tracepoint_id: int = 1
         # Maps zxdb breakpoint ids to watchpoint data_ids. zxdb reassigns ids on
         # every setDataBreakpoints call, so this is rebuilt from each response.
         # Used to route async `breakpoint` events; not exposed to clients.
@@ -247,6 +251,7 @@ class Daemon:
             step_in,
             stop,
             threads,
+            tracepoint,
             variables,
             wait_for_event,
             watch_req,
@@ -700,8 +705,11 @@ class Daemon:
             if thread and thread.process:
                 thread.process.threads.pop(tid, None)
 
-    def clear_process(self, process_id: int) -> None:
-        """Clears all cached state associated with a detached or terminated process."""
+    def clear_process(self, process_id: int) -> bool:
+        """Clears cached state for a detached or exited process.
+
+        Returns True if any process-bound tracepoints were evicted.
+        """
         process = self.processes.pop(process_id, None)
         if process:
             for tid in list(process.threads.keys()):
@@ -719,14 +727,36 @@ class Daemon:
             for bp_id, data_id in self.watchpoint_ids_by_bp_id.items()
             if data_id in self.active_watchpoints
         }
+        removed_tp_ids = [
+            tp_id
+            for tp_id, tp in self.tracepoints.items()
+            if tp.data_id is not None and tp.data_id.startswith(prefix)
+        ]
+        for tp_id in removed_tp_ids:
+            self.tracepoints.pop(tp_id, None)
+        return bool(removed_tp_ids)
 
-    def clear_all_processes(self) -> None:
-        """Clears all cached process and thread state."""
+    def clear_all_processes(self, evict_tracepoints: bool = True) -> bool:
+        """Clears all cached process and thread state.
+
+        When evict_tracepoints is True, also removes process-bound (dataId)
+        tracepoints. Returns True if any tracepoints were evicted.
+        """
         self.processes.clear()
         self.threads.clear()
         self.next_target_id = 1
         self.active_watchpoints.clear()
         self.watchpoint_ids_by_bp_id.clear()
+        if not evict_tracepoints:
+            return False
+        removed_tp_ids = [
+            tp_id
+            for tp_id, tp in self.tracepoints.items()
+            if tp.data_id is not None
+        ]
+        for tp_id in removed_tp_ids:
+            self.tracepoints.pop(tp_id, None)
+        return bool(removed_tp_ids)
 
     def set_watchpoints(
         self,
@@ -804,6 +834,7 @@ class Daemon:
             "thread",
             "process",
             "detached",
+            "zxdb.Tracepoint",
         }
         while True:
             event = await self.event_queue.get()
@@ -860,6 +891,14 @@ class Daemon:
                             )
                 case "breakpoint":
                     self._handle_breakpoint_changed(body)
+                case "zxdb.Tracepoint":
+                    tp_id = body.get("tracepointId")
+                    if tp_id is not None and tp_id in self.tracepoints:
+                        tp = self.tracepoints[tp_id]
+                        tp.hit_count = body.get("hitCount", tp.hit_count + 1)
+                        if body.get("autoDisabled", False):
+                            tp.enabled = False
+                            tp.auto_disabled = True
                 case "process":
                     pid = body.get("systemProcessId")
                     name = str(body.get("name") or "")
@@ -867,12 +906,20 @@ class Daemon:
                         self.get_or_create_process(pid, name=name)
                 case "detached":
                     pid = body.get("pid") or body.get("processId")
-                    if pid is not None:
+                    evicted = (
                         self.clear_process(pid)
-                    else:
-                        self.clear_all_processes()
+                        if pid is not None
+                        else self.clear_all_processes()
+                    )
+                    if evicted and self.zxdb_writer:
+                        with contextlib.suppress(Exception):
+                            await tracepoint.sync_tracepoints_with_dap(self)
                 case "exited" | "terminated":
-                    self.clear_all_processes()
+                    # These events carry no process ID, so one exit must not
+                    # delete dataId tracepoints that belong to processes that
+                    # are still alive. The server reports a tracepoint for a
+                    # dead process as unverified on the next sync.
+                    self.clear_all_processes(evict_tracepoints=False)
 
             # Only enqueue and sequence allowed events for surfacing to the CLI client
             if event.get("event") in allowed_events:

@@ -48,6 +48,7 @@ if (is_host) {
       "handlers/step_in.py",
       "handlers/stop.py",
       "handlers/threads.py",
+      "handlers/tracepoint.py",
       "handlers/variables.py",
       "handlers/wait_for_event.py",
       "handlers/watch_req.py",

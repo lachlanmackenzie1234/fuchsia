@@ -74,6 +74,11 @@ from shared.protocol.start import StartRequest
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
+from shared.protocol.tracepoint import (
+    TracepointInfo,
+    TracepointRequest,
+    TracepointResponse,
+)
 from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
 from shared.protocol.watch_request import WatchRequest
@@ -101,6 +106,7 @@ RequestType = Annotated[
     | StepInRequest
     | StopRequest
     | ThreadsRequest
+    | TracepointRequest
     | VariablesRequest
     | WaitForEventRequest
     | WatchRequest,
@@ -119,6 +125,7 @@ ResponseType = (
     | HandlesResponse
     | MemReadResponse
     | DriverListResponse
+    | TracepointResponse
     | dict[str, Any]
     | None
 )
@@ -149,6 +156,8 @@ __all__ = [
     "DriverHostEntry",
     "DriverListRequest",
     "DriverListResponse",
+    "TracepointInfo",
+    "TracepointResponse",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",
@@ -176,6 +185,7 @@ __all__ = [
     "StepInRequest",
     "StopRequest",
     "ThreadsRequest",
+    "TracepointRequest",
     "VariablesRequest",
     "WaitForEventRequest",
     "WatchRequest",

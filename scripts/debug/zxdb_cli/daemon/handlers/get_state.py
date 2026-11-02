@@ -56,6 +56,7 @@ async def handle(
             breakpoints=breakpoints or None,
             watchpoints=daemon.active_watchpoints or None,
             function_breakpoints=fn_bps or None,
+            tracepoints=list(daemon.tracepoints.values()) or None,
         )
         return Response(
             success=True,

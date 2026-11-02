@@ -4,6 +4,7 @@
 
 from typing import TYPE_CHECKING, Any
 
+from daemon.handlers.tracepoint import sync_tracepoints_with_dap
 from shared.protocol.base import Response
 from shared.protocol.detach import (
     COMMAND_NAME,
@@ -34,10 +35,13 @@ async def handle(daemon: Daemon, req: DetachRequest) -> Response[Any]:
                 success=False,
                 message=resp.get("message", "Failed to detach from process"),
             )
+        evicted = False
         if req.all:
-            daemon.clear_all_processes()
+            evicted = daemon.clear_all_processes()
         elif req.pid is not None:
-            daemon.clear_process(req.pid)
+            evicted = daemon.clear_process(req.pid)
+        if evicted and daemon.zxdb_writer:
+            await sync_tracepoints_with_dap(daemon)
 
         # Synthesize and enqueue detached event
         await daemon.event_queue.put(

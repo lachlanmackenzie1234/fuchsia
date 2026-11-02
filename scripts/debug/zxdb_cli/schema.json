@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 20,
+    "version": 21,
     "requests": {
         "$defs": {
             "AspaceRequest": {
@@ -1394,6 +1394,227 @@
                 "title": "ThreadsRequest",
                 "type": "object"
             },
+            "TracepointRequest": {
+                "description": "Request to set, update, enable, disable, delete, clear, or list tracepoints.\n\nWhen hit, the backend captures requested state and emits a structured\ntracepoint event into the event stream without stopping the target thread.",
+                "properties": {
+                    "command": {
+                        "const": "tracepoint",
+                        "default": "tracepoint",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Id"
+                    },
+                    "file": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "File"
+                    },
+                    "line": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Line"
+                    },
+                    "function": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Function"
+                    },
+                    "watch": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Watch"
+                    },
+                    "size": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Size"
+                    },
+                    "access_type": {
+                        "default": "write",
+                        "enum": [
+                            "write",
+                            "readWrite"
+                        ],
+                        "title": "Access Type",
+                        "type": "string"
+                    },
+                    "thread_id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    },
+                    "condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Condition"
+                    },
+                    "expressions": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Expressions",
+                        "type": "array"
+                    },
+                    "capture": {
+                        "items": {
+                            "enum": [
+                                "frame",
+                                "backtrace",
+                                "locals",
+                                "registers"
+                            ],
+                            "type": "string"
+                        },
+                        "title": "Capture",
+                        "type": "array"
+                    },
+                    "raw_backtrace": {
+                        "default": false,
+                        "title": "Raw Backtrace",
+                        "type": "boolean"
+                    },
+                    "max_matching_frames": {
+                        "default": 10,
+                        "title": "Max Matching Frames",
+                        "type": "integer"
+                    },
+                    "max_hits": {
+                        "default": 20,
+                        "title": "Max Hits",
+                        "type": "integer"
+                    },
+                    "delete": {
+                        "default": false,
+                        "title": "Delete",
+                        "type": "boolean"
+                    },
+                    "clear": {
+                        "default": false,
+                        "title": "Clear",
+                        "type": "boolean"
+                    },
+                    "enabled": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Enabled"
+                    },
+                    "tracepoint_id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Tracepoint Id"
+                    },
+                    "list_all": {
+                        "default": false,
+                        "title": "List All",
+                        "type": "boolean"
+                    }
+                },
+                "title": "TracepointRequest",
+                "type": "object"
+            },
             "VariablesRequest": {
                 "description": "Request variables for a frame in a thread.",
                 "properties": {
@@ -1621,6 +1842,7 @@
                 "step-in": "#/$defs/StepInRequest",
                 "stop": "#/$defs/StopRequest",
                 "threads": "#/$defs/ThreadsRequest",
+                "tracepoint": "#/$defs/TracepointRequest",
                 "variables": "#/$defs/VariablesRequest",
                 "wait-for-event": "#/$defs/WaitForEventRequest",
                 "watch": "#/$defs/WatchRequest"
@@ -1693,6 +1915,9 @@
             },
             {
                 "$ref": "#/$defs/ThreadsRequest"
+            },
+            {
+                "$ref": "#/$defs/TracepointRequest"
             },
             {
                 "$ref": "#/$defs/VariablesRequest"
@@ -2134,6 +2359,21 @@
                         ],
                         "default": null,
                         "title": "Function Breakpoints"
+                    },
+                    "tracepoints": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/$defs/TracepointInfo"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Tracepoints"
                     }
                 },
                 "required": [
@@ -2626,6 +2866,212 @@
                 "title": "ThreadStackTraceResponse",
                 "type": "object"
             },
+            "TracepointInfo": {
+                "additionalProperties": false,
+                "description": "Configuration and runtime state of a non-stopping tracepoint.",
+                "properties": {
+                    "id": {
+                        "title": "Id",
+                        "type": "integer"
+                    },
+                    "location": {
+                        "title": "Location",
+                        "type": "string"
+                    },
+                    "file": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "File"
+                    },
+                    "line": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Line"
+                    },
+                    "function": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Function"
+                    },
+                    "watch": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Watch"
+                    },
+                    "data_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Data Id"
+                    },
+                    "size": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Size"
+                    },
+                    "access_type": {
+                        "anyOf": [
+                            {
+                                "enum": [
+                                    "write",
+                                    "readWrite"
+                                ],
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Access Type"
+                    },
+                    "condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Condition"
+                    },
+                    "expressions": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Expressions",
+                        "type": "array"
+                    },
+                    "capture": {
+                        "items": {
+                            "enum": [
+                                "frame",
+                                "backtrace",
+                                "locals",
+                                "registers"
+                            ],
+                            "type": "string"
+                        },
+                        "title": "Capture",
+                        "type": "array"
+                    },
+                    "raw_backtrace": {
+                        "default": false,
+                        "title": "Raw Backtrace",
+                        "type": "boolean"
+                    },
+                    "max_matching_frames": {
+                        "default": 10,
+                        "title": "Max Matching Frames",
+                        "type": "integer"
+                    },
+                    "max_hits": {
+                        "default": 20,
+                        "title": "Max Hits",
+                        "type": "integer"
+                    },
+                    "hit_count": {
+                        "default": 0,
+                        "title": "Hit Count",
+                        "type": "integer"
+                    },
+                    "enabled": {
+                        "default": true,
+                        "title": "Enabled",
+                        "type": "boolean"
+                    },
+                    "auto_disabled": {
+                        "default": false,
+                        "title": "Auto Disabled",
+                        "type": "boolean"
+                    },
+                    "verified": {
+                        "default": false,
+                        "title": "Verified",
+                        "type": "boolean"
+                    },
+                    "message": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "description": "Verification or error message from DAP",
+                        "title": "Message"
+                    }
+                },
+                "required": [
+                    "id",
+                    "location"
+                ],
+                "title": "TracepointInfo",
+                "type": "object"
+            },
+            "TracepointResponse": {
+                "additionalProperties": false,
+                "description": "Response for tracepoint command.",
+                "properties": {
+                    "tracepoints": {
+                        "items": {
+                            "$ref": "#/$defs/TracepointInfo"
+                        },
+                        "title": "Tracepoints",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "tracepoints"
+                ],
+                "title": "TracepointResponse",
+                "type": "object"
+            },
             "WatchpointInfo": {
                 "description": "Information about an active data breakpoint (watchpoint).\n\n`verified` and `message` reflect the latest status reported by zxdb, either\nfrom the `setDataBreakpoints` response or from a later asynchronous\n`breakpoint` \"changed\" event.",
                 "properties": {
@@ -2758,6 +3204,9 @@
                     },
                     {
                         "$ref": "#/$defs/DriverListResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/TracepointResponse"
                     },
                     {
                         "additionalProperties": true,
