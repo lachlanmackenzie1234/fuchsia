@@ -10,6 +10,7 @@ import types
 import unittest
 from types import MappingProxyType
 from typing import Any
+from unittest import mock
 
 from memory import resource_usage
 from parameterized import parameterized
@@ -414,6 +415,120 @@ class ResourceUsageTest(unittest.TestCase):
             resource_usage.get_deep_size(head),
             _sum_unique_sizeof(*nodes),
         )
+
+    def test_multi_page_bitmap_and_shared_singletons(self) -> None:
+        # Allocate enough objects (~100k objects > 4+ MiB) to span multiple 1 MiB
+        # address-space pages alongside distant pre-existing singletons.
+        records: list[_SlottedRecord] = []
+        constituents: list[Any] = []
+        for i in range(25_000):
+            ticks = 10**12 + i
+            pt = _SlottedPoint(ticks)
+            tid = i & 0xFF
+            prio = 20
+            rec = _SlottedRecord(pt, tid=tid, prio=prio, args=None)
+            records.append(rec)
+            constituents.extend((ticks, pt, tid, prio, None, rec))
+        dup_slice = records[:1000]
+        singletons: list[Any] = [None, True, False, 0, 1, 255, "", "sys"]
+        graph = {
+            "records": records,
+            "duplicate_slice": dup_slice,
+            "singletons": singletons,
+        }
+        constituents.extend(
+            (
+                graph,
+                records,
+                dup_slice,
+                singletons,
+                *singletons,
+            )
+        )
+        page_keys = {id(r) >> 20 for r in records} | {
+            id(s) >> 20 for s in singletons
+        }
+        self.assertGreater(len(page_keys), 2)
+        self.assertEqual(
+            resource_usage.get_deep_size(graph),
+            _sum_unique_sizeof(*constituents),
+        )
+
+    @parameterized.expand(
+        [(f"page_{page_num:#x}", page_num) for page_num in (0, 1, 0x7FFF_1234)]
+    )
+    def test_seen_ids_bitmap_aligned_addresses_and_bit_preservation(
+        self, _: str, page_num: int
+    ) -> None:
+        # Verify 16-byte-aligned slots across the same byte (slots 0, 1, 7 in
+        # byte 0; slots 65534, 65535 in byte 8191), adjacent bytes (7, 8, 9),
+        # and multiple pages within a single _SeenIdsBitmap instance so setting
+        # new bits preserves previously set bits in the same byte.
+        bitmap = resource_usage._SeenIdsBitmap()
+        other_page = 0x7FFF_1234 if page_num != 0x7FFF_1234 else 1
+        slots = (0, 1, 7, 8, 9, 65534, 65535)
+        addrs = [(page_num << 20) | (slot << 4) for slot in slots] + [
+            (other_page << 20) | (0 << 4),
+            (other_page << 20) | (65535 << 4),
+        ]
+
+        for addr in addrs:
+            self.assertTrue(bitmap.check_and_add(addr))
+
+        # Re-check all addresses after sibling bits in the same bytes/pages
+        # have been populated to verify `byte_val | mask` bit preservation.
+        for addr in addrs:
+            self.assertFalse(bitmap.check_and_add(addr))
+
+        # Unvisited neighboring slots in the same bytes remain unset.
+        for unvisited_slot in (2, 6, 10, 65533):
+            self.assertTrue(
+                bitmap.check_and_add((page_num << 20) | (unvisited_slot << 4))
+            )
+        self.assertEqual(len(bitmap.unaligned_ids), 0)
+        self.assertEqual(set(bitmap.pages.keys()), {page_num, other_page})
+
+    @parameterized.expand(
+        [(f"offset_{offset}", offset) for offset in (1, 2, 4, 8, 15)]
+    )
+    def test_seen_ids_bitmap_unaligned_addresses(
+        self, _: str, offset: int
+    ) -> None:
+        # Verify non-16-byte-aligned addresses use `unaligned_ids` without
+        # colliding with 16-byte-aligned addresses sharing the same base slot.
+        bitmap = resource_usage._SeenIdsBitmap()
+        base_addr = (0x7FFF_1234 << 20) | (0x10 << 4)
+        unaligned_addr = base_addr | offset
+
+        self.assertTrue(bitmap.check_and_add(unaligned_addr))
+        self.assertFalse(bitmap.check_and_add(unaligned_addr))
+        self.assertEqual(bitmap.unaligned_ids, {unaligned_addr})
+        self.assertEqual(len(bitmap.pages), 0)
+
+        # The aligned base slot is still independent and unmarked.
+        self.assertTrue(bitmap.check_and_add(base_addr))
+        self.assertFalse(bitmap.check_and_add(base_addr))
+
+    def test_denylisted_referents_marked_as_seen(self) -> None:
+        captured: list[resource_usage._SeenIdsBitmap] = []
+        orig_cls = resource_usage._SeenIdsBitmap
+
+        def make_bitmap() -> resource_usage._SeenIdsBitmap:
+            inst = orig_cls()
+            captured.append(inst)
+            return inst
+
+        root: list[Any] = [_SampleClass, types, _sample_func, "payload"]
+        with mock.patch.object(
+            resource_usage, "_SeenIdsBitmap", side_effect=make_bitmap
+        ):
+            size = resource_usage.get_deep_size(root)
+
+        self.assertEqual(size, _sum_unique_sizeof(root, "payload"))
+        self.assertEqual(len(captured), 1)
+        seen = captured[0]
+        for denylisted in (_SampleClass, types, _sample_func):
+            self.assertFalse(seen.check_and_add(id(denylisted)))
 
     def test_get_max_rss_bytes(self) -> None:
         rss = resource_usage.get_max_rss_bytes()
