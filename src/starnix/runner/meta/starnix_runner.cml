@@ -37,6 +37,7 @@
         {
             protocol: [
                 "fuchsia.component.runner.ComponentRunner",
+                "fuchsia.input.injection.InputDeviceRegistry", // test-only
                 "fuchsia.starnix.runner.Manager",
             ],
         },
@@ -273,7 +274,10 @@
             from: "self",
         },
         {
-            protocol: [ "fuchsia.starnix.runner.Manager" ],
+            protocol: [
+                "fuchsia.input.injection.InputDeviceRegistry", // test-only
+                "fuchsia.starnix.runner.Manager",
+            ],
             from: "self",
         },
     ],

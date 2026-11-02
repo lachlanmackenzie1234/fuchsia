@@ -493,6 +493,43 @@ impl Kernels {
 
         Ok(Some(in_flight))
     }
+
+    /// Forwards a `ServerEnd` channel for protocol `P` to a running kernel.
+    ///
+    /// Connections are not queued: if no kernel is running, `server_end` is closed with epitaph
+    /// `zx::Status::UNAVAILABLE`. If multiple kernels are running, an arbitrary one is chosen.
+    pub fn forward_to_kernel<P: fidl::endpoints::DiscoverableProtocolMarker>(
+        &self,
+        server_end: ServerEnd<P>,
+    ) {
+        let guard = self.kernels.lock();
+        let Some(kernel) = guard.values().next() else {
+            log::warn!("Cannot forward {}: no starnix kernel is running", P::PROTOCOL_NAME);
+            let _ = server_end.close_with_epitaph(zx::Status::UNAVAILABLE);
+            return;
+        };
+        if guard.len() > 1 {
+            log::warn!(
+                "Multiple starnix kernels running ({}); forwarding {} to an arbitrary kernel",
+                guard.len(),
+                P::PROTOCOL_NAME
+            );
+        }
+        if let Err(e) = kernel.connect_channel_to_protocol::<P>(server_end) {
+            log::error!(
+                "Failed to forward {} to starnix kernel {}: {e:?}",
+                P::PROTOCOL_NAME,
+                kernel.name()
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub fn add_for_testing(&self, kernel: StarnixKernel) -> Result<(), Error> {
+        let kernel_koid = kernel.job().koid()?;
+        self.kernels.lock().insert(kernel_koid, kernel);
+        Ok(())
+    }
 }
 
 impl Drop for Kernels {
@@ -504,6 +541,8 @@ impl Drop for Kernels {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl::endpoints::{DiscoverableProtocolMarker, create_endpoints};
+    use fidl_fuchsia_starnix_container as fstarnix;
     use futures::StreamExt;
     use std::pin::pin;
     use std::task::Poll;
@@ -737,5 +776,89 @@ mod tests {
                 .in_flight
                 .is_none()
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_forward_to_kernel_no_kernel() {
+        let kernels = Kernels::new();
+        let (client_end, server_end) = create_endpoints::<fstarnix::ControllerMarker>();
+        kernels.forward_to_kernel(server_end);
+
+        let proxy = client_end.into_proxy();
+        let mut event_stream = proxy.take_event_stream();
+        let event = event_stream.next().await;
+        assert!(matches!(
+            event,
+            Some(Err(fidl::Error::ClientChannelClosed { epitaph, .. }))
+                if epitaph == zx::Status::UNAVAILABLE
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_forward_to_kernel_single_kernel() {
+        let kernels = Kernels::new();
+
+        let (reg_sender, reg_receiver) = async_channel::unbounded();
+        let dir = vfs::pseudo_directory! {
+            fstarnix::ControllerMarker::PROTOCOL_NAME =>
+                vfs::service::endpoint(move |_scope, channel| {
+                    let _ = reg_sender.try_send(channel.into_zx_channel());
+                }),
+        };
+        let exposed_dir = vfs::directory::serve_read_only(dir, ExecutionScope::new());
+
+        let test_job = Arc::new(fuchsia_runtime::job_default().create_child_job().unwrap());
+        let kernel =
+            StarnixKernel::new_for_testing("test_kernel".to_string(), exposed_dir, test_job);
+        kernels.add_for_testing(kernel).unwrap();
+
+        let (_client_end, server_end) = create_endpoints::<fstarnix::ControllerMarker>();
+        kernels.forward_to_kernel(server_end);
+
+        let received = reg_receiver.recv().await.expect("channel received");
+        assert!(!received.is_invalid());
+    }
+
+    #[fuchsia::test]
+    async fn test_forward_to_kernel_multiple_kernels() {
+        let kernels = Kernels::new();
+
+        let (reg_sender1, reg_receiver1) = async_channel::unbounded();
+        let dir1 = vfs::pseudo_directory! {
+            fstarnix::ControllerMarker::PROTOCOL_NAME =>
+                vfs::service::endpoint(move |_scope, channel| {
+                    let _ = reg_sender1.try_send(channel.into_zx_channel());
+                }),
+        };
+        let exposed_dir1 = vfs::directory::serve_read_only(dir1, ExecutionScope::new());
+        let test_job1 = Arc::new(fuchsia_runtime::job_default().create_child_job().unwrap());
+        let kernel1 =
+            StarnixKernel::new_for_testing("test_kernel_1".to_string(), exposed_dir1, test_job1);
+        kernels.add_for_testing(kernel1).unwrap();
+
+        let (reg_sender2, reg_receiver2) = async_channel::unbounded();
+        let dir2 = vfs::pseudo_directory! {
+            fstarnix::ControllerMarker::PROTOCOL_NAME =>
+                vfs::service::endpoint(move |_scope, channel| {
+                    let _ = reg_sender2.try_send(channel.into_zx_channel());
+                }),
+        };
+        let exposed_dir2 = vfs::directory::serve_read_only(dir2, ExecutionScope::new());
+        let test_job2 = Arc::new(fuchsia_runtime::job_default().create_child_job().unwrap());
+        let kernel2 =
+            StarnixKernel::new_for_testing("test_kernel_2".to_string(), exposed_dir2, test_job2);
+        kernels.add_for_testing(kernel2).unwrap();
+
+        let (_client_end, server_end) = create_endpoints::<fstarnix::ControllerMarker>();
+        kernels.forward_to_kernel(server_end);
+
+        // One of the kernels must receive the channel.
+        let result =
+            futures::future::select(Box::pin(reg_receiver1.recv()), Box::pin(reg_receiver2.recv()))
+                .await;
+        match result {
+            futures::future::Either::Left((res, _)) => assert!(res.is_ok()),
+            futures::future::Either::Right((res, _)) => assert!(res.is_ok()),
+        }
     }
 }

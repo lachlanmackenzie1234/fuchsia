@@ -19,6 +19,7 @@ use fidl_fuchsia_starnix_container as fstarnix;
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
+use fuchsia_component::directory::AsRefDirectory as _;
 use fuchsia_inspect::{HistogramProperty, NumericProperty};
 use futures::TryStreamExt;
 use kernels::{KernelWakeLease, Kernels};
@@ -144,9 +145,36 @@ impl StarnixKernel {
         &self.job
     }
 
+    /// Gets the name of the kernel instance.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// Connect to the specified protocol exposed by the kernel.
     pub fn connect_to_protocol<P: DiscoverableProtocolMarker>(&self) -> Result<P::Proxy, Error> {
         fclient::connect_to_protocol_at_dir_root::<P>(&self.exposed_dir)
+    }
+
+    /// Connect a channel to the specified protocol exposed by the kernel.
+    pub fn connect_channel_to_protocol<P: DiscoverableProtocolMarker>(
+        &self,
+        server_end: ServerEnd<P>,
+    ) -> Result<(), Error> {
+        self.exposed_dir.as_ref_directory().open(
+            P::PROTOCOL_NAME,
+            fio::Flags::PROTOCOL_SERVICE,
+            server_end.into_channel(),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn new_for_testing(
+        name: String,
+        exposed_dir: fio::DirectoryProxy,
+        job: Arc<zx::Job>,
+    ) -> Self {
+        let wake_lease = Arc::new(KernelWakeLease::new(&name));
+        Self { name, exposed_dir, component_instance: zx::Event::create(), job, wake_lease }
     }
 }
 
