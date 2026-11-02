@@ -30,6 +30,7 @@ fuchsia_unittest_package("audio_services_device_registry_unittests") {
     log_settings = {
       max_severity = "INFO"
     }
+    parallel = 4
   }
 }
 
@@ -40,6 +41,7 @@ fuchsia_unittest_package("audio_services_device_registry_warning_unittests") {
     log_settings = {
       max_severity = "WARN"
     }
+    parallel = 4
   }
 }
 
