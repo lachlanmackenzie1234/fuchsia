@@ -137,6 +137,7 @@ if (is_host) {
     library_deps = [
       ":build_utils",
       ":remote_services_utils",
+      "//build/rbe:rbe_profile",
       "//build/rbe:rbe_settings",
     ]
   }

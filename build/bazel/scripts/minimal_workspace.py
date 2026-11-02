@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from build.bazel.scripts import build_utils, remote_services_utils
-from build.rbe import rbe_settings
+from build.rbe import rbe_profile, rbe_settings
 
 _THIS_SCRIPT = Path(__file__)
 _SCRIPT_DIR = _THIS_SCRIPT.resolve().parent
@@ -68,6 +68,7 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 def force_symlink(src: Path, dest: Path) -> None:
     if src.exists() or src.is_symlink():
         src.unlink()
+    src.parent.mkdir(parents=True, exist_ok=True)
     src.symlink_to(dest)
 
 
@@ -162,6 +163,11 @@ def main(argv: Sequence[str]) -> int:
         workspace_dir / "expect_pwd.txt",
         _SCRIPT_DIR / "expect_pwd.txt",
     )
+
+    # Symlink active build service profiles so fuchsia_platform_build.bzl
+    # can resolve active RBE configuration (container image and worker pools).
+    for link in rbe_profile.workspace_symlinks(fuchsia_dir):
+        force_symlink(workspace_dir / link.workspace_relpath, link.target_path)
 
     # Generate args.json expected by fuchsia_platform_build.bzl
     write_file(workspace_dir / "fuchsia_build_generated" / "args.json", "{}")
