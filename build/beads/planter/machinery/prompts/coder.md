@@ -39,6 +39,11 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
   (`:fx_cc_binary.bzl`), or `fx_cc_test_binary` (`:fx_cc_test_binary.bzl`); never use raw `@rules_cc` rules.
 - Set `alwayslink = True` on `fx_cc_library` iff the GN target was `source_set()` (omit for
   `static_library()`). Add `"//sdk/lib/fdio"` to `fx_cc_binary` `deps` (automatic in `rustc_*`).
+- **GN `shared_library` is never `fx_cc_binary(linkshared = True)`**: In-tree C/C++ is built
+  statically. Mapping to `fx_cc_binary(linkshared = True)` drops `CcInfo` headers and breaks Bazel
+  dependents. Map in-tree libraries to `fx_cc_library`, system libraries to `cc_shared_library_zx`,
+  and drivers to `fuchsia_cc_driver`. Only standalone test fixture `.so` files loaded via `dlopen()`
+  may use `fx_cc_binary(linkshared = True)`.
 - **Platform constraints**: Targets guarded by `if (is_fuchsia)`/`assert(is_fuchsia)` or using
   unguarded Zircon/FIDL headers set `target_compatible_with = ["@platforms//os:fuchsia"]`
   (`bazel2gn` emits `if (is_fuchsia)`). For `if (is_host)`/`assert(is_host)` targets (except
@@ -86,6 +91,9 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
 - **Rust `public_deps` carrying `public_configs`**: Preserve public config forwarding with a
   package-local group above the sentinel (`group("<name>") { visibility = [ ":*" ] public_deps = [ "<label>" ] all_dependent_configs = [ ... ] }`)
   referenced via `# @bazel2gn:path_overwrite::<name>`. Name any removed unused dep in `summary`.
+  When pruning an unused GN dep not needed in Bazel (e.g. explicit `"//sdk/lib/fdio"` on an
+  `fx_cc_binary` that links the default C runtime without calling `fdio_*` APIs directly), explain it
+  in the commit body to preempt `dep_alignment` review questions.
 
 ### 4. GN-Only Attributes & Compiled Manifests (`cm()`)
 - Convertible targets with `exclude_toolchain_tags`, `configs -=`, `disable_syslog_backend`,
@@ -99,6 +107,9 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
      when the generated target already assigns that attribute). Use `# @bazel2gn:value_overwrite:$var`
      on `rustc_env` entries and `# @bazel2gn:raw_overwrite:[ var ]` on `compile_data`'s closing `],`
      for GN path variables above the sentinel.
+- **Raw executable `output_name`**: When an un-packaged `fx_cc_binary`'s GN `output_name` differs
+  from its target name, annotate `# @bazel2gn:raw_attribute:output_name = "<name>"` with an
+  explanatory comment above the target so `bazel2gn` preserves the binary name.
 - **Compiled manifests (`cm()`)**: Migrate GN `cm("<name>")` to `fx_compiled_manifest(...)` from
   `//build/bazel/rules/components:fx_component.bzl` (use `fx_component_manifest` for packaged
   `fx_component`s; update `//tools/cmc/build/restricted_features` for `restricted_features`).
@@ -115,10 +126,12 @@ tests that fail to compile (`# TODO` + commit note) and leave dead code unmigrat
   `fx_component(testonly = True)`, never `fx_test_component`.
 - **`BUILD.gn` & assembly cleanup**: `bazel2gn` converts `fx_component`/`fx_component_manifest`,
   not non-test `fx_package` or `resource`. Keep `fuchsia_package` in `BUILD.gn` only for non-assembly
-  GN `subpackages`/`deps` or `rustc_dylib` deps; otherwise delete it from `BUILD.gn`, replace
-  `//bundles/assembly/bazel_inputs/<dir>` with `"//<dir>:<pkg>"` in `//bundles/assembly/BUILD.bazel`,
-  remove its `bazel_inputs` entry/files, and set `visibility = ["//bundles/assembly:__subpackages__"]`.
-  Omit `## BAZEL2GN SENTINEL` when `BUILD.gn` retains only GN-only targets.
+  GN `subpackages`/`deps`, when its enclosing tool bundle (e.g. `//bundles/tools`) remains in GN, or
+  `rustc_dylib` deps (add `TODO(https://fxbug.dev/<bug>)` and note in commit body); otherwise delete
+  it from `BUILD.gn`, replace `//bundles/assembly/bazel_inputs/<dir>` with `"//<dir>:<pkg>"` in
+  `//bundles/assembly/BUILD.bazel`, remove its `bazel_inputs` entry/files, and set
+  `visibility = ["//bundles/assembly:__subpackages__"]`. Omit `## BAZEL2GN SENTINEL` when `BUILD.gn`
+  retains only GN-only targets.
 - **`ffx_plugin`, `ffx_tool` & `idk_ffx_tool`**: Define `ffx_plugin` (`//src/developer/ffx/build:ffx_plugin.bzl`,
   mapping `sources` -> `srcs`, `args_sources` -> `args_srcs`, synced via `fx bazel2gn`), `ffx_tool`
   (`:ffx_tool.bzl`), or `idk_ffx_tool` (`//build/bazel/rules/idk:idk_ffx_tool.bzl`, registering
