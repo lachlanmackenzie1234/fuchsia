@@ -73,7 +73,7 @@ rust_proc_macro(
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.47:quote",
-        "//third_party/rust_crates/vendor/syn-3.0.6:syn",
+        "//third_party/rust_crates/vendor/syn-3.0.9:syn",
         "//third_party/rust_crates/vendor/test-case-core-3.4.0:test_case_core",
     ],
 )
