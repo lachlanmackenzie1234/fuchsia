@@ -35,11 +35,13 @@ class Log {
   [[nodiscard]] FILE VerboseOnlyFile();
 
   // Replace the *stdout object with this one, storing the previous
-  // stdout object and mirroring the output to that one.
+  // stdout object and mirroring the output to that one.  This also
+  // installs the log as the non-verbose output (see SetNonVerboseOutput()).
   void SetStdout();
 
   // If this object was previously installed with SetStdout(), then restore the
-  // original stdout that it replaced.  If not, this is a harmless no-op.
+  // original stdout that it replaced and clear the non-verbose output.  If
+  // not, this is a harmless no-op.
   void RestoreStdout();
 
   // When the object dies, it always detaches from stdout.
@@ -76,6 +78,7 @@ class Log {
   Allocation buffer_;
   size_t size_ = 0;
   FILE mirror_;
+  FILE log_only_;
 };
 
 extern Log* gLog;

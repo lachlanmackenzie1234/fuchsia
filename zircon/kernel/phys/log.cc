@@ -9,6 +9,7 @@
 #include <lib/boot-options/boot-options.h>
 
 #include <phys/address-space.h>
+#include <phys/stdio.h>
 
 Log* gLog;
 
@@ -28,12 +29,15 @@ void Log::SetStdout() {
   ZX_ASSERT(!mirror_);
   mirror_ = *stdout;
   *stdout = FILE{this};
+  log_only_ = LogOnlyFile();
+  SetNonVerboseOutput(&log_only_);
 }
 
 void Log::RestoreStdout() {
   if (*stdout == FILE{this}) {
     *stdout = mirror_;
     mirror_ = FILE{};
+    SetNonVerboseOutput(nullptr);
   }
 }
 

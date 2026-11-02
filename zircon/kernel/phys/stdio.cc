@@ -10,13 +10,13 @@
 
 #include <phys/stdio.h>
 
-#include "log.h"
-
 namespace {
 
 int NullWrite(void*, const char*, size_t len) { return static_cast<int>(len); }
 
 constinit FILE gNullFile{NullWrite, nullptr};
+
+FILE* gNonVerboseOutput;
 
 }  // namespace
 
@@ -24,19 +24,17 @@ constinit FILE gStdout{NullWrite, nullptr};
 
 FILE* NullFile() { return &gNullFile; }
 
+void SetNonVerboseOutput(FILE* f) { gNonVerboseOutput = f; }
+
 void debugf(const char* fmt, ...) {
   FILE* outfile = stdout;
 
-  // If kernel.phys.verbose=false then only write to the log.
-  FILE log_only_file;
+  // If kernel.phys.verbose=false then only write to the non-verbose output.
   if (BootOptions::Get() && !BootOptions::Get()->phys_verbose) {
-    if (!gLog) {
-      // The log isn't initialized yet, so write nothing.
+    if (!gNonVerboseOutput) {
       return;
     }
-
-    log_only_file = gLog->LogOnlyFile();
-    outfile = &log_only_file;
+    outfile = gNonVerboseOutput;
   }
 
   va_list args;

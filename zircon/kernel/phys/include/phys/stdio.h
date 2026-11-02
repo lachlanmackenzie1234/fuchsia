@@ -22,7 +22,12 @@ struct CallableFile {
 };
 
 // A printf that respects the `kernel.phys.verbose` boot option: if the option
-// is false, nothing will be printed.
+// is false, the output is instead written to the FILE set by
+// SetNonVerboseOutput(), if any.
 void debugf(const char* fmt, ...) __PRINTFLIKE(1, 2);
+
+// Sets where debugf output goes when `kernel.phys.verbose` is disabled;
+// nullptr means it is dropped.
+void SetNonVerboseOutput(FILE* f);
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_STDIO_H_
