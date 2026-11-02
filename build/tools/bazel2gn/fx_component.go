@@ -31,6 +31,7 @@ var (
 		"visibility":             true,
 		"tags":                   true,
 		"target_compatible_with": true,
+		generatedDepsAttr:        true,
 	}
 
 	// `fx_compiled_manifest()` accepts the same attributes as
@@ -46,6 +47,7 @@ var (
 		"visibility":             true,
 		"tags":                   true,
 		"target_compatible_with": true,
+		generatedDepsAttr:        true,
 	}
 
 	allowedFxComponentAttrs = map[string]bool{
@@ -340,6 +342,9 @@ func resolveComponentTargets(f *syntax.File) error {
 		return err
 	}
 	if err := hoistComponentManifests(f); err != nil {
+		return err
+	}
+	if err := resolveCmcMergeTargets(f); err != nil {
 		return err
 	}
 

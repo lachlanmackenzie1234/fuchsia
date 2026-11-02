@@ -31,7 +31,9 @@ def merge_component_manifests(
     if not srcs:
         fail("`srcs` must not be empty.")
 
+    # LINT.IfChange(cmc_merge_output_name)
     merged_output = ctx.actions.declare_file(output_name or "{}.cml".format(ctx.label.name))
+    # LINT.ThenChange(//build/tools/bazel2gn/cmc_merge.go:cmc_merge_output_name)
 
     args = [
         "merge",

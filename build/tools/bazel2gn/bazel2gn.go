@@ -326,6 +326,10 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	}
 
 	switch bazelRule {
+	case "cmc_merge":
+		if err := prepareCmcMerge(expr, rawAttrs); err != nil {
+			return nil, err
+		}
 	case "cml_shard":
 		if err := validateCmlShard(expr); err != nil {
 			return nil, err
@@ -879,6 +883,8 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 	case "api", "outputs", "sources", "inputs", "args_sources", "args_source_root":
 		if bazelRule == compiledActionRule && attrName == "outputs" {
 			transformers = append(transformers, compiledActionOutsTransformer)
+		} else if bazelRule == "cmc_merge" && attrName == "sources" {
+			transformers = append(transformers, bazelCmcMergeSrcsToGN)
 		} else {
 			transformers = append(transformers, bazelFilePathsToGN)
 		}
@@ -888,7 +894,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		}
 	case "manifest":
 		if isFxManifestRule(bazelRule) {
-			transformers = append(transformers, bazelFilePathsToGN)
+			transformers = append(transformers, bazelManifestToGN(bazelRule))
 		}
 	case "depfile":
 		if bazelRule == compiledActionRule {

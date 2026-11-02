@@ -197,9 +197,18 @@ libraries (`fuchsia_cc_dso()` and `fuchsia_rust_dso()` from
 
 #### Components
 
-`fx_component_manifest()`, `fx_compiled_manifest()`, and `fx_component()` sync
-to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
+`cmc_merge()`, `fx_component_manifest()`, `fx_compiled_manifest()`, and
+`fx_component()` sync to GN `cmc_merge()`, `fuchsia_component_manifest()`,
+`cm()`, and `fuchsia_component()`:
 
+*   `cmc_merge()` maps `srcs` (`.cml`, `.shard.cml`, or `.json` files,
+    `cml_shard()` targets ending in `.shard`, or `:<merge>` targets defined in
+    the same `BUILD.bazel`) to `sources` and defaults `output_name` to
+    `<name>.cml` (matching the Bazel rule, whereas GN `cmc_merge()` defaults to
+    `<name>`). When an `fx_component_manifest()`, `fx_compiled_manifest()`, or
+    `cmc_merge()` consumes a `:<merge>` target defined in the same
+    `BUILD.bazel`, `bazel2gn` rewrites `:<merge>` to
+    `"$target_out_dir/<output_name>"` and adds `:<merge>` to `deps`.
 *   `fx_component_manifest()` maps `manifest` to a GN path, passes
     `restricted_features` through, and omits `includes`
     (which lists `.cml` shard inputs for the Bazel action sandbox; GN runs `cmc`

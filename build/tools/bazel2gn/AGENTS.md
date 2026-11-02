@@ -31,6 +31,10 @@ motivation, and comment annotations.
     assignment operators (`bazelAttrToGNAssignmentOps`), platform constraints,
     `coptToConfig`, third-party repo mappings, and `@bazel2gn:*` annotation
     prefixes.
+-   [`cmc_merge.go`](./cmc_merge.go): Validates `cmc_merge` and populates its
+    default `<name>.cml` `output_name`, and rewrites same-file `:cmc_merge`
+    references in `fx_component_manifest`, `fx_compiled_manifest`, and chained
+    `cmc_merge` targets into `"$target_out_dir/<output_name>"` with GN `deps`.
 -   [`compiled_action.go`](./compiled_action.go): Validates and converts
     `compiled_action` `outs` and `depfile` (placed under `$target_gen_dir`
     unless overwritten), `args` (`$(location <label>)`, `$(execpath <label>)`,

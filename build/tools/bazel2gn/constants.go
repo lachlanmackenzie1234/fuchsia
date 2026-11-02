@@ -114,6 +114,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"zither_fidl_library": "fidl",
 
 	// Components
+	"cmc_merge":                          "cmc_merge",
 	"expect_includes":                    "expect_includes",
 	"fuchsia_structured_config_rust_lib": "fuchsia_structured_config_rust_lib",
 	"fx_component":                       "fuchsia_component",
@@ -275,9 +276,10 @@ var implicitConditionsByRules = map[string]string{
 
 // Common Bazel attributes that use different names in GN.
 var commonAttrMap = map[string]string{
-	"aspect_hints": "deps",
-	"srcs":         "sources",
-	"hdrs":         "public",
+	"aspect_hints":    "deps",
+	"srcs":            "sources",
+	"hdrs":            "public",
+	generatedDepsAttr: "deps",
 }
 
 var aliasAttrMap = map[string]string{
