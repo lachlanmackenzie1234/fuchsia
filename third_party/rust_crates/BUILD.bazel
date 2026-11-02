@@ -104,6 +104,7 @@ package_group(
         "//src/storage/benchmarks",
         "//src/storage/benchmarks/host",
         "//src/storage/fxfs/unicode",
+        "//src/sys/fuzzing/fuzzctl",
         "//src/sys/lib/cm_fidl_validator",
         "//src/sys/pkg/lib/fuchsia-pkg",
         "//tools/fidl/fidldoc",

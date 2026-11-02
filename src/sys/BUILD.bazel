@@ -18,6 +18,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/sys/fuzzing/fuzzctl:fuzzctl-tests",
         "//src/sys/fuzzing/manager:fuzz-manager-unittests",
         "//src/sys/fuzzing/registry:fuzz-registry-unittests",
         "//src/sys/lib/elf_runner/tests/environ:elf_runner_environ_test",
