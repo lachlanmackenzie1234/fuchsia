@@ -44,8 +44,7 @@ source_set("tokens") {
   ]
 }
 
-executable("tokens-unittest-bin") {
-  testonly = true
+cc_test_executable("tokens-unittest-bin") {
   sources = [ "tokens-unittest.cc" ]
   deps = [
     ":tokens",
@@ -53,6 +52,8 @@ executable("tokens-unittest-bin") {
     "//sdk/lib/async-loop:async-loop-default",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("tokens-unittest") {

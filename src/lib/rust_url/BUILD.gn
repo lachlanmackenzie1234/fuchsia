@@ -75,13 +75,14 @@ source_set("rust_url") {
   ]
 }
 
-executable("rust_url_unittests_bin") {
-  testonly = true
+cc_test_executable("rust_url_unittests_bin") {
   sources = [ "rust_url_unittests.cc" ]
   deps = [
     ":rust_url",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("rust_url_unittests") {

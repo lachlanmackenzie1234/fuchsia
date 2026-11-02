@@ -50,14 +50,15 @@ source_set("backoff") {
   ]
 }
 
-executable("backoff_unittests") {
-  testonly = true
+cc_test_executable("backoff_unittests") {
   sources = [ "exponential_backoff_unittest.cc" ]
   deps = [
     ":backoff",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("backoff_tests") {

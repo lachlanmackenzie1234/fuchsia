@@ -82,8 +82,7 @@ source_set("files") {
   ]
 }
 
-executable("files_unittests") {
-  testonly = true
+cc_test_executable("files_unittests") {
   sources = [
     "directory_unittest.cc",
     "file_descriptor_unittest.cc",
@@ -100,6 +99,8 @@ executable("files_unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
   deps += [ "//third_party/googletest:gmock" ]
 }
 

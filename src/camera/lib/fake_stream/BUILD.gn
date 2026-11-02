@@ -79,14 +79,15 @@ source_set("lib") {
   ]
 }
 
-executable("fake_stream_unittest_bin") {
-  testonly = true
+cc_test_executable("fake_stream_unittest_bin") {
   sources = [ "fake_stream_unittest.cc" ]
   deps = [
     ":lib",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("fake_stream_unittest") {

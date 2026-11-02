@@ -51,8 +51,7 @@ source_set("process") {
   ]
 }
 
-executable("unittests") {
-  testonly = true
+cc_test_executable("unittests") {
   sources = [ "process_builder_unittest.cc" ]
   output_name = "process_unittests"
   deps = [
@@ -61,6 +60,8 @@ executable("unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/fbl",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_component_manifest("process_unittests_manifest") {

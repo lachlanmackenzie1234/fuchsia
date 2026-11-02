@@ -47,13 +47,14 @@ source_set("lib") {
   public_deps = [ "//src/camera/bin/camera-gym/fidl:controller_hlcpp" ]
 }
 
-executable("camera_gym_controller_error_unittest_bin") {
-  testonly = true
+cc_test_executable("camera_gym_controller_error_unittest_bin") {
   sources = [ "controller_error_unittest.cc" ]
   deps = [
     ":lib",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("camera_gym_controller_error_unittest") {

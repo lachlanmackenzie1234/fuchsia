@@ -69,14 +69,15 @@ source_set("lib") {
   ]
 }
 
-executable("formatting-unittest-bin") {
-  testonly = true
+cc_test_executable("formatting-unittest-bin") {
   sources = [ "formatting-unittest.cc" ]
   deps = [
     ":formatting",
     "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_hlcpp",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("formatting-unittest") {

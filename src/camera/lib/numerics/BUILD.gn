@@ -58,13 +58,14 @@ source_set("rational") {
   ]
 }
 
-executable("numerics-unittest-bin") {
-  testonly = true
+cc_test_executable("numerics-unittest-bin") {
   sources = [ "numerics-unittest.cc" ]
   deps = [
     ":numerics",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("numerics-unittest") {

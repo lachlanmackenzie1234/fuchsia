@@ -56,13 +56,14 @@ source_set("lib") {
   ]
 }
 
-executable("camera_gym_controller_parser_unittest_bin") {
-  testonly = true
+cc_test_executable("camera_gym_controller_parser_unittest_bin") {
   sources = [ "controller_parser_unittest.cc" ]
   deps = [
     ":lib",
     "//src/lib/fxl/test:gtest_main",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("camera_gym_controller_parser_unittest") {

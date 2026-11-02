@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
     "fx_component_manifest",
@@ -42,9 +42,8 @@ fx_cc_library(
     alwayslink = True,
 )
 
-fx_cc_binary(
+fx_cc_test_binary(
     name = "fake_camera_unittest_bin",
-    testonly = True,
     srcs = ["fake_camera_unittest.cc"],
     tags = ["manual"],
     deps = [

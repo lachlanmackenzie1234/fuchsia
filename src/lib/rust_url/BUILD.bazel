@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 load("@rules_rust//rust:rust_static_library.bzl", "rust_static_library")
-load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_test_binary.bzl", "fx_cc_test_binary")
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
@@ -32,9 +32,8 @@ rust_static_library(
 )
 # LINT.ThenChange(BUILD.gn:rust_url_c_api)
 
-fx_cc_binary(
+fx_cc_test_binary(
     name = "rust_url_unittests_bin",
-    testonly = True,
     srcs = ["rust_url_unittests.cc"],
     tags = ["manual"],
     deps = [

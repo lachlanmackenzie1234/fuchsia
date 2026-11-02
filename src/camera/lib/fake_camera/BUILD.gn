@@ -57,8 +57,7 @@ source_set("fake_camera") {
   ]
 }
 
-executable("fake_camera_unittest_bin") {
-  testonly = true
+cc_test_executable("fake_camera_unittest_bin") {
   sources = [ "fake_camera_unittest.cc" ]
   deps = [
     ":fake_camera",
@@ -68,6 +67,8 @@ executable("fake_camera_unittest_bin") {
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_component_manifest("fake_camera_unittest_manifest") {

@@ -52,8 +52,7 @@ source_set("actor_base") {
   ]
 }
 
-executable("actor_base_unittest_bin") {
-  testonly = true
+cc_test_executable("actor_base_unittest_bin") {
   sources = [ "actor_base_unittest.cc" ]
   deps = [
     ":actor_base",
@@ -64,6 +63,8 @@ executable("actor_base_unittest_bin") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+  testonly = true
+  emit_tool_path = false
 }
 
 fuchsia_unittest_package("actor_base_unittest") {

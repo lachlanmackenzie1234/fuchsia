@@ -168,11 +168,12 @@ fuchsia_unittest_package("output_sink_tests") {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-executable("timestamp_extrapolator_test_bin") {
-  testonly = true
+cc_test_executable("timestamp_extrapolator_test_bin") {
   sources = [ "timestamp_extrapolator_tests.cc" ]
   deps = [
     "//src/lib/fxl/test:gtest_main",
     "//src/media/codec/codecs:timestamp_extrapolator",
   ]
+  testonly = true
+  emit_tool_path = false
 }
