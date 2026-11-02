@@ -24,6 +24,9 @@
                 // on execve.
                 "InheritTest/InheritShareTest.ShareWithCloneFs/Denied",
 
+                // TODO: https://fxbug.dev/578846356 - Check read permission in inotify_add_watch.
+                "InotifyTest.WatchDeniedWithoutRead",
+
                 // TODO: https://fxbug.dev/532921178 - io_uring memory accounting is not implemented
                 // in Starnix.
                 "IoUringTest.IoUringSetupMemlockLimitCumulative",

@@ -13,6 +13,9 @@
         // checking `add_name` on the target parent directory.
         "FsTest.RenameChecksReparentBeforeAddName",
 
+        // TODO: https://fxbug.dev/578846356 - Check read permission in inotify_add_watch.
+        "InotifyTest.WatchDeniedWithoutRead",
+
         // Linux audits the denial using an unrelated permission of the socket class (since the
         // "watch" permissions are not defined for socket-like classes), while Starnix denies
         // the watch without auditing.

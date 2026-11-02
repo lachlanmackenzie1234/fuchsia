@@ -853,6 +853,12 @@
             ]
         },
         {
+            "name": "InotifyTest.WatchDeniedWithoutRead",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_aOW3Lc\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inotify_watch_t:s0 tcontext=test_u:object_r:test_inotify_unreadable_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "InotifyTest.WatchReadsOnlyDenied",
             "audit_expectations": [
                 "avc:  denied  { watch } for path=\"/tmp/proc_test_file_8isYnv\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_inotify_watch_reads_only_t:s0 tcontext=test_u:object_r:test_inotify_file_t:s0 tclass=file permissive=0"
