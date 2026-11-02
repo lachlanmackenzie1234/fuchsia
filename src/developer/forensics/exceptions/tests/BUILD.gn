@@ -66,6 +66,7 @@ cc_test_executable("exception_broker_integration_test_exe") {
 
   deps = [
     ":test_lib",
+    "//sdk/fidl/fuchsia.exception:fuchsia.exception_hlcpp",
     "//src/developer/forensics/exceptions:lib",
     "//src/developer/forensics/public/fakes:fuchsia.feedback.testing_hlcpp",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
