@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::lockdep_tracked::LockdepTracked;
+use crate::lockdep_tracked::{LockdepTracked, impl_lockdep_tracked_lock_policy};
 use crate::raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data, pin_init_from_closure};
+use zx_types::zx_duration_mono_t;
 
 #[cfg(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"))]
 const RAW_MUTEX_SIZE: usize = 32;
@@ -15,6 +16,10 @@ const RAW_MUTEX_SIZE: usize = 24;
 unsafe extern "C" {
     fn cpp_mutex_destroy(lock: *mut c_void);
     fn cpp_mutex_acquire(lock: *mut c_void);
+    fn cpp_mutex_acquire_with_spin_max_duration(
+        lock: *mut c_void,
+        spin_max_duration: zx_duration_mono_t,
+    );
     fn cpp_mutex_release(lock: *mut c_void);
     fn cpp_mutex_is_contested(lock: *mut c_void) -> bool;
     fn cpp_mutex_is_held(lock: *const c_void) -> bool;
@@ -152,6 +157,77 @@ unsafe impl LockPolicy<RawMutexStorage> for RawMutexStorage {
 // SAFETY: `cpp_mutex_acquire` and `cpp_mutex_release` enforce exclusive mutual exclusion on
 // `RawMutexStorage`.
 unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawMutexStorage {}
+
+/// Lock policy for acquiring and releasing a `RawMutexStorage` as a C++ `Mutex`, spinning for at
+/// most the given monotonic duration (in nanoseconds) before falling back to blocking.
+///
+/// This is the equivalent of the C++ `Guard<Mutex> guard{&lock, spin_max_duration}`. For
+/// comparison, the default `RawMutexStorage` policy spins for at most the C++
+/// `Mutex::SPIN_MAX_DURATION` (150us).
+///
+/// This policy can only be used with [`RawMutex`] and an untracked [`RawMutexStorage`]. It cannot
+/// be used with [`RawCriticalMutex`], since it would acquire the lock as a plain `Mutex` and
+/// bypass the `CriticalMutex` time slice extension.
+pub struct RawMutexSpinMaxDurationPolicy;
+
+// SAFETY: `cpp_mutex_acquire_with_spin_max_duration` and `cpp_mutex_release` enforce mutual
+// exclusion on `RawMutexStorage`.
+unsafe impl LockPolicy<RawMutexStorage> for RawMutexSpinMaxDurationPolicy {
+    type AcquireArgs = zx_duration_mono_t;
+    type GuardState = zx_duration_mono_t;
+
+    /// # Safety
+    ///
+    /// `lock` must be initialized, the calling thread must not already hold `lock`, and the
+    /// caller must be in a thread context where blocking on a kernel mutex is permitted.
+    #[inline]
+    unsafe fn acquire(
+        lock: &RawMutexStorage,
+        state: &mut Self::GuardState,
+        spin_max_duration: Self::AcquireArgs,
+    ) {
+        // SAFETY: The FFI call is safe because the lock is initialized, and the caller upholds
+        // the remaining `LockPolicy::acquire` requirements.
+        unsafe {
+            cpp_mutex_acquire_with_spin_max_duration(lock.as_mut_ptr(), spin_max_duration);
+        }
+        *state = spin_max_duration;
+    }
+
+    /// # Safety
+    ///
+    /// `lock` must be initialized, `state` must have been previously populated by `acquire`, the
+    /// calling thread must not currently hold `lock`, and blocking on a kernel mutex must be
+    /// permitted.
+    #[inline]
+    unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
+        // SAFETY: Caller upholds the `LockPolicy::reacquire` contract, and `*state` holds the
+        // spin duration recorded by `acquire`.
+        unsafe {
+            Self::acquire(lock, state, *state);
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `lock` must be initialized and currently held by the calling thread with `state` produced
+    /// by the corresponding `acquire` or `reacquire` call.
+    #[inline]
+    unsafe fn release(lock: &RawMutexStorage, _state: &mut Self::GuardState) {
+        // SAFETY: A lock acquired by this policy is released the same way as by the default
+        // `RawMutexStorage` policy, and the caller upholds the `LockPolicy::release` contract.
+        unsafe {
+            <RawMutexStorage as LockPolicy<RawMutexStorage>>::release(lock, &mut ());
+        }
+    }
+}
+
+// SAFETY: `cpp_mutex_acquire_with_spin_max_duration` and `cpp_mutex_release` enforce exclusive
+// mutual exclusion on `RawMutexStorage`.
+unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawMutexSpinMaxDurationPolicy {}
+
+// Restricted to `RawMutex`, so that `RawCriticalMutex` cannot be acquired as a plain `Mutex`.
+impl_lockdep_tracked_lock_policy!(RawMutexSpinMaxDurationPolicy, RawMutexStorage, RawMutexStorage);
 
 // SAFETY: `RawMutexStorage` is a physical kernel mutex with a unique storage address.
 unsafe impl RawLock for RawMutexStorage {

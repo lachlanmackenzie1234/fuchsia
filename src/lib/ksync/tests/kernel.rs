@@ -601,6 +601,164 @@ mod ksync_tests {
         }
     }
 
+    /// test RawMutexSpinMaxDurationPolicy acquire, call_unlocked, and call_untracked
+    #[test]
+    fn mutex_spin_max_duration() {
+        // 1us monotonic duration, in nanoseconds.
+        const SPIN_MAX_DURATION: i64 = 1_000;
+
+        // SAFETY: No preconditions.
+        let lock_validation_enabled = unsafe { cpp_ksync_test_lock_validation_enabled() };
+        let last = || {
+            // SAFETY: Runs on a valid kernel thread; reads only the current thread's
+            // `ThreadLockState`.
+            unsafe { cpp_ksync_test_lockdep_last_result() }
+        };
+
+        let obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 1.into(),
+        })
+        .unwrap();
+
+        {
+            ksync::lock!(
+                let mut guard =
+                    obj.lock_mu_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                        SPIN_MAX_DURATION
+                    )
+            );
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            expect_true!(obj.mu.raw_mutex().is_held());
+            expect_true!(*guard.value() == 1);
+            let held = guard.as_mut().call_unlocked(|| obj.mu.raw_mutex().is_held());
+            expect_true!(!held);
+            expect_true!(obj.mu.raw_mutex().is_held());
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            let (held_in_untracked, untracked_val) = guard.as_mut().call_untracked(|token| {
+                let held = obj.mu.raw_mutex().is_held();
+                // SAFETY: `token` was acquired from `obj.mu`.
+                *unsafe { obj.guard_mu_mut(token) }.value_mut() = 2;
+                // SAFETY: `token` was acquired from `obj.mu`.
+                (held, *unsafe { obj.guard_mu(token) }.value())
+            });
+            expect_true!(held_in_untracked);
+            expect_true!(untracked_val == 2);
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+        }
+        expect_true!(!obj.mu.raw_mutex().is_held());
+
+        // Exercise direct `KMutex::lock_policy_with` with boundary duration `0`.
+        {
+            ksync::lock!(
+                let mut guard =
+                    obj.mu.lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(0)
+            );
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            expect_true!(obj.mu.raw_mutex().is_held());
+            expect_true!(*obj.guard_mu_from_guard(&guard).value() == 2);
+            let held = guard.as_mut().call_unlocked(|| obj.mu.raw_mutex().is_held());
+            expect_true!(!held);
+            expect_true!(obj.mu.raw_mutex().is_held());
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            *obj.guard_mu_mut_from_guard(guard.as_mut()).value_mut() = 3;
+        }
+        expect_true!(!obj.mu.raw_mutex().is_held());
+
+        {
+            ksync::lock!(let guard = obj.lock_mu());
+            expect_true!(*guard.value() == 3);
+        }
+
+        // Exercise `GuardedFlaggedMutexObj` (`#[mutex(flags = ...)]`) as well as a
+        // `LockdepTracked` mutex with non-default `const LOCK_FLAGS` (verifying `const LOCK_FLAGS`
+        // in the 3-arg `impl_lockdep_tracked_lock_policy!` arm).
+        stack_pin_init!(let flagged = pin_init!(GuardedFlaggedMutexObj {
+            seek_lock <- ksync::KMutex::init(),
+            seek: 100.into(),
+        }));
+        {
+            ksync::lock!(
+                let mut guard =
+                    flagged.lock_seek_lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                        SPIN_MAX_DURATION
+                    )
+            );
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            expect_true!(flagged.seek_lock.raw_mutex().is_held());
+            expect_true!(*guard.seek() == 100);
+            *guard.as_mut().seek_mut() = 200;
+        }
+        expect_true!(!flagged.seek_lock.raw_mutex().is_held());
+
+        type FlaggedRawMutex = ksync::LockdepTracked<
+            ksync::RawMutexStorage,
+            ksync::RawMutexStorage,
+            { lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED },
+        >;
+        stack_pin_init!(
+            let const_flagged_mu =
+                ksync::KMutex::<GuardedFlaggedMutexObjSeekLockClass, FlaggedRawMutex>::init()
+        );
+        {
+            ksync::lock!(
+                let _guard = const_flagged_mu
+                    .lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(SPIN_MAX_DURATION)
+            );
+            if lock_validation_enabled {
+                expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
+            }
+            expect_true!(const_flagged_mu.raw_mutex().is_held());
+        }
+        expect_true!(!const_flagged_mu.raw_mutex().is_held());
+
+        stack_pin_init!(let untracked = pin_init!(GuardedUntrackedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+
+        {
+            ksync::lock!(
+                let mut guard =
+                    untracked.lock_mu_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                        SPIN_MAX_DURATION
+                    )
+            );
+            expect_true!(untracked.mu.raw_mutex().is_held());
+            expect_true!(*guard.value() == 10);
+            let held = guard.as_mut().call_unlocked(|| untracked.mu.raw_mutex().is_held());
+            expect_true!(!held);
+            expect_true!(untracked.mu.raw_mutex().is_held());
+            let (held_in_untracked, untracked_val) = guard.as_mut().call_untracked(|token| {
+                let held = untracked.mu.raw_mutex().is_held();
+                // SAFETY: `token` was acquired from `untracked.mu`.
+                *unsafe { untracked.guard_mu_mut(token) }.value_mut() = 20;
+                // SAFETY: `token` was acquired from `untracked.mu`.
+                (held, *unsafe { untracked.guard_mu(token) }.value())
+            });
+            expect_true!(held_in_untracked);
+            expect_true!(untracked_val == 20);
+        }
+        expect_true!(!untracked.mu.raw_mutex().is_held());
+
+        {
+            ksync::lock!(let guard = untracked.lock_mu());
+            expect_true!(*guard.value() == 20);
+        }
+    }
+
     /// test untracked RawSpinlockStorage and RawMonitoredSpinlockStorage directly
     #[test]
     fn untracked_spinlock() {

@@ -335,13 +335,12 @@ unsafe impl<
 }
 
 // SAFETY: `LockdepTracked` delegates lock acquisition and release to `P`, which guarantees
-// exclusive mutual exclusion on `L`.
-unsafe impl<
-    L: RawLock,
-    P: ExclusiveLockPolicy<L>,
-    LP: ExclusiveLockPolicy<L>,
-    const LOCK_FLAGS: lockdep::LockFlags,
-> ExclusiveLockPolicy<LockdepTracked<L, LP, LOCK_FLAGS>> for LockdepTracked<L, P, LOCK_FLAGS>
+// exclusive mutual exclusion on `L`. Requiring the target lock's default policy to match `P`
+// prevents `LockdepTracked<L, P, LOCK_FLAGS>` from bypassing policy restrictions on a
+// `LockdepTracked<L, LP, LOCK_FLAGS>` whose `LP` carries additional invariants (such as
+// `RawCriticalMutex`).
+unsafe impl<L: RawLock, P: ExclusiveLockPolicy<L>, const LOCK_FLAGS: lockdep::LockFlags>
+    ExclusiveLockPolicy<LockdepTracked<L, P, LOCK_FLAGS>> for LockdepTracked<L, P, LOCK_FLAGS>
 {
 }
 
@@ -527,156 +526,167 @@ unsafe impl<
 /// Implements `LockPolicy<LockdepTracked<L, LP, LOCK_FLAGS>>` and
 /// `ExclusiveLockPolicy<LockdepTracked<L, LP, LOCK_FLAGS>>` for a concrete policy type `$policy`
 /// by delegating to `LockdepTracked<L, $policy, LOCK_FLAGS>`.
+///
+/// * `impl_lockdep_tracked_lock_policy!($policy)` implements the traits for every `L` and `LP`
+///   where `$policy: LockPolicy<L>`.
+/// * `impl_lockdep_tracked_lock_policy!($policy, $lock, $default_policy)` only implements the
+///   traits for `L = $lock` and `LP = $default_policy`. Use this for a policy that is valid for
+///   `$lock` but would bypass the semantics of other default policies on the same `$lock` (for
+///   example, acquiring a `CriticalMutex` as a plain `Mutex`).
 #[cfg(feature = "kernel")]
 macro_rules! impl_lockdep_tracked_lock_policy {
-    ($policy:ty) => {
-        // SAFETY: Delegates to `LockdepTracked<L, $policy, LOCK_FLAGS>`, which performs lockdep
+    (@impl $policy:ty, [$($generics:tt)*], $l:ty, $lp:ty) => {
+        // SAFETY: Delegates to `LockdepTracked<$l, $policy, LOCK_FLAGS>`, which performs lockdep
         // validation and forwards mutual exclusion to `$policy`.
-        unsafe impl<
-            L: RawLock,
-            LP: $crate::ExclusiveLockPolicy<L>,
-            const LOCK_FLAGS: lockdep::LockFlags,
-        > LockPolicy<LockdepTracked<L, LP, LOCK_FLAGS>> for $policy
+        unsafe impl<$($generics)* const LOCK_FLAGS: lockdep::LockFlags>
+            $crate::LockPolicy<$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>> for $policy
         where
-            $policy: LockPolicy<L>,
+            $policy: $crate::LockPolicy<$l>,
         {
-            type AcquireArgs = <$policy as LockPolicy<L>>::AcquireArgs;
+            type AcquireArgs = <$policy as $crate::LockPolicy<$l>>::AcquireArgs;
             type GuardState =
-                $crate::LockdepTrackedGuardState<<$policy as LockPolicy<L>>::GuardState>;
-            const EXTERNAL_ORDER: bool = <$policy as LockPolicy<L>>::EXTERNAL_ORDER;
+                $crate::LockdepTrackedGuardState<<$policy as $crate::LockPolicy<$l>>::GuardState>;
+            const EXTERNAL_ORDER: bool = <$policy as $crate::LockPolicy<$l>>::EXTERNAL_ORDER;
 
             #[inline]
             unsafe fn pre_validate(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
                 args: Self::AcquireArgs,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::pre_validate` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::pre_validate(lock, state, args);
                 }
             }
 
             #[inline]
             unsafe fn pre_reacquire(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::pre_reacquire` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::pre_reacquire(lock, state);
                 }
             }
 
             #[inline]
             unsafe fn acquire(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
                 args: Self::AcquireArgs,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::acquire` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::acquire(lock, state, args);
                 }
             }
 
             #[inline]
             unsafe fn post_validate_acquire(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
                 args: Self::AcquireArgs,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::post_validate_acquire` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::post_validate_acquire(lock, state, args);
                 }
             }
 
             #[inline]
             unsafe fn reacquire(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::reacquire(lock, state);
                 }
             }
 
             #[inline]
             unsafe fn post_validate_reacquire(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::post_validate_reacquire` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::post_validate_reacquire(lock, state);
                 }
             }
 
             #[inline]
             unsafe fn untrack(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::untrack` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::untrack(lock, state);
                 }
             }
 
             #[inline]
             unsafe fn retrack(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::retrack` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::retrack(lock, state);
                 }
             }
 
             #[inline]
             unsafe fn release(
-                lock: &LockdepTracked<L, LP, LOCK_FLAGS>,
+                lock: &$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                 state: &mut Self::GuardState,
             ) {
                 // SAFETY: Caller upholds the `LockPolicy::release` contract.
                 unsafe {
-                    <LockdepTracked<L, $policy, LOCK_FLAGS> as LockPolicy<
-                        LockdepTracked<L, LP, LOCK_FLAGS>,
+                    <$crate::LockdepTracked<$l, $policy, LOCK_FLAGS> as $crate::LockPolicy<
+                        $crate::LockdepTracked<$l, $lp, LOCK_FLAGS>,
                     >>::release(lock, state);
                 }
             }
         }
 
-        // SAFETY: Delegates to `LockdepTracked<L, $policy, LOCK_FLAGS>`, and `$policy` guarantees
-        // exclusive mutual exclusion on `L`.
-        unsafe impl<
-            L: RawLock,
-            LP: $crate::ExclusiveLockPolicy<L>,
-            const LOCK_FLAGS: lockdep::LockFlags,
-        > $crate::ExclusiveLockPolicy<LockdepTracked<L, LP, LOCK_FLAGS>> for $policy
+        // SAFETY: Delegates to `LockdepTracked<$l, $policy, LOCK_FLAGS>`, and `$policy` guarantees
+        // exclusive mutual exclusion on `$l`.
+        unsafe impl<$($generics)* const LOCK_FLAGS: lockdep::LockFlags>
+            $crate::ExclusiveLockPolicy<$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>> for $policy
         where
-            $policy: $crate::ExclusiveLockPolicy<L>,
+            $policy: $crate::ExclusiveLockPolicy<$l>,
         {
         }
+    };
+    ($policy:ty $(,)?) => {
+        $crate::lockdep_tracked::impl_lockdep_tracked_lock_policy!(
+            @impl $policy, [L: $crate::RawLock, LP: $crate::ExclusiveLockPolicy<L>,], L, LP
+        );
+    };
+    ($policy:ty, $lock:ty, $default_policy:ty $(,)?) => {
+        $crate::lockdep_tracked::impl_lockdep_tracked_lock_policy!(
+            @impl $policy, [], $lock, $default_policy
+        );
     };
 }
 

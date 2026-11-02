@@ -62,6 +62,7 @@ rustc_library("ksync") {
       features += [ "lock_name_tracing" ]
     }
     deps += [
+      "//sdk/rust/zx-types",
       "//src/lib/zr",
       "//zircon/kernel/lib/ksync",
     ]

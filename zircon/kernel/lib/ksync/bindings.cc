@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/assert.h>
+#include <zircon/time.h>
 
 #include <new>
 
@@ -105,6 +106,7 @@ extern "C" {
 interrupt_saved_state_t cpp_ksync_interrupt_save();
 void cpp_mutex_destroy(Mutex* lock);
 void cpp_mutex_acquire(Mutex* lock);
+void cpp_mutex_acquire_with_spin_max_duration(Mutex* lock, zx_duration_mono_t spin_max_duration);
 void cpp_mutex_release(Mutex* lock);
 bool cpp_mutex_is_contested(Mutex* lock);
 bool cpp_mutex_is_held(const Mutex* lock);
@@ -144,6 +146,11 @@ FFI_ALWAYS_INLINE void cpp_mutex_destroy(Mutex* lock) { lock->~Mutex(); }
 
 FFI_ALWAYS_INLINE void cpp_mutex_acquire(Mutex* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Acquire();
+}
+
+FFI_ALWAYS_INLINE void cpp_mutex_acquire_with_spin_max_duration(
+    Mutex* lock, zx_duration_mono_t spin_max_duration) TA_NO_THREAD_SAFETY_ANALYSIS {
+  lock->Acquire(spin_max_duration);
 }
 
 FFI_ALWAYS_INLINE void cpp_mutex_release(Mutex* lock) TA_NO_THREAD_SAFETY_ANALYSIS {

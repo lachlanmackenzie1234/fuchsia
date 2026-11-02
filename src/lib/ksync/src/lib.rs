@@ -184,7 +184,7 @@ pub use raw_kernel_brwlock::{
 #[cfg(feature = "kernel")]
 pub use raw_kernel_mutex::{
     RawCriticalMutex, RawCriticalMutexOrderedPolicy, RawCriticalMutexPolicy, RawMutex,
-    RawMutexStorage,
+    RawMutexSpinMaxDurationPolicy, RawMutexStorage,
 };
 #[cfg(all(not(feature = "kernel"), test))]
 pub use raw_userspace_brwlock::{
