@@ -1792,6 +1792,8 @@ fn receive_ndp_packet<
                 p.message().router_lifetime().map(NonZeroNdpLifetime::Finite),
             );
 
+            Ipv6DeviceHandler::handle_router_advertisement(core_ctx, bindings_ctx, &device_id, p);
+
             for option in p.body().iter() {
                 match option {
                     NdpOption::TargetLinkLayerAddress(_)
@@ -3254,6 +3256,15 @@ mod tests {
             _dst_ip: SpecifiedAddr<Ipv6Addr>,
             _packet: MldPacket<B>,
             _header_info: &H,
+        ) {
+            unimplemented!()
+        }
+
+        fn handle_router_advertisement<B: SplitByteSlice>(
+            &mut self,
+            _bindings_ctx: &mut FakeIcmpBindingsCtx<Ipv6>,
+            _device_id: &Self::DeviceId,
+            _packet: &IcmpPacket<Ipv6, B, packet_formats::icmp::ndp::RouterAdvertisement>,
         ) {
             unimplemented!()
         }
