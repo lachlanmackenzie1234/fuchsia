@@ -188,6 +188,7 @@ if (target_cpu == "x64") {
     if (is_postsubmit || is_release) {
       allowed_environments = [
         aemu_env,
+        qemu_env,
         nuc11_env,
       ]
       default_environments = [ aemu_env ]
