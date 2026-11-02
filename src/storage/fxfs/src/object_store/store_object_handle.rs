@@ -1886,6 +1886,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             );
         }
         let mut start_offset = 0;
+        let mut graveyard_guard = None;
         for (i, chunk) in chunks.enumerate() {
             let rounded_len = self.block_size().align_up(chunk.len() as u64).unwrap();
             let mut buffer = self.store().device.allocate_buffer(rounded_len as usize).await;
@@ -1909,14 +1910,26 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             // Do not commit the last chunk.
             if i < num_chunks - 1 {
                 transaction.commit_and_continue().await?;
+                if i == 0 {
+                    graveyard_guard = Some(scopeguard::guard((), |()| {
+                        let store = self.store();
+                        store.graveyard_entries.fetch_add(1, atomic::Ordering::Relaxed);
+                        store.filesystem().ensure_local().graveyard().queue_tombstone_attribute(
+                            store.store_object_id(),
+                            self.object_id(),
+                            attribute_id,
+                        );
+                    }));
+                }
             }
         }
-        if num_chunks > 1 {
+        if let Some(guard) = graveyard_guard {
             self.store().remove_attribute_from_graveyard(
                 transaction,
                 self.object_id(),
                 attribute_id,
             );
+            scopeguard::ScopeGuard::into_inner(guard);
         }
         Ok(())
     }

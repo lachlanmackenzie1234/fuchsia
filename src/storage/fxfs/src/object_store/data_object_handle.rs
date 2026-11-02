@@ -108,8 +108,8 @@ impl FileExtent {
 #[derive(Debug)]
 pub enum DataObjectState {
     Standard(AllocatedRanges),
-    VerityStarted,
-    VerityPending(FsverityStateInner),
+    VerityStarted(AllocatedRanges),
+    VerityPending(AllocatedRanges, FsverityStateInner),
     Verity(FsverityStateInner),
 }
 
@@ -226,7 +226,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     ) -> R {
         let mut state = self.state.lock();
         match &mut *state {
-            DataObjectState::Standard(ranges) => f(Some(ranges)),
+            DataObjectState::Standard(ranges) | DataObjectState::VerityStarted(ranges) => {
+                f(Some(ranges))
+            }
             _ => f(None),
         }
     }
@@ -237,24 +239,28 @@ impl<S: HandleOwner> DataObjectHandle<S> {
 
     /// Sets `self.state` to DataObjectState::VerityStarted. Called at the top of `enable_verity`.
     /// If another caller has already started but not completed `enable_verity`, returns
-    /// FxfsError::AlreadyBound. If another caller has already completed `enable_verity`, returns
+    /// FxfsError::Unavailable. If another caller has already completed `enable_verity`, returns
     /// FxfsError::AlreadyExists.
     ///
     /// Note: This is called before `enable_verity` acquires its object transaction lock. Any
     /// ongoing transaction holding the object lock (such as `allocate`) will proceed to commit
     /// its mutations to disk while `enable_verity` waits for the lock, and `will_apply_mutation`
-    /// will gracefully discard in-memory range updates for the discarded `AllocatedRanges`.
+    /// will continue to update the preserved `AllocatedRanges` in case `enable_verity` fails.
     pub fn set_fsverity_state_started(&self) -> Result<(), Error> {
         let mut state = self.state.lock();
-        match *state {
-            DataObjectState::Standard(_) => {
-                *state = DataObjectState::VerityStarted;
+        match std::mem::replace(&mut *state, DataObjectState::Standard(AllocatedRanges::empty())) {
+            DataObjectState::Standard(ranges) => {
+                *state = DataObjectState::VerityStarted(ranges);
                 Ok(())
             }
-            DataObjectState::VerityStarted | DataObjectState::VerityPending(_) => {
+            other @ (DataObjectState::VerityStarted(_) | DataObjectState::VerityPending(..)) => {
+                *state = other;
                 Err(anyhow!(FxfsError::Unavailable))
             }
-            DataObjectState::Verity(_) => Err(anyhow!(FxfsError::AlreadyExists)),
+            other @ DataObjectState::Verity(_) => {
+                *state = other;
+                Err(anyhow!(FxfsError::AlreadyExists))
+            }
         }
     }
 
@@ -262,25 +268,45 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     ///
     /// # Panics
     ///
-    /// Panics if the prior state was not `DataObjectState::VerityStarted`.
+    /// Panics if the prior state was not `DataObjectState::VerityStarted(_)`.
     pub fn set_fsverity_state_pending(&self, descriptor: FsverityStateInner) {
         let mut state = self.state.lock();
-        assert!(matches!(*state, DataObjectState::VerityStarted));
-        *state = DataObjectState::VerityPending(descriptor);
+        let old_state =
+            std::mem::replace(&mut *state, DataObjectState::Standard(AllocatedRanges::empty()));
+        match old_state {
+            DataObjectState::VerityStarted(ranges) => {
+                *state = DataObjectState::VerityPending(ranges, descriptor);
+            }
+            _ => panic!("Cannot set verity pending state from {old_state:?}"),
+        }
     }
 
     /// Sets `self.state` to Verity.
     ///
     /// # Panics
     ///
-    /// Panics if the prior state was not `DataObjectState::VerityPending(_)`.
+    /// Panics if the prior state was not `DataObjectState::VerityPending(..)`.
     pub fn finalize_fsverity_state(&self) {
         let mut state = self.state.lock();
         let old_state =
             std::mem::replace(&mut *state, DataObjectState::Standard(AllocatedRanges::empty()));
         match old_state {
-            DataObjectState::VerityPending(inner) => *state = DataObjectState::Verity(inner),
+            DataObjectState::VerityPending(_, inner) => *state = DataObjectState::Verity(inner),
             _ => panic!("Cannot finalize verity state from {old_state:?}"),
+        }
+    }
+
+    /// Reverts `self.state` from `VerityStarted` or `VerityPending` back to `Standard` if
+    /// `enable_verity` fails or is cancelled before committing.
+    fn reset_fsverity_state(&self) {
+        let mut state = self.state.lock();
+        let old_state =
+            std::mem::replace(&mut *state, DataObjectState::Standard(AllocatedRanges::empty()));
+        match old_state {
+            DataObjectState::VerityStarted(ranges) | DataObjectState::VerityPending(ranges, _) => {
+                *state = DataObjectState::Standard(ranges);
+            }
+            other => *state = other,
         }
     }
 
@@ -370,7 +396,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             DataObjectState::Standard(_) => {
                 Err(anyhow!("Tried to verify read on a non verity-enabled file"))
             }
-            DataObjectState::VerityStarted | DataObjectState::VerityPending(_) => {
+            DataObjectState::VerityStarted(_) | DataObjectState::VerityPending(..) => {
                 Err(anyhow!("Enable verity has not yet completed, state: {state:?}"))
             }
             DataObjectState::Verity(metadata) => {
@@ -631,6 +657,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     #[trace]
     pub async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Error> {
         self.set_fsverity_state_started()?;
+        let state_guard = scopeguard::guard((), |()| {
+            self.reset_fsverity_state();
+        });
         // If the merkle attribute was tombstoned in the last attempt of `enable_verity`, flushing
         // the graveyard should process the tombstone before we start rewriting the attribute.
         if self
@@ -682,6 +711,17 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.handle
             .write_new_attr(&mut transaction, AttributeId::FSVERITY_MERKLE, &merkle_tree)
             .await?;
+        let graveyard_guard = (merkle_tree.len() > WRITE_ATTR_BATCH_SIZE).then(|| {
+            scopeguard::guard((), |()| {
+                let store = self.store();
+                store.graveyard_entries.fetch_add(1, atomic::Ordering::Relaxed);
+                store.filesystem().ensure_local().graveyard().queue_tombstone_attribute(
+                    store.store_object_id(),
+                    self.object_id(),
+                    AttributeId::FSVERITY_MERKLE,
+                );
+            })
+        });
         let descriptor_decoded =
             FsVerityDescriptor::new(&merkle_tree[..], self.block_size().get() as usize)?;
         let descriptor = FsverityStateInner {
@@ -702,6 +742,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             AssocObj::Borrowed(self),
         );
         transaction.commit().await?;
+        if let Some(guard) = graveyard_guard {
+            scopeguard::ScopeGuard::into_inner(guard);
+        }
+        scopeguard::ScopeGuard::into_inner(state_guard);
         Ok(())
     }
 
@@ -723,8 +767,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         // calls `set_fsverity_state_started` before creating its own transaction, which could
         // transition `self.state` to `VerityStarted` concurrently while this transaction is held.
         // If that happens, `enable_verity`'s subsequent `new_transaction` call will block until
-        // this allocation transaction finishes, and `will_apply_mutation` will gracefully discard
-        // updates to the in-memory allocated ranges.
+        // this allocation transaction finishes, and `will_apply_mutation` will continue to update
+        // the preserved in-memory allocated ranges in case `enable_verity` fails.
         {
             let state = self.state.lock();
             match &*state {
@@ -1960,9 +2004,8 @@ impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
             }) if self.object_id() == *object_id && self.attribute_id() == *attr_id => match mode {
                 ExtentMode::Overwrite | ExtentMode::OverwritePartial(_) => {
                     // If `enable_verity` transitioned state to `VerityStarted` concurrently while a
-                    // transaction was in progress, `with_overwrite_ranges_mut` will return `None`
-                    // and safely discard in-memory range updates, since verity files do not track
-                    // overwrite ranges.
+                    // transaction was in progress, `with_overwrite_ranges_mut` will still update
+                    // the preserved ranges in case `enable_verity` fails and reverts to `Standard`.
                     self.with_overwrite_ranges_mut(|ranges| {
                         if let Some(ranges) = ranges {
                             ranges.apply_range(extent.clone().into());
@@ -3229,6 +3272,65 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_enable_verity_failure_does_not_wedge_file() {
+        let fs: OpenFxFilesystem = test_filesystem().await;
+        let store = fs.root_store();
+        let mut transaction = store
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        let object = Arc::new(
+            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
+                .await
+                .expect("create_object failed"),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        object.allocate(0..4096).await.expect("allocate failed");
+
+        // Failing enable_verity (e.g. missing hash algorithm or salt > 32 bytes) should not leave
+        // the file wedged.
+        object
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: None,
+                salt: Some(vec![]),
+                ..Default::default()
+            })
+            .await
+            .expect_err("enable_verity with missing hash_algorithm should fail");
+
+        object
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                salt: Some(vec![0xaa; 64]),
+                ..Default::default()
+            })
+            .await
+            .expect_err("enable_verity with oversized salt should fail");
+
+        assert!(!object.is_verified_file());
+        assert!(!object.overwrite_ranges_is_empty());
+
+        // The file should still support normal mutations (allocate, truncate, write) and a
+        // subsequent valid enable_verity call.
+        object.allocate(4096..8192).await.expect("allocate after failed enable_verity failed");
+        object.truncate(4096).await.expect("truncate after failed enable_verity failed");
+
+        object
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                salt: Some(vec![]),
+                ..Default::default()
+            })
+            .await
+            .expect("enable_verity after prior failure should succeed");
+
+        assert!(object.is_verified_file());
+
+        fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
     async fn test_enable_verity_large_file() {
         // Need to make a large FakeDevice to create space for a 67 MB file.
         let device = DeviceHolder::new(FakeDevice::new(262144, TEST_DEVICE_BLOCK_SIZE));
@@ -3258,6 +3360,27 @@ mod tests {
             handle.write_or_append(Some(offset), buf.as_ref()).await.expect("write failed");
             offset += WRITE_ATTR_BATCH_SIZE as u64;
         }
+
+        // Reserve all remaining allocator space except `WRITE_ATTR_BATCH_SIZE` so the first batch
+        // of `write_new_attr` succeeds and the second batch fails with `NoSpace`.
+        let reservation = fs
+            .allocator()
+            .reserve_with(None, |limit| limit.saturating_sub(WRITE_ATTR_BATCH_SIZE as u64));
+
+        handle
+            .enable_verity(fio::VerificationOptions {
+                hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+                salt: Some(vec![]),
+                ..Default::default()
+            })
+            .await
+            .expect_err("enable_verity should fail when second merkle batch runs out of space");
+
+        assert!(!handle.is_verified_file());
+
+        // Release the reservation and verify that retrying `enable_verity` without a reboot reaps
+        // the partial merkle attribute and succeeds cleanly.
+        drop(reservation);
 
         handle
             .enable_verity(fio::VerificationOptions {

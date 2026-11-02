@@ -693,13 +693,7 @@ impl File for FxFile {
     }
 
     async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Status> {
-        // `set_read_only()` MUST be called before `flush()`. `flush()` acquires and releases
-        // the truncate lock (`truncate_guard`), acting as a barrier to ensure that any
-        // subsequent `truncate()` call will observe `read_only == true` under `truncate_guard`
-        // and fail.
-        self.handle.set_read_only();
-        self.handle.flush(FlushType::Sync).await.map_err(map_to_status)?;
-        self.handle.uncached_handle().enable_verity(options).await.map_err(map_to_status)
+        self.handle.enable_verity(options).await.map_err(map_to_status)
     }
 
     // Returns a VMO handle that supports paging.
@@ -2467,6 +2461,64 @@ mod tests {
             .await
             .expect("FIDL transport error")
             .expect_err("enabling verity on a verity-enabled file should fail.");
+
+        close_file_checked(file).await;
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_enable_verity_failure_does_not_wedge_file() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+
+        file.write(&[1; 8192])
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::err_from_raw)
+            .expect("write failed");
+
+        // Failing enable_verity (e.g. missing hash algorithm) should not leave the file wedged as
+        // read-only.
+        file.enable_verity(&fio::VerificationOptions {
+            hash_algorithm: None,
+            salt: Some(vec![0xFF; 8]),
+            ..Default::default()
+        })
+        .await
+        .expect("FIDL transport error")
+        .expect_err("enable_verity with missing hash_algorithm should fail");
+
+        // Writing, resizing, and subsequently enabling verity with valid options should succeed.
+        file.write(&[2; 4096])
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::err_from_raw)
+            .expect("write after failed enable_verity failed");
+        file.resize(4096)
+            .await
+            .expect("FIDL call failed")
+            .map_err(Status::err_from_raw)
+            .expect("resize after failed enable_verity failed");
+
+        file.enable_verity(&fio::VerificationOptions {
+            hash_algorithm: Some(fio::HashAlgorithm::Sha256),
+            salt: Some(vec![0xFF; 8]),
+            ..Default::default()
+        })
+        .await
+        .expect("FIDL transport error")
+        .expect("enable_verity after prior failure failed");
 
         close_file_checked(file).await;
         fixture.close().await;

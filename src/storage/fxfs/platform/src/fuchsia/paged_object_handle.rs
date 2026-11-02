@@ -521,8 +521,28 @@ impl PagedObjectHandle {
         self.owner().pager()
     }
 
-    pub fn set_read_only(&self) {
-        self.inner.lock().read_only = true
+    pub async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Error> {
+        // `read_only` MUST be set before `flush()`. `flush()` acquires and releases the truncate
+        // lock (`truncate_guard`), acting as a barrier to ensure that any subsequent `truncate()`
+        // call will observe `read_only == true` under `truncate_guard` and fail.
+        {
+            let mut inner = self.inner.lock();
+            if inner.read_only {
+                if self.handle.is_verified_file() {
+                    bail!(FxfsError::AlreadyExists);
+                } else {
+                    bail!(FxfsError::Unavailable);
+                }
+            }
+            inner.read_only = true;
+        }
+        let guard = scopeguard::guard((), |()| {
+            self.inner.lock().read_only = false;
+        });
+        self.flush(FlushType::Sync).await?;
+        self.handle.enable_verity(options).await?;
+        scopeguard::ScopeGuard::into_inner(guard);
+        Ok(())
     }
 
     pub fn is_read_only(&self) -> bool {
