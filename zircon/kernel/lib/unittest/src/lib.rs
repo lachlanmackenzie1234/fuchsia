@@ -43,6 +43,9 @@ pub use zx_status::sys as __sys;
 /// Disabling a test can be done with a further annotation of #[ignore]. Such a
 /// test will still be compiled; it just will not contribute test metadata.
 ///
+/// Any other attributes on a test function (e.g., #[sanitize]) are applied to
+/// the generated test function, other than #[cfg], which is not supported.
+///
 /// # Example
 /// ```rust,ignore
 /// /// Brief test suite description.
@@ -784,6 +787,17 @@ mod tests {
         fn normal_test() {}
     }
 
+    /// Suite with a test that has other attributes.
+    #[suite(name = "with_other_attributes")]
+    mod suite_with_other_attributes {
+        /// Test with an attribute that must be forwarded.
+        #[test]
+        #[expect(unused_variables)]
+        fn attributed_test() {
+            let unused = 0;
+        }
+    }
+
     /// Assertion tests description.
     #[suite]
     mod assertions {
@@ -1065,7 +1079,7 @@ mod tests {
     #[test]
     fn check_suite_count() {
         let suites = get_suites();
-        std::assert_eq!(suites.len(), 6);
+        std::assert_eq!(suites.len(), 7);
     }
 
     #[test]
@@ -1179,5 +1193,18 @@ mod tests {
         std::assert_eq!(suite.test_cnt, 1);
         let case = unsafe { &*suite.tests };
         std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"normal_test");
+    }
+
+    #[test]
+    fn check_suite_with_other_attributes() {
+        let suites = get_suites();
+        std::assert!(suites.len() > 6);
+        let suite = &suites[6];
+
+        std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"with_other_attributes");
+        std::assert_eq!(suite.test_cnt, 1);
+        let case = unsafe { &*suite.tests };
+        std::assert_eq!(unsafe { CStr::from_ptr(case.name) }.to_bytes(), b"attributed_test");
+        assert!((case.fn_)());
     }
 }
