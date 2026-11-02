@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/573703359): Remove once BlobProperty is wired up.
+#[allow(dead_code)]
+pub(crate) mod blob_buffer;
 mod error;
 pub(crate) mod heap;
 pub(crate) mod state;

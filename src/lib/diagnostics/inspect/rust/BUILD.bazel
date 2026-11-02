@@ -23,6 +23,7 @@ rustc_library(
         "src/reader/snapshot.rs",
         "src/reader/tree_reader.rs",
         "src/stats.rs",
+        "src/writer/blob_buffer.rs",
         "src/writer/error.rs",
         "src/writer/heap.rs",
         "src/writer/mod.rs",
