@@ -11,38 +11,40 @@
 
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
+#include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/common/err_or.h"
 
 namespace zxdb {
 
 class ExprValue;
 
-// Represents the DAP `dataId` identifier exchanged between `dataBreakpointInfo` and
-// `setDataBreakpoints` requests, as well as `zxdb.SetTracepoints` watch specifications.
+// Represents the DAP dataId identifier exchanged between dataBreakpointInfo and
+// setDataBreakpoints requests, as well as zxdb.SetTracepoints watch specifications.
 //
 // Format:
 //   "<process_koid>:0x<address_hex>:<byte_size>"
 //   Example: "17601:0x7ffee1234000:4"
 //
 // Fields & Invariants:
-//   - `process_koid`: Base-10 Zircon KOID of the target process. Must be non-zero
-//     (`ZX_KOID_INVALID` == 0 is rejected). Because virtual memory addresses are only meaningful
+//   - process_koid: Base-10 Zircon KOID of the target process. Must be non-zero
+//     (ZX_KOID_INVALID == 0 is rejected). Because virtual memory addresses are only meaningful
 //     within the address space of the process in which the expression was evaluated, a valid
 //     process KOID is always required so the watchpoint is scoped strictly to that process.
-//   - `address`: Base-16 virtual address prefixed with "0x" or "0X". Must not overflow the 64-bit
-//     address space when combined with `byte_size` (`address <= UINT64_MAX - byte_size`).
-//   - `byte_size`: Base-10 size in bytes of the watched memory location. Must be supported by the
-//     target architecture's hardware debug registers (`BreakpointSettings::ValidateSize`).
+//   - address: Base-16 virtual address prefixed with "0x" or "0X". Must not overflow the 64-bit
+//     address space when combined with byte_size (address <= UINT64_MAX - byte_size).
+//   - byte_size: Positive base-10 size in bytes of the watched memory location (byte_size > 0).
+//     Parse checks that byte_size is positive; hardware watchpoint callers invoke ValidateSize
+//     (BreakpointSettings::ValidateSize) to verify architectural watchpoint support.
 class DataId {
  public:
-  // Evaluates whether `value` can be watched and returns a validated `DataId`, or an `Err`
-  // describing why a data breakpoint cannot be set on `value`. Only properties of the value itself
-  // are checked here; `process_koid` must already be a valid (non-zero) KOID.
-  static ErrOr<DataId> FromExprValue(debug::Arch arch, uint64_t process_koid,
-                                     const std::string& name, const ExprValue& value);
+  // Evaluates whether value can be watched and returns a validated DataId, or an Err describing
+  // why a data breakpoint cannot be set on value. Only properties of the value itself are checked
+  // here; process_koid must already be a valid non-zero KOID.
+  static ErrOr<DataId> FromExprValue(debug::Arch arch, uint64_t process_koid, std::string_view name,
+                                     const ExprValue& value);
 
-  // Parses a `<process_koid>:0x<address_hex>:<byte_size>` string and checks format, non-zero
-  // `process_koid`, and 64-bit address range overflow invariants.
+  // Parses a <process_koid>:0x<address_hex>:<byte_size> string and checks format, non-zero
+  // process_koid, positive byte_size, and 64-bit address range overflow invariants.
   static ErrOr<DataId> Parse(std::string_view data_id);
 
   // Validates that `byte_size()` is supported by `arch` for the given hardware watchpoint `type`.

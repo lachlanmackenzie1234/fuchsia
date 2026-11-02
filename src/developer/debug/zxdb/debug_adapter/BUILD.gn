@@ -75,6 +75,7 @@ source_set("tests") {
     "context_test.cc",
     "context_test.h",
     "context_unittest.cc",
+    "data_id_unittest.cc",
     "handlers/request_async_backtrace_unittest.cc",
     "handlers/request_attach_unittest.cc",
     "handlers/request_breakpoint_unittest.cc",

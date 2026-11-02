@@ -9,12 +9,9 @@
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <limits>
 #include <string>
-#include <string_view>
 #include <utility>
 
-#include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/execution_scope.h"
@@ -33,7 +30,6 @@
 #include "src/developer/debug/zxdb/expr/resolve_ptr_ref.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
-#include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
