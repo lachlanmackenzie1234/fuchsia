@@ -436,26 +436,26 @@ pub struct ResolvedInstanceState {
     /// store them here as a memory optimization so that we can teardown storage
     /// component shutdown without needing to retain the complete component
     /// decl.
-    pub storage_paths: Box<[Path]>,
+    pub storage_paths: Vec<Path>,
 
     /// The collection declarations of this component instance. We store them here as a memory
     /// optimization so that we do not need to retain the complete decl.
-    pub collection_decls: Box<[CollectionDecl]>,
+    pub collection_decls: Vec<CollectionDecl>,
 
     /// The declarations of storage and service capabilities used by this
     /// component. We store them here as a memory optimization so that we do not
     /// need to retain the complete decl.
-    pub storage_service_use_decls: Box<[UseDecl]>,
+    pub storage_service_use_decls: Vec<UseDecl>,
 
-    /// The declarations of capabilities offered by this component instance that reference a
-    /// collection as source or target. We store them here as a memory optimization so that we do
-    /// not need to retain the complete decl.
-    pub offer_decls: Box<[OfferDecl]>,
+    /// The declarations of capabilities offered by this component instance.
+    /// We store them here as a memory optimization so that we do not need to
+    /// retain the complete decl.
+    pub offer_decls: Vec<OfferDecl>,
 
     /// The declarations of capabilities of this component instance.
     /// We store them here as a memory optimization so that we do not need to
     /// retain the complete decl.
-    pub capability_decls: Box<[CapabilityDecl]>,
+    pub capability_decls: Vec<CapabilityDecl>,
 
     /// The declaration of the logger capability used by this component.
     pub logger_decl: Option<UseProtocolDecl>,
@@ -566,9 +566,10 @@ impl ResolvedInstanceState {
                 UseDecl::Storage(storage_use) => Some(storage_use.target_path.clone()),
                 _ => None,
             })
-            .collect::<Box<[_]>>();
+            .collect::<Vec<_>>();
 
-        let collection_decls = decl.collections.clone();
+        let collection_decls =
+            decl.collections.iter().map(|collection| collection.clone()).collect::<Vec<_>>();
 
         let storage_service_use_decls = decl
             .uses
@@ -577,16 +578,20 @@ impl ResolvedInstanceState {
                 UseDecl::Storage(_) | UseDecl::Service(_) => Some(use_.clone()),
                 _ => None,
             })
-            .collect::<Box<[_]>>();
+            .collect::<Vec<_>>();
 
         let has_dynamic_offers = decl
             .collections
             .iter()
             .any(|collection| collection.allowed_offers == AllowedOffers::StaticAndDynamic);
-        let offer_decls = if !decl.collections.is_empty() {
-            // Static offers whose source or target is not a collection have their dependency edges
-            // added during initial manifest validation and cannot conflict with or aggregate with
-            // dynamic offers targeting a collection child.
+        let offer_decls = if has_dynamic_offers {
+            decl.offers.to_vec()
+        } else if !decl.collections.is_empty() {
+            // Even when dynamic offers are not allowed (`has_dynamic_offers` is false) and
+            // `cm_fidl_validator::validate_dynamic_offers` is skipped on `add_child`, we still
+            // need static offers whose source or target is a collection so that
+            // `validate_and_convert_dynamic_component` can populate `dependencies` with edges for
+            // newly created dynamic children (used by `ShutdownJob` for shutdown ordering).
             decl.offers
                 .iter()
                 .filter(|offer| {
@@ -594,12 +599,11 @@ impl ResolvedInstanceState {
                         || matches!(offer.target(), OfferTarget::Collection(_))
                 })
                 .cloned()
-                .collect::<Box<[_]>>()
+                .collect()
         } else {
-            Box::default()
+            vec![]
         };
-        let capability_decls =
-            if has_dynamic_offers { decl.capabilities.clone() } else { Box::default() };
+        let capability_decls = if has_dynamic_offers { decl.capabilities.to_vec() } else { vec![] };
 
         let logger_decl = decl.uses.iter().find_map(|use_| match use_ {
             cm_rust::UseDecl::Protocol(decl) => (decl.source_name
@@ -1349,7 +1353,7 @@ impl ResolvedInstanceState {
         dependencies: &mut DirectedGraph<DependencyNode>,
         all_dynamic_children: &[(&str, &str)],
     ) {
-        for collection in &*self.collection_decls {
+        for collection in &self.collection_decls {
             if let Some(env) = &collection.environment {
                 let source = DependencyNode::Environment(env.as_str().into());
                 let coll_name: FlyStr = collection.name.as_str().into();
@@ -1365,7 +1369,7 @@ impl ResolvedInstanceState {
                 }
             }
         }
-        for use_ in &*self.storage_service_use_decls {
+        for use_ in &self.storage_service_use_decls {
             if let UseDecl::Service(u) = use_ {
                 if u.dependency_type == DependencyType::Strong {
                     if let UseSource::Collection(coll_name) = &u.source {
@@ -1422,12 +1426,16 @@ impl ResolvedInstanceState {
         self.add_dynamic_child_collection_dependencies(deps, &all_dynamic_children);
 
         if dynamic_offers.is_empty() {
-            for offer in &*self.offer_decls {
-                cm_graph::add_dependencies_from_offer(
-                    deps,
-                    &offer.clone().native_into_fidl(),
-                    &all_dynamic_children,
-                );
+            for offer in &self.offer_decls {
+                if matches!(offer.source(), OfferSource::Collection(_))
+                    || matches!(offer.target(), OfferTarget::Collection(_))
+                {
+                    cm_graph::add_dependencies_from_offer(
+                        deps,
+                        &offer.clone().native_into_fidl(),
+                        &all_dynamic_children,
+                    );
+                }
             }
             _ = mem::replace(&mut self.resolved_component.dependencies, dependencies);
             return Ok(vec![]);

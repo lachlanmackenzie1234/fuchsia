@@ -782,12 +782,12 @@ impl ComponentInstance {
                 let state = self.lock_state().await;
                 match &*state {
                     InstanceState::Resolved(resolved_state) => resolved_state.storage_paths.clone(),
-                    _ => Box::default(),
+                    _ => Vec::new(),
                 }
             };
 
             let mut routed_storage = Vec::with_capacity(storage_paths.len());
-            for storage_path in &*storage_paths {
+            for storage_path in &storage_paths {
                 if let Ok(info) = routing::route_storage(storage_path, &self).await {
                     routed_storage.push(info);
                 }
