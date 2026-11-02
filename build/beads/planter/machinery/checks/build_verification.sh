@@ -151,6 +151,15 @@ changed = (
     if env_changed
     else git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
 )
+if not changed:
+    head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
+    head_c = (git_lines(["rev-parse", "--verify", "HEAD^{commit}"]) or [""])[0]
+    base_c = (git_lines(["rev-parse", "--verify", f"{change_base}^{{commit}}"]) or [""])[0]
+    if (change_base == "HEAD" or (head_c and head_c == base_c)) and head_subj.startswith("[bazel_migration]"):
+        change_base = "HEAD~1"
+        changed = git_lines(["diff", "--name-only", change_base]) + git_lines(
+            ["ls-files", "--others", "--exclude-standard"]
+        )
 changed_set = set(changed)
 
 
@@ -223,8 +232,8 @@ if fx is None:
 bazel_dirs = [d for d in dirs if os.path.isfile(os.path.join(workdir, d, "BUILD.bazel"))]
 host_markers = re.compile(
     r"HOST_CONSTRAINTS|HOST_OS_CONSTRAINTS|_host_tool\b|with_host_unit_tests|"
-    r"\bwith_unit_tests\s*=\s*\"(?:host|both)\"|"
-    r"\bhost_(?:go|rustc|py)_test\b|\bhost_test\(|\bwrap_host_rust_test\("
+    r"\bwith_unit_tests\s*=\s*\"(?:host|both)\"|\b(?:idk_)?ffx_(?:plugin|tool)\b|"
+    r"\bhost_(?:go|rustc|py|cc|shac)_test\b|\bhost_test(?:_data)?\b|\bwrap_host_rust_test\("
 )
 host_dirs = []
 for d in bazel_dirs:
@@ -258,10 +267,156 @@ for d in dirs:
                 if label not in exported_tests[lm.group(1)]:
                     exported_tests[lm.group(1)].append(label)
 
-# Also collect Bazel host tests defined directly in the changed packages' BUILD.bazel files
-# (including tests wired into an ancestor BUILD.bazel `test_suite` rather than a local
-# `bazel_test_suite`), scoped to `bazel_dirs` so `bazel_test_host` does not run unrelated
-# sibling packages' tests from an ancestor `test_suite`.
+# Normalize non-collateral top-level targets in a BUILD.bazel file so collateral-only edits
+# (visibility, exports_files, package, load, or test_suite) do not trigger running pre-existing
+# untouched host tests in non-target packages.
+def _canon_bazel_non_collateral(src):
+    tree = ast.parse(src)
+    items = []
+    for stmt in tree.body:
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            items.append(ast.dump(stmt))
+            continue
+        call = stmt.value
+        fn = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
+        )
+        if fn in ("load", "package", "exports_files", "licenses", "test_suite"):
+            continue
+        kept_kws = sorted(
+            (kw.arg or "", ast.dump(kw.value))
+            for kw in call.keywords
+            if kw.arg != "visibility"
+        )
+        items.append((fn, [ast.dump(a) for a in call.args], kept_kws))
+    return items
+
+
+# Check whether a package in `bazel_dirs` is a target directory, newly created, or modified
+# build/test targets beyond collateral `visibility`, `exports_files`, or `test_suite` edits.
+def _has_substantive_bazel_target_change(d):
+    if d in target_dirs:
+        return True
+    try:
+        base_src = subprocess.check_output(
+            ["git", "-C", workdir, "show", f"{change_base}:{d}/BUILD.bazel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return True
+    try:
+        with open(
+            os.path.join(workdir, d, "BUILD.bazel"), encoding="utf-8", errors="replace"
+        ) as f:
+            cur_src = f.read()
+        return _canon_bazel_non_collateral(base_src) != _canon_bazel_non_collateral(cur_src)
+    except Exception:
+        return True
+
+
+# Split a Bazel label (`@//a/b:c`, `//a/b`, or `:c`) into `(pkg_dir, target_name)`.
+def _split_bazel_label(raw_lbl, default_pkg=""):
+    s = re.sub(r"^@@?//", "//", (raw_lbl or "").strip())
+    if not s:
+        return "", ""
+    if s.startswith("//"):
+        pkg_part, sep, tgt_part = s[2:].partition(":")
+        pkg_d = pkg_part.strip("/")
+        t_name = tgt_part.strip() if sep else (pkg_d.rsplit("/", 1)[-1] if pkg_d else "")
+        return pkg_d, t_name
+    if s.startswith(":"):
+        return default_pkg, s[1:].strip()
+    if "/" not in s and ":" not in s:
+        return default_pkg, s
+    return "", ""
+
+
+_pkg_suites_cache = {}
+
+
+# Parse `test_suite` targets in `<pkg_d>/BUILD.bazel`, mapping `suite_name` to either a list
+# of member label strings (when `tests = [...]` is set) or `None` (implicit same-package suite).
+def _bazel_pkg_test_suites(pkg_d):
+    if pkg_d in _pkg_suites_cache:
+        return _pkg_suites_cache[pkg_d]
+    suites = {}
+    bz_path = os.path.join(workdir, pkg_d, "BUILD.bazel")
+    try:
+        with open(bz_path, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = (
+                node.func.id
+                if isinstance(node.func, ast.Name)
+                else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+            )
+            if fn != "test_suite":
+                continue
+            kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+            nm = kws.get("name")
+            if not (isinstance(nm, ast.Constant) and isinstance(nm.value, str)):
+                continue
+            tests_kw = kws.get("tests")
+            if tests_kw is None:
+                suites[nm.value] = None
+            else:
+                suites[nm.value] = [
+                    c.value
+                    for c in ast.walk(tests_kw)
+                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                ]
+    except Exception:
+        pass
+    _pkg_suites_cache[pkg_d] = suites
+    return suites
+
+
+# Expand an exported Bazel `host_tests` label to leaf host test targets in `test_dirs_set` so
+# ancestor `test_suite` aggregators never execute unrelated sibling packages' tests on RBE.
+def _expand_exported_host_test_label(raw_lbl, test_dirs_set, seen=None):
+    if seen is None:
+        seen = set()
+    pkg_d, t_name = _split_bazel_label(raw_lbl)
+    if not pkg_d or not t_name:
+        return []
+    canon_lbl = f"//{pkg_d}:{t_name}"
+    if canon_lbl in seen:
+        return []
+    seen.add(canon_lbl)
+    if (
+        pkg_d not in test_dirs_set
+        and pkg_d not in dirs
+        and not any(td.startswith(pkg_d + "/") for td in test_dirs_set)
+    ):
+        return []
+    suites = _bazel_pkg_test_suites(pkg_d)
+    if t_name in suites:
+        members = suites[t_name]
+        if members is None:
+            return [canon_lbl] if pkg_d in test_dirs_set else []
+        expanded = []
+        for m_raw in members:
+            m_pkg, m_tgt = _split_bazel_label(m_raw, default_pkg=pkg_d)
+            if not m_pkg or not m_tgt:
+                continue
+            for leaf in _expand_exported_host_test_label(
+                f"//{m_pkg}:{m_tgt}", test_dirs_set, seen
+            ):
+                if leaf not in expanded:
+                    expanded.append(leaf)
+        return expanded
+    return [canon_lbl] if pkg_d in test_dirs_set else []
+
+
+# Collect Bazel host tests defined directly in the substantively changed packages' BUILD.bazel
+# files (including tests wired into an ancestor BUILD.bazel `test_suite` rather than a local
+# `bazel_test_suite`), expanding any exported `test_suite` targets so `bazel_test_host` never
+# runs unrelated sibling packages' tests from an ancestor `test_suite`.
 BAZEL_HOST_TEST_RULES = {
     "host_rustc_test",
     "wrap_host_rust_test",
@@ -271,6 +426,7 @@ BAZEL_HOST_TEST_RULES = {
     "host_cc_test",
     "host_shac_test",
 }
+test_bazel_dirs_set = {d for d in bazel_dirs if _has_substantive_bazel_target_change(d)}
 host_test_targets = []
 for d in bazel_dirs:
     try:
@@ -294,7 +450,7 @@ for d in bazel_dirs:
         tname = nm_node.value
         if fn in BAZEL_HOST_TEST_RULES:
             lbl = f"//{d}:{tname}"
-            if lbl not in host_test_targets:
+            if d in test_bazel_dirs_set and lbl not in host_test_targets:
                 host_test_targets.append(lbl)
             if lbl not in exported_tests["host_tests"]:
                 exported_tests["host_tests"].append(lbl)
@@ -309,14 +465,14 @@ for d in bazel_dirs:
                 isinstance(w_ut, ast.Constant) and w_ut.value in ("host", "both")
             ):
                 lbl = f"//{d}:{tname}_test"
-                if lbl not in host_test_targets:
+                if d in test_bazel_dirs_set and lbl not in host_test_targets:
                     host_test_targets.append(lbl)
                 if lbl not in exported_tests["host_tests"]:
                     exported_tests["host_tests"].append(lbl)
 for lbl in exported_tests["host_tests"]:
-    pkg_d = lbl[2:].split(":", 1)[0].strip("/") if lbl.startswith("//") else ""
-    if pkg_d in bazel_dirs and lbl not in host_test_targets:
-        host_test_targets.append(lbl)
+    for leaf_lbl in _expand_exported_host_test_label(lbl, test_bazel_dirs_set):
+        if leaf_lbl not in host_test_targets:
+            host_test_targets.append(leaf_lbl)
 
 LINKED_TEMPLATES = {"executable", "test", "rustc_binary", "rustc_test", "loadable_module", "shared_library", "rustc_cdylib", "fuchsia_driver"}
 LIBRARY_TEMPLATES = {"rustc_library", "rustc_macro", "rustc_staticlib", "static_library", "source_set"}
@@ -436,7 +592,8 @@ def load_toolchains():
     return toolchains, None
 
 
-# Collect GN target labels in changed BUILD.gn files that are absent from ninja_outputs.json.
+# Collect GN target labels in changed BUILD.gn files that are absent from the default-toolchain
+# entries of ninja_outputs.json (including host-only targets such as ffx_plugin/ffx_tool).
 def unconfigured_own_gn_labels(toolchains):
     if toolchains is None:
         return []
@@ -447,22 +604,27 @@ def unconfigured_own_gn_labels(toolchains):
             if tmpl == "config":
                 continue
             lbl = f"//{d}:{name}"
-            if lbl not in toolchains and lbl not in unconfigured:
+            if lbl not in toolchains.get(lbl, []) and lbl not in unconfigured:
                 unconfigured.append(lbl)
     return unconfigured
 
 
+# Build an INFO note warning against passing unconfigured or host-only GN labels to `fx build`
+# in `Test:` footers, and clarifying that `fx bazel build` supersedes generic `fx build` defaults.
 def unconfigured_own_gn_note(unconfigured):
     if not unconfigured:
         return None
     shown = " ".join(unconfigured)
     return (
-        f"Not in the configured GN graph (<build dir>/ninja_outputs.json): {shown}. "
-        f"Do NOT run `fx build {shown}` or include unconfigured GN labels in "
-        "`CoderReport.test_footers` or `Test:` commit footers (Planter's `test_verifier` runs "
-        "`fx gn desc` and fails with `missing_gn_test_target` / `Unknown GN label`); verify "
-        "migrated Bazel targets with `fx bazel build --config=fuchsia_platform @//<dir>:<target>` "
-        "instead."
+        f"Not in the default-toolchain GN graph (<build dir>/ninja_outputs.json): {shown}. "
+        f"Do NOT pass unqualified `{shown}` to `fx build` in `CoderReport.test_footers` or "
+        "`Test:` commit footers (Planter's `test_verifier` runs `fx gn desc` in the default "
+        "toolchain and fails with `missing_gn_test_target` / `Unknown GN label` on host-only "
+        "or unconfigured targets); verify migrated Bazel targets with "
+        "`fx bazel build --config=fuchsia_platform @//<dir>:<target>` (or `--config=host` for "
+        "host targets) instead. Using `fx bazel build` here supersedes generic "
+        "`fx build //<dir>:<target>` task-prompt instructions and is NOT a `machinery_conflict` "
+        "(never report it in `disputed_findings`)."
     )
 
 
@@ -556,17 +718,19 @@ def bazel_tests_export_notes():
             missing.append(label)
     if not missing:
         return []
+    missing_str = " ".join(missing)
     return [
-        "Not in <build dir>/tests.json after `fx build`: "
-        + " ".join(missing)
-        + " (normal when `args.gn` is configured without `--with-test //<dir>:tests` or only "
-        "includes leaf `:tests` groups and not the ancestor `bazel_test_suite`). Do NOT pass `"
-        + " ".join(missing)
-        + "` to `fx test` in `CoderReport.test_footers` or commit `Test:` footers "
-        "(`fx test --dry` will fail with `missing_fx_test_target` because `<build dir>/tests.json` "
-        "does not contain that label); use "
+        f"Not in <build dir>/tests.json after `fx build`: {missing_str} "
+        "(normal when `args.gn` is configured without `--with-test //<dir>:tests` or "
+        "only includes leaf `:tests` groups and not the ancestor `bazel_test_suite`). "
+        f"Do NOT pass `{missing_str}` to `fx test` in `CoderReport.test_footers` or "
+        "commit `Test:` footers (`fx test --dry` will fail with `missing_fx_test_target` "
+        "because `<build dir>/tests.json` does not contain that label); use "
         "`fx bazel build --config=fuchsia_platform @//<dir>:<test>` (or "
-        "`fx bazel test --config=host @//<dir>:<test>` for host tests) instead."
+        "`fx bazel test --config=host @//<dir>:<test>` for host tests) instead. "
+        "Using `fx bazel test|build` when `<build dir>/tests.json` omits the target "
+        "supersedes `fx test` instructions and is NOT a `machinery_conflict` "
+        "(never report it in `disputed_findings`)."
     ]
 
 
@@ -857,17 +1021,25 @@ REMEDIATION = {
     ),
     "bazel_build_host": (
         "Fix BUILD.bazel so the `bazel_build_host` command passes. Never edit `.rs`/`.cc`/`.h` "
-        "source files; if a target has unconditional Fuchsia-only dependencies and cannot build "
-        "on host, check whether only its unit test is Fuchsia-only or add "
+        "source files; if an unreferenced unit test from a GN `with_unit_tests = true` target "
+        "(whose package `group(\"tests\")` was never wired into any parent/ancestor `BUILD.gn`) "
+        "fails to compile due to pre-existing bitrot, omit that unit test target in BUILD.bazel "
+        "(and remove any unreachable `bazel_test_suite` / `group(\"tests\")` in BUILD.gn) with "
+        "a `# TODO` comment and note it in the commit message. If a non-test target has "
+        "unconditional Fuchsia-only dependencies and cannot build on host, add "
         "`target_compatible_with = [\"@platforms//os:fuchsia\"]` with a `# Needs reviewer "
         "attention (target_compatible_with):` comment above the target and explain it in the "
         "commit message body."
     ),
-    "bazel_test_host": "A Bazel host test exported by a GN `bazel_test_suite(host_tests = ...)` fails, so it would fail "
-                       "on infra too. Fix its BUILD.bazel attributes (deps, data/test_data, test_args, "
-                       "lint/rustc flags) to match what GN ran on host. If GN never ran it on host, do not export "
-                       "it as a host test (a device-only test, C++ or Rust, becomes an `fx_test` package; for Rust "
-                       "unit tests use `with_unit_tests = \"fuchsia\"`).",
+    "bazel_test_host": (
+        "A Bazel host test exported by a GN `bazel_test_suite(host_tests = ...)` fails, so it "
+        "would fail on infra too. Fix its BUILD.bazel attributes (deps, data/test_data, "
+        "test_args, lint/rustc flags) to match what GN ran on host. If the unit test was never "
+        "wired into any parent/ancestor `BUILD.gn` `tests` group and fails to compile due to "
+        "pre-existing bitrot, omit the unit test target with a `# TODO` comment (and remove its "
+        "unreachable `bazel_test_suite` / `group(\"tests\")`) and note it in the commit message. "
+        "If GN only ran it on Fuchsia, package it as an `fx_test` / `fx_unittest_package` instead."
+    ),
 }
 
 findings = []
@@ -954,11 +1126,20 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                         "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
                     ),
                 })
-        if toolchains_map is not None and "fx build" in m_line:
+        # Check that `fx build` footers only pass GN labels configured in the active toolchain
+        # (unqualified host-only targets fail `fx gn desc` in the default Fuchsia toolchain).
+        if toolchains_map is not None and re.search(r"\bfx\s+build\b", test_cmd):
+            has_host_flag = bool(re.search(r"(?:^|\s)--host(?=\s|$)", test_cmd))
             bad_lbls = []
             for lbl in re.findall(r"//[^\s,;\"'`]+", m_line):
                 base_lbl = lbl.split("(", 1)[0]
-                if base_lbl not in toolchains_map and lbl not in toolchains_map.get(base_lbl, []):
+                known_keys = toolchains_map.get(base_lbl, [])
+                is_configured = (
+                    any("host" in k for k in known_keys)
+                    if (has_host_flag and "(" not in lbl)
+                    else (lbl in known_keys)
+                )
+                if not is_configured:
                     bad_lbls.append(lbl)
             if bad_lbls:
                 findings.append({
@@ -968,14 +1149,20 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     "file": "",
                     "line": 0,
                     "message": (
-                        f"Commit `Test:` footer `{m_line.strip()}` passes GN label(s) not in the configured GN graph "
-                        f"(<build dir>/ninja_outputs.json): {' '.join(bad_lbls)}. `fx build` fails with `Unknown GN label` "
-                        "on labels outside the configured product graph."
+                        f"Commit `Test:` footer `{m_line.strip()}` passes GN label(s) not in the "
+                        "configured default-toolchain GN graph (<build dir>/ninja_outputs.json): "
+                        f"{' '.join(bad_lbls)}. `fx build` and `test_verifier` (`fx gn desc`) "
+                        "fail on host-only or unconfigured labels without a configured toolchain."
                     ),
                     "remediation": (
-                        "Amend the commit message `Test:` footer (and only list commands in `CoderReport.test_footers`) to use "
-                        "commands that actually succeed in the configured build (copy the exact shell-quoted commands from "
-                        "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
+                        "Replace `fx build` in the commit `Test:` footer and "
+                        "`CoderReport.test_footers` with `fx bazel build --config=host "
+                        "@//<dir>:<target>` (for host-only targets such as `ffx_plugin`, "
+                        "`ffx_tool`, `*_host_tool`, or `HOST_OS_CONSTRAINTS`) or "
+                        "`fx bazel build --config=fuchsia_platform @//<dir>:<target>` (for "
+                        "Fuchsia targets). Using `fx bazel build` here supersedes generic "
+                        "`fx build //<dir>:<target>` task-prompt instructions and is NOT a "
+                        "`machinery_conflict` (never report it in `disputed_findings`)."
                     ),
                 })
         # Check that fx test footers reference leaf test targets or test packages
@@ -1236,7 +1423,11 @@ reuse_path = None
 reuse_key = None
 reused = None
 reused_time = 0
-if not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
+if (
+    not dry_run
+    and not skip_build
+    and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0")
+):
     def _git_bytes(args, repo_dir=workdir):
         return subprocess.run(["git", "-C", repo_dir] + args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True).stdout
 
@@ -1578,6 +1769,119 @@ def _existed_at_change_base(p):
         return False
 
 
+# Find the nearest enclosing Bazel/GN package directory for a workspace-relative path.
+def _owning_pkg_dir(rel_p):
+    cur = os.path.dirname(rel_p).strip("/")
+    while cur:
+        if (
+            os.path.isfile(os.path.join(workdir, cur, "BUILD.bazel"))
+            or os.path.isfile(os.path.join(workdir, cur, "BUILD.gn"))
+            or _existed_at_change_base(f"{cur}/BUILD.bazel")
+            or _existed_at_change_base(f"{cur}/BUILD.gn")
+        ):
+            return cur
+        cur = os.path.dirname(cur).strip("/")
+    return ""
+
+
+# Check whether a `bazel_build_host` or `bazel_build_fuchsia` failure is solely in
+# source compilation of untouched source files for a target (upstream dependency or
+# bazel2gn-verified unconfigured dead-code package) that is not built for that
+# platform in the configured GN graph (<build dir>/ninja_outputs.json).
+def unrelated_upstream_bazel_compile_failure(step_name, output):
+    targets = sorted(set(FROM_TARGET.findall(output)))
+    if not targets:
+        return None
+    if re.search(
+        r"no such (?:target|package)|is not visible|Unable to load|"
+        r"cycle in dependency graph|Analysis of target .* failed|"
+        r"Traceback \(most recent call last\)",
+        output,
+        re.I,
+    ):
+        return None
+    err_lines = [
+        l.strip()
+        for l in output.splitlines()
+        if l.strip().startswith("ERROR:")
+        and not l.strip().startswith("ERROR: Build did NOT complete successfully")
+    ]
+    if not err_lines or any("(from target " not in l for l in err_lines):
+        return None
+    toolchains, _ = load_toolchains()
+    if toolchains is None:
+        return None
+    changed_pkgs = {_owning_pkg_dir(f) for f in changed_set}
+    t_pkgs = set()
+    for t in targets:
+        t_pkg, t_name = _split_bazel_label(t)
+        if not t_pkg or not t_name:
+            return None
+        tc_keys = toolchains.get(f"//{t_pkg}:{t_name}", [])
+        if step_name == "bazel_build_host":
+            if any("host" in k for k in tc_keys):
+                return None
+        else:
+            if any("host" not in k for k in tc_keys):
+                return None
+        if t_pkg in dirs or t_pkg in changed_pkgs:
+            if "shac_check" in failed or not _existed_at_change_base(f"{t_pkg}/BUILD.gn"):
+                return None
+            gn_txt = read(f"{t_pkg}/BUILD.gn") or ""
+            if "## BAZEL2GN SENTINEL" not in gn_txt:
+                return None
+            for gn_nm in gn_blocks(gn_txt):
+                gn_keys = toolchains.get(f"//{t_pkg}:{gn_nm}", [])
+                if step_name == "bazel_build_host" and any("host" in k for k in gn_keys):
+                    return None
+                if step_name != "bazel_build_host" and any("host" not in k for k in gn_keys):
+                    return None
+        else:
+            if not _existed_at_change_base(f"{t_pkg}/BUILD.bazel"):
+                return None
+        t_pkgs.add(t_pkg)
+    ws_marker = "/gen/build/bazel/workspace/"
+    src_exts = (".rs", ".cc", ".c", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".go")
+    has_upstream_src_loc = False
+    for m in LOCATION.finditer(output):
+        loc_path = m.group(1).replace("../../", "", 1)
+        if loc_path.startswith(workdir + "/"):
+            loc_path = loc_path[len(workdir) + 1 :]
+        if ws_marker in loc_path:
+            loc_path = loc_path.split(ws_marker, 1)[1]
+        loc_path = os.path.normpath(loc_path).strip("/")
+        if loc_path.startswith(("bazel-out/", "external/", "out/")):
+            continue
+        if os.path.basename(loc_path) in ("BUILD.bazel", "BUILD.gn") or loc_path.endswith(
+            (".bzl", ".gni")
+        ):
+            continue
+        if loc_path in changed_set:
+            return None
+        loc_pkg = _owning_pkg_dir(loc_path)
+        in_failing_target_pkg = loc_pkg in t_pkgs or any(
+            loc_path == p or loc_path.startswith(p + "/") for p in t_pkgs
+        )
+        if not in_failing_target_pkg and (loc_pkg in dirs or loc_pkg in changed_pkgs):
+            return None
+        if loc_path.endswith(src_exts):
+            if not _existed_at_change_base(loc_path):
+                return None
+            if in_failing_target_pkg:
+                has_upstream_src_loc = True
+    if not has_upstream_src_loc:
+        return None
+    return (
+        f"the failing Bazel target(s) ({' '.join(targets)}) are not built for "
+        "this platform in the configured GN graph (<build dir>/ninja_outputs.json) "
+        "and fail with pre-existing source compilation errors in untouched source "
+        "files. Do not edit source files (`build_only_scope`) or report this "
+        "pre-existing failure in `disputed_findings` (set `disputed_findings` to "
+        "`[]` in `CoderReport`); the migrated packages are verified by "
+        "`shac_check` and the remaining steps."
+    )
+
+
 def _modified_lines_since_base(p):
     lines = set()
     try:
@@ -1753,6 +2057,105 @@ def unrelated_shac_failure(output):
     return None
 
 
+# Probe that .git, the build output directory, and the checkout accept non-empty
+# file writes (degraded FUSE/casfs mounts allow 0-byte O_CREAT metadata ops while
+# failing write() with ENOENT/EROFS/EIO).
+def workspace_write_probe_error():
+    probe_bytes = b"planter-write-probe\n"
+    probe_dirs = []
+    try:
+        gdir = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "--absolute-git-dir"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if gdir and os.path.isdir(gdir):
+            probe_dirs.append(gdir)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    bdir_rel = (read(".fx-build-dir") or "").strip()
+    if bdir_rel:
+        bdir_abs = os.path.join(workdir, bdir_rel)
+        out_parent = os.path.dirname(bdir_abs)
+        for cand_dir in (out_parent, bdir_abs):
+            if os.path.isdir(cand_dir) and cand_dir not in probe_dirs:
+                probe_dirs.append(cand_dir)
+    else:
+        out_abs = os.path.join(workdir, "out")
+        if os.path.isdir(out_abs) and out_abs not in probe_dirs:
+            probe_dirs.append(out_abs)
+    if os.path.isdir(workdir) and workdir not in probe_dirs:
+        probe_dirs.append(workdir)
+    for pdir in probe_dirs:
+        fd = None
+        probe_path = None
+        try:
+            fd, probe_path = tempfile.mkstemp(
+                dir=pdir, prefix=".planter-write-probe."
+            )
+            os.write(fd, probe_bytes)
+            os.close(fd)
+            fd = None
+            with open(probe_path, "rb") as rf:
+                if rf.read() != probe_bytes:
+                    raise OSError("short write during writability probe")
+            os.unlink(probe_path)
+        except OSError as err:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if probe_path and os.path.lexists(probe_path):
+                try:
+                    os.unlink(probe_path)
+                except OSError:
+                    pass
+            return pdir, err
+    return None
+
+
+# Emit a single workspace_write_error finding when the checkout/build mount rejects writes.
+def append_workspace_write_error(pdir, err):
+    msg = (
+        f"Filesystem write failed during writability probe in `{pdir}` ({err}). "
+        "The checkout, `.git`, or build directory mount is rejecting file writes "
+        "(for example a degraded FUSE/casfs mount), so `fx build`, `shac check`, "
+        "and `fx bazel` cannot run."
+    )
+    rem = (
+        "This is a workspace filesystem/mount write failure, not a BUILD.bazel or "
+        "BUILD.gn defect. Do not edit build files to work around it; stop retrying "
+        "failing build or `git commit` write commands, set `test_footers` to "
+        "`[\"fx host-tool shac check\"]` and `disputed_findings` to `[]` in "
+        "`CoderReport` (an empty `test_footers` fails `test_verifier` with "
+        "`missing_test_footer`, while `fx bazel`/`fx build`/`fx test` target "
+        "commands trigger spurious `test_verifier` query errors on an unwritable "
+        "mount), and report the mount write error in `summary`."
+    )
+    findings.append({
+        "source": "build_verification",
+        "category": "workspace_write_error",
+        "severity": "ERROR",
+        "message": msg,
+        "remediation": rem,
+    })
+
+
+GIT_LOCK_WRITE_ERROR = re.compile(
+    r"(?:\.git/[^\s'\"]*\.lock['\"]?\s+write error:|Unable to create '[^']*\.git/[^\s']*\.lock')",
+    re.I,
+)
+
+if not dry_run:
+    upfront_write_err = workspace_write_probe_error()
+    if upfront_write_err is not None:
+        # Drop pre-build commit Test: footer errors when .git/mount rejects writes.
+        findings[:] = [f for f in findings if f.get("severity") not in STEP_BLOCKING]
+        append_workspace_write_error(*upfront_write_err)
+        print(json.dumps(findings, indent=2))
+        sys.exit(0)
+
 failed = set()
 step_findings_start = len(findings)
 gn_build_scoped = False
@@ -1822,9 +2225,64 @@ for name, cmd in steps:
         code = "timeout"
         output = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
         output += f"\n(timed out after {timeout}s)"
+    # If target-scoped gn_build ran regenerator (updating ninja_outputs.json) and Ninja
+    # rejected a pre-regeneration target that lost its GN consumers (e.g. a library whose
+    # sole GN caller became bazel_ffx_tool/bazel_host_tool), refresh dependent_labels()
+    # from the newly regenerated ninja_outputs.json and retry once.
+    if (
+        name == "gn_build"
+        and gn_build_scoped
+        and code != 0
+        and code != "timeout"
+        and "ninja: error: unknown target" in output
+    ):
+        refreshed_labels, refreshed_notes = dependent_labels()
+        if refreshed_labels != labels:
+            labels = refreshed_labels
+            cmd = ([fx, "build"] + labels) if labels else [fx, "build"]
+            gn_build_scoped = bool(labels)
+            findings[:] = [
+                f for f in findings if f.get("category") != "dependents_note"
+            ] + [
+                {
+                    "source": "build_verification",
+                    "category": "dependents_note",
+                    "severity": "INFO",
+                    "message": n,
+                }
+                for n in refreshed_notes
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=workdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout,
+                )
+                code, output = proc.returncode, proc.stdout
+            except subprocess.TimeoutExpired as e:
+                code = "timeout"
+                output = (
+                    (e.stdout or b"").decode(errors="replace")
+                    if isinstance(e.stdout, bytes)
+                    else (e.stdout or "")
+                )
+                output += f"\n(timed out after {timeout}s)"
     if code == 0:
         continue
-    if name == "shac_check" and code != "timeout" and SHAC_MISSING_TOOL.search(output):
+    mid_write_err = workspace_write_probe_error()
+    if mid_write_err is not None:
+        failed.add(name)
+        append_workspace_write_error(*mid_write_err)
+        break
+    if (
+        name == "shac_check"
+        and code != "timeout"
+        and SHAC_MISSING_TOOL.search(output)
+        and not GIT_LOCK_WRITE_ERROR.search(output)
+    ):
         static_checks_cmd = [fx, "build", "--host", "//bundles/buildbot/static_checks"]
         try:
             sc_proc = subprocess.run(
@@ -1894,6 +2352,21 @@ for name, cmd in steps:
                 pass
     if name in ("gn_build", "gn_build_dependents"):
         note = unrelated_bazel_failure(output)
+        if note:
+            text, file, line = summarize(output, LOCATION)
+            findings.append({
+                "source": "build_verification",
+                "category": f"preexisting_failure_{name}",
+                "severity": "INFO",
+                "file": file,
+                "line": line,
+                "message": (
+                    f"`{fmt_cmd(cmd)}` failed ({code}) outside the change: {note}\n{text}"
+                ),
+            })
+            continue
+    if name in ("bazel_build_fuchsia", "bazel_build_host") and code != "timeout":
+        note = unrelated_upstream_bazel_compile_failure(name, output)
         if note:
             text, file, line = summarize(output, LOCATION)
             findings.append({

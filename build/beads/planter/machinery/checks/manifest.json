@@ -6,7 +6,7 @@
             "name": "planter_version",
             "script_file": "planter_version.sh",
             "enabled": true,
-            "description": "Errors when the planter running the checks is older than google3 cl/1010931925, which these checks need (planter_too_old)."
+            "description": "Errors when the planter running the checks is older than the minimum version these checks need (planter_too_old)."
         },
         {
             "name": "gn_secondary_tree",
@@ -66,7 +66,7 @@
             "name": "bazel_minimality",
             "script_file": "bazel_minimality.sh",
             "enabled": true,
-            "description": "Audits Starlark wrapper rules, default attrs, host constraints, and buildifier (unwrapped_external_language_rule, buildifier_lint)."
+            "description": "Audits Starlark wrapper rules, IDK atom allowlists, default attrs, host constraints, and buildifier (unwrapped_external_language_rule, missing_idk_atom_allowlist, buildifier_lint)."
         },
         {
             "name": "cq_reachability",
@@ -102,7 +102,7 @@
             "name": "test_data_attribute",
             "script_file": "test_data_attribute.sh",
             "enabled": true,
-            "description": "Flags test-only fixtures placed in runtime `data` instead of `test_data` (test_only_data_in_data)."
+            "description": "Flags test-only fixtures placed in runtime `data` instead of `test_data` (test_only_data_in_data) and host test data targets in `data` of host_rustc_test instead of `test_data` (host_test_data_in_data)."
         },
         {
             "name": "build_verification",
@@ -120,7 +120,7 @@
             "name": "speculative_unit_test",
             "script_file": "speculative_unit_test.sh",
             "enabled": true,
-            "description": "Rejects adding unit tests or host test wrappers absent from base BUILD.gn (speculative_empty_unit_test)."
+            "description": "Rejects empty unit tests, unrequested host test wrappers, and no-op with_unit_tests TODOs (speculative_empty_unit_test, redundant_empty_unit_test_todo)."
         },
         {
             "name": "cc_header_deps_and_annotations",

@@ -136,6 +136,14 @@ def check_directives(d, rel, text):
         m = DIRECTIVE_RE.search(line)
         if not m:
             continue
+        if (
+            m.group(1) == "skip"
+            and "target_compatible_with" in line
+            and "HOST_OS_CONSTRAINTS" in line
+        ):
+            # Handled by bazel_minimality (skipped_host_os_constraints); do not
+            # tell the coder to add a comment justifying the skip.
+            continue
         key = m.group(0).strip()
         if documented(lines, i):
             documented_keys.add(key)

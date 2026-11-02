@@ -53,8 +53,9 @@ set -euo pipefail
 #    human explanatory comment precedes `# @bazel2gn:skip` or the skip already existed at
 #    PLANTER_CHANGE_BASE.
 # 6. test_skip_needs_reviewer_attention (info): a test skip added in this change whose comment
-#    starts with `# Needs reviewer attention (bazel2gn skip):` uses the dual-testing cost exception,
-#    which only a human can confirm. It is never rejected, but always reported for the reviewer.
+#    starts with `# Needs reviewer attention (bazel2gn skip):` uses the dual-testing cost or
+#    infra-incompatibility exception (e.g. `testsharder` `duplicatedShardNames` under
+#    `use_test_pilot`), surfaced for a human reviewer in Gerrit to confirm (never rejected).
 # 7. unjustified_test_skip (error) also covers a test skip that did not exist at
 #    PLANTER_CHANGE_BASE, has no technical condition (T1-T4) and is justified only by an unmarked
 #    comment: agent-added skips must use the cost marker or meet T1-T4. Skips that existed at the
@@ -92,6 +93,9 @@ set -euo pipefail
 #     sentinel as a `fuchsia_test_component` without `test_type`.
 # 14. gcc_compiler_select (warning): a new `@rules_cc//cc/compiler:gcc` select() branch, which
 #     never matches because Fuchsia has no GCC toolchain in Bazel.
+# 15. missing_target_bazel_file (error) / target_blocked_by_unmigrated_deps (info): requires an
+#     assigned target directory with BUILD.gn to define BUILD.bazel unless every convertible or
+#     test target in BUILD.gn is blocked by unmigrated external packages outside CL scope.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -1362,6 +1366,195 @@ def parse_gn_file(gn_path):
     return parse_gn_text(text)
 
 
+# Check whether an unmigrated external package forms a mutual GN dependency cycle
+# with pkg_dir (cycles must be co-migrated together rather than treated as blockers).
+def _has_gn_cycle_with_pkg(dep_pkg, pkg_dir):
+    dep_gn = os.path.join(workdir, dep_pkg, "BUILD.gn")
+    try:
+        dep_txt = re.sub(r"#[^\n]*", "", open(dep_gn, encoding="utf-8").read())
+    except OSError:
+        return False
+    return bool(re.search(r'"//' + re.escape(pkg_dir) + r'(?=[:"/\s])', dep_txt))
+
+
+# Collect third-party GN package prefixes that map to pre-configured Bazel repos/crates.
+def _collect_third_party_mapped_pkgs():
+    mapped = {"third_party/googletest", "third_party/rust_crates"}
+    tp_map = os.path.join(workdir, "build/tools/bazel2gn/third_party_target_map.json")
+    try:
+        for lbl in json.load(open(tp_map, encoding="utf-8")).values():
+            if isinstance(lbl, str) and lbl.startswith("//"):
+                mapped.add(lbl[2:].split(":", 1)[0].strip("/"))
+    except Exception:
+        pass
+    return mapped
+
+
+# Expand top-level GN list variables referenced by a target body so `deps = common_deps`
+# resolves external package labels accurately when checking upstream blockers.
+def _expand_gn_list_vars(pre_text, body):
+    clean_pre = re.sub(r"#[^\n]*", "", pre_text)
+    gn_vars = {}
+    for vm in re.finditer(r"(?m)^[ \t]*([A-Za-z_]\w*)\s*\+?=\s*\[", clean_pre):
+        end_idx = find_closing_delim(clean_pre, vm.end() - 1, "[", "]")
+        gn_vars.setdefault(vm.group(1), []).append(clean_pre[vm.end() - 1 : end_idx + 1])
+    if not gn_vars:
+        return body
+    extra = []
+    clean_body = re.sub(r"#[^\n]*", "", body)
+    for vname, chunks in gn_vars.items():
+        if re.search(rf"\b{re.escape(vname)}\b", clean_body):
+            extra.extend(chunks)
+    return (body + "\n" + "\n".join(extra)) if extra else body
+
+
+# Scan all target blocks in `pre_text` so fallback `else { group("<name>") }` branches
+# do not overwrite convertible `if (is_host)` target definitions of the same name.
+def _iter_pre_gn_target_blocks(pre_text):
+    target_re = re.compile(r'^[ \t]*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
+    blocks = []
+    for tm in target_re.finditer(pre_text):
+        tmpl, name = tm.group(1), tm.group(2)
+        line_no = pre_text.count("\n", 0, tm.start(1)) + 1
+        brace_idx = tm.end() - 1
+        end_idx = find_closing_brace(pre_text, brace_idx)
+        blocks.append((name, tmpl, line_no, pre_text[brace_idx + 1 : end_idx]))
+    return blocks
+
+
+# Determine whether every convertible or test target in an unmigrated BUILD.gn is
+# blocked from compiling in Bazel by unmigrated external packages outside scope.
+def _inspect_unmigrated_pkg_external_blockers(pkg_dir, gn_abs):
+    gn_info = parse_gn_file(gn_abs)
+    if not gn_info or gn_info["has_sentinel"]:
+        return False, []
+    pre_text = gn_info["pre_text"]
+    pre_targets = gn_info["pre_targets"]
+    all_blocks = _iter_pre_gn_target_blocks(pre_text)
+    migratable_gn_kinds = CONVERTIBLE_GN_TEMPLATES | GN_TEST_TEMPLATES
+    tmpl_rule_pat = re.compile(
+        r"\b(" + "|".join(sorted(migratable_gn_kinds)) + r")\s*\("
+    )
+    local_templates = {}
+    for tname, ttmpl, _, tbody in all_blocks:
+        if ttmpl == "template":
+            clean_tbody = re.sub(
+                r"\bforward_variables_from\s*\(",
+                "_gn_tmpl_forward(",
+                re.sub(r"#[^\n]*", "", tbody),
+            )
+            m_inner = tmpl_rule_pat.search(clean_tbody)
+            if m_inner:
+                local_templates[tname] = (m_inner.group(1), clean_tbody)
+
+    expanded_pre = dict(pre_targets)
+    migratable_entries = []
+    test_deps_strip_re = re.compile(
+        r"\btest_deps\s*\+?=\s*(?:\[[^\]]*\]|[A-Za-z_]\w*)"
+    )
+    for gname, gtmpl, gline, gbody in all_blocks:
+        if gtmpl == "template":
+            continue
+        if gtmpl in local_templates:
+            eff_tmpl, tmpl_body = local_templates[gtmpl]
+            eff_body = tmpl_body + "\n" + gbody
+            if eff_tmpl in CONVERTIBLE_GN_TEMPLATES:
+                eff_body = test_deps_strip_re.sub("", eff_body)
+            eff_body = _expand_gn_list_vars(pre_text, eff_body)
+            expanded_pre[gname] = (eff_tmpl, gline, eff_body)
+            migratable_entries.append((gname, eff_tmpl, eff_body))
+        elif gtmpl in migratable_gn_kinds:
+            eff_body = (
+                test_deps_strip_re.sub("", gbody)
+                if gtmpl in CONVERTIBLE_GN_TEMPLATES
+                else gbody
+            )
+            eff_body = _expand_gn_list_vars(pre_text, eff_body)
+            expanded_pre[gname] = (gtmpl, gline, eff_body)
+            migratable_entries.append((gname, gtmpl, eff_body))
+
+    if not migratable_entries:
+        return False, []
+
+    in_scope_roots = [d for d in ([pkg_dir] + list(target_dirs)) if d]
+    tp_mapped = _collect_third_party_mapped_pkgs()
+    rel_subpkg_re = re.compile(
+        r'"([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)(?::[^"(\s]+)?"'
+    )
+    vis_strip_re = re.compile(r"\bvisibility\s*\+?=\s*\[[^\]]*\]")
+    all_ext_blockers = []
+
+    for _, _, eff_body in migratable_entries:
+        unmig_deps, _, gn_blocked = inspect_gn_target_deps(
+            eff_body, pkg_dir, expanded_pre, set()
+        )
+        sub_queue = [(pkg_dir, eff_body)]
+        seen_sub = set()
+        while sub_queue and len(seen_sub) < 16:
+            cur_dir, raw_b = sub_queue.pop(0)
+            clean_b = vis_strip_re.sub("", re.sub(r"#[^\n]*", "", raw_b))
+            tp_pat = r'"//(third_party/[^":(\s]+)(?::[^"(\s]+)?"'
+            for dm in re.finditer(tp_pat, clean_b):
+                tp_pkg = dm.group(1).strip("/")
+                if any(tp_pkg == m or tp_pkg.startswith(m + "/") for m in tp_mapped):
+                    continue
+                tp_gn = os.path.join(workdir, tp_pkg, "BUILD.gn")
+                tp_bzl = os.path.join(workdir, tp_pkg, "BUILD.bazel")
+                tp_bld = os.path.join(workdir, tp_pkg, "BUILD")
+                if os.path.isfile(tp_gn) and not (
+                    os.path.isfile(tp_bzl) or os.path.isfile(tp_bld)
+                ):
+                    lbl = f"//{tp_pkg}"
+                    if lbl not in unmig_deps:
+                        unmig_deps.append(lbl)
+            cand_children = set()
+            deps_pat = r"\b(?:public_)?deps\s*\+?=\s*\[([^\]]*)\]"
+            for deps_m in re.finditer(deps_pat, clean_b):
+                for rm in rel_subpkg_re.finditer(deps_m.group(1)):
+                    rel_p = rm.group(1).strip("/")
+                    joined = os.path.join(cur_dir, rel_p)
+                    sub_p = os.path.normpath(joined).replace("\\", "/")
+                    if sub_p.startswith(pkg_dir + "/"):
+                        cand_children.add(sub_p)
+            for d in list(unmig_deps):
+                if d[2:].startswith(pkg_dir + "/"):
+                    cand_children.add(d[2:])
+            for child_p in sorted(cand_children):
+                if child_p in seen_sub:
+                    continue
+                child_gn = os.path.join(workdir, child_p, "BUILD.gn")
+                child_bzl = os.path.join(workdir, child_p, "BUILD.bazel")
+                if os.path.isfile(child_gn) and not os.path.isfile(child_bzl):
+                    seen_sub.add(child_p)
+                    child_info = parse_gn_file(child_gn)
+                    if child_info:
+                        c_body = test_deps_strip_re.sub("", child_info["pre_text"])
+                        c_unmig, _, c_blocked = inspect_gn_target_deps(
+                            c_body, child_p, child_info["pre_targets"], set()
+                        )
+                        for cd in c_unmig:
+                            if cd not in unmig_deps:
+                                unmig_deps.append(cd)
+                        gn_blocked = gn_blocked or c_blocked
+                        sub_queue.append((child_p, c_body))
+
+        ext_unmig = [
+            d
+            for d in unmig_deps
+            if not any(
+                d[2:] == td or d[2:].startswith(td + "/") for td in in_scope_roots
+            )
+            and not _has_gn_cycle_with_pkg(d[2:], pkg_dir)
+        ]
+        if not ext_unmig and not gn_blocked:
+            return False, []
+        for d in ext_unmig:
+            if d not in all_ext_blockers:
+                all_ext_blockers.append(d)
+
+    return bool(all_ext_blockers), all_ext_blockers
+
+
 findings = []
 gn_kept_pkg_test_deps_by_dir = {}
 
@@ -1372,6 +1565,65 @@ for pkg_dir in sorted(candidate_dirs):
     gn_rel = os.path.join(pkg_dir, "BUILD.gn")
 
     if not os.path.isfile(bazel_abs):
+        if (
+            pkg_dir in target_dirs
+            and os.path.isfile(gn_abs)
+            and not os.path.isfile(os.path.join(workdir, pkg_dir, "BUILD"))
+        ):
+            # Allow an assigned target directory to remain unmigrated (INFO) when every
+            # convertible or test target in its BUILD.gn depends on unmigrated external
+            # packages outside the assigned CL scope.
+            all_blocked, ext_blockers = _inspect_unmigrated_pkg_external_blockers(
+                pkg_dir, gn_abs
+            )
+            if all_blocked:
+                blocker_list = ", ".join(f"`{d}`" for d in ext_blockers[:6])
+                msg = (
+                    f"Assigned migration target directory '{pkg_dir}' has no "
+                    f"'{bazel_rel}' because every convertible target in '{gn_rel}' "
+                    "depends on unmigrated external package(s) outside the assigned "
+                    f"scope ({blocker_list})."
+                )
+                rem = (
+                    "First check with `git fetch origin main` whether "
+                    f"{blocker_list} landed upstream. Co-migrate an unmigrated "
+                    "dependency only when its entire directory is a small same-area "
+                    "library helper within CL scoping limits (`<= 5` dirs, `<= ~500` "
+                    "lines; never cross-area, `third_party/`, or `ffx_tool`/host-tool "
+                    "packages alongside libraries). Otherwise do not create an empty "
+                    f"or `# @bazel2gn:skip`-only '{bazel_rel}': migrate only unblocked "
+                    f"in-scope child packages under `{pkg_dir}/` (if any), or leave "
+                    f"'{pkg_dir}' unmigrated (`modified_files: []`, "
+                    "`disputed_findings: []`, and `test_footers: [\"fx host-tool shac "
+                    "check\"]` so `test_verifier` does not query a missing "
+                    "`BUILD.bazel`) and list the blocking packages in "
+                    "`CoderReport.summary`."
+                )
+                _emit(
+                    findings,
+                    "target_blocked_by_unmigrated_deps",
+                    "INFO",
+                    gn_rel,
+                    1,
+                    msg,
+                    rem,
+                )
+                continue
+            msg = (
+                f"Assigned migration target directory '{pkg_dir}' has no "
+                f"'{bazel_rel}' file in the working tree while '{gn_rel}' "
+                "remains unmigrated."
+            )
+            rem = (
+                f"Migrate '{gn_rel}' to '{bazel_rel}' (and sync '{gn_rel}' with "
+                f"`fx bazel2gn -d {pkg_dir}` if `{gn_rel}` is retained, or delete "
+                f"'{gn_rel}' in Case 1). In a multi-directory or integration round, "
+                f"if a parallel worker did not leave edits for '{pkg_dir}' in the "
+                f"worktree, author '{bazel_rel}' and update '{gn_rel}' directly in "
+                "this round rather than leaving it unmigrated or reporting "
+                "`disputed_findings`."
+            )
+            _emit(findings, "missing_target_bazel_file", "error", gn_rel, 1, msg, rem)
         continue
 
     bazel_targets = parse_bazel_targets(bazel_abs, pkg_dir)
@@ -1917,29 +2169,52 @@ for pkg_dir in sorted(candidate_dirs):
                         + ", ".join(sorted(ext_refs)[:3]) + "."
                     )
                 if has_marker:
-                    _emit(findings, "test_skip_needs_reviewer_attention", "INFO", bazel_rel, ln, (
-                            f"{what} in '{bazel_rel}' skips dual-running its test in GN because the coder judged that "
-                            "dual-testing cost outweighs the risk (marked `# Needs reviewer attention (bazel2gn skip): ...`)."
-                            + unverifiable
-                        ), (
-                            "A human reviewer must confirm this exception (see the cost criteria in "
-                            "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) and the CL "
-                            "description must list it under \"Needs reviewer attention\". Do not remove the skip just "
-                            "to clear this finding."
-                        ))
+                    # Surface reviewer-attention skips (cost or infra incompatibility) as INFO.
+                    _emit(
+                        findings,
+                        "test_skip_needs_reviewer_attention",
+                        "INFO",
+                        bazel_rel,
+                        ln,
+                        (
+                            f"{what} in '{bazel_rel}' skips dual-running its test in GN via "
+                            "`# Needs reviewer attention (bazel2gn skip): ...` (dual-testing cost "
+                            "or pre-existing infra incompatibility such as `testsharder` "
+                            "`duplicatedShardNames` under `use_test_pilot`)." + unverifiable
+                        ),
+                        (
+                            "A human reviewer in Gerrit must confirm this skip (see "
+                            "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems) "
+                            'and the CL description must include a "Needs reviewer attention:" '
+                            "line. Do not remove the skip just to clear this INFO finding."
+                        ),
+                    )
                 else:
-                    _emit(findings, "unjustified_test_skip", "error", bazel_rel, ln, (
-                            f"{what} in '{bazel_rel}' has a `# @bazel2gn:skip` that did not exist at the change base, "
-                            "is justified only by an unmarked comment, and no technical skip condition applies. "
-                            "Skips added in a migration must meet a technical condition or use the dual-testing cost "
-                            "marker." + unverifiable
-                        ), (
-                            "If this is the dual-testing cost exception, start the comment with "
-                            "`# Needs reviewer attention (bazel2gn skip): <reason>` and add a matching "
-                            "\"Needs reviewer attention:\" line to the commit message. Otherwise remove the skip, "
-                            f"re-run `fx bazel2gn -d {pkg_dir}`, and wire the generated GN test into `group(\"tests\")` "
-                            "(see docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)."
-                        ))
+                    # Reject unmarked comment-only skips that meet no technical condition.
+                    _emit(
+                        findings,
+                        "unjustified_test_skip",
+                        "error",
+                        bazel_rel,
+                        ln,
+                        (
+                            f"{what} in '{bazel_rel}' has a `# @bazel2gn:skip` that did not exist "
+                            "at the change base, is justified only by an unmarked comment, and no "
+                            "technical skip condition applies. Skips added in a migration must "
+                            "meet a technical condition or use the reviewer-attention marker."
+                            + unverifiable
+                        ),
+                        (
+                            "If dual-testing cost outweighs risk or dual-running hits a "
+                            "pre-existing infra bug (e.g. `testsharder` `duplicatedShardNames` "
+                            "under `use_test_pilot`), start the comment with "
+                            "`# Needs reviewer attention (bazel2gn skip): <reason>` and add a "
+                            'matching "Needs reviewer attention:" line to the commit message. '
+                            f"Otherwise remove the skip, re-run `fx bazel2gn -d {pkg_dir}`, and "
+                            'wire the generated GN test into `group("tests")` (see '
+                            "docs/development/build/bazel_concepts/tests.md#tests-in-both-build-systems)."
+                        ),
+                    )
             if t["skip_line"] is None:
                 for attr_name, attr_skip_line, attr_reason in t.get("skipped_test_attrs", []):
                     if (
@@ -2444,13 +2719,14 @@ for pkg_dir in sorted(candidate_dirs):
                     else:
                         test_kept_rem = (
                             "If Bazel can run it unchanged, move it to Bazel "
-                            "(`with_unit_tests`/`with_host_unit_tests` on the `rustc_*` target, "
-                            "or `rustc_test`/`go_test`, without `# @bazel2gn:skip`), delete it "
+                            "(a standalone `rustc_test`/`host_rustc_test` or `go_test`/`host_go_test` "
+                            "without `# @bazel2gn:skip`), delete it "
                             f"here, re-run `fx bazel2gn -d {pkg_dir}` so the GN copy is "
                             "generated, list that GN copy in `group(\"tests\")` and export the "
                             "Bazel test with a `bazel_test_suite`. Otherwise keep it with its "
-                            "GN deps and output name, depending on the generated library, and "
-                            "name the blocker in the summary and commit message."
+                            "GN deps and output name (listing host tests in `group(\"tests\")` as "
+                            f"`\":{gname}($host_toolchain)\"`), and name the blocker in the "
+                            "summary and commit message."
                         )
                         _emit(findings, "gn_test_kept_above_sentinel", "INFO", gn_rel, gline, (
                                 f"GN test `{gtmpl}(\"{gname}\")` stays hand-written above `## BAZEL2GN SENTINEL` in '{gn_rel}'. "

@@ -18,8 +18,12 @@ emit findings to re-litigate rules owned by passing checks:
   pairing.
 - **CQ & `tests.json` plumbing** (`cq_reachability`, `tests_json_parity`): Defer to checks on
   ancestor `test_suite` vs. `bazel_test_suite` wiring and `tests.json` reachability.
-- **Formatting & Starlark style** (`bazel_minimality`, `bazel_shac_lint`, `gn_format`,
-  `confidentiality_check`): Do not nitpick buildifier formatting, load paths, or copyright years.
+- **Formatting, Starlark style & non-build file scope** (`bazel_minimality`, `bazel_shac_lint`,
+  `gn_format`, `confidentiality_check`, `build_only_scope`, `lint_config_parity`): Do not nitpick
+  buildifier formatting, load paths, or copyright years, and defer to `build_only_scope` on
+  permitted narrow source/manifest edits (`LINT.IfChange`/`LINT.ThenChange`, `clippy_warn_all` test
+  lints, `<sdk/lib/...>` include fixes, new/relocated test `.cml`, and `#[cfg(test)]`/test-file
+  `host_test_data` `runtime_dir` path fallbacks).
 
 ## 1. Target Completeness & Dual-Build Sentinel Sync
 1. **Complete Migration of Convertible Targets**:
@@ -27,7 +31,7 @@ emit findings to re-litigate rules owned by passing checks:
      `fx_cc_library_headers`, `fx_cc_binary`, `fx_cc_test`, `cc_binary`, `rustc_library`,
      `rustc_binary`, `rustc_proc_macro`, `go_library`, `go_binary`, `py_library`, `py_binary`,
      `fidl_library`, `zither_fidl_library`, `fuchsia_structured_config_rust_lib`,
-     `fx_component_manifest`, `fx_compiled_manifest`, `fx_component`, `idk_cc_*`) left hand-written
+     `fx_component_manifest`, `fx_compiled_manifest`, `fx_component`, `ffx_plugin`, `idk_cc_*`) left hand-written
      above `## BAZEL2GN SENTINEL` in `BUILD.gn` or annotated with `# @bazel2gn:skip` in
      `BUILD.bazel` when its dependencies are available in Bazel.
    - Valid `# @bazel2gn:skip` exceptions on non-test targets:
@@ -53,7 +57,8 @@ emit findings to re-litigate rules owned by passing checks:
 ## 2. Source, Attribute, Flag & Condition Equivalence
 1. **Sources & Go `*_test.go` Split**:
    - Verify every source file and header from `BUILD.gn` is preserved in `BUILD.bazel`, including
-     conditional sources (`select()`).
+     conditional sources (`select()`). In `ffx_plugin`, GN `sources` and `args_sources` map to
+     Bazel `srcs` and `args_srcs` (`bazel2gn` converts `args_srcs` back to `args_sources`).
    - For Go targets, GN `go_library` often lists `*_test.go` files in `sources`, whereas Bazel
      `go_library` compiles all `srcs` into the library archive. Moving `*_test.go` from GN
      `go_library.sources` into `srcs` of `host_go_test`/`go_test` with `embed = [":<lib>"]` is
@@ -106,7 +111,14 @@ emit findings to re-litigate rules owned by passing checks:
      newly added boilerplate `.cml`.
    - C++ `test("<name>")` must migrate to `fx_cc_test` (never `fx_cc_binary(testonly = True)`), and
      `cc_test_executable()` to `fx_cc_binary(testonly = True, build_flags = ["//build/config/lto:no-fat-lto-objects-linking"])`.
-   - Preserve `package_name`, `max_log_severity`, test `args`, and host vs. device execution.
+   - Preserve `package_name`, `max_log_severity`, test `args` (`test_args` on `host_*_test`), and
+     host vs. device execution. For host tests with `host_test_data`, stage files via
+     `host_test_data_files`/`host_test_data_map` passed in `test_data` (never `data`) on
+     `host_rustc_test`, which is `# @bazel2gn:skip` in dual builds since bazel2gn cannot
+     translate `test_data`; flag such targets in `data`), accepting
+     minimal `#[cfg(test)]`/test-file `<dest_dir>/...` path fallbacks when tests hardcoded GN
+     `../../<pkg>/...` or `current_exe()` paths; keep a standalone GN test above the sentinel only
+     when blocked by unmigratable GN-only targets/features.
    - **Valid `# @bazel2gn:skip` conditions on tests in Case 2**: Reject (`passed=false`)
      `# @bazel2gn:skip` on a test rule or attribute (`with_unit_tests`, `with_host_unit_tests`,
      `test_deps`) UNLESS one of these 5 conditions holds:
@@ -120,15 +132,15 @@ emit findings to re-litigate rules owned by passing checks:
         `host_shac_test`, `host_test`) or a `rustc_test` with cross-package `srcs`/`crate` or
         conflicting `rustc_env`, or the skip was pre-existing at `$PLANTER_CHANGE_BASE`.
      5. The comment directly above `# @bazel2gn:skip` starts with
-        `# Needs reviewer attention (bazel2gn skip):` (human-confirmed dual-testing cost exception)
-        AND the target under test is NOT an `sdk_*()` library other than `sdk_source_set()`
-        (`idk_cc_shared_library`, `idk_cc_static_library`, or `_zx` variants). For valid
-        `# Needs reviewer attention` skips, keep `passed=true` and emit at most an `"info"` finding.
+        `# Needs reviewer attention (bazel2gn skip):` (dual-testing cost or infra-incompatibility
+        exception, e.g. `testsharder` `duplicatedShardNames` under `use_test_pilot`, surfaced for
+        human confirmation in Gerrit) AND the target under test is NOT an `sdk_*()` library other
+        than `sdk_source_set()` (`idk_cc_shared_library`, `idk_cc_static_library`, or `_zx`
+        variants). For valid `# Needs reviewer attention` skips, keep `passed=true` and emit at
+        most an `"info"` finding.
 
-## 5. Build-Only Scope & CL Scoping
-1. **No Source Code Modifications**: Reject (`passed=false`) any edit to source files (`.rs`, `.cc`,
-   `.h`), including lint-silencing edits (`.clone()` removal, `#[allow]`).
-2. **CL Scope (`scoping_changelists.md`)**: Reject sweeping cross-area, general-purpose,
-   `third_party/`, or multi-hop dependencies into the CL (`<= 5` directories, `<= ~500` new lines).
+## 5. CL Scoping (`scoping_changelists.md`)
+1. Reject sweeping cross-area, general-purpose, `third_party/`, or multi-hop dependencies into the
+   CL (`<= 5` directories, `<= ~500` new lines).
 
 Emit a JSON ReviewerVerdict: `{"passed": true|false, "findings": [...]}`.

@@ -56,6 +56,7 @@ CHANGE_BASE="${PLANTER_CHANGE_BASE:-HEAD}"
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "$CHANGE_BASE" <<'PYEOF'
 import ast
+import difflib
 import json
 import os
 import re
@@ -167,8 +168,13 @@ def resolve_effective_change_base(raw_base: str) -> str:
         if not target_dirs or any(
             any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
         ):
+            parent_on_origin = bool(origin_main and is_ancestor(parent_sha, origin_main))
             if base == "HEAD" or base_sha == head_sha or (
-                base_sha and base_sha != parent_sha and is_ancestor(base_sha, parent_sha)
+                os.environ.get("PLANTER_CHANGED_FILES") is None
+                and base_sha
+                and base_sha != parent_sha
+                and is_ancestor(base_sha, parent_sha)
+                and (not origin_main or parent_on_origin)
             ):
                 return "HEAD~1"
     return base
@@ -188,23 +194,29 @@ def _emit(findings, category, severity, file, line, message, remediation=""):
     findings.append(d)
 
 
+# Resolve changed and untracked files consistently even when PLANTER_CHANGED_FILES is set.
 _resolved_env = os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
-change_base = normalize_git_rev(_resolved_env) if _resolved_env else resolve_effective_change_base(change_base)
+change_base = (
+    normalize_git_rev(_resolved_env)
+    if _resolved_env
+    else resolve_effective_change_base(change_base)
+)
 _env_changed = os.environ.get("PLANTER_CHANGED_FILES")
+untracked = [
+    f
+    for f in git_lines(["ls-files", "--others", "--exclude-standard"])
+    if "/" in f or not re.fullmatch(r"CoderReport[\w.-]*\.json", f)
+]
 if _env_changed is not None:
     changed = {
         l.strip()
         for l in _env_changed.splitlines()
-        if l.strip() and ("/" in l.strip() or not re.fullmatch(r"CoderReport[\w.-]*\.json", l.strip()))
+        if l.strip()
+        and ("/" in l.strip() or not re.fullmatch(r"CoderReport[\w.-]*\.json", l.strip()))
     }
-    untracked = []
+    untracked = [f for f in untracked if f in changed]
 else:
     changed = set(git_lines(["diff", "--name-only", change_base]))
-    untracked = [
-        f
-        for f in git_lines(["ls-files", "--others", "--exclude-standard"])
-        if "/" in f or not re.fullmatch(r"CoderReport[\w.-]*\.json", f)
-    ]
     changed.update(untracked)
 
 
@@ -240,95 +252,271 @@ def package_eliminated_gn_or_sentinel(pkg: str) -> bool:
         return False
 
 
+# Extract top-level target rule `name = "..."` definitions from Starlark text,
+# ignoring `package(...)` and `exports_files(...)` metadata calls.
+def extract_bazel_target_names(bz_text: str, filename: str = "BUILD.bazel") -> set[str]:
+    if not bz_text.strip():
+        return set()
+    names: set[str] = set()
+    try:
+        tree = ast.parse(bz_text, filename=filename)
+        for stmt in tree.body:
+            if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+                continue
+            func = stmt.value.func
+            if isinstance(func, ast.Name) and func.id in ("package", "exports_files"):
+                continue
+            for kw in stmt.value.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    names.add(kw.value.value)
+    except SyntaxError:
+        for m in re.finditer(r'^\s*name\s*=\s*"([^"]+)"', bz_text, re.M):
+            names.add(m.group(1))
+    return names
+
+
+# Check whether `<pkg>` already had a `BUILD.bazel` or `BUILD` file at `change_base`.
+def had_bazel_pkg_at_base(pkg: str) -> bool:
+    for bfile in ("BUILD.bazel", "BUILD"):
+        if git_lines(["ls-tree", "--name-only", change_base, "--", f"{pkg}/{bfile}"]):
+            return True
+    return False
+
+
+# Check whether `<pkg>` was unmigrated at `change_base` (no `BUILD.bazel`/`BUILD`, an
+# `exports_files`-only stub, or missing a target in `req_targets` that `<pkg>/BUILD.bazel`
+# now migrates).
+def was_unmigrated_dep_at_base(pkg: str, req_targets: set[str]) -> bool:
+    if not had_bazel_pkg_at_base(pkg):
+        return True
+    base_names: set[str] = set()
+    for bfile in ("BUILD.bazel", "BUILD"):
+        base_txt = "\n".join(git_lines(["show", f"{change_base}:{pkg}/{bfile}"]))
+        if base_txt:
+            base_names |= extract_bazel_target_names(base_txt, f"{pkg}/{bfile}")
+    if not base_names:
+        return True
+    if not req_targets:
+        return False
+    cur_txt = ""
+    for bfile in ("BUILD.bazel", "BUILD"):
+        bz_path = os.path.join(workdir, pkg, bfile)
+        if os.path.isfile(bz_path):
+            try:
+                with open(bz_path, encoding="utf-8") as f:
+                    cur_txt += "\n" + f.read()
+            except OSError:
+                pass
+    cur_names = extract_bazel_target_names(cur_txt, f"{pkg}/BUILD.bazel")
+    return bool((req_targets & cur_names) - base_names)
+
+
+# Check whether `<pkg>/BUILD.bazel` is a pure `exports_files(...)` stub (with `BUILD.gn`
+# untouched) added only to expose checked-in files across Bazel package boundaries.
+def is_exports_files_only_bazel_pkg(pkg: str) -> bool:
+    if not pkg or f"{pkg}/BUILD.gn" in changed:
+        return False
+    bz_path = os.path.join(workdir, pkg, "BUILD.bazel")
+    try:
+        with open(bz_path, encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=f"{pkg}/BUILD.bazel")
+    except (OSError, SyntaxError):
+        return False
+    saw_exports = False
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
+            continue
+        if not (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Call)
+            and isinstance(stmt.value.func, ast.Name)
+            and stmt.value.func.id in ("package", "exports_files")
+        ):
+            return False
+        if stmt.value.func.id == "exports_files":
+            saw_exports = True
+    return saw_exports
+
+
+# Collect workspace package paths -> referenced target names in `<pkg>/BUILD.bazel`
+# outside `visibility` attributes so upstream dependencies and exported file packages
+# can be identified.
+def collect_non_visibility_dep_targets(pkg: str) -> dict[str, set[str]]:
+    bz_path = os.path.join(workdir, pkg, "BUILD.bazel")
+    try:
+        with open(bz_path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return {}
+    label_re = re.compile(
+        r"(?<![A-Za-z0-9_.:/\-])@?//([A-Za-z0-9_.\-/]+)(?::([A-Za-z0-9_.\-/]+))?"
+    )
+    deps: dict[str, set[str]] = {}
+    try:
+        tree = ast.parse(text, filename=f"{pkg}/BUILD.bazel")
+        str_vals: list[str] = []
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                is_load = (
+                    isinstance(stmt.value.func, ast.Name)
+                    and stmt.value.func.id == "load"
+                )
+                for kw in stmt.value.keywords:
+                    if kw.arg in ("visibility", "default_visibility"):
+                        continue
+                    for sub in ast.walk(kw.value):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            str_vals.append(sub.value)
+                for idx, pos_arg in enumerate(stmt.value.args):
+                    if is_load and idx > 0:
+                        continue
+                    for sub in ast.walk(pos_arg):
+                        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                            str_vals.append(sub.value)
+            elif isinstance(stmt, ast.Assign):
+                for sub in ast.walk(stmt.value):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        str_vals.append(sub.value)
+        scan_items = str_vals
+    except SyntaxError:
+        scan_items = [re.sub(r"#[^\n]*", "", text)]
+    for item in scan_items:
+        for m in label_re.finditer(item):
+            ref, raw_tgt = m.group(1).strip("/"), m.group(2) or ""
+            if not ref or raw_tgt in ("__pkg__", "__subpackages__"):
+                continue
+            tgt = raw_tgt or os.path.basename(ref)
+            deps.setdefault(ref, set())
+            if tgt and not tgt.endswith(".bzl"):
+                deps[ref].add(tgt)
+    return deps
+
+
+def collect_non_visibility_dep_pkgs(pkg: str) -> set[str]:
+    return set(collect_non_visibility_dep_targets(pkg).keys())
+
+
 def migrated_dependency_packages():
     """Packages outside target_dirs that are legitimately co-migrated per scoping_changelists.md.
 
     Per //build/beads/references/migration/scoping_changelists.md Section 2 & Section 3:
-    - Never co-migrate cross-area packages, third_party/ packages (with first-party), general-purpose
-      libraries, or multi-hop transitive dependency closures.
+    - Never co-migrate cross-area packages, third_party/ packages (with first-party), or
+      sprawling multi-hop closures exceeding CL scoping limits.
     - Allowed co-migrations:
-      1. Subdirectories of an assigned target directory (`cand_pkg.startswith(td + "/")`, e.g.
+      1. Subdirectories of an in-scope migrated directory (`cand_pkg.startswith(td + "/")`, e.g.
          internal helpers `//<dir>/<helper>` or direct test dirs `//<dir>/tests`, Patterns 2.B & 2.D).
       2. A sole same-area GN consumer of `td` ONLY when co-migrating it eliminates `td/BUILD.gn` or
          avoids `bazel2gn` in `td/BUILD.gn` (Pattern 2.A).
-      3. A same-area private helper directly depended on by `td` whose `BUILD.gn` is deleted or has
-         no `BAZEL2GN SENTINEL` because `td` is its sole consumer (Pattern 2.B).
+      3. An unmigrated same-area dependency package required to compile an in-scope target in Bazel
+         (even when `bazel2gn` is kept for remaining GN consumers, or when `<pkg>/BUILD.bazel` at
+         base was only an `exports_files` stub / partial migration missing the depended-on target),
+         or a same-area private helper whose `BUILD.gn` or sentinel is eliminated (Pattern 2.B).
     """
-    added = set(git_lines(["diff", "--name-only", "--diff-filter=AM", change_base])) | set(untracked)
+    existing_changed = {
+        p for p in changed if os.path.isfile(os.path.join(workdir, p))
+    }
+    added = (
+        set(git_lines(["diff", "--name-only", "--diff-filter=AM", change_base]))
+        | set(untracked)
+        | existing_changed
+    )
     candidates = {
         os.path.dirname(p)
         for p in added
         if os.path.basename(p) == "BUILD.bazel"
         and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
         and not p.strip("/").startswith("bundles/")
+        and not is_exports_files_only_bazel_pkg(os.path.dirname(p))
     }
     candidates -= set(target_dirs)
     if not candidates or not target_dirs:
         return set()
-    label_re = re.compile(r'"@?//([^":]+)(?::([^"\s]+))?"')
-    td_direct_deps = set()
-    for td in target_dirs:
-        try:
-            with open(os.path.join(workdir, td, "BUILD.bazel"), encoding="utf-8") as f:
-                text = f.read()
-        except OSError:
-            continue
-        for m in label_re.finditer(text):
-            ref, target = m.group(1).strip("/"), m.group(2) or ""
-            if ref and target not in ("__pkg__", "__subpackages__"):
-                td_direct_deps.add(ref)
-    found = set()
-    for cand_pkg in sorted(candidates):
-        # 1. Child/descendant directory of an assigned target directory (Patterns 2.B & 2.D)
-        if any(
-            cand_pkg.startswith(td + "/") and is_same_third_party_scope(cand_pkg, td)
-            for td in target_dirs
-        ):
-            found.add(cand_pkg)
-            continue
-        # 1b. Direct FIDL library dependency in //sdk/fidl/<lib> upgraded from legacy
-        # fuchsia_fidl_library (C++ only) to fidl_library so Rust/C++ bindings exist in Bazel.
-        if cand_pkg in td_direct_deps and cand_pkg.startswith("sdk/fidl/"):
-            found.add(cand_pkg)
-            continue
-        # Must be in the same area and third_party scope as at least one target_dir
-        matching_tds = [
-            td
-            for td in target_dirs
-            if get_pkg_area(cand_pkg) == get_pkg_area(td)
-            and is_same_third_party_scope(cand_pkg, td)
-        ]
-        if not matching_tds:
-            continue
-        # 2. Pattern 2.A: Sole same-area consumer of td that eliminates td/BUILD.gn or bazel2gn in td
-        cand_texts = []
-        for fn in ("BUILD.gn", "BUILD.bazel"):
-            rel_f = f"{cand_pkg}/{fn}"
-            cand_texts.extend(git_lines(["show", f"{change_base}:{rel_f}"]))
-            try:
-                with open(os.path.join(workdir, rel_f), encoding="utf-8") as f:
-                    cand_texts.append(f.read())
-            except OSError:
-                pass
-        joined = "\n".join(cand_texts)
-        if any(
-            re.search(
-                r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])',
-                joined,
-            )
-            and package_eliminated_gn_or_sentinel(td)
-            for td in matching_tds
-        ):
-            found.add(cand_pkg)
-            continue
-        # 3. Pattern 2.B: Direct same-area private helper of td that needs no bazel2gn
-        if cand_pkg in td_direct_deps and package_eliminated_gn_or_sentinel(cand_pkg):
-            found.add(cand_pkg)
+    found: set[str] = set()
+    progressed = True
+    while progressed:
+        progressed = False
+        active_dep_targets: dict[str, set[str]] = {}
+        in_scope_pkgs = list(dict.fromkeys(list(target_dirs) + sorted(found)))
+        for src_pkg in in_scope_pkgs:
+            for dep_pkg, dep_tgts in collect_non_visibility_dep_targets(src_pkg).items():
+                active_dep_targets.setdefault(dep_pkg, set()).update(dep_tgts)
+        for cand_pkg in sorted(candidates - found):
+            # 1. Child/descendant directory of an in-scope migrated directory (Patterns 2.B & 2.D)
+            if any(
+                cand_pkg.startswith(td + "/") and is_same_third_party_scope(cand_pkg, td)
+                for td in in_scope_pkgs
+            ):
+                found.add(cand_pkg)
+                progressed = True
+                continue
+            # 1b. Direct FIDL library dependency in //sdk/fidl/<lib> upgraded from legacy
+            # fuchsia_fidl_library (C++ only) to fidl_library so Rust/C++ bindings exist in Bazel.
+            if cand_pkg in active_dep_targets and cand_pkg.startswith("sdk/fidl/"):
+                found.add(cand_pkg)
+                progressed = True
+                continue
+            # Must be in the same area and third_party scope as at least one target_dir
+            matching_tds = [
+                td
+                for td in target_dirs
+                if get_pkg_area(cand_pkg) == get_pkg_area(td)
+                and is_same_third_party_scope(cand_pkg, td)
+            ]
+            if not matching_tds:
+                continue
+            # 2. Pattern 2.A: Sole same-area consumer of td eliminating td/BUILD.gn or bazel2gn
+            cand_texts = []
+            for fn in ("BUILD.gn", "BUILD.bazel"):
+                rel_f = f"{cand_pkg}/{fn}"
+                cand_texts.extend(git_lines(["show", f"{change_base}:{rel_f}"]))
+                try:
+                    with open(os.path.join(workdir, rel_f), encoding="utf-8") as f:
+                        cand_texts.append(f.read())
+                except OSError:
+                    pass
+            joined = "\n".join(cand_texts)
+            if any(
+                re.search(
+                    r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)'
+                    + re.escape(td)
+                    + r'(?=[:"/\s\'])',
+                    joined,
+                )
+                and package_eliminated_gn_or_sentinel(td)
+                for td in matching_tds
+            ):
+                found.add(cand_pkg)
+                progressed = True
+                continue
+            # 3. Pattern 2.B / required unmigrated same-area dependency of an in-scope package
+            if cand_pkg in active_dep_targets and (
+                package_eliminated_gn_or_sentinel(cand_pkg)
+                or was_unmigrated_dep_at_base(cand_pkg, active_dep_targets[cand_pkg])
+            ):
+                found.add(cand_pkg)
+                progressed = True
     return found
 
 
 dependency_dirs = migrated_dependency_packages()
-newly_added_files = set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base])) | set(untracked)
+in_scope_dep_pkgs: set[str] = set()
+for _src_pkg in dict.fromkeys(list(target_dirs) + sorted(dependency_dirs)):
+    in_scope_dep_pkgs |= collect_non_visibility_dep_pkgs(_src_pkg)
+newly_added_files = (
+    set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base]))
+    | set(untracked)
+    | {
+        p
+        for p in changed
+        if os.path.basename(p) in ("BUILD.bazel", "BUILD")
+        and os.path.isfile(os.path.join(workdir, p))
+        and not had_bazel_pkg_at_base(os.path.dirname(p))
+    }
+)
 
 
 def referenced_shared_configs():
@@ -446,6 +634,14 @@ def is_allowed_scope(path: str) -> bool:
         return True
     if is_relocated_in_scope_cml(norm):
         return True
+    # Allow pure `exports_files(...)` BUILD.bazel stubs that expose checked-in files to
+    # in-scope migrated packages without migrating targets in that directory's BUILD.gn.
+    if (
+        os.path.basename(norm) == "BUILD.bazel"
+        and pkg_dir in in_scope_dep_pkgs
+        and is_exports_files_only_bazel_pkg(pkg_dir)
+    ):
+        return True
     if norm in allowed_gni_files:
         return True
     if pkg_dir in allowed_lint_pkgs and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
@@ -547,12 +743,56 @@ for path in sorted(changed):
                     "(such as loading private rule definitions, wrapping macros, editing debug "
                     "symbol aspects, or adding custom attributes).", shared_rem)
         else:
-            _emit(findings, "out_of_scope_package_modified", "error", path, 1, f"File '{path}' is outside the assigned target directory scope "
-                    f"({', '.join(target_dirs)}). Per //build/beads/references/migration/scoping_changelists.md, "
-                    "do not sweep cross-area packages, general-purpose dependencies, transitive closures, "
-                    "or downstream consumers that do not eliminate BUILD.gn/bazel2gn into the same CL.", f"Revert changes to '{path}' (`git checkout {change_base} -- {path}` or `rm -f {path}`) "
-                    "and restrict modifications strictly to the assigned target package(s) and allowed "
-                    "co-migrated subdirectories.")
+            out_msg = (
+                f"File '{path}' is outside the assigned target directory scope "
+                f"({', '.join(target_dirs)}). Per "
+                "//build/beads/references/migration/scoping_changelists.md, do not sweep "
+                "cross-area packages, general-purpose dependencies, transitive closures, or "
+                "downstream consumers that do not eliminate BUILD.gn/bazel2gn into the same CL."
+            )
+            out_rem = (
+                f"Revert changes to '{path}' (`git checkout {change_base} -- {path}` or "
+                f"`rm -f {path}`) and restrict modifications strictly to the assigned target "
+                "package(s) and allowed same-area co-migrated packages."
+            )
+            _emit(findings, "out_of_scope_package_modified", "error", path, 1, out_msg, out_rem)
+
+
+# Count hand-authored added lines in `<norm>`, excluding machine-generated output below
+# `## BAZEL2GN SENTINEL` in dual-built `BUILD.gn` files (already counted in `BUILD.bazel`).
+def count_authored_added_lines(norm: str) -> int:
+    full_p = os.path.join(workdir, norm)
+    if os.path.basename(norm) == "BUILD.gn" and os.path.isfile(full_p):
+        try:
+            with open(full_p, encoding="utf-8", errors="ignore") as f:
+                cur_gn = f.read()
+        except OSError:
+            cur_gn = ""
+        if "BAZEL2GN SENTINEL" in cur_gn:
+            base_gn = "\n".join(git_lines(["show", f"{change_base}:{norm}"]))
+            base_pre = re.split(
+                r"(?m)^##\s*BAZEL2GN SENTINEL", base_gn, maxsplit=1
+            )[0].splitlines()
+            cur_pre = re.split(
+                r"(?m)^##\s*BAZEL2GN SENTINEL", cur_gn, maxsplit=1
+            )[0].splitlines()
+            sm = difflib.SequenceMatcher(a=base_pre, b=cur_pre)
+            return sum(
+                j2 - j1
+                for tag, _i1, _i2, j1, j2 in sm.get_opcodes()
+                if tag in ("insert", "replace")
+            )
+    if norm in untracked:
+        try:
+            with open(full_p, encoding="utf-8", errors="ignore") as f:
+                return sum(1 for _ in f)
+        except OSError:
+            return 0
+    return sum(
+        1
+        for dl in git_lines(["diff", "--unified=0", change_base, "--", norm])
+        if dl.startswith("+") and not dl.startswith("+++")
+    )
 
 
 # Enforce CL directory count (<= 5) and added-line count (<= ~500 for multi-directory CLs)
@@ -566,7 +806,7 @@ def check_cl_scoping_guidelines():
         if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
             continue
         pkg = os.path.dirname(norm)
-        if not pkg:
+        if not pkg or is_exports_files_only_bazel_pkg(pkg):
             continue
         if norm in newly_added_files or pkg in target_dirs or pkg in dependency_dirs:
             migrated_pkgs.add(pkg)
@@ -577,16 +817,12 @@ def check_cl_scoping_guidelines():
         norm = p.strip("/")
         if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
             continue
-        if norm in untracked:
-            try:
-                with open(os.path.join(workdir, norm), encoding="utf-8", errors="ignore") as f:
-                    added_lines += sum(1 for _ in f)
-            except OSError:
-                pass
-        else:
-            for dl in git_lines(["diff", "--unified=0", change_base, "--", norm]):
-                if dl.startswith("+") and not dl.startswith("+++"):
-                    added_lines += 1
+        if (
+            os.path.basename(norm) == "BUILD.bazel"
+            and is_exports_files_only_bazel_pkg(os.path.dirname(norm))
+        ):
+            continue
+        added_lines += count_authored_added_lines(norm)
     anchor = f"{target_dirs[0]}/BUILD.bazel" if target_dirs else f"{sorted(migrated_pkgs)[0]}/BUILD.bazel"
     fidl_dep_pkgs = {d for d in dependency_dirs if d.startswith("sdk/fidl/")}
     unassigned_pkgs = migrated_pkgs - set(target_dirs) - fidl_dep_pkgs
@@ -669,6 +905,197 @@ for td in dict.fromkeys(list(target_dirs) + sorted(dependency_dirs)):
     cand = os.path.join(workdir, td, "BUILD.bazel")
     if os.path.isfile(cand):
         bazel_files.append((os.path.join(td, "BUILD.bazel"), cand))
+
+
+# Parse list and list-concatenation constants from sdk/atom_lists.bzl for IDK allowlist checks.
+def load_sdk_atom_allowlists():
+    atom_lists_path = os.path.join(workdir, "sdk/atom_lists.bzl")
+    if not os.path.isfile(atom_lists_path):
+        return None
+    try:
+        with open(atom_lists_path, "r", encoding="utf-8") as f:
+            atom_tree = ast.parse(f.read(), filename="sdk/atom_lists.bzl")
+    except Exception:
+        return None
+    atom_vars = {}
+
+    def _eval_set(node):
+        if isinstance(node, (ast.List, ast.Tuple)):
+            return {
+                elt.value
+                for elt in node.elts
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+            }
+        if isinstance(node, ast.Name):
+            return set(atom_vars.get(node.id, set()))
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return _eval_set(node.left) | _eval_set(node.right)
+        return set()
+
+    for stmt in atom_tree.body:
+        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+            tgt = stmt.targets[0]
+            if isinstance(tgt, ast.Name):
+                atom_vars[tgt.id] = _eval_set(stmt.value)
+    return atom_vars
+
+
+# Map host-tool package directories in sdk/BUILD.gn to their sdk_molecule target name.
+def load_sdk_gn_host_tool_molecules():
+    sdk_gn_path = os.path.join(workdir, "sdk/BUILD.gn")
+    if not os.path.isfile(sdk_gn_path):
+        return {}
+    try:
+        with open(sdk_gn_path, "r", encoding="utf-8") as f:
+            gn_text = re.sub(r"#[^\n]*", "", f.read())
+    except OSError:
+        return {}
+    pkg_to_mol = {}
+    mol_names = (
+        "build_host_tools",
+        "non_build_host_tools_required_by_bazel_sdk",
+        "non_build_host_tools",
+    )
+    for mol in mol_names:
+        pat = r'\bsdk_molecule\(\s*"' + re.escape(mol) + r'"\s*\)\s*\{'
+        m = re.search(pat, gn_text)
+        if not m:
+            continue
+        depth, idx = 1, m.end()
+        while idx < len(gn_text) and depth > 0:
+            if gn_text[idx] == "{":
+                depth += 1
+            elif gn_text[idx] == "}":
+                depth -= 1
+            idx += 1
+        body = gn_text[m.end() : idx - 1]
+        for ref_pkg in re.findall(r'"//([^":\s]+)(?::[^"]+)?"', body):
+            pkg_to_mol.setdefault(ref_pkg.strip("/"), mol)
+    return pkg_to_mol
+
+
+# Verify partner IDK macro targets in migrated BUILD.bazel files are in sdk/atom_lists.bzl.
+def check_idk_atom_allowlists():
+    atom_vars = load_sdk_atom_allowlists()
+    if not atom_vars:
+        return
+    sdk_gn_mols = load_sdk_gn_host_tool_molecules()
+    idk_rule_allowlists = {
+        "idk_ffx_tool": ("ALL_FFX_TOOL_ATOMS", "ffx_tool"),
+        "idk_host_tool": ("ALL_HOST_TOOL_ATOMS", "host_tool"),
+        "idk_cc_source_library": ("ALL_CC_SOURCE_LIBRARY_ATOMS", "cc_source_library"),
+        "idk_cc_source_library_zx": ("ALL_CC_SOURCE_LIBRARY_ATOMS", "cc_source_library"),
+        "idk_cc_shared_library": (
+            "CC_PREBUILT_SHARED_LIBRARY_ATOMS",
+            "cc_prebuilt_library",
+        ),
+        "idk_cc_shared_library_zx": (
+            "CC_PREBUILT_SHARED_LIBRARY_ATOMS",
+            "cc_prebuilt_library",
+        ),
+        "idk_cc_static_library": (
+            "CC_PREBUILT_STATIC_LIBRARY_ATOMS",
+            "cc_prebuilt_library",
+        ),
+        "idk_cc_static_library_zx": (
+            "CC_PREBUILT_STATIC_LIBRARY_ATOMS",
+            "cc_prebuilt_library",
+        ),
+        "idk_data": ("DATA_ATOMS", "data"),
+    }
+    host_mol_to_list = {
+        ("ffx_tool", "build_host_tools"): "BUILD_FFX_TOOLS_ATOMS",
+        ("ffx_tool", "non_build_host_tools_required_by_bazel_sdk"): (
+            "_NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK"
+        ),
+        ("ffx_tool", "non_build_host_tools"): "NON_BUILD_FFX_TOOLS_ATOMS",
+        ("host_tool", "build_host_tools"): "BUILD_HOST_TOOLS_ATOMS",
+        ("host_tool", "non_build_host_tools_required_by_bazel_sdk"): (
+            "_NON_BUILD_HOST_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK"
+        ),
+        ("host_tool", "non_build_host_tools"): "NON_BUILD_HOST_TOOLS_ATOMS",
+    }
+    for rel_p, full_p in bazel_files:
+        pkg_dir = os.path.dirname(rel_p).strip("/")
+        if pkg_dir == "build/bazel/bazel_idk/tests":
+            continue
+        try:
+            with open(full_p, "r", encoding="utf-8") as f:
+                tree = ast.parse(f.read(), filename=rel_p)
+        except Exception:
+            continue
+        for stmt in tree.body:
+            if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+                continue
+            call = stmt.value
+            if (
+                not isinstance(call.func, ast.Name)
+                or call.func.id not in idk_rule_allowlists
+            ):
+                continue
+            rule_name = call.func.id
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            nm_node = kws.get("name")
+            cat_node = kws.get("category")
+            if not (isinstance(nm_node, ast.Constant) and isinstance(nm_node.value, str)):
+                continue
+            if not (isinstance(cat_node, ast.Constant) and cat_node.value == "partner"):
+                continue
+            list_var, atom_type = idk_rule_allowlists[rule_name]
+            if list_var not in atom_vars:
+                continue
+            atom_label = f"//{pkg_dir}:{nm_node.value}_idk"
+            if atom_label in atom_vars[list_var]:
+                continue
+            mol = sdk_gn_mols.get(pkg_dir, "")
+            exact_list = host_mol_to_list.get((atom_type, mol), "")
+            if exact_list:
+                target_list_desc = f"`{exact_list}` (matching `{mol}` in `sdk/BUILD.gn`)"
+            elif atom_type == "ffx_tool":
+                target_list_desc = (
+                    "`BUILD_FFX_TOOLS_ATOMS`, "
+                    "`_NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK`, or "
+                    "`NON_BUILD_FFX_TOOLS_ATOMS` (matching its `sdk_molecule` in `sdk/BUILD.gn`)"
+                )
+            elif atom_type == "host_tool":
+                target_list_desc = (
+                    "`BUILD_HOST_TOOLS_ATOMS`, "
+                    "`_NON_BUILD_HOST_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK`, or "
+                    "`NON_BUILD_HOST_TOOLS_ATOMS` (matching its `sdk_molecule` in `sdk/BUILD.gn`)"
+                )
+            elif atom_type == "cc_source_library":
+                stable_node = kws.get("stable")
+                is_unstable = (
+                    isinstance(stable_node, ast.Constant) and stable_node.value is False
+                )
+                target_list_desc = (
+                    "`UNSTABLE_CC_SOURCE_LIBRARY_ATOMS`"
+                    if is_unstable
+                    else "`STABLE_CC_SOURCE_LIBRARY_ATOMS`"
+                )
+            else:
+                target_list_desc = f"`{list_var}`"
+            msg = (
+                f'`{rule_name}(name = "{nm_node.value}", category = "partner")` '
+                f"generates IDK atom `{atom_label}`, which is missing from `{list_var}` "
+                "in `sdk/atom_lists.bzl` (`verify_target_is_in_allowlist` fails loading)."
+            )
+            rem = (
+                f'Add `"{atom_label}"` (kept sorted) to {target_list_desc} in '
+                "`sdk/atom_lists.bzl`."
+            )
+            _emit(
+                findings,
+                "missing_idk_atom_allowlist",
+                "error",
+                rel_p,
+                stmt.lineno,
+                msg,
+                rem,
+            )
+
+
+check_idk_atom_allowlists()
 
 for rel_path, full_path in bazel_files:
     try:
@@ -1006,9 +1433,74 @@ for rel_path, full_path in bazel_files:
                     f"`\"{expected_name}\"` instead of including the variant suffix or `_host_test`.", f"Rename `{w_name}` to `\"{expected_name}\"` in '{rel_path}' and update its "
                     f"`host_tests` reference in `{pkg_dir}/BUILD.gn`.")
 
+    # Flag deprecated with_unit_tests / with_host_unit_tests / test_deps on rustc_* outside
+    # //build/bazel/rules/rust/generate_unit_tests.bzl _ALLOWED_PACKAGES.
+    def check_disallowed_rustc_unit_test_attrs(tree_node):
+        gen_ut_path = os.path.join(
+            workdir, "build/bazel/rules/rust/generate_unit_tests.bzl"
+        )
+        if not os.path.isfile(gen_ut_path):
+            return
+        try:
+            gen_ut_txt = open(gen_ut_path, encoding="utf-8").read()
+        except OSError:
+            return
+        if "_ALLOWED_PACKAGES" not in gen_ut_txt or f'"{pkg_dir}":' in gen_ut_txt:
+            return
+        for stmt_node in ast.walk(tree_node):
+            if not (
+                isinstance(stmt_node, ast.Call)
+                and isinstance(stmt_node.func, ast.Name)
+                and stmt_node.func.id
+                in ("rustc_library", "rustc_binary", "rustc_proc_macro")
+            ):
+                continue
+            r_id = stmt_node.func.id
+            t_name = ""
+            bad_attrs = []
+            bad_line = getattr(stmt_node, "lineno", 1)
+            for kw in stmt_node.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    t_name = kw.value.value
+                elif kw.arg in ("with_unit_tests", "with_host_unit_tests"):
+                    if not (
+                        isinstance(kw.value, ast.Constant)
+                        and kw.value.value in (False, None)
+                    ):
+                        bad_attrs.append(kw.arg)
+                        bad_line = getattr(kw, "lineno", bad_line)
+                elif kw.arg == "test_deps":
+                    if not (isinstance(kw.value, ast.List) and not kw.value.elts):
+                        bad_attrs.append(kw.arg)
+                        bad_line = getattr(kw, "lineno", bad_line)
+            if bad_attrs:
+                attrs_str = ", ".join(f"`{a}`" for a in bad_attrs)
+                _emit(
+                    findings,
+                    "deprecated_rustc_with_unit_tests",
+                    "error",
+                    rel_path,
+                    bad_line,
+                    f"`{r_id}(\"{t_name}\")` in '{rel_path}' sets {attrs_str}, which fails "
+                    "Bazel evaluation (`_check_unit_test_allowlist` in "
+                    "'build/bazel/rules/rust/generate_unit_tests.bzl') because "
+                    f"`{pkg_dir}` is not in `_ALLOWED_PACKAGES`.",
+                    f"Remove {attrs_str} from `{r_id}(\"{t_name}\")` in '{rel_path}' and "
+                    f"declare a standalone `rustc_test(name = \"{t_name}_test\", "
+                    f"crate = \":{t_name}\", deps = [...])` or `host_rustc_test(name = "
+                    f"\"{t_name}_test\", crate = \":{t_name}\", deps = [...])` target "
+                    "instead (setting `crate_name = \"<crate>_lib_test\"` when `name` is "
+                    "generic like `lib_test`).",
+                )
+
     # Check for rustc_check_cfg_build_flags(cfgs = ["test"]) in packages with no tests.
     def check_unnecessary_test_check_cfg_flags(tree_node):
         """Flag rustc_check_cfg_build_flags(cfgs = ["test"]) when the package has no tests."""
+        check_disallowed_rustc_unit_test_attrs(tree_node)
         has_pkg_tests = False
         for stmt_node in ast.walk(tree_node):
             if not (isinstance(stmt_node, ast.Call) and isinstance(stmt_node.func, ast.Name)):
@@ -1361,14 +1853,46 @@ for rel_path, full_path in bazel_files:
                     forbid_tcw.add(sym)
         return forbid_tcw
 
-    # Extract GN target names declared inside `if (is_host)` blocks.
+    # Check whether BUILD.gn has a file-scope (brace-depth 0) host-only assert(...).
+    def has_gn_file_scope_host_assert(gn_src):
+        """Return True when `gn_src` has a top-level host-only `assert(...)`."""
+        cleaned = "\n".join(
+            re.sub(r'("(?:\\.|[^"\\])*")|#.*$', lambda m: m.group(1) or "", ln)
+            for ln in gn_src.splitlines()
+        )
+        depth = 0
+        host_assert_pat = (
+            r'"(?:\\.|[^"\\])*"|\{|\}|\bassert\s*\(\s*'
+            r"(?:is_host|!\s*is_fuchsia|current_toolchain\s*==\s*host_toolchain)\b"
+        )
+        for tok_m in re.finditer(host_assert_pat, cleaned):
+            tok = tok_m.group(0)
+            if tok.startswith('"'):
+                continue
+            if tok == "{":
+                depth += 1
+            elif tok == "}":
+                depth = max(0, depth - 1)
+            elif depth == 0:
+                return True
+        return False
+
+    # Extract GN target names declared inside `if (is_host)` blocks or files with `assert(is_host)`.
     def find_gn_is_host_targets(gn_src):
-        """Return target names inside `if (is_host)` blocks, ignoring commented-out lines."""
+        """Return target names inside `if (is_host)` blocks or `assert(is_host)` files."""
         cleaned = "\n".join(
             ln for ln in gn_src.splitlines() if not ln.lstrip().startswith("#")
         )
         names = set()
-        for m_host in re.finditer(r"\bif\s*\(\s*is_host\s*\)\s*\{", cleaned):
+        host_cond_pat = r"(?:is_host|!\s*is_fuchsia|current_toolchain\s*==\s*host_toolchain)"
+        if re.search(
+            r"(?m)^\s*assert\s*\(\s*" + host_cond_pat + r"\b(?:\s*\)|\s*,)",
+            cleaned,
+        ):
+            for m_t in re.finditer(r'\b[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)\s*\{', cleaned):
+                names.add(m_t.group(1))
+                names.add(f"{m_t.group(1)}_test")
+        for m_host in re.finditer(r"\bif\s*\(\s*" + host_cond_pat + r"\s*\)\s*\{", cleaned):
             depth, idx = 1, m_host.end()
             while idx < len(cleaned) and depth > 0:
                 if cleaned[idx] == "{":
@@ -1379,6 +1903,8 @@ for rel_path, full_path in bazel_files:
             blk = cleaned[m_host.end() : max(m_host.end(), idx - 1)]
             for m_t in re.finditer(r'\b[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)\s*\{', blk):
                 names.add(m_t.group(1))
+                if "with_unit_tests" in blk:
+                    names.add(f"{m_t.group(1)}_test")
         return names
 
     # Check host platform constraint conventions (HOST_OS_CONSTRAINTS vs HOST_CONSTRAINTS,
@@ -1456,9 +1982,177 @@ for rel_path, full_path in bazel_files:
                     break
                 if cand_gn and not prev_gn:
                     prev_gn = cand_gn
-        if not prev_gn or not re.search(r"\b(?:if|assert)\s*\(\s*is_host\s*\)", prev_gn):
-            return
-        host_guarded_names = find_gn_is_host_targets(prev_gn)
+
+        # Flag `# @bazel2gn:skip` on `target_compatible_with = HOST_OS_CONSTRAINTS` (or comments
+        # above the target or attribute falsely claiming a GN `is_host`-guarded target was not
+        # gated by `is_host` in GN) on convertible targets that do not have a
+        # `@platforms//os:fuchsia` select() branch: `bazel2gn` natively maps
+        # `target_compatible_with = HOST_OS_CONSTRAINTS` to `if (is_host)`.
+        file_is_host_only = bool(prev_gn and has_gn_file_scope_host_assert(prev_gn))
+        host_guarded_names = (
+            find_gn_is_host_targets(prev_gn)
+            if prev_gn
+            and re.search(
+                r"\b(?:if|assert)\s*\(\s*"
+                r"(?:is_host|!\s*is_fuchsia|current_toolchain\s*==\s*host_toolchain)\b",
+                prev_gn,
+            )
+            else set()
+        )
+        convertible_host_tcw_rules = {
+            "rustc_library",
+            "rustc_binary",
+            "rustc_proc_macro",
+            "rustc_test",
+            "host_rustc_test",
+            "fx_cc_library",
+            "fx_cc_binary",
+            "fx_cc_test",
+            "cc_library",
+            "cc_binary",
+            "go_library",
+            "go_binary",
+            "py_library",
+            "py_binary",
+        }
+        false_not_wrapped_re = re.compile(
+            r"(?:did\s+not|does\s+not|was\s+not|not)\s+(?:wrap\w*|gat\w*|guard\w*)[^\n]*\bis_host\b",
+            re.I,
+        )
+        for stmt_node in tree_node.body:
+            if not (
+                isinstance(stmt_node, ast.Expr)
+                and isinstance(stmt_node.value, ast.Call)
+                and isinstance(stmt_node.value.func, ast.Name)
+                and stmt_node.value.func.id in convertible_host_tcw_rules
+            ):
+                continue
+            call_n = stmt_node.value
+            r_id = call_n.func.id
+            call_seg = ast.get_source_segment(source, stmt_node) or ""
+            if "@platforms//os:fuchsia" in call_seg:
+                continue
+            t_name = ""
+            tcw_kw = None
+            for kw in call_n.keywords:
+                if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    t_name = kw.value.value
+                elif kw.arg == "target_compatible_with":
+                    tcw_kw = kw
+            if tcw_kw is None:
+                continue
+            tcw_seg = ast.get_source_segment(source, tcw_kw) or ""
+            if "HOST_OS_CONSTRAINTS" not in tcw_seg or is_preexisting_target_attr(r_id, t_name, tcw_seg):
+                continue
+            # Check if the target itself is marked # @bazel2gn:skip above the rule call,
+            # and collect contiguous comments directly above the target call.
+            tgt_skipped = False
+            comment_lines_above_tgt = []
+            saw_blank_above_tgt = False
+            idx_above = getattr(stmt_node, "lineno", 1) - 2
+            while idx_above >= 0:
+                s_ln = src_lines[idx_above].strip()
+                if not s_ln:
+                    saw_blank_above_tgt = True
+                    idx_above -= 1
+                    continue
+                if s_ln.startswith("#"):
+                    if "@bazel2gn:skip" in s_ln:
+                        tgt_skipped = True
+                    if not saw_blank_above_tgt and "@bazel2gn:" not in s_ln:
+                        comment_lines_above_tgt.append((idx_above + 1, s_ln))
+                    idx_above -= 1
+                    continue
+                break
+            if tgt_skipped:
+                continue
+            kw_start = getattr(tcw_kw, "lineno", 1)
+            kw_end = getattr(tcw_kw, "end_lineno", kw_start)
+            kw_lines = src_lines[max(0, kw_start - 1) : min(len(src_lines), kw_end)]
+            has_attr_skip = any("@bazel2gn:skip" in ln for ln in kw_lines)
+            comment_lines_above_kw = []
+            c_idx = kw_start - 2
+            while c_idx >= 0 and src_lines[c_idx].strip().startswith("#"):
+                comment_lines_above_kw.append((c_idx + 1, src_lines[c_idx].strip()))
+                c_idx -= 1
+            if c_idx >= 0 and "@bazel2gn:skip" in src_lines[c_idx]:
+                has_attr_skip = True
+            ordered_tgt_comments = list(reversed(comment_lines_above_tgt))
+            ordered_kw_comments = list(reversed(comment_lines_above_kw))
+            unwrapped_tgt_comments = " ".join(
+                txt.lstrip("#").strip() for _, txt in ordered_tgt_comments
+            )
+            unwrapped_kw_comments = " ".join(
+                txt.lstrip("#").strip() for _, txt in ordered_kw_comments
+            )
+            is_host_in_gn = file_is_host_only or (t_name in host_guarded_names)
+            has_false_tgt_comment = is_host_in_gn and bool(
+                false_not_wrapped_re.search(unwrapped_tgt_comments)
+            )
+            has_false_kw_comment = is_host_in_gn and bool(
+                false_not_wrapped_re.search(unwrapped_kw_comments)
+            )
+            has_false_comment = has_false_tgt_comment or has_false_kw_comment
+            if has_attr_skip:
+                _emit(
+                    findings,
+                    "skipped_host_os_constraints",
+                    "error",
+                    rel_path,
+                    kw_start,
+                    (
+                        f"Target '{t_name}' ({r_id}) in '{rel_path}' puts `# @bazel2gn:skip` on "
+                        "`target_compatible_with = HOST_OS_CONSTRAINTS`. `bazel2gn` natively "
+                        "translates `target_compatible_with = HOST_OS_CONSTRAINTS` into "
+                        "`if (is_host)` in BUILD.gn; skipping it leaves the generated GN target "
+                        "unguarded."
+                    ),
+                    (
+                        "Remove `# @bazel2gn:skip` from `target_compatible_with = "
+                        "HOST_OS_CONSTRAINTS` and delete any skip/TODO comment on "
+                        f"'{t_name}' in '{rel_path}' (if `{t_name}` was split into `rustc_test` "
+                        "+ `wrap_host_rust_test` solely to skip `HOST_OS_CONSTRAINTS`, collapse "
+                        f"it back to `host_rustc_test(name = \"{t_name}\", ...)` and update any "
+                        "ancestor `test_suite` entry), then re-run "
+                        f"`fx bazel2gn -d {pkg_dir}` so `bazel2gn` wraps `{t_name}` in "
+                        "`if (is_host)` in BUILD.gn."
+                    ),
+                )
+            elif has_false_comment:
+                if has_false_tgt_comment and ordered_tgt_comments:
+                    rep_line = next(
+                        (
+                            ln
+                            for ln, txt in ordered_tgt_comments
+                            if re.search(
+                                r"(?:TODO|Note|target_compatible_with|is_host)", txt, re.I
+                            )
+                        ),
+                        ordered_tgt_comments[0][0],
+                    )
+                elif has_false_kw_comment and ordered_kw_comments:
+                    rep_line = ordered_kw_comments[0][0]
+                else:
+                    rep_line = kw_start
+                _emit(
+                    findings,
+                    "skipped_host_os_constraints",
+                    "error",
+                    rel_path,
+                    rep_line,
+                    (
+                        f"Target '{t_name}' ({r_id}) in '{rel_path}' has a comment/TODO "
+                        f"claiming `{t_name}` was not gated by `is_host` in GN, whereas "
+                        f"`{pkg_dir}/BUILD.gn` already restricted it to host (`assert(is_host)` "
+                        "or `if (is_host)`)."
+                    ),
+                    (
+                        f"Remove the stale `target_compatible_with` TODO/comment on '{t_name}' "
+                        f"in '{rel_path}' while keeping `target_compatible_with = "
+                        "HOST_OS_CONSTRAINTS` synced without `# @bazel2gn:skip`."
+                    ),
+                )
+
         if not host_guarded_names:
             return
         host_lib_bin_rules = {

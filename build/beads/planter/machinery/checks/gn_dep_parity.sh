@@ -563,11 +563,11 @@ for pkg in sorted(candidate_dirs):
             continue
         if name in folded_from_group:
             old_t = old_targets[folded_from_group[name]]
-        # Skip targets replaced by a Bazel host binary, test suite, or package bridge in GN.
+        # Skip targets replaced by a Bazel host binary, ffx tool, test suite, or package bridge in GN.
         if (
             name not in new_targets
             or new_targets[name]["tmpl"]
-            in ("bazel_host_tool", "bazel_test_suite", "bazel_fuchsia_package")
+            in ("bazel_host_tool", "bazel_ffx_tool", "bazel_test_suite", "bazel_fuchsia_package")
             or (
                 has_bazel_test_suite
                 and new_targets[name]["tmpl"] == "group"

@@ -1793,14 +1793,20 @@ stacked_parent_files = (
 )
 head_commit_msg = git_out(["log", "-1", "--format=%B", "HEAD"]) if head_sha else ""
 
+# Dependency-bearing Starlark attributes whose cross-package main-repo labels (`//<pkg>:...`)
+# must resolve to an existing `<pkg>/BUILD.bazel` or `<pkg>/BUILD` file in the checkout.
 DEP_ATTRS = {
     "actual",
+    "args_deps",
     "deps",
     "implementation_deps",
     "link_deps",
     "non_test_deps",
+    "plugin_deps",
     "test_deps",
     "proc_macro_deps",
+    "compile_data",
+    "config_data",
     "data",
     "test_data",
     "tools",
@@ -1925,11 +1931,24 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                         "`tests.json` generation (`bazel query`) to fail with "
                         f"`no such package '{dep_pkg}': BUILD file not found`."
                     )
-                    rem = (
-                        f"Migrate `//{dep_pkg}` to Bazel in this change (or ensure "
-                        "its stacked migration commit remains in the git parent "
-                        "ancestry before `HEAD` when rebasing onto `origin/main`)."
-                    )
+                    if dep_pkg in target_dirs:
+                        rem = (
+                            f"`//{dep_pkg}` is one of this task's assigned target "
+                            "directories (`$PLANTER_TARGET_DIRS`), but "
+                            f"'{dep_pkg}/BUILD.bazel' is missing from the worktree "
+                            "(for example because a parallel worker did not write or "
+                            "merge its edits before the integration round). Author "
+                            f"'{dep_pkg}/BUILD.bazel' and update '{dep_pkg}/BUILD.gn' "
+                            f"(running `fx bazel2gn -d {dep_pkg}` if dual-built) "
+                            "directly in this round; never report "
+                            "`missing_bazel_dependency_package` in `disputed_findings`."
+                        )
+                    else:
+                        rem = (
+                            f"Migrate `//{dep_pkg}` to Bazel in this change (or ensure "
+                            "its stacked migration commit remains in the git parent "
+                            "ancestry before `HEAD` when rebasing onto `origin/main`)."
+                        )
                     findings.append({
                         "source": "cq_reachability",
                         "category": "missing_bazel_dependency_package",
@@ -2172,6 +2191,40 @@ for _td in target_dirs:
     except Exception:
         pass
 
+# Read active build directory `args.gn` (if present) so GN targets referenced in
+# build arguments (e.g. `target_labels`, `host_labels`, `developer_test_labels`)
+# are recognized as reachable roots in `gn gen`.
+def read_active_args_gn_code():
+    bdirs = []
+    env_bdir = os.environ.get("FUCHSIA_BUILD_DIR", "").strip()
+    if env_bdir:
+        bdirs.append(env_bdir)
+    fx_bdir_file = os.path.join(workdir, ".fx-build-dir")
+    if os.path.isfile(fx_bdir_file):
+        try:
+            with open(fx_bdir_file, "r", encoding="utf-8") as f:
+                val = f.read().strip()
+            if val:
+                bdirs.append(val)
+        except OSError:
+            pass
+    chunks = []
+    seen_paths = set()
+    for bdir in bdirs:
+        full_bdir = bdir if os.path.isabs(bdir) else os.path.join(workdir, bdir)
+        args_path = os.path.abspath(os.path.join(full_bdir, "args.gn"))
+        if args_path in seen_paths or not os.path.isfile(args_path):
+            continue
+        seen_paths.add(args_path)
+        try:
+            with open(args_path, "r", encoding="utf-8") as f:
+                chunks.append(gn_code(f.read()))
+        except OSError:
+            pass
+    return "\n".join(chunks)
+
+
+active_args_gn_code = read_active_args_gn_code()
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:
     bazel_rel = os.path.join(td, "BUILD.bazel")
@@ -2319,6 +2372,10 @@ for td in target_dirs:
                 else r':tests(?:\([^"]*\))?"'
             )
         )
+        # Check whether group("tests") in pkg_dir/BUILD.gn is referenced by any ancestor BUILD.gn,
+        # active build-directory args.gn, or any other .gn/.gni file in the checkout.
+        if active_args_gn_code and abs_tests_re.search(active_args_gn_code):
+            return True
         for cand_rel in git_lines(
             [
                 "grep",
@@ -2404,6 +2461,177 @@ for td in target_dirs:
             )
         )
 
+    # Check whether any ancestor BUILD.gn references pkg_dir:tests($host_toolchain).
+    def ancestor_gn_calls_host_tests_group(pkg_dir):
+        if not pkg_dir:
+            return False
+        anc = os.path.dirname(pkg_dir)
+        while True:
+            anc_rel = os.path.join(anc, "BUILD.gn") if anc else "BUILD.gn"
+            anc_code = strip_bazel_test_suites(read_gn(anc_rel))
+            if anc_code:
+                rel_from_anc = os.path.relpath(pkg_dir, anc) if anc else pkg_dir
+                pat = (
+                    r'"(?://'
+                    + re.escape(pkg_dir)
+                    + r"|"
+                    + re.escape(rel_from_anc)
+                    + r'):tests\(\$host_toolchain\)"'
+                )
+                if os.path.basename(pkg_dir) == "tests":
+                    pat += (
+                        r'|"(?://'
+                        + re.escape(pkg_dir)
+                        + r"|"
+                        + re.escape(rel_from_anc)
+                        + r')\(\$host_toolchain\)"'
+                    )
+                if re.search(pat, anc_code):
+                    return True
+            if not anc:
+                break
+            anc = os.path.dirname(anc)
+        return False
+
+    # Check whether character offset `pos` in `code` lies inside an `if (is_host)` block.
+    def _pos_in_is_host_block(code, pos):
+        for mh in re.finditer(r"\bif\s*\(\s*is_host\b[^{]*\{", code):
+            brace_i = mh.end() - 1
+            end_i = closing(code, brace_i)
+            if brace_i < pos < end_i:
+                return True
+        return False
+
+    # Check whether a base GN `with_unit_tests = true` target (`:<ut_name>`) was
+    # decomposed into a standalone `rustc_test("<ut_name>")` kept above
+    # `## BAZEL2GN SENTINEL` in BUILD.gn and remains wired into GN tests.
+    def decomposed_unit_test_kept_above_sentinel(ut_name):
+        if not gn_src:
+            return False
+        m_sent_ut = SENTINEL_RE.search(gn_src)
+        if not m_sent_ut:
+            return False
+        gn_pre_clean = strip_bazel_test_suites(gn_code(gn_src[: m_sent_ut.start()]))
+        if not re.search(
+            r'\brustc_test\(\s*"' + re.escape(ut_name) + r'"\s*\)\s*\{',
+            gn_pre_clean,
+        ):
+            return False
+        host_ref_pat = (
+            r'"(?://' + re.escape(td) + r')?:' + re.escape(ut_name) + r'\(\$host_toolchain\)"'
+            if td
+            else r'":' + re.escape(ut_name) + r'\(\$host_toolchain\)"'
+        )
+        if (
+            ran_on_host_in_base_gn(ut_name)
+            and not re.search(host_ref_pat, gn_pre_clean)
+            and not direct_gn_test_callers(td, ut_name)
+        ):
+            return False
+        if direct_gn_test_callers(td, ut_name):
+            return True
+        blocks = {}
+        for mb in re.finditer(r'\b[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)\s*\{', gn_pre_clean):
+            b_name = mb.group(1)
+            b_body = gn_pre_clean[mb.end() : closing(gn_pre_clean, mb.end() - 1)]
+            blocks[b_name] = blocks.get(b_name, "") + "\n" + b_body
+        queue = ["tests"] if "tests" in blocks else []
+        visited = set(queue)
+        while queue:
+            cur_body = blocks[queue.pop(0)]
+            if refs_local(cur_body, td, ut_name):
+                return True
+            for cand_name in blocks:
+                if cand_name not in visited and refs_local(cur_body, td, cand_name):
+                    visited.add(cand_name)
+                    queue.append(cand_name)
+        return False
+
+    # Verify that any host-only GN unit test (`rustc_test` or `go_test`) kept above
+    # `## BAZEL2GN SENTINEL` in BUILD.gn is explicitly qualified with `($host_toolchain)`
+    # in `group("tests")` so static parity checks (`review_diff/unit_test_parity`) do not
+    # treat the group("tests") dependency as build-only.
+    def check_kept_pre_sentinel_host_tests():
+        if not gn_src:
+            return
+        m_sent_ht = SENTINEL_RE.search(gn_src)
+        if not m_sent_ht:
+            return
+        gn_pre_clean = strip_bazel_test_suites(gn_code(gn_src[: m_sent_ht.start()]))
+        file_is_host = bool(
+            re.search(r"\bassert\s*\(\s*is_host\b", gn_pre_clean)
+            or ancestor_gn_calls_host_tests_group(td)
+        )
+        if not file_is_host and not re.search(r"\bif\s*\(\s*is_host\b", gn_pre_clean):
+            return
+        bazel_test_names = {tn for tn, _, _, _ in test_targets}
+        pkg_wrapper_bodies = [
+            gn_pre_clean[mp.end() : closing(gn_pre_clean, mp.end() - 1)]
+            for mp in re.finditer(
+                r'\b(?:fuchsia_(?:unit)?test_(?:package|component)|fuchsia_component|bootfs_test)'
+                r'\(\s*"[^"]+"\s*\)\s*\{',
+                gn_pre_clean,
+            )
+        ]
+        for mt in re.finditer(
+            r'\b(rustc_test|go_test)\(\s*"([^"]+)"\s*\)\s*\{',
+            gn_pre_clean,
+        ):
+            t_tmpl, t_name = mt.group(1), mt.group(2)
+            t_body = gn_pre_clean[mt.end() : closing(gn_pre_clean, mt.end() - 1)]
+            out_m = re.search(r'\boutput_name\s*=\s*"([^"]+)"', t_body)
+            if t_name in bazel_test_names or (out_m and out_m.group(1) in bazel_test_names):
+                continue
+            if any(refs_local(wb, td, t_name) for wb in pkg_wrapper_bodies):
+                continue
+            if is_packaged_by_kept_gn_test_package(gn_src, td, t_name):
+                continue
+            test_is_host = (
+                file_is_host
+                or _pos_in_is_host_block(gn_pre_clean, mt.start())
+                or ran_on_host_in_base_gn(t_name)
+            )
+            unqual_pat = (
+                r'"(?://' + re.escape(td) + r')?:' + re.escape(t_name) + r'"'
+                if td
+                else r'":' + re.escape(t_name) + r'"'
+            )
+            host_pat = (
+                r'"(?://' + re.escape(td) + r')?:' + re.escape(t_name) + r'\(\$host_toolchain\)"'
+                if td
+                else r'":' + re.escape(t_name) + r'\(\$host_toolchain\)"'
+            )
+            for mg in re.finditer(r'\bgroup\(\s*"tests"\s*\)\s*\{', gn_pre_clean):
+                g_body = gn_pre_clean[mg.end() : closing(gn_pre_clean, mg.end() - 1)]
+                m_unqual = re.search(unqual_pat, g_body)
+                if not m_unqual or re.search(host_pat, g_body):
+                    continue
+                ref_abs_pos = mg.end() + m_unqual.start()
+                if not (test_is_host or _pos_in_is_host_block(gn_pre_clean, ref_abs_pos)):
+                    continue
+                g_line = gn_pre_clean.count("\n", 0, mg.start()) + 1
+                msg_text = (
+                    f"`group(\"tests\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' "
+                    f"lists kept host `{t_tmpl}(\"{t_name}\")` as '\":{t_name}\"' "
+                    "without `($host_toolchain)`, which static parity analysis "
+                    "treats as build-only (`review_diff/unit_test_parity`)."
+                )
+                rem_text = (
+                    f"Replace '\":{t_name}\"' with '\":{t_name}($host_toolchain)\"' "
+                    f"in `group(\"tests\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' "
+                    "so both GN and static parity checks recognize that the kept "
+                    "host unit test still runs."
+                )
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "unqualified_kept_host_test",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": g_line,
+                    "message": msg_text,
+                    "remediation": rem_text,
+                })
+
     # Verify that unit tests and group("tests") present in base BUILD.gn are not dropped.
     def check_base_gn_test_preservation():
         if not base_gn_clean or not FX_TEST_AVAILABLE:
@@ -2424,12 +2652,14 @@ for td in target_dirs:
             and not gn_tests_group_is_referenced(td)
             and all(wired_via_bazel_test_suite(td, tn) for tn, _, _, _ in test_targets)
         )
+        has_todo_omitted_test = bool(re.search(r"#\s*TODO\b", bazel_src))
         if (
             had_base_tests_group
             and gn_src
             and not has_now_tests_group
             and not all_tests_wired_in_anc_gn
             and not all_tests_wired_via_bazel_suite
+            and (gn_tests_group_is_referenced(td) or test_targets or not has_todo_omitted_test)
         ):
             anc_info = (
                 nearest_ancestor_test_suite(td, "target_tests")
@@ -2474,7 +2704,14 @@ for td in target_dirs:
             ut_name = f"{lib_name}_test"
             if not re.search(r'":' + re.escape(ut_name) + r'(?:\(|")', base_gn_clean):
                 continue
-            if not test_targets:
+            if decomposed_unit_test_kept_above_sentinel(ut_name):
+                continue
+            ut_reachable_in_gn = bool(
+                gn_tests_group_is_referenced(td)
+                or direct_gn_test_callers(td, ut_name)
+                or re.search(r"\bfuchsia_(?:unit)?test_package\s*\(", base_gn_clean)
+            )
+            if not test_targets and (ut_reachable_in_gn or not has_todo_omitted_test):
                 msg_text = (
                     f"`{m_ut.group(1)}(\"{lib_name}\")` in '{gn_rel}' had "
                     f"`with_unit_tests = true` (`:{ut_name}` wired into tests in base GN), "
@@ -2524,6 +2761,7 @@ for td in target_dirs:
                 })
 
     check_base_gn_test_preservation()
+    check_kept_pre_sentinel_host_tests()
 
     for t_name, rule_name, lineno, check_linenos in test_targets:
         # Check if this test target (or test attribute) has `# @bazel2gn:skip` in BUILD.bazel
@@ -2761,7 +2999,7 @@ for td in target_dirs:
                         "`program.binary` = `bin/<binary_name>`, `fx_component_manifest`, `fx_test_component`, "
                         "`fx_package(test_components = ...)` and `fx_test`, exported by a GN `bazel_test_suite` "
                         "(see \"Migrating Tests\" in the coder instructions). If the tests only ran on host in GN, "
-                        "use `with_unit_tests = \"host\"` instead."
+                        "use `host_rustc_test` instead."
                     ),
                 })
     if not exportable or not FX_TEST_AVAILABLE:

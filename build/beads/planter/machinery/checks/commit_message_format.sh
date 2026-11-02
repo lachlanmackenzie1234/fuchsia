@@ -22,7 +22,7 @@ TARGET_DIRS="${PLANTER_TARGET_DIRS:-$TARGET_DIR}"
 BASE="${PLANTER_RESOLVED_CHANGE_BASE:-${PLANTER_CHANGE_BASE:-HEAD}}"
 
 python3 - "$WORKDIR" "$TARGET_DIRS" "$BASE" <<'PYEOF'
-import collections, json, os, re, subprocess, sys
+import collections, json, os, re, subprocess, sys, tempfile
 
 workdir, target_dir, base = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -449,6 +449,7 @@ if head and base_rev and head != base_rev:
         m_none
         and non_leaf_common
         and len(f"[bazel_migration][{non_leaf_common[0]}] //{first}") <= 65
+        and len(subject) + len(f"[{non_leaf_common[0]}]") <= 65
     ):
         add("commit_subject_missing_tag", 1,
             "Commit subject has no subsystem tag although the directory's git log uses one.",
@@ -474,12 +475,36 @@ if head and base_rev and head != base_rev:
                     add("test_footer_redundant_label", ln,
                         f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
                         f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
+        # TODO(https://fxbug.dev/538640644): Replace with fx lint once it runs these shac checks.
+        if (
+            re.search(r"\bfx bazel2gn\b", cmd)
+            or re.search(r"verify_bazel2gn", cmd)
+            or (
+                re.search(r"\bshac\s+check\b", cmd)
+                and cmd not in ("fx host-tool shac check", "fx host-tool shac check --fail-level warning")
+            )
+        ):
+            add("test_footer_bazel2gn_form", ln,
+                f"`Test:` footer `{cmd}` verifies bazel2gn/shac in a narrower or indirect form.",
+                "Use the single line `Test: fx host-tool shac check` (runs `verify_bazel2gn` and all other shac checks).")
+        # Reject `:all` in `fx bazel build` footers: `:all` silently skips incompatible
+        # targets (such as host-only `ffx_plugin`/`ffx_tool`/`HOST_OS_CONSTRAINTS` targets
+        # under `--config=fuchsia_platform`) instead of verifying explicit migrated targets.
         if re.search(r"\bfx bazel build\b.*:all\b", cmd):
-            add("test_footer_build_all_not_test", ln,
-                f"`Test:` footer `{cmd}` builds `:all` instead of building or running the migrated test target.",
-                "Name the test target: `fx bazel test --config=fuchsia_platform @//<dir>:<test>` if it runs, else "
-                "`fx bazel build ...`; add `fx bazel test --config=host @//<dir>:<test>` when the target can build "
-                "for host (no target_compatible_with restriction).")
+            add(
+                "test_footer_build_all_not_test",
+                ln,
+                f"`Test:` footer `{cmd}` builds `:all` (which silently skips "
+                "platform-incompatible targets) instead of naming the migrated "
+                "target(s) explicitly.",
+                "Name each migrated target explicitly: use "
+                "`fx bazel build --config=host @//<dir>:<target>` for host-only targets "
+                "(`ffx_plugin`, `ffx_tool`, `idk_ffx_tool`, `*_host_tool`, "
+                "`HOST_OS_CONSTRAINTS`), `fx bazel build --config=fuchsia_platform "
+                "@//<dir>:<target>` for Fuchsia library/binary/component/`fx_test`/"
+                "`fx_unittest_package` targets, and `fx bazel test --config=host "
+                "@//<dir>:<test>` for runnable Bazel host tests.",
+            )
         # Check that `fx test` footers do not pass a GN `group("tests")` label (`//<dir>:tests`),
         # which is not a leaf test entry in `tests.json` and fails `fx test --dry`.
         if re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", cmd):
@@ -656,6 +681,8 @@ if head and base_rev and head != base_rev:
         "bazel_host_tool",
         "bazel_ffx_tool",
         "bazel_fuchsia_package",
+        "host_test_data",
+        "sdk_atom",
         "declare_args",
         "import",
         "set_defaults",
@@ -1996,5 +2023,72 @@ if head and base_rev and head != base_rev:
                         "block.",
                         severity="error",
                     )
+
+
+# Probe whether the repository .git directory accepts non-empty file writes during full check runs.
+def git_dir_write_probe_error():
+    skip_b = os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
+    dry_r = os.environ.get("PLANTER_BUILD_DRY_RUN", "").strip() not in ("", "0")
+    if skip_b or dry_r:
+        return None
+    gdir = git("rev-parse", "--absolute-git-dir")
+    if not gdir or not os.path.isdir(gdir):
+        return None
+    probe_bytes = b"planter-write-probe\n"
+    fd = None
+    probe_path = None
+    try:
+        fd, probe_path = tempfile.mkstemp(dir=gdir, prefix=".planter-write-probe.")
+        os.write(fd, probe_bytes)
+        os.close(fd)
+        fd = None
+        with open(probe_path, "rb") as rf:
+            if rf.read() != probe_bytes:
+                raise OSError("short write during writability probe")
+        os.unlink(probe_path)
+    except OSError as err:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if probe_path and os.path.lexists(probe_path):
+            try:
+                os.unlink(probe_path)
+            except OSError:
+                pass
+        return gdir, err
+    return None
+
+
+# Suppress unamendable commit-message findings when .git rejects file writes.
+def suppress_unamendable_findings_on_write_error():
+    blocking = [
+        f for f in findings if f.get("severity", "").lower() in ("warning", "error")
+    ]
+    if not blocking:
+        return
+    probe_err = git_dir_write_probe_error()
+    if probe_err is None:
+        return
+    gdir, err = probe_err
+    findings[:] = [
+        f for f in findings if f.get("severity", "").lower() not in ("warning", "error")
+    ]
+    msg = (
+        f"Skipped {len(blocking)} commit message finding(s) because `{gdir}` rejected "
+        f"file writes ({err}); `git commit --amend` cannot update HEAD while the "
+        "workspace mount is unwritable."
+    )
+    rem = (
+        "Stop retrying `git commit --amend` or build commands while the mount rejects "
+        "writes; set `test_footers` to `[\"fx host-tool shac check\"]` and "
+        "`disputed_findings` to `[]` in `CoderReport` and report "
+        "`workspace_write_error` in `summary`."
+    )
+    add("commit_msg_unwritable_git_dir", 1, msg, rem, severity="info")
+
+
+suppress_unamendable_findings_on_write_error()
 print(json.dumps(findings, indent=2))
 PYEOF

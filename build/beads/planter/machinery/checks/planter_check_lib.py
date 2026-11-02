@@ -302,17 +302,63 @@ def changed_files(workdir, change_base=None):
     return result
 
 
-def read_review_diff_findings():
-    """Loads precomputed review_diff findings from PLANTER_REVIEW_DIFF_JSON if available."""
-    path = os.environ.get("PLANTER_REVIEW_DIFF_JSON", "").strip()
-    if not path or not os.path.isfile(path):
+_review_diff_cache = {}
+
+
+def read_review_diff_findings(workdir=None):
+    """Loads precomputed review_diff findings from PLANTER_REVIEW_DIFF_JSON, or queries planter diff --local when unset."""
+    if "PLANTER_REVIEW_DIFF_JSON" in os.environ:
+        path = os.environ.get("PLANTER_REVIEW_DIFF_JSON", "").strip()
+        if not path or not os.path.isfile(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    if os.environ.get("PLANTER_SKIP_DIFF_COVERAGE") == "1":
         return []
+    wdir = (
+        workdir or os.environ.get("PLANTER_WORKDIR", "").strip() or os.getcwd()
+    )
+    if not wdir or not os.path.isdir(wdir):
+        return []
+    wdir = os.path.abspath(wdir)
+    if wdir in _review_diff_cache:
+        return list(_review_diff_cache[wdir])
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
+        import rdeps_lib as rl
+
+        planter_bin = rl.find_planter_bin()
     except Exception:
+        planter_bin = None
+    if not planter_bin:
         return []
+    env = dict(
+        os.environ,
+        PLANTER_BIN=planter_bin,
+        PLANTER_SKIP_DIFF_COVERAGE="1",
+    )
+    for flag in ("--format=findings-json", "--check-findings"):
+        try:
+            out = subprocess.run(
+                [planter_bin, "diff", "--local", flag, f"--workdir={wdir}"],
+                cwd=wdir,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=15,
+            ).stdout.strip()
+            findings, parsed_ok = parse_check_findings(out)
+            if parsed_ok or out.startswith("["):
+                _review_diff_cache[wdir] = findings
+                return list(findings)
+        except Exception:
+            continue
+    return []
 
 
 def strip_comments(text, blank=False):
