@@ -175,6 +175,7 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.sys2.BootNotifier",
                 "fuchsia.sys2.SystemController",
             ],
             from: "parent",
