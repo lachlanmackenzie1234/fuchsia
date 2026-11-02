@@ -833,8 +833,136 @@ def _collect_unit_test_bazel_context(wdir, rel_bz, lib_name, test_name, pkg_rel)
     return code_deps, data_deps, overwrites, host_test_misplaced_data - data_deps
 
 
+_GENERIC_TEST_DATA_SEGMENTS = {
+    "test_data",
+    "testdata",
+    "data",
+    "host_test_data",
+    "keys",
+    "repository",
+    "blobs",
+    "meta",
+    "bin",
+    "lib",
+}
+_pkg_source_blob_cache = {}
+_htd_tokens_cache = {}
+
+
+# Add non-generic staged directory path tokens for host_test_data consumption checks.
+def _add_test_data_dir_tokens(tokens, raw_dir):
+    dd = (raw_dir or "").strip().strip("/")
+    if not dd:
+        return
+    tokens.add(dd)
+    parent = os.path.dirname(dd)
+    if parent and parent not in _GENERIC_TEST_DATA_SEGMENTS:
+        tokens.add(parent)
+    for seg in dd.split("/"):
+        if seg and seg not in _GENERIC_TEST_DATA_SEGMENTS:
+            tokens.add(seg)
+
+
+# Read all non-BUILD source files in package `pkg_rel` to verify test_data consumption.
+def _package_non_build_source_blob(wdir, pkg_rel):
+    key = (wdir, pkg_rel)
+    if key not in _pkg_source_blob_cache:
+        chunks = []
+        root = os.path.join(wdir, pkg_rel) if pkg_rel else wdir
+        if os.path.isdir(root):
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [
+                    dn
+                    for dn in dirnames
+                    if not dn.startswith(".")
+                    and not os.path.isfile(os.path.join(dirpath, dn, "BUILD.bazel"))
+                ]
+                for fn in filenames:
+                    if fn in ("BUILD.bazel", "BUILD.gn", "BUILD"):
+                        continue
+                    try:
+                        with open(
+                            os.path.join(dirpath, fn),
+                            encoding="utf-8",
+                            errors="ignore",
+                        ) as sf:
+                            chunks.append(sf.read())
+                    except OSError:
+                        pass
+        _pkg_source_blob_cache[key] = "\n".join(chunks)
+    return _pkg_source_blob_cache[key]
+
+
+# Collect staged path tokens for a host_test_data target in BUILD.bazel or BUILD.gn.
+def _host_test_data_target_tokens(wdir, base_rev, canon_lbl):
+    if not canon_lbl or not canon_lbl.startswith("//") or not wdir:
+        return None
+    key = (wdir, base_rev, canon_lbl)
+    if key in _htd_tokens_cache:
+        return _htd_tokens_cache[key]
+    dep_pkg, _, dep_name = canon_lbl[2:].partition(":")
+    if not dep_pkg or not dep_name:
+        _htd_tokens_cache[key] = None
+        return None
+    tokens = set()
+    is_htd = False
+    bz_path = os.path.join(wdir, dep_pkg, "BUILD.bazel")
+    if os.path.isfile(bz_path):
+        try:
+            with open(bz_path, encoding="utf-8") as bf:
+                bz_text = bf.read()
+        except OSError:
+            bz_text = ""
+        if bz_text:
+            var_table = _parse_bazel_var_table(bz_text, filename=bz_path)
+            for bt in pcl.extract_bazel_targets(bz_text, filename=bz_path):
+                if bt["name"] == dep_name and bt["rule"] in (
+                    "host_test_data_files",
+                    "host_test_data_map",
+                ):
+                    is_htd = True
+                    kws = bt.get("keywords", {})
+                    for dd in pcl._extract_ast_strings(
+                        kws.get("dest_dir"), var_table
+                    ):
+                        _add_test_data_dir_tokens(tokens, dd)
+                    for src in pcl._extract_ast_strings(kws.get("srcs"), var_table):
+                        base = os.path.basename(src.split(":", 1)[-1]).strip()
+                        if base and not tokens:
+                            tokens.add(base)
+    if not is_htd:
+        gn_text = _read_dep_pkg_gn(wdir, dep_pkg, base_rev)
+        for gt in pcl.extract_gn_targets(gn_text):
+            if gt["name"] == dep_name and gt["tmpl"] == "host_test_data":
+                is_htd = True
+                body = gt["clean_body"]
+                for om in re.finditer(r"(?<![\w.])outputs\s*\+?=\s*\[", body):
+                    close_idx = pcl.find_closing_delim(body, om.end() - 1, "[", "]")
+                    for raw_out in re.findall(
+                        r'"((?:[^"\\]|\\.)*)"', body[om.end() : close_idx]
+                    ):
+                        cleaned = re.sub(
+                            r"^\$\{?root_(?:out|build)_dir\}?/+", "", raw_out.strip()
+                        )
+                        cleaned = re.sub(r"/+\{\{[^}]+\}\}.*$", "", cleaned)
+                        _add_test_data_dir_tokens(tokens, cleaned)
+    res = tokens if (is_htd and tokens) else None
+    _htd_tokens_cache[key] = res
+    return res
+
+
+# Check whether canon_lbl is a host_test_data target whose staged paths are unused in pkg_rel.
+def _is_unused_host_test_data_in_pkg(wdir, base_rev, pkg_rel, canon_lbl):
+    tokens = _host_test_data_target_tokens(wdir, base_rev, canon_lbl)
+    if not tokens:
+        return False
+    src_blob = _package_non_build_source_blob(wdir, pkg_rel)
+    return not any(tok in src_blob for tok in tokens)
+
+
 # Check whether unit_test_parity ERROR/WARNING is a false positive on non-Rust
-# runtime/compile test data (`data`/`test_data`/`compile_data`) or mapped test deps.
+# runtime/compile test data (`data`/`test_data`/`compile_data`), mapped test deps,
+# or unused GN `host_test_data` `test_deps` rejected by `test_data_attribute`.
 def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
     """Returns (test_name, kind) when reported GN test_deps are carried on test_name."""
     if finding.get("category") != "unit_test_parity":
@@ -861,6 +989,7 @@ def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
         return (test_name, "data_not_test_data")
     stop_set = code_deps | data_deps
     used_runtime_data = False
+    dropped_unused_test_data = False
     for g_lbl in gn_canon:
         g_norm = _norm_vendor_crate_label(g_lbl)
         if g_norm in code_deps:
@@ -876,6 +1005,9 @@ def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
             if ow_data and any(not _is_bazel_rust_crate_target(wdir, b) for b in ow_data):
                 used_runtime_data = True
                 continue
+        if _is_unused_host_test_data_in_pkg(wdir, base_rev, pkg_rel, g_lbl):
+            dropped_unused_test_data = True
+            continue
         exp = _expand_pure_gn_forwarding_group(g_lbl, wdir, base_rev, stop_set)
         if not exp:
             return None
@@ -885,7 +1017,12 @@ def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
             if e_lbl in data_deps and not _is_bazel_rust_crate_target(wdir, e_lbl):
                 used_runtime_data = True
                 continue
+            if _is_unused_host_test_data_in_pkg(wdir, base_rev, pkg_rel, e_lbl):
+                dropped_unused_test_data = True
+                continue
             return None
+    if dropped_unused_test_data:
+        return (test_name, "unused_host_test_data")
     return (test_name, "runtime_data" if used_runtime_data else "code_or_forwarding")
 
 
@@ -986,7 +1123,20 @@ def annotate_review_diff_macro_false_positives(diff_findings, wdir, base_rev="")
             continue
         elif matched_unit_test:
             test_name, ut_kind = matched_unit_test
-            if ut_kind == "runtime_data":
+            if ut_kind == "unused_host_test_data":
+                f["remediation"] = (
+                    f'Target "{test_name}" in `{f_path}` intentionally omits unused '
+                    "GN `host_test_data` `test_deps` entry/entries whose staged test "
+                    "data paths are not referenced by any source or test file in the "
+                    "package (adding them to `test_data` is rejected by "
+                    "`test_data_attribute/unused_test_data`), which check scripts "
+                    "cannot waive in `review_diff`. Once all deterministic check "
+                    "scripts pass, dispute this `review_diff/unit_test_parity` false "
+                    'positive in `CoderReport.disputed_findings` (`source: '
+                    f'"review_diff"`, `category: "unit_test_parity"`, `file: '
+                    f'"{f_path}"`).'
+                )
+            elif ut_kind == "runtime_data":
                 f["remediation"] = (
                     f'Target "{test_name}" in `{f_path}` already carries these '
                     "non-Rust test dependencies in `test_data`/`compile_data` "

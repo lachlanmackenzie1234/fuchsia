@@ -76,29 +76,154 @@ HOST_TEST_DATA_RULE_RE = re.compile(r"^(host_test_data_files|host_test_data_map)
 _htd_cache = {}
 
 
-# Names of host_test_data_files / host_test_data_map targets in package `pkg`.
-def host_test_data_names(pkg):
+# Names and staged path tokens of host_test_data_files / host_test_data_map targets in `pkg`.
+_GENERIC_SEGMENTS = {
+    "test_data",
+    "testdata",
+    "data",
+    "host_test_data",
+    "keys",
+    "repository",
+    "blobs",
+    "meta",
+    "bin",
+    "lib",
+}
+
+
+def host_test_data_info(pkg):
     if pkg not in _htd_cache:
-        names = set()
+        info = {}
         p = os.path.join(workdir, pkg, "BUILD.bazel")
         if os.path.isfile(p):
             t = open(p, encoding="utf-8").read()
             for hm in HOST_TEST_DATA_RULE_RE.finditer(t):
-                nm = re.search(r'^\s+name\s*=\s*"([^"]+)"', block_at(t, hm.end() - 1), re.M)
-                if nm:
-                    names.add(nm.group(1))
-        _htd_cache[pkg] = names
+                blk = block_at(t, hm.end() - 1)
+                nm = re.search(r'^\s+name\s*=\s*"([^"]+)"', blk, re.M)
+                if not nm:
+                    continue
+                tokens = set()
+                dm = re.search(r'^\s+dest_dir\s*=\s*"([^"]+)"', blk, re.M)
+                if dm:
+                    dd = dm.group(1).strip().strip("/")
+                    if dd:
+                        tokens.add(dd)
+                        parent = os.path.dirname(dd)
+                        if parent and parent not in _GENERIC_SEGMENTS:
+                            tokens.add(parent)
+                        for seg in dd.split("/"):
+                            if seg and seg not in _GENERIC_SEGMENTS:
+                                tokens.add(seg)
+                for src in list_attr(blk, "srcs") or []:
+                    base = os.path.basename(src.split(":", 1)[-1]).strip()
+                    if base and not tokens:
+                        tokens.add(base)
+                info[nm.group(1)] = tokens
+        _htd_cache[pkg] = info
     return _htd_cache[pkg]
 
 
-def is_host_test_data_label(label, pkg):
+def host_test_data_names(pkg):
+    return set(host_test_data_info(pkg).keys())
+
+
+def parse_host_test_data_label(label, pkg):
     if label.startswith(":"):
         lpkg, name = pkg, label[1:]
     elif label.startswith("//") and ":" in label:
         lpkg, name = label[2:].split(":", 1)
     else:
-        return False
-    return name in host_test_data_names(lpkg)
+        return None
+    if name in host_test_data_names(lpkg):
+        return lpkg, name
+    return None
+
+
+def is_host_test_data_label(label, pkg):
+    return parse_host_test_data_label(label, pkg) is not None
+
+
+# Read all non-BUILD source files in package `pkg` to verify test_data consumption.
+def package_source_blob(pkg):
+    chunks = []
+    root = os.path.join(workdir, pkg)
+    if not os.path.isdir(root):
+        return ""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            dn
+            for dn in dirnames
+            if not dn.startswith(".")
+            and not os.path.isfile(os.path.join(dirpath, dn, "BUILD.bazel"))
+        ]
+        for fn in filenames:
+            if fn in ("BUILD.bazel", "BUILD.gn", "BUILD"):
+                continue
+            fpath = os.path.join(dirpath, fn)
+            try:
+                chunks.append(open(fpath, encoding="utf-8", errors="ignore").read())
+            except OSError:
+                pass
+    return "\n".join(chunks)
+
+
+# Check that host_test_data targets listed in `test_data` of a host_rustc_test are actually
+# referenced by at least one source or test file in the package.
+def check_unused_host_test_data(text, d):
+    src_blob = None
+    for m in HOST_RUST_TEST_RE.finditer(text):
+        block = block_at(text, m.end() - 1)
+        td_entries = list_attr(block, "test_data") or []
+        if not td_entries:
+            continue
+        name_m = re.search(r'^\s+name\s*=\s*"([^"]+)"', block, re.M)
+        name = name_m.group(1) if name_m else "?"
+        unused = []
+        for entry in td_entries:
+            parsed = parse_host_test_data_label(entry, d)
+            if not parsed:
+                continue
+            lpkg, htd_name = parsed
+            tokens = host_test_data_info(lpkg).get(htd_name) or set()
+            if not tokens:
+                continue
+            if src_blob is None:
+                src_blob = package_source_blob(d)
+            if not any(tok in src_blob for tok in tokens):
+                unused.append((entry, lpkg, htd_name))
+        if not unused:
+            continue
+        labels_desc = ", ".join(u[0] for u in unused)
+        cross_pkgs = sorted({u[1] for u in unused if u[1] != d})
+        vis_note = (
+            f" Also remove `\"//{d}:__pkg__\"` from the `visibility` list of those "
+            f"`host_test_data_*` target(s) in {', '.join(f'{p}/BUILD.bazel' for p in cross_pkgs)}."
+            if cross_pkgs
+            else ""
+        )
+        _emit(
+            findings,
+            "unused_test_data",
+            "ERROR",
+            os.path.join(d, "BUILD.bazel"),
+            text[: m.start()].count("\n") + 1,
+            (
+                f'host_rustc_test(name = "{name}") specifies `test_data` entries '
+                f"({labels_desc}), but no source or test file in //{d} references or "
+                "consumes their staged test data paths."
+            ),
+            (
+                f"Remove the unused `test_data` entry/attribute ({labels_desc}) from "
+                f'`host_rustc_test(name = "{name}")` in {d}/BUILD.bazel (and update '
+                "any skip comment above it that mentions `test_data`)."
+                + vis_note
+                + " If those targets were in GN `test_deps`, note their removal in "
+                "`CoderReport.summary` and dispute any resulting "
+                "`review_diff/unit_test_parity` finding in "
+                "`CoderReport.disputed_findings` once all deterministic check "
+                "scripts pass."
+            ),
+        )
 
 
 # host_rustc_test forwards `test_data` to its host_test() wrapper; `data` only
@@ -138,6 +263,7 @@ for d in target_dirs:
         continue
     text = open(path, encoding="utf-8").read()
     check_host_rustc_test_data(text, d)
+    check_unused_host_test_data(text, d)
     for m in RULE_RE.finditer(text):
         block = block_at(text, m.end() - 1)
         if not re.search(r"^\s+with_(host_)?unit_tests\s*=", block, re.M):

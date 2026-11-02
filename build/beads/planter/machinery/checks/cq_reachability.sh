@@ -3429,5 +3429,130 @@ for td in target_dirs:
             ),
         })
 
+    # Check ancestor migrated-test exclusion lists (e.g. `<all_var> - <migrated_var>` in an
+    # ancestor BUILD.gn or its imported .gni files feeding `foreach(..., ...) { deps += [ "...:tests" ] }`)
+    # and flag leftover empty `group("tests")` stubs or `:tests` deps in `group("<name>")` when all
+    # package tests are migrated to Bazel and skipped in bazel2gn.
+    def check_ancestor_migrated_tests_list():
+        if not SENTINEL_RE.search(gn_src) or not test_targets:
+            return
+        gn_post_clean = gn_code(gn_src[SENTINEL_RE.search(gn_src).end() :])
+        if re.search(
+            r"\b(?:rustc_test|go_test|test|fuchsia_unittest_package|fuchsia_test_package)\s*\("
+            r"|\bwith_unit_tests\s*=\s*true\b",
+            gn_post_clean,
+        ):
+            return
+        gn_pre_clean = gn_code(gn_pre)
+        if SUITE_RE.search(gn_pre_clean):
+            return
+        anc = os.path.dirname(td)
+        while anc:
+            anc_gn_rel = os.path.join(anc, "BUILD.gn")
+            anc_code = read_gn(anc_gn_rel)
+            if anc_code and re.search(r'\bforeach\s*\([^)]*\)\s*\{[^}]*:tests"', anc_code, re.S):
+                gni_rels = [anc_gn_rel]
+                for im in re.finditer(r'\bimport\(\s*"([^"]+\.gni)"\s*\)', anc_code):
+                    imp = im.group(1)
+                    if not imp.startswith("//"):
+                        cand_gni = os.path.normpath(os.path.join(anc, imp))
+                        if os.path.isfile(os.path.join(workdir, cand_gni)):
+                            gni_rels.append(cand_gni)
+                combined = "\n".join(read_gn(r) for r in gni_rels)
+                sub_m = re.search(r"\b([A-Za-z_]\w*)\s*-\s*([A-Za-z_]\w*)\b", combined)
+                if sub_m:
+                    all_var, mig_var = sub_m.group(1), sub_m.group(2)
+                    rel_td = os.path.relpath(td, anc)
+                    for def_rel in gni_rels:
+                        def_code = read_gn(def_rel)
+                        all_m = re.search(
+                            r"\b" + re.escape(all_var) + r"\s*=\s*\[", def_code
+                        )
+                        mig_m = re.search(
+                            r"\b" + re.escape(mig_var) + r"\s*=\s*\[", def_code
+                        )
+                        if not (all_m and mig_m):
+                            continue
+                        all_items = re.findall(
+                            r'"([^"]+)"',
+                            def_code[all_m.end() : closing_bracket(def_code, all_m.end() - 1)],
+                        )
+                        mig_items = re.findall(
+                            r'"([^"]+)"',
+                            def_code[mig_m.end() : closing_bracket(def_code, mig_m.end() - 1)],
+                        )
+                        entry_key = (
+                            rel_td
+                            if rel_td in all_items
+                            else (f"//{td}" if f"//{td}" in all_items else None)
+                        )
+                        if not entry_key:
+                            continue
+                        if entry_key not in mig_items:
+                            mig_ln = def_code.count("\n", 0, mig_m.start()) + 1
+                            findings.append({
+                                "source": "cq_reachability",
+                                "category": "unregistered_migrated_test_library",
+                                "severity": "error",
+                                "file": def_rel,
+                                "line": mig_ln,
+                                "message": (
+                                    f"Tests for `//{td}` are migrated to Bazel and skipped in "
+                                    f"`bazel2gn`, but `\"{entry_key}\"` is not listed in "
+                                    f"`{mig_var}` in '{def_rel}'."
+                                ),
+                                "remediation": (
+                                    f"Add `\"{entry_key}\"` (in sorted order) to `{mig_var}` "
+                                    f"in '{def_rel}', remove the empty `group(\"tests\")` stub "
+                                    f"from '{gn_rel}', and drop `\":tests\"` from "
+                                    f"`group(\"{os.path.basename(td)}\")` in '{gn_rel}'."
+                                ),
+                            })
+                        if m_tests_grp:
+                            grp_ln = gn_pre.count("\n", 0, m_tests_grp.start()) + 1
+                            findings.append({
+                                "source": "cq_reachability",
+                                "category": "empty_gn_tests_group_stub",
+                                "severity": "error",
+                                "file": gn_rel,
+                                "line": grp_ln,
+                                "message": (
+                                    f"`group(\"tests\")` in '{gn_rel}' is an obsolete stub now "
+                                    f"that `//{td}`'s tests are migrated to Bazel and excluded "
+                                    f"via `{mig_var}` in '{def_rel}'."
+                                ),
+                                "remediation": (
+                                    f"Ensure `\"{entry_key}\"` is in `{mig_var}` in '{def_rel}', "
+                                    f"remove `group(\"tests\")` from '{gn_rel}', and drop "
+                                    f"`\":tests\"` from `group(\"{os.path.basename(td)}\")` in "
+                                    f"'{gn_rel}'."
+                                ),
+                            })
+                        pkg_grp_body = gn_block(gn_pre_clean, "group", os.path.basename(td))
+                        if pkg_grp_body and re.search(r'":tests"', pkg_grp_body):
+                            findings.append({
+                                "source": "cq_reachability",
+                                "category": "dangling_local_tests_group_dep",
+                                "severity": "error",
+                                "file": gn_rel,
+                                "line": 1,
+                                "message": (
+                                    f"`group(\"{os.path.basename(td)}\")` in '{gn_rel}' still "
+                                    f"lists `\":tests\"` in `deps` even though `//{td}`'s tests "
+                                    "are migrated to Bazel and skipped in `bazel2gn`."
+                                ),
+                                "remediation": (
+                                    f"Remove `\":tests\"` from `group(\"{os.path.basename(td)}\")` "
+                                    f"in '{gn_rel}'."
+                                ),
+                            })
+                        return
+            next_anc = os.path.dirname(anc)
+            if next_anc == anc:
+                break
+            anc = next_anc
+
+    check_ancestor_migrated_tests_list()
+
 print(json.dumps(findings, indent=2))
 PYEOF

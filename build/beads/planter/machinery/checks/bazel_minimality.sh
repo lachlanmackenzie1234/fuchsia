@@ -2031,9 +2031,12 @@ for rel_path, full_path in bazel_files:
             else set()
         )
         convertible_host_tcw_rules = {
+            "alias",
             "rustc_library",
             "rustc_binary",
+            "rustc_dylib",
             "rustc_proc_macro",
+            "rustc_staticlib",
             "rustc_test",
             "host_rustc_test",
             "fx_cc_library",
@@ -2047,7 +2050,9 @@ for rel_path, full_path in bazel_files:
             "py_binary",
         }
         false_not_wrapped_re = re.compile(
-            r"(?:did\s+not|does\s+not|was\s+not|not)\s+(?:wrap\w*|gat\w*|guard\w*)[^\n]*\bis_host\b",
+            r"(?:did\s+not|does\s+not|was\s+not|not)\s+"
+            r"(?:wrap\w*|gat\w*|guard\w*)[^\n]*\bis_host\b"
+            r"|\bTODO\b[^\n]*(?:target_compatible_with|HOST_OS_CONSTRAINTS|\bis_host\b)",
             re.I,
         )
         for stmt_node in tree_node.body:

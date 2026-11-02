@@ -102,7 +102,7 @@
             "name": "test_data_attribute",
             "script_file": "test_data_attribute.sh",
             "enabled": true,
-            "description": "Flags test-only fixtures placed in runtime `data` instead of `test_data` (test_only_data_in_data) and host test data targets in `data` of host_rustc_test instead of `test_data` (host_test_data_in_data)."
+            "description": "Flags test-only fixtures placed in runtime `data` instead of `test_data` (test_only_data_in_data), host test data targets in `data` of host_rustc_test (host_test_data_in_data), and unreferenced `test_data` targets (unused_test_data)."
         },
         {
             "name": "build_verification",
