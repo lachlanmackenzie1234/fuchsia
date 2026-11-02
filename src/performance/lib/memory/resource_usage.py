@@ -19,6 +19,24 @@ class MaxRss(NamedTuple):
 # have similar issues.
 _DENYLIST = type, ModuleType, FunctionType
 
+# Built-in leaf types that never hold outgoing Python object references in
+# CPython. Checked with exact type identity (`type(obj) in _ATOMIC_TYPES`) so
+# user subclasses (e.g. IntEnum or custom int/str subclasses with __dict__)
+# still have their referents traversed.
+_ATOMIC_TYPES = frozenset(
+    {
+        int,
+        str,
+        float,
+        bytes,
+        bool,
+        type(None),
+        complex,
+        bytearray,
+        range,
+    }
+)
+
 
 def get_deep_size(obj: Any) -> int:
     """Traverse obj and its members, summing their sizes."""
@@ -26,17 +44,23 @@ def get_deep_size(obj: Any) -> int:
         raise TypeError(
             f"get_deep_size() does not take argument of type: {str(type(obj))}"
         )
-    seen_ids: set[int] = set()
-    size = 0
-    objects = [obj]
-    while objects:
-        need_referents = []
-        for obj in objects:
-            if not isinstance(obj, _DENYLIST) and id(obj) not in seen_ids:
-                seen_ids.add(id(obj))
-                size += sys.getsizeof(obj)
-                need_referents.append(obj)
-        objects = gc.get_referents(*need_referents)
+    if type(obj) in _ATOMIC_TYPES:
+        return sys.getsizeof(obj)
+
+    seen_ids: set[int] = {id(obj)}
+    size = sys.getsizeof(obj)
+    stack: list[Any] = [obj]
+    while stack:
+        current = stack.pop()
+        for ref in gc.get_referents(current):
+            oid = id(ref)
+            if oid not in seen_ids:
+                seen_ids.add(oid)
+                if type(ref) in _ATOMIC_TYPES:
+                    size += sys.getsizeof(ref)
+                elif not isinstance(ref, _DENYLIST):
+                    size += sys.getsizeof(ref)
+                    stack.append(ref)
     return size
 
 
