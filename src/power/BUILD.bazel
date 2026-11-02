@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
-
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -18,15 +16,14 @@ exports_files(
 
 test_suite(
     name = "target_tests",
-    target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/power/broker/client:tests",
         "//src/power/cpu-manager/energy_model_config/parser:energy-model-config-parser-tests",
     ],
 )
 
 test_suite(
     name = "host_tests",
-    target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
         "//src/power/cpu-manager/energy_model_config/parser:parser_host_test",
         "//src/power/cpu-manager/energy_model_config/validator:validator_test",
