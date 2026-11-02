@@ -70,11 +70,11 @@ class Process:
     vmos_koid: List[int] = field(metadata=config(field_name="vmos"))
 
     @cached_property
-    def vmos(self) -> Tuple["VMO"]:
+    def vmos(self) -> Tuple[VMO]:
         return tuple(self._capture.vmo_by_koid[koid] for koid in self.vmos_koid)
 
     @cached_property
-    def vmos_and_their_ancestors(self) -> Tuple["VMO"]:
+    def vmos_and_their_ancestors(self) -> Tuple[VMO]:
         koids = set()
         for vmo in self.vmos:
             koids.add(vmo.koid)

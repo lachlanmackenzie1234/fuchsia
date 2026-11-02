@@ -75,7 +75,7 @@ class InspectEntry:
     root: Mapping[str, Any]
 
     @classmethod
-    def from_dict(cls, entry: Mapping[str, Any]) -> "InspectEntry | None":
+    def from_dict(cls, entry: Mapping[str, Any]) -> InspectEntry | None:
         """Parses a raw JSON Inspect entry dictionary into an `InspectEntry`."""
         metadata = entry.get("metadata")
         if not isinstance(metadata, Mapping):
