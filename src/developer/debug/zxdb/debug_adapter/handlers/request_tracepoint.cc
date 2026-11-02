@@ -184,17 +184,11 @@ ErrOr<TracepointWatchSpec> BuildWatchSpec(const dap::ZxdbTracepointWatchSpec& da
     watch.byte_size = static_cast<uint32_t>(*dap_watch.byte_size);
   }
   if (dap_watch.access_type.has_value()) {
-    const std::string& access = *dap_watch.access_type;
-    if (access == "read") {
-      return Err("Read-only data breakpoints are not supported on this platform.");
+    ErrOr<BreakpointSettings::Type> access_res = DataId::ParseAccessType(*dap_watch.access_type);
+    if (access_res.has_error()) {
+      return access_res.err();
     }
-    if (access == "readWrite" || access == "read_write") {
-      watch.access_type = debug_ipc::BreakpointType::kReadWrite;
-    } else if (access == "write") {
-      watch.access_type = debug_ipc::BreakpointType::kWrite;
-    } else {
-      return Err("Unknown accessType: %s", access.c_str());
-    }
+    watch.access_type = access_res.value();
   }
 
   if (watch.address.has_value() &&

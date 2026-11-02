@@ -90,6 +90,19 @@ ErrOr<DataId> DataId::Parse(std::string_view data_id) {
   return DataId(koid, address, byte_size);
 }
 
+ErrOr<BreakpointSettings::Type> DataId::ParseAccessType(std::string_view access_type) {
+  if (access_type == "write") {
+    return BreakpointSettings::Type::kWrite;
+  }
+  if (access_type == "readWrite") {
+    return BreakpointSettings::Type::kReadWrite;
+  }
+  if (access_type == "read") {
+    return Err("Read-only data breakpoints are not supported on this platform.");
+  }
+  return Err("Unknown accessType: " + std::string(access_type));
+}
+
 Err DataId::ValidateSize(debug::Arch arch, BreakpointSettings::Type type) const {
   return BreakpointSettings::ValidateSize(arch, type, byte_size_);
 }

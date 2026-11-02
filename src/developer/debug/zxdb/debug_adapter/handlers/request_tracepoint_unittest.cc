@@ -307,7 +307,7 @@ TEST_F(RequestTracepointTest, RawBacktraceImpliesBacktrace) {
   EXPECT_TRUE(tp->spec().backtrace);
 }
 
-TEST_F(RequestTracepointTest, UnrecognizedAccessType) {
+TEST_F(RequestTracepointTest, UnrecognizedAndReadOnlyAccessTypes) {
   InitializeDebugging();
 
   dap::ZxdbTracepointSpec sideways_spec;
@@ -315,8 +315,20 @@ TEST_F(RequestTracepointTest, UnrecognizedAccessType) {
       dap::ZxdbTracepointWatchSpec{.data_id = "1234:0x2000:8", .access_type = "sideways"};
   auto got_sideways = SendSetTracepoints({sideways_spec});
   ASSERT_FALSE(got_sideways.error);
+  ASSERT_EQ(got_sideways.response.tracepoints.size(), 1u);
   EXPECT_FALSE(got_sideways.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_sideways.response.tracepoints[0].message.has_value());
   EXPECT_EQ(got_sideways.response.tracepoints[0].message.value(), "Unknown accessType: sideways");
+
+  dap::ZxdbTracepointSpec read_spec;
+  read_spec.watch = dap::ZxdbTracepointWatchSpec{.address = 0x2000, .access_type = "read"};
+  auto got_read = SendSetTracepoints({read_spec});
+  ASSERT_FALSE(got_read.error);
+  ASSERT_EQ(got_read.response.tracepoints.size(), 1u);
+  EXPECT_FALSE(got_read.response.tracepoints[0].verified);
+  ASSERT_TRUE(got_read.response.tracepoints[0].message.has_value());
+  EXPECT_EQ(got_read.response.tracepoints[0].message.value(),
+            "Read-only data breakpoints are not supported on this platform.");
 }
 
 TEST_F(RequestTracepointTest, DeleteDapTracepointsSafeguard) {

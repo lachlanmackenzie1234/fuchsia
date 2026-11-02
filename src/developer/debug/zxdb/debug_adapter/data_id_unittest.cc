@@ -106,6 +106,24 @@ TEST(DataIdTest, ParseValidAndBoundaryRejections) {
       non_hw.value().ValidateSize(debug::Arch::kX64, BreakpointSettings::Type::kWrite).has_error());
 }
 
+TEST(DataIdTest, ParseAccessType) {
+  ErrOr<BreakpointSettings::Type> write = DataId::ParseAccessType("write");
+  ASSERT_TRUE(write.ok());
+  EXPECT_EQ(write.value(), BreakpointSettings::Type::kWrite);
+
+  ErrOr<BreakpointSettings::Type> rw = DataId::ParseAccessType("readWrite");
+  ASSERT_TRUE(rw.ok());
+  EXPECT_EQ(rw.value(), BreakpointSettings::Type::kReadWrite);
+
+  ErrOr<BreakpointSettings::Type> ro = DataId::ParseAccessType("read");
+  ASSERT_TRUE(ro.has_error());
+  EXPECT_EQ(ro.err().msg(), "Read-only data breakpoints are not supported on this platform.");
+
+  ErrOr<BreakpointSettings::Type> unknown = DataId::ParseAccessType("sideways");
+  ASSERT_TRUE(unknown.has_error());
+  EXPECT_EQ(unknown.err().msg(), "Unknown accessType: sideways");
+}
+
 }  // namespace
 
 }  // namespace zxdb

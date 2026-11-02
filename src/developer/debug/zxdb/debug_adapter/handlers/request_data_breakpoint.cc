@@ -287,24 +287,16 @@ dap::ResponseOrError<dap::SetDataBreakpointsResponse> OnRequestSetDataBreakpoint
 
     BreakpointSettings::Type type = BreakpointSettings::Type::kWrite;
     if (request_bp.accessType.has_value()) {
-      const std::string& access = request_bp.accessType.value();
-      if (access == "write") {
-        type = BreakpointSettings::Type::kWrite;
-      } else if (access == "readWrite") {
-        type = BreakpointSettings::Type::kReadWrite;
-      } else if (access == "read") {
+      ErrOr<BreakpointSettings::Type> parsed_type =
+          DataId::ParseAccessType(request_bp.accessType.value());
+      if (parsed_type.has_error()) {
         response.breakpoints.push_back(dap::Breakpoint{
-            .message = "Read-only data breakpoints are not supported on this platform.",
-            .verified = false,
-        });
-        continue;
-      } else {
-        response.breakpoints.push_back(dap::Breakpoint{
-            .message = "Unknown accessType: " + access,
+            .message = parsed_type.err().msg(),
             .verified = false,
         });
         continue;
       }
+      type = parsed_type.value();
     }
 
     if (request_bp.hitCondition.has_value()) {

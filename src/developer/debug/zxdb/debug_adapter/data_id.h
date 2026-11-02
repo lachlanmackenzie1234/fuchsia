@@ -47,6 +47,10 @@ class DataId {
   // process_koid, positive byte_size, and 64-bit address range overflow invariants.
   static ErrOr<DataId> Parse(std::string_view data_id);
 
+  // Parses a DAP watchpoint accessType string ("write" or "readWrite") into BreakpointSettings
+  // watchpoint type, returning an Err for unsupported ("read") or unrecognized strings.
+  static ErrOr<BreakpointSettings::Type> ParseAccessType(std::string_view access_type);
+
   // Validates that `byte_size()` is supported by `arch` for the given hardware watchpoint `type`.
   Err ValidateSize(debug::Arch arch, BreakpointSettings::Type type) const;
 
