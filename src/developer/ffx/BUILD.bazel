@@ -45,6 +45,7 @@ test_suite(
         "//src/developer/ffx/lib/ssh:lib_test",
         "//src/developer/ffx/lib/target:lib_test",
         "//src/developer/ffx/lib/target/behavior:lib_test",
+        "//src/developer/ffx/lib/target/connector:tests",
         "//src/developer/ffx/lib/target/holders:lib_test",
         "//src/developer/ffx/lib/target_errors:lib_test",
         "//src/developer/ffx/lib/termio:termio_test",
