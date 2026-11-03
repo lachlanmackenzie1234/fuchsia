@@ -241,6 +241,7 @@ sha2-0_10 = { package = "sha2", version = "0.10.9" }
 simplelog = { version = "0.12.2", default-features = false }
 siphasher = "1.0.4"
 slab = "0.4.12"
+smallbox = "0.8.9"
 smallvec = {version= "1.16.3", features = ["const_generics", "const_new", "union"]}
 socket2 = { version = "=0.6.5", features = ["all"] }
 splines = "5.0.0"
@@ -1249,6 +1250,9 @@ rustflags = []
 rustflags = []
 
 [gn.package.slab."0.4.12"]
+rustflags = []
+
+[gn.package.smallbox."0.8.9"]
 rustflags = []
 
 [gn.package.spki."0.7.3"]

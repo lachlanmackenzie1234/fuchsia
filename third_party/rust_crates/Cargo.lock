@@ -2023,6 +2023,7 @@ dependencies = [
  "simplelog",
  "siphasher",
  "slab",
+ "smallbox",
  "smallvec",
  "socket2",
  "spki 0.7.3",
@@ -5286,6 +5287,12 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "smallbox"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8d91712aabb2e735436c02f70d990d8b2241f42dd092a973694e198ea95fc93"
 
 [[package]]
 name = "smallvec"

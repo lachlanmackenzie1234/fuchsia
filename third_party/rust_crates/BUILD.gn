@@ -2300,6 +2300,14 @@ group("slab-0.4.12") {
   public_deps = [ ":slab-v0_4_12" ]
 }
 
+group("smallbox") {
+  public_deps = [ ":smallbox-v0_8_9" ]
+}
+
+group("smallbox-0.8.9") {
+  public_deps = [ ":smallbox-v0_8_9" ]
+}
+
 group("smallvec") {
   public_deps = [ ":smallvec-v1_16_3" ]
 }
@@ -21766,6 +21774,40 @@ rustc_library("slab-v0_4_12") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":slab-v0_4_12.license" ]
+}
+
+license("smallbox-v0_8_9.license") {
+  public_package_name = "smallbox"
+  license_files = [
+    "//third_party/rust_crates/vendor/smallbox-0.8.9/LICENCE",
+    "//third_party/rust_crates/vendor/smallbox-0.8.9/LICENSE",
+  ]
+}
+
+rustc_library("smallbox-v0_8_9") {
+  crate_name = "smallbox"
+  source_root = "//third_party/rust_crates/vendor/smallbox-0.8.9/src/lib.rs"
+  output_name = "smallbox-fe9bbbc9a20521b2"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=fe9bbbc9a20521b2",
+    "-Cextra-filename=-fe9bbbc9a20521b2",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":smallbox-v0_8_9.license" ]
 }
 
 license("smallvec-v1_16_3.license") {
