@@ -19,6 +19,7 @@ use core::time::Duration;
 use netstack3_base::{EffectiveMss, Instant, Mss, SackBlocks, SeqNum, WindowSize};
 
 use crate::internal::sack_scoreboard::SackScoreboard;
+use crate::internal::seq_ranges::SeqRange;
 
 // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#section-3.2):
 ///   The fast retransmit algorithm uses the arrival of 3 duplicate ACKs (...)
@@ -851,15 +852,6 @@ impl SackRecovery {
         let pipe = sack_scoreboard.pipe();
         let congestion_window = cwnd.cwnd();
         let available_window = congestion_window.saturating_sub(pipe);
-        // Don't send anything if we can't send at least full MSS, following the
-        // RFC. All outcomes require at least one MSS of available window:
-        //
-        // (3.3) If (cwnd - pipe) >= 1 SMSS [...]
-        // (C) If cwnd - pipe >= 1 SMSS [...]
-        if available_window < cwnd.mss().into() {
-            return None;
-        }
-        let congestion_limit = available_window.min(cwnd.mss().into());
 
         // If we're not in recovery, use the regular congestion calculation,
         // adjusting the congestion window with the pipe value.
@@ -873,6 +865,10 @@ impl SackRecovery {
         let SackInRecoveryState { recovery_point, high_rxt, rescue_rxt } = match recovery {
             SackRecoveryState::InRecovery(sack_in_recovery_state) => sack_in_recovery_state,
             SackRecoveryState::PostRto { recovery_point: _ } | SackRecoveryState::NotInRecovery => {
+                if available_window < cwnd.mss().into() {
+                    return None;
+                }
+                let congestion_limit = cwnd.mss().into();
                 return Some(CongestionControlSendOutcome {
                     next_seg: snd_nxt,
                     congestion_limit,
@@ -904,8 +900,54 @@ impl SackRecovery {
         // arrives.
         //
         // Note that rule 4 always rearms the retransmission timer because it
-        // sents only a single segment per entry into recovery.¡
+        // sents only a single segment per entry into recovery.
         let rearm_retransmit = |next_seg: SeqNum| next_seg.before(*recovery_point);
+
+        let first_unsacked_range =
+            sack_scoreboard.first_unsacked_range_from(snd_una.latest(*high_rxt));
+
+        let mut retransmit_hole = |first_hole: &SeqRange<bool>| {
+            let congestion_limit = u32::from(cwnd.mss()).min(first_hole.len());
+            let next_seg = first_hole.start();
+            *high_rxt = next_seg + congestion_limit;
+            CongestionControlSendOutcome {
+                next_seg,
+                congestion_limit,
+                congestion_window,
+                loss_recovery: LossRecoverySegment::Yes {
+                    rearm_retransmit: rearm_retransmit(next_seg),
+                    mode: LossRecoveryMode::SackRecovery,
+                },
+            }
+        };
+
+        // Upon entering loss recovery, unconditionally retransmit the first
+        // unacknowledged segment before checking `cwnd - pipe` in step (4.4) /
+        // (C). From RFC 6675 section 5:
+        //
+        //  (4.3) Retransmit the first data segment presumed dropped -- the
+        //        segment starting with sequence number HighACK + 1.  To
+        //        prevent repeated retransmission of the same data or a
+        //        premature rescue retransmission, set both HighRxt and
+        //        RescueRxt to the highest sequence number in the retransmitted
+        //        segment.
+        if rescue_rxt.is_none() {
+            if let Some(first_hole) = &first_unsacked_range {
+                let outcome = retransmit_hole(first_hole);
+                *rescue_rxt = Some(*high_rxt);
+                return Some(outcome);
+            }
+        }
+
+        // Don't send anything if we can't send at least full MSS, following the
+        // RFC. Subsequent outcomes require at least one MSS of available
+        // window:
+        //
+        // (C) If cwnd - pipe >= 1 SMSS [...]
+        if available_window < cwnd.mss().into() {
+            return None;
+        }
+        let congestion_limit = cwnd.mss().into();
 
         // run NextSeg() as defined in RFC 6675.
 
@@ -919,38 +961,10 @@ impl SackRecovery {
         //         SACK.
         //   (1.c) IsLost (S2) returns true.
 
-        let first_unsacked_range =
-            sack_scoreboard.first_unsacked_range_from(snd_una.latest(*high_rxt));
-
         if let Some(first_hole) = &first_unsacked_range {
             // Meta is the IsLost value.
             if *first_hole.meta() {
-                let hole_size = first_hole.len();
-                let congestion_limit = congestion_limit.min(hole_size);
-                *high_rxt = first_hole.start() + congestion_limit;
-
-                // If we haven't set RescueRxt yet, set it to prevent eager
-                // rescue. From RFC 6675:
-                //
-                //  Retransmit the first data segment presumed dropped --
-                //  the segment starting with sequence number HighACK + 1.
-                //  To prevent repeated retransmission of the same data or a
-                //  premature rescue retransmission, set both HighRxt and
-                //  RescueRxt to the highest sequence number in the
-                //  retransmitted segment.
-                if rescue_rxt.is_none() {
-                    *rescue_rxt = Some(*high_rxt);
-                }
-
-                return Some(CongestionControlSendOutcome {
-                    next_seg: first_hole.start(),
-                    congestion_limit,
-                    congestion_window,
-                    loss_recovery: LossRecoverySegment::Yes {
-                        rearm_retransmit: rearm_retransmit(first_hole.start()),
-                        mode: LossRecoveryMode::SackRecovery,
-                    },
-                });
+                return Some(retransmit_hole(first_hole));
             }
         }
 
@@ -988,20 +1002,8 @@ impl SackRecovery {
         //  for detecting loss given in steps (1.a) and (1.b) above
         //  (specifically excluding step (1.c)), then one segment of up to
         //  SMSS octets starting with S3 SHOULD be returned.
-        if let Some(first_hole) = first_unsacked_range {
-            let hole_size = first_hole.len();
-            let congestion_limit = congestion_limit.min(hole_size);
-            *high_rxt = first_hole.start() + congestion_limit;
-
-            return Some(CongestionControlSendOutcome {
-                next_seg: first_hole.start(),
-                congestion_limit,
-                congestion_window,
-                loss_recovery: LossRecoverySegment::Yes {
-                    rearm_retransmit: rearm_retransmit(first_hole.start()),
-                    mode: LossRecoveryMode::SackRecovery,
-                },
-            });
+        if let Some(first_hole) = &first_unsacked_range {
+            return Some(retransmit_hole(first_hole));
         }
 
         // Run next rule, from RFC 6675:
@@ -1397,10 +1399,12 @@ mod test {
         // Verify that our set up math here is correct, we want recovery to be
         // able to fill only a part of the hole.
         assert_eq!(cwnd.cwnd() - scoreboard.pipe(), (lost_segments - 1) * u32::from(mss));
-        // Enter recovery.
+        // Enter recovery. Expect the first lost segment to be retransmitted on
+        // recovery entry per RFC 6675 section 5 step (4.3), and any remaining
+        // segments up to the congestion window via NextSeg() rule (1).
         assert_eq!(recovery.on_dup_ack(snd_una, snd_nxt, &scoreboard), SackDupAckOutcome(true));
 
-        for i in 0..(lost_segments - 1) {
+        for i in 0..(lost_segments - 1).max(1) {
             let next_seg = snd_una + i * u32::from(mss);
             assert_eq!(
                 recovery.poll_send(cwnd, snd_una, snd_nxt, snd_wnd, available_bytes, &scoreboard),

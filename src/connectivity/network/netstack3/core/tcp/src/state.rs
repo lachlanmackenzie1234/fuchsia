@@ -10432,4 +10432,205 @@ mod test {
         let alice_third_estimate = get_rtt_estimate(&alice);
         assert_eq!(alice_second_estimate, alice_third_estimate);
     }
+
+    // Verifies that after sending the full initial window and clocking out 2
+    // new segments via SACK-based Limited Transmit on the first two SACK
+    // duplicate ACKs, the third SACK duplicate ACK triggers an immediate fast
+    // retransmit of the first lost segment per RFC 6675 Section 5 Step (4.3),
+    // even though the reduced `cwnd` does not exceed `pipe` (`cwnd <= pipe`).
+    #[test]
+    fn sack_limited_transmit_fast_retransmit() {
+        let mss = TEST_MSS;
+        let mss_u32 = u32::from(mss);
+        let congestion_control = CongestionControl::cubic_with_mss(mss);
+        let initial_cwnd = congestion_control.inspect_cwnd().cwnd();
+        assert_eq!(initial_cwnd % mss_u32, 0);
+        let initial_segments = initial_cwnd / mss_u32;
+        assert!(initial_segments >= 4);
+        let send_segments = initial_segments + 2;
+        let send_bytes = send_segments * mss_u32;
+        let peer_window = WindowSize::DEFAULT >> WindowScale::default();
+        let start = TEST_ISS + 1;
+
+        let mut state = State::<FakeInstant, _, _, ()>::Established(Established {
+            snd: Send(SendInner {
+                congestion_control,
+                ..SendInner::default_for_test_at(
+                    start,
+                    RepeatingSendBuffer::new(usize::try_from(send_bytes).unwrap()),
+                )
+            })
+            .into(),
+            rcv: Recv {
+                mss,
+                sack_permitted: true,
+                ..Recv::default_for_test(RingBuffer::default())
+            }
+            .into(),
+        });
+        let socket_options = SocketOptions::default_for_state_tests();
+        let clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+
+        // Send all segments allowed by the initial window.
+        for i in 0..initial_segments {
+            let segment = state
+                .poll_send(
+                    &FakeStateMachineDebugId::default(),
+                    &counters.refs(),
+                    clock.now(),
+                    &socket_options,
+                )
+                .expect("initial window segment");
+            assert_eq!(segment.header().seq, start + i * mss_u32);
+            assert_eq!(segment.len(), mss_u32);
+        }
+        assert_matches!(
+            state.poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                clock.now(),
+                &socket_options,
+            ),
+            Err(NewlyClosed::No)
+        );
+
+        let make_sack_ack = |sacked_segments: core::ops::Range<u32>| {
+            let sack_block = SackBlock::try_new(
+                start + sacked_segments.start * mss_u32,
+                start + sacked_segments.end * mss_u32,
+            )
+            .unwrap();
+            Segment::<()>::ack(
+                TEST_IRS + 1,
+                start,
+                peer_window,
+                SegmentOptions {
+                    sack_blocks: [sack_block].into_iter().collect(),
+                    timestamp: Some(DEFAULT_ACK_TS_OPT),
+                },
+            )
+        };
+
+        // First two SACK duplicate ACKs each clock out one new segment via
+        // Limited Transmit (RFC 6675 Section 5 Step 3.3 / RFC 3042) without
+        // entering loss recovery.
+        for (sacked_end, expected_segment_index) in
+            [(2, initial_segments), (3, initial_segments + 1)]
+        {
+            assert_eq!(
+                state.on_segment::<_, ClientlessBufferProvider>(
+                    &FakeStateMachineDebugId::default(),
+                    &counters.refs(),
+                    make_sack_ack(1..sacked_end),
+                    clock.now(),
+                    &socket_options,
+                    false,
+                ),
+                (None, None, DataAcked::No, NewlyClosed::No)
+            );
+            let congestion_control = &state.assert_established().snd.congestion_control;
+            assert!(congestion_control.in_slow_start());
+            assert_eq!(congestion_control.inspect_cwnd().cwnd(), initial_cwnd);
+            assert_eq!(congestion_control.pipe(), (initial_segments - 1) * mss_u32);
+
+            let segment = state
+                .poll_send(
+                    &FakeStateMachineDebugId::default(),
+                    &counters.refs(),
+                    clock.now(),
+                    &socket_options,
+                )
+                .expect("limited transmit segment");
+            assert_eq!(segment.header().seq, start + expected_segment_index * mss_u32);
+            assert_eq!(segment.len(), mss_u32);
+            assert_matches!(
+                state.poll_send(
+                    &FakeStateMachineDebugId::default(),
+                    &counters.refs(),
+                    clock.now(),
+                    &socket_options,
+                ),
+                Err(NewlyClosed::No)
+            );
+        }
+
+        // Third SACK duplicate ACK marks the first segment as lost (`pipe =
+        // (initial_segments - 2) * SMSS`), reduces `cwnd` and `ssthresh` to at
+        // most `pipe`, and enters SACK recovery, immediately retransmitting the
+        // first segment per RFC 6675 Section 5 Step (4.3).
+        assert_eq!(
+            state.on_segment::<_, ClientlessBufferProvider>(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                make_sack_ack(1..4),
+                clock.now(),
+                &socket_options,
+                false,
+            ),
+            (None, None, DataAcked::No, NewlyClosed::No)
+        );
+        let congestion_control = &state.assert_established().snd.congestion_control;
+        assert_eq!(
+            congestion_control.inspect_loss_recovery_mode(),
+            Some(LossRecoveryMode::SackRecovery)
+        );
+        assert!(!congestion_control.in_slow_start());
+        let expected_pipe = (initial_segments - 2) * mss_u32;
+        assert_eq!(congestion_control.pipe(), expected_pipe);
+        let cwnd = congestion_control.inspect_cwnd().cwnd();
+        assert_eq!(congestion_control.slow_start_threshold(), cwnd);
+        assert!(cwnd <= expected_pipe);
+
+        let segment = state
+            .poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                clock.now(),
+                &socket_options,
+            )
+            .expect("sack fast retransmit segment");
+        assert_eq!(segment.header().seq, start);
+        assert_eq!(segment.len(), mss_u32);
+        assert_matches!(
+            state.poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                clock.now(),
+                &socket_options,
+            ),
+            Err(NewlyClosed::No)
+        );
+
+        // Cumulative ACK for all sent segments exits loss recovery.
+        let cumulative_ack = Segment::<()>::ack(
+            TEST_IRS + 1,
+            start + send_bytes,
+            peer_window,
+            SegmentOptions { sack_blocks: SackBlocks::EMPTY, timestamp: Some(DEFAULT_ACK_TS_OPT) },
+        );
+        assert_eq!(
+            state.on_segment::<_, ClientlessBufferProvider>(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                cumulative_ack,
+                clock.now(),
+                &socket_options,
+                false,
+            ),
+            (None, None, DataAcked::Yes, NewlyClosed::No)
+        );
+        let congestion_control = &state.assert_established().snd.congestion_control;
+        assert_eq!(congestion_control.inspect_loss_recovery_mode(), None);
+        assert_eq!(congestion_control.pipe(), 0);
+        CounterExpectations {
+            retransmits: 1,
+            sack_recovery: 1,
+            sack_retransmits: 1,
+            loss_recovered: 1,
+            dup_acks: 3,
+            ..Default::default()
+        }
+        .assert_counters(&counters);
+    }
 }
