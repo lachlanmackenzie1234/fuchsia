@@ -119,6 +119,7 @@ template("ifs_shared_library") {
   source_set(main_target) {
     forward_variables_from(invoker,
                            [
+                             "check_includes",
                              "data_deps",
                              "public",
                              "public_configs",
@@ -126,6 +127,9 @@ template("ifs_shared_library") {
                              "testonly",
                              "visibility",
                            ])
+    if (defined(invoker.check_includes_strict)) {
+      check_includes_strict = invoker.check_includes_strict
+    }
     configs += [ ":$config_target" ]
     libs = [ gen_stub_file ]
     deps = [ gen_label ]
@@ -160,6 +164,7 @@ template("ifs_shared_library") {
   source_set(as_needed_target) {
     forward_variables_from(invoker,
                            [
+                             "check_includes",
                              "data_deps",
                              "public",
                              "public_configs",
@@ -167,6 +172,9 @@ template("ifs_shared_library") {
                              "testonly",
                              "visibility",
                            ])
+    if (defined(invoker.check_includes_strict)) {
+      check_includes_strict = invoker.check_includes_strict
+    }
     libs = [ output_name ]
     deps = [
       ":$gen_as_needed_skip_target.a($default_toolchain)",
