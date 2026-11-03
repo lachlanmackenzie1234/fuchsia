@@ -2518,24 +2518,7 @@ impl MemoryManagerState {
 
         self.ensure_range_mapped_in_user_vmar(start_addr, Some(end_addr - start_addr), context)?;
 
-        if !on_fault && !current_task.kernel().features.mlock_always_onfault {
-            context
-                .user_vmar
-                .op_range(zx::VmarOp::PREFETCH, start_addr.ptr(), end_addr - start_addr)
-                .map_err(Self::mlock_op_range_status_to_errno)?;
-        }
-
-        match current_task.kernel().features.mlock_pin_flavor {
-            MlockPinFlavor::VmarAlwaysNeed => {
-                context
-                    .user_vmar
-                    .op_range(zx::VmarOp::ALWAYS_NEED, start_addr.ptr(), end_addr - start_addr)
-                    .map_err(Self::mlock_op_range_status_to_errno)?;
-            }
-            // The shadow process doesn't use any vmar-level operations to pin memory.
-            MlockPinFlavor::Noop | MlockPinFlavor::ShadowProcess => (),
-        }
-
+        // Lock the mappings before populating so a populate failure leaves the range locked.
         for (range, mut mapping, shadow_mapping) in updates {
             if let Some(shadow_mapping) = shadow_mapping {
                 released_mappings.extend_pins(
@@ -2548,12 +2531,91 @@ impl MemoryManagerState {
             released_mappings.extend(self.mappings.insert(range, mapping));
         }
 
+        // Apply the hint before populating, so that a populate failure does not skip it.
+        match current_task.kernel().features.mlock_pin_flavor {
+            MlockPinFlavor::VmarAlwaysNeed => {
+                context
+                    .user_vmar
+                    .op_range(zx::VmarOp::ALWAYS_NEED, start_addr.ptr(), end_addr - start_addr)
+                    .map_err(Self::mlock_op_range_status_to_errno)?;
+            }
+            // The shadow process doesn't use any vmar-level operations to pin memory.
+            MlockPinFlavor::Noop | MlockPinFlavor::ShadowProcess => (),
+        }
+
+        if !on_fault && !current_task.kernel().features.mlock_always_onfault {
+            // Populate the range, as required by mlock(2). Private mappings that are writable in
+            // the VMAR are committed. Unmodified private file mappings are prefetched instead, as
+            // COMMIT would break copy-on-write without `set_cow_modified()`, and so are
+            // userfaultfd ranges, as COMMIT would fill missing pages behind its back. Other
+            // accessible mappings are prefetched. Populating stops at the first PROT_NONE mapping.
+            // Batch the same operation on the nearby ranges together.
+            let mut current_op: Option<(zx::VmarOp, UserAddress, usize)> = None;
+
+            for (range, mapping) in self.mappings.range(start_addr..end_addr) {
+                let sub_start = std::cmp::max(range.start, start_addr);
+                let sub_end = std::cmp::min(range.end, end_addr);
+                debug_assert!(sub_start < sub_end, "mappings.range() yields intersecting ranges");
+                let sub_len = sub_end - sub_start;
+
+                // TODO(https://fxbug.dev/579404355): PREFETCH does not allocate non-pager-backed
+                // shared memory (shared anonymous, memfd, tmpfs). Consider also using COMMIT in
+                // those cases.
+                let new_op = if mapping.vmar_flags().contains(MappingFlags::WRITE)
+                    && !mapping.flags().intersects(MappingFlags::SHARED | MappingFlags::UFFD)
+                {
+                    zx::VmarOp::COMMIT
+                } else if mapping
+                    .flags()
+                    .intersects(MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXEC)
+                {
+                    zx::VmarOp::PREFETCH
+                } else {
+                    break;
+                };
+
+                match current_op {
+                    Some((cur_op, cur_start, cur_len))
+                        if cur_op == new_op
+                            && cur_start.checked_add(cur_len) == Some(sub_start) =>
+                    {
+                        current_op = Some((cur_op, cur_start, cur_len + sub_len));
+                    }
+                    Some((cur_op, cur_start, cur_len)) => {
+                        context
+                            .user_vmar
+                            .op_range(cur_op, cur_start.ptr(), cur_len)
+                            .map_err(Self::mlock_op_range_status_to_errno)?;
+                        current_op = Some((new_op, sub_start, sub_len));
+                    }
+                    None => {
+                        current_op = Some((new_op, sub_start, sub_len));
+                    }
+                }
+            }
+
+            if let Some((cur_op, cur_start, cur_len)) = current_op {
+                context
+                    .user_vmar
+                    .op_range(cur_op, cur_start.ptr(), cur_len)
+                    .map_err(Self::mlock_op_range_status_to_errno)?;
+            }
+        }
+
         if failed_to_lock { error!(ENOMEM) } else { Ok(()) }
     }
 
     fn mlock_op_range_status_to_errno(e: zx::Status) -> Errno {
         match e {
-            zx::Status::BAD_STATE | zx::Status::NOT_SUPPORTED => errno!(ENOMEM),
+            // mlock(2): EAGAIN if some or all of the range could not be locked.
+            zx::Status::NO_MEMORY => errno!(EAGAIN),
+            // Includes errors a pager can return while paging in file contents.
+            zx::Status::BAD_STATE
+            | zx::Status::NOT_SUPPORTED
+            | zx::Status::IO
+            | zx::Status::IO_DATA_INTEGRITY
+            | zx::Status::NO_SPACE
+            | zx::Status::BUFFER_TOO_SMALL => errno!(ENOMEM),
             zx::Status::INVALID_ARGS | zx::Status::OUT_OF_RANGE => errno!(EINVAL),
             zx::Status::ACCESS_DENIED => {
                 unreachable!("user vmar should always have needed rights")
@@ -9227,6 +9289,116 @@ mod tests {
                 assert!(!mapping.flags().contains(MappingFlags::LAZY_PRIVATE_FILE));
             },
             mlock_features(MlockPinFlavor::VmarAlwaysNeed),
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_mlock_always_onfault_feature_does_not_prefault() {
+        let mut features = KernelFeatures::default();
+        features.cached_zx_map_info_bytes = *PAGE_SIZE as u32;
+        features.mlock_always_onfault = true;
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let addr = do_mmap(
+                    current_task,
+                    UserAddress::default(),
+                    page_size * 2,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS,
+                    FdNumber::from_raw(-1),
+                    0,
+                )
+                .expect("mmap failed");
+                let mm = current_task.mm().unwrap();
+
+                // Even with on_fault: false, the kernel feature forces on-fault behavior.
+                mm.mlock(current_task, addr, page_size, false).expect("mlock failed");
+
+                let stats = mm.get_stats(current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(stats.vm_rss, 0);
+                assert_eq!(stats.vm_lck, 0);
+            },
+            features,
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_mlock_prot_none() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let page_size = *PAGE_SIZE as usize;
+                let addr = do_mmap(
+                    current_task,
+                    UserAddress::default(),
+                    page_size * 3,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS,
+                    FdNumber::from_raw(-1),
+                    0,
+                )
+                .expect("mmap failed");
+                let mm = current_task.mm().unwrap();
+                mm.protect(
+                    current_task,
+                    (addr + page_size).unwrap(),
+                    page_size,
+                    ProtectionFlags::empty(),
+                )
+                .expect("mprotect failed");
+
+                // mlock on a standalone PROT_NONE mapping returns ENOMEM without panicking.
+                assert_eq!(
+                    mm.mlock(current_task, (addr + page_size).unwrap(), page_size, false),
+                    error!(ENOMEM)
+                );
+
+                // [RW, PROT_NONE, RW] returns ENOMEM and only commits the first RW page.
+                assert_eq!(mm.mlock(current_task, addr, page_size * 3, false), error!(ENOMEM));
+                let stats = mm.get_stats(current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(stats.vm_rss, page_size);
+                assert_eq!(stats.vm_lck, page_size);
+            },
+            KernelFeatures { cached_zx_map_info_bytes: *PAGE_SIZE as u32, ..Default::default() },
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_mlock_unmodified_private_file() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let file = new_memfd(
+                    current_task,
+                    b"test_memfd".into(),
+                    SealFlags::empty(),
+                    OpenFlags::RDWR,
+                )
+                .unwrap();
+                file.node().truncate(current_task, &file.name.mount, *PAGE_SIZE * 2).unwrap();
+                let fd = current_task.add_file(file, FdFlags::empty()).unwrap();
+                let page_size = *PAGE_SIZE as usize;
+                let addr = do_mmap(
+                    current_task,
+                    UserAddress::default(),
+                    page_size * 2,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE,
+                    fd,
+                    0,
+                )
+                .expect("mmap failed");
+                let mm = current_task.mm().unwrap();
+                // Must be prefetched, not committed, so that it stays unmodified.
+                mm.mlock(current_task, addr, page_size, false).expect("mlock failed");
+                let state = mm.state.read();
+                let (_, mapping) = state.mappings.get(addr).expect("mapping");
+                assert!(mapping.flags().contains(MappingFlags::LOCKED));
+                assert!(mapping.is_unmodified_private_file());
+            },
+            KernelFeatures { cached_zx_map_info_bytes: *PAGE_SIZE as u32, ..Default::default() },
         )
         .await;
     }
