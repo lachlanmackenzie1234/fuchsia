@@ -38,7 +38,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 _REFLECTION_CLI = "/google/bin/releases/gemini-agents-reflection/reflection_cli"
 _DEFAULT_SHARED_TELEMETRY_PATH = (
@@ -270,65 +270,117 @@ def normalize_verification_mode(raw_mode: str) -> str:
     return val
 
 
+def _read_frontmatter_header(path: Optional[Path]) -> str:
+    """Reads up to 4 KiB of YAML frontmatter from an artifact file if it exists."""
+    if path is None or not path.is_file():
+        return ""
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")[:4096]
+        m = re.match(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", content, re.DOTALL)
+        return m.group(1) if m else content
+    except OSError:
+        return ""
+
+
+def _extract_fm_str(header: str, key: str) -> str:
+    if not header:
+        return ""
+    m = re.search(
+        rf"(?m)^{re.escape(key)}\s*:\s*[\"']?([^\"'\n]+)[\"']?", header
+    )
+    if not m:
+        return ""
+    val = m.group(1).strip()
+    return "" if "pending" in val.lower() else val
+
+
+def _extract_fm_int(header: str, key: str) -> Optional[int]:
+    if not header:
+        return None
+    m = re.search(rf"(?m)^{re.escape(key)}\s*:\s*(\d+)\s*$", header)
+    return int(m.group(1)) if m else None
+
+
+def _resolve_artifact_path(
+    explicit_path: Optional[Path],
+    conversation_id: str,
+    default_name: str,
+) -> Optional[Path]:
+    if explicit_path is not None:
+        return explicit_path
+    if conversation_id:
+        return _brain_root() / conversation_id / default_name
+    return None
+
+
 def read_spec_frontmatter_fields(
     conversation_id: str,
+    spec_path: Optional[Path] = None,
+    devlog_path: Optional[Path] = None,
 ) -> Tuple[str, str, Optional[int]]:
-    """Reads (verification_mode, adversarial_review, adversarial_review_rounds) from bug_spec.md."""
-    if not conversation_id:
-        return "", "", None
-    spec_path = _brain_root() / conversation_id / "bug_spec.md"
-    if not spec_path.is_file():
-        return "", "", None
-    mode = ""
-    adv_review = ""
-    adv_rounds: Optional[int] = None
-    try:
-        content = spec_path.read_text(encoding="utf-8", errors="replace")[:4096]
-        m_mode = re.search(
-            r"(?m)^verification_mode\s*:\s*[\"']?([^\"'\n]+)[\"']?", content
-        )
-        if m_mode:
-            mode = normalize_verification_mode(m_mode.group(1))
-        m_adv = re.search(
-            r"(?m)^adversarial_review\s*:\s*[\"']?([^\"'\n]+)[\"']?", content
-        )
-        if m_adv:
-            val = m_adv.group(1).strip().lower()
-            if "pending" not in val:
-                adv_review = val
-        m_rounds = re.search(
-            r"(?m)^adversarial_review_rounds\s*:\s*(\d+)", content
-        )
-        if m_rounds:
-            adv_rounds = int(m_rounds.group(1))
-    except OSError:
-        pass
+    """Reads (verification_mode, adversarial_review, adversarial_review_rounds) from bug_spec.md / bug_devlog.md."""
+    resolved_spec = _resolve_artifact_path(
+        spec_path, conversation_id, "bug_spec.md"
+    )
+    resolved_devlog = _resolve_artifact_path(
+        devlog_path, conversation_id, "bug_devlog.md"
+    )
+    spec_hdr = _read_frontmatter_header(resolved_spec)
+    devlog_hdr = _read_frontmatter_header(resolved_devlog)
+
+    raw_mode = _extract_fm_str(
+        spec_hdr, "verification_mode"
+    ) or _extract_fm_str(devlog_hdr, "verification_mode")
+    mode = normalize_verification_mode(raw_mode)
+
+    adv_review = (
+        _extract_fm_str(spec_hdr, "adversarial_review")
+        or _extract_fm_str(devlog_hdr, "adversarial_review")
+    ).lower()
+
+    adv_rounds = _extract_fm_int(spec_hdr, "adversarial_review_rounds")
+    if adv_rounds is None:
+        adv_rounds = _extract_fm_int(devlog_hdr, "adversarial_review_rounds")
+
     return mode, adv_review, adv_rounds
 
 
 def read_recon_spec_frontmatter_fields(
     conversation_id: str,
-) -> Tuple[str, str, str]:
-    """Reads (system_id, hardware_verification, outcome) from recon_spec.md."""
-    if not conversation_id:
-        return "", "", ""
-    spec_path = _brain_root() / conversation_id / "recon_spec.md"
-    if not spec_path.is_file():
-        return "", "", ""
-    fields = {"system_id": "", "hardware_verification": "", "outcome": ""}
-    try:
-        content = spec_path.read_text(encoding="utf-8", errors="replace")[:4096]
-        for key in fields:
-            m = re.search(rf"(?m)^{key}\s*:\s*[\"']?([^\"'\n]+)[\"']?", content)
-            if m and "pending" not in m.group(1).lower():
-                fields[key] = m.group(1).strip()
-    except OSError:
-        pass
-    return (
-        fields["system_id"],
-        fields["hardware_verification"].lower(),
-        fields["outcome"].upper(),
+    spec_path: Optional[Path] = None,
+    devlog_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Reads recon metadata and optional claim counts from recon_spec.md / recon_devlog.md."""
+    resolved_spec = _resolve_artifact_path(
+        spec_path, conversation_id, "recon_spec.md"
     )
+    resolved_devlog = _resolve_artifact_path(
+        devlog_path, conversation_id, "recon_devlog.md"
+    )
+    spec_hdr = _read_frontmatter_header(resolved_spec)
+    devlog_hdr = _read_frontmatter_header(resolved_devlog)
+
+    fields: Dict[str, Any] = {}
+    for key in (
+        "system_id",
+        "campaign_id",
+        "conversation_id",
+        "hardware_verification",
+        "outcome",
+    ):
+        fields[key] = _extract_fm_str(spec_hdr, key) or _extract_fm_str(
+            devlog_hdr, key
+        )
+    fields["hardware_verification"] = fields["hardware_verification"].lower()
+    fields["outcome"] = fields["outcome"].upper()
+
+    for count_key in ("claims_total", "claims_verified", "claims_contradicted"):
+        val = _extract_fm_int(spec_hdr, count_key)
+        if val is None:
+            val = _extract_fm_int(devlog_hdr, count_key)
+        fields[count_key] = val
+
+    return fields
 
 
 def _brain_root() -> Path:
@@ -406,7 +458,7 @@ def is_fx_metrics_enabled(fuchsia_dir: Path) -> bool:
     return False
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Log AutoDA skill invocation telemetry (Signal B)."
     )
@@ -420,6 +472,27 @@ def main() -> int:
         "--conversation-id",
         default="",
         help="Root orchestrator conversation UUID.",
+    )
+    parser.add_argument(
+        "--spec",
+        "--bug-spec",
+        dest="spec",
+        default="",
+        help=(
+            "Optional path to spec artifact (bug_spec.md or recon_spec.md); "
+            "overrides <brain>/<conversation_id>/ when campaign.json sets a "
+            "custom output.artifact_dir."
+        ),
+    )
+    parser.add_argument(
+        "--devlog",
+        "--bug-devlog",
+        dest="devlog",
+        default="",
+        help=(
+            "Optional path to devlog artifact (bug_devlog.md or "
+            "recon_devlog.md) used as frontmatter fallback."
+        ),
     )
     parser.add_argument(
         "--bug-id",
@@ -485,7 +558,7 @@ def main() -> int:
         ),
         help="Path to shared skill_invocations.jsonl.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     workflow = args.workflow
     skill_name = _WORKFLOW_SKILLS[workflow]
@@ -500,11 +573,26 @@ def main() -> int:
         skill_md, _DEFAULT_SKILL_VERSIONS[workflow]
     )
 
-    clean_bug = re.sub(r"^(?:b/|bug:)", "", args.bug_id.strip(), flags=re.I)
+    spec_path = Path(args.spec.strip()) if args.spec.strip() else None
+    devlog_path = Path(args.devlog.strip()) if args.devlog.strip() else None
+
+    conv_id = args.conversation_id.strip()
+    if not conv_id and (spec_path or devlog_path):
+        conv_id = _extract_fm_str(
+            _read_frontmatter_header(spec_path), "conversation_id"
+        ) or _extract_fm_str(
+            _read_frontmatter_header(devlog_path), "conversation_id"
+        )
+
+    raw_bug = args.bug_id.strip()
+    if not raw_bug and workflow == "fix" and (spec_path or devlog_path):
+        raw_bug = _extract_fm_str(
+            _read_frontmatter_header(spec_path), "bug_id"
+        ) or _extract_fm_str(_read_frontmatter_header(devlog_path), "bug_id")
+    clean_bug = re.sub(r"^(?:b/|bug:)", "", raw_bug, flags=re.I)
     m_digits = re.search(r"(\d{5,})", clean_bug)
     bug_id = m_digits.group(1) if m_digits else clean_bug
 
-    conv_id = args.conversation_id.strip()
     traj_id, resolved_model, model_id, model_version = query_session_telemetry(
         conv_id
     )
@@ -534,7 +622,9 @@ def main() -> int:
     }
 
     if workflow == "fix":
-        spec_mode, spec_adv, spec_rounds = read_spec_frontmatter_fields(conv_id)
+        spec_mode, spec_adv, spec_rounds = read_spec_frontmatter_fields(
+            conv_id, spec_path=spec_path, devlog_path=devlog_path
+        )
         verification_mode = (
             normalize_verification_mode(args.verification_mode) or spec_mode
         )
@@ -549,21 +639,31 @@ def main() -> int:
         if adv_rounds is not None:
             record["adversarial_review_rounds"] = adv_rounds
     else:
-        spec_system, spec_hw, spec_outcome = read_recon_spec_frontmatter_fields(
-            conv_id
+        recon_fm = read_recon_spec_frontmatter_fields(
+            conv_id, spec_path=spec_path, devlog_path=devlog_path
         )
-        outcome = args.outcome.strip().upper() or spec_outcome
+        outcome = args.outcome.strip().upper() or recon_fm["outcome"]
         if outcome and outcome not in _RECON_OUTCOMES:
             parser.error(
                 f"--outcome must be one of {sorted(_RECON_OUTCOMES)}, "
                 f"got {outcome!r}."
             )
-        record["system_id"] = args.system_id.strip() or spec_system
-        record["campaign_id"] = args.campaign_id.strip()
+        record["system_id"] = args.system_id.strip() or recon_fm["system_id"]
+        record["campaign_id"] = (
+            args.campaign_id.strip() or recon_fm["campaign_id"]
+        )
         record["hardware_verification"] = (
-            args.hardware_verification.strip().lower() or spec_hw
+            args.hardware_verification.strip().lower()
+            or recon_fm["hardware_verification"]
         )
         record["outcome"] = outcome
+        for count_key in (
+            "claims_total",
+            "claims_verified",
+            "claims_contradicted",
+        ):
+            if recon_fm[count_key] is not None:
+                record[count_key] = recon_fm[count_key]
 
     metrics_enabled = is_fx_metrics_enabled(fuchsia_dir)
     shared_ok = False
@@ -573,9 +673,12 @@ def main() -> int:
             shared_ok = upsert_jsonl_record(Path(args.telemetry_path), record)
 
         local_fallback = (
-            Path.home()
-            / ".gemini"
-            / "jetski"
+            Path(
+                os.environ.get(
+                    "ANTIGRAVITY_APP_DATA_DIR",
+                    str(Path.home() / ".gemini" / "jetski"),
+                )
+            )
             / "autoda_skill_invocations.jsonl"
         )
         local_ok = upsert_jsonl_record(local_fallback, record)

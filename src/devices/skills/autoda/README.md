@@ -22,14 +22,16 @@ and write a thin `SKILL.md`.
 
 ```text
 autoda/
-  README.md                     This file: family layout and shared conventions.
-  references/<role>.md          One specification per subagent role.
-  scripts/register_subagents.py Role prompts + per-workflow membership/addenda.
-  scripts/audit_session.py      Deterministic gate checks (--workflow fix|recon).
-  scripts/audit_session_test.py Unit tests for the auditor.
-  scripts/log_invocation.py     Invocation telemetry (--workflow fix|recon).
-autoda-fix/SKILL.md             Fix entry point.
-autoda-recon/SKILL.md           Recon entry point.
+  README.md                          This file: family layout and shared conventions.
+  references/<role>.md               One specification per subagent role.
+  scripts/register_subagents.py      Role prompts + per-workflow overrides/addenda.
+  scripts/register_subagents_test.py Unit tests for the subagent registry.
+  scripts/audit_session.py           Deterministic gate checks (--workflow fix|recon).
+  scripts/audit_session_test.py      Unit tests for the auditor.
+  scripts/log_invocation.py          Invocation telemetry (--workflow fix|recon).
+  scripts/log_invocation_test.py     Unit tests for the telemetry logger.
+autoda-fix/SKILL.md                  Fix entry point.
+autoda-recon/SKILL.md                Recon entry point.
 ```
 
 In entry-point documents, `<path_to_autoda_core>` means this directory
@@ -46,21 +48,26 @@ python3 <path_to_autoda_core>/scripts/register_subagents.py --workflow recon
 # Recon gates: static, verified.
 python3 <path_to_autoda_core>/scripts/audit_session.py \
   --workflow recon --gate static \
-  --spec <artifact_dir>/recon_spec.md --devlog <artifact_dir>/recon_devlog.md
+  --spec <artifact_dir>/recon_spec.md --devlog <artifact_dir>/recon_devlog.md \
+  --repo-root <checkout_root>
 
 # Invocation telemetry (prints the resolved record; writes only when
-# Fuchsia metrics collection is enabled).
+# Fuchsia metrics collection is enabled). Pass --spec/--devlog when
+# campaign.json uses a custom output.artifact_dir.
 python3 <path_to_autoda_core>/scripts/log_invocation.py --workflow recon \
   --system-id <system_id> --campaign-id <campaign_id> \
-  --conversation-id <root_conversation_id>
+  --conversation-id <root_conversation_id> \
+  --spec <artifact_dir>/recon_spec.md --devlog <artifact_dir>/recon_devlog.md
 
-# Auditor unit tests.
+# Unit tests.
+python3 <path_to_autoda_core>/scripts/register_subagents_test.py
 python3 <path_to_autoda_core>/scripts/audit_session_test.py
+python3 <path_to_autoda_core>/scripts/log_invocation_test.py
 ```
 
 `--workflow` defaults to `fix` everywhere, so existing `autoda-fix` command
-lines keep working. The auditor accepts `--spec`/`--devlog` and the older
-`--bug-spec`/`--bug-devlog` spellings.
+lines keep working. Both `audit_session.py` and `log_invocation.py` accept
+`--spec`/`--devlog` and the older `--bug-spec`/`--bug-devlog` spellings.
 
 ## Roles and Workflow Membership
 

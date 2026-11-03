@@ -53,7 +53,18 @@ to report it.
         sources in their own right for clocks, resets, power domains, pin
         control, interrupts, and compatible strings.
 
-3.  **Hard Stop and Mandatory Escalation When Source Cannot Be Found:**
+3.  **Read-Only Shell Guardrail (`autoda-recon`):**
+    *   In `autoda-recon`, `enable_write_tools: true` is granted strictly so
+        the subagent can execute read-only source discovery (`git log`,
+        `git blame`, code-search CLIs, and remote git/HTTP fetches) and cache
+        retrieved files under `<artifact_dir>/sources/`.
+    *   Modifying any file in the repository checkout, mutating git state
+        (`git add`, `git commit`, `git checkout`, `git reset`, `git stash`), or
+        editing `recon_spec.md` / `recon_devlog.md` is strictly prohibited.
+        `audit_session.py --repo-root` enforces a clean
+        `git status --porcelain`.
+
+4.  **Hard Stop and Mandatory Escalation When Source Cannot Be Found:**
     *   If the actual Linux driver source cannot be located or read with the
         tools above, **do not guess, infer, or fall back to parametric
         memory**. Halt and return `STATUS: BLOCKED_MISSING_LINUX_SOURCE` with
@@ -206,8 +217,12 @@ provenance section.
 
 Otherwise, return `STATUS: VERIFIED_FROM_SOURCE` with:
 
-1.  **Source Provenance:** Tree, `branch@commit`, file paths, and the binding
-    and devicetree node paths read in this session.
+1.  **Source Provenance:** Tree, `branch@commit`, file paths (plus cached
+    copies under `<artifact_dir>/sources/` when fetched remotely), and the
+    binding and devicetree node paths read in this session. Every row below
+    cites `path@commit:lines` and a **1-3 line verbatim anchor quote** (rather
+    than 5-15 lines as in `autoda-fix`) so a 60-claim subsystem deconstruction
+    fits cleanly within the orchestrator's line budget.
 2.  **Register Map Table:**
 
     ```markdown

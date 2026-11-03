@@ -44,6 +44,18 @@ as cited, scoped facts. The same role serves two workflows:
     *   Never open a source the campaign fence denies; list it as excluded
         instead.
 
+3.  **Read-Only Shell Guardrail (`autoda-recon`):**
+    *   In `autoda-recon`, `enable_write_tools: true` is granted strictly for
+        read-only document search/conversion CLIs and caching retrieved
+        excerpts under `<artifact_dir>/sources/`.
+    *   Modifying any file in the repository checkout, mutating git state
+        (`git add`, `git commit`, `git checkout`, `git reset`, `git stash`), or
+        editing `recon_spec.md` / `recon_devlog.md` is strictly prohibited and
+        checked via `audit_session.py --repo-root`.
+    *   Document and URI locators (`doc:<id>`, `drive:<id>`, `https://...`,
+        section/table/page anchors) must still be paired with a `-- "..."`
+        verbatim quote from the document.
+
 ---
 
 ## Core Rule 2: Scope Before Facts (Document Revision Must Match the Silicon)

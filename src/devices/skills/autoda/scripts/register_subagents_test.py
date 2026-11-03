@@ -30,6 +30,10 @@ class RegistryTest(unittest.TestCase):
                 self.assertIn(
                     role, register_subagents.ROLES, f"{workflow}/{role}"
                 )
+            for role in spec.get("overrides", {}):
+                self.assertIn(
+                    role, spec["roles"], f"{workflow} override {role}"
+                )
             for role in spec["addenda"]:
                 self.assertIn(
                     role, spec["roles"], f"{workflow} addendum {role}"
@@ -72,6 +76,36 @@ class RegistryTest(unittest.TestCase):
         prober = register_subagents.ROLES["hardware-prober"]["system_prompt"]
         for token in ("in-situ", "proxy", "direct", "state_origin", "liveness"):
             self.assertIn(token, prober, token)
+
+    def test_recon_read_roles_enable_guarded_shell_access(self) -> None:
+        recon = register_subagents.subagents_for("recon")
+        for role in (
+            "linux-driver-expert",
+            "datasheet-researcher",
+            "session-auditor",
+        ):
+            self.assertTrue(
+                recon[role]["enable_write_tools"],
+                f"recon/{role} must enable shell access",
+            )
+            self.assertIn(
+                "git status --porcelain",
+                recon[role]["system_prompt"],
+                f"recon/{role} must enforce clean checkout guardrail",
+            )
+        self.assertFalse(recon["adversarial-reviewer"]["enable_write_tools"])
+        fix = register_subagents.subagents_for("fix")
+        self.assertTrue(fix["session-auditor"]["enable_write_tools"])
+        self.assertFalse(fix["linux-driver-expert"]["enable_write_tools"])
+        self.assertFalse(fix["datasheet-researcher"]["enable_write_tools"])
+
+    def test_recon_quote_budget_guidance(self) -> None:
+        recon_lde = register_subagents.subagents_for("recon")[
+            "linux-driver-expert"
+        ]["system_prompt"]
+        self.assertIn("1-3", recon_lde)
+        self.assertIn("<artifact_dir>/sources/", recon_lde)
+        self.assertIn("5-15 lines in `autoda-fix`", recon_lde)
 
     def test_unknown_workflow_rejected(self) -> None:
         with self.assertRaises(KeyError):

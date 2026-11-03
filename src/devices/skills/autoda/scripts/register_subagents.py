@@ -263,8 +263,13 @@ ROLES: Dict[str, Dict[str, Any]] = {
             " upstream is a fallback for product hardware; (d) the devicetree"
             " binding and the board node that instantiates the block.\n3."
             " Every claim MUST cite the exact source path/URL read in this"
-            " session, the exact function name and line numbers, and a 5-15"
-            " line verbatim code quote copied from that file.\n4. If you"
+            " session, the exact function name and line numbers, and a"
+            " verbatim code quote copied from that file (5-15 lines in"
+            " `autoda-fix`; 1-3 verbatim anchor lines plus"
+            " `path@commit:lines` in `autoda-recon`, backed by cached source"
+            " files under `<artifact_dir>/sources/` when fetched remotely so"
+            " multi-dozen-claim subsystem reports stay within the hub's line"
+            " budget).\n4. If you"
             " cannot locate or read the actual Linux driver source file via"
             " tools, DO NOT GUESS. Immediately halt and return `STATUS:"
             " BLOCKED_MISSING_LINUX_SOURCE` so the orchestrator can ask the"
@@ -310,8 +315,9 @@ ROLES: Dict[str, Dict[str, Any]] = {
             " never-touch ranges flagged). Return `STATUS:"
             " VERIFIED_FROM_SOURCE` with provenance, a register map table,"
             " numbered sequences, ordered dependencies, quirk rows, probe"
-            " hypotheses, and open questions, every row carrying applies-to"
-            " and citation."
+            " hypotheses, and open questions, every row carrying applies-to,"
+            " `path@commit:lines` (referencing `<artifact_dir>/sources/` when"
+            " cached), and a 1-3 line verbatim anchor quote."
         ),
         "enable_write_tools": False,
         "enable_subagent_tools": False,
@@ -417,9 +423,15 @@ ROLES: Dict[str, Dict[str, Any]] = {
             " primitive sweep), Axis 2 (end-to-end state/callback continuity),"
             " and Axis 3 (cross-layer lifecycle & diagnostic litmus test)."
             " Return `AUDIT_STATUS: PASS` or `AUDIT_STATUS: VIOLATION_FOUND`"
-            " with numbered corrective actions."
+            " with numbered corrective actions.\n\nREAD-ONLY SHELL GUARDRAIL:"
+            " Shell access (`enable_write_tools: true`) is granted strictly"
+            " to execute `scripts/audit_session.py` and read-only git"
+            " inspection (`git status --porcelain`, `git diff`, `git show`,"
+            " `git log`). You are strictly forbidden from modifying any"
+            " repository file, mutating git state, or editing session"
+            " artifacts."
         ),
-        "enable_write_tools": False,
+        "enable_write_tools": True,
         "enable_subagent_tools": False,
         "enable_mcp_tools": True,
     },
@@ -470,12 +482,14 @@ ROLES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Per-workflow role membership and prompt addenda. Every registered role's
-# system prompt ends with an `ACTIVE WORKFLOW` banner naming the entry point,
-# so roles whose shared prompt carries both a FIX WORKFLOW and a RECON
-# WORKFLOW section know which one applies. An addendum, when present, is
-# appended after the banner for roles that need extra workflow-specific
-# instructions.
+# Per-workflow role membership, config overrides, and prompt addenda. Every
+# registered role's system prompt ends with an `ACTIVE WORKFLOW` banner naming
+# the entry point, so roles whose shared prompt carries both a FIX WORKFLOW and
+# a RECON WORKFLOW section know which one applies. Optional `overrides` adjust
+# tool permissions per workflow (for example enabling read-only shell access in
+# recon while `audit_session.py --repo-root` enforces a clean checkout). An
+# addendum, when present, is appended after the banner for roles that need
+# extra workflow-specific instructions.
 WORKFLOWS: Dict[str, Dict[str, Any]] = {
     "fix": {
         "skill": "autoda-fix",
@@ -488,6 +502,7 @@ WORKFLOWS: Dict[str, Dict[str, Any]] = {
             "session-auditor",
             "adversarial-reviewer",
         ],
+        "overrides": {},
         "addenda": {},
     },
     "recon": {
@@ -499,19 +514,54 @@ WORKFLOWS: Dict[str, Dict[str, Any]] = {
             "session-auditor",
             "adversarial-reviewer",
         ],
+        "overrides": {
+            "linux-driver-expert": {"enable_write_tools": True},
+            "datasheet-researcher": {"enable_write_tools": True},
+            "session-auditor": {"enable_write_tools": True},
+        },
         "addenda": {
+            "linux-driver-expert": (
+                "READ-ONLY SHELL GUARDRAIL: Shell access (`enable_write_tools:"
+                " true`) is granted strictly for read-only source discovery"
+                " (`git log`, `git blame`, code-search CLIs, and remote"
+                " git/HTTP fetches) and caching retrieved files under"
+                " `<artifact_dir>/sources/`. You are strictly forbidden from"
+                " modifying any file in the repository checkout, mutating git"
+                " state (`git add`, `git commit`, `git checkout`, `git reset`,"
+                " `git stash`), or editing `recon_spec.md` /"
+                " `recon_devlog.md`. `audit_session.py --repo-root` enforces a"
+                " clean `git status --porcelain`."
+            ),
+            "datasheet-researcher": (
+                "READ-ONLY SHELL GUARDRAIL: Shell access (`enable_write_tools:"
+                " true`) is granted strictly for read-only document"
+                " search/conversion CLIs and caching retrieved excerpts under"
+                " `<artifact_dir>/sources/`. You are strictly forbidden from"
+                " modifying any file in the repository checkout, mutating git"
+                " state (`git add`, `git commit`, `git checkout`, `git reset`,"
+                " `git stash`), or editing `recon_spec.md` /"
+                " `recon_devlog.md`. `audit_session.py --repo-root` enforces a"
+                " clean `git status --porcelain`."
+            ),
             "session-auditor": (
                 "Audit `recon_spec.md` and `recon_devlog.md` with"
-                " `audit_session.py --workflow recon`. Gate `static`: every"
-                " claim carries a confidence tier, a status, an applies-to"
-                " scope, and a verbatim-cited source; the Linux and datasheet"
-                " status markers are recorded; the contradiction ledger and"
-                " the gaps section are complete; no simulated or synthetic"
-                " values appear anywhere. Gate `verified`: every `[VERIFIED]`"
-                " claim cites an evidence manifest hash, `boot_id`, and audit"
-                " sequence range that also appear in `recon_devlog.md`, and"
-                " no claim was promoted to `[VERIFIED]` from documentation"
-                " or source reading alone."
+                " `audit_session.py --workflow recon` (passing `--repo-root"
+                " <checkout_root>` when a repository checkout is present so"
+                " `git status --porcelain` is verified clean). Gate `static`:"
+                " frontmatter `claims_total` and `claims_contradicted` match"
+                " the parsed claims under `## 3. Claims`; every claim carries"
+                " a confidence tier, a status, a concrete non-placeholder"
+                " `Applies-to:` scope, and a `Source:` anchor with a `--"
+                ' "..."` verbatim quote (1-3 anchor lines in recon); the'
+                " Linux and datasheet status markers are recorded; the"
+                " contradiction ledger and the gaps section are complete; no"
+                " simulated or synthetic values appear anywhere; and read-only"
+                " subagents left `git status --porcelain` clean. Gate"
+                " `verified`: every `[VERIFIED]` claim cites an evidence"
+                " manifest hash, `boot_id`, and audit sequence range that"
+                " also appear in `recon_devlog.md`, frontmatter"
+                " `claims_verified` matches, and no claim was promoted to"
+                " `[VERIFIED]` from documentation or source reading alone."
             ),
             "adversarial-reviewer": (
                 "There is no patch to review. Attempt to falsify the"
@@ -534,9 +584,12 @@ def subagents_for(workflow: str) -> Dict[str, Dict[str, Any]]:
             f" {sorted(WORKFLOWS)}"
         )
     spec = WORKFLOWS[workflow]
+    overrides = spec.get("overrides", {})
     merged: Dict[str, Dict[str, Any]] = {}
     for role in spec["roles"]:
         config = dict(ROLES[role])
+        if role in overrides:
+            config.update(overrides[role])
         banner = (
             f"\n\nACTIVE WORKFLOW: {spec['skill']} ({workflow}). Where this"
             " prompt distinguishes workflows, follow the section for this"

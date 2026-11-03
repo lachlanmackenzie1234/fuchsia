@@ -84,8 +84,13 @@ itself when a role exists for that.
     and define any missing roles from `register_subagents.py --workflow recon`.
     The recon workflow registers `linux-driver-expert`, `datasheet-researcher`,
     `hardware-prober`, `session-auditor`, and `adversarial-reviewer`, each with
-    a recon addendum appended to its shared prompt. Role specifications are
-    under `<path_to_autoda_core>/references/`.
+    a recon addendum appended to its shared prompt. In recon mode,
+    `linux-driver-expert`, `datasheet-researcher`, and `session-auditor` set
+    `enable_write_tools: true` strictly for read-only search/fetch CLIs, `git
+    log` / `git blame`, caching retrieved files under `<artifact_dir>/sources/`,
+    and running `audit_session.py`; repository checkout mutations are prohibited
+    and checked via `--repo-root`. Role specifications are under
+    `<path_to_autoda_core>/references/`.
 2.  **Single-Agent Progressive Mode:** If subagent tools are unavailable,
     execute each phase directly while adopting the role constraints, run the
     auditor at both gates, and maintain both artifacts.
@@ -195,10 +200,12 @@ header line; the auditor parses the fields below it.
 * **Status:** `[UNVERIFIED]`, `[VERIFIED]`, `[CONTRADICTED]`. Only
   `[HW_VERIFIED]` claims may be `[VERIFIED]`, and only with an `Evidence:` line
   naming a `sha256:` manifest hash and a `boot_id`.
-* **Applies-to:** Never empty, `TBD`, or `unknown`. A fact whose scope cannot be
-  established is recorded under `## 6. Gaps & Blocked Sources`, not as a claim.
-* **Source:** A path with commit and line range, a document section or page, a
-  bug comment, a URL, or an evidence record, followed by a verbatim quote.
+* **Applies-to:** Never empty or a placeholder (`TBD`, `unknown`, `SCOPE`,
+  `<scope>`, `same`). A fact whose scope cannot be established is recorded under
+  `## 6. Gaps & Blocked Sources`, not as a claim.
+* **Source:** A path with commit and line range, a document or URI locator, a
+  bug comment, a URL, or an evidence record, followed by `-- "<verbatim quote>"`
+  (1-3 anchor lines for code quotes in recon).
 * **Evidence:** Required for `[VERIFIED]`. Include `state_origin`
   (`firmware-configured` or `post-reset`) for every observed value.
 
@@ -258,7 +265,9 @@ budget, recovery method, and the enablement-patch policy.
       --workflow recon \
       --system-id "<system_id>" \
       --campaign-id "<campaign_id_or_empty>" \
-      --conversation-id "<root_orchestrator_conversation_id>"
+      --conversation-id "<root_orchestrator_conversation_id>" \
+      --spec "<artifact_dir>/recon_spec.md" \
+      --devlog "<artifact_dir>/recon_devlog.md"
     ```
 
 2.  Create `recon_spec.md` and `recon_devlog.md` with the frontmatter block
@@ -315,9 +324,11 @@ Delegate, in parallel where possible, and normalize every report into claims.
     what the bootloader or firmware is already known to configure (boot logs,
     firmware source if available). This section gates Phase 3.
 5.  **Normalize into claims.** One fact per claim with type, tier, status,
-    applies-to, source with verbatim quote, and reasoning when non-obvious.
-    Prefer fewer, load-bearing claims over transcription: extract what a driver
-    needs, not the whole document.
+    applies-to, source with `-- "..."` verbatim quote, and reasoning when
+    non-obvious. Prefer fewer, load-bearing claims over transcription: extract
+    what a driver needs, not the whole document. Keep frontmatter
+    `claims_total`, `claims_verified`, and `claims_contradicted` synchronized
+    with `## 3. Claims`.
 6.  **Reconcile (`## 5`).** Compare the reports. Where one source names an
     invariant, value, or ordering that another omits or contradicts, log it, run
     a targeted follow-up query against the sources, and record the resolution
@@ -335,7 +346,8 @@ Delegate, in parallel where possible, and normalize every report into claims.
     python3 <path_to_autoda_core>/scripts/audit_session.py \
       --workflow recon --gate static \
       --spec "<artifact_dir>/recon_spec.md" \
-      --devlog "<artifact_dir>/recon_devlog.md"
+      --devlog "<artifact_dir>/recon_devlog.md" \
+      --repo-root "<checkout_root>"
     ```
 
 2.  Invoke `session-auditor` for the `static` gate (see
@@ -395,7 +407,8 @@ contradiction in `## 5` depends on it.
     python3 <path_to_autoda_core>/scripts/audit_session.py \
       --workflow recon --gate verified \
       --spec "<artifact_dir>/recon_spec.md" \
-      --devlog "<artifact_dir>/recon_devlog.md"
+      --devlog "<artifact_dir>/recon_devlog.md" \
+      --repo-root "<checkout_root>"
     ```
 
     and invoke `session-auditor` for the `verified` gate.
@@ -418,6 +431,8 @@ contradiction in `## 5` depends on it.
       --system-id "<system_id>" \
       --campaign-id "<campaign_id_or_empty>" \
       --conversation-id "<root_orchestrator_conversation_id>" \
+      --spec "<artifact_dir>/recon_spec.md" \
+      --devlog "<artifact_dir>/recon_devlog.md" \
       --hardware-verification "<enabled | disabled>" \
       --outcome "<STATIC_COMPLETE | HARDWARE_VERIFIED | BLOCKED>"
     ```

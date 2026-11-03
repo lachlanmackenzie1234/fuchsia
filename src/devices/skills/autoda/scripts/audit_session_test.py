@@ -9,6 +9,7 @@ Run with:
 """
 
 import pathlib
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -67,7 +68,10 @@ _RECON_SPEC = textwrap.dedent(
     system_id: "{system_id}"
     target_scope: "example-soc / example-timer v2 / silicon B0 / dev-board"
     hardware_verification: "{hw}"
-    outcome: "IN_PROGRESS"
+    outcome: "{outcome}"
+    claims_total: {claims_total}
+    claims_verified: {claims_verified}
+    claims_contradicted: {claims_contradicted}
     ---
     # Recon spec
 
@@ -186,13 +190,36 @@ class FixWorkflowTest(_ArtifactCase):
 
 class ReconWorkflowTest(_ArtifactCase):
     def _pair(
-        self, claims, hw="disabled", evidence="Not yet run.", hardware=""
+        self,
+        claims,
+        hw="disabled",
+        evidence="Not yet run.",
+        hardware="",
+        outcome="IN_PROGRESS",
+        claims_total=None,
+        claims_verified=None,
+        claims_contradicted=None,
     ):
+        parsed = audit_session.parse_claims("## 3. Claims\n" + claims)
+        if claims_total is None:
+            claims_total = len(parsed)
+        if claims_verified is None:
+            claims_verified = sum(
+                1 for c in parsed if c["status"] == "VERIFIED"
+            )
+        if claims_contradicted is None:
+            claims_contradicted = sum(
+                1 for c in parsed if c["status"] == "CONTRADICTED"
+            )
         spec = self.write(
             "recon_spec.md",
             _RECON_SPEC.format(
                 system_id="example-timer-0",
                 hw=hw,
+                outcome=outcome,
+                claims_total=claims_total,
+                claims_verified=claims_verified,
+                claims_contradicted=claims_contradicted,
                 claims=claims,
                 evidence=evidence,
             ),
@@ -314,6 +341,159 @@ class ReconWorkflowTest(_ArtifactCase):
         )
         self.assertIn("VERIFIED_HW_DISABLED", codes)
         self.assertIn("VERIFIED_NO_VERIFIED_CLAIMS", codes)
+
+    def test_claim_count_mismatch_and_invalid_count(self) -> None:
+        spec, devlog = self._pair(_CLAIM_OK, claims_total=5)
+        codes = self.codes(
+            audit_session.run_gate("recon", "static", spec, devlog, True)
+        )
+        self.assertIn("STATIC_CLAIM_COUNT_MISMATCH", codes)
+
+        contradicted = _CLAIM_OK.replace("`[UNVERIFIED]`", "`[CONTRADICTED]`")
+        spec2, devlog2 = self._pair(contradicted, claims_contradicted=0)
+        codes2 = self.codes(
+            audit_session.run_gate("recon", "static", spec2, devlog2, True)
+        )
+        self.assertIn("STATIC_CLAIM_COUNT_MISMATCH", codes2)
+
+        spec3, devlog3 = self._pair(_CLAIM_OK, claims_total="pending")
+        codes3 = self.codes(
+            audit_session.run_gate("recon", "static", spec3, devlog3, True)
+        )
+        self.assertIn("STATIC_INVALID_CLAIM_COUNT", codes3)
+
+    def test_document_and_uri_anchors_require_verbatim_quote(self) -> None:
+        doc_claim = textwrap.dedent(
+            """\
+            - **C1** `[DATASHEET]` `[UNVERIFIED]` -- CTL (0x00) resets to 0.
+              - **Type:** register
+              - **Applies-to:** example-soc / example-timer v2 / silicon B0
+              - **Source:** doc:1lI_b0_abc1234567890abcdefg §4.2 -- "Reset value: 0x0000_0000"
+              - **Reasoning:** Documented reset state.
+            """
+        )
+        spec, devlog = self._pair(doc_claim)
+        self.assertEqual(
+            [], audit_session.run_gate("recon", "static", spec, devlog, True)
+        )
+
+        # Parenthetical title without `-- "..."` verbatim quote must fail.
+        no_quote = doc_claim.replace(
+            '§4.2 -- "Reset value: 0x0000_0000"',
+            '("Timer Working Group Notes")',
+        )
+        spec_nq, devlog_nq = self._pair(no_quote)
+        codes_nq = self.codes(
+            audit_session.run_gate("recon", "static", spec_nq, devlog_nq, True)
+        )
+        self.assertIn("STATIC_CLAIM_MISSING_QUOTE", codes_nq)
+
+        # Bare path@commit without verbatim quote must also fail.
+        bare_path = _CLAIM_OK.replace(' -- "writel(CTL_EN, base + CTL)"', "")
+        spec_bp, devlog_bp = self._pair(bare_path)
+        codes_bp = self.codes(
+            audit_session.run_gate("recon", "static", spec_bp, devlog_bp, True)
+        )
+        self.assertIn("STATIC_CLAIM_MISSING_QUOTE", codes_bp)
+
+        # Slash inside quoted string must not masquerade as an anchor.
+        fake_anchor = _CLAIM_OK.replace(
+            "vendor-kernel drivers/clocksource/example-timer.c@abc1234:120-131"
+            ' -- "writel(CTL_EN, base + CTL)"',
+            'the driver -- "foo/bar writel(CTL_EN, base + CTL)"',
+        )
+        spec_fa, devlog_fa = self._pair(fake_anchor)
+        codes_fa = self.codes(
+            audit_session.run_gate("recon", "static", spec_fa, devlog_fa, True)
+        )
+        self.assertIn("STATIC_CLAIM_MISSING_SOURCE", codes_fa)
+
+    def test_placeholder_scope_tokens_rejected(self) -> None:
+        for bad_scope in (
+            "SCOPE",
+            "<scope>",
+            "target_scope",
+            "same",
+            "same as above",
+        ):
+            bad_claim = _CLAIM_OK.replace(
+                "example-soc / example-timer v2 / silicon B0", bad_scope
+            )
+            spec, devlog = self._pair(bad_claim)
+            codes = self.codes(
+                audit_session.run_gate("recon", "static", spec, devlog, True)
+            )
+            self.assertIn("STATIC_CLAIM_MISSING_SCOPE", codes, bad_scope)
+
+    def test_repo_root_cleanliness_check(self) -> None:
+        repo = self.root / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "-C", str(repo), "init"], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "config",
+                "user.email",
+                "test@example.com",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "Test"],
+            check=True,
+        )
+        tracked = repo / "driver.c"
+        tracked.write_text("int ok = 1;\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "driver.c"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "init"], check=True
+        )
+
+        spec, devlog = self._pair(_CLAIM_OK)
+        self.assertEqual(
+            [],
+            audit_session.run_gate(
+                "recon", "static", spec, devlog, True, repo_root=repo
+            ),
+        )
+
+        # Stray file created by a read-only subagent triggers STATIC_REPO_DIRTY.
+        (repo / "stray.txt").write_text("oops\n", encoding="utf-8")
+        codes = self.codes(
+            audit_session.run_gate(
+                "recon", "static", spec, devlog, True, repo_root=repo
+            )
+        )
+        self.assertIn("STATIC_REPO_DIRTY", codes)
+
+        # Verified gate rejects unlogged dirty state, but allows logged WIP enablement.
+        v_spec, v_devlog = self._pair(
+            _CLAIM_OK + _CLAIM_VERIFIED,
+            hw="enabled",
+            evidence="run-001 verified STA readback.",
+            hardware=_DEVLOG_HW,
+        )
+        v_codes = self.codes(
+            audit_session.run_gate(
+                "recon", "verified", v_spec, v_devlog, True, repo_root=repo
+            )
+        )
+        self.assertIn("VERIFIED_REPO_DIRTY", v_codes)
+
+        v_spec2, v_devlog2 = self._pair(
+            _CLAIM_OK + _CLAIM_VERIFIED,
+            hw="enabled",
+            evidence="run-001 verified STA readback.",
+            hardware=_DEVLOG_HW + "\nWIP devicetree enablement patch applied.",
+        )
+        self.assertEqual(
+            [],
+            audit_session.run_gate(
+                "recon", "verified", v_spec2, v_devlog2, True, repo_root=repo
+            ),
+        )
 
 
 class DispatchTest(unittest.TestCase):

@@ -18,10 +18,16 @@ protocol violation.
 
 ## Core Audit Checklist (Gates 1 & 2)
 
+> **Read-Only Shell Guardrail:** `session-auditor` is registered with
+> `enable_write_tools: true` strictly so it can execute `audit_session.py` and
+> read-only git inspection (`git status --porcelain`, `git diff`, `git show`,
+> `git log`). Modifying repository files, mutating git state, or editing
+> session artifacts is strictly prohibited.
+
 When invoked at Gate 1 or Gate 2, run `../scripts/audit_session.py --workflow
 fix` (in the `autoda-recon` workflow: `--workflow recon` with the `static` or
-`verified` gate, auditing `recon_spec.md` / `recon_devlog.md` per the
-workflow addendum in `register_subagents.py`) and
+`verified` gate and `--repo-root <checkout_root>`, auditing `recon_spec.md` /
+`recon_devlog.md` per the workflow addendum in `register_subagents.py`) and
 independently inspect `bug_spec.md`, `bug_devlog.md`, and (at Gate 2) `git diff`
 / `git show HEAD` against the following five non-negotiable invariants:
 
@@ -50,12 +56,20 @@ independently inspect `bug_spec.md`, `bug_devlog.md`, and (at Gate 2) `git diff`
 
 3. **Zero Parametric Memory in `linux-driver-expert` and `datasheet-researcher`:**
    * Verify that every claim attributed to `linux-driver-expert` cites an exact
-     Linux source path/URL, function/line range, and verbatim 5-15 line code
-     quote (or that the session paused on `STATUS: BLOCKED_MISSING_LINUX_SOURCE`
-     until the user supplied a link or confirmed no Linux driver exists).
+     Linux source path/URL, function/line range, and verbatim code quote (5-15
+     lines in `autoda-fix`; 1-3 anchor lines plus `path@commit:lines` in
+     `autoda-recon`), or that the session paused on
+     `STATUS: BLOCKED_MISSING_LINUX_SOURCE` until the user supplied a link or
+     confirmed no Linux driver exists.
    * Verify that every claim attributed to `datasheet-researcher` either cites
-     an exact document path/URL, section/page, and verbatim quote, or is marked
-     `STATUS: UNAVAILABLE_NO_DATASHEET_FOUND` (`N/A (Datasheet Unavailable)`).
+     an exact document path/URL or URI locator, section/page, and `-- "..."`
+     verbatim quote, or is marked `STATUS: UNAVAILABLE_NO_DATASHEET_FOUND`
+     (`N/A (Datasheet Unavailable)`).
+   * In `autoda-recon`, confirm frontmatter `claims_total`,
+     `claims_contradicted`, and `claims_verified` match the parsed claims under
+     `## 3. Claims`, no claim uses placeholder `Applies-to:` tokens (`SCOPE`,
+     `<scope>`, `TBD`), and `git status --porcelain` is clean after static
+     reconnaissance.
    * Flag any uncited Linux or datasheet claim as a blocking violation.
 
 4. **Suggested-Fix Quarantine & 3-Axis Invariant Trace (`## 3c` in `bug_spec.md`):**

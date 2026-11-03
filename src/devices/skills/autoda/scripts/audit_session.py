@@ -43,20 +43,25 @@ Recon workflow (`recon_spec.md` / `recon_devlog.md`):
 Static gate (`--gate static`, end of static analysis):
   1. Valid YAML frontmatter in both artifacts with a shared `system_id`,
      a non-empty `target_scope`, `hardware_verification` of "enabled" or
-     "disabled", and an `outcome` from the allowed set.
+     "disabled", an `outcome` from the allowed set, and `claims_total` /
+     `claims_contradicted` (plus `claims_verified` when present) matching the
+     parsed claims under `## 3. Claims`.
   2. Presence of the seven required `recon_spec.md` sections.
   3. Every claim block (`- **C<n>** ...`) under `## 3. Claims` carries a
-     confidence tier, a status, a concrete `Applies-to:` scope, and a
-     `Source:` anchor. A claim may only be `[VERIFIED]` with the
-     `[HW_VERIFIED]` tier and an `Evidence:` line naming a `sha256:` manifest
-     hash and a `boot_id`.
+     confidence tier, a status, a concrete non-placeholder `Applies-to:` scope,
+     and a `Source:` anchor (code path@commit:lines, bug comment, URL, or
+     document/URI locator) followed by a `-- "..."` verbatim quote. A claim may
+     only be `[VERIFIED]` with the `[HW_VERIFIED]` tier and an `Evidence:` line
+     naming a `sha256:` manifest hash and a `boot_id`.
   4. Status markers for the reference lookups are recorded
      (`VERIFIED_FROM_SOURCE` or `BLOCKED_MISSING_LINUX_SOURCE`, and
      `VERIFIED_FROM_DATASHEET` or `UNAVAILABLE_NO_DATASHEET_FOUND`).
   5. No simulated or synthetic values in the claims or evidence sections.
+  6. When `--repo-root` is provided, `git status --porcelain` is clean.
 
 Verified gate (`--gate verified`, after hardware verification):
-  1. All static gate checks.
+  1. All static gate checks (at `--repo-root`, dirty state is allowed only when
+     `recon_devlog.md` records a work-in-progress enablement patch).
   2. `hardware_verification` is "enabled" and at least one claim is
      `[VERIFIED]`.
   3. `recon_devlog.md` records driver-lab evidence (`manifest.json`,
@@ -72,7 +77,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _ALLOWED_MODES = {"Mode A", "Mode B", "Mode C"}
 _ALLOWED_ADVERSARIAL = {"enabled", "disabled"}
@@ -150,12 +155,29 @@ _REQUIRED_RECON_SECTIONS = [
 _CLAIM_HEADER_RE = re.compile(r"(?m)^-\s+\*\*C(\d+)\*\*(.*)$")
 _CLAIM_FIELD_RE = r"(?im)^\s*-\s*\*\*{field}:\*\*\s*(.*)$"
 _PLACEHOLDER_SCOPE_RE = re.compile(
-    r"(?i)^\s*(tbd|todo|unknown|n/?a|pending|\?+|-+)?\s*$"
+    r"(?i)^\s*("
+    r"tbd|todo|unknown|unspecified|none|null|n/?a|pending|"
+    r"scope|target[_ -]?scope|applies[_ -]?to|default|all|any|"
+    r"same(?:\s+as\s+above)?|see\s+above|ditto|"
+    r"<[^>\n]+>|\{[^}\n]+\}|\[[^\]\n]+\]|\?+|-+"
+    r")?\s*$"
 )
+_QUOTED_SPAN_RE = re.compile(r'"[^"\n]*"|\u201c[^\u201d\n]*\u201d|`[^`\n]*`')
 _SOURCE_ANCHOR_RE = re.compile(
-    r"(@|/|https?:|\u00a7|\bpage\b|\bp\.|\bb/|\btable\b|\bevidence\b|"
-    r"\brun[-_]?id\b)",
+    r"(@|/"
+    r"|(?:https?|file)://\S+"
+    r"|\b(?:doc|gdoc|drive|urn|git|cs|cl|bug):[A-Za-z0-9_./-]+"
+    r"|\u00a7"
+    r"|\bb/"
+    r"|\b(?:p|sec|ch|tbl|fig)\."
+    r"|\b(?:page|section|chapter|clause|table|figure|doc(?:ument)?|trm|"
+    r"datasheet|errata|hpg|rev(?:ision)?|evidence|run[-_]?id)\b"
+    r"|\b[A-Za-z0-9_-]{25,}\b)",
     re.I,
+)
+_QUOTE_DELIMITER_RE = re.compile(
+    r"(?:--|\u2014|\u2013)\s*[^\n]*?"
+    r'(?:"[^"\n]+"|\u201c[^\u201d\n]+\u201d|`[^`\n]+`|\'[^\'\n]+\')'
 )
 _SYNTHETIC_RE = re.compile(
     r"(?i)\b(simulated|synthetic|mock(?:ed)?|fake|placeholder)\s+"
@@ -220,6 +242,39 @@ def check_live_target() -> Tuple[bool, str]:
         return True, "Live target visible via `ffx target list`"
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"Unable to run `ffx target list`: {exc}"
+
+
+def check_clean_repo(repo_root: Path) -> Tuple[bool, str]:
+    """Checks `git status --porcelain` under `repo_root` is empty."""
+    if not repo_root.is_dir():
+        return False, f"`{repo_root}` is not a directory"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            return (
+                False,
+                f"`git status --porcelain` failed ({proc.returncode}): {err}",
+            )
+        dirty = [
+            line.strip()
+            for line in (proc.stdout or "").splitlines()
+            if line.strip()
+        ]
+        if dirty:
+            preview = ", ".join(dirty[:5])
+            if len(dirty) > 5:
+                preview += f", ... (+{len(dirty) - 5} more)"
+            return False, preview
+        return True, ""
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"Unable to run `git status --porcelain`: {exc}"
 
 
 def _read_text(path: Path) -> str:
@@ -442,9 +497,48 @@ def parse_claims(spec_text: str) -> List[Dict[str, str]]:
     return claims
 
 
+def _audit_recon_claim_counts(
+    fm: Dict[str, str],
+    claims: List[Dict[str, str]],
+    artifact_label: str,
+    require_verified_count: bool = False,
+) -> List[str]:
+    """Cross-checks frontmatter claim count fields against parsed claims."""
+    violations: List[str] = []
+    actual_counts = {
+        "claims_total": len(claims),
+        "claims_contradicted": sum(
+            1 for c in claims if c["status"] == "CONTRADICTED"
+        ),
+        "claims_verified": sum(1 for c in claims if c["status"] == "VERIFIED"),
+    }
+    required_keys = {"claims_total", "claims_contradicted"}
+    if require_verified_count or actual_counts["claims_verified"] > 0:
+        required_keys.add("claims_verified")
+
+    for key, actual in actual_counts.items():
+        if key not in fm and key not in required_keys:
+            continue
+        raw = fm.get(key, "").strip()
+        if not raw or not re.fullmatch(r"\d+", raw):
+            violations.append(
+                f"[STATIC_INVALID_CLAIM_COUNT] `{artifact_label}` frontmatter "
+                f"`{key}` must be a non-negative integer matching parsed "
+                f"claims ({actual}), got: {raw!r}."
+            )
+        elif int(raw) != actual:
+            violations.append(
+                f"[STATIC_CLAIM_COUNT_MISMATCH] `{artifact_label}` frontmatter "
+                f"`{key}` is {int(raw)}, but `## 3. Claims` contains {actual} "
+                "matching claim(s)."
+            )
+    return violations
+
+
 def audit_recon_static(
     spec_path: Path,
     devlog_path: Path,
+    repo_root: Optional[Path] = None,
 ) -> List[str]:
     """Runs the recon `static` gate (end of static analysis)."""
     violations: List[str] = []
@@ -458,6 +552,7 @@ def audit_recon_static(
     spec_text = spec_path.read_text(encoding="utf-8", errors="replace")
     devlog_text = _read_text(devlog_path)
     fm = parse_frontmatter(spec_text)
+    devlog_fm: Dict[str, str] = {}
     if not fm:
         violations.append(
             "[STATIC_MISSING_FRONTMATTER] `recon_spec.md` is missing YAML "
@@ -527,6 +622,22 @@ def audit_recon_static(
             "[STATIC_NO_CLAIMS] `## 3. Claims` contains no `- **C<n>**` "
             "claim blocks."
         )
+    if fm:
+        violations.extend(
+            _audit_recon_claim_counts(fm, claims, "recon_spec.md")
+        )
+    if (
+        devlog_fm
+        and fm.get("outcome", "") in ("STATIC_COMPLETE", "HARDWARE_VERIFIED")
+        and any(
+            k in devlog_fm
+            for k in ("claims_total", "claims_contradicted", "claims_verified")
+        )
+    ):
+        violations.extend(
+            _audit_recon_claim_counts(devlog_fm, claims, "recon_devlog.md")
+        )
+
     for claim in claims:
         cid = claim["id"]
         if not claim["tier"]:
@@ -543,15 +654,20 @@ def audit_recon_static(
             violations.append(
                 f"[STATIC_CLAIM_MISSING_SCOPE] {cid} has no concrete "
                 "`Applies-to:` scope (SoC, IP block and revision, silicon "
-                "revision). Unscoped facts are forbidden."
+                "revision). Placeholder or unscoped tokens are forbidden."
             )
-        if len(claim["source"]) < 10 or not _SOURCE_ANCHOR_RE.search(
-            claim["source"]
-        ):
+        source = claim["source"]
+        unquoted_source = _QUOTED_SPAN_RE.sub("", source)
+        if len(source) < 10 or not _SOURCE_ANCHOR_RE.search(unquoted_source):
             violations.append(
                 f"[STATIC_CLAIM_MISSING_SOURCE] {cid} has no `Source:` anchor "
-                "(path@commit:lines, document section/page, bug comment, or "
-                "URL) with a verbatim quote."
+                "(path@commit:lines, document/URI locator, section/page, bug "
+                "comment, or URL)."
+            )
+        elif not _QUOTE_DELIMITER_RE.search(source):
+            violations.append(
+                f"[STATIC_CLAIM_MISSING_QUOTE] {cid} `Source:` has an anchor "
+                'but lacks a verbatim quote after `-- "..."`.'
             )
         if claim["status"] == "VERIFIED":
             evidence = claim["evidence"]
@@ -611,6 +727,15 @@ def audit_recon_static(
                 "enter a recon spec."
             )
 
+    if repo_root is not None:
+        clean, detail = check_clean_repo(repo_root)
+        if not clean:
+            violations.append(
+                f"[STATIC_REPO_DIRTY] Repository `{repo_root}` is not clean "
+                f"after static recon ({detail}). Read-only roles must never "
+                "modify checkout files."
+            )
+
     return violations
 
 
@@ -618,6 +743,7 @@ def audit_recon_verified(
     spec_path: Path,
     devlog_path: Path,
     skip_live_target_check: bool = False,
+    repo_root: Optional[Path] = None,
 ) -> List[str]:
     """Runs the recon `verified` gate (after hardware verification)."""
     violations = audit_recon_static(spec_path, devlog_path)
@@ -677,6 +803,15 @@ def audit_recon_verified(
                 "`recon_devlog.md` has no target attachment record."
             )
 
+    if repo_root is not None:
+        clean, detail = check_clean_repo(repo_root)
+        if not clean and not re.search(r"(?i)\benablement\b", devlog_text):
+            violations.append(
+                f"[VERIFIED_REPO_DIRTY] Repository `{repo_root}` has "
+                f"unlogged modifications ({detail}); any WIP node-enablement "
+                "patch must be documented in `recon_devlog.md`."
+            )
+
     return violations
 
 
@@ -691,6 +826,7 @@ def run_gate(
     spec_path: Path,
     devlog_path: Path,
     skip_live_target_check: bool = False,
+    repo_root: Optional[Path] = None,
 ) -> List[str]:
     """Dispatches to the audit function for `workflow` / `gate`."""
     if gate not in WORKFLOW_GATES.get(workflow, []):
@@ -703,8 +839,13 @@ def run_gate(
             return audit_pre_fix(spec_path, devlog_path, skip_live_target_check)
         return audit_pre_commit(spec_path, devlog_path, skip_live_target_check)
     if gate == "static":
-        return audit_recon_static(spec_path, devlog_path)
-    return audit_recon_verified(spec_path, devlog_path, skip_live_target_check)
+        return audit_recon_static(spec_path, devlog_path, repo_root=repo_root)
+    return audit_recon_verified(
+        spec_path,
+        devlog_path,
+        skip_live_target_check=skip_live_target_check,
+        repo_root=repo_root,
+    )
 
 
 def main() -> int:
@@ -748,6 +889,14 @@ def main() -> int:
         action="store_true",
         help="Skip live `ffx target list` subprocess check (rely on artifact text).",
     )
+    parser.add_argument(
+        "--repo-root",
+        default=None,
+        help=(
+            "Optional repository root to verify clean `git status --porcelain` "
+            "during recon gates."
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -757,6 +906,7 @@ def main() -> int:
             Path(args.spec),
             Path(args.devlog),
             skip_live_target_check=args.skip_live_target_check,
+            repo_root=Path(args.repo_root) if args.repo_root else None,
         )
     except ValueError as exc:
         parser.error(str(exc))
