@@ -54,11 +54,10 @@ pub unsafe fn start_root_job_observer() {
 
 /// Initializes the `kernel/object` singletons at `LK_INIT_LEVEL_THREADING`.
 fn object_init(_level: init::LkInitLevel) {
-    Handle::init();
-
     // SAFETY: `object_init` runs once during single-threaded boot at `LK_INIT_LEVEL_THREADING`
-    // before any accesses to `EXECUTOR`.
+    // before any accesses to `HANDLE_ARENA` or `EXECUTOR`.
     unsafe {
+        Handle::init();
         Pin::static_ref(&EXECUTOR).init_pin(Executor::new()).unwrap();
     }
 }

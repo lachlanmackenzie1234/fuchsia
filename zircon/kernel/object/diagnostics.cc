@@ -23,6 +23,7 @@
 #include <object/socket_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <pretty/cpp/sizes.h>
+#include <vm/vm_object_paged.h>
 
 #include <ktl/enforce.h>
 

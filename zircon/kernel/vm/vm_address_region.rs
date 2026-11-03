@@ -455,7 +455,7 @@ impl VmAddressRegionOrMapping {
         }
     }
 
-    /// Dump debug info
+    /// Dump debug info.
     fn dump_locked(
         &self,
         region_token: &LockToken<'_, VmAspaceRegionLockClass>,
@@ -985,7 +985,8 @@ impl VmAddressRegion {
         Ok(())
     }
 
-    fn dump_locked(
+    /// Dump debug info.
+    pub fn dump_locked(
         &self,
         region_token: &LockToken<'_, VmAspaceRegionLockClass>,
         token: &LockToken<'_, VmAspaceLockClass>,
@@ -993,6 +994,8 @@ impl VmAddressRegion {
         verbose: bool,
     ) {
         self.state().canary.assert();
+        debug_assert!(self.lock_is_held());
+        debug_assert!(self.region_lock_is_held());
         for _ in 0..depth {
             kprint!("  ");
         }

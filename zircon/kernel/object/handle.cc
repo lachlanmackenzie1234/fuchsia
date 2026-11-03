@@ -6,10 +6,7 @@
 
 #include "object/handle.h"
 
-#include <kernel/ffi.h>
 #include <object/dispatcher.h>
-
-HandleTableArena gHandleTableArena;
 
 // Handles are constructed and destroyed by Rust (rust_handle_make, rust_handle_destroy), so every
 // Handle the C++ accessors in handle.h touch was laid out by the Rust `Handle` in
@@ -25,14 +22,6 @@ struct HandleLayoutCheck {
   static_assert(offsetof(Handle, rights_) == 16);
   static_assert(offsetof(Handle, base_value_) == 20);
   static_assert(offsetof(Handle, node_state_) == 24);
-
-  // Validate that all the fields we need to preserve fit within the preservation window.
-  static_assert(offsetof(Handle, handle_table_id_) + sizeof(Handle::handle_table_id_) <=
-                Handle::PreserveSize);
-  static_assert(offsetof(Handle, base_value_) + sizeof(Handle::base_value_) <=
-                Handle::PreserveSize);
-  static_assert(offsetof(Handle, dispatcher_) + sizeof(Handle::dispatcher_) <=
-                Handle::PreserveSize);
 
   // KernelHandle<Dispatcher> is passed by pointer across the FFI boundary and mirrored by the Rust
   // `KernelHandle<Dispatcher>` in handle.rs.
@@ -62,39 +51,3 @@ HandleOwner Handle::Make(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rig
 }
 
 uint32_t Handle::Count(const Dispatcher& dispatcher) { return dispatcher.current_handle_count(); }
-
-extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_handle_arena_init(const char* name, size_t max_count) {
-  return gHandleTableArena.arena().Init(name, max_count);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void* cpp_handle_arena_alloc() { return gHandleTableArena.arena().Alloc(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_handle_arena_free(void* ptr) { gHandleTableArena.arena().Free(ptr); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_handle_arena_committed(const void* ptr) {
-  return gHandleTableArena.arena().Committed(const_cast<void*>(ptr));
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uintptr_t cpp_handle_arena_confine(uintptr_t addr) {
-  return gHandleTableArena.arena().Confine(addr);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void* cpp_handle_arena_base() { return gHandleTableArena.arena().Base(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE size_t cpp_handle_arena_diagnostic_count() {
-  return gHandleTableArena.arena().DiagnosticCount();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_handle_arena_dump() { gHandleTableArena.arena().Dump(); }
-
-}  // extern "C"

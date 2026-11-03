@@ -10,12 +10,11 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
-#include <fbl/gparena.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
-#include <kernel/ffi.h>
 #include <ktl/atomic.h>
+#include <ktl/unique_ptr.h>
 #include <ktl/utility.h>
 
 class Dispatcher;
@@ -25,15 +24,6 @@ template <typename T>
 class KernelHandle;
 
 extern "C" {
-zx_status_t cpp_handle_arena_init(const char* name, size_t max_count);
-void* cpp_handle_arena_alloc();
-void cpp_handle_arena_free(void* ptr);
-bool cpp_handle_arena_committed(const void* ptr);
-uintptr_t cpp_handle_arena_confine(uintptr_t addr);
-void* cpp_handle_arena_base();
-size_t cpp_handle_arena_diagnostic_count();
-void cpp_handle_arena_dump();
-
 Handle* rust_handle_make(Dispatcher* dispatcher, zx_rights_t rights);
 void rust_handle_destroy(Handle* handle);
 }
@@ -46,8 +36,6 @@ struct HandleDestroyer {
 // HandleOwner wraps a Handle in a unique_ptr that has single
 // ownership of the Handle and deletes it whenever it falls out of scope.
 using HandleOwner = ktl::unique_ptr<Handle, HandleDestroyer>;
-
-class HandleTableArena;
 
 // A Handle is how a specific process refers to a specific Dispatcher.
 class Handle final {
@@ -78,18 +66,10 @@ class Handle final {
   ktl::atomic<zx_koid_t> handle_table_id_;
   fbl::RefPtr<Dispatcher> dispatcher_;
   const zx_rights_t rights_;
-  const uint32_t base_value_;
-
-  // Up to here the members need to be preserved when handles are free'd to the arena. The
-  // PreserveSize is an 'approximation' of how large all the previous members are; HandleLayoutCheck
-  // in handle.cc statically validates that the chosen PreserveSize is correct. Any incorrect size
-  // will result in a compilation error!
-  static constexpr size_t PreserveSize = 24;
-  friend HandleTableArena;
+  [[maybe_unused]] const uint32_t base_value_;
 
   // Validates in handle.cc that this C++ view of a Handle matches the Rust definition that
-  // actually constructs them (see handle.rs), and that the preserved members fit within
-  // PreserveSize.
+  // actually constructs them (see handle.rs).
   friend struct HandleLayoutCheck;
 
   // Use a manually declared linked list node state instead of inheriting so that the early
@@ -97,19 +77,6 @@ class Handle final {
   // be placed later.
   fbl::DoublyLinkedListNodeState<Handle*> node_state_;
 };
-
-// Owns the GPArena backing all Handles. Allocation, construction and destruction of Handles is
-// done by Rust (see handle.rs), which reaches the arena through the cpp_handle_arena_* shims.
-class HandleTableArena {
- public:
-  using HandleGPArena = fbl::GPArena<Handle::PreserveSize, sizeof(Handle)>;
-  HandleGPArena& arena() { return arena_; }
-
- private:
-  HandleGPArena arena_;
-};
-
-extern HandleTableArena gHandleTableArena;
 
 // This can't be defined directly in the HandleDestroyer struct definition
 // because Handle is an incomplete type at that point.

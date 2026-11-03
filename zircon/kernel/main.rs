@@ -73,6 +73,9 @@ pub mod crashlog;
 #[path = "lib/debuglog/debuglog.rs"]
 pub mod debuglog_rs;
 
+#[path = "lib/fbl/gparena.rs"]
+pub mod gparena;
+
 #[path = "lib/instrumentation/mod.rs"]
 pub mod instrumentation;
 

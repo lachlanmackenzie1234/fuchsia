@@ -9,10 +9,12 @@ use super::channel_dispatcher::ChannelDispatcher;
 use super::dispatcher::Dispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use crate::counters::define_kcounter;
+use crate::gparena::GPArena;
 use core::mem::MaybeUninit;
+use core::pin::Pin;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
 use fbl::{DoublyLinkedListNode, HasRefCount, Recyclable, RefPtr};
+use lazy_init::LazyInit;
 use relaxed_atomic::{RelaxedAtomicU32, RelaxedAtomicU64};
 use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, zx_handle_t, zx_koid_t, zx_rights_t, zx_status_t};
@@ -55,12 +57,11 @@ pub(crate) const HANDLE_MUST_BE_ONE_MASK: u32 = (1 << HANDLE_RESERVED_BITS) - 1;
 pub(crate) const BASE_VALUE_MUST_BE_ZERO_MASK: u32 =
     HANDLE_MUST_BE_ONE_MASK << (32 - HANDLE_RESERVED_BITS);
 
-// The leading members of `Handle` (`handle_table_id`, `dispatcher`, `rights` and `base_value`)
-// need to be preserved when handles are free'd to the arena. HANDLE_PRESERVE_SIZE is an
-// 'approximation' of how large all those members are; the layout assertions below `Handle`
-// statically validate that the chosen HANDLE_PRESERVE_SIZE is correct. Any incorrect size will
-// result in a compilation error! This must match `Handle::PreserveSize` in handle.h, which
-// parameterizes the C++ `fbl::GPArena` backing the handles.
+/// The leading members of `Handle` (`handle_table_id`, `dispatcher`, `rights` and `base_value`)
+/// need to be preserved when handles are freed to the arena. `HANDLE_PRESERVE_SIZE` is an
+/// 'approximation' of how large all those members are; the layout assertions below `Handle`
+/// statically validate that the chosen `HANDLE_PRESERVE_SIZE` is correct. Any incorrect size will
+/// result in a compilation error!
 const HANDLE_PRESERVE_SIZE: usize = 24;
 
 zr::static_assert!((HANDLE_INDEX_MASK & (MAX_HANDLE_COUNT as u32)) == 0);
@@ -175,11 +176,15 @@ zr::static_assert!(
         <= HANDLE_PRESERVE_SIZE
 );
 zr::static_assert!(
-    core::mem::offset_of!(Handle, base_value) + core::mem::size_of::<RelaxedAtomicU32>()
+    core::mem::offset_of!(Handle, dispatcher) + core::mem::size_of::<RefPtr<Dispatcher>>()
         <= HANDLE_PRESERVE_SIZE
 );
 zr::static_assert!(
-    core::mem::offset_of!(Handle, dispatcher) + core::mem::size_of::<RefPtr<Dispatcher>>()
+    core::mem::offset_of!(Handle, rights) + core::mem::size_of::<zx_rights_t>()
+        <= HANDLE_PRESERVE_SIZE
+);
+zr::static_assert!(
+    core::mem::offset_of!(Handle, base_value) + core::mem::size_of::<RelaxedAtomicU32>()
         <= HANDLE_PRESERVE_SIZE
 );
 
@@ -252,14 +257,17 @@ impl Handle {
 
     /// Initializes the global handle table arena.
     ///
-    /// To be called once during bring up before any handles are allocated.
-    pub(super) fn init() {
-        static INITIALIZED: AtomicBool = AtomicBool::new(false);
-        assert!(!INITIALIZED.swap(true, Ordering::Relaxed), "Handle::init called more than once");
-        HandleTableArena::init().expect("failed to initialize handle arena");
+    /// # Safety
+    ///
+    /// Must be called at most once during single-threaded early bring up before any handles are
+    /// allocated or accessed.
+    pub(super) unsafe fn init() {
+        // SAFETY: The caller guarantees single-threaded early boot before any handle access.
+        unsafe { HandleTableArena::init() }.expect("failed to initialize handle arena");
     }
 
     /// Maps a 32-bit handle base value back to a pointer to a `Handle`.
+    #[inline]
     pub(crate) fn from_u32(value: u32) -> Option<NonNull<Handle>> {
         HandleTableArena::from_u32(value)
     }
@@ -380,9 +388,9 @@ impl Handle {
 
         let zero_handles = dispatcher.decrement_handle_count();
 
-        // SAFETY: `handle` was allocated by `cpp_handle_arena_alloc` and its contents have been
+        // SAFETY: `handle` was allocated from `HANDLE_ARENA` and its contents have been
         // destructured.
-        unsafe { cpp_handle_arena_free(raw.cast()) };
+        unsafe { HandleTableArena::arena().free(handle.cast()) };
 
         if zero_handles {
             dispatcher.on_zero_handles();
@@ -429,27 +437,47 @@ impl<const DURATION: i64> EventLimiter<DURATION> {
 
 static HANDLE_COUNT_HIGH_LOG: EventLimiter<1_000_000_000> = EventLimiter::new();
 
+type HandleArena = GPArena<HANDLE_PRESERVE_SIZE, { core::mem::size_of::<Handle>() }>;
+
+static HANDLE_ARENA: LazyInit<HandleArena, lazy_init::NoCheck> = LazyInit::uninit();
+
 /// Arena allocator managing memory slots for all `Handle` objects in the kernel.
 pub(crate) struct HandleTableArena;
 
 impl HandleTableArena {
-    /// Initializes the handle table arena.
-    fn init() -> Result<(), Status> {
-        // SAFETY: `cpp_handle_arena_init` initializes the C++ backing allocator for the arena.
-        let status = unsafe { cpp_handle_arena_init(c"handles".as_ptr(), MAX_HANDLE_COUNT) };
-        Status::ok(status)
+    /// Returns a reference to the global handle arena initialized during early boot.
+    #[inline]
+    fn arena() -> &'static HandleArena {
+        // SAFETY: `HANDLE_ARENA` is initialized unconditionally during single-threaded early boot
+        // at `LK_INIT_LEVEL_THREADING` (`object_init` -> `Handle::init`) before any handles are
+        // allocated or looked up.
+        unsafe { HANDLE_ARENA.get_unchecked() }
     }
 
-    /// Allocates space for a `Handle` from the arena, but don't instantiate the
-    /// object. `base_value` gets the value for `Handle::base_value`. `what`
-    /// says whether this is allocation or duplication, for the error message.
+    /// Initializes the handle table arena.
+    ///
+    /// # Safety
+    ///
+    /// Must be called at most once during single-threaded early bring up before any concurrent
+    /// access to `HANDLE_ARENA`.
+    unsafe fn init() -> Result<(), Status> {
+        // SAFETY: The caller guarantees single-threaded initialization during bring up before any
+        // concurrent access to `HANDLE_ARENA`.
+        unsafe {
+            Pin::static_ref(&HANDLE_ARENA).init_pin(GPArena::new_init(b"handles", MAX_HANDLE_COUNT))
+        }
+    }
+
+    /// Allocates space for a `Handle` from the arena without instantiating the object, returning
+    /// the raw slot pointer and the new `base_value`. `what` describes whether this is allocation
+    /// or duplication for diagnostic logging.
     fn alloc(dispatcher: &Dispatcher, what: &str) -> Option<(NonNull<u8>, u32)> {
+        let arena = Self::arena();
         // Attempt to allocate a handle.
-        // SAFETY: `cpp_handle_arena_alloc` allocates a raw slot in the global handle arena.
-        let raw_addr = unsafe { cpp_handle_arena_alloc() };
-        // SAFETY: Retrieves the diagnostic count from the global arena.
-        let outstanding_handles = unsafe { cpp_handle_arena_diagnostic_count() };
-        let Some(addr) = NonNull::new(raw_addr.cast::<u8>()) else {
+        let addr = arena.alloc();
+        let outstanding_handles = arena.diagnostic_count();
+        let Some(addr) = addr else {
+            core::hint::cold_path();
             HANDLE_COUNT_ALLOC_FAILED.add(1);
             kprint::kprintln!(
                 "WARNING: Could not allocate {what:s} handle ({outstanding_handles} outstanding)"
@@ -458,10 +486,15 @@ impl HandleTableArena {
         };
 
         // Emit a warning if too many handles have been created and we haven't recently logged
-        if outstanding_handles > HIGH_HANDLE_COUNT && HANDLE_COUNT_HIGH_LOG.ready() {
-            kprint::kprintln!(
-                "WARNING: High handle count: {outstanding_handles} / {HIGH_HANDLE_COUNT} handles"
-            );
+        if outstanding_handles > HIGH_HANDLE_COUNT {
+            core::hint::cold_path();
+            if HANDLE_COUNT_HIGH_LOG.ready() {
+                kprint::kprintln!(
+                    "WARNING: High handle count: {} / {} handles",
+                    outstanding_handles,
+                    HIGH_HANDLE_COUNT,
+                );
+            }
         }
 
         dispatcher.increment_handle_count();
@@ -475,15 +508,15 @@ impl HandleTableArena {
                 core::ptr::addr_of!((*handle_ptr.as_ptr()).dispatcher).cast::<*const ()>().read();
             debug_assert!(disp_ptr.is_null());
         }
-        let base_value = Self::get_new_base_value(handle_ptr);
+        let base_value = Self::get_new_base_value(arena, handle_ptr);
         Some((addr, base_value))
     }
 
     /// Returns a new base_value based on the value stored in the free arena slot pointed to by
     /// `handle`. The new value will be different from the last base_value used by this slot.
-    fn get_new_base_value(handle: NonNull<Handle>) -> u32 {
+    fn get_new_base_value(arena: &HandleArena, handle: NonNull<Handle>) -> u32 {
         // Get the index of this slot within the arena.
-        let handle_index = Self::handle_to_index(handle.as_ptr());
+        let handle_index = Self::handle_to_index(arena, handle.as_ptr());
         // Check the free memory for a stashed base_value.
         // SAFETY: `handle` points to an arena slot whose previous base value is preserved across
         // allocations.
@@ -492,54 +525,36 @@ impl HandleTableArena {
     }
 
     /// Converts a handle pointer to its index in the arena.
-    fn handle_to_index(handle: *const Handle) -> u32 {
-        // SAFETY: Returns the base address of the global handle arena.
-        let base = unsafe { cpp_handle_arena_base() } as usize;
-        ((handle as usize - base) / core::mem::size_of::<Handle>()) as u32
-    }
-
-    /// Converts an index in the arena to a memory address.
-    fn index_to_handle(index: u32) -> usize {
-        // SAFETY: Returns the base address of the global handle arena.
-        let base = unsafe { cpp_handle_arena_base() } as usize;
-        base + (index as usize) * core::mem::size_of::<Handle>()
+    fn handle_to_index(arena: &HandleArena, handle: *const Handle) -> u32 {
+        let base = arena.base().addr();
+        ((handle.addr() - base) / core::mem::size_of::<Handle>()) as u32
     }
 
     /// Maps a 32-bit handle value back to a pointer to a `Handle`.
+    #[inline]
     fn from_u32(value: u32) -> Option<NonNull<Handle>> {
+        let arena = Self::arena();
         let index = handle_value_to_index(value);
-        let handle_addr = Self::index_to_handle(index);
-        // SAFETY: Checks if `handle_addr` is committed in the arena.
-        if unsafe {
-            !cpp_handle_arena_committed(core::ptr::with_exposed_provenance::<core::ffi::c_void>(
-                handle_addr,
-            ))
-        } {
-            return None;
-        }
-        // SAFETY: Confines `handle_addr` to ensure it is within the arena boundary without
-        // speculative bypass.
-        let handle_addr = unsafe { cpp_handle_arena_confine(handle_addr) };
-        let handle = NonNull::new(core::ptr::with_exposed_provenance_mut::<Handle>(handle_addr))?;
+        let offset = (index as usize) * core::mem::size_of::<Handle>();
+        let handle = arena.lookup_confined(offset)?.cast::<Handle>();
+        let handle_addr = handle.as_ptr().addr();
         // SAFETY: `handle` points to committed, confined arena memory.
         let actual_base = unsafe { Handle::raw_base_value(handle) };
         let safe_addr =
             fbl::conditional_select_nospec_eq(actual_base as usize, value as usize, handle_addr, 0);
-        NonNull::new(core::ptr::with_exposed_provenance_mut::<Handle>(safe_addr))
+        NonNull::new(handle.as_ptr().with_addr(safe_addr))
     }
 
     /// Returns the number of currently allocated handles in the arena.
     #[cfg(console_enabled)]
     pub(super) fn diagnostic_count() -> usize {
-        // SAFETY: Safe to query diagnostic handle count from global arena.
-        unsafe { cpp_handle_arena_diagnostic_count() }
+        Self::arena().diagnostic_count()
     }
 
     /// Dumps arena diagnostic information.
     #[cfg(console_enabled)]
     pub(super) fn dump() {
-        // SAFETY: Safe to dump arena diagnostic info.
-        unsafe { cpp_handle_arena_dump() };
+        Self::arena().dump();
     }
 
     /// Returns the number of handle allocations that have failed since boot.
@@ -919,21 +934,6 @@ impl<'a> core::borrow::Borrow<Handle> for &HandleRef<'a> {
     fn borrow(&self) -> &Handle {
         self.as_handle()
     }
-}
-
-unsafe extern "C" {
-    fn cpp_handle_arena_init(
-        name: *const core::ffi::c_char,
-        max_count: usize,
-    ) -> zx_types::zx_status_t;
-    fn cpp_handle_arena_alloc() -> *mut core::ffi::c_void;
-    fn cpp_handle_arena_free(ptr: *mut core::ffi::c_void);
-    fn cpp_handle_arena_committed(ptr: *const core::ffi::c_void) -> bool;
-    fn cpp_handle_arena_confine(addr: usize) -> usize;
-    fn cpp_handle_arena_base() -> *mut core::ffi::c_void;
-    fn cpp_handle_arena_diagnostic_count() -> usize;
-    #[cfg(console_enabled)]
-    fn cpp_handle_arena_dump();
 }
 
 // C-compatible FFI exported symbols.
