@@ -493,7 +493,11 @@ bool SystemMetricsDaemon::LogCpuToCobalt() {
 
   // call cobalt FIDL
   fuchsia::metrics::MetricEventLogger_LogMetricEvents_Result result;
-  ReinitializeIfPeerClosed(logger_->LogMetricEvents(std::move(events), &result));
+  const zx_status_t zx_status =
+      ReinitializeIfPeerClosed(logger_->LogMetricEvents(std::move(events), &result));
+  if (zx_status != ZX_OK) {
+    return false;
+  }
   if (result.is_err()) {
     FX_LOGS(ERROR) << "LogCpuToCobalt returned error=" << ErrorToString(result.err());
     return false;

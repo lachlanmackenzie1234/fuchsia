@@ -845,6 +845,7 @@ class MockLoggerFactory : public ::fuchsia::metrics::testing::MetricEventLoggerF
  public:
   MockLogger* logger() { return logger_.get(); }
   uint32_t received_project_id() const { return received_project_id_; }
+  void CloseLoggerBindings() { logger_bindings_.CloseAll(); }
 
   void CreateMetricEventLogger(fuchsia::metrics::ProjectSpec project,
                                ::fidl::InterfaceRequest<fuchsia::metrics::MetricEventLogger> logger,
@@ -898,6 +899,13 @@ class SystemMetricsDaemonInitializationTest : public gtest::TestLoopFixture {
     for (uint32_t bucket_index = 0; bucket_index < num_buckets; ++bucket_index) {
       daemon_->activity_state_to_cpu_map_[fuchsia::ui::activity::State::ACTIVE][bucket_index] = 1u;
     }
+  }
+
+  void PrepareNextCpuFlush() { daemon_->cpu_data_stored_ = 599; }
+
+  size_t ActiveCpuBucketCount() const {
+    auto it = daemon_->activity_state_to_cpu_map_.find(fuchsia::ui::activity::State::ACTIVE);
+    return it == daemon_->activity_state_to_cpu_map_.end() ? 0u : it->second.size();
   }
 
   bool IsCpuMapEmpty() const { return daemon_->activity_state_to_cpu_map_.empty(); }
@@ -965,5 +973,30 @@ TEST_F(SystemMetricsDaemonInitializationTest, LogCpuUsageEncodesLargeHistogramOv
   EXPECT_EQ(1, logger_factory_->logger()->num_calls());
   EXPECT_EQ(2, logger_factory_->logger()->num_events());
   EXPECT_EQ(601u, logger_factory_->logger()->total_histogram_samples());
+  EXPECT_TRUE(IsCpuMapEmpty());
+}
+
+TEST_F(SystemMetricsDaemonInitializationTest, LogCpuUsageRetainsDataOnFidlTransportError) {
+  // Initialize the FIDL logger connection.
+  EXPECT_FALSE(LogFuchsiaLifetimeEvent());
+  ASSERT_NE(nullptr, logger_factory_->logger());
+
+  PrepareLargeActiveCpuHistogram(10);
+  logger_factory_->CloseLoggerBindings();
+  EXPECT_EQ(zx::sec(1), LogCpuUsageOverFidl());
+  // ReinitializeIfPeerClosed reconnects to a fresh MockLogger, and the 11 accumulated samples
+  // (buckets 0..9 plus FakeCpuStatsFetcher's 12.34% bucket) must remain retained in
+  // activity_state_to_cpu_map_ rather than being dropped.
+  ASSERT_NE(nullptr, logger_factory_->logger());
+  EXPECT_EQ(0, logger_factory_->logger()->num_calls());
+  EXPECT_EQ(11u, ActiveCpuBucketCount());
+
+  // Trigger the next 10-minute flush over the reinitialized FIDL channel and verify all 12 samples
+  // (10 initial + 1 failed-flush sample + 1 retry-flush sample) are delivered.
+  PrepareNextCpuFlush();
+  EXPECT_EQ(zx::sec(1), LogCpuUsageOverFidl());
+  EXPECT_EQ(1, logger_factory_->logger()->num_calls());
+  EXPECT_EQ(1, logger_factory_->logger()->num_events());
+  EXPECT_EQ(12u, logger_factory_->logger()->total_histogram_samples());
   EXPECT_TRUE(IsCpuMapEmpty());
 }
