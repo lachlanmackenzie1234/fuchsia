@@ -29,8 +29,8 @@ use crate::block_device::{BlockServerCompleter, LunBlockServer, UfsBlockDevice};
 use crate::constants::{
     AUTO_HIBERNATE_TIMER_US, COMMAND_TIMEOUT, INTERCONNECT_AVG_BANDWIDTH_BPS,
     INTERCONNECT_INSTANCE, INTERCONNECT_PEAK_BANDWIDTH_BPS, INTERCONNECT_TAG_UFS,
-    IRQ_SCHEDULER_ROLE, LEGACY_INTERRUPT_ACK_TIMEOUT, LU_ENABLED, MIN_MMIO_SIZE, PCI_INSTANCE,
-    PDEV_INSTANCE, PHY_INSTANCE, TEST_UNIT_READY_ATTEMPTS, WORKER_SCHEDULER_ROLE,
+    IRQ_SCHEDULER_ROLE, LU_ENABLED, MIN_MMIO_SIZE, PCI_INSTANCE, PDEV_INSTANCE, PHY_INSTANCE,
+    TEST_UNIT_READY_ATTEMPTS, WORKER_SCHEDULER_ROLE,
 };
 use crate::controller::UfsController;
 use crate::device_manager::{DeviceManager, DiscoveredUnit, Quirks};
@@ -117,10 +117,8 @@ struct BoundDevice {
 enum Bus {
     /// Platform device; holds the interconnect path if a bandwidth vote was cast.
     Pdev { interconnect_path: Option<finterconnect::PathProxy> },
-    /// PCI function. `legacy_ack` is a synchronous proxy on a second channel, present only with a
-    /// legacy (level-triggered) interrupt, which the `ufs-irq-0` thread uses to acknowledge it
-    /// without entering the async executor.
-    Pci { device: fpci::DeviceProxy, legacy_ack: Option<Arc<fpci::DeviceSynchronousProxy>> },
+    /// PCI function.
+    Pci { device: fpci::DeviceProxy },
 }
 
 /// Core UFS DFv2 driver state and owned node resources.
@@ -467,17 +465,6 @@ impl UfsDriver {
         check_fidl("SetInterruptMode", pci.set_interrupt_mode(irq_mode, 1).await)?;
         let interrupt = check_fidl("MapInterrupt", pci.map_interrupt(0).await)?;
         let bti = check_fidl("GetBti", pci.get_bti(0).await)?;
-        // A legacy interrupt is acknowledged from the IRQ thread, which has no executor, so give
-        // it a synchronous proxy on its own channel.
-        let legacy_ack = if irq_mode == fpci::InterruptMode::Legacy {
-            let sync_proxy = pci_service.connect_to_device_sync().map_err(|e| {
-                error!(err:? = e; "Failed to connect synchronous PCI proxy for legacy IRQ acks");
-                DriverError::from(zx::Status::NOT_FOUND)
-            })?;
-            Some(Arc::new(sync_proxy))
-        } else {
-            None
-        };
 
         // Last, so that no earlier failure leaves bus mastering on.
         check_fidl("SetBusMastering", pci.set_bus_mastering(true).await)?;
@@ -486,7 +473,7 @@ impl UfsDriver {
             interrupt,
             bti,
             phy_proxy: None,
-            bus: Bus::Pci { device: pci, legacy_ack },
+            bus: Bus::Pci { device: pci },
             quirks,
         })
     }
@@ -770,7 +757,7 @@ impl UfsDriver {
                     check_fidl("SetBandwidth", path.set_bandwidth(&bandwidth_request(0, 0)).await);
             }
             Bus::Pdev { interconnect_path: None } => {}
-            Bus::Pci { device, .. } => {
+            Bus::Pci { device } => {
                 let _ = check_fidl("SetBusMastering", device.set_bus_mastering(false).await);
             }
         }
@@ -827,7 +814,6 @@ impl UfsDriver {
             &scope,
             &mut interrupt_workers,
             interrupt,
-            &bus,
             quirks,
             config,
             phy_proxy.as_ref(),
@@ -869,7 +855,6 @@ impl UfsDriver {
         scope: &fasync::Scope,
         interrupt_workers: &mut InterruptWorkers,
         interrupt: zx::Interrupt,
-        bus: &Bus,
         quirks: Quirks,
         config: &ufs_rust_config::Config,
         phy_proxy: Option<&fufs_phy::UfsPhyProxy>,
@@ -878,11 +863,7 @@ impl UfsDriver {
     ) -> Result<BoundDevice, DriverError> {
         check_step("Transfer request processor init", processor.init())?;
         controller.enable_interrupts();
-        let legacy_ack = match bus {
-            Bus::Pci { legacy_ack, .. } => legacy_ack.clone(),
-            Bus::Pdev { .. } => None,
-        };
-        *interrupt_workers = spawn_interrupt_thread(interrupt, legacy_ack, Arc::clone(processor))?;
+        *interrupt_workers = spawn_interrupt_thread(interrupt, Arc::clone(processor))?;
         spawn_io_timeout_task(scope, Arc::clone(processor));
         Self::bring_up_device(context, quirks, config, phy_proxy, controller, processor, scope)
             .await
@@ -1051,8 +1032,7 @@ where
 #[derive(Default)]
 struct InterruptWorkers {
     inner: Mutex<InterruptWorkersInner>,
-    /// Set by [`InterruptWorkers::take_and_destroy`]; tells a worker retrying a timed-out legacy
-    /// interrupt acknowledgement to exit instead.
+    /// Set by [`InterruptWorkers::take_and_destroy`] to signal worker threads to exit cleanly.
     stop_requested: Arc<AtomicBool>,
 }
 
@@ -1101,12 +1081,9 @@ impl Drop for InterruptWorkers {
 }
 
 /// Spawns a dedicated OS thread that waits on `interrupt` and services completions directly
-/// without hopping through the driver's async executor. With a legacy PCI interrupt, `legacy_ack`
-/// (a synchronous proxy, so no executor is needed on this thread) acknowledges it at the bus after
-/// clearing `IS`.
+/// without hopping through the driver's async executor.
 fn spawn_interrupt_thread<M, K>(
     interrupt: zx::Interrupt<K>,
-    legacy_ack: Option<Arc<fpci::DeviceSynchronousProxy>>,
     processor: Arc<TransferRequestProcessor<M>>,
 ) -> Result<InterruptWorkers, DriverError>
 where
@@ -1141,11 +1118,6 @@ where
                     return;
                 }
                 let _ = processor.service_interrupt();
-                if let Some(pci) = &legacy_ack
-                    && !ack_legacy_interrupt(pci, &worker_stop)
-                {
-                    break;
-                }
             }
             if !worker_stop.load(Ordering::Acquire) {
                 error!("UFS irq loop exited; in-flight requests will time out");
@@ -1162,29 +1134,6 @@ where
         }),
         stop_requested,
     })
-}
-
-/// Acknowledges a legacy PCI interrupt from the IRQ thread. Each attempt is bounded by
-/// [`LEGACY_INTERRUPT_ACK_TIMEOUT`] and retried until `stop_requested` is set, so a stalled bus
-/// driver cannot pin the thread past [`InterruptWorkers::stop`]. Returns `false` if the thread
-/// should exit (stop requested, or a non-timeout failure that would leave the line masked).
-fn ack_legacy_interrupt(pci: &fpci::DeviceSynchronousProxy, stop_requested: &AtomicBool) -> bool {
-    loop {
-        if stop_requested.load(Ordering::Acquire) {
-            return false;
-        }
-        let deadline = zx::MonotonicInstant::after(LEGACY_INTERRUPT_ACK_TIMEOUT);
-        match pci.ack_interrupt(deadline) {
-            Ok(Ok(())) => return true,
-            Err(fidl::Error::ClientCall(zx::Status::TIMED_OUT)) => {
-                warn!("PCI AckInterrupt timed out; retrying");
-            }
-            result => {
-                let _ = check_fidl("AckInterrupt", result);
-                return false;
-            }
-        }
-    }
 }
 
 /// UFS driver error mapping to `zx::Status` (for `UicError`, `code` is the `UICCMDARG2` result or
@@ -1303,7 +1252,7 @@ mod tests {
         let irq = zx::VirtualInterrupt::create_virtual().unwrap();
         let irq_trigger = irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
 
-        let workers = spawn_interrupt_thread(irq, None, Arc::clone(&processor)).unwrap();
+        let workers = spawn_interrupt_thread(irq, Arc::clone(&processor)).unwrap();
 
         let (completion, rx) = io_callback();
         let cdb = ScsiOpcode::build_test_unit_ready_cdb();
@@ -1328,7 +1277,7 @@ mod tests {
         let mut utp = fake_utp(&mmio_vmo, &processor);
         let irq = zx::VirtualInterrupt::create_virtual().unwrap();
         let irq_trigger = irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let workers = spawn_interrupt_thread(irq, None, Arc::clone(&processor)).unwrap();
+        let workers = spawn_interrupt_thread(irq, Arc::clone(&processor)).unwrap();
 
         let data_vmo = Arc::new(zx::Vmo::create(PAGE_SIZE).unwrap());
         let (completion, rx) = io_callback();

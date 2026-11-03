@@ -36,11 +36,6 @@ pub const WORKER_SCHEDULER_ROLE: &str = "fuchsia.devices.storage.ufs.worker";
 /// Dedicated scheduler role applied to the interrupt worker threads so completion notifications
 /// are not starved by block worker threads.
 pub const IRQ_SCHEDULER_ROLE: &str = "fuchsia.devices.storage.ufs.irq";
-/// Deadline for one synchronous `fuchsia.hardware.pci/Device.AckInterrupt` call from the IRQ
-/// thread. Bounded so a stalled PCI bus driver cannot keep the thread from noticing that its
-/// interrupt was destroyed on stop; a timeout is retried while the worker is still running.
-pub const LEGACY_INTERRUPT_ACK_TIMEOUT: zx::MonotonicDuration =
-    zx::MonotonicDuration::from_seconds(1);
 
 // --- UFSHCI register, UTRD, UCD, and transfer processor constants (UFSHCI 3.0/4.0 sec 5 - 7) ---
 
