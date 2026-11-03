@@ -17,6 +17,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -218,9 +219,8 @@ template <fuchsia::media::AudioSampleFormat InputFormat,
           fuchsia::media::AudioSampleFormat OutputFormat>
 std::vector<HermeticFidelityTest::Frequency> HermeticFidelityTest::GetTestFrequencies(
     const HermeticFidelityTest::TestCase<InputFormat, OutputFormat>& tc) {
-  if (tc.single_frequency_to_test.has_value()) {
-    auto freq_display_val = tc.single_frequency_to_test.value();
-    // If `single_frequency_to_test` is specified, it should be in kReferenceFrequencies.
+  auto freq_to_struct = [&tc](int32_t freq_display_val) -> HermeticFidelityTest::Frequency {
+    // Specified frequencies should be in kReferenceFrequencies.
     // If not, round down to a lower frequency that is, and use those results.
     size_t freq_idx;
     for (freq_idx = 0u; freq_idx < kNumReferenceFreqs - 1; ++freq_idx) {
@@ -234,14 +234,25 @@ std::vector<HermeticFidelityTest::Frequency> HermeticFidelityTest::GetTestFreque
                        << kReferenceFrequencies[freq_idx] << " Hz instead";
       freq_display_val = kReferenceFrequencies[freq_idx];
     }
-    return {{
+    return {
         .display_val = freq_display_val,
         .periods = FrequencyToPeriods(tc.output_format.frames_per_second(), freq_display_val),
         .idx = freq_idx,
-    }};
-  }
+    };
+  };
 
   std::vector<HermeticFidelityTest::Frequency> frequencies;
+  if (!tc.frequencies_to_test.empty()) {
+    frequencies.reserve(tc.frequencies_to_test.size());
+    for (auto freq_val : tc.frequencies_to_test) {
+      frequencies.push_back(freq_to_struct(freq_val));
+    }
+    return frequencies;
+  }
+  if (tc.single_frequency_to_test.has_value()) {
+    return {freq_to_struct(tc.single_frequency_to_test.value())};
+  }
+
   for (auto freq_idx = 0u; freq_idx < kNumReferenceFreqs; ++freq_idx) {
     frequencies.push_back({
         .display_val = kReferenceFrequencies[freq_idx],
