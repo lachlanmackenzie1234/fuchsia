@@ -32,7 +32,9 @@ rustc_library(
     visibility = ["//src/starnix/modules:__subpackages__"],
     deps = [
         "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_rust",
+        "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_rust",
         "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_rust",
+        "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_rust",
         "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-component",

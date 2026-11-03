@@ -23,14 +23,15 @@ use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::NamespaceNode;
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{LockDepMutex, Mutex, UsbFsDevicesLock};
+use starnix_sync::{
+    LockDepMutex, UsbFsDevicesLock, UsbfsActiveHwIdsLock, UsbfsDevNumAllocatorLock,
+};
 use starnix_uapi::device_id::{DeviceId, USB_DEVICE_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, usb_device_descriptor};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 pub(crate) fn fuchsia_speed_to_linux_speed(speed: fusb_descriptor::UsbSpeed) -> u32 {
     match speed {
@@ -95,7 +96,7 @@ impl DevNumAllocator {
 pub struct UsbDeviceManager {
     pub(crate) bus: Bus,
     pub(crate) devices: Arc<LockDepMutex<BTreeMap<DeviceId, Arc<UsbDevice>>, UsbFsDevicesLock>>,
-    pub(crate) allocator: Arc<Mutex<DevNumAllocator>>,
+    pub(crate) allocator: Arc<LockDepMutex<DevNumAllocator, UsbfsDevNumAllocatorLock>>,
 }
 
 impl UsbDeviceManager {
@@ -103,7 +104,7 @@ impl UsbDeviceManager {
         Self {
             bus,
             devices: Arc::new(LockDepMutex::new(BTreeMap::new())),
-            allocator: Arc::new(Mutex::new(DevNumAllocator::new())),
+            allocator: Arc::new(LockDepMutex::new(DevNumAllocator::new())),
         }
     }
 
@@ -176,7 +177,8 @@ impl UsbDeviceManager {
         registered_device: Device,
     ) -> Result<(), Errno> {
         if let Some(metadata) = registered_device.metadata() {
-            if let Some(device) = self.devices.lock().remove(&metadata.devt) {
+            let removed = self.devices.lock().remove(&metadata.devt);
+            if let Some(device) = removed {
                 self.release_dev_num(device.dev_num);
                 device.on_disconnect();
             }
@@ -268,7 +270,8 @@ async fn watch_usb_devices_from_service(
         }
     };
 
-    let active_hw_ids = Arc::new(Mutex::new(HashSet::<u32>::new()));
+    let active_hw_ids =
+        Arc::new(LockDepMutex::<HashSet<u32>, UsbfsActiveHwIdsLock>::new(HashSet::new()));
     while let Ok(Some(instance)) = watcher.try_next().await {
         let device_proxy = match instance.connect_to_device() {
             Ok(proxy) => proxy,
@@ -350,7 +353,7 @@ async fn watch_usb_devices_from_service(
 
         let mut usb_device =
             UsbDevice::new(1, assigned_dev_num, speed, device_descriptor, config_descriptors);
-        usb_device.active_config.store(active_config, Ordering::Relaxed);
+        usb_device.state.get_mut().active_config = active_config;
         usb_device.sync_proxy = sync_proxy;
         let usb_device = Arc::new(usb_device);
 
@@ -405,21 +408,84 @@ async fn watch_usb_devices_from_service(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::device::{
+        DEFAULT_CANCEL_DRAIN_TIMEOUT, INVALID_USBDEVFS_BULK_SIZE, MAX_RETIRED_VMOS,
+        MAX_USBDEVFS_BULK_SIZE, MAX_USBDEVFS_CONTROL_SIZE, canonicalize_ioctl_request,
+    };
+    use fidl::endpoints::{Responder, ServerEnd, create_endpoints};
+    use fidl_fuchsia_hardware_usb_endpoint as fusb_endpoint;
+    use fidl_fuchsia_hardware_usb_request as fusb_request;
     use starnix_core::device::DeviceListener;
     use starnix_core::device::kobject::{UEventAction, UEventContext};
-    use starnix_core::task::KernelFeatures;
+    use starnix_core::fs::devtmpfs::DevTmpFs;
+    use starnix_core::mm::syscalls::do_mmap;
+    use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
+    use starnix_core::signals::{SignalInfo, send_standard_signal};
+    use starnix_core::task::{KernelFeatures, TaskFlags};
     use starnix_core::testing::{spawn_kernel_and_run, spawn_kernel_with_features_and_run};
-    use starnix_core::vfs::{FsStr, FsString};
+    use starnix_core::vfs::buffers::VecOutputBuffer;
+    use starnix_core::vfs::{FdNumber, FileHandle, FsStr, FsString, LookupContext};
+    use starnix_sync::Mutex;
+    use starnix_syscalls::{SUCCESS, SyscallResult};
+    use starnix_uapi::errors::Errno;
+    use starnix_uapi::signals::{SIGKILL, SIGUSR1};
+    #[cfg(target_arch = "aarch64")]
+    use starnix_uapi::uaddr32;
+    #[cfg(target_arch = "aarch64")]
+    use starnix_uapi::uapi::arch32;
+    use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::{
-        error, usb_config_descriptor, usb_endpoint_descriptor, usb_interface_descriptor,
+        MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, USB_CLASS_HID, USB_CLASS_PRINTER,
+        USB_CLASS_VENDOR_SPEC, USB_DIR_IN, USB_DIR_OUT, USB_DT_CONFIG, USB_DT_CONFIG_SIZE,
+        USB_DT_DEVICE, USB_DT_DEVICE_SIZE, USB_DT_ENDPOINT, USB_DT_ENDPOINT_SIZE, USB_DT_INTERFACE,
+        USB_DT_INTERFACE_SIZE, USB_DT_SS_ENDPOINT_COMP, USB_DT_SS_EP_COMP_SIZE,
+        USB_ENDPOINT_XFER_BULK, USB_ENDPOINT_XFER_INT, USB_ENDPOINT_XFER_ISOC, USB_RECIP_ENDPOINT,
+        USB_RECIP_INTERFACE, USB_REQ_CLEAR_FEATURE, USB_REQ_GET_DESCRIPTOR, USB_REQ_SET_INTERFACE,
+        USB_TYPE_CLASS, USB_TYPE_STANDARD, USB_TYPE_VENDOR, USBDEVFS_BULK, USBDEVFS_CLAIMINTERFACE,
+        USBDEVFS_CLEAR_HALT, USBDEVFS_CONNECT, USBDEVFS_CONNECTINFO, USBDEVFS_CONTROL,
+        USBDEVFS_DISCONNECT, USBDEVFS_DISCONNECT_CLAIM, USBDEVFS_DISCONNECT_CLAIM_EXCEPT_DRIVER,
+        USBDEVFS_DISCONNECT_CLAIM_IF_DRIVER, USBDEVFS_GET_CAPABILITIES, USBDEVFS_GET_SPEED,
+        USBDEVFS_GETDRIVER, USBDEVFS_IOCTL, USBDEVFS_RELEASEINTERFACE, USBDEVFS_RESET,
+        USBDEVFS_SETCONFIGURATION, USBDEVFS_SETINTERFACE, error, sigaction_t, uaddr,
+        usb_config_descriptor, usb_endpoint_descriptor, usb_interface_descriptor,
+        usbdevfs_bulktransfer, usbdevfs_connectinfo, usbdevfs_ctrltransfer,
+        usbdevfs_disconnect_claim, usbdevfs_getdriver, usbdevfs_ioctl, usbdevfs_setinterface,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use zerocopy::IntoBytes as _;
+    use std::collections::{HashMap, HashSet, VecDeque};
+    use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicUsize, Ordering};
+    use zerocopy::{FromZeros, Immutable, IntoBytes};
+
+    const EP1_IN: u8 = 0x81;
+    const EP1_OUT: u8 = 0x01;
+    const EP2_IN: u8 = 0x82;
+    const EP2_OUT: u8 = 0x02;
+    const EP3_IN: u8 = 0x83;
+
+    const XFER_ISO: u8 = USB_ENDPOINT_XFER_ISOC as u8;
+    const XFER_BULK: u8 = USB_ENDPOINT_XFER_BULK as u8;
+    const XFER_INT: u8 = USB_ENDPOINT_XFER_INT as u8;
+    const CLASS_PRINTER: u8 = USB_CLASS_PRINTER as u8;
+    const CLASS_VENDOR: u8 = USB_CLASS_VENDOR_SPEC as u8;
+
+    /// Request answered by the mock device without any side effect.
+    const TEST_REQUEST: u8 = 0x42;
+    const INTERFACE_OUT: u32 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE;
+    const ENDPOINT_OUT: u32 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT;
+    const PRINTER_GET_DEVICE_ID: u32 = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE;
+
+    /// Data returned by the mock device for an IN request when no reply is scripted.
+    const DEFAULT_IN_DATA: [u8; 4] = [0xaa, 0xbb, 0xcc, 0xdd];
+
+    /// Offset of the data buffer from the ioctl argument in the buffers of `map_test_buffers`.
+    const TEST_DATA_OFFSET: usize = 256;
+
+    /// Device number of the device registered by the `run_with_*` helpers.
+    const DEV_NUM: u16 = 2;
 
     fn create_mock_hid_descriptors() -> (usb_device_descriptor, Vec<u8>) {
         let device_desc = usb_device_descriptor {
-            bLength: 18,
-            bDescriptorType: 1,
+            bLength: USB_DT_DEVICE_SIZE as u8,
+            bDescriptorType: USB_DT_DEVICE as u8,
             bcdUSB: 0x0210u16.to_le(),
             bDeviceClass: 0,
             bDeviceSubClass: 0,
@@ -435,8 +501,8 @@ mod tests {
         };
 
         let config_desc = usb_config_descriptor {
-            bLength: 9,
-            bDescriptorType: 2,
+            bLength: USB_DT_CONFIG_SIZE as u8,
+            bDescriptorType: USB_DT_CONFIG as u8,
             wTotalLength: ((9 + 9 + 7 + 7) as u16).to_le(),
             bNumInterfaces: 1,
             bConfigurationValue: 1,
@@ -446,59 +512,894 @@ mod tests {
         };
 
         let if_desc = usb_interface_descriptor {
-            bLength: 9,
-            bDescriptorType: 4,
+            bLength: USB_DT_INTERFACE_SIZE as u8,
+            bDescriptorType: USB_DT_INTERFACE as u8,
             bInterfaceNumber: 0,
             bAlternateSetting: 0,
             bNumEndpoints: 2,
-            bInterfaceClass: 3, // HID class
+            bInterfaceClass: USB_CLASS_HID as u8,
             bInterfaceSubClass: 0,
             bInterfaceProtocol: 0,
             iInterface: 0,
         };
 
         let ep_in_desc = usb_endpoint_descriptor {
-            bLength: 7,
-            bDescriptorType: 5,
-            bEndpointAddress: 0x81, // EP 1 IN
-            bmAttributes: 3,        // Interrupt
+            bLength: USB_DT_ENDPOINT_SIZE as u8,
+            bDescriptorType: USB_DT_ENDPOINT as u8,
+            bEndpointAddress: EP1_IN,
+            bmAttributes: XFER_INT,
             wMaxPacketSize: 64u16.to_le(),
             bInterval: 5,
             bRefresh: 0,
             bSynchAddress: 0,
         };
 
-        let ep_out_desc = usb_endpoint_descriptor {
-            bLength: 7,
-            bDescriptorType: 5,
-            bEndpointAddress: 0x01, // EP 1 OUT
-            bmAttributes: 3,        // Interrupt
-            wMaxPacketSize: 64u16.to_le(),
-            bInterval: 5,
-            bRefresh: 0,
-            bSynchAddress: 0,
-        };
+        let ep_out_desc = usb_endpoint_descriptor { bEndpointAddress: EP1_OUT, ..ep_in_desc };
 
+        let endpoint_size = USB_DT_ENDPOINT_SIZE as usize;
         let mut config_bytes = Vec::new();
         config_bytes.extend_from_slice(config_desc.as_bytes());
         config_bytes.extend_from_slice(if_desc.as_bytes());
-        config_bytes.extend_from_slice(&ep_in_desc.as_bytes()[..7]);
-        config_bytes.extend_from_slice(&ep_out_desc.as_bytes()[..7]);
+        config_bytes.extend_from_slice(&ep_in_desc.as_bytes()[..endpoint_size]);
+        config_bytes.extend_from_slice(&ep_out_desc.as_bytes()[..endpoint_size]);
 
         (device_desc, config_bytes)
+    }
+
+    fn hid_config() -> Vec<u8> {
+        create_mock_hid_descriptors().1
+    }
+
+    /// Interface alternate setting used to build test configuration descriptors.
+    struct TestAlt {
+        interface: u8,
+        alt: u8,
+        class: u8,
+        /// `(bEndpointAddress, bmAttributes, wMaxPacketSize)` of each endpoint.
+        endpoints: Vec<(u8, u8, u16)>,
+    }
+
+    fn alt(interface: u8, alt: u8, endpoints: Vec<(u8, u8, u16)>) -> TestAlt {
+        TestAlt { interface, alt, class: CLASS_VENDOR, endpoints }
+    }
+
+    fn endpoint_descriptor(address: u8, attributes: u8, max_packet_size: u16) -> Vec<u8> {
+        let [lo, hi] = max_packet_size.to_le_bytes();
+        vec![USB_DT_ENDPOINT_SIZE as u8, USB_DT_ENDPOINT as u8, address, attributes, lo, hi, 0]
+    }
+
+    /// Builds a configuration descriptor with value `config_value` containing `alts`.
+    fn build_config(config_value: u8, alts: &[TestAlt]) -> Vec<u8> {
+        let num_interfaces = alts.iter().map(|a| a.interface).collect::<HashSet<_>>().len();
+        let mut bytes = usb_config_descriptor {
+            bLength: USB_DT_CONFIG_SIZE as u8,
+            bDescriptorType: USB_DT_CONFIG as u8,
+            wTotalLength: 0,
+            bNumInterfaces: num_interfaces as u8,
+            bConfigurationValue: config_value,
+            iConfiguration: 0,
+            bmAttributes: 0x80,
+            bMaxPower: 50,
+        }
+        .as_bytes()
+        .to_vec();
+        for a in alts {
+            let interface = usb_interface_descriptor {
+                bLength: USB_DT_INTERFACE_SIZE as u8,
+                bDescriptorType: USB_DT_INTERFACE as u8,
+                bInterfaceNumber: a.interface,
+                bAlternateSetting: a.alt,
+                bNumEndpoints: a.endpoints.len() as u8,
+                bInterfaceClass: a.class,
+                bInterfaceSubClass: 0,
+                bInterfaceProtocol: 0,
+                iInterface: 0,
+            };
+            bytes.extend_from_slice(interface.as_bytes());
+            for &(address, attributes, max_packet_size) in &a.endpoints {
+                bytes.extend(endpoint_descriptor(address, attributes, max_packet_size));
+            }
+        }
+        let [lo, hi] = (bytes.len() as u16).to_le_bytes();
+        bytes[2] = lo;
+        bytes[3] = hi;
+        bytes
     }
 
     fn open_dev_node(
         current_task: &CurrentTask,
         path: &FsStr,
         flags: OpenFlags,
-    ) -> Result<starnix_core::vfs::FileHandle, Errno> {
+    ) -> Result<FileHandle, Errno> {
         let dev_root = NamespaceNode::new_anonymous(
-            starnix_core::fs::devtmpfs::DevTmpFs::from_kernel(current_task.kernel()).root().clone(),
+            DevTmpFs::from_kernel(current_task.kernel()).root().clone(),
         );
-        let mut context = starnix_core::vfs::LookupContext::default();
+        let mut context = LookupContext::default();
         let node = current_task.lookup_path(&mut context, dev_root, path)?;
         node.open(current_task, flags)
+    }
+
+    fn open_device(current_task: &CurrentTask, dev_num: u16) -> FileHandle {
+        let path = format!("bus/usb/001/{:03}", dev_num);
+        open_dev_node(current_task, path.as_bytes().into(), OpenFlags::RDWR).expect("open device")
+    }
+
+    fn map_test_buffer(current_task: &CurrentTask, length: usize) -> UserAddress {
+        do_mmap(
+            current_task,
+            UserAddress::NULL,
+            length,
+            PROT_READ | PROT_WRITE,
+            MAP_ANONYMOUS | MAP_PRIVATE,
+            FdNumber::from_raw(-1),
+            0,
+        )
+        .unwrap()
+    }
+
+    /// Maps a page and returns the address of an ioctl argument and of a data buffer in it.
+    fn map_test_buffers(current_task: &CurrentTask) -> (UserAddress, UserAddress) {
+        let arg = map_test_buffer(current_task, *PAGE_SIZE as usize);
+        (arg, (arg + TEST_DATA_OFFSET).unwrap())
+    }
+
+    /// Writes `value` at `addr` and issues ioctl `request` with `addr` as argument.
+    fn ioctl_with<T: IntoBytes + Immutable>(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        request: u32,
+        addr: UserAddress,
+        value: &T,
+    ) -> Result<SyscallResult, Errno> {
+        current_task.write_object(UserRef::new(addr), value).unwrap();
+        file.ops().ioctl(file, current_task, request, addr.into())
+    }
+
+    /// Issues ioctl `request` without argument.
+    fn ioctl_no_arg(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        request: u32,
+    ) -> Result<SyscallResult, Errno> {
+        file.ops().ioctl(file, current_task, request, 0u64.into())
+    }
+
+    /// Issues `USBDEVFS_BULK` on raw endpoint value `ep`, using `arg` for the ioctl argument and
+    /// `data` as buffer.
+    fn bulk_raw(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ep: u32,
+        len: u32,
+        timeout: u32,
+        data: UserAddress,
+    ) -> Result<SyscallResult, Errno> {
+        let transfer = usbdevfs_bulktransfer {
+            ep,
+            len,
+            timeout,
+            data: uaddr { addr: data.ptr() as u64 },
+            ..usbdevfs_bulktransfer::new_zeroed()
+        };
+        ioctl_with(current_task, file, USBDEVFS_BULK, arg, &transfer)
+    }
+
+    /// Issues `USBDEVFS_BULK` on endpoint `ep`.
+    fn bulk(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ep: u8,
+        len: u32,
+        timeout: u32,
+        data: UserAddress,
+    ) -> Result<SyscallResult, Errno> {
+        bulk_raw(current_task, file, arg, u32::from(ep), len, timeout, data)
+    }
+
+    /// Reads `N` bytes at `addr`.
+    fn read_bytes<const N: usize>(current_task: &CurrentTask, addr: UserAddress) -> [u8; N] {
+        current_task.read_object(UserRef::new(addr)).unwrap()
+    }
+
+    fn ctrl_transfer(
+        request_type: u32,
+        request: u8,
+        value: u16,
+        index: u16,
+        length: u16,
+        timeout: u32,
+        data: UserAddress,
+    ) -> usbdevfs_ctrltransfer {
+        usbdevfs_ctrltransfer {
+            bRequestType: request_type as u8,
+            bRequest: request,
+            wValue: value,
+            wIndex: index,
+            wLength: length,
+            timeout,
+            data: uaddr { addr: data.ptr() as u64 },
+            ..usbdevfs_ctrltransfer::new_zeroed()
+        }
+    }
+
+    /// Issues `USBDEVFS_CONTROL` without data stage.
+    fn control(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        request_type: u32,
+        request: u8,
+        index: u16,
+        timeout: u32,
+    ) -> Result<SyscallResult, Errno> {
+        let ctrl = ctrl_transfer(request_type, request, 0, index, 0, timeout, UserAddress::NULL);
+        ioctl_with(current_task, file, USBDEVFS_CONTROL, arg, &ctrl)
+    }
+
+    fn claim(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ifno: u32,
+    ) -> Result<SyscallResult, Errno> {
+        ioctl_with(current_task, file, USBDEVFS_CLAIMINTERFACE, arg, &ifno)
+    }
+
+    fn release(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ifno: u32,
+    ) -> Result<SyscallResult, Errno> {
+        ioctl_with(current_task, file, USBDEVFS_RELEASEINTERFACE, arg, &ifno)
+    }
+
+    fn set_interface(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        interface: u32,
+        altsetting: u32,
+    ) -> Result<SyscallResult, Errno> {
+        let set = usbdevfs_setinterface { interface, altsetting };
+        ioctl_with(current_task, file, USBDEVFS_SETINTERFACE, arg, &set)
+    }
+
+    fn set_configuration(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        config: i32,
+    ) -> Result<SyscallResult, Errno> {
+        ioctl_with(current_task, file, USBDEVFS_SETCONFIGURATION, arg, &config)
+    }
+
+    fn clear_halt(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ep: u32,
+    ) -> Result<SyscallResult, Errno> {
+        ioctl_with(current_task, file, USBDEVFS_CLEAR_HALT, arg, &ep)
+    }
+
+    fn disconnect_claim(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        interface: u32,
+        flags: u32,
+        driver: &[u8],
+    ) -> Result<SyscallResult, Errno> {
+        let mut dc = usbdevfs_disconnect_claim::default();
+        dc.interface = interface;
+        dc.flags = flags;
+        for (dst, src) in dc.driver.iter_mut().zip(driver) {
+            *dst = *src as _;
+        }
+        ioctl_with(current_task, file, USBDEVFS_DISCONNECT_CLAIM, arg, &dc)
+    }
+
+    fn driver_ioctl(
+        current_task: &CurrentTask,
+        file: &FileHandle,
+        arg: UserAddress,
+        ifno: i32,
+        ioctl_code: u32,
+    ) -> Result<SyscallResult, Errno> {
+        let ctl = usbdevfs_ioctl { ifno, ioctl_code: ioctl_code as i32, data: uaddr { addr: 0 } };
+        ioctl_with(current_task, file, USBDEVFS_IOCTL, arg, &ctl)
+    }
+
+    /// Queues (or removes) a SIGKILL for `current_task` without making its thread group exit, so
+    /// the test can observe the interrupted wait.
+    fn set_pending_sigkill(current_task: &CurrentTask, pending: bool) {
+        let mut task_state = current_task.write();
+        if pending {
+            task_state.enqueue_signal(SignalInfo::kernel(SIGKILL));
+            task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
+        } else {
+            task_state.take_specific_signal(SignalInfo::kernel(SIGKILL));
+            task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, false);
+        }
+    }
+
+    /// Runs `test` against device `DEV_NUM` built by `build`.
+    async fn run_with_device<B, F>(build: B, test: F)
+    where
+        B: FnOnce(&CurrentTask) -> UsbDevice + Send + Sync + 'static,
+        F: FnOnce(&CurrentTask, &Arc<UsbDevice>) + Send + Sync + 'static,
+    {
+        spawn_kernel_with_features_and_run(
+            async move |current_task| {
+                let kernel = current_task.kernel();
+                let manager = usbfs_init(kernel).expect("usbfs_init failed");
+                let device = Arc::new(build(current_task));
+                let registered =
+                    manager.add_device(kernel, Arc::clone(&device)).expect("add_device failed");
+                test(current_task, &device);
+                manager.remove_device(current_task, registered).expect("remove_device failed");
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
+        .await;
+    }
+
+    /// Runs `test` against device `DEV_NUM` with configuration descriptors `config_bytes` and
+    /// without connection to a USB device.
+    async fn run_with_unconnected_device<F>(config_bytes: Vec<u8>, test: F)
+    where
+        F: FnOnce(&CurrentTask) + Send + Sync + 'static,
+    {
+        run_with_device(
+            move |_| {
+                let (device_desc, _) = create_mock_hid_descriptors();
+                UsbDevice::new(1, DEV_NUM, USB_SPEED_HIGH, device_desc, config_bytes)
+            },
+            |current_task, _| test(current_task),
+        )
+        .await;
+    }
+
+    /// What the mock endpoint server does with the held IN requests when it receives `CancelAll`.
+    #[derive(Clone, Copy, PartialEq)]
+    enum CancelBehavior {
+        /// Replies to `CancelAll`, then completes the held requests with `ZX_ERR_CANCELED`.
+        CompleteAfterReply,
+        /// Replies to `CancelAll`, then completes the held requests successfully, as if they
+        /// completed just before being cancelled.
+        CompleteSuccessfullyAfterReply,
+        /// Never completes the held requests.
+        Drop,
+    }
+
+    /// Event signaled with `USER_0` by the mock server.
+    struct MockEvent(zx::Event);
+
+    impl Default for MockEvent {
+        fn default() -> Self {
+            Self(zx::Event::create())
+        }
+    }
+
+    impl MockEvent {
+        fn signal(&self) {
+            let _ = self.0.signal(zx::Signals::NONE, zx::Signals::USER_0);
+        }
+
+        fn is_signaled(&self) -> bool {
+            self.0
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST)
+                .to_result()
+                .is_ok()
+        }
+
+        fn wait_signaled(&self) {
+            self.0
+                .wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE)
+                .to_result()
+                .unwrap();
+        }
+    }
+
+    #[derive(Default)]
+    struct MockUsbServerState {
+        /// Configuration values of the device, accepted by `SetConfiguration`.
+        config_values: Mutex<HashSet<u8>>,
+        last_ctrl_out: Mutex<Vec<u8>>,
+        ctrl_transfer_error: AtomicI32,
+        ctrl_timeouts: Mutex<Vec<i64>>,
+        /// `(bmRequestType, bRequest, wValue, wIndex)` of each control transfer.
+        ctrl_setups: Mutex<Vec<(u8, u8, u16, u16)>>,
+        hold_ctrl_transfers: AtomicBool,
+        held_ctrl_responders: Mutex<Vec<fhardware_usb::UsbControlTransferResponder>>,
+        /// Signaled with `USER_0` when a control transfer responder is held.
+        ctrl_held: MockEvent,
+        set_interface_status: AtomicI32,
+        last_set_iface: Mutex<Option<(u8, u8)>>,
+        set_configuration_status: AtomicI32,
+        /// Configuration value of each `SetConfiguration` call.
+        set_config_log: Mutex<Vec<u8>>,
+        /// Endpoint address of the last `ResetEndpoint` call.
+        last_reset_endpoint: AtomicU8,
+        reset_endpoint_count: AtomicUsize,
+        reset_endpoint_status: AtomicI32,
+        /// Endpoints enabled on the mock host controller.
+        enabled_endpoints: Mutex<HashSet<u8>>,
+        /// `(address, enable, wMaxPacketSize)` of each successful `EnableEndpoint` call.
+        enable_log: Mutex<Vec<(u8, bool, u16)>>,
+        /// `(address, bMaxBurst)` of the SuperSpeed companion of each enabled endpoint.
+        ss_companion_log: Mutex<Vec<(u8, u8)>>,
+        connect_count: AtomicUsize,
+        connect_error_once: AtomicI32,
+        /// Closes the next endpoint channel before serving `RegisterVmos`.
+        close_endpoint_before_register: AtomicBool,
+        /// Signaled with `USER_0` when usbfs closes an endpoint channel.
+        endpoint_unbound: MockEvent,
+        /// `(address, VMO ID)` of each registered and unregistered VMO.
+        registered_vmos: Mutex<Vec<(u8, u64)>>,
+        unregistered_vmos: Mutex<Vec<(u8, u64)>>,
+        /// `(address, transfer type)` of each queued request.
+        request_types: Mutex<Vec<(u8, &'static str)>>,
+        /// `(address, size)` of each queued request.
+        request_sizes: Mutex<Vec<(u8, u64)>>,
+        received_bulk_out: Mutex<Vec<Vec<u8>>>,
+        bulk_out_max_transfer_size: AtomicUsize,
+        bulk_in_queue_count: AtomicUsize,
+        bulk_in_scripted_packets: Mutex<VecDeque<(Vec<u8>, i32)>>,
+        /// Reports the full scripted reply as transferred, even if it exceeds the request size.
+        overreport_in_transfer_size: AtomicBool,
+        hold_in_requests: AtomicBool,
+        cancel_behavior: Mutex<Option<CancelBehavior>>,
+        cancel_all_status: AtomicI32,
+        cancel_count: AtomicUsize,
+        send_stale_completion_on_cancel: AtomicBool,
+        /// Completes the held requests successfully when the next requests are queued.
+        complete_held_on_next_queue: AtomicBool,
+        drop_endpoint_on_next_in: AtomicBool,
+        /// Number of `QueueRequests` calls received while `ep_addr` was not in `enabled_endpoints`.
+        invalid_queue_while_disabled: AtomicUsize,
+        /// Optional hook invoked after sending an IN completion in `QueueRequests`.
+        on_in_completion: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+        /// Optional hook invoked when serving `ConnectToEndpoint`.
+        on_connect_to_endpoint: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    }
+
+    fn request_type_name(request: &fusb_request::Request) -> &'static str {
+        match request.information {
+            Some(fusb_request::RequestInfo::Bulk(_)) => "bulk",
+            Some(fusb_request::RequestInfo::Interrupt(_)) => "interrupt",
+            Some(fusb_request::RequestInfo::Isochronous(_)) => "isochronous",
+            Some(fusb_request::RequestInfo::Control(_)) => "control",
+            _ => "unknown",
+        }
+    }
+
+    /// Returns the `(VMO ID, offset, size)` of the buffer of `request`.
+    fn request_region(request: &fusb_request::Request) -> (u64, u64, u64) {
+        let region = request.data.as_ref().and_then(|d| d.first()).unwrap();
+        let id = match region.buffer {
+            Some(fusb_request::Buffer::VmoId(id)) => id,
+            _ => panic!("unexpected buffer"),
+        };
+        (id, region.offset.unwrap_or(0), region.size.unwrap_or(0))
+    }
+
+    /// Completes `request` successfully, filling its buffer with the next scripted reply.
+    fn complete_in_request(
+        state: &MockUsbServerState,
+        vmos: &HashMap<u64, zx::Vmo>,
+        request: fusb_request::Request,
+    ) -> fusb_endpoint::Completion {
+        let (id, offset, size) = request_region(&request);
+        let (reply, status) =
+            state.bulk_in_scripted_packets.lock().pop_front().unwrap_or_else(|| {
+                let len = std::cmp::min(size as usize, DEFAULT_IN_DATA.len());
+                (DEFAULT_IN_DATA[..len].to_vec(), zx::sys::ZX_OK)
+            });
+        // Like a host controller, never write beyond the request buffer.
+        let written = std::cmp::min(reply.len(), size as usize);
+        if written > 0 {
+            vmos[&id].write(&reply[..written], offset).unwrap();
+        }
+        let reported = if state.overreport_in_transfer_size.load(Ordering::SeqCst) {
+            reply.len()
+        } else {
+            written
+        };
+        fusb_endpoint::Completion {
+            request: Some(request),
+            status: Some(status),
+            transfer_size: Some(reported as u64),
+            ..Default::default()
+        }
+    }
+
+    fn cancelled_completion(request: fusb_request::Request) -> fusb_endpoint::Completion {
+        fusb_endpoint::Completion {
+            request: Some(request),
+            status: Some(zx::sys::ZX_ERR_CANCELED),
+            transfer_size: Some(0),
+            ..Default::default()
+        }
+    }
+
+    /// Serves `ep` like the xHCI endpoint server.
+    ///
+    /// When the server closes the channel, it disables the endpoint first. When usbfs closes the
+    /// channel, the endpoint stays enabled, which models the asynchronous disable of the xHCI
+    /// driver losing the race with a later enable.
+    async fn serve_mock_endpoint(
+        ep_addr: u8,
+        ep: ServerEnd<fusb_endpoint::EndpointMarker>,
+        state: Arc<MockUsbServerState>,
+    ) {
+        let mut ep_stream = ep.into_stream();
+        let mut vmos: HashMap<u64, zx::Vmo> = HashMap::new();
+        let mut held: Vec<fusb_request::Request> = Vec::new();
+        let is_in = (ep_addr & (USB_DIR_IN as u8)) != 0;
+        while let Ok(Some(ep_req)) = ep_stream.try_next().await {
+            match ep_req {
+                fusb_endpoint::EndpointRequest::RegisterVmos { vmo_ids, responder } => {
+                    let mut registered = Vec::new();
+                    for info in vmo_ids {
+                        if let (Some(id), Some(size)) = (info.id, info.size) {
+                            let vmo = zx::Vmo::create(size).unwrap();
+                            let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+                            vmos.insert(id, vmo);
+                            state.registered_vmos.lock().push((ep_addr, id));
+                            registered.push(fusb_endpoint::VmoHandle {
+                                id: Some(id),
+                                vmo: Some(dup),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    let _ = responder.send(registered);
+                }
+                fusb_endpoint::EndpointRequest::UnregisterVmos { vmo_ids, responder } => {
+                    for id in vmo_ids {
+                        vmos.remove(&id);
+                        state.unregistered_vmos.lock().push((ep_addr, id));
+                    }
+                    let _ = responder.send(&[], &[]);
+                }
+                fusb_endpoint::EndpointRequest::QueueRequests { req: reqs, control_handle } => {
+                    if !state.enabled_endpoints.lock().contains(&ep_addr) {
+                        state.invalid_queue_while_disabled.fetch_add(1, Ordering::SeqCst);
+                    }
+                    if is_in && state.drop_endpoint_on_next_in.swap(false, Ordering::SeqCst) {
+                        // Like xHCI, disable the endpoint before closing the channel.
+                        state.enabled_endpoints.lock().remove(&ep_addr);
+                        return;
+                    }
+                    if state.complete_held_on_next_queue.swap(false, Ordering::SeqCst) {
+                        let completions: Vec<_> = held
+                            .drain(..)
+                            .map(|r| {
+                                let (id, offset, size) = request_region(&r);
+                                vmos[&id].write(&vec![0x99; size as usize], offset).unwrap();
+                                fusb_endpoint::Completion {
+                                    request: Some(r),
+                                    status: Some(zx::sys::ZX_OK),
+                                    transfer_size: Some(size),
+                                    ..Default::default()
+                                }
+                            })
+                            .collect();
+                        let _ = control_handle.send_on_completion(completions);
+                    }
+                    let mut completions = Vec::new();
+                    for r in reqs {
+                        state.request_types.lock().push((ep_addr, request_type_name(&r)));
+                        let (id, offset, size) = request_region(&r);
+                        state.request_sizes.lock().push((ep_addr, size));
+                        if is_in {
+                            state.bulk_in_queue_count.fetch_add(1, Ordering::SeqCst);
+                            if state.hold_in_requests.load(Ordering::SeqCst) {
+                                held.push(r);
+                                continue;
+                            }
+                            completions.push(complete_in_request(&state, &vmos, r));
+                        } else {
+                            let max_out = state.bulk_out_max_transfer_size.load(Ordering::Relaxed);
+                            let actual_size = std::cmp::min(size as usize, max_out);
+                            let mut buf = vec![0u8; actual_size];
+                            if actual_size > 0 {
+                                vmos[&id].read(&mut buf, offset).unwrap();
+                            }
+                            state.received_bulk_out.lock().push(buf);
+                            completions.push(fusb_endpoint::Completion {
+                                request: Some(r),
+                                status: Some(zx::sys::ZX_OK),
+                                transfer_size: Some(actual_size as u64),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    if !completions.is_empty() {
+                        let _ = control_handle.send_on_completion(completions);
+                        if is_in {
+                            if let Some(hook) = state.on_in_completion.lock().take() {
+                                hook();
+                            }
+                        }
+                    }
+                }
+                fusb_endpoint::EndpointRequest::CancelAll { responder } => {
+                    state.cancel_count.fetch_add(1, Ordering::SeqCst);
+                    let status = state.cancel_all_status.load(Ordering::SeqCst);
+                    if status != zx::sys::ZX_OK {
+                        let _ = responder.send(Err(status));
+                        continue;
+                    }
+                    let control_handle = responder.control_handle().clone();
+                    if state.send_stale_completion_on_cancel.swap(false, Ordering::SeqCst) {
+                        let _ =
+                            control_handle.send_on_completion(vec![fusb_endpoint::Completion {
+                                status: Some(zx::sys::ZX_ERR_CANCELED),
+                                transfer_size: Some(0),
+                                ..Default::default()
+                            }]);
+                    }
+                    let _ = responder.send(Ok(()));
+                    if held.is_empty() {
+                        continue;
+                    }
+                    let behavior =
+                        state.cancel_behavior.lock().unwrap_or(CancelBehavior::CompleteAfterReply);
+                    let completions: Vec<_> = match behavior {
+                        CancelBehavior::CompleteAfterReply => {
+                            held.drain(..).map(cancelled_completion).collect()
+                        }
+                        CancelBehavior::CompleteSuccessfullyAfterReply => {
+                            held.drain(..).map(|r| complete_in_request(&state, &vmos, r)).collect()
+                        }
+                        CancelBehavior::Drop => continue,
+                    };
+                    let _ = control_handle.send_on_completion(completions);
+                }
+                _ => {}
+            }
+        }
+        state.endpoint_unbound.signal();
+    }
+
+    fn status_result(status: i32) -> Result<(), i32> {
+        if status == zx::sys::ZX_OK { Ok(()) } else { Err(status) }
+    }
+
+    fn spawn_mock_usb_server(
+        kernel: &Arc<Kernel>,
+        config_values: HashSet<u8>,
+    ) -> (Arc<fhardware_usb::UsbSynchronousProxy>, Arc<MockUsbServerState>) {
+        let (client_end, server_end) = create_endpoints::<fhardware_usb::UsbMarker>();
+        let sync_proxy =
+            Arc::new(fhardware_usb::UsbSynchronousProxy::new(client_end.into_channel()));
+
+        let state = Arc::new(MockUsbServerState {
+            config_values: Mutex::new(config_values),
+            bulk_out_max_transfer_size: AtomicUsize::new(usize::MAX),
+            ..Default::default()
+        });
+
+        let state_srv = Arc::clone(&state);
+        let kernel_for_srv = Arc::clone(kernel);
+
+        kernel.kthreads.spawn_future(
+            move || async move {
+                let mut stream = server_end.into_stream();
+                while let Ok(Some(req)) = stream.try_next().await {
+                    match req {
+                        fhardware_usb::UsbRequest::ControlTransfer {
+                            setup,
+                            timeout_ns,
+                            write_data,
+                            responder,
+                        } => {
+                            state_srv.ctrl_timeouts.lock().push(timeout_ns);
+                            state_srv.ctrl_setups.lock().push((
+                                setup.bm_request_type,
+                                setup.b_request,
+                                setup.w_value,
+                                setup.w_index,
+                            ));
+                            let is_in = (setup.bm_request_type & (USB_DIR_IN as u8)) != 0;
+                            // Like usb-bus, the OUT data must match wLength.
+                            let expected_len = if is_in { 0 } else { usize::from(setup.w_length) };
+                            if write_data.len() != expected_len {
+                                let _ = responder.send(Err(zx::sys::ZX_ERR_INVALID_ARGS));
+                                continue;
+                            }
+                            if state_srv.hold_ctrl_transfers.load(Ordering::SeqCst) {
+                                state_srv.held_ctrl_responders.lock().push(responder);
+                                state_srv.ctrl_held.signal();
+                                continue;
+                            }
+                            let err = state_srv.ctrl_transfer_error.load(Ordering::Relaxed);
+                            if err != zx::sys::ZX_OK {
+                                let _ = responder.send(Err(err));
+                                continue;
+                            }
+                            if is_in {
+                                let reply =
+                                    vec![setup.b_request, (setup.w_value & 0xff) as u8, 0xca, 0xfe];
+                                let _ = responder.send(Ok(&reply));
+                            } else {
+                                *state_srv.last_ctrl_out.lock() = write_data;
+                                let _ = responder.send(Ok(&[]));
+                            }
+                        }
+                        fhardware_usb::UsbRequest::SetInterface {
+                            interface_number,
+                            alt_setting,
+                            responder,
+                        } => {
+                            let status = state_srv.set_interface_status.load(Ordering::Relaxed);
+                            if status == zx::sys::ZX_OK {
+                                *state_srv.last_set_iface.lock() =
+                                    Some((interface_number, alt_setting));
+                            }
+                            let _ = responder.send(status_result(status));
+                        }
+                        fhardware_usb::UsbRequest::SetConfiguration {
+                            configuration,
+                            responder,
+                        } => {
+                            state_srv.set_config_log.lock().push(configuration);
+                            // Like usb-bus, only configurations of the device are accepted.
+                            let status = if state_srv.config_values.lock().contains(&configuration)
+                            {
+                                state_srv.set_configuration_status.load(Ordering::Relaxed)
+                            } else {
+                                zx::sys::ZX_ERR_INVALID_ARGS
+                            };
+                            let _ = responder.send(status_result(status));
+                        }
+                        fhardware_usb::UsbRequest::EnableEndpoint {
+                            ep_desc,
+                            ss_com_desc,
+                            enable,
+                            responder,
+                        } => {
+                            // Like the xHCI driver, enabling an enabled endpoint or disabling a
+                            // disabled one fails.
+                            let address = ep_desc.b_endpoint_address;
+                            let mut enabled = state_srv.enabled_endpoints.lock();
+                            let ok = if enable {
+                                enabled.insert(address)
+                            } else {
+                                enabled.remove(&address)
+                            };
+                            if ok {
+                                state_srv.enable_log.lock().push((
+                                    address,
+                                    enable,
+                                    ep_desc.w_max_packet_size,
+                                ));
+                                if enable {
+                                    state_srv
+                                        .ss_companion_log
+                                        .lock()
+                                        .push((address, ss_com_desc.b_max_burst));
+                                }
+                                let _ = responder.send(Ok(()));
+                            } else {
+                                let _ = responder.send(Err(zx::sys::ZX_ERR_BAD_STATE));
+                            }
+                        }
+                        fhardware_usb::UsbRequest::ResetEndpoint { ep_address, responder } => {
+                            state_srv.last_reset_endpoint.store(ep_address, Ordering::Relaxed);
+                            state_srv.reset_endpoint_count.fetch_add(1, Ordering::Relaxed);
+                            let status = state_srv.reset_endpoint_status.load(Ordering::Relaxed);
+                            let _ = responder.send(status_result(status));
+                        }
+                        fhardware_usb::UsbRequest::ConnectToEndpoint { ep_addr, ep, responder } => {
+                            if let Some(hook) = state_srv.on_connect_to_endpoint.lock().take() {
+                                hook();
+                            }
+                            let err =
+                                state_srv.connect_error_once.swap(zx::sys::ZX_OK, Ordering::SeqCst);
+                            if err != zx::sys::ZX_OK {
+                                let _ = responder.send(Err(err));
+                                continue;
+                            }
+                            state_srv.connect_count.fetch_add(1, Ordering::SeqCst);
+                            let _ = responder.send(Ok(()));
+                            if state_srv
+                                .close_endpoint_before_register
+                                .swap(false, Ordering::SeqCst)
+                            {
+                                drop(ep);
+                                continue;
+                            }
+                            let ep_state = Arc::clone(&state_srv);
+                            kernel_for_srv.kthreads.spawn_future(
+                                move || serve_mock_endpoint(ep_addr, ep, ep_state),
+                                "mock_usb_ep_server",
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            },
+            "mock_usb_server",
+        );
+
+        (sync_proxy, state)
+    }
+
+    /// Returns the configuration values of the configuration descriptors in `config_bytes`.
+    fn config_values(config_bytes: &[u8]) -> HashSet<u8> {
+        let mut values = HashSet::new();
+        let mut rest = config_bytes;
+        while rest.len() >= 2 && usize::from(rest[0]) >= 2 && usize::from(rest[0]) <= rest.len() {
+            if u32::from(rest[1]) == USB_DT_CONFIG && rest.len() >= USB_DT_CONFIG_SIZE as usize {
+                values.insert(rest[5]);
+            }
+            rest = &rest[usize::from(rest[0])..];
+        }
+        values
+    }
+
+    /// Device served by a mock USB server.
+    struct MockDeviceOptions {
+        config_bytes: Vec<u8>,
+        speed: u32,
+        active_config: u8,
+        cancel_drain_timeout: zx::MonotonicDuration,
+    }
+
+    impl MockDeviceOptions {
+        fn new(config_bytes: Vec<u8>) -> Self {
+            Self {
+                config_bytes,
+                speed: USB_SPEED_HIGH,
+                active_config: 1,
+                cancel_drain_timeout: DEFAULT_CANCEL_DRAIN_TIMEOUT,
+            }
+        }
+    }
+
+    /// Runs `test` against device `DEV_NUM` served by a mock USB server.
+    async fn run_with_mock_device_options<F>(options: MockDeviceOptions, test: F)
+    where
+        F: FnOnce(&CurrentTask, &Arc<UsbDevice>, &Arc<MockUsbServerState>) + Send + Sync + 'static,
+    {
+        let mock_slot: Arc<Mutex<Option<Arc<MockUsbServerState>>>> = Default::default();
+        let mock_for_build = Arc::clone(&mock_slot);
+        run_with_device(
+            move |current_task| {
+                let (sync_proxy, mock) = spawn_mock_usb_server(
+                    current_task.kernel(),
+                    config_values(&options.config_bytes),
+                );
+                *mock_for_build.lock() = Some(mock);
+                let (device_desc, _) = create_mock_hid_descriptors();
+                let mut device =
+                    UsbDevice::new(1, DEV_NUM, options.speed, device_desc, options.config_bytes);
+                device.sync_proxy = Some(sync_proxy);
+                device.cancel_drain_timeout = options.cancel_drain_timeout;
+                device.state.get_mut().active_config = options.active_config;
+                device
+            },
+            move |current_task, device| {
+                let mock = mock_slot.lock().take().unwrap();
+                test(current_task, device, &mock);
+            },
+        )
+        .await;
+    }
+
+    /// Runs `test` against device `DEV_NUM` served by a mock USB server with configuration
+    /// descriptors `config_bytes`.
+    async fn run_with_mock_device<F>(config_bytes: Vec<u8>, test: F)
+    where
+        F: FnOnce(&CurrentTask, &Arc<UsbDevice>, &Arc<MockUsbServerState>) + Send + Sync + 'static,
+    {
+        run_with_mock_device_options(MockDeviceOptions::new(config_bytes), test).await;
     }
 
     #[::fuchsia::test]
@@ -591,7 +1492,7 @@ mod tests {
                     open_dev_node(current_task, b"bus/usb/001/003".into(), OpenFlags::RDONLY)
                         .expect("open_dev_node failed");
 
-                let mut output_buf = starnix_core::vfs::buffers::VecOutputBuffer::new(128);
+                let mut output_buf = VecOutputBuffer::new(128);
                 let bytes_read = file.ops().read(&file, current_task, 0, &mut output_buf).unwrap();
 
                 assert_eq!(bytes_read, expected_raw.len());
@@ -646,7 +1547,7 @@ mod tests {
             let usb_dev = Arc::new(UsbDevice::new(1, 5, USB_SPEED_HIGH, device_desc, config_bytes));
             let registered = manager.add_device(kernel, usb_dev).unwrap();
 
-            let props: std::collections::HashMap<FsString, FsString> =
+            let props: HashMap<FsString, FsString> =
                 registered.get_uevent_properties_list().into_iter().collect();
             assert_eq!(props.get(&FsString::from(b"SUBSYSTEM")).unwrap().as_slice(), b"usb");
             assert_eq!(props.get(&FsString::from(b"DEVTYPE")).unwrap().as_slice(), b"usb_device");
@@ -698,33 +1599,2067 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn test_barebones_ioctl_returns_enotty() {
-        spawn_kernel_with_features_and_run(
-            async |current_task| {
-                let kernel = current_task.kernel();
-                let manager = usbfs_init(kernel).expect("usbfs_init failed");
+    async fn test_usbfs_interface_claim_release_lifecycle() {
+        run_with_unconnected_device(hid_config(), |current_task| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
 
+            assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+            assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+
+            // Claiming non-existent interface < 64 returns ENOENT; >= 64 returns EINVAL.
+            assert_eq!(claim(current_task, &file1, arg, 5), error!(ENOENT));
+            assert_eq!(claim(current_task, &file1, arg, 99), error!(EINVAL));
+
+            assert_eq!(claim(current_task, &file2, arg, 0), error!(EBUSY));
+
+            // Releasing non-existent interface < 64 returns ENOENT; >= 64 returns EINVAL;
+            // releasing an interface not claimed by this FD returns EINVAL.
+            assert_eq!(release(current_task, &file1, arg, 5), error!(ENOENT));
+            assert_eq!(release(current_task, &file1, arg, 99), error!(EINVAL));
+            assert_eq!(release(current_task, &file2, arg, 0), error!(EINVAL));
+
+            assert_eq!(release(current_task, &file1, arg, 0), Ok(SUCCESS));
+            assert_eq!(claim(current_task, &file2, arg, 0), Ok(SUCCESS));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_interface_claim_release_on_file_close() {
+        run_with_unconnected_device(hid_config(), |current_task| {
+            let (arg, _) = map_test_buffers(current_task);
+            {
+                let file1 = open_device(current_task, DEV_NUM);
+                assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+            }
+            current_task.kernel().delayed_releaser.apply(current_task);
+
+            let file2 = open_device(current_task, DEV_NUM);
+            assert_eq!(claim(current_task, &file2, arg, 0), Ok(SUCCESS));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_empty_descriptors_have_no_interfaces_or_endpoints() {
+        run_with_unconnected_device(vec![], |current_task| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(claim(current_task, &file, arg, 0), error!(ENOENT));
+            // Without a configuration, endpoints cannot be looked up.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 0, data), error!(ESRCH));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_control_transfer_size_limit() {
+        run_with_unconnected_device(hid_config(), |current_task| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let ctrl = ctrl_transfer(
+                USB_DIR_IN,
+                USB_REQ_GET_DESCRIPTOR as u8,
+                (USB_DT_DEVICE as u16) << 8,
+                0,
+                (MAX_USBDEVFS_CONTROL_SIZE + 1) as u16,
+                1000,
+                UserAddress::NULL,
+            );
+            assert_eq!(
+                ioctl_with(current_task, &file, USBDEVFS_CONTROL, arg, &ctrl),
+                error!(EINVAL)
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    fn test_compat32_control_and_bulk_struct_layout() {
+        #[cfg(target_arch = "aarch64")]
+        {
+            assert_eq!(std::mem::size_of::<arch32::usbdevfs_ctrltransfer>(), 16);
+            assert_eq!(std::mem::size_of::<arch32::usbdevfs_bulktransfer>(), 16);
+            assert_eq!(std::mem::size_of::<arch32::usbdevfs_ioctl>(), 12);
+
+            for (arch32_request, expected) in [
+                (arch32::USBDEVFS_CONTROL, USBDEVFS_CONTROL),
+                (arch32::USBDEVFS_BULK, USBDEVFS_BULK),
+                (arch32::USBDEVFS_SETINTERFACE, USBDEVFS_SETINTERFACE),
+                (arch32::USBDEVFS_SETCONFIGURATION, USBDEVFS_SETCONFIGURATION),
+                (arch32::USBDEVFS_GETDRIVER, USBDEVFS_GETDRIVER),
+                (arch32::USBDEVFS_CONNECTINFO, USBDEVFS_CONNECTINFO),
+                (arch32::USBDEVFS_RESET, USBDEVFS_RESET),
+                (arch32::USBDEVFS_CLEAR_HALT, USBDEVFS_CLEAR_HALT),
+                (arch32::USBDEVFS_RELEASEINTERFACE, USBDEVFS_RELEASEINTERFACE),
+                (arch32::USBDEVFS_CLAIMINTERFACE, USBDEVFS_CLAIMINTERFACE),
+                (arch32::USBDEVFS_GET_CAPABILITIES, USBDEVFS_GET_CAPABILITIES),
+                (arch32::USBDEVFS_DISCONNECT_CLAIM, USBDEVFS_DISCONNECT_CLAIM),
+                (arch32::USBDEVFS_GET_SPEED, USBDEVFS_GET_SPEED),
+                (arch32::USBDEVFS_IOCTL, USBDEVFS_IOCTL),
+            ] {
+                assert_eq!(
+                    canonicalize_ioctl_request(true, arch32_request),
+                    expected,
+                    "request {arch32_request:#x}"
+                );
+            }
+            assert_eq!(
+                canonicalize_ioctl_request(false, arch32::USBDEVFS_CONTROL),
+                arch32::USBDEVFS_CONTROL
+            );
+
+            let ctrl32 = arch32::usbdevfs_ctrltransfer {
+                bRequestType: USB_DIR_IN as u8,
+                bRequest: USB_REQ_GET_DESCRIPTOR as u8,
+                wValue: (USB_DT_DEVICE as u16) << 8,
+                wIndex: 0,
+                wLength: 18,
+                timeout: 500,
+                data: uaddr32 { addr: 0x1234_5678 },
+            };
+            let converted_ctrl = usbdevfs_ctrltransfer::from(ctrl32);
+            assert_eq!(converted_ctrl.bRequestType, USB_DIR_IN as u8);
+            assert_eq!(converted_ctrl.wLength, 18);
+            assert_eq!(converted_ctrl.data.addr, 0x1234_5678);
+
+            let bulk32 = arch32::usbdevfs_bulktransfer {
+                ep: u32::from(EP1_IN),
+                len: 64,
+                timeout: 250,
+                data: uaddr32 { addr: 0x8765_4321 },
+            };
+            let converted_bulk = usbdevfs_bulktransfer::from(bulk32);
+            assert_eq!(converted_bulk.ep, u32::from(EP1_IN));
+            assert_eq!(converted_bulk.len, 64);
+            assert_eq!(converted_bulk.data.addr, 0x8765_4321);
+
+            let ioctl32 = arch32::usbdevfs_ioctl {
+                ifno: 1,
+                ioctl_code: USBDEVFS_DISCONNECT as i32,
+                data: uaddr32 { addr: 0xdead_beef },
+            };
+            let converted_ioctl = usbdevfs_ioctl::from(ioctl32);
+            assert_eq!(converted_ioctl.ifno, 1);
+            assert_eq!(converted_ioctl.ioctl_code, USBDEVFS_DISCONNECT as i32);
+            assert_eq!(converted_ioctl.data.addr, 0xdead_beef);
+        }
+        assert_eq!(std::mem::size_of::<usbdevfs_ctrltransfer>(), 24);
+        assert_eq!(std::mem::size_of::<usbdevfs_bulktransfer>(), 24);
+        assert_eq!(std::mem::size_of::<usbdevfs_ioctl>(), 16);
+        assert_eq!(canonicalize_ioctl_request(false, USBDEVFS_CONTROL), USBDEVFS_CONTROL);
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnected_device_rejects_all_ioctls_with_enodev() {
+        run_with_mock_device(hid_config(), |current_task, device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            device.on_disconnect();
+
+            for request in [
+                USBDEVFS_CONTROL,
+                USBDEVFS_BULK,
+                USBDEVFS_CLAIMINTERFACE,
+                USBDEVFS_RELEASEINTERFACE,
+                USBDEVFS_SETINTERFACE,
+                USBDEVFS_SETCONFIGURATION,
+                USBDEVFS_CLEAR_HALT,
+                USBDEVFS_RESET,
+                USBDEVFS_GETDRIVER,
+                USBDEVFS_GET_SPEED,
+                USBDEVFS_GET_CAPABILITIES,
+                USBDEVFS_CONNECTINFO,
+                USBDEVFS_DISCONNECT_CLAIM,
+                USBDEVFS_IOCTL,
+            ] {
+                assert_eq!(
+                    file.ops().ioctl(&file, current_task, request, arg.into()),
+                    error!(ENODEV),
+                    "request {request:#x}"
+                );
+            }
+
+            let mut output_buf = VecOutputBuffer::new(16);
+            let res_read = file.ops().read(&file, current_task, 0, &mut output_buf);
+            assert_eq!(res_read, error!(ENODEV));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_closed_usb_channel_returns_enodev_for_control_and_bulk() {
+        run_with_device(
+            |_| {
+                let (client_end, server_end) = create_endpoints::<fhardware_usb::UsbMarker>();
+                drop(server_end);
                 let (device_desc, config_bytes) = create_mock_hid_descriptors();
-                let usb_dev =
-                    Arc::new(UsbDevice::new(1, 2, USB_SPEED_HIGH, device_desc, config_bytes));
-                let registered = manager.add_device(kernel, usb_dev.clone()).unwrap();
-
-                let file = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDWR)
-                    .expect("open_dev_node failed");
-
-                // Calling any ioctl in barebones returns ENOTTY
-                let res = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
-                assert_eq!(res, error!(ENOTTY));
-
-                // Disconnecting the device causes ioctl to return ENODEV
-                usb_dev.on_disconnect();
-                let res_disconn = file.ops().ioctl(&file, current_task, 0x1234, 0u64.into());
-                assert_eq!(res_disconn, error!(ENODEV));
-
-                manager.remove_device(current_task, registered).unwrap();
+                let mut device =
+                    UsbDevice::new(1, DEV_NUM, USB_SPEED_HIGH, device_desc, config_bytes);
+                device.sync_proxy = Some(Arc::new(fhardware_usb::UsbSynchronousProxy::new(
+                    client_end.into_channel(),
+                )));
+                device
             },
-            KernelFeatures { devtmpfs: true, ..Default::default() },
+            |current_task, _device| {
+                let file = open_device(current_task, DEV_NUM);
+                let (arg, data) = map_test_buffers(current_task);
+
+                assert_eq!(
+                    control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 1000),
+                    error!(ENODEV)
+                );
+                assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENODEV));
+            },
         )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_invalid_and_unknown_ioctls() {
+        run_with_unconnected_device(hid_config(), |current_task| {
+            let file = open_device(current_task, DEV_NUM);
+
+            assert_eq!(ioctl_no_arg(current_task, &file, 0xdeadbeef), error!(ENOTTY));
+            assert_eq!(ioctl_no_arg(current_task, &file, USBDEVFS_GETDRIVER), error!(EFAULT));
+            assert_eq!(
+                ioctl_no_arg(current_task, &file, USBDEVFS_GET_SPEED),
+                Ok((USB_SPEED_HIGH as usize).into())
+            );
+
+            // Opening with O_RDONLY rejects all USBDEVFS_* ioctls with EPERM.
+            let ro_file = open_dev_node(current_task, b"bus/usb/001/002".into(), OpenFlags::RDONLY)
+                .expect("open ro_file");
+            assert_eq!(ioctl_no_arg(current_task, &ro_file, USBDEVFS_GET_SPEED), error!(EPERM));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_fidl_synchronous_control_transfers() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            current_task.write_object(UserRef::new(data), &[0u8; 4]).unwrap();
+            let ctrl_in = ctrl_transfer(USB_DIR_IN, TEST_REQUEST, 0x0102, 0, 4, 1000, data);
+            assert_eq!(
+                ioctl_with(current_task, &file, USBDEVFS_CONTROL, arg, &ctrl_in),
+                Ok(4.into())
+            );
+            assert_eq!(read_bytes::<4>(current_task, data), [TEST_REQUEST, 0x02, 0xca, 0xfe]);
+
+            let out_payload: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+            current_task.write_object(UserRef::new(data), &out_payload).unwrap();
+            let ctrl_out = ctrl_transfer(USB_DIR_OUT, TEST_REQUEST, 0, 0, 4, 1000, data);
+            assert_eq!(
+                ioctl_with(current_task, &file, USBDEVFS_CONTROL, arg, &ctrl_out),
+                Ok(4.into())
+            );
+            assert_eq!(*mock.last_ctrl_out.lock(), out_payload.to_vec());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_timeout_zero_means_no_timeout() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            for timeout in [0, 1000] {
+                assert_eq!(
+                    control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, timeout),
+                    Ok(0.into())
+                );
+            }
+            assert_eq!(
+                *mock.ctrl_timeouts.lock(),
+                vec![zx::MonotonicDuration::INFINITE.into_nanos(), 1_000_000_000]
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_device_errors_map_to_errno() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            for (status, expected) in [
+                (zx::sys::ZX_ERR_IO_REFUSED, error!(EPIPE)),
+                (zx::sys::ZX_ERR_TIMED_OUT, error!(ETIMEDOUT)),
+                (zx::sys::ZX_ERR_NOT_FOUND, error!(ENOENT)),
+                (zx::sys::ZX_ERR_ALREADY_BOUND, error!(EBUSY)),
+                (zx::sys::ZX_ERR_IO_NOT_PRESENT, error!(ENODEV)),
+                (zx::sys::ZX_ERR_PEER_CLOSED, error!(ENODEV)),
+                (zx::sys::ZX_ERR_INVALID_ARGS, error!(EINVAL)),
+                (zx::sys::ZX_ERR_BAD_STATE, error!(EHOSTUNREACH)),
+                (zx::sys::ZX_ERR_CANCELED, error!(ECONNRESET)),
+                (zx::sys::ZX_ERR_NO_MEMORY, error!(ENOMEM)),
+                (zx::sys::ZX_ERR_INTERNAL, error!(EIO)),
+            ] {
+                mock.ctrl_transfer_error.store(status, Ordering::Relaxed);
+                assert_eq!(
+                    control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 1000),
+                    expected,
+                    "status {status}"
+                );
+            }
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_wait_ignores_maskable_signals() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            current_task.thread_group.signal_actions.set(
+                SIGUSR1,
+                sigaction_t { sa_handler: uaddr { addr: 0x1000 }, ..sigaction_t::default() },
+            );
+            send_standard_signal(current_task, SignalInfo::kernel(SIGUSR1));
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 0),
+                Ok(0.into()),
+                "A maskable signal must not interrupt a control transfer"
+            );
+            assert_eq!(mock.ctrl_timeouts.lock().len(), 1);
+            assert!(current_task.read().has_signal_pending(SIGUSR1));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_wait_is_killable() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            mock.hold_ctrl_transfers.store(true, Ordering::SeqCst);
+
+            set_pending_sigkill(current_task, true);
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 0),
+                error!(EINTR),
+                "SIGKILL must end a control transfer without timeout"
+            );
+            set_pending_sigkill(current_task, false);
+
+            // Complete the abandoned transfer so the kernel thread running it exits.
+            mock.ctrl_held.wait_signaled();
+            for responder in mock.held_ctrl_responders.lock().drain(..) {
+                let _ = responder.send(Err(zx::sys::ZX_ERR_CANCELED));
+            }
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_waits_for_abandoned_control_transfer() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            mock.hold_ctrl_transfers.store(true, Ordering::SeqCst);
+
+            set_pending_sigkill(current_task, true);
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 0),
+                error!(EINTR)
+            );
+            mock.ctrl_held.wait_signaled();
+
+            // The abandoned transfer is still running, so the next one waits for it instead of
+            // starting another one, and that wait is killable too.
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 0),
+                error!(EINTR)
+            );
+            assert_eq!(mock.ctrl_timeouts.lock().len(), 1);
+            set_pending_sigkill(current_task, false);
+
+            // Once the abandoned transfer completes, the next transfer runs.
+            mock.hold_ctrl_transfers.store(false, Ordering::SeqCst);
+            for responder in mock.held_ctrl_responders.lock().drain(..) {
+                let _ = responder.send(Ok(&[]));
+            }
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 0),
+                Ok(0.into())
+            );
+            assert_eq!(mock.ctrl_timeouts.lock().len(), 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_recipient_requires_interface_claim() {
+        let config = build_config(
+            1,
+            &[
+                alt(0, 0, vec![(EP1_IN, XFER_BULK, 64)]),
+                TestAlt { interface: 1, alt: 0, class: CLASS_PRINTER, endpoints: vec![] },
+            ],
+        );
+        run_with_mock_device(config, |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let set_interface_request = USB_REQ_SET_INTERFACE as u8;
+            let clear_feature = USB_REQ_CLEAR_FEATURE as u8;
+            assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+            assert_eq!(claim(current_task, &file1, arg, 1), Ok(SUCCESS));
+
+            assert_eq!(
+                control(current_task, &file2, arg, INTERFACE_OUT, set_interface_request, 0, 1000),
+                error!(EBUSY)
+            );
+            let ep1_in = u16::from(EP1_IN);
+            assert_eq!(
+                control(current_task, &file2, arg, ENDPOINT_OUT, clear_feature, ep1_in, 1000),
+                error!(EBUSY)
+            );
+            // The endpoint number without its direction bit also resolves to the endpoint.
+            let ep1_number = u16::from(EP1_IN & !(USB_DIR_IN as u8));
+            assert_eq!(
+                control(current_task, &file2, arg, ENDPOINT_OUT, clear_feature, ep1_number, 1000),
+                error!(EBUSY)
+            );
+            assert_eq!(
+                control(current_task, &file2, arg, INTERFACE_OUT, set_interface_request, 64, 1000),
+                error!(EINVAL)
+            );
+            // Endpoint 0, device, and vendor requests need no claim.
+            let ep0_in = USB_DIR_IN as u16;
+            assert_eq!(
+                control(current_task, &file2, arg, ENDPOINT_OUT, clear_feature, ep0_in, 1000),
+                Ok(0.into())
+            );
+            assert_eq!(
+                control(current_task, &file2, arg, USB_DIR_OUT, TEST_REQUEST, 0, 1000),
+                Ok(0.into())
+            );
+            let vendor_interface = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_INTERFACE;
+            assert_eq!(
+                control(current_task, &file2, arg, vendor_interface, TEST_REQUEST, 0, 1000),
+                Ok(0.into())
+            );
+            // The printer class GET_DEVICE_ID request is allowed on a claimed interface.
+            assert_eq!(
+                control(current_task, &file2, arg, PRINTER_GET_DEVICE_ID, 0, 1 << 8, 1000),
+                Ok(0.into())
+            );
+            // None of these requests took the interfaces away from the first FD.
+            assert_eq!(release(current_task, &file1, arg, 1), Ok(SUCCESS));
+
+            // An interface-recipient request auto-claims the unclaimed interface.
+            assert_eq!(release(current_task, &file1, arg, 0), Ok(SUCCESS));
+            assert_eq!(
+                control(current_task, &file2, arg, INTERFACE_OUT, set_interface_request, 0, 1000),
+                Ok(0.into())
+            );
+            assert_eq!(claim(current_task, &file1, arg, 0), error!(EBUSY));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_control_interface_recipient_on_unconfigured_device() {
+        let options =
+            MockDeviceOptions { active_config: 0, ..MockDeviceOptions::new(hid_config()) };
+        run_with_mock_device_options(options, |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let request = USB_REQ_SET_INTERFACE as u8;
+
+            // The configuration is checked before the interface number.
+            for index in [0, 99] {
+                assert_eq!(
+                    control(current_task, &file, arg, INTERFACE_OUT, request, index, 1000),
+                    error!(EHOSTUNREACH),
+                    "interface {index}"
+                );
+            }
+            // Requests to the device are allowed.
+            assert_eq!(
+                control(current_task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 1000),
+                Ok(0.into())
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_only_disables_endpoints_of_interface() {
+        // Interface 0 alt 0 has EP1, alt 1 has no endpoints, interface 1 has EP2.
+        let config = build_config(
+            1,
+            &[
+                alt(0, 0, vec![(EP1_IN, XFER_INT, 64), (EP1_OUT, XFER_INT, 64)]),
+                alt(0, 1, vec![]),
+                alt(1, 0, vec![(EP2_IN, XFER_BULK, 64)]),
+            ],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, EP2_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            // Switching interface 0 to alt 1 disables EP1 IN but leaves EP2 IN alone.
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), Ok(SUCCESS));
+            assert_eq!(*mock.last_set_iface.lock(), Some((0, 1)));
+            assert_eq!(*mock.enabled_endpoints.lock(), HashSet::from([EP2_IN]));
+
+            // EP2 IN keeps working without being enabled again.
+            assert_eq!(bulk(current_task, &file, arg, EP2_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(
+                *mock.enable_log.lock(),
+                vec![(EP2_IN, true, 64), (EP1_IN, true, 64), (EP1_IN, false, 64)]
+            );
+
+            // EP1 IN is not in the active alternate setting anymore.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 2, 1000, data), error!(EINVAL));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_reenables_endpoints_after_switching_back() {
+        let config = build_config(
+            1,
+            &[
+                alt(0, 0, vec![]),
+                alt(0, 1, vec![(EP1_IN, XFER_BULK, 64)]),
+                alt(0, 2, vec![(EP1_IN, XFER_BULK, 512)]),
+                alt(1, 0, vec![(EP2_IN, XFER_BULK, 64)]),
+            ],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, EP2_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), Ok(SUCCESS));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(set_interface(current_task, &file, arg, 0, 0), Ok(SUCCESS));
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), Ok(SUCCESS));
+            // Fails if EP1 IN was not disabled when it left the active alternate setting, since
+            // enabling an enabled endpoint fails.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            // EP1 IN changes descriptors in alt 2, so it is enabled again with them.
+            assert_eq!(set_interface(current_task, &file, arg, 0, 2), Ok(SUCCESS));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            assert_eq!(
+                *mock.enable_log.lock(),
+                vec![
+                    (EP2_IN, true, 64),
+                    (EP1_IN, true, 64),
+                    (EP1_IN, false, 64),
+                    (EP1_IN, true, 64),
+                    (EP1_IN, false, 64),
+                    (EP1_IN, true, 512),
+                ]
+            );
+            // The endpoint channel is reused across disable and enable.
+            assert_eq!(mock.connect_count.load(Ordering::SeqCst), 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_invalid_alt_does_not_claim() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(set_interface(current_task, &file1, arg, 0, 0x100), error!(EINVAL));
+            assert_eq!(set_interface(current_task, &file1, arg, 0, 7), error!(EINVAL));
+            // The interface is not claimed by the first FD.
+            assert_eq!(claim(current_task, &file2, arg, 0), Ok(SUCCESS));
+            assert_eq!(set_interface(current_task, &file1, arg, 0, 0), error!(EBUSY));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_errno_order() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(set_interface(current_task, &file, arg, 99, 0x100), error!(EINVAL));
+            // A missing interface is reported before an invalid alternate setting.
+            assert_eq!(set_interface(current_task, &file, arg, 5, 0x100), error!(ENOENT));
+        })
+        .await;
+
+        let options =
+            MockDeviceOptions { active_config: 0, ..MockDeviceOptions::new(hid_config()) };
+        run_with_mock_device_options(options, |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            // The configuration is checked first.
+            assert_eq!(set_interface(current_task, &file, arg, 99, 0x100), error!(EHOSTUNREACH));
+            assert_eq!(set_interface(current_task, &file, arg, 0, 0), error!(EHOSTUNREACH));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_stall_on_single_alt_setting_succeeds() {
+        let config =
+            build_config(1, &[alt(0, 0, vec![(EP1_IN, XFER_BULK, 64), (EP2_OUT, XFER_BULK, 64)])]);
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            mock.set_interface_status.store(zx::sys::ZX_ERR_IO_REFUSED, Ordering::Relaxed);
+            assert_eq!(set_interface(current_task, &file, arg, 0, 0), Ok(SUCCESS));
+
+            // The halt of each endpoint of the interface is cleared instead.
+            let clear_halt =
+                |ep: u8| (ENDPOINT_OUT as u8, USB_REQ_CLEAR_FEATURE as u8, 0, u16::from(ep));
+            assert_eq!(*mock.ctrl_setups.lock(), vec![clear_halt(EP2_OUT), clear_halt(EP1_IN)]);
+            // The endpoints were disabled, and are enabled again on next use.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(
+                *mock.enable_log.lock(),
+                vec![(EP1_IN, true, 64), (EP1_IN, false, 64), (EP1_IN, true, 64)]
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_stall_on_multiple_alt_settings_fails() {
+        let config = build_config(
+            1,
+            &[alt(0, 0, vec![(EP1_IN, XFER_BULK, 64)]), alt(0, 1, vec![(EP1_IN, XFER_BULK, 64)])],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            mock.set_interface_status.store(zx::sys::ZX_ERR_IO_REFUSED, Ordering::Relaxed);
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), error!(EPIPE));
+            assert!(mock.ctrl_setups.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setinterface_failure_keeps_alt_setting() {
+        let config = build_config(
+            1,
+            &[alt(0, 0, vec![(EP1_IN, XFER_BULK, 64)]), alt(0, 1, vec![(EP2_IN, XFER_BULK, 64)])],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.set_interface_status.store(zx::sys::ZX_ERR_INTERNAL, Ordering::Relaxed);
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), error!(EIO));
+            // Alternate setting 0 is still active.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(bulk(current_task, &file, arg, EP2_IN, 4, 1000, data), error!(EINVAL));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setconfiguration_busy_with_any_claim() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+            // A claim by another FD or by the caller prevents the change.
+            assert_eq!(set_configuration(current_task, &file2, arg, 1), error!(EBUSY));
+            assert_eq!(set_configuration(current_task, &file1, arg, 1), error!(EBUSY));
+            // The claims are checked before the configuration value.
+            assert_eq!(set_configuration(current_task, &file1, arg, 0x100), error!(EBUSY));
+            assert!(mock.set_config_log.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setconfiguration_disables_endpoints() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(release(current_task, &file, arg, 0), Ok(SUCCESS));
+
+            assert_eq!(set_configuration(current_task, &file, arg, 1), Ok(SUCCESS));
+            assert_eq!(*mock.set_config_log.lock(), vec![1]);
+            assert!(mock.enabled_endpoints.lock().is_empty());
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(
+                *mock.enable_log.lock(),
+                vec![(EP1_IN, true, 64), (EP1_IN, false, 64), (EP1_IN, true, 64)]
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setconfiguration_rejects_invalid_values() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            for value in [0x100, -2, 5] {
+                assert_eq!(
+                    set_configuration(current_task, &file, arg, value),
+                    error!(EINVAL),
+                    "configuration {value}"
+                );
+            }
+            assert!(mock.set_config_log.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setconfiguration_unconfigure_rejected_by_driver() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(release(current_task, &file, arg, 0), Ok(SUCCESS));
+
+            // -1 unconfigures the device, which the USB driver does not support.
+            assert_eq!(set_configuration(current_task, &file, arg, -1), error!(EINVAL));
+            assert_eq!(*mock.set_config_log.lock(), vec![0]);
+
+            // The configuration is unchanged, and the disabled endpoint is enabled again.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(*mock.enabled_endpoints.lock(), HashSet::from([EP1_IN]));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_setconfiguration_failure_keeps_configuration() {
+        let mut config = hid_config();
+        config.extend(build_config(2, &[alt(3, 0, vec![])]));
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.set_configuration_status.store(zx::sys::ZX_ERR_IO_REFUSED, Ordering::Relaxed);
+            assert_eq!(set_configuration(current_task, &file, arg, 2), error!(EPIPE));
+            // Configuration 1 is still active.
+            assert_eq!(claim(current_task, &file, arg, 3), error!(ENOENT));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_unconfigured_device() {
+        let options =
+            MockDeviceOptions { active_config: 0, ..MockDeviceOptions::new(hid_config()) };
+        run_with_mock_device_options(options, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(claim(current_task, &file, arg, 0), error!(ENOENT));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ESRCH));
+            assert_eq!(clear_halt(current_task, &file, arg, u32::from(EP1_IN)), error!(ESRCH));
+
+            assert_eq!(set_configuration(current_task, &file, arg, 1), Ok(SUCCESS));
+            assert_eq!(*mock.set_config_log.lock(), vec![1]);
+            assert_eq!(claim(current_task, &file, arg, 0), Ok(SUCCESS));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_rejects_invalid_endpoints() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(clear_halt(current_task, &file, arg, 0x10), error!(EINVAL));
+            assert_eq!(clear_halt(current_task, &file, arg, 0x181), error!(EINVAL));
+            assert_eq!(clear_halt(current_task, &file, arg, 0x85), error!(ENOENT));
+            assert!(mock.ctrl_setups.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_skips_reset_endpoint_when_clear_feature_fails() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            mock.ctrl_transfer_error.store(zx::sys::ZX_ERR_IO_REFUSED, Ordering::Relaxed);
+            assert_eq!(clear_halt(current_task, &file, arg, u32::from(EP1_IN)), error!(EPIPE));
+            assert_eq!(mock.reset_endpoint_count.load(Ordering::Relaxed), 0);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_resets_halted_endpoint() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            assert_eq!(clear_halt(current_task, &file, arg, u32::from(EP1_IN)), Ok(SUCCESS));
+            assert_eq!(
+                *mock.ctrl_setups.lock(),
+                vec![(ENDPOINT_OUT as u8, USB_REQ_CLEAR_FEATURE as u8, 0, u16::from(EP1_IN))]
+            );
+            assert_eq!(mock.last_reset_endpoint.load(Ordering::Relaxed), EP1_IN);
+            assert_eq!(mock.reset_endpoint_count.load(Ordering::Relaxed), 1);
+            // The endpoint stays enabled.
+            assert_eq!(*mock.enable_log.lock(), vec![(EP1_IN, true, 64)]);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_reenables_endpoint_that_is_not_halted() {
+        for status in [zx::sys::ZX_ERR_INVALID_ARGS, zx::sys::ZX_ERR_NOT_SUPPORTED] {
+            run_with_mock_device(hid_config(), move |current_task, _device, mock| {
+                let file = open_device(current_task, DEV_NUM);
+                let (arg, data) = map_test_buffers(current_task);
+                assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+                // The host controller does not reset an endpoint that is not halted, so the
+                // endpoint is disabled to reset the host data toggle when it is enabled again.
+                mock.reset_endpoint_status.store(status, Ordering::Relaxed);
+                assert_eq!(clear_halt(current_task, &file, arg, u32::from(EP1_IN)), Ok(SUCCESS));
+                assert!(mock.enabled_endpoints.lock().is_empty());
+                assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+                assert_eq!(
+                    *mock.enable_log.lock(),
+                    vec![(EP1_IN, true, 64), (EP1_IN, false, 64), (EP1_IN, true, 64)]
+                );
+                // The endpoint channel stays open.
+                assert_eq!(mock.connect_count.load(Ordering::SeqCst), 1);
+                assert!(!mock.endpoint_unbound.is_signaled());
+            })
+            .await;
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_fails_on_reset_endpoint_error() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            mock.reset_endpoint_status.store(zx::sys::ZX_ERR_INTERNAL, Ordering::Relaxed);
+            assert_eq!(clear_halt(current_task, &file, arg, u32::from(EP1_IN)), error!(EIO));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_clear_halt_claims_interface() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(clear_halt(current_task, &file1, arg, u32::from(EP1_IN)), Ok(SUCCESS));
+            assert_eq!(clear_halt(current_task, &file2, arg, u32::from(EP1_IN)), error!(EBUSY));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_endpoint_lookup_searches_all_alt_settings() {
+        let config =
+            build_config(1, &[alt(0, 0, vec![]), alt(0, 1, vec![(EP1_IN, XFER_BULK, 64)])]);
+        run_with_mock_device(config, |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // EP1 IN belongs to inactive alt 1 of interface 0, which is claimed.
+            assert_eq!(clear_halt(current_task, &file1, arg, u32::from(EP1_IN)), Ok(SUCCESS));
+            assert_eq!(claim(current_task, &file2, arg, 0), error!(EBUSY));
+            assert_eq!(bulk(current_task, &file1, arg, EP1_IN, 4, 1000, data), error!(EINVAL));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_usbfs_null_buffer_returns_efault() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            let ctrl = ctrl_transfer(USB_DIR_OUT, TEST_REQUEST, 0, 0, 4, 1000, UserAddress::NULL);
+            assert_eq!(
+                ioctl_with(current_task, &file, USBDEVFS_CONTROL, arg, &ctrl),
+                error!(EFAULT)
+            );
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_OUT, 4, 1000, UserAddress::NULL),
+                error!(EFAULT)
+            );
+        })
+        .await;
+    }
+
+    /// Issues `USBDEVFS_CONNECTINFO` on a buffer filled with a non-zero pattern.
+    fn connect_info(current_task: &CurrentTask, file: &FileHandle) -> usbdevfs_connectinfo {
+        let (arg, _) = map_test_buffers(current_task);
+        let pattern = [0xffu8; std::mem::size_of::<usbdevfs_connectinfo>()];
+        assert_eq!(
+            ioctl_with(current_task, file, USBDEVFS_CONNECTINFO, arg, &pattern),
+            Ok(SUCCESS)
+        );
+        current_task.read_object(UserRef::new(arg)).unwrap()
+    }
+
+    #[::fuchsia::test]
+    async fn test_capabilities_and_connectinfo() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            // None of the optional capabilities is implemented.
+            assert_eq!(
+                ioctl_with(current_task, &file, USBDEVFS_GET_CAPABILITIES, arg, &0xffff_ffffu32),
+                Ok(SUCCESS)
+            );
+            let caps: u32 = current_task.read_object(UserRef::new(arg)).unwrap();
+            assert_eq!(caps, 0);
+
+            let conn_info = connect_info(current_task, &file);
+            assert_eq!(conn_info.devnum, u32::from(DEV_NUM));
+            assert_eq!(conn_info.slow, 0);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_connectinfo_reports_low_speed_device_as_slow() {
+        let options =
+            MockDeviceOptions { speed: USB_SPEED_LOW, ..MockDeviceOptions::new(hid_config()) };
+        run_with_mock_device_options(options, |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let conn_info = connect_info(current_task, &file);
+            assert_eq!(conn_info.devnum, u32::from(DEV_NUM));
+            assert_eq!(conn_info.slow, 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_getdriver_reports_usbfs_for_claimed_interfaces() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            let getdriver = |interface: u32| {
+                let mut gd = usbdevfs_getdriver::new_zeroed();
+                gd.interface = interface;
+                gd.driver.fill(0x7f);
+                ioctl_with(current_task, &file, USBDEVFS_GETDRIVER, arg, &gd)
+            };
+
+            assert_eq!(getdriver(0), error!(ENODATA));
+            assert_eq!(getdriver(5), error!(ENODATA));
+            assert_eq!(getdriver(99), error!(ENODATA));
+
+            assert_eq!(claim(current_task, &file, data, 0), Ok(SUCCESS));
+            assert_eq!(getdriver(0), Ok(SUCCESS));
+            let gd: usbdevfs_getdriver = current_task.read_object(UserRef::new(arg)).unwrap();
+            assert_eq!(gd.interface, 0);
+            let name: Vec<u8> =
+                gd.driver.iter().map(|&c| c as u8).take_while(|&c| c != 0).collect();
+            assert_eq!(name, b"usbfs");
+            assert!(gd.driver[name.len()..].iter().all(|&c| c == 0));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_claim_rejects_missing_interfaces() {
+        // Interface 3 only exists in inactive configuration 2.
+        let mut config = hid_config();
+        config.extend(build_config(2, &[alt(3, 0, vec![])]));
+        run_with_mock_device(config, |current_task, _device, _mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(disconnect_claim(current_task, &file, arg, 99, 0, b""), error!(EINVAL));
+            assert_eq!(disconnect_claim(current_task, &file, arg, 3, 0, b""), error!(EINVAL));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_claim_claims_free_interface() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(disconnect_claim(current_task, &file1, arg, 0, 0, b""), Ok(SUCCESS));
+            assert_eq!(disconnect_claim(current_task, &file1, arg, 0, 0, b""), Ok(SUCCESS));
+            assert_eq!(claim(current_task, &file2, arg, 0), error!(EBUSY));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_claim_driver_filters() {
+        run_with_mock_device(hid_config(), |current_task, _device, _mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let if_driver = USBDEVFS_DISCONNECT_CLAIM_IF_DRIVER;
+            let except_driver = USBDEVFS_DISCONNECT_CLAIM_EXCEPT_DRIVER;
+            assert_eq!(claim(current_task, &file1, arg, 0), Ok(SUCCESS));
+
+            // The interface is bound to the "usbfs" driver.
+            assert_eq!(
+                disconnect_claim(current_task, &file2, arg, 0, if_driver, b"usb-storage"),
+                error!(EBUSY)
+            );
+            assert_eq!(
+                disconnect_claim(current_task, &file2, arg, 0, except_driver, b"usbfs"),
+                error!(EBUSY)
+            );
+            assert_eq!(
+                disconnect_claim(current_task, &file2, arg, 0, if_driver, b"usbfs"),
+                Ok(SUCCESS)
+            );
+            assert_eq!(
+                disconnect_claim(current_task, &file1, arg, 0, except_driver, b"usb-storage"),
+                Ok(SUCCESS)
+            );
+            assert_eq!(claim(current_task, &file2, arg, 0), error!(EBUSY));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_claim_takes_interface_from_other_fd() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file1, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            assert_eq!(disconnect_claim(current_task, &file2, arg, 0, 0, b""), Ok(SUCCESS));
+            // The requests of the previous claimant are cancelled.
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+            assert_eq!(release(current_task, &file1, arg, 0), error!(EINVAL));
+            assert_eq!(claim(current_task, &file1, arg, 0), error!(EBUSY));
+            assert_eq!(bulk(current_task, &file2, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_driver_ioctl_disconnect_and_connect() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(
+                file1.ioctl(current_task, USBDEVFS_IOCTL, UserAddress::NULL.into()),
+                error!(EFAULT)
+            );
+            assert_eq!(
+                driver_ioctl(current_task, &file1, arg, 99, USBDEVFS_DISCONNECT),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                driver_ioctl(current_task, &file1, arg, -1, USBDEVFS_DISCONNECT),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                driver_ioctl(current_task, &file1, arg, 0, USBDEVFS_DISCONNECT),
+                error!(ENODATA)
+            );
+            assert_eq!(driver_ioctl(current_task, &file1, arg, 0, USBDEVFS_CONNECT), Ok(SUCCESS));
+            assert_eq!(driver_ioctl(current_task, &file1, arg, 0, 0x1234), error!(ENOTTY));
+
+            // Claiming interface 0 on file1 makes CONNECT return EBUSY and lets file2 detach file1.
+            assert_eq!(bulk(current_task, &file1, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(driver_ioctl(current_task, &file2, arg, 0, USBDEVFS_CONNECT), error!(EBUSY));
+            assert_eq!(
+                driver_ioctl(current_task, &file2, arg, 0, USBDEVFS_DISCONNECT),
+                Ok(SUCCESS)
+            );
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+            assert_eq!(release(current_task, &file1, arg, 0), error!(EINVAL));
+            assert_eq!(claim(current_task, &file2, arg, 0), Ok(SUCCESS));
+            assert_eq!(release(current_task, &file2, arg, 0), Ok(SUCCESS));
+            assert_eq!(driver_ioctl(current_task, &file2, arg, 0, USBDEVFS_CONNECT), Ok(SUCCESS));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_preserves_configuration_and_claims() {
+        let config = build_config(
+            1,
+            &[alt(0, 0, vec![(EP1_IN, XFER_BULK, 64)]), alt(0, 1, vec![(EP2_IN, XFER_BULK, 64)])],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(set_interface(current_task, &file1, arg, 0, 1), Ok(SUCCESS));
+
+            assert_eq!(ioctl_no_arg(current_task, &file1, USBDEVFS_RESET), Ok(SUCCESS));
+            assert!(mock.set_config_log.lock().is_empty());
+            assert_eq!(claim(current_task, &file2, arg, 0), error!(EBUSY));
+            // Alternate setting 1 is still active.
+            assert_eq!(bulk(current_task, &file1, arg, EP2_IN, 4, 1000, data), Ok(4.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_cancels_endpoint_requests() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            assert_eq!(ioctl_no_arg(current_task, &file, USBDEVFS_RESET), Ok(SUCCESS));
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_stray_completion_is_not_mistaken_for_next_one() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            // A stray completion sent while no request is in flight must not be mistaken for
+            // the completion of a later request.
+            mock.send_stale_completion_on_cancel.store(true, Ordering::SeqCst);
+            assert_eq!(ioctl_no_arg(current_task, &file, USBDEVFS_RESET), Ok(SUCCESS));
+            mock.bulk_in_scripted_packets.lock().push_back((vec![1, 2, 3, 4], zx::sys::ZX_OK));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), [1, 2, 3, 4]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_rejects_invalid_endpoints() {
+        let config = build_config(
+            1,
+            &[alt(
+                0,
+                0,
+                vec![(EP1_IN, XFER_ISO, 64), (EP2_IN, XFER_BULK, 0), (EP3_IN, XFER_BULK, 64)],
+            )],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, 0x10, 0, 1000, data), error!(EINVAL));
+            assert_eq!(bulk_raw(current_task, &file, arg, 0x101, 0, 1000, data), error!(EINVAL));
+            assert_eq!(bulk(current_task, &file, arg, 0x85, 0, 1000, data), error!(ENOENT));
+            // Isochronous endpoints and endpoints with a zero wMaxPacketSize are rejected.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(EINVAL));
+            assert_eq!(bulk(current_task, &file, arg, EP2_IN, 4, 1000, data), error!(EINVAL));
+            assert!(mock.request_types.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_length_limits() {
+        let config =
+            build_config(1, &[alt(0, 0, vec![(EP1_IN, XFER_ISO, 64), (EP3_IN, XFER_BULK, 64)])]);
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            let too_long = (MAX_USBDEVFS_BULK_SIZE + 1) as u32;
+            let invalid = INVALID_USBDEVFS_BULK_SIZE as u32;
+
+            // usbfs limits the memory used by a transfer, including its URB.
+            assert_eq!(
+                bulk(current_task, &file, arg, EP3_IN, too_long, 1000, data),
+                error!(ENOMEM)
+            );
+            // Very large lengths are invalid, which is checked before the endpoint.
+            assert_eq!(bulk(current_task, &file, arg, EP3_IN, invalid, 1000, data), error!(EINVAL));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, invalid, 1000, data), error!(EINVAL));
+            // The endpoint is checked before the memory limit.
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, too_long, 1000, data),
+                error!(EINVAL)
+            );
+            assert!(mock.request_types.lock().is_empty());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_uses_endpoint_transfer_type() {
+        let config =
+            build_config(1, &[alt(0, 0, vec![(EP1_IN, XFER_INT, 64), (EP2_OUT, XFER_BULK, 512)])]);
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(bulk(current_task, &file, arg, EP2_OUT, 4, 1000, data), Ok(4.into()));
+            assert_eq!(*mock.request_types.lock(), vec![(EP1_IN, "interrupt"), (EP2_OUT, "bulk")]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_enable_endpoint_passes_ss_companion() {
+        let mut config = build_config(1, &[alt(0, 0, vec![])]);
+        config.extend(endpoint_descriptor(EP1_IN, XFER_BULK, 1024));
+        config.extend([USB_DT_SS_EP_COMP_SIZE as u8, USB_DT_SS_ENDPOINT_COMP as u8, 3, 0, 0, 0]);
+        config[4 + USB_DT_CONFIG_SIZE as usize] = 1; // bNumEndpoints
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(*mock.ss_companion_log.lock(), vec![(EP1_IN, 3)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_out_claims_interface() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            let out_payload = [0x11u8, 0x22, 0x33, 0x44, 0x55];
+            current_task.write_memory(data, &out_payload).unwrap();
+            assert_eq!(bulk(current_task, &file1, arg, EP1_OUT, 5, 0, data), Ok(5.into()));
+            assert_eq!(bulk(current_task, &file2, arg, EP1_OUT, 5, 0, data), error!(EBUSY));
+            assert_eq!(*mock.received_bulk_out.lock(), vec![out_payload.to_vec()]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_zero_length_transfers_queue_zero_length_requests() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_OUT, 0, 1000, UserAddress::NULL),
+                Ok(0.into())
+            );
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 0, 1000, UserAddress::NULL),
+                Ok(0.into())
+            );
+            assert_eq!(*mock.request_sizes.lock(), vec![(EP1_OUT, 0), (EP1_IN, 0)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_out_short_write_returns_partial_count() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // If the device accepts only 3 of 5 bytes, 3 is returned.
+            mock.bulk_out_max_transfer_size.store(3, Ordering::Relaxed);
+            assert_eq!(bulk(current_task, &file, arg, EP1_OUT, 5, 1000, data), Ok(3.into()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_in_returns_eoverflow_when_device_sends_too_much() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            current_task.write_memory(data, &[0u8; 6]).unwrap();
+
+            mock.overreport_in_transfer_size.store(true, Ordering::SeqCst);
+            mock.bulk_in_scripted_packets.lock().push_back((vec![1, 2, 3, 4, 5, 6], 0));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 2, 1000, data), error!(EOVERFLOW));
+            assert_eq!(read_bytes::<6>(current_task, data), [0; 6]);
+
+            // Nothing is kept for the next transfer.
+            mock.overreport_in_transfer_size.store(false, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(mock.bulk_in_queue_count.load(Ordering::SeqCst), 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_release_cancels_endpoint_requests() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            assert_eq!(release(current_task, &file, arg, 0), Ok(SUCCESS));
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_release_resets_nonzero_alternate_setting_to_zero() {
+        let config = build_config(
+            1,
+            &[alt(0, 0, vec![(EP1_IN, XFER_BULK, 64)]), alt(0, 1, vec![(EP2_IN, XFER_BULK, 64)])],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            assert_eq!(set_interface(current_task, &file, arg, 0, 1), Ok(SUCCESS));
+            assert_eq!(*mock.last_set_iface.lock(), Some((0, 1)));
+
+            assert_eq!(release(current_task, &file, arg, 0), Ok(SUCCESS));
+            assert_eq!(*mock.last_set_iface.lock(), Some((0, 0)));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_close_cancels_endpoint_requests() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let (arg, data) = map_test_buffers(current_task);
+            let file = open_device(current_task, DEV_NUM);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            drop(file);
+            current_task.kernel().delayed_releaser.apply(current_task);
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    /// Runs `f` on a kernel thread once `count` IN requests have been queued to the mock, and
+    /// returns a receiver for its result.
+    fn run_when_in_requests_queued<R: Send + 'static>(
+        current_task: &CurrentTask,
+        mock: &Arc<MockUsbServerState>,
+        count: usize,
+        f: impl FnOnce(&CurrentTask) -> R + Send + 'static,
+    ) -> std::sync::mpsc::Receiver<R> {
+        let mock = Arc::clone(mock);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let closure = move |task: &CurrentTask| {
+            while mock.bulk_in_queue_count.load(Ordering::SeqCst) < count {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let _ = sender.send(f(task));
+        };
+        let request = SpawnRequestBuilder::new()
+            .with_debug_name("usbfs-test")
+            .with_sync_closure(closure)
+            .build();
+        current_task.kernel().kthreads.spawner().spawn_from_request(request);
+        receiver
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_from_other_fd_shuts_down_in_flight_bulk() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // Another file descriptor resets the device while a transfer without timeout waits
+            // for its request.
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            let reset = run_when_in_requests_queued(current_task, mock, 1, move |task| {
+                ioctl_no_arg(task, &file2, USBDEVFS_RESET)
+            });
+            assert_eq!(bulk(current_task, &file1, arg, EP1_IN, 4, 0, data), error!(ESHUTDOWN));
+            assert_eq!(reset.recv().unwrap(), Ok(SUCCESS));
+
+            // The cancelled request was drained: the next transfer gets its own completion on
+            // the same VMO.
+            mock.hold_in_requests.store(false, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file1, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(mock.registered_vmos.lock().len(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_fails_in_flight_bulk_with_enodev() {
+        run_with_mock_device(hid_config(), |current_task, device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            let device = Arc::clone(device);
+            let disconnected =
+                run_when_in_requests_queued(current_task, mock, 1, move |_| device.on_disconnect());
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 0, data), error!(ENODEV));
+            disconnected.recv().unwrap();
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_timeout_drains_late_cancelled_completion() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // The request never completes, and its cancelled completion arrives after the
+            // CancelAll reply.
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(ETIMEDOUT));
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+
+            // The next transfer gets its own completion, not the cancelled one.
+            mock.hold_in_requests.store(false, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(mock.connect_count.load(Ordering::SeqCst), 1);
+            assert_eq!(mock.registered_vmos.lock().len(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_timeout_returns_data_completed_before_cancel() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // The request completes successfully as it is cancelled after the timeout.
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            *mock.cancel_behavior.lock() = Some(CancelBehavior::CompleteSuccessfullyAfterReply);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_timeout_retires_vmo_when_cancel_does_not_complete() {
+        let options = MockDeviceOptions {
+            cancel_drain_timeout: zx::MonotonicDuration::from_millis(50),
+            ..MockDeviceOptions::new(hid_config())
+        };
+        run_with_mock_device_options(options, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            *mock.cancel_behavior.lock() = Some(CancelBehavior::Drop);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(ETIMEDOUT));
+
+            // The next transfer uses a new VMO on the same channel, without disabling the
+            // endpoint.
+            mock.hold_in_requests.store(false, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(*mock.registered_vmos.lock(), vec![(EP1_IN, 1), (EP1_IN, 2)]);
+            assert_eq!(mock.connect_count.load(Ordering::SeqCst), 1);
+            assert_eq!(*mock.enable_log.lock(), vec![(EP1_IN, true, 64)]);
+            assert!(!mock.endpoint_unbound.is_signaled());
+
+            // The retired request eventually completes successfully. Its completion is not
+            // mistaken for the one of the next transfer, and the retired VMO is unregistered.
+            mock.complete_held_on_next_queue.store(true, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(*mock.unregistered_vmos.lock(), vec![(EP1_IN, 1)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_fails_when_too_many_vmos_are_retired() {
+        let options = MockDeviceOptions {
+            cancel_drain_timeout: zx::MonotonicDuration::from_millis(50),
+            ..MockDeviceOptions::new(hid_config())
+        };
+        run_with_mock_device_options(options, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            *mock.cancel_behavior.lock() = Some(CancelBehavior::Drop);
+            for _ in 0..=MAX_RETIRED_VMOS {
+                assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(ETIMEDOUT));
+            }
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(EIO));
+            assert_eq!(mock.registered_vmos.lock().len(), MAX_RETIRED_VMOS + 1);
+            assert_eq!(mock.bulk_in_queue_count.load(Ordering::SeqCst), MAX_RETIRED_VMOS + 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_wait_ignores_maskable_signals() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            current_task.thread_group.signal_actions.set(
+                SIGUSR1,
+                sigaction_t { sa_handler: uaddr { addr: 0x1000 }, ..sigaction_t::default() },
+            );
+            send_standard_signal(current_task, SignalInfo::kernel(SIGUSR1));
+            // A pending maskable signal neither interrupts a transfer that completes nor one that
+            // times out.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 0, data), Ok(4.into()));
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(ETIMEDOUT));
+            assert!(current_task.read().has_signal_pending(SIGUSR1));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_wait_is_killable() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            set_pending_sigkill(current_task, true);
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 4, 0, data),
+                error!(EINTR),
+                "SIGKILL must end a bulk transfer without timeout"
+            );
+            set_pending_sigkill(current_task, false);
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+
+            // The cancelled request was drained: the next transfer gets its own completion on
+            // the same VMO.
+            mock.hold_in_requests.store(false, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+            assert_eq!(mock.connect_count.load(Ordering::SeqCst), 1);
+            assert_eq!(mock.registered_vmos.lock().len(), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_without_usb_connection_returns_enodev() {
+        run_with_unconnected_device(hid_config(), |current_task| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+
+            // ENODEV is returned before reading user memory.
+            let unmapped = UserAddress::from(0x1000u64);
+            assert_eq!(bulk(current_task, &file, arg, EP1_OUT, 64, 1000, unmapped), error!(ENODEV));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_cancels_endpoint_transfers() {
+        run_with_mock_device(hid_config(), |current_task, device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+
+            device.on_disconnect();
+            assert_eq!(mock.cancel_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_endpoint_closed_before_register_vmos_disables_endpoint() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.close_endpoint_before_register.store(true, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENODEV));
+            assert_eq!(*mock.enable_log.lock(), vec![(EP1_IN, true, 64), (EP1_IN, false, 64)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_endpoint_connect_failure_disables_endpoint() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            // The endpoint is disabled again, so a later attempt can enable it.
+            mock.connect_error_once.store(zx::sys::ZX_ERR_NOT_FOUND, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENOENT));
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(
+                *mock.enable_log.lock(),
+                vec![(EP1_IN, true, 64), (EP1_IN, false, 64), (EP1_IN, true, 64)]
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_reconnects_after_driver_closes_endpoint() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.drop_endpoint_on_next_in.store(true, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENODEV));
+
+            // The driver disabled the endpoint before closing the channel, so it is enabled and
+            // connected again.
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(mock.connect_count.load(Ordering::SeqCst), 2);
+            assert_eq!(*mock.enable_log.lock(), vec![(EP1_IN, true, 64), (EP1_IN, true, 64)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_out_chunks_transfers_larger_than_vmo() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let large_payload: Vec<u8> = (0..70_000usize).map(|i| (i % 251) as u8).collect();
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+            current_task.write_memory(buf_addr, &large_payload).unwrap();
+
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_OUT, large_payload.len() as u32, 2000, buf_addr),
+                Ok(large_payload.len().into())
+            );
+            assert_eq!(mock.received_bulk_out.lock().concat(), large_payload);
+            assert_eq!(*mock.request_sizes.lock(), vec![(EP1_OUT, 65_536), (EP1_OUT, 4_464)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_in_chunks_transfers_larger_than_vmo() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+
+            // 70,000 bytes are received as a 65,536-byte chunk and a 4,464-byte chunk.
+            let expected_in: Vec<u8> = (0..70_000usize).map(|i| (i % 239) as u8).collect();
+            {
+                let mut scripted = mock.bulk_in_scripted_packets.lock();
+                scripted.push_back((expected_in[..65_536].to_vec(), zx::sys::ZX_OK));
+                scripted.push_back((expected_in[65_536..].to_vec(), zx::sys::ZX_OK));
+            }
+            let len = expected_in.len() as u32;
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, len, 2000, buf_addr),
+                Ok(expected_in.len().into())
+            );
+            let actual_in = current_task.read_memory_to_vec(buf_addr, expected_in.len()).unwrap();
+            assert_eq!(actual_in, expected_in);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_in_error_in_second_chunk_discards_first_chunk() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+
+            current_task.write_memory(buf_addr, &[0u8; 16]).unwrap();
+            {
+                let mut scripted = mock.bulk_in_scripted_packets.lock();
+                scripted.push_back((vec![0x5au8; 65_536], zx::sys::ZX_OK));
+                scripted.push_back((Vec::new(), zx::sys::ZX_ERR_IO_REFUSED));
+            }
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 70_000, 2000, buf_addr),
+                error!(EPIPE)
+            );
+            let untouched = current_task.read_memory_to_vec(buf_addr, 16).unwrap();
+            assert_eq!(untouched, vec![0u8; 16]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_in_short_chunk_ends_transfer() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+
+            mock.bulk_in_scripted_packets.lock().push_back((vec![0x11; 100], zx::sys::ZX_OK));
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 70_000, 2000, buf_addr),
+                Ok(100.into())
+            );
+            assert_eq!(mock.bulk_in_queue_count.load(Ordering::SeqCst), 1);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_bulk_chunks_are_multiples_of_max_packet_size() {
+        // Interrupt endpoints can have a wMaxPacketSize that does not divide the VMO size.
+        let config = build_config(
+            1,
+            &[alt(0, 0, vec![(EP1_OUT, XFER_INT, 1000), (EP1_IN, XFER_INT, 1000)])],
+        );
+        run_with_mock_device(config, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_OUT, 70_000, 2000, buf_addr),
+                Ok(70_000.into())
+            );
+            {
+                let mut scripted = mock.bulk_in_scripted_packets.lock();
+                scripted.push_back((vec![1; 65_000], zx::sys::ZX_OK));
+                scripted.push_back((vec![2; 5_000], zx::sys::ZX_OK));
+            }
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 70_000, 2000, buf_addr),
+                Ok(70_000.into())
+            );
+            assert_eq!(
+                *mock.request_sizes.lock(),
+                vec![(EP1_OUT, 65_000), (EP1_OUT, 5_000), (EP1_IN, 65_000), (EP1_IN, 5_000)]
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_between_bulk_chunks_returns_eshutdown() {
+        run_with_mock_device(hid_config(), |current_task, device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, _) = map_test_buffers(current_task);
+            let buf_addr = map_test_buffer(current_task, 73_728);
+
+            // Complete the first 65,536-byte chunk normally, but reset the endpoint before the
+            // second chunk is submitted. The transfer must fail with ESHUTDOWN (not ENOENT).
+            mock.bulk_in_scripted_packets.lock().push_back((vec![0x42u8; 65_536], zx::sys::ZX_OK));
+            let device_for_hook = Arc::clone(device);
+            *mock.on_in_completion.lock() = Some(Box::new(move || {
+                device_for_hook.reset_endpoint_state(EP1_IN);
+            }));
+
+            assert_eq!(
+                bulk(current_task, &file, arg, EP1_IN, 70_000, 2000, buf_addr),
+                error!(ESHUTDOWN)
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_cancel_all_domain_error_retires_vmo_without_waiting_for_drain_timeout() {
+        let options = MockDeviceOptions {
+            // Large drain timeout so that ignoring an inner CancelAll error would block for
+            // multiple seconds instead of returning immediately.
+            cancel_drain_timeout: zx::MonotonicDuration::from_seconds(5),
+            ..MockDeviceOptions::new(hid_config())
+        };
+        run_with_mock_device_options(options, |current_task, _device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            mock.cancel_all_status.store(zx::sys::ZX_ERR_IO, Ordering::SeqCst);
+            let start = zx::MonotonicInstant::get();
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1, data), error!(ETIMEDOUT));
+            let elapsed = zx::MonotonicInstant::get() - start;
+            assert!(
+                elapsed < zx::MonotonicDuration::from_seconds(1),
+                "CancelAll domain error must abort draining immediately, took {elapsed:?}"
+            );
+
+            // Because CancelAll failed, the next transfer retires VMO 1 and registers VMO 2.
+            mock.hold_in_requests.store(false, Ordering::SeqCst);
+            mock.cancel_all_status.store(zx::sys::ZX_OK, Ordering::SeqCst);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(*mock.registered_vmos.lock(), vec![(EP1_IN, 1), (EP1_IN, 2)]);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_disconnect_during_endpoint_connect_returns_enodev_and_leaves_no_endpoint() {
+        run_with_mock_device(hid_config(), |current_task, device, mock| {
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+
+            let device_for_hook = Arc::clone(device);
+            *mock.on_connect_to_endpoint.lock() = Some(Box::new(move || {
+                device_for_hook.on_disconnect();
+            }));
+
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENODEV));
+            assert!(
+                mock.enabled_endpoints.lock().is_empty(),
+                "endpoint enabled concurrently with on_disconnect must be rolled back"
+            );
+        })
+        .await;
+    }
+
+    fn spawn_kernel_thread<R: Send + Sync + 'static>(
+        current_task: &CurrentTask,
+        f: impl FnOnce(&CurrentTask) -> R + Send + Sync + 'static,
+    ) -> std::sync::mpsc::Receiver<R> {
+        let task_builder = current_task
+            .clone_task(
+                u64::from(
+                    starnix_uapi::CLONE_VM
+                        | starnix_uapi::CLONE_FS
+                        | starnix_uapi::CLONE_FILES
+                        | starnix_uapi::CLONE_THREAD
+                        | starnix_uapi::CLONE_SIGHAND,
+                ),
+                None,
+                UserRef::default(),
+                UserRef::default(),
+                UserRef::default(),
+            )
+            .expect("failed to clone task in test");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        starnix_core::execution::execute_task(
+            task_builder,
+            move |worker_task| {
+                let result = f(worker_task);
+                worker_task
+                    .write()
+                    .set_exit_status_if_not_already(starnix_core::task::ExitStatus::Exit(0));
+                let _ = sender.send(result);
+                error!(EHWPOISON)
+            },
+            |_| {},
+        )
+        .expect("failed to execute worker task");
+        receiver
+    }
+
+    #[::fuchsia::test]
+    async fn test_reset_before_begin_transfer_returns_eshutdown() {
+        run_with_mock_device(hid_config(), |current_task, _device, mock| {
+            let file1 = open_device(current_task, DEV_NUM);
+            let file2 = open_device(current_task, DEV_NUM);
+
+            // Thread 1 holds the endpoint transfer lock while waiting on an in-flight request.
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            let file1_first = Arc::clone(&file1);
+            let first = spawn_kernel_thread(current_task, move |task| {
+                let (arg1, data1) = map_test_buffers(task);
+                bulk(task, &file1_first, arg1, EP1_IN, 4, 0, data1)
+            });
+            while mock.bulk_in_queue_count.load(Ordering::SeqCst) < 1 {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+
+            // Thread 2 snapshots `expected_reset` in `bulk` and blocks on the endpoint transfer
+            // lock before entering `begin_transfer`.
+            let entered = Arc::new(AtomicBool::new(false));
+            let entered_clone = Arc::clone(&entered);
+            let file1_second = Arc::clone(&file1);
+            let second = spawn_kernel_thread(current_task, move |task| {
+                let (arg2, data2) = map_test_buffers(task);
+                entered_clone.store(true, Ordering::SeqCst);
+                bulk(task, &file1_second, arg2, EP1_IN, 4, 1000, data2)
+            });
+            while !entered.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            // Give Thread 2 a brief moment to reach `self.transfer.lock()`.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            // Resetting the device wakes Thread 1 and increments `reset_count`, so when Thread 2
+            // acquires `self.transfer.lock()`, `begin_transfer` sees the reset and returns
+            // `ESHUTDOWN`.
+            assert_eq!(ioctl_no_arg(current_task, &file2, USBDEVFS_RESET), Ok(SUCCESS));
+            assert_eq!(first.recv().unwrap(), error!(ESHUTDOWN));
+            assert_eq!(second.recv().unwrap(), error!(ESHUTDOWN));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_concurrent_bulk_transfers_resets_alt_switches_and_errors_stress() {
+        let config = build_config(
+            1,
+            &[
+                alt(0, 0, vec![(EP1_IN, XFER_BULK, 512), (EP1_OUT, XFER_BULK, 512)]),
+                alt(0, 1, vec![(EP1_IN, XFER_BULK, 512), (EP1_OUT, XFER_BULK, 512)]),
+            ],
+        );
+        let options = MockDeviceOptions {
+            cancel_drain_timeout: zx::MonotonicDuration::from_millis(20),
+            ..MockDeviceOptions::new(config)
+        };
+        run_with_mock_device_options(options, |current_task, _device, mock| {
+            const ITERS: usize = 25;
+            let file_in = open_device(current_task, DEV_NUM);
+            let file_out = open_device(current_task, DEV_NUM);
+            let file_ctrl = open_device(current_task, DEV_NUM);
+            let file_mgmt = open_device(current_task, DEV_NUM);
+
+            // Worker 1: single-chunk and multi-chunk IN transfers with short timeouts and errors.
+            let mock_in = Arc::clone(mock);
+            let t_in = spawn_kernel_thread(current_task, move |task| {
+                let (arg_in, _) = map_test_buffers(task);
+                let buf_in = map_test_buffer(task, 73_728);
+                for i in 0..ITERS {
+                    if i % 5 == 0 {
+                        mock_in
+                            .bulk_in_scripted_packets
+                            .lock()
+                            .push_back((Vec::new(), zx::sys::ZX_ERR_IO_REFUSED));
+                    }
+                    let len = if i % 3 == 0 { 70_000 } else { 64 };
+                    let _ = bulk(task, &file_in, arg_in, EP1_IN, len, 5, buf_in);
+                }
+            });
+
+            // Worker 2: single-chunk and multi-chunk OUT transfers with periodic short writes.
+            let mock_out = Arc::clone(mock);
+            let t_out = spawn_kernel_thread(current_task, move |task| {
+                let (arg_out, _) = map_test_buffers(task);
+                let buf_out = map_test_buffer(task, 73_728);
+                task.write_memory(buf_out, &[0x5au8; 70_000]).unwrap();
+                for i in 0..ITERS {
+                    if i % 5 == 0 {
+                        mock_out.bulk_out_max_transfer_size.store(16, Ordering::Relaxed);
+                    } else {
+                        mock_out.bulk_out_max_transfer_size.store(usize::MAX, Ordering::Relaxed);
+                    }
+                    let len = if i % 4 == 0 { 70_000 } else { 64 };
+                    let _ = bulk(task, &file_out, arg_out, EP1_OUT, len, 5, buf_out);
+                }
+                mock_out.bulk_out_max_transfer_size.store(usize::MAX, Ordering::Relaxed);
+            });
+
+            // Worker 3: concurrent control transfers exercising ControlTransferSlot and errors.
+            let mock_ctrl = Arc::clone(mock);
+            let t_ctrl = spawn_kernel_thread(current_task, move |task| {
+                let (arg_ctrl, _) = map_test_buffers(task);
+                for i in 0..ITERS {
+                    let status =
+                        if i % 6 == 0 { zx::sys::ZX_ERR_IO_REFUSED } else { zx::sys::ZX_OK };
+                    mock_ctrl.ctrl_transfer_error.store(status, Ordering::Relaxed);
+                    let _ = control(task, &file_ctrl, arg_ctrl, USB_DIR_OUT, TEST_REQUEST, 0, 10);
+                }
+                mock_ctrl.ctrl_transfer_error.store(zx::sys::ZX_OK, Ordering::Relaxed);
+            });
+
+            // Worker 4: concurrent resets, clear_halt, alternate setting switches, and
+            // disconnect_claim, plus toggling hold_in_requests to exercise cancel_and_drain.
+            let mock_mgmt = Arc::clone(mock);
+            let t_mgmt = spawn_kernel_thread(current_task, move |task| {
+                let (arg_mgmt, _) = map_test_buffers(task);
+                for i in 0..ITERS {
+                    mock_mgmt.hold_in_requests.store(i % 4 == 0, Ordering::SeqCst);
+                    let _ = disconnect_claim(task, &file_mgmt, arg_mgmt, 0, 0, b"");
+                    let _ = set_interface(task, &file_mgmt, arg_mgmt, 0, (i % 2) as u32);
+                    let _ = clear_halt(task, &file_mgmt, arg_mgmt, u32::from(EP1_IN));
+                    let _ = ioctl_no_arg(task, &file_mgmt, USBDEVFS_RESET);
+                }
+                mock_mgmt.hold_in_requests.store(false, Ordering::SeqCst);
+            });
+
+            t_in.recv().unwrap();
+            t_out.recv().unwrap();
+            t_ctrl.recv().unwrap();
+            t_mgmt.recv().unwrap();
+            mock.bulk_in_scripted_packets.lock().clear();
+
+            assert_eq!(
+                mock.invalid_queue_while_disabled.load(Ordering::SeqCst),
+                0,
+                "no request may be queued onto a disabled endpoint"
+            );
+
+            // After the stress run, verify the device and endpoints recover cleanly.
+            let file_check = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(disconnect_claim(current_task, &file_check, arg, 0, 0, b""), Ok(SUCCESS));
+            assert_eq!(bulk(current_task, &file_check, arg, EP1_IN, 4, 1000, data), Ok(4.into()));
+            assert_eq!(read_bytes::<4>(current_task, data), DEFAULT_IN_DATA);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_concurrent_transfers_and_device_disconnect_stress() {
+        run_with_mock_device(hid_config(), |current_task, device, mock| {
+            let mut workers = Vec::new();
+            for i in 0..4 {
+                let file = open_device(current_task, DEV_NUM);
+                workers.push(spawn_kernel_thread(current_task, move |task| {
+                    let (arg, data) = map_test_buffers(task);
+                    for step in 0..20 {
+                        let ep = if (i + step) % 2 == 0 { EP1_IN } else { EP1_OUT };
+                        let _ = bulk(task, &file, arg, ep, 4, 10, data);
+                        let _ = control(task, &file, arg, USB_DIR_OUT, TEST_REQUEST, 0, 10);
+                        let _ = ioctl_no_arg(task, &file, USBDEVFS_RESET);
+                    }
+                }));
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            device.on_disconnect();
+
+            for worker in workers {
+                worker.recv().unwrap();
+            }
+
+            assert!(device.endpoints.lock().is_empty());
+            assert_eq!(mock.invalid_queue_while_disabled.load(Ordering::SeqCst), 0);
+
+            let file = open_device(current_task, DEV_NUM);
+            let (arg, data) = map_test_buffers(current_task);
+            assert_eq!(bulk(current_task, &file, arg, EP1_IN, 4, 1000, data), error!(ENODEV));
+        })
         .await;
     }
 }
