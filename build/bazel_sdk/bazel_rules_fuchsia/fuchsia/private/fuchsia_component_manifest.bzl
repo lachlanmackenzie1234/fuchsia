@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Rules for compiling Fuchsia component manifests."""
+
 load(
     "@fuchsia_rules_common//components:component_manifest.bzl",
     "compile_component_manifest",
@@ -11,8 +13,6 @@ load(
     "@fuchsia_rules_common//components:providers.bzl",
     "FuchsiaComponentManifestInfo",
 )
-
-# buildifier: disable=module-docstring
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(
