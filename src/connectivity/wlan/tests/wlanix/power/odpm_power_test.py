@@ -72,9 +72,9 @@ class OdpmPowerTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     wlanix_proxy: fidl_wlanix.WlanixClient
     nl80211_proxy: fidl_wlanix.Nl80211Client
     iface_name: str
-    wlanix: "wlanix_testing.Wlanix"
-    chip: "wlanix_testing.WifiChip"
-    iface: "wlanix_testing.StaIface"
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+    iface: wlanix_testing.StaIface
 
     def _set_display_power(self, power_on: bool) -> None:
         """Helper to power the display panel on or off."""

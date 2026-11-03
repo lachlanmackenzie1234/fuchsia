@@ -262,7 +262,7 @@ class MetricStats:
     @classmethod
     def from_values(
         cls, values: list[int | float | None], round_digits: int = 1
-    ) -> "MetricStats":
+    ) -> MetricStats:
         valid = [v for v in values if v is not None]
         if not valid:
             return cls()
@@ -296,9 +296,7 @@ class LinkMetricSummary:
     samples: list[LinkMetricSample]
 
     @classmethod
-    def from_samples(
-        cls, samples: list[LinkMetricSample]
-    ) -> "LinkMetricSummary":
+    def from_samples(cls, samples: list[LinkMetricSample]) -> LinkMetricSummary:
         # Find the most recent valid phy_mode and nss from the collected samples,
         # reflecting the steady-state negotiated configuration under load.
         phy_mode: str | None = None

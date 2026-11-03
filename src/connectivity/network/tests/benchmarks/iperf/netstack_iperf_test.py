@@ -37,7 +37,7 @@ class Protocol(Enum):
     UDP = 2
 
     @classmethod
-    def from_str(cls, value: str) -> "Protocol":
+    def from_str(cls, value: str) -> Protocol:
         value = value.lower()
         if value == "tcp":
             return Protocol.TCP
@@ -59,7 +59,7 @@ class Direction(Enum):
     LOOPBACK = 3
 
     @classmethod
-    def from_str(cls, value: str) -> "Direction":
+    def from_str(cls, value: str) -> Direction:
         value = value.lower()
         if value == "send":
             return Direction.DEVICE_TO_HOST
