@@ -102,6 +102,7 @@ fuchsia_unittest_package("virtual-audio-legacy-test") {
     log_settings = {
       max_severity = "INFO"
     }
+    parallel = 4
   }
 }
 

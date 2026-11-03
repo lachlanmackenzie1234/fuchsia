@@ -52,5 +52,6 @@ fuchsia_unittest_package("test-package") {
   deps = [ ":aml-g12-pdm-test-bin" ]
   test_specs = {
     environments = basic_envs
+    parallel = 4
   }
 }

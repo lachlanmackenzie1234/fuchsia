@@ -106,6 +106,7 @@ fuchsia_unittest_package("tas27xx-test-package") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }
 

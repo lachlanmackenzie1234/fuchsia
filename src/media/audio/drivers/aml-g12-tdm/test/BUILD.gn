@@ -69,6 +69,7 @@ fuchsia_unittest_package("stream-test-package") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }
 

@@ -99,6 +99,7 @@ fuchsia_unittest_package("max98373-test-package") {
 
   test_specs = {
     environments = basic_envs
+    parallel = 4
     log_settings = {
       max_severity = "ERROR"
     }

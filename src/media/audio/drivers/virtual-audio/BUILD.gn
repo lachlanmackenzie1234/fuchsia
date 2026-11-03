@@ -92,5 +92,6 @@ fuchsia_unittest_package("virtual-audio-test") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }

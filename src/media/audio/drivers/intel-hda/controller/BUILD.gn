@@ -181,6 +181,7 @@ fuchsia_unittest_package("intel-hda-controller-test") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 4
   }
 }
 
@@ -206,6 +207,7 @@ fuchsia_unittest_package("intel-hda-stream-test") {
   deps = [ ":intel-hda-stream-test-bin" ]
   test_specs = {
     environments = basic_envs
+    parallel = 4
   }
 }
 
@@ -224,6 +226,7 @@ fuchsia_unittest_package("intel-dsp-stream-test") {
   deps = [ ":intel-dsp-stream-test-bin" ]
   test_specs = {
     environments = basic_envs
+    parallel = 4
   }
 }
 
