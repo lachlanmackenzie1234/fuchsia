@@ -1344,6 +1344,8 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache",
     ],
     base_packages = [
+        # Software Delivery.
+        "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver",
         # This is a required dependency of pkg-cache
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-committer",
         # Build-Information
@@ -1597,7 +1599,6 @@ assembly_input_bundle(
         "standard::eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver:pkg-resolver-eng",
         # Dash launcher and driver_debug should be available in every engineering-mode product.
         "//bundles/assembly/bazel_inputs/src/sys/tools/debug-dash-launcher",
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver_debug",
@@ -1845,9 +1846,6 @@ assembly_input_bundle(
         "standard::userdebug",
         "utility::user",
         "utility::userdebug",
-    ],
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver",
     ],
     core_shards = [
         # user and userdebug only have the base resolver, not the full

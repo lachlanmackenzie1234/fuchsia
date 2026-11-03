@@ -13,7 +13,6 @@ package(default_applicable_licenses = ["//:license"])
 # `//src/connectivity/policy/http-client:component`,
 # `//src/storage/testing:storage_driver_test_realm`,
 # `//src/storage/tools/blobfs-compression`,
-# `//src/sys/pkg/bin/pkg-resolver:production-component-and-config`,
 # `//src/sys/pkg/bin/system-updater:component`,
 # `//src/sys/pkg/bin/fake-system-update-committer`, and
 # `//src/sys/pkg/tests/pkg-resolver:empty-repo`).

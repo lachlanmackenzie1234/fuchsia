@@ -10,25 +10,12 @@ grand_swd_binary("bin") {
   output_name = "pkg_resolver"
 }
 
-group("production-component-and-config") {
-  public_deps = [ ":component" ]
-}
-
-group("eng-component-and-config") {
-  public_deps = [ ":component" ]
-}
-
 fuchsia_package("pkg-resolver") {
-  deps = [ ":production-component-and-config" ]
+  deps = [ ":component" ]
 }
 
-fuchsia_package("pkg-resolver-eng") {
-  package_name = "pkg-resolver"
-  deps = [ ":eng-component-and-config" ]
-}
-
-# Kept in GN because `unit-tests-package` packages `:eng-component-and-config`
-# (`grand_swd_binary("bin")`), `//src/connectivity/network/dns:component`,
+# Kept in GN because `unit-tests-package` packages
+# `//src/connectivity/network/dns:component`,
 # `//src/connectivity/network/netstack3:component-for-tests`, and
 # `//src/connectivity/policy/http-client:component`, which remain in GN, and
 # `lib_test` depends on `//src/storage/lib/vfs/rust:vfs`
@@ -160,7 +147,7 @@ fuchsia_test_package("unit-tests-package") {
   }
   package_name = "pkg-resolver-tests"
   deps = [
-    ":eng-component-and-config",
+    ":component",
     ":unit-tests-driver",
     "//src/connectivity/network/dns:component",
     "//src/connectivity/network/netstack3:component-for-tests",
@@ -314,6 +301,8 @@ fuchsia_component("component") {
   cm_label = ":manifest"
   visibility = [
     ":*",
+    "//src/security/tests/pkg_test/tests:*",
+    "//src/sys/pkg/lib/isolated-swd:*",
     "//src/sys/pkg/tests/isolated-ota:*",
   ]
   deps = [ ":bin" ]

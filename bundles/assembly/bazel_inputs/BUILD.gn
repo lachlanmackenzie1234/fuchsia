@@ -627,6 +627,7 @@ group("core_realm") {
     "//bundles/assembly/bazel_inputs/src/developer/forensics:pkg",
     "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/serial:package",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache",
+    "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-committer",
   ]
 }
@@ -679,7 +680,6 @@ group("core_realm_eng") {
     "//bundles/assembly/bazel_inputs/src/devices/bin/driver_debug",
     "//bundles/assembly/bazel_inputs/src/storage/bin:fs_realm_tools",
     "//bundles/assembly/bazel_inputs/src/storage/fs_realm",
-    "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver:pkg-resolver-eng",
     "//bundles/assembly/bazel_inputs/src/sys/tools/debug-dash-launcher",
   ]
 
@@ -695,7 +695,7 @@ group("dso_runner") {
 }
 
 group("core_realm_user_and_userdebug") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver" ]
+  deps = []
 }
 
 group("swd_trust_store_restricted") {
