@@ -267,6 +267,7 @@ audio_core_test_package("audio_core_api_tests") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 2
   }
 }
 
@@ -291,6 +292,7 @@ audio_core_test_package("audio_core_api_error_tests") {
     log_settings = {
       max_severity = "ERROR"
     }
+    parallel = 2
   }
 }
 
@@ -323,6 +325,7 @@ audio_core_test_package("audio_core_api_pipeline_tests") {
       max_severity = "ERROR"
     }
     environments = hardware_envs
+    parallel = 2
   }
 }
 
@@ -342,6 +345,7 @@ audio_core_test_package("audio_core_api_pipeline_error_tests") {
       max_severity = "ERROR"
     }
     environments = hardware_envs
+    parallel = 2
   }
 }
 
@@ -365,6 +369,7 @@ audio_core_test_package("audio_core_fidelity_tests") {
       max_severity = "ERROR"
     }
     environments = hardware_envs
+    parallel = 2
   }
 }
 
@@ -387,5 +392,6 @@ audio_core_test_package("audio_core_thermal_tests") {
       max_severity = "WARN"
     }
     environments = hardware_envs
+    parallel = 2
   }
 }
