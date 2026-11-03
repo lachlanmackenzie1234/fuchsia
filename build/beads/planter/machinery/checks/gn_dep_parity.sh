@@ -21,9 +21,12 @@ set -euo pipefail
 #    of the same package that still exists, e.g. a GN-only `<lib>_static`
 #    wrapper above the dependency's BAZEL2GN SENTINEL replaced by the `<lib>`
 #    it wraps. Such wrappers exist to add GN configs or link settings; the swap
-#    builds in Bazel but breaks GN links. Pure forwarding groups and GN groups
-#    replacing a migrated GN test target with `bazel_test_suite` and/or its
-#    renamed `<package_name>-gn` dual-build test package are exempt.
+#    builds in Bazel but breaks GN links. Pure forwarding groups (whose
+#    forwarded targets also do not count as newly added substitutes for other
+#    removed dependencies), GN groups replacing a migrated GN test target with
+#    `bazel_test_suite` and/or `<package_name>-gn`, `test_deps`-only entries on
+#    targets that no longer set `with_unit_tests`, and incompatible
+#    `host_test_data` vs. compiled target pairs are exempt.
 # 2. dep_link_settings_dropped (error): a removed dependency carries
 #    link-affecting settings (public_configs, all_dependent_configs, ldflags,
 #    libs, rustflags, complete_static_lib). A removed test_deps entry of a
@@ -51,7 +54,18 @@ workdir = os.path.abspath(sys.argv[1])
 target_dir = sys.argv[2].strip().strip("/")
 change_base = (os.environ.get("PLANTER_RESOLVED_CHANGE_BASE") or os.environ.get("PLANTER_CHANGE_BASE") or "HEAD").strip()
 
-GN_DEP_ATTRS = ("deps", "public_deps", "non_rust_deps", "test_deps", "proc_macro_deps", "link_deps", "data_deps", "non_test_deps")
+GN_DEP_ATTRS = (
+    "deps",
+    "public_deps",
+    "non_rust_deps",
+    "test_deps",
+    "args_deps",
+    "args_test_deps",
+    "proc_macro_deps",
+    "link_deps",
+    "data_deps",
+    "non_test_deps",
+)
 LINK_ATTRS = ("public_configs", "all_dependent_configs", "ldflags", "libs", "rustflags", "complete_static_lib")
 FORWARDING_ONLY_ATTRS = {"public_deps", "deps", "visibility", "testonly"}
 GN_TEST_PACKAGE_TEMPLATES = {"fuchsia_unittest_package", "fuchsia_test_package"}
@@ -317,9 +331,49 @@ def resolve(label, now=False):
     return _resolved[key]
 
 
-# Filter added dependencies to non-test GN targets in the same package when checking
-# for sibling library wrapper substitutions.
-def non_test_substitutes(added_labels, dep_pkg):
+# Expand a pure GN forwarding group (transitively up to bounded depth) to the
+# underlying targets it forwards when all forwarded targets reach `stop_set`.
+def expand_forwarding_group(label, stop_set, seen=()):
+    if label in stop_set:
+        return {label}
+    if label in seen or len(seen) >= 6:
+        return set()
+    info, _ = resolve(label)
+    if not info or not info["forwarding_group"]:
+        return set()
+    direct = info["public_deps"] | info["deps"]
+    if not direct:
+        return set()
+    expanded = set()
+    next_seen = seen + (label,)
+    for dep in sorted(direct):
+        if dep in stop_set:
+            expanded.add(dep)
+            continue
+        sub = expand_forwarding_group(dep, stop_set, next_seen)
+        if not sub:
+            return set()
+        expanded.update(sub)
+    return expanded
+
+
+# Collect removed pure forwarding groups whose forwarded targets are all present
+# in `new_all`, along with the set of added labels accounted for by those groups.
+def collect_expanded_forwarding_groups(removed_labels, new_all):
+    expanded_groups = {}
+    accounted = set()
+    for rem_lbl in sorted(removed_labels):
+        exp = expand_forwarding_group(rem_lbl, new_all)
+        if exp:
+            expanded_groups[rem_lbl] = exp
+            accounted.update(exp)
+    return expanded_groups, accounted
+
+
+# Filter added dependencies to compatible non-test GN targets in the same package
+# when checking for sibling library wrapper substitutions.
+def non_test_substitutes(added_labels, dep_pkg, removed_info=None):
+    removed_tmpl = removed_info["tmpl"] if removed_info else ""
     out = []
     for cand in sorted(added_labels):
         if split(cand)[0] != dep_pkg:
@@ -327,6 +381,10 @@ def non_test_substitutes(added_labels, dep_pkg):
         cand_info, _ = resolve(cand, now=True)
         cand_tmpl = cand_info["tmpl"] if cand_info else ""
         if cand_tmpl in GN_TEST_TEMPLATES or cand_tmpl == "bazel_test_suite":
+            continue
+        # Runtime `host_test_data` targets stage files and never substitute for
+        # compiled library targets (or vice versa).
+        if (removed_tmpl == "host_test_data") != (cand_tmpl == "host_test_data"):
             continue
         out.append(cand)
     return out
@@ -584,37 +642,57 @@ for pkg in sorted(candidate_dirs):
         reached, adc = reach(sorted(new_direct - old_all))
         new_all = new_direct | set(reached)
         removed, added = old_all - new_all, new_all - old_all
+        expanded_groups, accounted_by_forwarding = collect_expanded_forwarding_groups(
+            removed, new_all
+        )
+        unaccounted_added = added - accounted_by_forwarding
         target_desc = f'`{tmpl}("{name}")` in //{pkg}'
         rust = tmpl.startswith("rust")
 
         def with_hops(labels):
-            """labels plus the groups through which the target reaches them (to locate the BUILD.bazel entry)."""
-            return labels + sorted({h for l in labels for h, _ in reached.get(l, ()) if h not in labels})
+            """labels plus the groups through which the target reaches them."""
+            return labels + sorted(
+                {h for l in labels for h, _ in reached.get(l, ()) if h not in labels}
+            )
 
         for label in sorted(removed):
+            # Pure forwarding groups expanded to their forwarded target(s) are preserved.
+            if label in expanded_groups:
+                continue
             dep_pkg = split(label)[0]
             kinds = [a for a in GN_DEP_ATTRS if label in old_deps.get(a, ())]
-            if kinds == ["test_deps"] and label in package_now:
-                continue  # Moved to another target, e.g. `with_unit_tests` replaced by an explicit test target.
-            # test_deps only reach GN's generated `<name>_test` executable; if GN no longer builds it (the
-            # unit test moved to Bazel), no GN link can lose the dependency's link settings.
-            gn_unit_test_gone = kinds == ["test_deps"] and not any(
-                re.search(r"\bwith_unit_tests\s*=\s*true\b", b) for b in new_targets[name]["bodies"]
+            is_test_only_dep = bool(kinds) and set(kinds) <= {"test_deps", "args_test_deps"}
+            if is_test_only_dep and (
+                label in package_now or bool(expand_forwarding_group(label, package_now))
+            ):
+                # Moved to another target (or expanded from a pure forwarding group on the
+                # decomposed `<name>_test` / `<name>_args_test` target) when `with_unit_tests`
+                # or `args_with_unit_tests` is replaced by a standalone test target.
+                continue
+            # `test_deps` / `args_test_deps` only reach GN's generated `<name>_test` /
+            # `<name>_args_test` executable; when GN no longer builds inline unit tests on
+            # this target, its production deps neither substitute for nor drop link settings
+            # of test-only entries.
+            gn_unit_test_gone = is_test_only_dep and not any(
+                re.search(r"\b(?:with_unit_tests|args_with_unit_tests)\s*=\s*true\b", b)
+                for b in new_targets[name]["bodies"]
             )
             info, exists_now = resolve(label)
-            in_gn_now = info["in_gn_now"] if info is not None else (split(label)[1] in parsed(f"{dep_pkg}/BUILD.gn", "new")[1])
+            in_gn_now = (
+                info["in_gn_now"]
+                if info is not None
+                else (split(label)[1] in parsed(f"{dep_pkg}/BUILD.gn", "new")[1])
+            )
             if is_migrated_test_or_group_dep(info, in_gn_now):
                 continue
-            raw_subs = sorted(l for l in added if split(l)[0] == dep_pkg)
+            raw_subs = sorted(l for l in unaccounted_added if split(l)[0] == dep_pkg)
             if is_migrated_test_group_dep(tmpl, label, info, old_all, raw_subs, new_all):
                 continue
-            subs = non_test_substitutes(added, dep_pkg)
+            subs = non_test_substitutes(unaccounted_added, dep_pkg, info)
             public = "public_deps" in kinds
-            file, line = locate(pkg, with_hops(subs) or [label], new_file, new_targets[name]["line"])
-            forwarded = (info["public_deps"] | info["deps"]) if info else set()
-            # Pure forwarding groups expanded to their forwarded target(s) are preserved.
-            if info and info["forwarding_group"] and forwarded and forwarded <= new_all:
-                continue
+            file, line = locate(
+                pkg, with_hops(subs) or [label], new_file, new_targets[name]["line"]
+            )
             # When a GN fuchsia_unittest_package/fuchsia_test_package("<name>") is migrated to
             # fx_package(name = "<name>-package", package_name = "<name>", test_components = ...) +
             # fx_test(name = "<name>"), bazel2gn generates fuchsia_test_package("<name>-package")
@@ -631,7 +709,7 @@ for pkg in sorted(candidate_dirs):
                 )
             ):
                 continue
-            if subs and in_gn_now:
+            if subs and in_gn_now and not gn_unit_test_gone:
                 _emit(
                     findings,
                     "dep_label_substituted",
@@ -678,9 +756,10 @@ for pkg in sorted(candidate_dirs):
                     "INFO",
                     new_file,
                     new_targets[name]["line"],
-                    f"{target_desc} no longer depends on `{label}` (was `{'`/`'.join(kinds)}`) and no other target "
-                    f"of //{pkg} does. Make sure it was really unused (e.g. an unused `test_deps` entry of a test "
-                    "GN never built) and say so in the CoderReport summary.",
+                    f"{target_desc} no longer depends on `{label}` (was `{'`/`'.join(kinds)}`) "
+                    f"and no other target of //{pkg} does. Make sure it was really unused "
+                    "(e.g. an unused `test_deps` entry, or a `test_deps` entry moved to a "
+                    "`# @bazel2gn:skip` Bazel test) and say so in the CoderReport summary.",
                 )
 
         for label in sorted(old_deps.get("public_deps", set()) & new_all):
@@ -708,6 +787,72 @@ for pkg in sorted(candidate_dirs):
                 "emits those as GN `public_deps`)."
                 if not rust
                 else rust_forwarding_remedy(label, info["public_configs"], pkg),
+            )
+
+    # Check that migrated Rust targets (including decomposed unit test targets) do not
+    # add external crate dependencies absent from the base BUILD.gn, which fail compilation
+    # under `-D unused-crate-dependencies` (for example after an upstream rebase removes a
+    # dependency from BUILD.gn while BUILD.bazel still lists it).
+    rust_tmpls = {
+        "ffx_plugin",
+        "ffx_tool",
+        "rustc_library",
+        "rustc_binary",
+        "rustc_macro",
+        "rustc_test",
+        "rustc_dylib",
+        "rustc_cdylib",
+        "rustc_staticlib",
+    }
+    implicit_rust_deps = {
+        "//src/lib/fuchsia:fuchsia",
+        "//src/lib/dso/rust:rust",
+        "//sdk/rust/zx:zx",
+        "//build/config/rust:proc_macro_test",
+    }
+    old_file_labels = {
+        norm_l
+        for raw_s in GN_STRING.findall(gn_code(before))
+        for norm_l in (normalize(raw_s, pkg),)
+        if norm_l
+    }
+    for ot in old_targets.values():
+        for d_set in gn_deps(ot, pkg).values():
+            old_file_labels.update(d_set)
+    old_pkgs = {split(l)[0] for l in old_file_labels}
+    reported_extra = set()
+    for t_name, new_t in sorted(new_targets.items()):
+        if new_t["tmpl"] not in rust_tmpls:
+            continue
+        t_deps = set().union(*new_t["deps"].values()) if new_t["deps"] else set()
+        for label in sorted(t_deps):
+            dep_pkg = split(label)[0]
+            if (
+                dep_pkg == pkg
+                or dep_pkg in old_pkgs
+                or label in old_file_labels
+                or label in implicit_rust_deps
+                or dep_pkg.startswith("sdk/categories")
+                or label in reported_extra
+            ):
+                continue
+            reported_extra.add(label)
+            file, line = locate(pkg, [label], new_file, new_t["line"])
+            t_desc = f'`{new_t["tmpl"]}("{t_name}")` in //{pkg}'
+            _emit(
+                findings,
+                "unexpected_rust_dep_added",
+                "ERROR",
+                file,
+                line,
+                f"{t_desc} depends on `{label}`, which was not present in `{gn_rel}` "
+                "at the change base. Adding extra Rust crate dependencies that were not "
+                "in the original `BUILD.gn` (or keeping a stale dependency in "
+                "`BUILD.bazel` after an upstream rebase removed it from `BUILD.gn`) "
+                "causes `rustc` to fail with `error: extern crate ... is unused` under "
+                "`-D unused-crate-dependencies`.",
+                f"Remove `{label}` from `{pkg}/BUILD.bazel` and re-run "
+                f"`fx bazel2gn -d {pkg}` so `{gn_rel}` matches the base GN dependencies.",
             )
 
 print(json.dumps(findings, indent=2))

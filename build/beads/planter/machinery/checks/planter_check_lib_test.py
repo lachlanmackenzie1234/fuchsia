@@ -250,7 +250,7 @@ class PlanterCheckLibTest(unittest.TestCase):
                     tmpdir,
                     "config",
                     "user.email",
-                    "test@example.com",
+                    "test-user",
                 ],
                 check=True,
             )
@@ -296,6 +296,8 @@ class PlanterCheckLibTest(unittest.TestCase):
                     "PLANTER_RESOLVED_CHANGE_BASE",
                     "PLANTER_CHANGED_FILES",
                     "PLANTER_CHANGE_BASE",
+                    "PLANTER_TARGET_DIR",
+                    "PLANTER_TARGET_DIRS",
                 )
             }
             with mock.patch.dict(os.environ, env, clear=True):
@@ -303,6 +305,41 @@ class PlanterCheckLibTest(unittest.TestCase):
                 cfiles = pcl.changed_files(tmpdir)
                 self.assertIn("BUILD.bazel", cfiles)
                 self.assertNotIn("CoderReport1.json", cfiles)
+
+                # Upstream [bazel2gn]/[bazel_migration] commits on origin/main
+                # must not step change_base back to HEAD~1.
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        tmpdir,
+                        "update-ref",
+                        "refs/remotes/origin/main",
+                        "HEAD",
+                    ],
+                    check=True,
+                )
+                self.assertEqual(pcl.resolve_change_base(tmpdir), "HEAD")
+
+                # Stacked prerequisite migration commits outside target_dirs
+                # must stay at HEAD while local uncommitted edits are in progress.
+                subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        tmpdir,
+                        "update-ref",
+                        "refs/remotes/origin/main",
+                        "HEAD~1",
+                    ],
+                    check=True,
+                )
+                os.makedirs(os.path.join(tmpdir, "src", "other"))
+                self.assertEqual(
+                    pcl.resolve_change_base(tmpdir, target_dirs=["src/other"]),
+                    "HEAD",
+                )
+                self.assertEqual(pcl.resolve_change_base(tmpdir), "HEAD~1")
 
 
 import rdeps_lib as rl
@@ -321,15 +358,15 @@ class RdepsLibAndScriptsTest(unittest.TestCase):
                 "//src/sys/pkg/lib/fuchsia-pkg:__pkg__",
             ],
         )
-        # Vendor google sanitization
+        # Vendor subpackage rollup sanitization
         self.assertEqual(
             rl.recommend_narrow_visibility(
-                ["vendor/google/foo/bar", "src/diagnostics/archivist"],
+                [f"{rl.VG_ROOT}/foo/bar", "src/diagnostics/archivist"],
                 "src/lib/my_lib",
             ),
             [
                 "//src/diagnostics/archivist:__pkg__",
-                "//vendor/google:__subpackages__",
+                rl.VG_SUBPKGS,
             ],
         )
 
@@ -387,7 +424,7 @@ class RdepsLibAndScriptsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             subprocess.run(["git", "-C", tmpdir, "init", "-q"], check=True)
             subprocess.run(
-                ["git", "-C", tmpdir, "config", "user.email", "t@example.com"],
+                ["git", "-C", tmpdir, "config", "user.email", "test-user"],
                 check=True,
             )
             subprocess.run(
@@ -543,7 +580,7 @@ rustc_library(
                     tmpdir,
                     "config",
                     "user.email",
-                    "test@example.com",
+                    "test-user",
                 ],
                 check=True,
             )

@@ -42,7 +42,7 @@
             "name": "visibility_audit",
             "script_file": "visibility_audit.sh",
             "enabled": true,
-            "description": "Audits BUILD.bazel visibility via find_rdeps (overbroad_public_visibility, visibility_narrowed, visibility_widened_beyond_gn)."
+            "description": "Audits BUILD.bazel visibility via find_rdeps and restricted rust_crates allowlists (overbroad_public_visibility, visibility_narrowed, visibility_widened_beyond_gn, missing_rust_crates_visibility)."
         },
         {
             "name": "build_only_scope",
@@ -72,7 +72,7 @@
             "name": "cq_reachability",
             "script_file": "cq_reachability.sh",
             "enabled": true,
-            "description": "Verifies tests reach group(\"tests\") and ancestor test_suite, and HEAD merges cleanly (unexported_bazel_test)."
+            "description": "Verifies tests reach group(\"tests\"), umbrella ffx_plugin test sections/comments, and ancestor test_suite, and HEAD merges cleanly (unexported_bazel_test, stale_plugin_tests_aggregation_comment, ungrouped_migrated_plugin_tests)."
         },
         {
             "name": "confidentiality_check",
@@ -102,7 +102,7 @@
             "name": "test_data_attribute",
             "script_file": "test_data_attribute.sh",
             "enabled": true,
-            "description": "Flags test-only fixtures placed in runtime `data` instead of `test_data` (test_only_data_in_data), host test data targets in `data` of host_rustc_test (host_test_data_in_data), and unreferenced `test_data` targets (unused_test_data)."
+            "description": "Flags test-only fixtures in `data` (test_only_data_in_data), host test data in `data` of host_rustc_test (host_test_data_in_data), attribute-level `@bazel2gn:skip` on `test_data` of unskipped host tests (skipped_test_data_attr_on_host_test), runtime test fixtures in `compile_data` (runtime_test_data_in_compile_data), unreferenced `test_data` targets (unused_test_data), GN `$root_build_dir` host_test_data/copy outputs colliding across variant toolchains (host_test_data_root_build_dir_outputs, unguarded_root_build_dir_outputs), runtime `.exists()` fallback probing (runtime_test_data_path_probing), and unskipped GN host tests missing staged test data (dual_build_test_data_fallback_dropped)."
         },
         {
             "name": "build_verification",

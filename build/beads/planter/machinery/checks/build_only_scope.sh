@@ -597,9 +597,9 @@ def check_allowed_host_test_data_path_edit(path: str):
         f"Allowed test-only runtime test-data path adaptation in '{path}' for '//{pkg}': "
         "Bazel host tests execute in '<test>.runtime_dir' where 'host_test_data_files' / "
         "'host_test_data_map' stages files under 'dest_dir' rather than GN's 'out/<dir>' "
-        "CWD ('../../<pkg>/...') or executable parent directory. Preserve fallback to the "
-        "GN path when the test is also dual-built in GN, and explain the adaptation in "
-        "the commit message body."
+        "CWD ('../../<pkg>/...') or executable parent directory. Use a single consistent "
+        "'<dest_dir>/...' path (never runtime '.exists()' fallback probing), mark the "
+        "Bazel host test '# @bazel2gn:skip', and explain the adaptation in the commit body."
     )
 
 

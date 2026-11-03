@@ -28,7 +28,7 @@ mechanical invariants; this prompt covers workflow, GN-to-Bazel semantics, and r
 new custom test `.cml` when required). Never edit `.rs`/`.cc`/`.h` sources except narrow
 `build_only_scope` allowances (`LINT.IfChange`/`LINT.ThenChange`, `clippy_warn_all` test lints,
 `<sdk/lib/...>` include fixes, or `#[cfg(test)]`/test-file `host_test_data` `runtime_dir` path
-fallbacks, explained in commit body); otherwise fix `BUILD.bazel` attrs. Omit unbuilt template
+updates, explained in commit body); otherwise fix `BUILD.bazel` attrs. Omit unbuilt template
 tests that fail to compile (`# TODO(https://fxbug.dev/<id>)` + commit note; verify the bug is open
 and matches the subsystem, never citing WLAN bug `543568916` outside `//src/connectivity/wlan/**`;
 use `570694755` for general Bazel migration tech debt) and leave dead code unmigrated (note in
@@ -133,11 +133,11 @@ use `570694755` for general Bazel migration tech debt) and leave dead code unmig
   `visibility = ["//bundles/assembly:__subpackages__"]`. Omit `## BAZEL2GN SENTINEL` when `BUILD.gn`
   retains only GN-only targets.
 - **`ffx_plugin`, `ffx_tool` & `idk_ffx_tool`**: Define `ffx_plugin` (`//src/developer/ffx/build:ffx_plugin.bzl`,
-  mapping `sources` -> `srcs`, `args_sources` -> `args_srcs`, synced via `fx bazel2gn`), `ffx_tool`
-  (`:ffx_tool.bzl`), or `idk_ffx_tool` (`//build/bazel/rules/idk:idk_ffx_tool.bzl`, registering
-  `"//<dir>:<name>_idk"` in the matching `*_FFX_TOOLS_ATOMS*` list in `sdk/atom_lists.bzl` per
-  `sdk/BUILD.gn`) without `# @bazel2gn:skip`. Replace GN `ffx_tool(...)` with
-  `bazel_ffx_tool("<name>") { output_name = "..." }` above the sentinel (IDK tools keep
+  `sources` -> `srcs`, `args_sources` -> `args_srcs`, synced via `fx bazel2gn`), `ffx_tool`
+  (`:ffx_tool.bzl`, `output_name` -> `binary_name`), or `idk_ffx_tool`
+  (`//build/bazel/rules/idk:idk_ffx_tool.bzl`, `idk_name` sets binary + atom name; register
+  `"//<dir>:<name>_idk"` in `sdk/atom_lists.bzl` per `sdk/BUILD.gn`) without `# @bazel2gn:skip`.
+  Replace GN `ffx_tool(...)` with `bazel_ffx_tool("<name>") { output_name = "..." }` (IDK tools keep
   `sdk_atom("sdk")` with `non_sdk_deps = [ ":<name>_versioned" ]`), wire host tests to
   `//src/developer/ffx:tests`, and add to `_bazel_tested_tools` in `//src/developer/ffx/tools/BUILD.gn`
   if in `_tools`.
@@ -166,11 +166,11 @@ use `570694755` for general Bazel migration tech debt) and leave dead code unmig
   or `":<name>_args"`), `wrap_host_rust_test`, `host_test(binary = ":<cc_test>")`, `host_py_test`,
   or `host_go_test`; map GN `args` to `test_args`. Stage `host_test_data` with
   `host_test_data_files`/`host_test_data_map` (`//build/bazel/rules/host_tests:host_test_data.bzl`,
-  `dest_dir = "..."`), always passed in `test_data` (never `data`) on `host_rustc_test`. bazel2gn
-  cannot translate `test_data`, so in dual builds mark that test `# @bazel2gn:skip` (condition 3
-  below), export it via the ancestor `test_suite`, and drop GN `host_test_data` targets left
-  without GN consumers. Adapt `#[cfg(test)]`/test-file
-  `../../<dir>/...` or `current_exe()` paths to check `<dest_dir>/...` with fallback to the GN path.
+  `dest_dir = "..."`), passed in `test_data` (never `data`) on `host_rustc_test`. bazel2gn cannot
+  translate `test_data`, so mark the test target itself `# @bazel2gn:skip` (never skip `test_data`
+  alone), export via the ancestor `test_suite`, drop unused GN `host_test_data`, and update
+  `#[cfg(test)]`/test-file `../../<dir>/...` paths directly to `<dest_dir>/...` (no `.exists()`
+  fallback).
 - **Exporting to CQ**: Wire tests into the nearest ancestor `BUILD.bazel` `test_suite`
   (`target_tests` or `host_tests`), setting `visibility = ["//<ancestor_dir>:__pkg__"]`, and delete
   `BUILD.gn` if no GN consumers remain (Case 1). Only when no ancestor `test_suite` exists, declare
@@ -200,23 +200,19 @@ use `570694755` for general Bazel migration tech debt) and leave dead code unmig
   `Also fixed third-party Bazel build: <crate> (needed by //target)` in `summary`.
 
 ## Verification, `Test:` Footers & `CoderReport`
-1. Run `run_checks.sh --skip-build` first (fix allowlists/`test_suite`/deps up front), then
-   targeted `fx bazel build`/`test` (never `fx bazel test` an `fx_test`); rebase onto `origin/main`
-   on `upstream_rebase_conflict`.
-2. Finish with **one** full `run_checks.sh` without flags; make no edits afterward. Set
-   `disputed_findings: []` if it exits 0 (unless a post-turn finding absent from it repeats on
-   clean rounds), an unverified `ERROR` remains, or budget expires (never dispute
-   `INFO`/`outside_changes`/`task_prompt`). Dispute check contradictions, runner skew, or
-   `run_checks.sh`-verified `review_diff` false positives for **every** affected `BUILD.bazel`.
-3. **`test_footers` / `Test:`**: If `<dir>` is left unmigrated (`modified_files: []`) or the mount
-   is unwritable, use `["fx host-tool shac check"]` (never `@//<unmigrated_dir>:...` or `[]`).
-   Else use `fx test //<dir>:<test>` if in `<build dir>/tests.json`; else
-   `fx bazel test --config=host @//<dir>:<test>` (host),
-   `fx bazel build --config=fuchsia_platform @//<dir>:<test>` (device), or
-   `fx bazel build --config=host|--config=fuchsia_platform @//<dir>:<target>` (no tests; supersedes
-   task-prompt defaults).
-4. Put changed paths vs. `$PLANTER_CHANGE_BASE` in `modified_files`. Keep commit/`summary` ASCII
-   with no internal paths/names or agent-added `NO_IFTTT=...`.
+1. Never leave `## BAZEL2GN SENTINEL` unsynced (`fx bazel2gn -d <dir>`). Run `run_checks.sh --skip-build`,
+   then targeted `fx bazel build`/`test` (never `fx bazel test` an `fx_test`).
+2. Finish with **one** full `run_checks.sh` (no flags); do not edit after. Set `disputed_findings: []`
+   if it exits 0 (unless a post-turn finding absent from it repeats on clean rounds), any non-`review_diff`
+   check fails, an unverified `ERROR` remains, `--skip-build`/`--only` ran, in a per-leaf pass, or budget
+   expires (never dispute `INFO`/`outside_changes`/`task_prompt`). Dispute check contradictions, runner
+   skew, or verified `review_diff` false positives (every affected file) only when zero other blocking
+   findings remain.
+3. **`test_footers` / `Test:`**: Use `["fx host-tool shac check"]` if `<dir>` is unmigrated or mount is
+   unwritable. Else follow Task Note `Test:` overrides, or `fx test //<dir>:<test>` only if `fx test --dry`
+   finds it; else `fx bazel test --config=host @//<dir>:<test>` or
+   `fx bazel build --config=host|--config=fuchsia_platform @//<dir>:<target>`.
+4. Put changed paths vs. `$PLANTER_CHANGE_BASE` in `modified_files` (ASCII; no internal paths/names or `NO_IFTTT=`).
 
 Always output a final JSON block matching CoderReport:
 {"summary": "...", "modified_files": ["..."], "migration_case": "case1_full_removal|case2_dual_build", "test_footers": ["..."], "disputed_findings": []}

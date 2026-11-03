@@ -44,29 +44,14 @@ candidate_files = {
 }
 
 change_base = pcl.resolve_change_base(workdir)
-for line in pcl.changed_files(workdir, change_base):
+changed_set = set(pcl.changed_files(workdir, change_base))
+for line in sorted(changed_set):
     if (
         line.endswith("BUILD.bazel")
         and not line.startswith(rl.EXCLUDED_GLOBAL_VIS_PREFIXES)
         and os.path.isfile(os.path.join(workdir, line))
     ):
         candidate_files.add(line)
-
-if not candidate_files:
-    print("[]")
-    sys.exit(0)
-
-origin_main_sources = {}
-pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
-matched_files = rl.discover_referencing_build_files(
-    workdir,
-    pkg_paths,
-    candidate_files=candidate_files,
-    change_base=change_base,
-    origin_main_sources=origin_main_sources,
-    refresh_origin_main=True,
-)
-file_cache = rl.build_file_cache(matched_files, origin_main_sources)
 
 findings = []
 clean_audited_targets = set()
@@ -86,6 +71,404 @@ def emit_finding(category, severity, file_rel, line_no, message, remediation):
         remediation=remediation,
         source="visibility_audit",
     )
+
+# Check whether `<pkg_dir>/BUILD.gn` still depends on the crate guarded by `group_name`.
+def gn_pkg_uses_restricted_rust_crate(pkg_dir, group_name):
+    gn_file = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    if not os.path.isfile(gn_file):
+        return False
+    try:
+        with open(gn_file, "r", encoding="utf-8") as f:
+            gn_clean = pcl.strip_comments(f.read())
+    except Exception:
+        return False
+    prefix = group_name[: -len("_visibility")].replace("_", "[-_]")
+    if prefix == "md5":
+        prefix = "md[-_]?5"
+    crate_re = re.compile(
+        r'"//third_party/rust_crates(?:/vendor)?:' + prefix + r'(?:"|\()'
+    )
+    return bool(crate_re.search(gn_clean))
+
+
+# Parse restricted crate aliases in `third_party/rust_crates/vendor/BUILD.bazel` and
+# their `*_visibility` package_groups in `third_party/rust_crates/BUILD.bazel`.
+def load_restricted_rust_crate_allowlists():
+    rc_bz_path = os.path.join(workdir, "third_party/rust_crates/BUILD.bazel")
+    vendor_bz_path = os.path.join(
+        workdir, "third_party/rust_crates/vendor/BUILD.bazel"
+    )
+    if not os.path.isfile(rc_bz_path) or not os.path.isfile(vendor_bz_path):
+        return {}, {}
+    try:
+        with open(rc_bz_path, "r", encoding="utf-8") as f:
+            rc_tree = ast.parse(
+                f.read(), filename="third_party/rust_crates/BUILD.bazel"
+            )
+        with open(vendor_bz_path, "r", encoding="utf-8") as f:
+            vendor_tree = ast.parse(
+                f.read(), filename="third_party/rust_crates/vendor/BUILD.bazel"
+            )
+    except Exception:
+        return {}, {}
+
+    pkg_groups = {}
+    for node in ast.walk(rc_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func.id if isinstance(node.func, ast.Name) else ""
+        if fn != "package_group":
+            continue
+        gname = None
+        exact = set()
+        subtrees = set()
+        for kw in node.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                gname = kw.value.value
+            elif kw.arg == "packages" and isinstance(kw.value, ast.List):
+                for elt in kw.value.elts:
+                    if not (
+                        isinstance(elt, ast.Constant)
+                        and isinstance(elt.value, str)
+                        and elt.value.startswith("//")
+                    ):
+                        continue
+                    raw_pkg = elt.value
+                    if raw_pkg == "//...":
+                        subtrees.add("")
+                    elif raw_pkg.endswith("/..."):
+                        subtrees.add(raw_pkg[2:-4].strip("/"))
+                    else:
+                        exact.add(raw_pkg[2:].strip("/"))
+        if gname and gname.endswith("_visibility"):
+            pkg_groups[gname] = (exact, subtrees)
+
+    restricted_labels = {}
+    vis_group_re = re.compile(
+        r"^//third_party/rust_crates:([A-Za-z0-9_]+_visibility)$"
+    )
+    for node in ast.walk(vendor_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func.id if isinstance(node.func, ast.Name) else ""
+        if fn != "alias":
+            continue
+        alias_name = None
+        actual_lbl = None
+        group_name = None
+        for kw in node.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                alias_name = kw.value.value
+            elif (
+                kw.arg == "actual"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                actual_lbl = kw.value.value
+            elif kw.arg == "visibility" and isinstance(kw.value, ast.List):
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                        m_vg = vis_group_re.match(elt.value)
+                        if m_vg:
+                            group_name = m_vg.group(1)
+                            break
+        if alias_name and group_name and group_name in pkg_groups:
+            restricted_labels[
+                f"//third_party/rust_crates/vendor:{alias_name}"
+            ] = group_name
+            if actual_lbl and actual_lbl.startswith("//"):
+                restricted_labels[actual_lbl] = group_name
+    return restricted_labels, pkg_groups
+
+
+# Verify that candidate BUILD.bazel packages depending on restricted third-party Rust
+# crates are listed in the corresponding `*_visibility` package_group in
+# `third_party/rust_crates/BUILD.bazel`.
+def check_missing_rust_crates_visibility(bazel_files):
+    if not bazel_files:
+        return
+    restricted_labels, pkg_groups = load_restricted_rust_crate_allowlists()
+    if not restricted_labels or not pkg_groups:
+        return
+    for rel_bz in sorted(bazel_files):
+        pkg_dir = os.path.dirname(rel_bz).strip("/")
+        if not pkg_dir or rel_bz.startswith("third_party/rust_crates/"):
+            continue
+        full_bz = os.path.join(workdir, rel_bz)
+        try:
+            with open(full_bz, "r", encoding="utf-8") as f:
+                bz_src = f.read()
+            bz_tree = ast.parse(bz_src, filename=rel_bz)
+        except Exception:
+            continue
+        var_table = {}
+        for stmt in bz_tree.body:
+            if isinstance(stmt, ast.Assign):
+                for tgt in stmt.targets:
+                    if isinstance(tgt, ast.Name):
+                        var_table[tgt.id] = stmt.value
+        seen_groups = set()
+        for node in ast.walk(bz_tree):
+            if not isinstance(node, ast.Call):
+                continue
+            tname = None
+            for kw in node.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    tname = kw.value.value
+                    break
+            if not tname:
+                continue
+            for kw in node.keywords:
+                if not kw.arg or kw.arg in ("name", "visibility"):
+                    continue
+                for raw_lbl in pcl._extract_ast_strings(kw.value, var_table):
+                    norm_lbl = re.sub(r"^@@?//", "//", raw_lbl.strip())
+                    if norm_lbl.startswith("//") and ":" not in norm_lbl:
+                        norm_lbl = f"{norm_lbl}:{norm_lbl.rsplit('/', 1)[-1]}"
+                    group_name = restricted_labels.get(norm_lbl)
+                    if not group_name or group_name in seen_groups:
+                        continue
+                    exact_pkgs, subtree_prefixes = pkg_groups[group_name]
+                    is_allowed = pkg_dir in exact_pkgs or any(
+                        pref == ""
+                        or pkg_dir == pref
+                        or pkg_dir.startswith(pref + "/")
+                        for pref in subtree_prefixes
+                    )
+                    if is_allowed:
+                        continue
+                    seen_groups.add(group_name)
+                    uses_in_gn = gn_pkg_uses_restricted_rust_crate(
+                        pkg_dir, group_name
+                    )
+                    line_no = getattr(kw, "lineno", getattr(node, "lineno", 1))
+                    msg = (
+                        f"Target '{tname}' depends on restricted third-party Rust "
+                        f"crate '{norm_lbl}', which requires visibility group "
+                        f"'//third_party/rust_crates:{group_name}', but "
+                        f"'//{pkg_dir}' is missing from `{group_name}` in "
+                        "`third_party/rust_crates/BUILD.bazel`."
+                    )
+                    if uses_in_gn:
+                        rem = (
+                            f'Add `"//{pkg_dir}"` (sorted alphabetically) to '
+                            f'`package_group(name = "{group_name}", ...)` in '
+                            "`third_party/rust_crates/BUILD.bazel`. Keep "
+                            f'`"//{pkg_dir}:*"` in `{group_name}` in '
+                            "`third_party/rust_crates/visibility.gni` while GN "
+                            f"targets in `{pkg_dir}/BUILD.gn` still depend on the "
+                            "crate, never add a `NO_IFTTT` line to the commit "
+                            "message or `CoderReport.summary`, and explain in the "
+                            "commit body that the GN allowlist entry is still "
+                            "required by `BUILD.gn`."
+                        )
+                    else:
+                        rem = (
+                            f'Add `"//{pkg_dir}"` (sorted alphabetically) to '
+                            f'`package_group(name = "{group_name}", ...)` in '
+                            "`third_party/rust_crates/BUILD.bazel`, and remove "
+                            f'`"//{pkg_dir}:*"` from `{group_name}` in '
+                            "`third_party/rust_crates/visibility.gni` if present "
+                            "(paired via `LINT.ThenChange`)."
+                        )
+                    emit_finding(
+                        "missing_rust_crates_visibility",
+                        "error",
+                        rel_bz,
+                        line_no,
+                        msg,
+                        rem,
+                    )
+
+
+# Check third_party/rust_crates/BUILD.bazel and visibility.gni allowlist sync.
+def check_rust_crates_visibility_sync(changed_paths):
+    rc_bz_rel = "third_party/rust_crates/BUILD.bazel"
+    rc_gni_rel = "third_party/rust_crates/visibility.gni"
+    if rc_bz_rel not in changed_paths and rc_gni_rel not in changed_paths:
+        return
+    rc_bz_path = os.path.join(workdir, rc_bz_rel)
+    rc_gni_path = os.path.join(workdir, rc_gni_rel)
+    if not os.path.isfile(rc_bz_path) or not os.path.isfile(rc_gni_path):
+        return
+    try:
+        with open(rc_bz_path, "r", encoding="utf-8") as f:
+            bz_src = f.read()
+        bz_tree = ast.parse(bz_src, filename=rc_bz_rel)
+        with open(rc_gni_path, "r", encoding="utf-8") as f:
+            gni_src = f.read()
+    except Exception:
+        return
+
+    base_bz_src = pcl._git_out(workdir, ["show", f"{change_base}:{rc_bz_rel}"])
+    try:
+        base_bz_tree = ast.parse(base_bz_src) if base_bz_src else None
+    except Exception:
+        base_bz_tree = None
+
+    def parse_pkg_groups(tree):
+        groups = {}
+        if not tree:
+            return groups
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func.id if isinstance(node.func, ast.Name) else ""
+            if fn != "package_group":
+                continue
+            gname = None
+            pkgs = {}
+            for kw in node.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    gname = kw.value.value
+                elif kw.arg == "packages" and isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        if (
+                            isinstance(elt, ast.Constant)
+                            and isinstance(elt.value, str)
+                            and elt.value.startswith("//")
+                            and not elt.value.endswith("/...")
+                        ):
+                            pkgs[elt.value[2:].strip("/")] = elt.lineno
+            if gname and gname.endswith("_visibility"):
+                groups[gname] = pkgs
+        return groups
+
+    def parse_gni_vis_lists(text):
+        lists = {}
+        clean = pcl.blank_comments(text)
+        pat = re.compile(r"(?m)^\s*([A-Za-z0-9_]+_visibility)\s*=\s*\[([^\]]*)\]")
+        for m in pat.finditer(clean):
+            vname = m.group(1)
+            body = m.group(2)
+            base_line = clean.count("\n", 0, m.start(2)) + 1
+            entries = {}
+            for sm in re.finditer(r'"//([^":*]+):?\*"', body):
+                pkg = sm.group(1).strip("/")
+                entries[pkg] = base_line + body.count("\n", 0, sm.start())
+            lists[vname] = entries
+        return lists
+
+    cur_bz_groups = parse_pkg_groups(bz_tree)
+    base_bz_groups = parse_pkg_groups(base_bz_tree)
+    cur_gni_lists = parse_gni_vis_lists(gni_src)
+    base_gni_src = pcl._git_out(workdir, ["show", f"{change_base}:{rc_gni_rel}"])
+    base_gni_lists = parse_gni_vis_lists(base_gni_src) if base_gni_src else {}
+
+    then_change_line = len(bz_src.splitlines())
+    for idx, line_txt in enumerate(bz_src.splitlines(), start=1):
+        if "LINT.ThenChange" in line_txt and "visibility.gni" in line_txt:
+            then_change_line = idx
+            break
+
+    dual_build_added = []
+    for gname, cur_pkgs in sorted(cur_bz_groups.items()):
+        base_pkgs = base_bz_groups.get(gname, {})
+        gni_pkgs = cur_gni_lists.get(gname, {})
+        for pkg, _ in sorted(cur_pkgs.items()):
+            if pkg in base_pkgs:
+                continue
+            uses_in_gn = gn_pkg_uses_restricted_rust_crate(pkg, gname)
+            if not uses_in_gn and pkg in gni_pkgs:
+                emit_finding(
+                    "stale_rust_crates_gn_visibility",
+                    "error",
+                    rc_gni_rel,
+                    gni_pkgs[pkg],
+                    (
+                        f"`{rc_bz_rel}` adds `//{pkg}` to `{gname}`, and no target in "
+                        f"`{pkg}/BUILD.gn` depends on this restricted crate in GN, but "
+                        f"`//{pkg}:*` still remains in `{gname}` in `{rc_gni_rel}` "
+                        f"(violating `LINT.ThenChange(//{rc_gni_rel})`)."
+                    ),
+                    (
+                        f"Remove `\"//{pkg}:*\"` from `{gname}` in `{rc_gni_rel}` now "
+                        f"that no GN targets in `//{pkg}` use the crate."
+                    ),
+                )
+            elif uses_in_gn and pkg in gni_pkgs:
+                dual_build_added.append((gname, pkg))
+
+    for gname, base_gni_pkgs in sorted(base_gni_lists.items()):
+        cur_gni_pkgs = cur_gni_lists.get(gname, {})
+        for pkg in sorted(base_gni_pkgs):
+            if pkg not in cur_gni_pkgs and gn_pkg_uses_restricted_rust_crate(
+                pkg, gname
+            ):
+                emit_finding(
+                    "removed_active_rust_crates_gn_visibility",
+                    "error",
+                    rc_gni_rel,
+                    1,
+                    (
+                        f"`//{pkg}:*` was removed from `{gname}` in `{rc_gni_rel}`, "
+                        f"but `{pkg}/BUILD.gn` still has GN target(s) depending on "
+                        "that restricted third-party crate."
+                    ),
+                    (
+                        f"Restore `\"//{pkg}:*\"` in `{gname}` in `{rc_gni_rel}` "
+                        f"while GN targets in `{pkg}/BUILD.gn` still depend on the "
+                        "crate."
+                    ),
+                )
+
+    if dual_build_added and rc_gni_rel not in changed_paths:
+        desc = ", ".join(f"`//{p}` in `{g}`" for g, p in dual_build_added)
+        emit_finding(
+            "rust_crates_dual_build_ifttt",
+            "info",
+            rc_bz_rel,
+            then_change_line,
+            (
+                f"`{rc_bz_rel}` adds {desc} while `{dual_build_added[0][1]}/BUILD.gn` "
+                f"still depends on the crate in GN, so `{rc_gni_rel}` already lists "
+                "the package and must remain unchanged despite "
+                f"`LINT.ThenChange(//{rc_gni_rel})`."
+            ),
+            (
+                f"Keep `{rc_gni_rel}` unchanged while GN targets in `BUILD.gn` still "
+                "use the crate, and never add a `NO_IFTTT` line to the commit message "
+                "or `CoderReport.summary` (only a human reviewer may add `NO_IFTTT` "
+                "after reviewing the IFTTT warning). Explain in the commit body and "
+                "`CoderReport.summary` that the GN allowlist entry in "
+                f"`{rc_gni_rel}` is still required by `BUILD.gn`."
+            ),
+        )
+
+check_rust_crates_visibility_sync(changed_set)
+check_missing_rust_crates_visibility(candidate_files)
+
+if not candidate_files:
+    pcl.emit_json(findings)
+    sys.exit(0)
+
+origin_main_sources = {}
+pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
+matched_files = rl.discover_referencing_build_files(
+    workdir,
+    pkg_paths,
+    candidate_files=candidate_files,
+    change_base=change_base,
+    origin_main_sources=origin_main_sources,
+    refresh_origin_main=True,
+)
+file_cache = rl.build_file_cache(matched_files, origin_main_sources)
 
 def check_visibility_tightened_from_gn(
     target_name, rel_path, lineno, vis_vals, vis_scopes, preserved_gn_vis, pkg_path

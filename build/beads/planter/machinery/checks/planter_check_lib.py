@@ -180,7 +180,29 @@ def _is_ancestor(workdir, anc, desc):
         return False
 
 
-def resolve_change_base(workdir, change_base=None):
+def _resolve_active_target_dirs(workdir, target_dirs=None):
+    """Normalizes explicit `target_dirs` or `$PLANTER_TARGET_DIRS` / `$PLANTER_TARGET_DIR`."""
+    if target_dirs is not None:
+        raw_items = (
+            re.split(r"[\s,]+", target_dirs)
+            if isinstance(target_dirs, str)
+            else list(target_dirs)
+        )
+    else:
+        raw_env = (
+            os.environ.get("PLANTER_TARGET_DIRS", "").strip()
+            or os.environ.get("PLANTER_TARGET_DIR", "").strip()
+        )
+        raw_items = re.split(r"[\s,]+", raw_env) if raw_env else []
+    out = []
+    for item in raw_items:
+        norm = normalize_target_dir(item, workdir)
+        if norm and norm not in out:
+            out.append(norm)
+    return out
+
+
+def resolve_change_base(workdir, change_base=None, target_dirs=None):
     """Deterministically resolves the git change base for the current check run."""
     env_resolved = os.environ.get("PLANTER_RESOLVED_CHANGE_BASE", "").strip()
     if env_resolved and change_base is None:
@@ -198,10 +220,9 @@ def resolve_change_base(workdir, change_base=None):
     ):
         return env_resolved
 
-    if base == "@-":
-        base = "HEAD~1"
-    elif base == "@":
-        base = "HEAD"
+    m_jj = re.fullmatch(r"@(-*)", base)
+    if m_jj:
+        base = f"HEAD~{len(m_jj.group(1))}" if m_jj.group(1) else "HEAD"
 
     if not workdir or not os.path.isdir(workdir):
         return base
@@ -243,18 +264,46 @@ def resolve_change_base(workdir, change_base=None):
             workdir, ["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"]
         )
 
-    if parent_sha:
+    # Do not step back to HEAD~1 when HEAD is already merged on origin/main
+    # (e.g. an upstream [bazel_migration] commit at checkout base while edits
+    # are uncommitted) or is a stacked prerequisite commit outside target_dirs.
+    head_on_origin = bool(
+        origin_main
+        and head_sha
+        and (head_sha == origin_main or merge_base == head_sha)
+    )
+    if parent_sha and not head_on_origin:
         subj = _git_out(workdir, ["log", "-1", "--format=%s", "HEAD"])
         is_mig_subj = subj.startswith(
             ("[bazel_migration]", "[bazel2gn]", "[bazel]")
         )
         if is_mig_subj and (base == "HEAD" or base_sha == head_sha):
+            tdirs = _resolve_active_target_dirs(workdir, target_dirs)
+            head_files = [
+                line.strip()
+                for line in _git_out(
+                    workdir, ["diff", "--name-only", "HEAD~1", "HEAD"]
+                ).splitlines()
+                if line.strip()
+            ]
+            active_tdirs = [
+                td
+                for td in tdirs
+                if os.path.exists(os.path.join(workdir, td))
+                or any(f == td or f.startswith(td + "/") for f in head_files)
+            ]
+            if active_tdirs and not any(
+                f == td or f.startswith(td + "/")
+                for td in active_tdirs
+                for f in head_files
+            ):
+                return base
             return "HEAD~1"
 
     return base
 
 
-def changed_files(workdir, change_base=None):
+def changed_files(workdir, change_base=None, target_dirs=None):
     """Returns the list of changed and untracked files relative to `change_base`."""
     if "PLANTER_CHANGED_FILES" in os.environ and (
         change_base is None
@@ -274,7 +323,9 @@ def changed_files(workdir, change_base=None):
     if not workdir or not os.path.isdir(workdir):
         return []
 
-    eff_base = resolve_change_base(workdir, change_base)
+    eff_base = resolve_change_base(
+        workdir, change_base, target_dirs=target_dirs
+    )
     seen = set()
     result = []
 

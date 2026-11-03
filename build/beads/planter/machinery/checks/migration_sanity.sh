@@ -455,11 +455,17 @@ else:
     changed.update(git_lines(["diff", "--name-only", change_base]))
     changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
-if change_base == "HEAD" and not changed and head_subj and head_subj[0].startswith("[bazel_migration]"):
+parent_subj = git_lines(["log", "-1", "--format=%s", "HEAD~1"])
+mig_prefixes = ("[bazel_migration]", "[bazel2gn]", "[bazel]")
+if head_subj and head_subj[0].startswith(mig_prefixes):
     head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
     if not target_dir or any(p.startswith(target_dir + "/") for p in head_files):
-        change_base = "HEAD~1"
-        changed.update(head_files)
+        if change_base == "HEAD" or (
+            parent_subj and not parent_subj[0].startswith(mig_prefixes)
+        ):
+            change_base = "HEAD~1"
+        if not changed:
+            changed.update(head_files)
 all_changed_build_dirs = set()
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
@@ -758,7 +764,13 @@ def is_bazel_only_private_test_dep(
         )
         for ptmpl, _, pbody in gn_info["pre_targets"].values():
             if (
-                ptmpl not in ("bazel_test_suite", "bazel_host_tool", "bazel_fuchsia_package")
+                ptmpl
+                not in (
+                    "bazel_test_suite",
+                    "bazel_host_tool",
+                    "bazel_ffx_tool",
+                    "bazel_fuchsia_package",
+                )
                 and ref_pat.search(pbody)
             ):
                 return False
@@ -1193,6 +1205,7 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
                             "bazel_test_suite",
                             "bazel_fuchsia_package",
                             "bazel_host_tool",
+                            "bazel_ffx_tool",
                         )
                     ):
                         return False
@@ -1636,13 +1649,13 @@ for pkg_dir in sorted(candidate_dirs):
     for t in bazel_targets:
         if t["rule"] == "fx_unittest_package":
             packaged_binaries.update(t.get("unit_tests_refs", []))
-    # Treat host binaries wrapped by a pre-sentinel bazel_host_tool() target as
-    # Bazel-only packaged binaries so `# @bazel2gn:skip` on the underlying host
-    # binary in BUILD.bazel is allowed even when bazel_host_tool() uses a
-    # different GN target name.
+    # Treat host binaries wrapped by a pre-sentinel bazel_host_tool() or
+    # bazel_ffx_tool() target as Bazel-only packaged binaries so `# @bazel2gn:skip`
+    # on the underlying host binary in BUILD.bazel is allowed even when the GN
+    # wrapper uses a different GN target name.
     if gn_info:
         for hname, (htmpl, _, hbody) in gn_info["pre_targets"].items():
-            if htmpl == "bazel_host_tool":
+            if htmpl in ("bazel_host_tool", "bazel_ffx_tool"):
                 packaged_binaries.add(hname)
                 m_bt = re.search(r'\bbazel_target\s*=\s*"([^"]+)"', hbody)
                 if m_bt:
@@ -2265,7 +2278,13 @@ for pkg_dir in sorted(candidate_dirs):
                 )
             )
             ref_in_pre_gn = rule in CONVERTIBLE_BAZEL_RULES and any(
-                ptmpl not in ("bazel_test_suite", "bazel_host_tool", "bazel_fuchsia_package")
+                ptmpl
+                not in (
+                    "bazel_test_suite",
+                    "bazel_host_tool",
+                    "bazel_ffx_tool",
+                    "bazel_fuchsia_package",
+                )
                 and bool(
                     re.search(
                         r'"(?::|//' + re.escape(pkg_dir) + r':)' + re.escape(tname) + r'(?:_[A-Za-z0-9_]+)?(?:"|\()',
@@ -2947,6 +2966,7 @@ for pkg_dir in sorted(candidate_dirs):
                             "bazel_test_suite",
                             "bazel_fuchsia_package",
                             "bazel_host_tool",
+                            "bazel_ffx_tool",
                         )
                     ):
                         return False
@@ -4121,6 +4141,37 @@ for pkg_dir in sorted(candidate_dirs):
         btree = ast.parse(btext, filename=bazel_abs)
     except Exception:
         continue
+    # Skip pre-existing re-export load() statements in ancillary or collateral-edited
+    # upstream packages that already existed at change_base or HEAD~1.
+    is_ancillary_candidate = bool(target_dirs and pkg_dir not in target_dirs)
+    base_btext_flat = ""
+    base_refs = ["HEAD~1", change_base] if change_base == "HEAD" else [change_base, "HEAD~1"]
+    for _ref in dict.fromkeys(base_refs):
+        _lines = git_lines(["show", f"{_ref}:{bazel_rel}"])
+        if _lines:
+            base_btext_flat = re.sub(r"\s+", "", "\n".join(_lines))
+            if not is_ancillary_candidate and not target_dirs:
+                _diff = git_lines(["diff", "--unified=0", _ref, "--", bazel_rel])
+                _chg = [
+                    ln[1:].strip()
+                    for ln in _diff
+                    if ln[:1] in ("+", "-")
+                    and not ln.startswith(("+++", "---"))
+                    and ln[1:].strip()
+                    and not ln[1:].strip().startswith("#")
+                ]
+                _col_pat = re.compile(
+                    r'^(?:load\(\s*"(?:@platforms//host:constraints\.bzl|'
+                    r"//build/bazel/platforms:constraints\.bzl|"
+                    r'//build/bazel/rules/[\w/]+:(?:defs|\w+)\.bzl)"|'
+                    r"target_compatible_with\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b|"
+                    r"visibility\s*=\s*|"
+                    r'"(?:(?://|:)[^"]+|\w+)"\s*,?$|'
+                    r"\],?$|\),?$)"
+                )
+                if _chg and all(_col_pat.search(ln) for ln in _chg):
+                    is_ancillary_candidate = True
+            break
     if FIDL_RUST_NEXT_UNIMPLEMENTED:
         next_m = FIDL_RUST_NEXT_DEP_RE.search(btext)
         if next_m:
@@ -4150,6 +4201,14 @@ for pkg_dir in sorted(candidate_dirs):
             and isinstance(node.value.args[0].value, str)
         ):
             mod_label = node.value.args[0].value
+            load_seg = ast.get_source_segment(btext, node) or ""
+            if (
+                is_ancillary_candidate
+                and base_btext_flat
+                and load_seg
+                and re.sub(r"\s+", "", load_seg) in base_btext_flat
+            ):
+                continue
             reexport_info = get_defs_bzl_reexports(mod_label)
             if reexport_info is not None:
                 canonical_pkg, reexports = reexport_info
@@ -5182,11 +5241,88 @@ def check_gn_only_constructs_below_sentinel(dirs_to_check):
             b_txt = open(b_abs, encoding="utf-8").read()
         except OSError:
             continue
+        gn_rel = f"{d}/BUILD.gn"
+        bazel_rel = f"{d}/BUILD.bazel"
+        gn_clean_for_arm64 = re.sub(r"#[^\n]*", "", g_txt)
+
+        def _is_cross_compiled_arm64_host_tool_pkg(p_dir, gn_clean_txt):
+            if re.search(
+                r"\b(?:sdk_atom|sdk_host_tool)\s*\(|\bhost_arm64_toolchain\b",
+                gn_clean_txt,
+            ):
+                return True
+            leaf = os.path.basename(p_dir)
+            for reg_rel, allow_rel_leaf in (
+                ("bundles/infra/test/BUILD.gn", False),
+                (
+                    "src/developer/ffx/tools/BUILD.gn",
+                    p_dir.startswith("src/developer/ffx/tools/"),
+                ),
+                ("src/developer/ffx/config.gni", False),
+                ("sdk/BUILD.gn", False),
+            ):
+                reg_path = os.path.join(workdir, reg_rel)
+                try:
+                    reg_txt = re.sub(
+                        r"#[^\n]*",
+                        "",
+                        open(reg_path, encoding="utf-8", errors="ignore").read(),
+                    )
+                except OSError:
+                    continue
+                if re.search(r'"//' + re.escape(p_dir) + r'(?=[":])', reg_txt):
+                    return True
+                if allow_rel_leaf and re.search(
+                    r'"' + re.escape(leaf) + r'(?=[":])', reg_txt
+                ):
+                    return True
+            return False
+
+        # Check that host tools bridged via bazel_host_tool / bazel_ffx_tool AND
+        # cross-compiled in host_arm64_toolchain do not depend on BUILD.bazel targets
+        # or loaded .bzl macros that hardcode HOST_CONSTRAINTS (@platforms//host:constraints.bzl).
+        if re.search(
+            r"\b(?:bazel_host_tool|bazel_ffx_tool)\s*\(", gn_clean_for_arm64
+        ) and _is_cross_compiled_arm64_host_tool_pkg(d, gn_clean_for_arm64):
+            check_files = [bazel_rel]
+            for lm in re.finditer(r'load\(\s*"//([^":]+):([^"]+\.bzl)"', b_txt):
+                bzl_rel = f"{lm.group(1).strip('/')}/{lm.group(2).lstrip('/')}"
+                if bzl_rel not in check_files:
+                    check_files.append(bzl_rel)
+            for cf_rel in check_files:
+                cf_abs = os.path.join(workdir, cf_rel)
+                try:
+                    cf_txt = open(cf_abs, encoding="utf-8").read()
+                except OSError:
+                    continue
+                if "HOST_CONSTRAINTS" in cf_txt and "@platforms//host:constraints.bzl" in cf_txt:
+                    msg = (
+                        f"'{gn_rel}' bridges a host tool via `bazel_host_tool` / "
+                        f"`bazel_ffx_tool` (which cross-compiles for `host_linux_arm64` on "
+                        f"arm64 builders), but '{cf_rel}' uses `HOST_CONSTRAINTS` from "
+                        "`@platforms//host:constraints.bzl`, locking CPU to the execution "
+                        "host (`x86_64`) and failing Bazel analysis on `linux_arm64`."
+                    )
+                    rem = (
+                        f"In '{cf_rel}', replace "
+                        '`load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")` '
+                        "and `target_compatible_with = HOST_CONSTRAINTS` with "
+                        '`load("//build/bazel/platforms:constraints.bzl", '
+                        '"HOST_OS_CONSTRAINTS")` and '
+                        "`target_compatible_with = HOST_OS_CONSTRAINTS`."
+                    )
+                    _emit(
+                        findings,
+                        "host_tool_cpu_constraint_incompatible",
+                        "error",
+                        cf_rel,
+                        1,
+                        msg,
+                        rem,
+                    )
         sm = GN_SENTINEL_RE.search(g_txt)
         if not sm:
             continue
-        gn_rel = f"{d}/BUILD.gn"
-        bazel_rel = f"{d}/BUILD.bazel"
         post_off = sm.end()
         post = g_txt[post_off:]
 

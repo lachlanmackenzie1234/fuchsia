@@ -151,13 +151,32 @@ changed = (
     if env_changed
     else git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
 )
+# Fall back to HEAD~1 only when HEAD is a local migration commit for target_dirs
+# (never when HEAD is already merged on origin/main or belongs to a stacked parent).
 if not changed:
     head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
     head_c = (git_lines(["rev-parse", "--verify", "HEAD^{commit}"]) or [""])[0]
     base_c = (git_lines(["rev-parse", "--verify", f"{change_base}^{{commit}}"]) or [""])[0]
-    if (change_base == "HEAD" or (head_c and head_c == base_c)) and head_subj.startswith("[bazel_migration]"):
+    origin_c = (git_lines(["rev-parse", "--verify", "origin/main^{commit}"]) or [""])[0]
+    merge_c = (
+        (git_lines(["merge-base", origin_c, head_c]) or [""])[0]
+        if (origin_c and head_c)
+        else ""
+    )
+    head_on_origin = bool(origin_c and head_c and merge_c == head_c)
+    head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
+    head_touches_td = not target_dirs or any(
+        any(p == td or p.startswith(td + "/") for td in target_dirs)
+        for p in head_files
+    )
+    if (
+        not head_on_origin
+        and head_touches_td
+        and (change_base == "HEAD" or (head_c and head_c == base_c))
+        and head_subj.startswith(("[bazel_migration]", "[bazel2gn]", "[bazel]"))
+    ):
         change_base = "HEAD~1"
-        changed = git_lines(["diff", "--name-only", change_base]) + git_lines(
+        changed = head_files + git_lines(
             ["ls-files", "--others", "--exclude-standard"]
         )
 changed_set = set(changed)
@@ -202,6 +221,70 @@ def _is_ancestor_test_wiring_only(d):
     return True
 
 
+# Normalize non-collateral top-level targets in a BUILD.bazel file so collateral-only edits
+# (visibility, exports_files, package, load, test_suite, or HOST_CONSTRAINTS ->
+# HOST_OS_CONSTRAINTS) do not trigger building `:all` or running pre-existing untouched
+# host tests in non-target packages.
+def _is_host_compat_value(node):
+    return isinstance(node, ast.Name) and node.id in (
+        "HOST_CONSTRAINTS",
+        "HOST_OS_CONSTRAINTS",
+    )
+
+
+def _canon_bazel_non_collateral(src):
+    tree = ast.parse(src)
+    items = []
+    for stmt in tree.body:
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            items.append(ast.dump(stmt))
+            continue
+        call = stmt.value
+        fn = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
+        )
+        if fn in ("load", "package", "exports_files", "licenses", "test_suite"):
+            continue
+        kept_kws = sorted(
+            (
+                kw.arg or "",
+                "HOST_COMPAT"
+                if (kw.arg == "target_compatible_with" and _is_host_compat_value(kw.value))
+                else ast.dump(kw.value),
+            )
+            for kw in call.keywords
+            if kw.arg != "visibility"
+        )
+        items.append((fn, [ast.dump(a) for a in call.args], kept_kws))
+    return items
+
+
+# Check whether a package is a target directory, newly created, or modified build/test
+# targets beyond collateral `visibility`, `exports_files`, `test_suite`, or
+# `HOST_CONSTRAINTS` -> `HOST_OS_CONSTRAINTS` edits.
+def _has_substantive_bazel_target_change(d):
+    if d in target_dirs:
+        return True
+    try:
+        base_src = subprocess.check_output(
+            ["git", "-C", workdir, "show", f"{change_base}:{d}/BUILD.bazel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return True
+    try:
+        with open(
+            os.path.join(workdir, d, "BUILD.bazel"), encoding="utf-8", errors="replace"
+        ) as f:
+            cur_src = f.read()
+        return _canon_bazel_non_collateral(base_src) != _canon_bazel_non_collateral(cur_src)
+    except Exception:
+        return True
+
+
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
@@ -210,6 +293,7 @@ for p in changed:
             and d not in ("tools", "src", "sdk", "build")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
             and not _is_ancestor_test_wiring_only(d)
+            and (f"{d}/BUILD.gn" in changed_set or _has_substantive_bazel_target_change(d))
             and d not in dirs
         ):
             dirs.append(d)
@@ -230,6 +314,7 @@ if fx is None:
     sys.exit(0)
 
 bazel_dirs = [d for d in dirs if os.path.isfile(os.path.join(workdir, d, "BUILD.bazel"))]
+test_bazel_dirs_set = {d for d in bazel_dirs if _has_substantive_bazel_target_change(d)}
 host_markers = re.compile(
     r"HOST_CONSTRAINTS|HOST_OS_CONSTRAINTS|_host_tool\b|with_host_unit_tests|"
     r"\bwith_unit_tests\s*=\s*\"(?:host|both)\"|\b(?:idk_)?ffx_(?:plugin|tool)\b|"
@@ -237,6 +322,8 @@ host_markers = re.compile(
 )
 host_dirs = []
 for d in bazel_dirs:
+    if d not in test_bazel_dirs_set:
+        continue
     try:
         with open(os.path.join(workdir, d, "BUILD.bazel")) as f:
             if host_markers.search(f.read()):
@@ -266,55 +353,6 @@ for d in dirs:
             for label in re.findall(r'"(//[^"]+)"', lm.group(2)):
                 if label not in exported_tests[lm.group(1)]:
                     exported_tests[lm.group(1)].append(label)
-
-# Normalize non-collateral top-level targets in a BUILD.bazel file so collateral-only edits
-# (visibility, exports_files, package, load, or test_suite) do not trigger running pre-existing
-# untouched host tests in non-target packages.
-def _canon_bazel_non_collateral(src):
-    tree = ast.parse(src)
-    items = []
-    for stmt in tree.body:
-        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
-            items.append(ast.dump(stmt))
-            continue
-        call = stmt.value
-        fn = (
-            call.func.id
-            if isinstance(call.func, ast.Name)
-            else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
-        )
-        if fn in ("load", "package", "exports_files", "licenses", "test_suite"):
-            continue
-        kept_kws = sorted(
-            (kw.arg or "", ast.dump(kw.value))
-            for kw in call.keywords
-            if kw.arg != "visibility"
-        )
-        items.append((fn, [ast.dump(a) for a in call.args], kept_kws))
-    return items
-
-
-# Check whether a package in `bazel_dirs` is a target directory, newly created, or modified
-# build/test targets beyond collateral `visibility`, `exports_files`, or `test_suite` edits.
-def _has_substantive_bazel_target_change(d):
-    if d in target_dirs:
-        return True
-    try:
-        base_src = subprocess.check_output(
-            ["git", "-C", workdir, "show", f"{change_base}:{d}/BUILD.bazel"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-    except Exception:
-        return True
-    try:
-        with open(
-            os.path.join(workdir, d, "BUILD.bazel"), encoding="utf-8", errors="replace"
-        ) as f:
-            cur_src = f.read()
-        return _canon_bazel_non_collateral(base_src) != _canon_bazel_non_collateral(cur_src)
-    except Exception:
-        return True
 
 
 # Split a Bazel label (`@//a/b:c`, `//a/b`, or `:c`) into `(pkg_dir, target_name)`.
@@ -910,7 +948,9 @@ steps = [
 # `shac check` without file arguments finds and checks all modified files itself;
 # `--fail-level warning` makes `shac check` fail on warnings as well as errors.
 steps.append(("shac_check", [fx, "host-tool", "shac", "check", "--fail-level", "warning"]))
-fuchsia_bazel_dirs = [d for d in bazel_dirs if has_non_suite_bazel_targets(d)]
+fuchsia_bazel_dirs = [
+    d for d in bazel_dirs if d in test_bazel_dirs_set and has_non_suite_bazel_targets(d)
+]
 if fuchsia_bazel_dirs:
     steps.append((
         "bazel_build_fuchsia",

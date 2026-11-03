@@ -349,13 +349,21 @@ def list_strings(node):
 _bazel_suites_cache = {}
 
 
+# Parse `test_suite` targets in `pkg/BUILD.bazel`, stripping git conflict marker lines
+# on syntax error so an unmerged ancestor `BUILD.bazel` does not hide its `test_suite`
+# and trigger a misleading leaf `unexported_bazel_test` error during rebase resolution.
 def bazel_suites_of(pkg):
     """{test_suite name: [test labels], or None when `tests` is omitted} of pkg's BUILD.bazel."""
     if pkg not in _bazel_suites_cache:
         found = {}
         try:
             with open(os.path.join(workdir, pkg, "BUILD.bazel"), "r", encoding="utf-8") as f:
-                t = ast.parse(f.read())
+                raw = f.read()
+            try:
+                t = ast.parse(raw)
+            except SyntaxError:
+                cleaned = re.sub(r"(?m)^(?:<{7}|={7}|\|{7}|>{7})[^\n]*$", "", raw)
+                t = ast.parse(cleaned)
             for node in ast.walk(t):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "test_suite":
                     kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
@@ -1445,6 +1453,43 @@ if origin_main and head_sha and head_sha != origin_main:
                                         "into a single target definition."
                                     ),
                                 })
+                    # Flag target directories where upstream origin/main modified BUILD or
+                    # source files since merge_base, which leaves BUILD.bazel and bazel2gn
+                    # output out of sync after a clean 3-way git merge.
+                    for td in target_dirs:
+                        td_upstream = sorted(
+                            u for u in upstream_touched if u.startswith(td + "/")
+                        )
+                        if not td_upstream:
+                            continue
+                        td_bz = f"{td}/BUILD.bazel"
+                        rep_file = (
+                            td_bz
+                            if os.path.isfile(os.path.join(workdir, td_bz))
+                            else td_upstream[0]
+                        )
+                        touched_list = ", ".join(f"'{u}'" for u in td_upstream[:4])
+                        findings.append({
+                            "source": "cq_reachability",
+                            "category": "upstream_rebase_conflict",
+                            "severity": "error",
+                            "file": rep_file,
+                            "line": 1,
+                            "message": (
+                                f"Upstream `origin/main` ({origin_main[:11]}) modified "
+                                f"{touched_list} in target package `//{td}` since checkout "
+                                f"base {merge_base[:11]}. A 3-way git merge updates those "
+                                f"files without updating '{td_bz}' or re-running "
+                                "`fx bazel2gn`, leaving stale dependencies (such as unused "
+                                "Rust crate dependencies) or `verify_bazel2gn` drift in CQ."
+                            ),
+                            "remediation": (
+                                "Rebase onto the latest `origin/main` (`git fetch origin "
+                                "main && git rebase origin/main`), update "
+                                f"'{td_bz}' to match upstream's changes in `//{td}`, and "
+                                f"re-run `fx bazel2gn -d {td}`."
+                            ),
+                        })
 
 # Check whether HEAD is stacked on a local ancestor commit that has already landed on
 # origin/main, or still carries a 'Depends on:' reference to a CL now in origin/main.
@@ -1484,11 +1529,10 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
                 )
                 landed_ancestors.append((anc[:11], anc_subj))
 
-    # Only inspect HEAD's commit message for 'Depends on:' when HEAD is a task commit
-    # distinct from $PLANTER_CHANGE_BASE.
+    # Only inspect HEAD's commit message for 'Depends on:' when HEAD is a task commit.
     head_msg = (
         git_out(["log", "-1", "--format=%B", head_sha])
-        if head_sha and not (base_sha and head_sha == base_sha)
+        if head_sha and head_is_task_commit
         else ""
     )
     if re.search(r"(?m)^Reviewed-on:\s+\S+", head_msg) and not head_touches_target:
@@ -1513,6 +1557,17 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
     dep_cl_re = (
         r"(?:fxrev\.dev|fxr|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
     )
+    # Planter's uploader (`dependsOnBlock`) regenerates `- task <slug> (CL ...)` bullets from
+    # `task.depends_on` on every upload even after the prerequisite task lands; ignore those
+    # Planter-managed bullets (including 72-char wrapped continuation lines) for `stale_depends_on`
+    # so post-ack uploads do not bounce.
+    manual_dep_text = re.sub(
+        r"(?im)^[ \t]*[-*][ \t]*task[ \t]+[A-Za-z0-9_.-]+[^\n]*(?:\n[ \t]+(?![-*]\s)[^\n]*)*",
+        "",
+        dep_text,
+    )
+    manual_cl_nums = set(re.findall(dep_cl_re, manual_dep_text))
+    manual_cids = set(re.findall(r"\b(I[0-9a-f]{40})\b", manual_dep_text))
     for cl_num in re.findall(dep_cl_re, dep_text):
         rev_pat = r"Reviewed-on:[^\n]*/\+/" + re.escape(cl_num) + r"\b"
         ref = f"fxrev.dev/{cl_num}"
@@ -1526,7 +1581,7 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
                 origin_main,
             ]
         ):
-            if ref not in stale_depends_on:
+            if cl_num in manual_cl_nums and ref not in stale_depends_on:
                 stale_depends_on.append(ref)
         elif ref not in unlanded_depends_on:
             unlanded_depends_on.append(ref)
@@ -1546,10 +1601,51 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
             ]
         )
         if landed_sha:
-            if cid not in stale_depends_on:
+            if cid in manual_cids and cid not in stale_depends_on:
                 stale_depends_on.append(cid)
         elif cid not in unlanded_depends_on:
             unlanded_depends_on.append(cid)
+
+    # Check that unlanded 'Depends on:' Change-Ids are actually stacked in git ancestry.
+    # Gerrit CQ/Tricium builds HEAD's git tree and ignores prose 'Depends on:' lines.
+    stack_cids = set()
+    if parent_sha and merge_base != parent_sha and is_ancestor(merge_base, parent_sha):
+        stack_log = git_out(["log", "--format=%B", f"{merge_base}..{parent_sha}"])
+        stack_cids = set(re.findall(r"^Change-Id:\s*(I[0-9a-f]{40})\b", stack_log, re.M))
+    has_task_dep_slug = bool(re.search(r"(?i)\btask\s+[a-z0-9_-]+", dep_text))
+    unstacked_prereqs = []
+    for cid in unlanded_depends_on:
+        if cid in stack_cids:
+            continue
+        local_prereq = git_out(
+            ["log", "--all", "--reflog", "-1", "--format=%H", f"--grep=^Change-Id: {cid}$"]
+        )
+        if local_prereq or has_task_dep_slug:
+            unstacked_prereqs.append((cid, local_prereq[:12] if local_prereq else ""))
+    if unstacked_prereqs:
+        prereq_desc = ", ".join(
+            f"{cid} (local commit {sha})" if sha else cid for cid, sha in unstacked_prereqs
+        )
+        first_sha = next((sha for _, sha in unstacked_prereqs if sha), "<prereq_sha>")
+        findings.append({
+            "source": "cq_reachability",
+            "category": "unstacked_depends_on_commit",
+            "severity": "error",
+            "file": "/COMMIT_MSG",
+            "line": 1,
+            "message": (
+                f"Commit message lists unlanded `Depends on:` prerequisite(s) {prereq_desc}, "
+                "but those commit(s) are missing from `HEAD`'s git ancestry above "
+                "`origin/main`. Gerrit CQ/Tricium ignores prose `Depends on:` lines and "
+                "tests `HEAD`'s git tree directly, failing with `no such package`."
+            ),
+            "remediation": (
+                f"Restack `HEAD` on top of the prerequisite commit (`git rebase --onto "
+                f"{first_sha} HEAD~1 HEAD`) so its `BUILD.bazel` is in `origin/main..HEAD`, "
+                "or if the prerequisite CL has since landed, run "
+                "`git fetch origin main && git rebase origin/main` and remove `Depends on:`."
+            ),
+        })
 
     if landed_ancestors or stale_depends_on:
         anc_desc = ", ".join(f"{sha} ({subj!r})" for sha, subj in landed_ancestors)
@@ -1711,12 +1807,22 @@ def check_unlanded_bazel_dependencies(origin_main, parent_sha):
                 continue
 
             # Skip dependency packages added/modified in HEAD (co-migrated in this CL)
-            # or residing in a nested jiri git repository / submodule outside the root repo.
+            # or committed in a stacked ancestor when not standalone on origin/main.
+            co_migrated_files = (
+                set(head_commit_files)
+                if (head_touches_target and not wt_touches_target)
+                else changed_files
+            )
             dep_in_head = (
-                dep_bazel_rel in changed_files
-                or dep_build_rel in changed_files
-                or git_success(["cat-file", "-e", f"{head_sha}:{dep_bazel_rel}"])
-                or git_success(["cat-file", "-e", f"{head_sha}:{dep_build_rel}"])
+                dep_bazel_rel in co_migrated_files
+                or dep_build_rel in co_migrated_files
+                or (
+                    not is_standalone_on_origin
+                    and (
+                        git_success(["cat-file", "-e", f"{head_sha}:{dep_bazel_rel}"])
+                        or git_success(["cat-file", "-e", f"{head_sha}:{dep_build_rel}"])
+                    )
+                )
             )
             if dep_in_head:
                 continue
@@ -1919,6 +2025,25 @@ def iter_pkg_dep_labels(cur_tree):
                 yield from iter_dep_label_strings(kw.value, var_defs)
 
 
+# Check whether a cross-package reference to `dep_pkg` in a non-target package `pkg_d`
+# was already present on `origin/main` (or the change base when `origin/main` is absent),
+# such as pre-existing `test_deps` in an already-migrated upstream library touched only
+# to update `visibility` or `HOST_OS_CONSTRAINTS`.
+def is_preexisting_non_target_dep(pkg_d, dep_pkg):
+    if not pkg_d or pkg_d in target_dirs:
+        return False
+    ref_src = (
+        git_out(["show", f"{origin_main}:{pkg_d}/BUILD.bazel"])
+        if origin_main
+        else base_bazel_src_of(pkg_d)
+    )
+    if not ref_src:
+        return False
+    return bool(
+        re.search(r"//" + re.escape(dep_pkg) + r"(?![A-Za-z0-9_/-])", ref_src)
+    )
+
+
 def check_missing_bazel_dep_packages(bazel_rel, td, tree):
     reported_pkgs = set()
     visited_pkgs = {td}
@@ -1934,6 +2059,8 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                 continue
             report_ln = root_line if root_line is not None else ln
             if not has_bazel_pkg_in_worktree(dep_pkg):
+                if is_preexisting_non_target_dep(cur_pkg, dep_pkg):
+                    continue
                 if dep_pkg not in reported_pkgs:
                     reported_pkgs.add(dep_pkg)
                     msg = (
@@ -1956,10 +2083,36 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                             "`missing_bazel_dependency_package` in `disputed_findings`."
                         )
                     else:
+                        prereq_sha = ""
+                        for cid in re.findall(r"\b(I[0-9a-f]{40})\b", head_commit_msg):
+                            cand_sha = git_out(
+                                [
+                                    "log",
+                                    "--all",
+                                    "--reflog",
+                                    "-1",
+                                    "--format=%H",
+                                    f"--grep=^Change-Id: {cid}$",
+                                ]
+                            )
+                            if cand_sha and has_bazel_pkg_at_ref(dep_pkg, cand_sha):
+                                prereq_sha = cand_sha[:12]
+                                break
+                        stack_hint = (
+                            f"restack `HEAD` onto local prerequisite commit `{prereq_sha}` "
+                            f"(`git rebase --onto {prereq_sha} HEAD~1 HEAD`) or "
+                            if prereq_sha
+                            else ""
+                        )
                         rem = (
-                            f"Migrate `//{dep_pkg}` to Bazel in this change (or ensure "
-                            "its stacked migration commit remains in the git parent "
-                            "ancestry before `HEAD` when rebasing onto `origin/main`)."
+                            f"Ensure `//{dep_pkg}` is present before uploading: {stack_hint}"
+                            "rebase onto `origin/main` if its CL landed, co-migrate "
+                            f"`//{dep_pkg}` in the integration/main pass if it is a small "
+                            "same-area helper within CL scoping limits (`<= 5` dirs, "
+                            "`<= ~500` lines), or revert the blocked `BUILD.bazel` / "
+                            "`BUILD.gn` edits and report the blocker with "
+                            "`disputed_findings: []` (never dispute "
+                            "`missing_bazel_dependency_package`)."
                         )
                     findings.append({
                         "source": "cq_reachability",
@@ -1971,10 +2124,60 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                         "remediation": rem,
                     })
                 continue
+            # Skip nested git repositories (e.g. jiri subprojects under third_party/)
+            # that are tracked outside the main repository's HEAD commit tree.
+            dep_abs_dir = os.path.join(workdir, dep_pkg)
+            try:
+                dep_top = subprocess.check_output(
+                    ["git", "-C", dep_abs_dir, "rev-parse", "--show-toplevel"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).strip()
+            except Exception:
+                dep_top = ""
+            if dep_top and os.path.realpath(dep_top) != os.path.realpath(workdir):
+                continue
+            # Verify that committed task changes do not rely on untracked/uncommitted
+            # dependency BUILD.bazel files (direct or transitive) missing from HEAD's tree.
+            if (
+                head_is_task_commit
+                and not wt_touches_target
+                and head_sha
+                and not has_bazel_pkg_at_ref(dep_pkg, head_sha)
+            ):
+                if dep_pkg not in reported_pkgs:
+                    reported_pkgs.add(dep_pkg)
+                    msg = (
+                        f"Dependency `{raw_label}` in '{cur_rel}' references Bazel "
+                        f"package `//{dep_pkg}`, which exists in the working tree but "
+                        "is missing from `HEAD`'s committed git tree, causing Gerrit "
+                        "CQ/Tricium (`bazel query` for `tests.json`) to fail with "
+                        f"`no such package '{dep_pkg}': BUILD file not found`."
+                    )
+                    rem = (
+                        f"Commit '{dep_pkg}/BUILD.bazel' if co-migrating `//{dep_pkg}` "
+                        "in scope, restack `HEAD` onto the prerequisite commit that "
+                        f"adds '{dep_pkg}/BUILD.bazel', or rebase onto `origin/main` "
+                        "once the prerequisite CL lands."
+                    )
+                    findings.append({
+                        "source": "cq_reachability",
+                        "category": "unlanded_bazel_dependency_package",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": report_ln,
+                        "message": msg,
+                        "remediation": rem,
+                    })
+                continue
             in_stacked_parent = (
                 f"{dep_pkg}/BUILD.bazel" in stacked_parent_files
                 or f"{dep_pkg}/BUILD" in stacked_parent_files
-                or (origin_main and not has_bazel_pkg_at_ref(dep_pkg, origin_main))
+                or (
+                    origin_main
+                    and (not head_sha or has_bazel_pkg_at_ref(dep_pkg, head_sha))
+                    and not has_bazel_pkg_at_ref(dep_pkg, origin_main)
+                )
             )
             if (
                 origin_main
@@ -2041,7 +2244,8 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                 rem = (
                     f"'{dep_pkg}/BUILD.bazel' is now present in `HEAD~1` after rebasing onto "
                     "`origin/main` (resolving any earlier CQ `no such package` failure from "
-                    "a pre-rebase patchset); run `run_checks.sh` once and report with "
+                    "a pre-rebase patchset); remove any obsolete landed `Depends on:` entry "
+                    "with `git commit --amend`, run `run_checks.sh` once, and report with "
                     "`disputed_findings: []` so the rebased patchset is uploaded."
                 )
                 findings.append({
@@ -2101,6 +2305,7 @@ def check_modified_ancestor_bazel_dep_packages():
                 or dep_pkg == pkg_d
                 or dep_pkg in seen_missing
                 or has_bazel_pkg_in_worktree(dep_pkg)
+                or is_preexisting_non_target_dep(pkg_d, dep_pkg)
             ):
                 continue
             seen_missing.add(dep_pkg)
@@ -2236,8 +2441,272 @@ def read_active_args_gn_code():
     return "\n".join(chunks)
 
 
+# Helpers for auditing ancestor GN umbrella `ffx_plugin(plugin_deps = [...])` `group("tests")`
+# blocks when child plugins with unit tests migrate to Bazel (`fx bazel2gn` emits `ffx_plugin`
+# without `with_unit_tests = true`, so `:<umbrella>_tests` stops aggregating migrated child tests).
+STALE_ALL_PLUGINS_COMMENT_RE = re.compile(
+    r"(?i)\b(?:aggregates?|includes?|collects?|covers?|runs?)\b[^.;]*"
+    r"\b(?:for\s+|of\s+|from\s+|across\s+)?all\s+(?:the\s+)?(?:ffx\s+)?"
+    r"(?:sub-?)?(?:plugins?|subcommands?|commands?|`?plugin_deps`?)\b"
+)
+
+
+def _resolve_gn_label(raw_lbl, cur_dir):
+    lbl = raw_lbl.split("(", 1)[0].strip()
+    if not lbl:
+        return None, None
+    if lbl.startswith("//"):
+        path_part, sep, name_part = lbl[2:].partition(":")
+        pkg = path_part.strip("/")
+        return pkg, (name_part if sep else os.path.basename(pkg))
+    if lbl.startswith(":"):
+        return cur_dir, lbl[1:]
+    path_part, sep, name_part = lbl.partition(":")
+    pkg = os.path.normpath(os.path.join(cur_dir, path_part)).strip("/")
+    if pkg == ".":
+        pkg = ""
+    return pkg, (name_part if sep else os.path.basename(pkg))
+
+
+def _bazel_ffx_plugin_names(bz_tree):
+    names = []
+    for node in ast.walk(bz_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        r_nm = (
+            node.func.id
+            if isinstance(node.func, ast.Name)
+            else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+        )
+        if r_nm != "ffx_plugin":
+            continue
+        for kw in node.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                names.append(kw.value.value)
+    return sorted(set(names))
+
+
+def _gn_plugin_deps_reach(start_dir, start_plugin, target_pkg, target_plugins):
+    queue = [(start_dir, start_plugin)]
+    visited = set(queue)
+    while queue:
+        cur_dir, cur_plug = queue.pop(0)
+        cur_rel = os.path.join(cur_dir, "BUILD.gn") if cur_dir else "BUILD.gn"
+        cur_code = read_gn(cur_rel)
+        if not cur_code:
+            continue
+        plug_body = gn_block(cur_code, "ffx_plugin", cur_plug)
+        if not plug_body:
+            continue
+        for m_pd in re.finditer(r"\bplugin_deps\s*\+?=\s*\[", plug_body):
+            open_b = m_pd.end() - 1
+            close_b = closing_bracket(plug_body, open_b)
+            for raw_dep in re.findall(r'"([^"]+)"', plug_body[open_b + 1 : close_b]):
+                dep_pkg, dep_name = _resolve_gn_label(raw_dep, cur_dir)
+                if not dep_pkg or not dep_name:
+                    continue
+                if dep_pkg == target_pkg and dep_name in target_plugins:
+                    return True
+                nxt = (dep_pkg, dep_name)
+                if nxt in visited:
+                    continue
+                dep_code = read_gn(os.path.join(dep_pkg, "BUILD.gn"))
+                if (
+                    dep_code
+                    and gn_block(dep_code, "ffx_plugin", dep_name)
+                    and not gn_block(dep_code, "group", "tests")
+                ):
+                    visited.add(nxt)
+                    queue.append(nxt)
+    return False
+
+
+def _find_umbrella_ffx_tests_owner(td_pkg, plugin_names):
+    anc = os.path.dirname(td_pkg)
+    while anc:
+        anc_gn_rel = os.path.join(anc, "BUILD.gn")
+        anc_full = os.path.join(workdir, anc_gn_rel)
+        if os.path.isfile(anc_full):
+            try:
+                with open(anc_full, "r", encoding="utf-8") as af:
+                    anc_raw = af.read()
+            except OSError:
+                anc_raw = ""
+            anc_clean = gn_code(anc_raw)
+            if re.search(r'\bgroup\(\s*"tests"\s*\)\s*\{', anc_clean):
+                for m_fp in re.finditer(
+                    r'\bffx_plugin\(\s*"([^"]+)"\s*\)\s*\{', anc_clean
+                ):
+                    umb_name = m_fp.group(1)
+                    if _gn_plugin_deps_reach(anc, umb_name, td_pkg, set(plugin_names)):
+                        return (anc, anc_gn_rel, anc_raw, anc_clean, umb_name)
+        next_anc = os.path.dirname(anc)
+        if next_anc == anc:
+            break
+        anc = next_anc
+    return None
+
+
+def _parse_gn_list_sections(list_raw, first_line_no):
+    sections = []
+    cur = {"first_line": None, "comments": [], "items": []}
+    for offset, raw_line in enumerate(list_raw.splitlines()):
+        ln = first_line_no + offset
+        stripped = raw_line.strip()
+        if not stripped:
+            if cur["comments"] or cur["items"]:
+                sections.append(cur)
+                cur = {"first_line": None, "comments": [], "items": []}
+            continue
+        if cur["first_line"] is None:
+            cur["first_line"] = ln
+        if stripped.startswith("#"):
+            cur["comments"].append(stripped.lstrip("#").strip())
+        else:
+            for s_val in re.findall(r'"([^"]+)"', gn_code(raw_line)):
+                cur["items"].append((s_val, ln))
+    if cur["comments"] or cur["items"]:
+        sections.append(cur)
+    return sections
+
+
+def _check_umbrella_tests_stale_comment(
+    anc_gn_rel, raw_grp, body_start_line, umb_name, seen_keys
+):
+    blocks = []
+    cur_start = None
+    cur_lines = []
+    for idx, r_line in enumerate(raw_grp.splitlines()):
+        s_line = r_line.strip()
+        if s_line.startswith("#"):
+            if cur_start is None:
+                cur_start = body_start_line + idx
+            cur_lines.append(s_line.lstrip("#").strip())
+        elif cur_lines:
+            blocks.append((cur_start, " ".join(cur_lines)))
+            cur_start = None
+            cur_lines = []
+    if cur_lines:
+        blocks.append((cur_start, " ".join(cur_lines)))
+    for c_line, joined in blocks:
+        if not STALE_ALL_PLUGINS_COMMENT_RE.search(joined):
+            continue
+        if re.search(r"(?i)\b(?:unmigrated|non-migrated|except)\b", joined):
+            continue
+        dedup_key = ("stale_comment", anc_gn_rel, c_line)
+        if dedup_key in seen_keys:
+            continue
+        seen_keys.add(dedup_key)
+        msg_text = (
+            f"Comment in `group(\"tests\")` of '{anc_gn_rel}' at line {c_line} still "
+            f"claims `:{umb_name}_tests` aggregates tests for all plugins in "
+            "`plugin_deps`, which ceases to be true once child plugins migrate to "
+            "Bazel (`fx bazel2gn` emits `ffx_plugin` without `with_unit_tests = true`)."
+        )
+        rem_text = (
+            f"Update the comment above `\":{umb_name}_tests\"` in '{anc_gn_rel}' to "
+            "clarify that it aggregates `<subdir>:<plugin_name>_tests` only for "
+            "unmigrated plugins in `plugin_deps`, and list Bazel-migrated plugin "
+            "`:tests` targets in a separate commented section below."
+        )
+        findings.append({
+            "source": "cq_reachability",
+            "category": "stale_plugin_tests_aggregation_comment",
+            "severity": "error",
+            "file": anc_gn_rel,
+            "line": c_line,
+            "message": msg_text,
+            "remediation": rem_text,
+        })
+
+
+def _check_umbrella_tests_migrated_section(
+    anc, anc_gn_rel, anc_raw, clean_grp, raw_grp, body_start, umb_name, td_pkg, valid_names, seen_keys
+):
+    rel_td = os.path.relpath(td_pkg, anc)
+    for m_list in re.finditer(r"\b(?:public_)?deps\s*\+?=\s*\[", clean_grp):
+        open_b = m_list.end() - 1
+        close_b = closing_bracket(clean_grp, open_b)
+        first_line_no = anc_raw.count("\n", 0, body_start + open_b + 1) + 1
+        sections = _parse_gn_list_sections(raw_grp[open_b + 1 : close_b], first_line_no)
+        list_has_umbrella = any(
+            _resolve_gn_label(lbl, anc) == (anc, f"{umb_name}_tests")
+            for sec in sections
+            for lbl, _ in sec["items"]
+        )
+        if not list_has_umbrella:
+            continue
+        for sec in sections:
+            td_matches = [
+                (lbl, ln)
+                for lbl, ln in sec["items"]
+                if _resolve_gn_label(lbl, anc)[0] == td_pkg
+                and _resolve_gn_label(lbl, anc)[1] in valid_names
+            ]
+            if not td_matches:
+                continue
+            mixed_with_umbrella = any(
+                _resolve_gn_label(lbl, anc) == (anc, f"{umb_name}_tests")
+                for lbl, _ in sec["items"]
+            )
+            sec_comment = " ".join(sec["comments"])
+            has_migrated_comment = bool(
+                re.search(r"(?i)\b(?:bazel|migrated)\b", sec_comment)
+            )
+            unmigrated_in_sec = []
+            if not mixed_with_umbrella:
+                for lbl, _ in sec["items"]:
+                    i_pkg, _ = _resolve_gn_label(lbl, anc)
+                    if i_pkg and (
+                        (i_pkg == anc and not has_bazel_pkg_in_worktree(anc))
+                        or not has_bazel_pkg_in_worktree(i_pkg)
+                    ):
+                        unmigrated_in_sec.append(lbl)
+            if not (mixed_with_umbrella or not has_migrated_comment or unmigrated_in_sec):
+                continue
+            dedup_key = ("ungrouped_section", anc_gn_rel, sec["first_line"])
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+            report_ln = td_matches[0][1]
+            detail = (
+                f"mixes unmigrated target(s) ({', '.join(f'`{u}`' for u in unmigrated_in_sec)}) "
+                "into the Bazel-migrated plugins section"
+                if unmigrated_in_sec
+                else f"lists `{td_matches[0][0]}` without a separate commented section "
+                f"from `\":{umb_name}_tests\"`"
+            )
+            msg_text = (
+                f"`group(\"tests\")` in '{anc_gn_rel}' {detail}; migrated `ffx_plugin` "
+                f"targets define standalone unit tests no longer aggregated by "
+                f"`:{umb_name}_tests` and belong in their own commented section."
+            )
+            rem_text = (
+                f"In `group(\"tests\")` of '{anc_gn_rel}', keep `\":{umb_name}_tests\"` "
+                "(and any unmigrated test deps) in the first `deps` section, then add a "
+                "blank line and a `# Plugins migrated to Bazel define standalone unit "
+                f"test targets that are not aggregated by `:{umb_name}_tests`.` comment "
+                f"header before sorted Bazel-migrated plugin `:tests` entries such as "
+                f"`\"{rel_td}:tests\"`."
+            )
+            findings.append({
+                "source": "cq_reachability",
+                "category": "ungrouped_migrated_plugin_tests",
+                "severity": "error",
+                "file": anc_gn_rel,
+                "line": report_ln,
+                "message": msg_text,
+                "remediation": rem_text,
+            })
+
+
 active_args_gn_code = read_active_args_gn_code()
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
+umbrella_plugin_findings_seen = set()
 for td in target_dirs:
     bazel_rel = os.path.join(td, "BUILD.bazel")
     bazel_full = os.path.join(workdir, bazel_rel)
@@ -2772,8 +3241,250 @@ for td in target_dirs:
                     "remediation": rem_text,
                 })
 
+        # Verify that GN `ffx_plugin` inline unit tests (`with_unit_tests = true` and
+        # `args_with_unit_tests = true`) are decomposed into standalone Rust test targets.
+        def check_base_ffx_plugin_unit_tests():
+            try:
+                bz_tree = ast.parse(bazel_src)
+            except SyntaxError:
+                return
+            tested_crates = set()
+            bazel_test_names_set = set()
+            for c_node in ast.walk(bz_tree):
+                if not isinstance(c_node, ast.Call):
+                    continue
+                r_nm = (
+                    c_node.func.id
+                    if isinstance(c_node.func, ast.Name)
+                    else (
+                        c_node.func.attr
+                        if isinstance(c_node.func, ast.Attribute)
+                        else ""
+                    )
+                )
+                if r_nm not in ("host_rustc_test", "rustc_test", "rust_test"):
+                    continue
+                c_kws = {kw.arg: kw.value for kw in c_node.keywords if kw.arg}
+                nm_v = c_kws.get("name")
+                if isinstance(nm_v, ast.Constant) and isinstance(nm_v.value, str):
+                    bazel_test_names_set.add(nm_v.value)
+                cr_v = c_kws.get("crate")
+                if isinstance(cr_v, ast.Constant) and isinstance(cr_v.value, str):
+                    ln = local_name(cr_v.value, td)
+                    if ln:
+                        tested_crates.add(ln)
+
+            for m_fp in re.finditer(
+                r'\bffx_plugin\(\s*"([^"]+)"\s*\)\s*\{', base_gn_clean
+            ):
+                p_name = m_fp.group(1)
+                fp_body = base_gn_clean[
+                    m_fp.end() : closing(base_gn_clean, m_fp.end() - 1)
+                ]
+                specs = (
+                    (
+                        "with_unit_tests",
+                        "test_deps",
+                        p_name,
+                        f"{p_name}_test",
+                        "sources",
+                        "src/lib.rs",
+                    ),
+                    (
+                        "args_with_unit_tests",
+                        "args_test_deps",
+                        f"{p_name}_args",
+                        f"{p_name}_args_test",
+                        "args_sources",
+                        "src/args.rs",
+                    ),
+                )
+                for attr_nm, deps_attr, crate_nm, ut_nm, src_attr, def_src in specs:
+                    if not re.search(rf"\b{attr_nm}\s*=\s*true\b", fp_body):
+                        continue
+                    if (
+                        crate_nm in tested_crates
+                        or ut_nm in bazel_test_names_set
+                        or decomposed_unit_test_kept_above_sentinel(ut_nm)
+                        or has_todo_omitted_test
+                    ):
+                        continue
+                    src_m = re.search(
+                        rf"\b{src_attr}\s*=\s*\[([^\]]*)\]", fp_body
+                    )
+                    rel_srcs = (
+                        re.findall(r'"([^"]+)"', src_m.group(1))
+                        if src_m
+                        else [def_src]
+                    ) or [def_src]
+                    has_rust_tests = False
+                    for rs_rel in rel_srcs:
+                        rs_abs = os.path.join(workdir, td, rs_rel.lstrip("/"))
+                        if not os.path.isfile(rs_abs):
+                            has_rust_tests = True
+                            break
+                        try:
+                            with open(rs_abs, encoding="utf-8", errors="ignore") as rf:
+                                rs_txt = rf.read()
+                        except OSError:
+                            has_rust_tests = True
+                            break
+                        if re.search(
+                            r"#\s*\[\s*(?:cfg\s*\(\s*test\b|(?:\w+::)*test\b)",
+                            rs_txt,
+                        ) or re.search(r"(?m)^\s*(?:pub\s+)?mod\s+\w+\s*;", rs_txt):
+                            has_rust_tests = True
+                            break
+                    if not has_rust_tests:
+                        continue
+                    anc_s = nearest_ancestor_test_suite(td, "host_tests")
+                    suite_hint = (
+                        f"add `\"//{td}:{ut_nm}\"` to "
+                        f"`//{anc_s[0]}:{anc_s[1]}` in '{anc_s[0]}/BUILD.bazel'"
+                        if anc_s
+                        else f"export `\"//{td}:{ut_nm}\"` via `bazel_test_suite`"
+                    )
+                    msg_text = (
+                        f"`ffx_plugin(\"{p_name}\")` in '{gn_rel}' had "
+                        f"`{attr_nm} = true`, but '{bazel_rel}' defines no "
+                        f"`host_rustc_test` for `:{crate_nm}` (`:{ut_nm}`), "
+                        "dropping its unit tests."
+                    )
+                    rem_text = (
+                        f"Add `host_rustc_test(name = \"{ut_nm}\", "
+                        f"crate = \":{crate_nm}\", deps = [<GN {deps_attr}>])` "
+                        f"in '{bazel_rel}' (the Bazel `ffx_plugin` macro does not "
+                        f"accept inline `{attr_nm}` or `{deps_attr}` attributes), "
+                        f"re-run `fx bazel2gn -d {td}`, wire "
+                        f"'\":{ut_nm}($host_toolchain)\"' into `group(\"tests\")` "
+                        f"in '{gn_rel}', and {suite_hint}."
+                    )
+                    findings.append({
+                        "source": "cq_reachability",
+                        "category": "missing_migrated_tests",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": 1,
+                        "message": msg_text,
+                        "remediation": rem_text,
+                    })
+
+        check_base_ffx_plugin_unit_tests()
+
+    # Verify that ancestor GN umbrella `ffx_plugin(plugin_deps = [...])` `group("tests")`
+    # targets wire migrated child plugin `:tests` directly in a dedicated commented section
+    # and update stale "for all plugins" aggregation comments.
+    def check_umbrella_ffx_plugin_tests_group():
+        plugin_names = _bazel_ffx_plugin_names(tree)
+        if not plugin_names or not test_targets or not SENTINEL_RE.search(gn_src):
+            return
+        has_gn_tests = any(
+            not any(has_skip_above(bazel_lines, ln) for ln in c_lns)
+            for _, _, _, c_lns in test_targets
+        ) or bool(re.search(r'\bgroup\(\s*"tests"\s*\)\s*\{', gn_code(gn_src)))
+        if not has_gn_tests:
+            return
+        owner = _find_umbrella_ffx_tests_owner(td, plugin_names)
+        if not owner:
+            return
+        anc, anc_gn_rel, anc_raw, anc_clean, umb_name = owner
+        rel_td = os.path.relpath(td, anc)
+        valid_names = {"tests"} | {tn for tn, _, _, _ in test_targets}
+        stale_subtargets = {f"{pn}_tests" for pn in plugin_names}
+        wired_in_anc = False
+        first_grp_line = 1
+        for m_grp in re.finditer(r'\bgroup\(\s*"tests"\s*\)\s*\{', anc_clean):
+            end_pos = closing(anc_clean, m_grp.end() - 1)
+            body_start = m_grp.end()
+            clean_grp = anc_clean[body_start:end_pos]
+            raw_grp = anc_raw[body_start:end_pos]
+            grp_line = anc_raw.count("\n", 0, m_grp.start()) + 1
+            body_start_line = anc_raw.count("\n", 0, body_start) + 1
+            if (
+                re.search(r'":tests\(\$host_toolchain\)"', clean_grp)
+                and not refs_local(clean_grp, anc, f"{umb_name}_tests")
+            ):
+                continue
+            first_grp_line = grp_line
+            for raw_lbl in re.findall(r'"([^"]+)"', clean_grp):
+                l_pkg, l_nm = _resolve_gn_label(raw_lbl, anc)
+                if l_pkg == td and l_nm in valid_names:
+                    wired_in_anc = True
+                elif l_pkg == td and l_nm in stale_subtargets:
+                    s_key = ("stale_subtarget", anc_gn_rel, raw_lbl)
+                    if s_key not in umbrella_plugin_findings_seen:
+                        umbrella_plugin_findings_seen.add(s_key)
+                        findings.append({
+                            "source": "cq_reachability",
+                            "category": "stale_ffx_plugin_tests_subtarget",
+                            "severity": "error",
+                            "file": anc_gn_rel,
+                            "line": grp_line,
+                            "message": (
+                                f"`group(\"tests\")` in '{anc_gn_rel}' still references "
+                                f"`\"{raw_lbl}\"`, which is empty after migrating "
+                                f"`//{td}` to Bazel (`fx bazel2gn` emits `ffx_plugin` "
+                                "without `with_unit_tests = true`)."
+                            ),
+                            "remediation": (
+                                f"Replace `\"{raw_lbl}\"` with `\"{rel_td}:tests\"` in "
+                                f"`group(\"tests\")` of '{anc_gn_rel}' so the standalone "
+                                "generated unit test target runs in GN."
+                            ),
+                        })
+            if refs_local(clean_grp, anc, f"{umb_name}_tests"):
+                _check_umbrella_tests_stale_comment(
+                    anc_gn_rel,
+                    raw_grp,
+                    body_start_line,
+                    umb_name,
+                    umbrella_plugin_findings_seen,
+                )
+                _check_umbrella_tests_migrated_section(
+                    anc,
+                    anc_gn_rel,
+                    anc_raw,
+                    clean_grp,
+                    raw_grp,
+                    body_start,
+                    umb_name,
+                    td,
+                    valid_names,
+                    umbrella_plugin_findings_seen,
+                )
+        if (
+            not wired_in_anc
+            and not gn_tests_group_is_referenced(td)
+            and not any(direct_gn_test_callers(td, tn) for tn, _, _, _ in test_targets)
+        ):
+            u_key = ("unwired_plugin", anc_gn_rel, td)
+            if u_key not in umbrella_plugin_findings_seen:
+                umbrella_plugin_findings_seen.add(u_key)
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "unwired_migrated_plugin_tests",
+                    "severity": "error",
+                    "file": anc_gn_rel,
+                    "line": first_grp_line,
+                    "message": (
+                        f"Migrated `ffx_plugin` package `//{td}` defines unit tests in "
+                        f"'{gn_rel}', but '{anc_gn_rel}' only references "
+                        f"`:{umb_name}_tests`, which no longer aggregates `//{td}`'s "
+                        "standalone unit tests once `with_unit_tests` moves out of "
+                        "`ffx_plugin`."
+                    ),
+                    "remediation": (
+                        f"Add `\"{rel_td}:tests\"` to `group(\"tests\")` in "
+                        f"'{anc_gn_rel}' under a dedicated commented section for "
+                        f"Bazel-migrated plugins (separated by a blank line from "
+                        f"`\":{umb_name}_tests\"`), and update any comment claiming "
+                        f"`:{umb_name}_tests` covers all `plugin_deps`."
+                    ),
+                })
+
     check_base_gn_test_preservation()
     check_kept_pre_sentinel_host_tests()
+    check_umbrella_ffx_plugin_tests_group()
 
     for t_name, rule_name, lineno, check_linenos in test_targets:
         # Check if this test target (or test attribute) has `# @bazel2gn:skip` in BUILD.bazel

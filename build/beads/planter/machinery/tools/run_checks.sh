@@ -154,10 +154,12 @@ if os.environ.get("PLANTER_SKIP_FETCH", "").strip() in ("", "0"):
 os.environ["PLANTER_SKIP_FETCH"] = "1"
 
 # Resolve PLANTER_RESOLVED_CHANGE_BASE and PLANTER_CHANGED_FILES once up front.
-change_base = pcl.resolve_change_base(workdir)
+change_base = pcl.resolve_change_base(workdir, target_dirs=target_dirs)
 os.environ["PLANTER_RESOLVED_CHANGE_BASE"] = change_base
 if "PLANTER_CHANGED_FILES" not in os.environ:
-    os.environ["PLANTER_CHANGED_FILES"] = "\n".join(pcl.changed_files(workdir, change_base))
+    os.environ["PLANTER_CHANGED_FILES"] = "\n".join(
+        pcl.changed_files(workdir, change_base, target_dirs=target_dirs)
+    )
 
 signal.signal(signal.SIGTERM, lambda signum, _frame: sys.exit(128 + signum))
 
@@ -179,12 +181,14 @@ MACRO_ATTR_EQUIVALENTS = {
     "args_sources": ("args_srcs",),
     "features": ("crate_features",),
     "inputs": ("compile_data",),
+    "output_name": ("output_name", "binary_name", "idk_name", "crate_name"),
     "public": ("hdrs",),
     "rustenv": ("rustc_env",),
     "rustflags": ("rustc_flags",),
     "sdk_area": ("api_area",),
     "sdk_category": ("sdk_category", "category"),
     "sdk_name": ("idk_name",),
+    "sdk_target_name": ("sdk_target_name", "idk_name"),
     "source_root": ("crate_root",),
     "sources": ("srcs",),
 }
@@ -213,6 +217,10 @@ IMPLICIT_HOST_ONLY_MACROS = {
 ATTR_ALIGN_MSG_RE = re.compile(
     r'^Target "([^"]+)" \(Target Attributes\): ([A-Za-z_]\w*) in GN not carried over to Bazel$'
 )
+IDK_NAME_RENAME_MSG_RE = re.compile(
+    r'^Target "([^"]+)" \(Target Attributes\): idk_name=(\S+) differs from '
+    r'GN\'s default sdk_name "[^"]+" \(the target name\); the IDK atom is renamed$'
+)
 HOST_COMPAT_MSG_RE = re.compile(
     r'^Target "([^"]+)" .*missing `target_compatible_with = HOST_(?:OS_)?CONSTRAINTS` in BUILD\.bazel'
 )
@@ -228,6 +236,12 @@ UNIT_TEST_PARITY_MSG_RE = re.compile(
     r'^Unit tests of "([^"]+)": GN test_deps \[([^\]]+)\] '
     r'are not dependencies of "([^"]+)"\.?\s*$'
 )
+MISSING_SOURCES_MSG_RE = re.compile(
+    r'^Target "([^"]+)" is missing source file\(s\) from BUILD\.gn:\s*(.+?)\s*$'
+)
+TEST_DATA_PATH_RE = re.compile(
+    r"(^|[/_.-])(test_?data|testdata|tests?|fixtures?|golden)([/_.-]|$)", re.I
+)
 
 KNOWN_GN_TARGET_ATTRS = {
     "all_dependent_configs",
@@ -235,6 +249,8 @@ KNOWN_GN_TARGET_ATTRS = {
     "args",
     "args_source_root",
     "args_sources",
+    "args_test_deps",
+    "args_with_unit_tests",
     "asmflags",
     "assert_no_deps",
     "category",
@@ -247,6 +263,7 @@ KNOWN_GN_TARGET_ATTRS = {
     "cm_label",
     "complete_static_lib",
     "component_name",
+    "config_data",
     "configs",
     "crate_name",
     "crate_root",
@@ -280,6 +297,7 @@ KNOWN_GN_TARGET_ATTRS = {
     "output_name",
     "outputs",
     "package_name",
+    "plugin_deps",
     "pool",
     "proc_macro_deps",
     "public",
@@ -380,6 +398,114 @@ def _is_base_gn_local_helper_var(wdir, pkg_rel, base_rev, gn_attr, bz_attrs):
     )
 
 
+# Check whether gn_attr is a unit-test generation or test-deps attribute decomposed
+# into standalone Rust test target(s) in BUILD.bazel (e.g. ffx_plugin args_with_unit_tests).
+def _is_decomposed_unit_test_attr_false_positive(
+    wdir, rel_bz, pkg_rel, base_rev, tname, gn_attr, bz_text, bz_targets
+):
+    if gn_attr not in (
+        "args_with_unit_tests",
+        "with_unit_tests",
+        "args_test_deps",
+        "test_deps",
+    ):
+        return False
+    owner_targets = [bt for bt in bz_targets if bt["name"] == tname]
+    if not owner_targets:
+        return False
+    is_args = gn_attr in ("args_with_unit_tests", "args_test_deps")
+    crate_target = f"{tname}_args" if is_args else tname
+    crate_forms = {f":{crate_target}", crate_target}
+    if pkg_rel:
+        crate_forms.add(f"//{pkg_rel}:{crate_target}")
+    var_table = _parse_bazel_var_table(bz_text, filename=rel_bz)
+    matched_tests = []
+    for bt in bz_targets:
+        if bt["rule"] not in ("host_rustc_test", "rustc_test", "rust_test"):
+            continue
+        crate_vals = pcl._extract_ast_strings(
+            bt.get("keywords", {}).get("crate"), var_table
+        )
+        if any(cv.lstrip("@") in crate_forms for cv in crate_vals):
+            matched_tests.append(bt["name"])
+    if gn_attr in ("args_with_unit_tests", "with_unit_tests"):
+        if matched_tests:
+            return True
+        base_gn = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+        if base_gn:
+            for gt in pcl.extract_gn_targets(base_gn):
+                if gt["name"] == tname and re.search(
+                    rf"(?<![\w.]){re.escape(gn_attr)}\s*=\s*false\b",
+                    gt["clean_body"],
+                ):
+                    return True
+        src_attr = "args_srcs" if is_args else "srcs"
+        src_rels = pcl._extract_ast_strings(
+            owner_targets[0].get("keywords", {}).get(src_attr), var_table
+        )
+        if src_rels:
+            has_tests = False
+            for rs_rel in src_rels:
+                rs_abs = os.path.join(wdir, pkg_rel, rs_rel.lstrip(":/"))
+                if not os.path.isfile(rs_abs):
+                    has_tests = True
+                    break
+                try:
+                    with open(rs_abs, encoding="utf-8", errors="ignore") as rf:
+                        rs_txt = rf.read()
+                except OSError:
+                    has_tests = True
+                    break
+                if re.search(
+                    r"#\s*\[\s*(?:cfg\s*\(\s*test\b|(?:\w+::)*test\b)", rs_txt
+                ) or re.search(r"(?m)^\s*(?:pub\s+)?mod\s+\w+\s*;", rs_txt):
+                    has_tests = True
+                    break
+            if not has_tests:
+                return True
+        return False
+    base_gn = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+    if not base_gn:
+        return False
+    gn_items = []
+    found_owner_gn = False
+    for gt in pcl.extract_gn_targets(base_gn):
+        if gt["name"] == tname:
+            found_owner_gn = True
+            gn_items.extend(_extract_gn_target_list_strings(gt["clean_body"], gn_attr))
+    if found_owner_gn and not gn_items:
+        return True
+    if not gn_items or not matched_tests:
+        return False
+    gn_canon = [_canon_dep_label(s, pkg_rel) for s in gn_items]
+    if None in gn_canon:
+        return False
+    for ut_name in matched_tests:
+        ctx = _collect_unit_test_bazel_context(
+            wdir, rel_bz, tname, ut_name, pkg_rel
+        )
+        if ctx is None:
+            continue
+        code_deps, data_deps, overwrites, misplaced_data = ctx
+        if any(_norm_vendor_crate_label(g) in misplaced_data for g in gn_canon):
+            continue
+        stop_set = code_deps | data_deps
+        all_ok = True
+        for g_lbl in gn_canon:
+            g_norm = _norm_vendor_crate_label(g_lbl)
+            if g_norm in stop_set or (
+                g_norm in overwrites and (overwrites[g_norm] & stop_set)
+            ):
+                continue
+            exp = _expand_pure_gn_forwarding_group(g_lbl, wdir, base_rev, stop_set)
+            if not exp or not (exp <= stop_set):
+                all_ok = False
+                break
+        if all_ok:
+            return True
+    return False
+
+
 # Check whether attribute_alignment is a Starlark macro rename or local GN helper var false positive.
 def is_macro_synced_attr_false_positive(finding, wdir, base_rev=""):
     """Returns (target_name, gn_attr, kind) when BUILD.bazel / bazel2gn already carries gn_attr."""
@@ -390,12 +516,33 @@ def is_macro_synced_attr_false_positive(finding, wdir, base_rev=""):
     rel_bz = finding.get("file", "")
     if not rel_bz.endswith("BUILD.bazel") or not wdir:
         return None
-    m = ATTR_ALIGN_MSG_RE.match(finding.get("message", ""))
+    msg = finding.get("message", "")
+    pkg_rel = os.path.dirname(rel_bz).strip("/")
+    pkg_dir = os.path.dirname(os.path.join(wdir, rel_bz))
+    m_idk = IDK_NAME_RENAME_MSG_RE.match(msg)
+    if m_idk:
+        tname, idk_val = m_idk.group(1), m_idk.group(2)
+        val_re = re.compile(
+            rf'(?<![\w.])(?:output_name|idk_name|sdk_name)\s*=\s*"{re.escape(idk_val)}"'
+        )
+        gn_path = os.path.join(pkg_dir, "BUILD.gn")
+        gn_cur = ""
+        if os.path.isfile(gn_path):
+            try:
+                with open(gn_path, encoding="utf-8") as gf:
+                    gn_cur = gf.read()
+            except OSError:
+                gn_cur = ""
+        gn_base = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+        if val_re.search(pcl.blank_comments(gn_cur)) or val_re.search(
+            pcl.blank_comments(gn_base)
+        ):
+            return (tname, "idk_name", "macro_attr")
+        return None
+    m = ATTR_ALIGN_MSG_RE.match(msg)
     if not m:
         return None
     tname, gn_attr = m.group(1), m.group(2)
-    pkg_rel = os.path.dirname(rel_bz).strip("/")
-    pkg_dir = os.path.dirname(os.path.join(wdir, rel_bz))
     var_ref_re = re.compile(
         rf"(?:\$\{{?{re.escape(gn_attr)}\}}?|(?<![\w.$]){re.escape(gn_attr)}(?![\w]))"
     )
@@ -458,6 +605,10 @@ def is_macro_synced_attr_false_positive(finding, wdir, base_rev=""):
                 cm_bt = by_name.get(cm_name)
                 if cm_bt and any(a in cm_bt["attrs"] for a in equivs):
                     return (tname, gn_attr, "macro_attr")
+            if _is_decomposed_unit_test_attr_false_positive(
+                wdir, rel_bz, pkg_rel, base_rev, tname, gn_attr, bz_text, bz_targets
+            ):
+                return (tname, gn_attr, "decomposed_unit_test")
             if gn_attr not in KNOWN_GN_TARGET_ATTRS:
                 start_ln = max(1, bt.get("line", 1))
                 end_ln = min(len(lines), bt.get("end_line", start_ln))
@@ -1125,6 +1276,375 @@ def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
     return (test_name, "runtime_data" if used_runtime_data else "code_or_forwarding")
 
 
+# Check whether sentinel_drift WARNING is a false positive on a BUILD.gn that
+# retains only GN-only bridge/group targets with no GN consumers of BUILD.bazel
+# convertible targets.
+GN_ONLY_SENTINEL_FREE_TEMPLATES = {
+    "bazel_ffx_tool",
+    "bazel_fuchsia_package",
+    "bazel_host_tool",
+    "bazel_test_package",
+    "bazel_test_suite",
+    "group",
+    "host_test_data",
+    "install_host_tools",
+    "sdk_atom",
+    "sdk_host_tool",
+}
+GN_BAZEL_BRIDGE_TEMPLATES = {
+    "bazel_ffx_tool",
+    "bazel_fuchsia_package",
+    "bazel_host_tool",
+    "bazel_test_package",
+    "bazel_test_suite",
+}
+
+
+# Read a repo-relative file at `base_rev` from git, returning "" when absent.
+def _read_git_file_at_base(wdir, rel_path, base_rev=""):
+    if not wdir or not rel_path:
+        return ""
+    ref = (base_rev or "HEAD").strip()
+    try:
+        return subprocess.check_output(
+            ["git", "-C", wdir, "show", f"{ref}:{rel_path.strip('/')}"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return ""
+
+
+# Check whether `pkg_rel` is a pre-existing Bazel package outside `target_dirs`
+# whose `BUILD.bazel` added no new non-`test_suite` targets in this change.
+def _is_collateral_preexisting_bazel_pkg(pkg_rel, cur_bz_text, wdir, base_rev=""):
+    pkg_clean = (pkg_rel or "").strip("/")
+    if pkg_clean in target_dirs:
+        return False, ""
+    rel_bz = f"{pkg_clean}/BUILD.bazel" if pkg_clean else "BUILD.bazel"
+    base_bz = _read_git_file_at_base(wdir, rel_bz, base_rev)
+    if not base_bz.strip():
+        return False, ""
+    base_pairs = {
+        (bt["rule"], bt["name"])
+        for bt in pcl.extract_bazel_targets(base_bz, filename=rel_bz)
+    }
+    cur_non_suite = {
+        (bt["rule"], bt["name"])
+        for bt in pcl.extract_bazel_targets(cur_bz_text, filename=rel_bz)
+        if bt["rule"] not in ("test_suite", "exports_files")
+    }
+    if not (cur_non_suite <= base_pairs):
+        return False, ""
+    return True, base_bz
+
+
+# Canonicalize a named top-level Starlark target call, ignoring collateral
+# `visibility` and `HOST_CONSTRAINTS` <-> `HOST_OS_CONSTRAINTS` edits.
+def _canon_collateral_bazel_target(bz_text, tname, filename="<BUILD.bazel>"):
+    try:
+        tree = ast.parse(bz_text, filename=filename)
+    except SyntaxError:
+        return None
+    matches = []
+    for stmt in tree.body:
+        if not (
+            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+        ):
+            continue
+        call = stmt.value
+        fn = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (
+                call.func.attr if isinstance(call.func, ast.Attribute) else ""
+            )
+        )
+        kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+        nm = kws.get("name")
+        if not (
+            isinstance(nm, ast.Constant)
+            and isinstance(nm.value, str)
+            and nm.value == tname
+        ):
+            continue
+        norm_kws = []
+        for k, v in sorted(kws.items()):
+            if k == "visibility":
+                continue
+            if (
+                k == "target_compatible_with"
+                and isinstance(v, ast.Name)
+                and v.id in ("HOST_CONSTRAINTS", "HOST_OS_CONSTRAINTS")
+            ):
+                norm_kws.append((k, "HOST_COMPAT"))
+            else:
+                norm_kws.append((k, ast.dump(v)))
+        matches.append((fn, [ast.dump(a) for a in call.args], norm_kws))
+    return matches if matches else None
+
+
+COLLATERAL_TARGET_FP_CATEGORIES = {
+    "attribute_alignment",
+    "dep_alignment",
+    "host_compatibility",
+    "missing_sources",
+    "unit_test_parity",
+}
+TARGET_HEAD_MSG_RE = re.compile(r'^(?:Target|Unit tests of) "([^"]+)"')
+
+
+# Check whether a target-level review_diff finding flags an untouched pre-existing
+# target in a collateral-modified non-target BUILD.bazel package.
+def is_preexisting_collateral_target_false_positive(
+    finding, wdir="", base_rev=""
+):
+    if finding.get("category") not in COLLATERAL_TARGET_FP_CATEGORIES:
+        return None
+    if finding.get("severity") not in ("ERROR", "WARNING"):
+        return None
+    rel_bz = finding.get("file", "")
+    if (
+        not (rel_bz == "BUILD" or rel_bz.endswith(("BUILD.bazel", "/BUILD")))
+        or not wdir
+    ):
+        return None
+    m = TARGET_HEAD_MSG_RE.match(finding.get("message", ""))
+    if not m:
+        return None
+    tname = m.group(1)
+    bz_path = os.path.join(wdir, rel_bz)
+    if not os.path.isfile(bz_path):
+        return None
+    try:
+        with open(bz_path, encoding="utf-8") as bf:
+            cur_bz = bf.read()
+    except OSError:
+        return None
+    pkg_rel = os.path.dirname(rel_bz).strip("/")
+    is_col, base_bz = _is_collateral_preexisting_bazel_pkg(
+        pkg_rel, cur_bz, wdir, base_rev
+    )
+    if not is_col:
+        return None
+    base_canon = _canon_collateral_bazel_target(
+        base_bz, tname, filename=rel_bz
+    )
+    cur_canon = _canon_collateral_bazel_target(cur_bz, tname, filename=rel_bz)
+    if not base_canon or base_canon != cur_canon:
+        return None
+    return tname
+
+
+def is_verified_sentinel_drift_false_positive(finding, wdir="", base_rev=""):
+    """Returns reason kind when BUILD.gn intentionally omits BAZEL2GN SENTINEL."""
+    if finding.get("category") != "sentinel_drift":
+        return None
+    if finding.get("severity") not in ("ERROR", "WARNING"):
+        return None
+    rel_gn = finding.get("file", "")
+    if not rel_gn.endswith("BUILD.gn") or not wdir:
+        return None
+    gn_path = os.path.join(wdir, rel_gn)
+    pkg_dir = os.path.dirname(gn_path)
+    bz_path = os.path.join(pkg_dir, "BUILD.bazel")
+    if not (os.path.isfile(gn_path) and os.path.isfile(bz_path)):
+        return None
+    try:
+        with open(gn_path, encoding="utf-8") as gf:
+            gn_text = gf.read()
+        with open(bz_path, encoding="utf-8") as bf:
+            bz_text = bf.read()
+    except OSError:
+        return None
+    if pcl.has_sentinel(gn_text):
+        return None
+    pkg_rel = os.path.dirname(rel_gn).strip("/")
+    gt_list = pcl.extract_gn_targets(gn_text)
+    if gt_list and all(
+        gt["tmpl"] in GN_ONLY_SENTINEL_FREE_TEMPLATES for gt in gt_list
+    ):
+        bridge_names = {
+            gt["name"]
+            for gt in gt_list
+            if gt["tmpl"] in GN_BAZEL_BRIDGE_TEMPLATES
+        }
+        if bridge_names:
+            bridge_derived = set(bridge_names)
+            for bname in bridge_names:
+                bridge_derived.add(f"{bname}_host_tool")
+                bridge_derived.add(f"{bname}_versioned")
+            bz_targets = pcl.extract_bazel_targets(bz_text, filename=bz_path)
+            non_bridge_bz_names = {
+                bt["name"]
+                for bt in bz_targets
+                if bt["name"] not in bridge_derived
+            }
+            has_local_ref = False
+            for gt in gt_list:
+                if gt["tmpl"] in GN_BAZEL_BRIDGE_TEMPLATES:
+                    continue
+                for bname in non_bridge_bz_names:
+                    pat = (
+                        r'"(?::|//'
+                        + re.escape(pkg_rel)
+                        + r":)"
+                        + re.escape(bname)
+                        + r'(?:"|\()'
+                    )
+                    if re.search(pat, gt["clean_body"]):
+                        has_local_ref = True
+                        break
+                if has_local_ref:
+                    break
+            if not has_local_ref:
+                return "gn_only_bridge"
+    is_col, _ = _is_collateral_preexisting_bazel_pkg(
+        pkg_rel, bz_text, wdir, base_rev
+    )
+    if is_col:
+        base_gn = _read_git_file_at_base(wdir, rel_gn, base_rev)
+        if base_gn and not pcl.has_sentinel(base_gn):
+            base_gn_names = {
+                gt["name"] for gt in pcl.extract_gn_targets(base_gn)
+            }
+            new_gn_tmpls = {
+                gt["tmpl"]
+                for gt in gt_list
+                if gt["name"] not in base_gn_names
+            }
+            if new_gn_tmpls <= {"bazel_test_suite", "group"}:
+                return "collateral_non_sentinel_pkg"
+    return None
+
+
+# Normalize a GN or Bazel file path or label to a repo-relative path without `//`.
+def _norm_repo_file_path(raw, pkg_rel=""):
+    s = (raw or "").strip().strip('"').strip("'")
+    if not s or "$" in s:
+        return ""
+    if s.startswith("@//"):
+        s = s[1:]
+    if s.startswith("//"):
+        body = s[2:].replace(":", "/")
+        return os.path.normpath(body).replace("\\", "/").lstrip("/")
+    if s.startswith(":"):
+        s = s[1:]
+    joined = os.path.join(pkg_rel, s) if pkg_rel else s
+    return os.path.normpath(joined).replace("\\", "/").lstrip("/")
+
+
+# Extract string literal list items assigned to `attr_name` inside a GN target body.
+def _extract_gn_target_list_strings(clean_body, attr_name):
+    items = []
+    for m in re.finditer(rf"(?<![\w.]){re.escape(attr_name)}\s*\+?=\s*\[", clean_body):
+        close_idx = pcl.find_closing_delim(clean_body, m.end() - 1, "[", "]")
+        items.extend(
+            re.findall(r'"((?:[^"\\]|\\.)*)"', clean_body[m.end() : close_idx])
+        )
+    return items
+
+
+# Collect repo-relative paths and basenames staged in test_data or host_test_data_* in BUILD.bazel.
+def _collect_bazel_test_data_files(bz_text, pkg_rel, filename="<BUILD.bazel>"):
+    var_table = _parse_bazel_var_table(bz_text, filename=filename)
+    paths = set()
+    basenames = set()
+    for bt in pcl.extract_bazel_targets(bz_text, filename=filename):
+        kws = bt.get("keywords", {})
+        attrs = (
+            ("srcs",)
+            if bt["rule"] in ("host_test_data_files", "host_test_data_map")
+            else ("test_data",)
+        )
+        for attr in attrs:
+            for raw in pcl._extract_ast_strings(kws.get(attr), var_table):
+                np = _norm_repo_file_path(raw, pkg_rel)
+                if np:
+                    paths.add(np)
+                    basenames.add(os.path.basename(np))
+    return paths, basenames
+
+
+# Check whether missing_sources ERROR/WARNING only reports base GN `inputs` entries
+# that are runtime test fixtures omitted from `compile_data`.
+def is_verified_missing_sources_false_positive(finding, wdir="", base_rev=""):
+    """Returns target_name when missing GN files are runtime test fixtures from `inputs`."""
+    if finding.get("category") != "missing_sources":
+        return None
+    if finding.get("severity") not in ("ERROR", "WARNING"):
+        return None
+    rel_bz = finding.get("file", "")
+    if not rel_bz.endswith("BUILD.bazel") or not wdir:
+        return None
+    m = MISSING_SOURCES_MSG_RE.match(finding.get("message", ""))
+    if not m:
+        return None
+    tname, raw_list = m.group(1), m.group(2)
+    missing_items = [s.strip() for s in raw_list.split(",") if s.strip()]
+    if not missing_items:
+        return None
+    pkg_rel = os.path.dirname(rel_bz).strip("/")
+    base_gn = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+    if not base_gn:
+        return None
+    gt_blocks = [gt for gt in pcl.extract_gn_targets(base_gn) if gt["name"] == tname]
+    if not gt_blocks:
+        return None
+    gn_inputs = set()
+    gn_real_srcs = set()
+    for gt in gt_blocks:
+        for s in _extract_gn_target_list_strings(gt["clean_body"], "inputs"):
+            np = _norm_repo_file_path(s, pkg_rel)
+            if np:
+                gn_inputs.add(np)
+        for src_attr in ("sources", "args_sources", "public"):
+            for s in _extract_gn_target_list_strings(gt["clean_body"], src_attr):
+                np = _norm_repo_file_path(s, pkg_rel)
+                if np:
+                    gn_real_srcs.add(np)
+    if not gn_inputs:
+        return None
+    bz_path = os.path.join(wdir, rel_bz)
+    if not os.path.isfile(bz_path):
+        return None
+    try:
+        with open(bz_path, encoding="utf-8") as bf:
+            bz_text = bf.read()
+    except OSError:
+        return None
+    bz_targets = [
+        bt
+        for bt in pcl.extract_bazel_targets(bz_text, filename=rel_bz)
+        if bt["name"] == tname
+    ]
+    if not bz_targets or any("rustc_env" in bt["attrs"] for bt in bz_targets):
+        return None
+    td_paths, td_basenames = _collect_bazel_test_data_files(
+        bz_text, pkg_rel, filename=rel_bz
+    )
+    src_blob = _package_non_build_source_blob(wdir, pkg_rel)
+    for item in missing_items:
+        np = _norm_repo_file_path(item, pkg_rel)
+        base = os.path.basename(np)
+        if not np or not base or np in gn_real_srcs or np not in gn_inputs:
+            return None
+        if not (
+            TEST_DATA_PATH_RE.search(item) or np in td_paths or base in td_basenames
+        ):
+            return None
+        inc_pat = re.compile(
+            r"include_(?:str|bytes)?!\s*\([^)]*" + re.escape(base), re.S
+        )
+        if inc_pat.search(src_blob) or (
+            "concat!" in src_blob
+            and re.search(r"include_(?:str|bytes)!", src_blob)
+            and base in src_blob
+        ):
+            return None
+    return tname
+
+
 # Annotate verified review_diff false positives with accurate dispute instructions.
 def annotate_review_diff_macro_false_positives(diff_findings, wdir, base_rev=""):
     """Updates remediation on verified false positives; returns (items, finding_ids)."""
@@ -1148,6 +1668,36 @@ def annotate_review_diff_macro_false_positives(diff_findings, wdir, base_rev="")
             if (matched_attr or matched_host or matched_dep)
             else is_verified_unit_test_parity_false_positive(f, wdir, base_rev)
         )
+        matched_sentinel = (
+            None
+            if (matched_attr or matched_host or matched_dep or matched_unit_test)
+            else is_verified_sentinel_drift_false_positive(f, wdir, base_rev)
+        )
+        matched_missing_src = (
+            None
+            if (
+                matched_attr
+                or matched_host
+                or matched_dep
+                or matched_unit_test
+                or matched_sentinel
+            )
+            else is_verified_missing_sources_false_positive(f, wdir, base_rev)
+        )
+        matched_preexisting = (
+            None
+            if (
+                matched_attr
+                or matched_host
+                or matched_dep
+                or matched_unit_test
+                or matched_sentinel
+                or matched_missing_src
+            )
+            else is_preexisting_collateral_target_false_positive(
+                f, wdir, base_rev
+            )
+        )
         if matched_attr:
             tname, gn_attr, attr_kind = matched_attr
             if attr_kind == "local_gn_var":
@@ -1157,6 +1707,17 @@ def annotate_review_diff_macro_false_positives(diff_findings, wdir, base_rev="")
                     f'carried on "{tname}" (and preserved via `@bazel2gn` overwrite '
                     "when dual-built), so this `review_diff/attribute_alignment` "
                     "finding is a parser false positive that check scripts cannot "
+                    "waive. Once all deterministic check scripts pass, dispute it in "
+                    '`CoderReport.disputed_findings` (`source: "review_diff"`, '
+                    f'`category: "attribute_alignment"`, `file: "{f_path}"`).'
+                )
+            elif attr_kind == "decomposed_unit_test":
+                f["remediation"] = (
+                    f'In `{f_path}`, GN `{gn_attr}` on "{tname}" is decomposed '
+                    "into standalone `host_rustc_test`/`rustc_test` target(s) "
+                    "(since the Bazel macro/rule does not accept inline unit-test "
+                    "generation attributes), so this `review_diff/attribute_alignment` "
+                    "WARNING is a parser false positive that check scripts cannot "
                     "waive. Once all deterministic check scripts pass, dispute it in "
                     '`CoderReport.disputed_findings` (`source: "review_diff"`, '
                     f'`category: "attribute_alignment"`, `file: "{f_path}"`).'
@@ -1258,6 +1819,53 @@ def annotate_review_diff_macro_false_positives(diff_findings, wdir, base_rev="")
                     f'"review_diff"`, `category: "unit_test_parity"`, `file: '
                     f'"{f_path}"`).'
                 )
+        elif matched_sentinel == "collateral_non_sentinel_pkg":
+            f["remediation"] = (
+                f"`{f_path}` is a pre-existing non-`bazel2gn` package outside "
+                "the migrated target directories, modified only for collateral "
+                "test or dependency wiring, so omitting `## BAZEL2GN SENTINEL` "
+                "is expected. Do NOT run `fx bazel2gn` or add `# LINT.IfChange` "
+                "to it; once all deterministic check scripts pass, dispute this "
+                "`review_diff/sentinel_drift` false positive in "
+                '`CoderReport.disputed_findings` (`source: "review_diff"`, '
+                f'`category: "sentinel_drift"`, `file: "{f_path}"`).'
+            )
+        elif matched_sentinel:
+            f["remediation"] = (
+                f"`{f_path}` retains only GN-only bridge/group targets (such as "
+                "`bazel_ffx_tool`, `bazel_host_tool`, `bazel_fuchsia_package`, "
+                "`bazel_test_suite`, `sdk_atom`, `host_test_data`, or `group`) with "
+                "no GN consumers of convertible `BUILD.bazel` targets, so omitting "
+                "`## BAZEL2GN SENTINEL` is required. Do NOT add `## BAZEL2GN SENTINEL` "
+                "or `# LINT.IfChange`; once all deterministic check scripts pass, "
+                "dispute this `review_diff/sentinel_drift` false positive in "
+                '`CoderReport.disputed_findings` (`source: "review_diff"`, '
+                f'`category: "sentinel_drift"`, `file: "{f_path}"`).'
+            )
+        elif matched_missing_src:
+            f["remediation"] = (
+                f'Target "{matched_missing_src}" in `{f_path}` intentionally omits '
+                "runtime test fixture(s) that were listed in GN `inputs` at the "
+                "change base (adding runtime test fixtures to `compile_data` is "
+                "rejected by `test_data_attribute/runtime_test_data_in_compile_data`; "
+                "they belong on the test target via `test_data` / "
+                "`host_test_data_*`), which check scripts cannot waive in "
+                "`review_diff`. Once all deterministic check scripts pass, dispute "
+                "this `review_diff/missing_sources` false positive in "
+                '`CoderReport.disputed_findings` (`source: "review_diff"`, '
+                f'`category: "missing_sources"`, `file: "{f_path}"`).'
+            )
+        elif matched_preexisting:
+            f["remediation"] = (
+                f'Target "{matched_preexisting}" in `{f_path}` is a pre-existing '
+                "target in a non-target package modified only for collateral test "
+                "suite, visibility, or host constraint wiring, and is outside "
+                "this migration's scope. Do NOT modify this pre-existing target; "
+                "once all deterministic check scripts pass, dispute this "
+                f"`review_diff/{f_cat}` false positive in "
+                '`CoderReport.disputed_findings` (`source: "review_diff"`, '
+                f'`category: "{f_cat}"`, `file: "{f_path}"`).'
+            )
         else:
             continue
         fp_ids.add(id(f))

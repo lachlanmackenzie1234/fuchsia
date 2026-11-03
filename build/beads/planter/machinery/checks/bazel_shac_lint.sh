@@ -59,10 +59,32 @@ def git_lines(args):
     return [l.strip() for l in out.splitlines() if l.strip()]
 
 
+# Read ignored directory prefixes from shac.textproto so bazel_shac_lint matches shac.
+def load_shac_ignored_prefixes():
+    prefixes = ["third_party/bazel_vendor/", "third_party/rust_crates/vendor/"]
+    shac_cfg = os.path.join(workdir, "shac.textproto")
+    if os.path.isfile(shac_cfg):
+        try:
+            with open(shac_cfg, encoding="utf-8") as cf:
+                for raw_line in cf:
+                    line = raw_line.split("#", 1)[0].strip()
+                    if line.startswith("ignore:"):
+                        val = line.split(":", 1)[1].strip().strip('"').strip("/")
+                        if val:
+                            prefixes.append(val + "/")
+        except OSError:
+            pass
+    return tuple(sorted(set(prefixes)))
+
+
+SHAC_IGNORED_PREFIXES = load_shac_ignored_prefixes()
+
+
 def is_bazel_file(path):
     base = os.path.basename(path)
-    # shac skips vendored Bazel repositories and upstream third-party sources.
-    if path.startswith("third_party/bazel_vendor/"):
+    # shac skips paths listed in shac.textproto ignore entries, vendored Bazel
+    # repositories, and upstream third-party source trees.
+    if path.startswith(SHAC_IGNORED_PREFIXES):
         return False
     if path.startswith("third_party/") and "/src/" in path:
         return False

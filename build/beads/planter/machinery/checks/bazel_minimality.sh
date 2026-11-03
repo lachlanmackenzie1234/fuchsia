@@ -119,6 +119,16 @@ def git_out(args):
         return ""
 
 
+def _changed_code_lines(diff_lines):
+    """Returns stripped, non-empty, non-comment `+`/`-` lines from a unified diff."""
+    changed = [
+        ln[1:].strip()
+        for ln in diff_lines
+        if ln[:1] in ("+", "-") and not ln.startswith(("+++", "---"))
+    ]
+    return [ln for ln in changed if ln and not ln.startswith("#")]
+
+
 def is_ancestor(anc: str, desc: str) -> bool:
     if not anc or not desc:
         return False
@@ -197,19 +207,27 @@ def resolve_effective_change_base(raw_base: str) -> str:
     elif head_sha and base_sha and not is_ancestor(base_sha, head_sha):
         base = merge_base or "HEAD~1"
         base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"])
+    # Never step back to HEAD~1 when HEAD itself is already merged on origin/main.
+    head_on_origin = bool(origin_main and head_sha and is_ancestor(head_sha, origin_main))
     head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
-    if parent_sha and head_subj.startswith(("[bazel_migration]", "[bazel2gn]", "[bazel]")):
+    parent_subj = (git_lines(["log", "-1", "--format=%s", "HEAD~1"]) or [""])[0]
+    mig_prefixes = ("[bazel_migration]", "[bazel2gn]", "[bazel]")
+    if parent_sha and not head_on_origin and head_subj.startswith(mig_prefixes):
         head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
         if not target_dirs or any(
             any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
         ):
             parent_on_origin = bool(origin_main and is_ancestor(parent_sha, origin_main))
-            if base == "HEAD" or base_sha == head_sha or (
-                os.environ.get("PLANTER_CHANGED_FILES") is None
-                and base_sha
-                and base_sha != parent_sha
-                and is_ancestor(base_sha, parent_sha)
-                and (not origin_main or parent_on_origin)
+            parent_is_upstream = not parent_subj.startswith(mig_prefixes)
+            if (
+                base == "HEAD"
+                or base_sha == head_sha
+                or (
+                    base_sha
+                    and base_sha != parent_sha
+                    and is_ancestor(base_sha, parent_sha)
+                    and (parent_is_upstream or not origin_main or parent_on_origin)
+                )
             ):
                 return "HEAD~1"
     return base
@@ -316,11 +334,16 @@ def extract_bazel_target_names(bz_text: str, filename: str = "BUILD.bazel") -> s
     return names
 
 
-# Check whether `<pkg>` already had a `BUILD.bazel` or `BUILD` file at `change_base`.
+# Check whether `<pkg>` already had a `BUILD.bazel` or `BUILD` file at `change_base`
+# (or `HEAD~1` when `HEAD` is a migration commit rebased onto newer upstream history).
 def had_bazel_pkg_at_base(pkg: str) -> bool:
-    for bfile in ("BUILD.bazel", "BUILD"):
-        if git_lines(["ls-tree", "--name-only", change_base, "--", f"{pkg}/{bfile}"]):
-            return True
+    refs = [change_base]
+    if change_base != "HEAD~1":
+        refs.append("HEAD~1")
+    for ref in refs:
+        for bfile in ("BUILD.bazel", "BUILD"):
+            if git_lines(["ls-tree", "--name-only", ref, "--", f"{pkg}/{bfile}"]):
+                return True
     return False
 
 
@@ -437,6 +460,57 @@ def collect_non_visibility_dep_pkgs(pkg: str) -> set[str]:
     return set(collect_non_visibility_dep_targets(pkg).keys())
 
 
+# Check whether an existing `<pkg>/BUILD.bazel` (already present with targets at `change_base`)
+# only has collateral edits needed by a downstream migration (such as `visibility`, `test_suite`
+# registration, or replacing legacy `HOST_CONSTRAINTS` with `HOST_OS_CONSTRAINTS`).
+def is_collateral_existing_bazel_edit(pkg: str) -> bool:
+    if not pkg or not had_bazel_pkg_at_base(pkg):
+        return False
+    rel_bz = f"{pkg}/BUILD.bazel"
+    base_ref = change_base
+    base_txt = "\n".join(git_lines(["show", f"{base_ref}:{rel_bz}"]))
+    if (not base_txt or not extract_bazel_target_names(base_txt, rel_bz)) and base_ref != "HEAD~1":
+        alt_txt = "\n".join(git_lines(["show", f"HEAD~1:{rel_bz}"]))
+        if alt_txt and extract_bazel_target_names(alt_txt, rel_bz):
+            base_ref = "HEAD~1"
+            base_txt = alt_txt
+    if not base_txt or not extract_bazel_target_names(base_txt, rel_bz):
+        return False
+    diff_lines = git_lines(["diff", "--unified=0", base_ref, "--", rel_bz])
+    if not diff_lines and base_ref == "HEAD":
+        diff_lines = git_lines(["diff", "--unified=0", "HEAD~1", "HEAD", "--", rel_bz])
+    changed_lines = _changed_code_lines(diff_lines)
+    if not changed_lines:
+        return True
+    collateral_pat = re.compile(
+        r'^(?:load\(\s*"(?:@platforms//host:constraints\.bzl|'
+        r"//build/bazel/platforms:constraints\.bzl|"
+        r'//build/bazel/rules/[\w/]+:(?:defs|\w+)\.bzl)"|'
+        r"target_compatible_with\s*=\s*HOST_(?:OS_)?CONSTRAINTS\b|"
+        r"visibility\s*=\s*|"
+        r'"(?:(?://|:)[^"]+|\w+)"\s*,?$|'
+        r"\],?$|\),?$)"
+    )
+    return all(collateral_pat.search(ln) for ln in changed_lines)
+
+
+# Collect transitive first-party workspace package dependencies reachable from `seed_pkgs`.
+def collect_transitive_dep_pkgs(seed_pkgs: list[str], max_Visited: int = 500) -> set[str]:
+    visited: set[str] = set()
+    queue = list(seed_pkgs)
+    while queue and len(visited) < max_Visited:
+        cur = queue.pop(0)
+        for dep_pkg in sorted(collect_non_visibility_dep_pkgs(cur)):
+            if (
+                dep_pkg not in visited
+                and not dep_pkg.startswith("third_party/")
+                and os.path.isfile(os.path.join(workdir, dep_pkg, "BUILD.bazel"))
+            ):
+                visited.add(dep_pkg)
+                queue.append(dep_pkg)
+    return visited
+
+
 def migrated_dependency_packages():
     """Returns (dependency_dirs, required_upstream_deps) for packages outside target_dirs.
 
@@ -472,6 +546,7 @@ def migrated_dependency_packages():
         and not p.strip("/").startswith(ALLOWED_GLOBAL_PREFIXES)
         and not p.strip("/").startswith("bundles/")
         and not is_exports_files_only_bazel_pkg(os.path.dirname(p))
+        and not is_collateral_existing_bazel_edit(os.path.dirname(p))
     }
     candidates -= set(target_dirs)
     if not candidates or not target_dirs:
@@ -560,6 +635,9 @@ dependency_dirs, required_upstream_deps = migrated_dependency_packages()
 in_scope_dep_pkgs: set[str] = set()
 for _src_pkg in dict.fromkeys(list(target_dirs) + sorted(dependency_dirs)):
     in_scope_dep_pkgs |= collect_non_visibility_dep_pkgs(_src_pkg)
+transitive_dep_pkgs = collect_transitive_dep_pkgs(
+    list(dict.fromkeys(list(target_dirs) + sorted(dependency_dirs)))
+)
 newly_added_files = (
     set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base]))
     | set(untracked)
@@ -669,18 +747,52 @@ def is_relative_name_registration_edit(norm: str) -> bool:
     if not rel_names:
         return False
     diff = git_lines(["diff", "--unified=0", change_base, "--", norm])
-    edited = [
-        ln[1:].strip()
-        for ln in diff
-        if ln[:1] in ("+", "-") and not ln.startswith(("+++", "---"))
-    ]
-    edited = [ln for ln in edited if ln and not ln.startswith("#")]
+    edited = _changed_code_lines(diff)
     if not edited:
         return False
     return all(
         re.fullmatch(r'"([^"]+)",?', ln) and re.fullmatch(r'"([^"]+)",?', ln).group(1) in rel_names
         for ln in edited
     )
+
+
+# Allow collateral BUILD.bazel and .bzl rule/macro edits in upstream packages that
+# replace `@platforms//host:constraints.bzl` (`HOST_CONSTRAINTS`) with
+# `//build/bazel/platforms:constraints.bzl` (`HOST_OS_CONSTRAINTS`) (plus any
+# `defs.bzl` -> direct rule `.bzl` load cleanup required by `scripts/shac/bazel_lint`
+# on the modified file) so cross-compiled `host_linux_arm64` host tools build cleanly.
+HOST_OS_UPGRADE_LINE_RE = re.compile(
+    r'^(?:load\(\s*"(?:@platforms//host:constraints\.bzl|'
+    r"//build/bazel/platforms:constraints\.bzl|"
+    r'//build/bazel/rules/[\w/]+:(?:defs|\w+)\.bzl)"|'
+    r"target_compatible_with\s*=\s*HOST_(?:OS_)?CONSTRAINTS\s*,?$|"
+    r'"\w+"\s*,?$|'
+    r"\),?$)"
+)
+
+
+def is_host_os_constraints_upgrade_edit(norm: str) -> bool:
+    if os.path.basename(norm) not in ("BUILD.bazel", "BUILD") and not norm.endswith(".bzl"):
+        return False
+    pkg_d = os.path.dirname(norm).strip("/")
+    base_ref = change_base
+    if not pkg_d or not git_lines(["ls-tree", "--name-only", base_ref, "--", norm]):
+        if (
+            not pkg_d
+            or base_ref == "HEAD~1"
+            or not git_lines(["ls-tree", "--name-only", "HEAD~1", "--", norm])
+        ):
+            return False
+        base_ref = "HEAD~1"
+    diff = git_lines(["diff", "--unified=0", base_ref, "--", norm])
+    if not diff and base_ref == "HEAD":
+        diff = git_lines(["diff", "--unified=0", "HEAD~1", "HEAD", "--", norm])
+    edited = _changed_code_lines(diff)
+    if not edited or not any(
+        "HOST_CONSTRAINTS" in ln or "HOST_OS_CONSTRAINTS" in ln for ln in edited
+    ):
+        return False
+    return all(HOST_OS_UPGRADE_LINE_RE.search(ln) for ln in edited)
 
 
 def is_allowed_scope(path: str) -> bool:
@@ -693,6 +805,8 @@ def is_allowed_scope(path: str) -> bool:
             return True
         if pkg_dir and td.startswith(pkg_dir + "/") and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
             return True
+    if is_host_os_constraints_upgrade_edit(norm):
+        return True
     if is_shared_bazel_rule_file(norm):
         return references_in_scope_package_at_base(norm)
     if (
@@ -723,6 +837,15 @@ def is_allowed_scope(path: str) -> bool:
         os.path.basename(norm) == "BUILD.bazel"
         and pkg_dir in in_scope_dep_pkgs
         and is_exports_files_only_bazel_pkg(pkg_dir)
+    ):
+        return True
+    # Allow collateral compatibility edits (such as visibility or replacing legacy
+    # HOST_CONSTRAINTS with HOST_OS_CONSTRAINTS) on pre-existing transitive dependency
+    # BUILD.bazel files (and any paired bazel2gn sync of their BUILD.gn).
+    if (
+        pkg_dir in transitive_dep_pkgs
+        and os.path.basename(norm) in ("BUILD.bazel", "BUILD.gn")
+        and is_collateral_existing_bazel_edit(pkg_dir)
     ):
         return True
     if norm in allowed_gni_files:
@@ -893,7 +1016,12 @@ def check_cl_scoping_guidelines():
         if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
             continue
         pkg = os.path.dirname(norm)
-        if not pkg or is_exports_files_only_bazel_pkg(pkg):
+        if (
+            not pkg
+            or is_exports_files_only_bazel_pkg(pkg)
+            or is_collateral_existing_bazel_edit(pkg)
+            or is_host_os_constraints_upgrade_edit(norm)
+        ):
             continue
         if norm in newly_added_files or pkg in target_dirs or pkg in dependency_dirs:
             migrated_pkgs.add(pkg)
@@ -916,9 +1044,11 @@ def check_cl_scoping_guidelines():
         norm = p.strip("/")
         if norm.startswith(ALLOWED_GLOBAL_PREFIXES) or norm.startswith(("bundles/", RUST_CRATES)):
             continue
-        if (
-            os.path.basename(norm) == "BUILD.bazel"
-            and is_exports_files_only_bazel_pkg(os.path.dirname(norm))
+        if is_host_os_constraints_upgrade_edit(norm):
+            continue
+        if os.path.basename(norm) in ("BUILD.bazel", "BUILD.gn") and (
+            is_exports_files_only_bazel_pkg(os.path.dirname(norm))
+            or is_collateral_existing_bazel_edit(os.path.dirname(norm))
         ):
             continue
         added_lines += count_authored_added_lines(norm)
@@ -2339,6 +2469,304 @@ for rel_path, full_path in bazel_files:
                         f"HOST_OS_CONSTRAINTS` on '{t_name}' in '{rel_path}', then "
                         f"re-run `fx bazel2gn -d {pkg_dir}` if dual-building.")
 
+    # Check that host tools bridged into GN via `bazel_ffx_tool` or `bazel_host_tool` AND
+    # cross-compiled for `host_arm64_toolchain` (`//build/bazel/platforms:host_linux_arm64`)
+    # via `//bundles/infra/test:host_tools` (`//src/developer/ffx/tools:bins`) or the IDK
+    # (`//sdk:host_tools_for_configured_host_cpus` / `sdk_atom` / `sdk_host_tool`) do not
+    # depend transitively on Bazel targets constrained to `HOST_CONSTRAINTS` (`cpu:x86_64`).
+    def is_cross_compiled_arm64_host_tool_pkg(p_dir: str, gn_clean_txt: str) -> bool:
+        if re.search(r"\b(?:sdk_atom|sdk_host_tool)\s*\(|\bhost_arm64_toolchain\b", gn_clean_txt):
+            return True
+        leaf = os.path.basename(p_dir)
+        for reg_rel, allow_rel_leaf in (
+            ("bundles/infra/test/BUILD.gn", False),
+            ("src/developer/ffx/tools/BUILD.gn", p_dir.startswith("src/developer/ffx/tools/")),
+            ("src/developer/ffx/config.gni", False),
+            ("sdk/BUILD.gn", False),
+        ):
+            reg_path = os.path.join(workdir, reg_rel)
+            try:
+                reg_txt = re.sub(
+                    r"#[^\n]*", "", open(reg_path, encoding="utf-8", errors="ignore").read()
+                )
+            except OSError:
+                continue
+            if re.search(r'"//' + re.escape(p_dir) + r'(?=[":])', reg_txt):
+                return True
+            if allow_rel_leaf and re.search(r'"' + re.escape(leaf) + r'(?=[":])', reg_txt):
+                return True
+        return False
+
+    def check_host_tool_transitive_constraints(tree_node):
+        """Verify cross-compiled bridged host tools do not depend on HOST_CONSTRAINTS targets."""
+        cur_gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+        if not os.path.isfile(cur_gn_path):
+            return
+        try:
+            cur_gn_src = open(cur_gn_path, encoding="utf-8", errors="ignore").read()
+        except OSError:
+            return
+        gn_clean = re.sub(r"#[^\n]*", "", cur_gn_src)
+        if not is_cross_compiled_arm64_host_tool_pkg(pkg_dir, gn_clean):
+            return
+        bridged_targets = []
+        for m_br in re.finditer(
+            r'\b(bazel_ffx_tool|bazel_host_tool)\(\s*"([^"]+)"\s*\)\s*\{([^}]*)\}',
+            gn_clean,
+        ):
+            tmpl_name, gn_tname, body_txt = m_br.group(1), m_br.group(2), m_br.group(3)
+            m_bt = re.search(r'\bbazel_target\s*=\s*"([^"]+)"', body_txt)
+            if m_bt:
+                raw_bt = m_bt.group(1).strip()
+                bt_name = raw_bt.split(":")[-1]
+                if bt_name.endswith("_versioned"):
+                    bt_name = bt_name[: -len("_versioned")]
+            else:
+                bt_name = gn_tname
+            bridged_targets.append((tmpl_name, gn_tname, bt_name))
+        if not bridged_targets:
+            return
+
+        pkg_cache = {}
+        bzl_macro_cache = {}
+        # Exclude `proc_macro_deps` and procedural macro rules: Bazel transitions
+        # procedural macros to the `exec` configuration rather than the cross-compiled
+        # `host_linux_arm64` target configuration, so `HOST_CONSTRAINTS` on proc-macro
+        # crates and their exec-only helpers does not block target cross-compilation.
+        exec_only_rule_names = {"rustc_proc_macro", "rust_proc_macro"}
+        dep_kw_names = {
+            "deps",
+            "implementation_deps",
+            "public_deps",
+            "non_test_deps",
+            "link_deps",
+            "args_deps",
+            "plugin_deps",
+            "crate",
+        }
+
+        # Inspect a workspace .bzl file for @platforms//host:constraints.bzl usage
+        # and target-configured workspace dependency labels injected by its macros.
+        def inspect_workspace_bzl(bzl_rel):
+            if bzl_rel in bzl_macro_cache:
+                return bzl_macro_cache[bzl_rel]
+            bzl_abs = os.path.join(workdir, bzl_rel)
+            if not os.path.isfile(bzl_abs):
+                bzl_macro_cache[bzl_rel] = (False, [])
+                return False, []
+            try:
+                bzl_src = open(bzl_abs, encoding="utf-8", errors="ignore").read()
+                bzl_ast = ast.parse(bzl_src, filename=bzl_abs)
+            except Exception:
+                bzl_macro_cache[bzl_rel] = (False, [])
+                return False, []
+            uses_host_cpu = False
+            top_consts = {}
+            for st in bzl_ast.body:
+                if (
+                    isinstance(st, ast.Expr)
+                    and isinstance(st.value, ast.Call)
+                    and isinstance(st.value.func, ast.Name)
+                    and st.value.func.id == "load"
+                    and st.value.args
+                    and isinstance(st.value.args[0], ast.Constant)
+                    and st.value.args[0].value == "@platforms//host:constraints.bzl"
+                ):
+                    uses_host_cpu = bool(re.search(r"\bHOST_CONSTRAINTS\b", bzl_src))
+                elif isinstance(st, ast.Assign):
+                    vals = [
+                        c.value
+                        for c in ast.walk(st.value)
+                        if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                    ]
+                    for tgt in st.targets:
+                        if isinstance(tgt, ast.Name):
+                            top_consts[tgt.id] = vals
+            injected_deps = []
+            for st in bzl_ast.body:
+                if not isinstance(st, ast.FunctionDef):
+                    continue
+                for sub in ast.walk(st):
+                    if not isinstance(sub, ast.Call):
+                        continue
+                    for kw in sub.keywords:
+                        if kw.arg not in dep_kw_names:
+                            continue
+                        for item in ast.walk(kw.value):
+                            cands = []
+                            if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                                cands.append(item.value)
+                            elif isinstance(item, ast.Name) and item.id in top_consts:
+                                cands.extend(top_consts[item.id])
+                            for s in cands:
+                                if (
+                                    s.startswith("//")
+                                    and not s.startswith(("//third_party/", "//build/"))
+                                    and " " not in s
+                                    and s not in injected_deps
+                                ):
+                                    injected_deps.append(s)
+            bzl_macro_cache[bzl_rel] = (uses_host_cpu, injected_deps)
+            return uses_host_cpu, injected_deps
+
+        # Parse top-level target calls, macro loads, and dependency edges in <p_dir>/BUILD.bazel.
+        def parse_pkg_targets(p_dir):
+            if p_dir in pkg_cache:
+                return pkg_cache[p_dir]
+            bz_file = os.path.join(workdir, p_dir, "BUILD.bazel")
+            if not os.path.isfile(bz_file):
+                pkg_cache[p_dir] = {}
+                return {}
+            try:
+                bz_src = open(bz_file, encoding="utf-8", errors="ignore").read()
+                bz_ast = ast.parse(bz_src, filename=bz_file)
+            except Exception:
+                pkg_cache[p_dir] = {}
+                return {}
+            sym_to_bzl = {}
+            pkg_vars = {}
+            for st in bz_ast.body:
+                if (
+                    isinstance(st, ast.Expr)
+                    and isinstance(st.value, ast.Call)
+                    and isinstance(st.value.func, ast.Name)
+                    and st.value.func.id == "load"
+                    and st.value.args
+                    and isinstance(st.value.args[0], ast.Constant)
+                    and isinstance(st.value.args[0].value, str)
+                ):
+                    mod_s = st.value.args[0].value
+                    if mod_s.startswith("//") and mod_s.endswith(".bzl"):
+                        b_pkg, _, b_file = mod_s[2:].partition(":")
+                        bzl_rel = f"{b_pkg.strip('/')}/{b_file.lstrip('/')}" if b_file else ""
+                        if bzl_rel:
+                            for a in st.value.args[1:]:
+                                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                                    sym_to_bzl[a.value] = bzl_rel
+                            for kw in st.value.keywords:
+                                if kw.arg:
+                                    sym_to_bzl[kw.arg] = bzl_rel
+                elif isinstance(st, ast.Assign):
+                    vals = [
+                        c.value
+                        for c in ast.walk(st.value)
+                        if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                    ]
+                    for tgt in st.targets:
+                        if isinstance(tgt, ast.Name):
+                            pkg_vars[tgt.id] = vals
+            res = {}
+            for st in bz_ast.body:
+                if not (
+                    isinstance(st, ast.Expr)
+                    and isinstance(st.value, ast.Call)
+                    and isinstance(st.value.func, ast.Name)
+                ):
+                    continue
+                c_node = st.value
+                r_id = c_node.func.id
+                is_exec_rule = r_id in exec_only_rule_names
+                t_nm = ""
+                t_deps = []
+                has_host_cpu_tcw = False
+                macro_bzl = ""
+                if not is_exec_rule and r_id in sym_to_bzl:
+                    bzl_bad, bzl_deps = inspect_workspace_bzl(sym_to_bzl[r_id])
+                    if bzl_bad:
+                        macro_bzl = sym_to_bzl[r_id]
+                    t_deps.extend(bzl_deps)
+                for kw in c_node.keywords:
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ):
+                        t_nm = kw.value.value
+                    elif not is_exec_rule and kw.arg in dep_kw_names:
+                        for sub in ast.walk(kw.value):
+                            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                                t_deps.append(sub.value)
+                            elif isinstance(sub, ast.Name) and sub.id in pkg_vars:
+                                t_deps.extend(pkg_vars[sub.id])
+                    elif not is_exec_rule and kw.arg == "target_compatible_with":
+                        tcw_txt = ast.get_source_segment(bz_src, kw.value) or ""
+                        if re.search(r"\bHOST_CONSTRAINTS\b", tcw_txt):
+                            has_host_cpu_tcw = True
+                if t_nm:
+                    res[t_nm] = (getattr(st, "lineno", 1), has_host_cpu_tcw, macro_bzl, t_deps)
+            pkg_cache[p_dir] = res
+            return res
+
+        local_tgts = parse_pkg_targets(pkg_dir)
+        for tmpl_name, gn_tname, bt_name in bridged_targets:
+            if bt_name not in local_tgts:
+                continue
+            bt_line = local_tgts[bt_name][0]
+            visited = set()
+            queue = [(pkg_dir, bt_name)]
+            bad_bzls = []
+            bad_labels = []
+            while queue:
+                cur_p, cur_t = queue.pop(0)
+                p_tgts = parse_pkg_targets(cur_p)
+                resolved_t = cur_t if cur_t in p_tgts else ""
+                if not resolved_t:
+                    for suf in ("_args", "_sub_command", "_versioned"):
+                        if cur_t.endswith(suf) and cur_t[: -len(suf)] in p_tgts:
+                            resolved_t = cur_t[: -len(suf)]
+                            break
+                if not resolved_t or (cur_p, resolved_t) in visited:
+                    continue
+                visited.add((cur_p, resolved_t))
+                _, is_bad_tcw, m_bzl, dep_list = p_tgts[resolved_t]
+                if m_bzl and m_bzl not in bad_bzls:
+                    bad_bzls.append(m_bzl)
+                if is_bad_tcw and (cur_p, resolved_t) != (pkg_dir, bt_name):
+                    lbl_s = f"//{cur_p}:{resolved_t}"
+                    if lbl_s not in bad_labels:
+                        bad_labels.append(lbl_s)
+                for d_lbl in dep_list:
+                    if d_lbl.startswith(":"):
+                        queue.append((cur_p, d_lbl[1:]))
+                    elif d_lbl.startswith("//") and not d_lbl.startswith("//third_party/"):
+                        dep_p, _, dep_t = d_lbl[2:].partition(":")
+                        dep_p = dep_p.strip("/")
+                        dep_t = dep_t or os.path.basename(dep_p)
+                        queue.append((dep_p, dep_t))
+            if bad_bzls or bad_labels:
+                all_items = [f"'{b}'" for b in bad_bzls] + [f"`{lbl}`" for lbl in bad_labels]
+                sample = ", ".join(all_items[:6])
+                more = f" (and {len(all_items) - 6} more)" if len(all_items) > 6 else ""
+                full_list = ", ".join(bad_bzls + bad_labels)
+                msg = (
+                    f"Target '{bt_name}' in '{rel_path}' is bridged into `{pkg_dir}/BUILD.gn` "
+                    f"via `{tmpl_name}(\"{gn_tname}\")`, which cross-compiles for "
+                    "`//build/bazel/platforms:host_linux_arm64`, but its transitive Bazel "
+                    f"dependency/macro closure uses `HOST_CONSTRAINTS` "
+                    f"(`@@platforms//cpu:x86_64`): {sample}{more}."
+                )
+                rem = (
+                    f"In all blocking collateral `.bzl` and `BUILD.bazel` files ({full_list}), "
+                    'replace `load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")` '
+                    "and `target_compatible_with = HOST_CONSTRAINTS` with "
+                    '`load("//build/bazel/platforms:constraints.bzl", '
+                    '"HOST_OS_CONSTRAINTS")` and `target_compatible_with = '
+                    "HOST_OS_CONSTRAINTS` (updating any pre-existing `*:defs.bzl` load to its "
+                    "direct rule `.bzl` file if required by `bazel_shac_lint`, making no other "
+                    "edits to those files or their `BUILD.gn` files, and omitting collateral "
+                    "packages from `Bazel-Migration-Target:` and `Also migrated in this "
+                    "change:`)."
+                )
+                _emit(
+                    findings,
+                    "host_tool_transitive_host_constraints",
+                    "error",
+                    rel_path,
+                    bt_line,
+                    msg,
+                    rem,
+                )
+
     check_single_use_private_vars(tree)
     check_wrap_host_rust_test_naming(tree, base_gn_text)
     check_unnecessary_test_check_cfg_flags(tree)
@@ -2346,6 +2774,7 @@ for rel_path, full_path in bazel_files:
     check_redundant_forwarding_alias(tree, base_gn_text)
     check_commented_out_deps(tree)
     check_host_constraints_parity(tree, base_gn_text)
+    check_host_tool_transitive_constraints(tree)
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
