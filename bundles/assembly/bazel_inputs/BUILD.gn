@@ -823,7 +823,6 @@ group("common_standard") {
     "//bundles/assembly/bazel_inputs/src/diagnostics/persistence:diagnostics-persistence",
     "//bundles/assembly/bazel_inputs/src/diagnostics/sampler",
     "//bundles/assembly/bazel_inputs/src/intl/tzdata_provider:tzdata_provider_pkg",
-    "//bundles/assembly/bazel_inputs/src/sys/activity",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-updater",
   ]
 }
@@ -853,7 +852,6 @@ group("standard_eng") {
     "//bundles/assembly/bazel_inputs/src/developer/process_explorer:process_explorer_package",
     "//bundles/assembly/bazel_inputs/src/devices/bin/driver_playground:pkg",
     "//bundles/assembly/bazel_inputs/src/power/metrics-logger:metrics-logger-pkg",
-    "//bundles/assembly/bazel_inputs/src/sys/loopback_resolver:loopback_resolver_pkg",
   ]
 }
 

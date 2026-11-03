@@ -2269,7 +2269,7 @@ assembly_input_bundle(
         # Internationalization
         "//bundles/assembly/bazel_inputs/src/intl/tzdata_provider:tzdata_provider_pkg",
         # Activity
-        "//bundles/assembly/bazel_inputs/src/sys/activity",
+        "//src/sys/activity:activity",
         # Memory pressure monitoring
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
         # Security
@@ -2413,7 +2413,7 @@ assembly_input_bundle(
     ],
     base_packages = [
         # Needed to resolve driver components from "full" packages
-        "//bundles/assembly/bazel_inputs/src/sys/loopback_resolver:loopback_resolver_pkg",
+        "//src/sys/loopback_resolver:loopback_resolver_pkg",
     ],
     # Needed to resolve driver components from "full" packages
     cache_packages = [
