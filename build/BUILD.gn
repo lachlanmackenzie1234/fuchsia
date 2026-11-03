@@ -128,6 +128,7 @@ if (is_host) {
       "bazel/rules/host_tests/tests/py/test_with_py_library.py",
       "bazel/rules/host_tests/tests/py/test_with_unittests.py",
       "beads/.agent/skills/analyzing_migration_dag/scripts/analyze_migration_dag.py",
+      "beads/.agent/skills/graduating_planter_rules_to_shac/scripts/list_shac_checks.py",
       "check_product_bundles_manifest.py",
       "config/clang/generate_config_json.py",
       "config/fuchsia/get_platform_version.py",
