@@ -22,7 +22,6 @@ source_set("kernel") {
     "init.cc",
     "interrupt_ffi.cc",
     "koid_ffi.cc",
-    "lazy_owned_wait_queue.cc",
     "mp.cc",
     "mp_ffi.cc",
     "mutex.cc",

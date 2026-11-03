@@ -40,12 +40,45 @@ bool test_lazy_wrapper() {
       lazy.ReleaseLocked();
     }
     EXPECT_NULL(lazy.Peek());
+
+    // Detach hands the queue to the caller instead of recycling it.
+    q = lazy.Get();
+    EXPECT_NONNULL(q);
+    {
+      Guard<SpinLock, IrqSave> guard{OwnedWaitQueuePoolLock::Get()};
+      EXPECT_EQ(q, lazy.Detach());
+      EXPECT_NULL(lazy.Peek());
+      EXPECT_NULL(lazy.Detach());
+      stack_pool.RecycleLocked(q);
+    }
   }
 
   {
     Guard<SpinLock, IrqSave> guard{OwnedWaitQueuePoolLock::Get()};
     stack_pool.BorrowLocked();
   }
+
+  END_TEST;
+}
+
+bool test_global_lazy_wrapper() {
+  BEGIN_TEST;
+
+  // Every contended Mutex borrows from and returns queues to the global pool in the same way, so
+  // borrowing and returning a single queue here leaves the pool in a valid state.
+  LazyOwnedWaitQueue lazy;
+  EXPECT_NULL(lazy.Peek());
+
+  OwnedWaitQueue* q = lazy.Get();
+  EXPECT_NONNULL(q);
+  EXPECT_EQ(q, lazy.Peek());
+  EXPECT_EQ(q, lazy.Get());
+
+  {
+    Guard<SpinLock, IrqSave> guard{OwnedWaitQueuePoolLock::Get()};
+    lazy.ReleaseLocked();
+  }
+  EXPECT_NULL(lazy.Peek());
 
   END_TEST;
 }
@@ -202,6 +235,7 @@ bool test_pool_counters() {
 
 UNITTEST_START_TESTCASE(owned_wait_queue_pool_tests)
 UNITTEST("lazy_wrapper", test_lazy_wrapper)
+UNITTEST("global_lazy_wrapper", test_global_lazy_wrapper)
 UNITTEST("concurrent_get", test_concurrent_get)
 UNITTEST("pool_stress", test_pool_stress)
 UNITTEST("pool_counters", test_pool_counters)
