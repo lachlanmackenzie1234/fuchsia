@@ -161,6 +161,7 @@ idk_cc_source_library(
         "//src/connectivity/network/lib/udp_serde:__pkg__",
         "//src/graphics/display/lib/driver-framework-migration-utils/dispatcher:__pkg__",
         "//src/graphics/display/lib/driver-framework-migration-utils/metadata:__pkg__",
+        "//src/lib/fidl/contrib/connection:__pkg__",
         "//src/lib/fidl/llcpp:__subpackages__",
         "//src/storage/memfs:__pkg__",
         "//src/sys/loopback_resolver:__pkg__",
