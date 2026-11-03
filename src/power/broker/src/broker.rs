@@ -1705,6 +1705,7 @@ impl Catalog {
     /// `claims` and `lease_dependencies` agree with each other, empty entries are cleaned up, and
     /// the claim counts match the tracked claims.
     #[cfg(test)]
+    #[track_caller]
     fn assert_claims_consistent(&self) {
         let mut pending_count = 0;
         let mut enforced_count = 0;
@@ -1927,6 +1928,7 @@ mod tests {
     use fuchsia_inspect::hierarchy::DiagnosticsHierarchy;
 
     use power_broker_client::BINARY_POWER_LEVELS;
+    use std::ops::{Deref, DerefMut};
 
     // Convenience aliases.
     const OFF: IndexedPowerLevel =
@@ -1937,6 +1939,214 @@ mod tests {
     const ZERO: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(0);
     const ONE: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(1);
     const TWO: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(2);
+
+    type InnerBroker = super::Broker;
+
+    /// Wraps [`super::Broker`] in unit tests so every borrow and scope exit checks resting-state
+    /// invariants at a single point without touching production code.
+    ///
+    /// Intentionally departs from Rust's `C-DEREF` smart-pointer guideline within this private
+    /// test module so existing and future tests cannot bypass checks by omitting an explicit
+    /// accessor or macro. Checks run before each borrow, so a panic points at the first call
+    /// after the operation that broke an invariant (or at `Drop` if it was the last operation).
+    /// Tests that deliberately build or inspect a non-resting state access `.0` directly (and
+    /// `std::mem::forget` the wrapper when `Drop` must be skipped).
+    struct Broker(InnerBroker);
+
+    impl Broker {
+        fn new(inspect: INode) -> Self {
+            Self(InnerBroker::new(inspect))
+        }
+    }
+
+    impl Deref for Broker {
+        type Target = InnerBroker;
+
+        #[track_caller]
+        fn deref(&self) -> &Self::Target {
+            assert_broker_invariants(&self.0);
+            &self.0
+        }
+    }
+
+    impl DerefMut for Broker {
+        #[track_caller]
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            assert_broker_invariants(&self.0);
+            &mut self.0
+        }
+    }
+
+    impl Drop for Broker {
+        fn drop(&mut self) {
+            if !std::thread::panicking() {
+                assert_broker_invariants(&self.0);
+            }
+        }
+    }
+
+    #[track_caller]
+    fn assert_broker_invariants(broker: &InnerBroker) {
+        broker.catalog.assert_claims_consistent();
+
+        for &element_id in broker.current.keys() {
+            if broker.catalog.topology.element_exists(element_id)
+                && !broker.in_transition.contains_key(&element_id)
+            {
+                assert_eq!(
+                    broker.get_required_level(&element_id),
+                    Some(broker.catalog.calculate_required_level(element_id)),
+                    "settled element {element_id} required level does not match calculated level"
+                );
+            }
+        }
+
+        let mut all_deactivating = Vec::new();
+        for (dep, entry) in &broker.catalog.claims {
+            for &lease_id in entry.pending.iter().chain(entry.active.iter()) {
+                assert!(
+                    !broker.catalog.is_lease_dropped(lease_id),
+                    "claim {lease_id}:{dep} in pending/active belongs to a dropped lease"
+                );
+            }
+            for &lease_id in &entry.deactivating {
+                assert!(
+                    broker.catalog.leases.contains_key(&lease_id)
+                        && broker.catalog.is_lease_powering_down(lease_id),
+                    "deactivating claim {lease_id}:{dep} must belong to a PoweringDown lease"
+                );
+                all_deactivating.push((dep.clone(), lease_id));
+            }
+        }
+        // Overlapping re-acquisition across multi-hop chains still strands a droppable downstream
+        // deactivating claim (https://fxbug.dev/578645847), so a unit test reproducing that
+        // scenario will trip this assertion until the bug is fixed.
+        // Note: `find_deactivating_claims_to_drop` logs at DEBUG during read-only evaluation;
+        // skip the empty common case to avoid per-borrow noise.
+        if !all_deactivating.is_empty() {
+            all_deactivating.sort_unstable();
+            let droppable = broker.find_deactivating_claims_to_drop(&all_deactivating);
+            assert!(
+                droppable.is_empty(),
+                "droppable deactivating claims remained after operation: {droppable:?}"
+            );
+        }
+
+        let mut prereq_cache: FxHashMap<ElementLevel, Vec<Dependency>> = FxHashMap::default();
+        for (dep, entry) in &broker.catalog.claims {
+            if !entry.pending.is_empty() {
+                assert!(
+                    !broker.all_dependencies_satisfied(&dep.requires),
+                    "pending claim on {dep} should be active because its prerequisites are satisfied"
+                );
+            }
+
+            if entry.active.is_empty() && entry.deactivating.is_empty() {
+                continue;
+            }
+
+            let prereqs = prereq_cache.entry(dep.requires.clone()).or_insert_with(|| {
+                broker.catalog.topology.all_direct_and_indirect_dependencies(&dep.requires)
+            });
+            // Pre-existing shortcuts (`activate_claims_if_dependencies_satisfied` on self-raised
+            // intermediates and `prepare_add_dependency` reading `required` while in transition)
+            // can enforce a claim before its prerequisite settles; a future test hitting either
+            // path will surface that ordering gap here.
+            for prereq in prereqs.iter() {
+                assert!(
+                    broker
+                        .get_current_level(&prereq.requires.element_id)
+                        .satisfies(prereq.requires.level),
+                    "enforced claim on {dep} has unsatisfied prerequisite {prereq} (current: {:?})",
+                    broker.get_current_level(&prereq.requires.element_id)
+                );
+            }
+
+            let claimed = &dep.requires;
+            let active_satisfied = !entry.active.is_empty();
+            let element_may_satisfy = broker
+                .get_current_level(&claimed.element_id)
+                .satisfies(claimed.level)
+                || broker.in_transition.get(&claimed.element_id).copied().satisfies(claimed.level);
+            // `update_leases_for_dependency` intentionally skips `PoweringDown` leases when a new
+            // dependency is added dynamically: a provisional root lease holds the new parent only
+            // until `add_dependency` returns and is then dropped while `deactivating` claims are
+            // still winding down (see `test_add_dependency_while_lease_powering_down`). Requiring
+            // `all_dependencies_satisfied(claimed)` for `deactivating_satisfied` and gating
+            // `has_enforced_edge` on `active_satisfied` accommodates that state transition.
+            let deactivating_satisfied = !entry.deactivating.is_empty()
+                && element_may_satisfy
+                && broker.all_dependencies_satisfied(claimed);
+            if !active_satisfied && !deactivating_satisfied {
+                continue;
+            }
+
+            for parent_dep in
+                broker.catalog.topology.dependencies_for_dependent_element(claimed.element_id)
+            {
+                let dep_level =
+                    parent_dep.dependent.as_ref().expect("topology dep must have dependent");
+                if !claimed.satisfies(dep_level) {
+                    continue;
+                }
+                let parent_required =
+                    broker.catalog.calculate_required_level(parent_dep.requires.element_id);
+                assert!(
+                    parent_required.satisfies(parent_dep.requires.level),
+                    "satisfied dependent {claimed} requires {parent_dep}, \
+                     but calculated required level of {} is {parent_required}",
+                    parent_dep.requires.element_id
+                );
+                if active_satisfied {
+                    let has_enforced_edge = broker
+                        .catalog
+                        .topology
+                        .dependencies_for_required_element(parent_dep.requires.element_id)
+                        .any(|enforced_dep| {
+                            enforced_dep
+                                .dependent
+                                .as_ref()
+                                .is_some_and(|d| d.element_id == claimed.element_id)
+                                && enforced_dep.requires.satisfies(&parent_dep.requires)
+                                && broker.catalog.is_dependency_enforced(enforced_dep)
+                        });
+                    assert!(
+                        has_enforced_edge,
+                        "active-claimed dependent {claimed} has no enforced claim covering \
+                         parent dependency {parent_dep}"
+                    );
+                }
+            }
+        }
+
+        for (lease_id, status_entry) in &broker.catalog.lease_status.values {
+            if status_entry.value.is_some() {
+                assert!(
+                    broker.catalog.leases.contains_key(lease_id),
+                    "lease_status entry for {lease_id} outlived catalog.leases"
+                );
+            }
+        }
+
+        for &lease_id in broker.catalog.leases.keys() {
+            if broker.catalog.is_lease_powering_down(lease_id) {
+                assert!(
+                    !broker.catalog.has_no_remaining_claims(lease_id),
+                    "PoweringDown lease {lease_id} has no remaining claims and should be vacated"
+                );
+            } else {
+                assert!(
+                    !broker.catalog.is_lease_dropped(lease_id),
+                    "vacated lease {lease_id} remained in catalog.leases"
+                );
+                assert_eq!(
+                    broker.get_lease_status(lease_id),
+                    Some(broker.calculate_lease_status(lease_id)),
+                    "open lease {lease_id} status does not match calculated status"
+                );
+            }
+        }
+    }
 
     #[track_caller]
     fn assert_element_cleaned_up(broker: &Broker, element_id: ElementID) {
@@ -5147,7 +5357,6 @@ mod tests {
         // The lease and all of its claims are dropped immediately, leaving A no longer required.
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));
         assert_lease_cleaned_up(&broker.catalog, lease.id);
-        broker.catalog.assert_claims_consistent();
         assert!(broker.drop_lease(lease.id).is_err());
 
         assert_data_tree!(inspect, root: contains {
@@ -5236,7 +5445,6 @@ mod tests {
         assert!(!broker.element_exists(element_b));
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));
         assert_lease_cleaned_up(&broker.catalog, lease.id);
-        broker.catalog.assert_claims_consistent();
         assert!(broker.drop_lease(lease.id).is_err());
 
         assert_data_tree!(inspect, root: contains {
@@ -5361,7 +5569,6 @@ mod tests {
         assert!(!broker.element_exists(element_d));
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));
         assert_lease_cleaned_up(&broker.catalog, lease.id);
-        broker.catalog.assert_claims_consistent();
 
         // Complete B's in-flight transition to ON; now that `[C(ON) -> B(ON)]` has been dropped,
         // B's required level drops back to OFF.
@@ -5692,7 +5899,6 @@ mod tests {
         assert_eq!(broker.get_required_level(&f), Some(ON));
         assert_eq!(broker.get_required_level(&g), Some(ON));
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
-        broker.catalog.assert_claims_consistent();
 
         settle_levels(&mut broker, &[a, f, g]);
         assert_eq!(broker.get_current_level(&f), Some(ON));
@@ -5703,7 +5909,6 @@ mod tests {
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
         assert_eq!(broker.get_current_level(&a), Some(ON));
-        broker.catalog.assert_claims_consistent();
     }
 
     #[fuchsia::test]
@@ -5741,13 +5946,11 @@ mod tests {
         assert_eq!(broker.get_required_level(&p), Some(ON));
         assert_eq!(broker.get_required_level(&q), Some(OFF));
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
-        broker.catalog.assert_claims_consistent();
 
         settle_levels(&mut broker, &[m, p, q]);
         broker.update_current_level(e, ON);
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
-        broker.catalog.assert_claims_consistent();
     }
 
     #[fuchsia::test]
@@ -5780,7 +5983,6 @@ mod tests {
         assert_eq!(broker.get_required_level(&y), Some(OFF));
         assert_eq!(broker.get_lease_status(lease_e.id), Some(LeaseStatus::Pending));
         assert_eq!(broker.get_lease_status(lease_y.id), Some(LeaseStatus::Pending));
-        broker.catalog.assert_claims_consistent();
     }
 
     #[fuchsia::test]
@@ -5831,7 +6033,6 @@ mod tests {
         assert_lease_cleaned_up(&broker.catalog, lease1.id);
         assert_eq!(broker.get_required_level(&a), Some(OFF));
         assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Pending));
-        broker.catalog.assert_claims_consistent();
     }
 
     #[fuchsia::test]
@@ -5871,6 +6072,228 @@ mod tests {
         assert_eq!(broker.get_required_level(&e), Some(TWO));
         assert_eq!(broker.get_required_level(&x), Some(OFF));
         assert_eq!(broker.get_required_level(&y), Some(OFF));
-        broker.catalog.assert_claims_consistent();
+    }
+
+    /// Settled baseline topology for invariant tests: `C(ON) -> A(ON) -> B(ON)` and
+    /// `D(ON) -> B(ON)`, with `lease_a` satisfied on `A@ON`, `lease_d` satisfied on `D@ON` (so
+    /// both leases require `B@ON`), and `C` idle at `OFF`.
+    struct InvariantFixture {
+        _inspect: fuchsia_inspect::Inspector,
+        broker: Broker,
+        a: ElementID,
+        b: ElementID,
+        c: ElementID,
+        d: ElementID,
+        lease_a: LeaseID,
+        lease_d: LeaseID,
+    }
+
+    fn setup_invariant_fixture() -> InvariantFixture {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+        let (b, b_token) = add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
+        let (a, a_token) = add_test_element_with_token(
+            &mut broker,
+            "A",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &b_token, ON.level)],
+        );
+        let (c, _) = add_test_element_with_token(
+            &mut broker,
+            "C",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &a_token, ON.level)],
+        );
+        let (d, _) = add_test_element_with_token(
+            &mut broker,
+            "D",
+            &BINARY_POWER_LEVELS,
+            &[(ON.level, &b_token, ON.level)],
+        );
+        let lease_a = broker.acquire_lease(a, ON, zx::Koid::from_raw(1)).unwrap().id;
+        let lease_d = broker.acquire_lease(d, ON, zx::Koid::from_raw(2)).unwrap().id;
+        settle_levels(&mut broker, &[a, b, c, d]);
+        InvariantFixture { _inspect: inspect, broker, a, b, c, d, lease_a, lease_d }
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "required level does not match calculated level")]
+    fn test_wrapper_deref_checks_invariants() {
+        let mut f = setup_invariant_fixture();
+        f.broker.0.required.update(&f.b, OFF);
+        let _ = f.broker.get_required_level(&f.b);
+        // Skip `Drop` so only `Deref` can satisfy `should_panic`.
+        std::mem::forget(f.broker);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "required level does not match calculated level")]
+    fn test_wrapper_deref_mut_checks_invariants() {
+        let mut f = setup_invariant_fixture();
+        f.broker.0.required.update(&f.b, OFF);
+        f.broker.update_current_level(f.b, ON);
+        std::mem::forget(f.broker);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "required level does not match calculated level")]
+    fn test_wrapper_drop_checks_invariants() {
+        let mut f = setup_invariant_fixture();
+        f.broker.0.required.update(&f.b, OFF);
+        drop(f.broker);
+    }
+
+    macro_rules! invariant_violation_tests {
+        ($( $name:ident => ($expected:literal, |$f:ident| $corrupt:block) ),+ $(,)?) => {
+            $(
+                #[fuchsia::test]
+                #[should_panic(expected = $expected)]
+                fn $name() {
+                    let mut $f = setup_invariant_fixture();
+                    $corrupt;
+                    assert_broker_invariants(&$f.broker.0);
+                    std::mem::forget($f.broker);
+                }
+            )+
+        };
+    }
+
+    invariant_violation_tests! {
+        test_invariants_catch_catalog_claims_bookkeeping => (
+            "pending claim count is stale",
+            |f| {
+                f.broker.0.catalog.pending_claims_count += 1;
+            }
+        ),
+        test_invariants_catch_settled_element_required_level_mismatch => (
+            "required level does not match calculated level",
+            |f| {
+                f.broker.0.required.update(&f.b, OFF);
+            }
+        ),
+        test_invariants_catch_active_claim_on_dropped_lease => (
+            "in pending/active belongs to a dropped lease",
+            |f| {
+                f.broker.0.catalog.lease_status.update(&f.lease_a, LeaseStatus::PoweringDown);
+            }
+        ),
+        test_invariants_catch_deactivating_claim_on_open_lease => (
+            "must belong to a PoweringDown lease",
+            |f| {
+                let _ = f.broker.0.catalog.mark_to_deactivate(f.lease_a);
+            }
+        ),
+        test_invariants_catch_stranded_droppable_deactivating_claim => (
+            "droppable deactivating claims remained",
+            |f| {
+                let duplicate_lease =
+                    f.broker.0.acquire_lease(f.a, ON, zx::Koid::from_raw(3)).unwrap();
+                let _ =
+                    f.broker.0.catalog.drop_and_mark_powering_down(duplicate_lease.id).unwrap();
+            }
+        ),
+        test_invariants_catch_pending_claim_with_satisfied_prerequisites => (
+            "should be active because its prerequisites are satisfied",
+            |f| {
+                let root_a = Dependency::new_root(ElementLevel { element_id: f.a, level: ON });
+                f.broker.0.catalog.deactivate_claim(&root_a, f.lease_a);
+                f.broker.0.update_required_levels([f.a], &mut EagerInspectWriter);
+            }
+        ),
+        test_invariants_catch_enforced_claim_with_unsatisfied_prerequisite => (
+            "has unsatisfied prerequisite",
+            |f| {
+                f.broker.0.update_current_level_internal(f.b, OFF, &mut EagerInspectWriter);
+            }
+        ),
+        test_invariants_catch_satisfied_dependent_missing_parent_required_level => (
+            "but calculated required level of",
+            |f| {
+                f.broker.drop_lease(f.lease_d).unwrap();
+                settle_levels(&mut f.broker, &[f.d]);
+                f.broker.0.catalog.drop_claim(
+                    &create_test_dependency(f.a, ON.level, f.b, ON.level),
+                    f.lease_a,
+                );
+                f.broker.0.update_required_levels([f.b], &mut EagerInspectWriter);
+            }
+        ),
+        test_invariants_catch_active_dependent_missing_enforced_parent_edge => (
+            "has no enforced claim covering",
+            |f| {
+                // `lease_d` keeps `B` required at `ON`, isolating the `has_enforced_edge` check on
+                // `A -> B`.
+                f.broker.0.catalog.drop_claim(
+                    &create_test_dependency(f.a, ON.level, f.b, ON.level),
+                    f.lease_a,
+                );
+            }
+        ),
+        test_invariants_catch_deactivating_dependent_missing_parent_required_level => (
+            "but calculated required level of",
+            |f| {
+                let lease_c =
+                    f.broker.acquire_lease(f.c, ON, zx::Koid::from_raw(3)).unwrap().id;
+                settle_levels(&mut f.broker, &[f.c]);
+                f.broker.drop_lease(f.lease_a).unwrap();
+                f.broker.drop_lease(f.lease_d).unwrap();
+                settle_levels(&mut f.broker, &[f.d]);
+                f.broker.drop_lease(lease_c).unwrap();
+                // `C` is transitioning toward `OFF`, so `C@ON -> A@ON` is only in `deactivating`
+                // (`active` is empty). Marking `B` in transition to `ON` after dropping
+                // `A@ON -> B@ON` skips the settled-element check on `B` while keeping
+                // `deactivating_satisfied` true for `A@ON`.
+                f.broker.0.catalog.drop_claim(
+                    &create_test_dependency(f.a, ON.level, f.b, ON.level),
+                    lease_c,
+                );
+                f.broker.0.in_transition.insert(f.b, ON);
+            }
+        ),
+        test_invariants_catch_orphaned_lease_status => (
+            "outlived catalog.leases",
+            |f| {
+                f.broker.drop_lease(f.lease_d).unwrap();
+                settle_levels(&mut f.broker, &[f.d]);
+                f.broker.0.catalog.lease_status.update(&f.lease_d, LeaseStatus::PoweringDown);
+            }
+        ),
+        test_invariants_catch_powering_down_lease_without_remaining_claims => (
+            "has no remaining claims and should be vacated",
+            |f| {
+                let _ = f.broker.0.catalog.drop_and_mark_powering_down(f.lease_d).unwrap();
+                f.broker.0.catalog.drop_claim(
+                    &Dependency::new_root(ElementLevel { element_id: f.d, level: ON }),
+                    f.lease_d,
+                );
+                f.broker.0.catalog.drop_claim(
+                    &create_test_dependency(f.d, ON.level, f.b, ON.level),
+                    f.lease_d,
+                );
+                f.broker.0.update_required_levels([f.d], &mut EagerInspectWriter);
+            }
+        ),
+        test_invariants_catch_vacated_lease_retained_in_catalog => (
+            "vacated lease",
+            |f| {
+                let _ = f.broker.0.catalog.drop_and_mark_powering_down(f.lease_d).unwrap();
+                f.broker.0.catalog.drop_claim(
+                    &Dependency::new_root(ElementLevel { element_id: f.d, level: ON }),
+                    f.lease_d,
+                );
+                f.broker.0.catalog.drop_claim(
+                    &create_test_dependency(f.d, ON.level, f.b, ON.level),
+                    f.lease_d,
+                );
+                f.broker.0.update_required_levels([f.d], &mut EagerInspectWriter);
+                f.broker.0.catalog.lease_status.update(&f.lease_d, LeaseStatus::Vacated);
+            }
+        ),
+        test_invariants_catch_open_lease_stale_status => (
+            "status does not match calculated status",
+            |f| {
+                f.broker.0.catalog.lease_status.update(&f.lease_a, LeaseStatus::Pending);
+            }
+        ),
     }
 }
