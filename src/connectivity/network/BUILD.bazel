@@ -48,7 +48,8 @@ build_flags(
 # LINT.ThenChange(//src/connectivity/network/BUILD.gn:performance_critical_rust_crate)
 
 # Network target-side tests defined in Bazel. These are exported to `fx test`
-# and infra builders through //src/connectivity:target_tests.
+# and infra builders through `:bazel_tests` in BUILD.gn and
+# //src/connectivity:target_tests.
 test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
@@ -64,7 +65,8 @@ test_suite(
 )
 
 # Network host-side tests defined in Bazel. These are exported to `fx test` and
-# infra builders through //src/connectivity:host_tests.
+# infra builders through `:bazel_tests` in BUILD.gn and
+# //src/connectivity:host_tests.
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_OS_CONSTRAINTS,
