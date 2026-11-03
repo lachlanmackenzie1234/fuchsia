@@ -3981,7 +3981,7 @@ assembly_input_bundle(
         "utility::eng",
     ],
     cache_packages = [
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
+        "//src/media/audio/tools/virtual_audio_util",
     ],
     shell_commands = [
         {
@@ -4017,12 +4017,12 @@ assembly_input_bundle(
         "utility::eng",
     ],
     cache_packages = [
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util",
+        "//src/media/audio/tools/virtual_audio_legacy_util",
     ],
     shell_commands = [
         {
             "package": "virtual_audio_legacy_util",
-            "components": ["virtual_audio_legacy_util"],
+            "components": ["virtual_audio_legacy"],
         },
     ],
 )

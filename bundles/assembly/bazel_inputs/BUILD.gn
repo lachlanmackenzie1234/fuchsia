@@ -1347,13 +1347,11 @@ group("virtual_audio_legacy_driver") {
 }
 
 group("virtual_audio_util") {
-  deps = [
-    "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
-  ]
+  deps = []
 }
 
 group("virtual_audio_legacy_util") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_legacy_util" ]
+  deps = []
 }
 
 group("audio_legacy_driver_tools") {
