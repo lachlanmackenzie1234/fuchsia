@@ -547,14 +547,6 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
   ASSERT_OK(port.wait(zx::time::infinite(), &packet));
   ASSERT_TRUE(disabled());
 
-  // AckLegacyIrq is a no-op that returns ZX_OK for backward compatibility;
-  // verify it does not unmask the device prematurely.
-  {
-    fbl::AutoLock _(bus_device->dev_lock());
-    ASSERT_OK(bus_device->AckLegacyIrq());
-  }
-  ASSERT_TRUE(disabled());
-
   // Acknowledging the virtual interrupt handle re-arms the device automatically
   // via the ZX_VIRTUAL_INTERRUPT_UNTRIGGERED signal handler.
   ASSERT_OK(dev_interrupt.ack());
@@ -633,32 +625,6 @@ TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
 
   cleanup.call();
   EXPECT_EQ(thrd_res, ZX_ERR_CANCELED);
-}
-
-TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
-  fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  ecam().get_device(device)->set_vendor_id(0x8086).set_device_id(0x8086).set_interrupt_pin(0x1);
-  constexpr uint8_t kVector = 0x10;
-  AddLegacyIrqToBus(kVector);
-  AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
-                       /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
-  ASSERT_OK(owned_bus->Initialize());
-  auto* bus = owned_bus.release();
-  auto* bus_device = bus->GetDevice(device);
-
-  // In kLegacy mode, AckLegacyIrq is a no-op returning ZX_OK.
-  ASSERT_OK(bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kLegacy, 1));
-  {
-    fbl::AutoLock _(bus_device->dev_lock());
-    ASSERT_OK(bus_device->AckLegacyIrq());
-  }
-
-  ASSERT_OK(bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kDisabled, 0));
-  {
-    fbl::AutoLock _(bus_device->dev_lock());
-    ASSERT_STATUS(ZX_ERR_BAD_STATE, bus_device->AckLegacyIrq());
-  }
 }
 
 TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {

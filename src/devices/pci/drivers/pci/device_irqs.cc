@@ -190,17 +190,6 @@ zx_status_t Device::SignalLegacyIrq(zx_instant_boot_t timestamp) {
   return irqs_.legacy.trigger(/*options=*/0, zx::time_boot(timestamp));
 }
 
-zx_status_t Device::AckLegacyIrq() {
-  if (irqs_.mode != fpci::InterruptMode::kLegacy) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  // TODO(544749672): AckLegacyIrq is a no-op until fully removed.
-  // Unmasking is handled automatically by the Bus monitoring
-  // ZX_VIRTUAL_INTERRUPT_UNTRIGGERED.
-  return ZX_OK;
-}
-
 void Device::EnableLegacyIrq() {
   fbl::AutoLock cmd_lock(&cmd_reg_lock_);
   CommandRegLocked().ReadFrom(cfg_.get()).set_interrupt_disable(false).WriteTo(cfg_.get());

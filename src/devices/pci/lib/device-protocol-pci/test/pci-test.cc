@@ -148,11 +148,6 @@ class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
     completer.ReplySuccess(std::move(interrupt));
   }
 
-  void AckInterrupt(AckInterruptCompleter::Sync& completer) override {
-    acked_ = true;
-    completer.ReplySuccess();
-  }
-
   void ReadConfig8(ReadConfig8RequestView request, ReadConfig8Completer::Sync& completer) override {
     last_read_offset_ = request->offset;
     completer.ReplySuccess(static_cast<uint8_t>(kConfig32Value & 0xffu));
@@ -252,7 +247,6 @@ class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
   }
 
   fpci::InterruptMode current_mode() const { return current_mode_; }
-  bool acked() const { return acked_; }
   uint16_t last_read_offset() const { return last_read_offset_; }
   uint16_t last_write_offset() const { return last_write_offset_; }
   uint32_t written_config() const { return written_config_; }
@@ -267,7 +261,6 @@ class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
   };
   fpci::InterruptMode fail_mode_ = fpci::InterruptMode::kDisabled;
   fpci::InterruptMode current_mode_ = fpci::InterruptMode::kDisabled;
-  bool acked_ = false;
   uint16_t last_read_offset_ = 0;
   uint16_t last_write_offset_ = 0;
   uint32_t written_config_ = 0;
@@ -479,10 +472,6 @@ TEST_F(PciClientTest, Interrupts) {
   EXPECT_STATUS(pci().MapInterrupt(0, nullptr), ZX_ERR_INVALID_ARGS);
   ASSERT_OK(pci().MapInterrupt(0, &interrupt));
   ASSERT_TRUE(interrupt.is_valid());
-
-  ASSERT_OK(pci().AckInterrupt());
-
-  server().SyncCall([](FakePciDeviceServer* server) { EXPECT_TRUE(server->acked()); });
 }
 
 TEST_F(PciClientTest, ConfigSpace) {
@@ -654,7 +643,6 @@ TEST(PciClientStandaloneTest, DisconnectedClient) {
 
   zx::interrupt interrupt;
   EXPECT_STATUS(pci.MapInterrupt(0, &interrupt), ZX_ERR_PEER_CLOSED);
-  EXPECT_STATUS(pci.AckInterrupt(), ZX_ERR_PEER_CLOSED);
 
   fidl::Arena arena;
   fpci::wire::Bar bar;

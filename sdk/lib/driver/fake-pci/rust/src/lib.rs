@@ -362,14 +362,6 @@ impl State {
             _ => Err(zx::Status::BAD_STATE),
         }
     }
-
-    fn ack_interrupt(&self) -> Result<(), zx::Status> {
-        if self.interrupt_mode == fpci::InterruptMode::Legacy {
-            Ok(())
-        } else {
-            Err(zx::Status::BAD_STATE)
-        }
-    }
 }
 
 /// A fake implementation of the [`fpci::Device`] protocol for testing PCI drivers.
@@ -679,18 +671,6 @@ impl DeviceServerHandler for Server {
     async fn reset_device(&mut self, responder: Responder<fpci::device::ResetDevice>) {
         self.state.lock().reset_count += 1;
         responder.respond(()).await.expect_respond("reset_device");
-    }
-
-    async fn ack_interrupt(&mut self, responder: Responder<fpci::device::AckInterrupt>) {
-        let result = self.state.lock().ack_interrupt();
-        match result {
-            Ok(()) => {
-                responder.respond(()).await.expect_respond("ack_interrupt");
-            }
-            Err(e) => {
-                responder.respond_err(e).await.expect_respond("ack_interrupt");
-            }
-        }
     }
 
     async fn map_interrupt(
@@ -1056,10 +1036,6 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(fake_pci.interrupt_mode(), fpci::InterruptMode::Legacy);
 
-        // Ack interrupt should succeed for legacy
-        let ack_res = client.ack_interrupt().await.expect("ack_interrupt failed");
-        assert!(ack_res.is_ok());
-
         // Map legacy interrupt
         let map_res = client.map_interrupt(0).await.expect("map_interrupt failed");
         let mapped = map_res.expect("map_interrupt error status").interrupt;
@@ -1079,10 +1055,6 @@ mod tests {
             .await
             .expect("set_interrupt_mode failed");
         assert!(set_msi_res.is_ok());
-
-        // Ack interrupt should fail for MSI mode
-        let ack_err = client.ack_interrupt().await.expect("ack_interrupt failed");
-        assert_eq!(ack_err.unwrap_err(), zx::Status::BAD_STATE);
 
         // Map MSI 0
         let map_msi = client.map_interrupt(0).await.expect("map_interrupt failed");

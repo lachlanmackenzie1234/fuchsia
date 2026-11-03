@@ -842,16 +842,6 @@ void Device::ResetDevice(ResetDeviceCompleter::Sync& completer) {
   RETURN_DEBUG(ZX_ERR_NOT_SUPPORTED, "");
 }
 
-void Device::AckInterrupt(AckInterruptCompleter::Sync& completer) {
-  fbl::AutoLock dev_lock(&dev_lock_);
-  zx_status_t status = AckLegacyIrq();
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
-    return;
-  }
-  completer.ReplySuccess();
-}
-
 void Device::MapInterrupt(MapInterruptRequestView request, MapInterruptCompleter::Sync& completer) {
   zx::result<zx::interrupt> result = MapInterrupt(request->which_irq);
   if (result.is_error()) {

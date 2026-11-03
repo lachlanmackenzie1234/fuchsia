@@ -208,14 +208,6 @@ impl TestFixture {
             .expect("FIDL map_interrupt")
             .map_err(zx::Status::err_from_raw)
     }
-
-    async fn ack_interrupt(&self) -> Result<(), zx::Status> {
-        self.pci
-            .ack_interrupt()
-            .await
-            .expect("FIDL ack_interrupt")
-            .map_err(zx::Status::err_from_raw)
-    }
 }
 
 // Device reset is not supported and returns ZX_ERR_NOT_SUPPORTED.
@@ -627,26 +619,6 @@ async fn msi_enables_bus_mastering() {
     let val = fixture.read_config16(fpci::Config::Command.into_primitive()).await.unwrap();
     assert_eq!(val & fpci::Command::BUS_MASTER_EN.bits(), fpci::Command::BUS_MASTER_EN.bits());
     assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::Disabled, 0).await, Ok(()));
-}
-
-// AckInterrupt succeeds in Legacy mode and returns ZX_ERR_BAD_STATE in Msi, MsiX, and Disabled
-// modes.
-#[fuchsia::test]
-async fn acking_irq_modes() {
-    let fixture = TestFixture::new().await;
-    assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::Legacy, 1).await, Ok(()));
-    let interrupt = fixture.map_interrupt(0).await.unwrap();
-    assert_eq!(fixture.ack_interrupt().await, Ok(()));
-    drop(interrupt);
-
-    assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::Msi, 1).await, Ok(()));
-    assert_eq!(fixture.ack_interrupt().await, Err(zx::Status::BAD_STATE));
-
-    assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::MsiX, 1).await, Ok(()));
-    assert_eq!(fixture.ack_interrupt().await, Err(zx::Status::BAD_STATE));
-
-    assert_eq!(fixture.set_interrupt_mode(fpci::InterruptMode::Disabled, 0).await, Ok(()));
-    assert_eq!(fixture.ack_interrupt().await, Err(zx::Status::BAD_STATE));
 }
 
 // Mapped MSI-X interrupt handles block disabling interrupts (ZX_ERR_BAD_STATE) until all handles

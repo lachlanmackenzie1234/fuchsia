@@ -28,7 +28,7 @@ class FakePciProtocolInternal {
 
   FakePciProtocolInternal();
   ~FakePciProtocolInternal() = default;
-  zx_status_t PciAckInterrupt();
+
   zx_status_t PciMapInterrupt(uint32_t which_irq, zx::interrupt* out_handle);
   void PciGetInterruptModes(fuchsia_hardware_pci::wire::InterruptModes* modes);
   zx_status_t PciSetInterruptMode(fuchsia_hardware_pci::InterruptMode mode,

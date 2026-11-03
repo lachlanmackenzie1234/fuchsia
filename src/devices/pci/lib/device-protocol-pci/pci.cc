@@ -87,17 +87,6 @@ zx_status_t Pci::ResetDevice() const {
   return ZX_OK;
 }
 
-zx_status_t Pci::AckInterrupt() const {
-  auto result = client_->AckInterrupt();
-  if (!result.ok()) {
-    return result.status();
-  }
-  if (result->is_error()) {
-    return result->error_value();
-  }
-  return ZX_OK;
-}
-
 zx_status_t Pci::MapInterrupt(uint32_t which_irq, zx::interrupt* out_interrupt) const {
   if (!out_interrupt) {
     return ZX_ERR_INVALID_ARGS;

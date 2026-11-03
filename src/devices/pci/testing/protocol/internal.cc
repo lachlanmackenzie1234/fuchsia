@@ -26,10 +26,6 @@ __EXPORT FakePciProtocolInternal::FakePciProtocolInternal() {
   reset();
 }
 
-zx_status_t FakePciProtocolInternal::PciAckInterrupt() {
-  return (irq_mode_ == fpci::InterruptMode::kLegacy) ? ZX_OK : ZX_ERR_BAD_STATE;
-}
-
 zx_status_t FakePciProtocolInternal::PciMapInterrupt(uint32_t which_irq,
                                                      zx::interrupt* out_handle) {
   if (!out_handle) {

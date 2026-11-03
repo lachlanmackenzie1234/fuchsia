@@ -162,7 +162,6 @@ class FakePciProtocol : public FakePciProtocolInternal,
   void SetBusMastering(SetBusMasteringRequestView request,
                        SetBusMasteringCompleter::Sync& completer) override;
   void ResetDevice(ResetDeviceCompleter::Sync& completer) override;
-  void AckInterrupt(AckInterruptCompleter::Sync& completer) override;
 
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) final {
     completer.Close(ZX_ERR_NOT_SUPPORTED);

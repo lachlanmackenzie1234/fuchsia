@@ -210,9 +210,6 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // Signals the device's zx::interrupt, effectively triggering an interrupt for the device
   // driver.
   zx_status_t SignalLegacyIrq(zx_instant_boot_t timestamp) __TA_REQUIRES(dev_lock_);
-  // Legacy IRQs are automatically re-armed via ZX_VIRTUAL_INTERRUPT_UNTRIGGERED;
-  // AckLegacyIrq is a no-op.
-  zx_status_t AckLegacyIrq() __TA_REQUIRES(dev_lock_);
   void EnableLegacyIrq() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   void DisableLegacyIrq() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
 
@@ -230,7 +227,6 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   void SetBusMastering(SetBusMasteringRequestView request,
                        SetBusMasteringCompleter::Sync& completer) override;
   void ResetDevice(ResetDeviceCompleter::Sync& completer) override;
-  void AckInterrupt(AckInterruptCompleter::Sync& completer) override;
   void MapInterrupt(MapInterruptRequestView request,
                     MapInterruptCompleter::Sync& completer) override;
   void SetInterruptMode(SetInterruptModeRequestView request,

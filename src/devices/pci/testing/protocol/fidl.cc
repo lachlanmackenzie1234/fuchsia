@@ -219,15 +219,6 @@ void FakePciProtocol::ResetDevice(ResetDeviceCompleter::Sync& completer) {
   }
 }
 
-void FakePciProtocol::AckInterrupt(AckInterruptCompleter::Sync& completer) {
-  zx_status_t status = PciAckInterrupt();
-  if (status == ZX_OK) {
-    completer.ReplySuccess();
-  } else {
-    completer.ReplyError(status);
-  }
-}
-
 fdf::Pci FakePciProtocol::SetUpFidlServer(async::Loop& loop) {
   auto endpoints = fidl::Endpoints<fuchsia_hardware_pci::Device>::Create();
 

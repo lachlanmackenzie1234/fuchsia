@@ -64,7 +64,6 @@ class Pci {
                      fuchsia_hardware_pci::wire::Bar* out_result) const;
   zx_status_t SetBusMastering(bool enabled) const;
   zx_status_t ResetDevice() const;
-  zx_status_t AckInterrupt() const;
   zx_status_t MapInterrupt(uint32_t which_irq, zx::interrupt* out_interrupt) const;
   void GetInterruptModes(fuchsia_hardware_pci::wire::InterruptModes* out_modes) const;
   zx_status_t SetInterruptMode(fuchsia_hardware_pci::InterruptMode mode,
