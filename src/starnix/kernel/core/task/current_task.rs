@@ -1295,6 +1295,8 @@ impl CurrentTask {
             state.robust_list_head = RobustListHeadPtr::null(self);
         }
 
+        self.set_command_name(resolved_program.command_name());
+
         security::bprm_committing_creds(self, &resolved_program)?;
 
         let new_creds = Arc::new(resolved_program.creds.clone());
@@ -1308,7 +1310,6 @@ impl CurrentTask {
         self.thread_group().signal_actions.reset_for_exec();
         security::bprm_committed_creds(self)?;
 
-        let command_name = resolved_program.command_name();
         let start_info = load_executable(self, resolved_program)?;
 
         let regs: zx_restricted_state_t = start_info.into();
@@ -1330,8 +1331,6 @@ impl CurrentTask {
         }
 
         self.thread_group().write().did_exec = true;
-
-        self.set_command_name(command_name);
 
         Ok(())
     }

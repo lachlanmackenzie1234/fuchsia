@@ -17,9 +17,6 @@
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/Context",
                 "CgroupFs/CgroupFsTest.SecondMountWithDifferentOptionsChangesLabels/RootContext",
 
-                // TODO: https://fxbug.dev/578845590 - Update task comm before bprm_committing_creds.
-                "InheritTest.UnauthorizedFdDenialLogsPostExecComm",
-
                 // TODO: https://fxbug.dev/578846638 - Return EPERM when process share check fails
                 // on execve.
                 "InheritTest/InheritShareTest.ShareWithCloneFs/Denied",
