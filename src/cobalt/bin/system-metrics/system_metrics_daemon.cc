@@ -461,17 +461,36 @@ bool SystemMetricsDaemon::LogCpuToCobalt() {
   std::vector<MetricEvent> events;
   auto builder = MetricEventBuilder(fuchsia_system_metrics::kCpuPercentageMigratedMetricId);
   for (const auto& pair : activity_state_to_cpu_map_) {
+    const EventCode event_code = GetCobaltEventCodeForDeviceState<EventCode>(pair.first);
     std::vector<HistogramBucket> cpu_buckets;
     for (const auto& bucket_pair : pair.second) {
       HistogramBucket bucket;
       bucket.index = bucket_pair.first;
       bucket.count = bucket_pair.second;
       cpu_buckets.push_back(std::move(bucket));
+      if (cpu_buckets.size() == fuchsia::metrics::MAX_HISTOGRAM_BUCKETS) {
+        events.push_back(builder.Clone()
+                             .with_event_code(event_code)
+                             .as_integer_histogram(std::exchange(cpu_buckets, {})));
+      }
     }
-    events.push_back(builder.Clone()
-                         .with_event_code(GetCobaltEventCodeForDeviceState<EventCode>(pair.first))
-                         .as_integer_histogram(cpu_buckets));
+    if (!cpu_buckets.empty()) {
+      events.push_back(
+          builder.Clone().with_event_code(event_code).as_integer_histogram(std::move(cpu_buckets)));
+    }
   }
+  // At most kNumActivityStates (3) x ceil((1,000 + 2) / 500) = 9 MetricEvents can be emitted per
+  // flush, well below MAX_BATCHED_EVENTS (500), so a single LogMetricEvents call is safe. If this
+  // bound ever exceeds MAX_BATCHED_EVENTS, multi-batch flushing must also handle partial-batch
+  // failures so earlier succeeded batches are not re-sent and double-counted on retry.
+  constexpr uint64_t kMaxBucketsPerState =
+      uint64_t{fuchsia_system_metrics::kCpuPercentageMigratedIntBucketsNumBuckets} + 2;
+  constexpr uint64_t kMaxChunksPerState =
+      (kMaxBucketsPerState + fuchsia::metrics::MAX_HISTOGRAM_BUCKETS - 1) /
+      fuchsia::metrics::MAX_HISTOGRAM_BUCKETS;
+  static_assert(kNumActivityStates * kMaxChunksPerState <= fuchsia::metrics::MAX_BATCHED_EVENTS,
+                "You will have to upgrade to multi-batch flushing");
+
   // call cobalt FIDL
   fuchsia::metrics::MetricEventLogger_LogMetricEvents_Result result;
   ReinitializeIfPeerClosed(logger_->LogMetricEvents(std::move(events), &result));

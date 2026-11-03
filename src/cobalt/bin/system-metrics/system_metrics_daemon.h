@@ -205,6 +205,10 @@ class SystemMetricsDaemon {
   zx::duration unlogged_active_duration_;
   std::mutex active_time_mutex_;
 
+  // TODO(https://fxbug.dev/581232767): Eliminate kNumActivityStates. Until then, keep in sync with
+  // the exhaustive switch in GetCobaltEventCodeForDeviceState.
+  static constexpr uint64_t kNumActivityStates = 3;
+
   template <typename T>
   T GetCobaltEventCodeForDeviceState(fuchsia::ui::activity::State state) {
     switch (state) {

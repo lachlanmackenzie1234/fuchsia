@@ -115,6 +115,14 @@ class SystemMetricsDaemonTest : public gtest::TestLoopFixture {
     daemon_->activity_state_to_cpu_map_[fuchsia::ui::activity::State::ACTIVE][345u] = 599u;
   }
 
+  void PrepareLargeCpuHistogram(uint32_t num_buckets) {
+    daemon_->cpu_data_stored_ = 599;
+    daemon_->activity_state_to_cpu_map_.clear();
+    for (uint32_t bucket_index = 0; bucket_index < num_buckets; ++bucket_index) {
+      daemon_->activity_state_to_cpu_map_[fuchsia::ui::activity::State::ACTIVE][bucket_index] = 1u;
+    }
+  }
+
   void CheckValues(LogMetricMethod expected_log_method_invoked, size_t expected_call_count,
                    uint32_t expected_metric_id, std::vector<uint32_t> expected_last_event_codes,
                    size_t expected_event_count = 0) {
@@ -773,12 +781,45 @@ TEST_F(SystemMetricsDaemonTest, LogCpuUsageBacksOffRetryOnCobaltError) {
   EXPECT_EQ(1200u, total_bucket_samples);
 }
 
+TEST_F(SystemMetricsDaemonTest, LogCpuUsageChunksHistogramsExceedingMaxBuckets) {
+  stub_logger_.reset();
+  PrepareLargeCpuHistogram(1002);
+  UpdateState(fuchsia::ui::activity::State::ACTIVE);
+
+  EXPECT_EQ(zx::sec(1), LogCpuUsage());
+  EXPECT_EQ(1u, stub_logger_.call_count());
+  // 1002 buckets split into chunks of at most MAX_HISTOGRAM_BUCKETS (500) -> 3 MetricEvents
+  // (500 + 500 + 2).
+  ASSERT_EQ(3u, stub_logger_.logged_events().size());
+  uint64_t total_buckets = 0;
+  uint64_t total_samples = 0;
+  for (const auto& event : stub_logger_.logged_events()) {
+    EXPECT_EQ(fuchsia_system_metrics::kCpuPercentageMigratedMetricId, event.metric_id);
+    EXPECT_THAT(event.event_codes, testing::ElementsAre(DeviceState::Active));
+    ASSERT_TRUE(event.payload.is_histogram());
+    EXPECT_LE(event.payload.histogram().size(), fuchsia::metrics::MAX_HISTOGRAM_BUCKETS);
+    total_buckets += event.payload.histogram().size();
+    for (const auto& bucket : event.payload.histogram()) {
+      total_samples += bucket.count;
+    }
+  }
+  EXPECT_EQ(1002u, total_buckets);
+  EXPECT_EQ(1003u, total_samples);
+}
+
 class MockLogger : public ::fuchsia::metrics::testing::MetricEventLogger_TestBase {
  public:
   void LogMetricEvents(std::vector<fuchsia::metrics::MetricEvent> events,
                        LogMetricEventsCallback callback) override {
     num_calls_++;
     num_events_ += events.size();
+    for (const auto& event : events) {
+      if (event.payload.is_histogram()) {
+        for (const auto& bucket : event.payload.histogram()) {
+          total_histogram_samples_ += bucket.count;
+        }
+      }
+    }
     callback(fpromise::ok());
   }
   void LogOccurrence(uint32_t metric_id, uint64_t count, std::vector<uint32_t> event_codes,
@@ -792,10 +833,12 @@ class MockLogger : public ::fuchsia::metrics::testing::MetricEventLogger_TestBas
   }
   int num_calls() const { return num_calls_; }
   int num_events() const { return num_events_; }
+  uint64_t total_histogram_samples() const { return total_histogram_samples_; }
 
  private:
   int num_calls_ = 0;
   int num_events_ = 0;
+  uint64_t total_histogram_samples_ = 0;
 };
 
 class MockLoggerFactory : public ::fuchsia::metrics::testing::MetricEventLoggerFactory_TestBase {
@@ -840,6 +883,25 @@ class SystemMetricsDaemonInitializationTest : public gtest::TestLoopFixture {
     return result.get();
   }
 
+  zx::duration LogCpuUsageOverFidl() {
+    std::future<zx::duration> result = std::async([this]() { return daemon_->LogCpuUsage(); });
+    while (result.wait_for(std::chrono::milliseconds(1)) != std::future_status::ready) {
+      RunLoopUntilIdle();
+    }
+    return result.get();
+  }
+
+  void PrepareLargeActiveCpuHistogram(uint32_t num_buckets) {
+    daemon_->UpdateState(fuchsia::ui::activity::State::ACTIVE);
+    daemon_->cpu_data_stored_ = 599;
+    daemon_->activity_state_to_cpu_map_.clear();
+    for (uint32_t bucket_index = 0; bucket_index < num_buckets; ++bucket_index) {
+      daemon_->activity_state_to_cpu_map_[fuchsia::ui::activity::State::ACTIVE][bucket_index] = 1u;
+    }
+  }
+
+  bool IsCpuMapEmpty() const { return daemon_->activity_state_to_cpu_map_.empty(); }
+
  protected:
   void SetUp() override {
     // Create a MockLoggerFactory and add it to the services the fake context can provide.
@@ -852,6 +914,10 @@ class SystemMetricsDaemonInitializationTest : public gtest::TestLoopFixture {
         dispatcher(), context_provider_.context(), nullptr,
         std::unique_ptr<timekeeper::TestClock>(fake_clock_),
         std::unique_ptr<cobalt::CpuStatsFetcher>(new FakeCpuStatsFetcher()), nullptr, "/tmp"));
+    daemon_->cpu_bucket_config_ = SystemMetricsDaemon::InitializeLinearBucketConfig(
+        fuchsia_system_metrics::kCpuPercentageMigratedIntBucketsFloor,
+        fuchsia_system_metrics::kCpuPercentageMigratedIntBucketsNumBuckets,
+        fuchsia_system_metrics::kCpuPercentageMigratedIntBucketsStepSize);
   }
 
   // Note that we first save an unprotected pointer in fake_clock_ and then
@@ -885,4 +951,19 @@ TEST_F(SystemMetricsDaemonInitializationTest, LogSomethingAnything) {
   // success.
   EXPECT_EQ(true, LogFuchsiaLifetimeEvent());
   EXPECT_EQ(1, logger_factory_->logger()->num_calls());
+}
+
+TEST_F(SystemMetricsDaemonInitializationTest, LogCpuUsageEncodesLargeHistogramOverFidl) {
+  // Initialize the FIDL logger connection.
+  EXPECT_FALSE(LogFuchsiaLifetimeEvent());
+  ASSERT_NE(nullptr, logger_factory_->logger());
+
+  // Populate 600 distinct CPU histogram buckets (> MAX_HISTOGRAM_BUCKETS = 500) so real HLCPP FIDL
+  // channel encoding validates vector bounds across 2 chunked MetricEvents (500 + 100 buckets).
+  PrepareLargeActiveCpuHistogram(600);
+  EXPECT_EQ(zx::sec(1), LogCpuUsageOverFidl());
+  EXPECT_EQ(1, logger_factory_->logger()->num_calls());
+  EXPECT_EQ(2, logger_factory_->logger()->num_events());
+  EXPECT_EQ(601u, logger_factory_->logger()->total_histogram_samples());
+  EXPECT_TRUE(IsCpuMapEmpty());
 }
