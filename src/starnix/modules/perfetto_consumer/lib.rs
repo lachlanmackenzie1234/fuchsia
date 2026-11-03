@@ -54,9 +54,10 @@ const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 /// Perfetto consumer socket, so a read that blocks past the deadline delays the check. Once
 /// the drain has stopped writing, it no longer copies, frames or rewrites the remaining
 /// packets, but it still holds the prolonged context while it reads the rest of the
-/// ReadBuffers response, up to the size of the Perfetto buffer, and then sends FreeBuffers.
-/// That part isn't bounded, which is a known limitation: the context is released only once
-/// FreeBuffers has been sent.
+/// ReadBuffers response, up to the size of the Perfetto buffer, and then sends FreeBuffers
+/// and drains the FreeBuffers and deferred EnableTracing replies. That part isn't bounded,
+/// which is a known limitation: the context is released only once those replies have been
+/// drained.
 // TODO(b/571694521): Release the context once the drain stops writing (fxr/1881111).
 const DRAIN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(30);
 
@@ -148,6 +149,9 @@ struct CallbackState {
     /// since. Holding it keeps trace-engine from reaching Stopped, so the session it belongs to
     /// can't end, and no other session can start, until Stopping releases it.
     prolonged_context: Option<ProlongedContext>,
+    /// Request ID of the active session's `EnableTracing` IPC, cleared once its deferred
+    /// `InvokeMethodReply` has been drained during `TraceState::Stopping`.
+    enable_request: Option<u64>,
     /// Partial trace packet returned from Perfetto but not yet written to Fuchsia.
     packet_data: Vec<u8>,
 
@@ -164,6 +168,7 @@ impl CallbackState {
             socket_path,
             connection: None,
             prolonged_context: None,
+            enable_request: None,
             packet_data: Vec::new(),
             session: None,
         }
@@ -186,6 +191,7 @@ impl CallbackState {
     /// Clears the state kept for a trace session that has ended. Leaves `prolonged_context`
     /// alone: only `TraceState::Stopping` releases it (see `prolonged_context`).
     fn handle_stopped(&mut self) {
+        self.enable_request = None;
         self.packet_data.clear();
         self.session = None;
     }
@@ -279,7 +285,7 @@ impl CallbackState {
                         ..Default::default()
                     });
                 }
-                connection.enable_tracing(
+                let enable_request = connection.enable_tracing(
                     current_task,
                     EnableTracingRequest {
                         trace_config: Some(TraceConfig {
@@ -297,6 +303,7 @@ impl CallbackState {
                 // EnableTracing has been sent now, so hold the context until Stopping tears
                 // Perfetto tracing down. If an error above returned early, EnableTracing wasn't
                 // sent and the context was dropped without being stored.
+                self.enable_request = Some(enable_request);
                 self.prolonged_context = Some(prolonged_context);
                 // Once tracing has started, open a recording session so pid/koid
                 // mappings are tracked for the duration of the trace.
@@ -318,6 +325,7 @@ impl CallbackState {
                     }
                     return Ok(());
                 };
+                let mut pending_enable_request = self.enable_request.take();
                 // With the context held, this Stopping is for the session it belongs to, or a
                 // stale one for a session that ended before we acquired the context. In the
                 // stale case Perfetto tracing pauses for the current session until its own
@@ -332,8 +340,11 @@ impl CallbackState {
                     let frame = connection.next_frame_blocking(current_task)?;
                     if frame.request_id == Some(disable_request) {
                         break;
+                    } else if pending_enable_request.is_some_and(|id| frame.request_id == Some(id))
+                    {
+                        pending_enable_request = None;
                     } else {
-                        log_error!(
+                        log_debug!(
                             "Ignoring frame while looking for DisableTracingRequest: {frame:?}"
                         );
                     }
@@ -372,11 +383,14 @@ impl CallbackState {
                 loop {
                     let frame = self.connection(current_task)?.next_frame_blocking(current_task)?;
                     if frame.request_id != Some(read_buffers_request) {
+                        if pending_enable_request.is_some_and(|id| frame.request_id == Some(id)) {
+                            pending_enable_request = None;
+                        } else {
+                            log_debug!(
+                                "perfetto_consumer ignoring frame while looking for ReadBuffersRequest {read_buffers_request}: {frame:?}"
+                            );
+                        }
                         continue;
-                    } else {
-                        log_debug!(
-                            "perfetto_consumer ignoring frame while looking for ReadBuffersRequest {read_buffers_request}: {frame:?}"
-                        );
                     }
                     if let Some(ipc_frame::Msg::MsgInvokeMethodReply(reply)) = &frame.msg {
                         if let Ok(response) = decode_read_buffers_response(
@@ -407,12 +421,28 @@ impl CallbackState {
                 // FreeBuffers comes only after the last ReadBuffers reply: traced reads the
                 // buffers in several tasks, and a FreeBuffers handled in between frees them, so
                 // the response would never get its last reply.
-                // The response to a free buffers request does not have anything meaningful,
-                // so we don't need to worry about tracking the request id to match to the
-                // response.
-                let _free_buffers_request_id = self
-                    .connection(current_task)?
+                // Drain until both the FreeBuffers reply and (if not already seen) the deferred
+                // EnableTracing reply arrive: when FreeBuffers forces `will_notify_on_stop` data
+                // sources to finish disabling, traced resolves FreeBuffersResponse synchronously
+                // and posts OnTracingDisabled (EnableTracingResponse) on its task runner, so the
+                // EnableTracing reply can arrive after the FreeBuffers reply.
+                let connection = self.connection(current_task)?;
+                let free_buffers_request = connection
                     .free_buffers(current_task, FreeBuffersRequest { buffer_ids: vec![0] })?;
+                let mut pending_free_buffers_request = Some(free_buffers_request);
+                while pending_free_buffers_request.is_some() || pending_enable_request.is_some() {
+                    let frame = connection.next_frame_blocking(current_task)?;
+                    if pending_free_buffers_request.is_some_and(|id| frame.request_id == Some(id)) {
+                        pending_free_buffers_request = None;
+                    } else if pending_enable_request.is_some_and(|id| frame.request_id == Some(id))
+                    {
+                        pending_enable_request = None;
+                    } else {
+                        log_debug!(
+                            "Ignoring frame while draining FreeBuffers/EnableTracing replies: {frame:?}"
+                        );
+                    }
+                }
                 let elapsed = (zx::MonotonicInstant::get() - start_time).into_millis();
                 let PacketForwarder {
                     packets_written,
@@ -675,14 +705,19 @@ pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), anyhow::Error> 
 mod tests {
     use super::*;
     use crate::testing::{TraceSession, lock_trace_engine};
+    use perfetto_protos::perfetto::protos::IpcFrame;
     use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_core::vfs::socket::{SocketDomain, SocketType, UnixSocket};
+    use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::vfs::FdEvents;
 
-    // The tests below run `CallbackState::on_state_change()` with and without a trace context.
-    // They have no Perfetto consumer endpoint that answers EnableTracing, DisableTracing and
-    // ReadBuffers, so every attempt to connect to Perfetto fails. So no test covers a Started that
-    // enables Perfetto tracing and keeps the context, or a Stopping that then disables Perfetto
-    // tracing, reads the buffers and releases the context. If Started stopped storing the context
-    // after EnableTracing, every Stopping would skip Perfetto and no test here would fail.
+    // The first five tests below run `CallbackState::on_state_change()` with `/nonexistent/...`
+    // so every attempt to connect to Perfetto fails, exercising the skip, retry, and cleanup paths
+    // without a Perfetto endpoint. `stopping_drains_deferred_enable_and_free_buffers_replies` then
+    // injects a `UnixSocket` pair via `Consumer::from_file` to cover `Started` (enabling Perfetto
+    // tracing and holding the prolonged context) and `Stopping` (disabling tracing, reading and
+    // freeing buffers, draining the `FreeBuffers` and deferred `EnableTracing` replies, and
+    // releasing the context) end-to-end.
 
     #[fuchsia::test]
     async fn started_without_trace_context_skips_perfetto() {
@@ -838,6 +873,193 @@ mod tests {
                 panic!("Stopping: {e:?}");
             }
             assert!(callback_state.connection.is_none(), "Stopping connected to Perfetto");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn stopping_drains_deferred_enable_and_free_buffers_replies() {
+        spawn_kernel_and_run(async |current_task| {
+            let _session = TraceSession::start();
+            let (client_file, server_file) = UnixSocket::new_pair(
+                current_task,
+                SocketDomain::Unix,
+                SocketType::Stream,
+                OpenFlags::RDWR,
+            )
+            .expect("new_pair");
+
+            let mut server_conn = perfetto::IpcConnection::new(server_file.clone());
+            let mut server_reader = perfetto::FrameReader::new(server_file);
+
+            // Queue BindServiceReply (`request_id = 1`) before `Consumer::from_file` reads it.
+            server_conn
+                .write_frame(
+                    IpcFrame {
+                        request_id: Some(1),
+                        data_for_testing: Vec::new(),
+                        msg: Some(ipc_frame::Msg::MsgBindServiceReply(
+                            ipc_frame::BindServiceReply {
+                                success: Some(true),
+                                service_id: Some(1),
+                                methods: vec![
+                                    ipc_frame::bind_service_reply::MethodInfo {
+                                        id: Some(1),
+                                        name: Some("EnableTracing".to_string()),
+                                    },
+                                    ipc_frame::bind_service_reply::MethodInfo {
+                                        id: Some(2),
+                                        name: Some("DisableTracing".to_string()),
+                                    },
+                                    ipc_frame::bind_service_reply::MethodInfo {
+                                        id: Some(3),
+                                        name: Some("ReadBuffers".to_string()),
+                                    },
+                                    ipc_frame::bind_service_reply::MethodInfo {
+                                        id: Some(4),
+                                        name: Some("FreeBuffers".to_string()),
+                                    },
+                                ],
+                            },
+                        )),
+                    },
+                    current_task,
+                )
+                .expect("write BindServiceReply");
+
+            let consumer = perfetto::Consumer::from_file(current_task, client_file.clone())
+                .expect("Consumer::from_file");
+            let bind_req = server_reader.next_frame_blocking(current_task).expect("read bind");
+            assert_eq!(bind_req.request_id, Some(1));
+
+            let mut callback_state = CallbackState::new("/nonexistent/perfetto-consumer".into());
+            callback_state.connection = Some(consumer);
+
+            // Session 1: deferred `EnableTracing` reply arrives before `DisableTracing` resolves.
+            callback_state
+                .on_state_change(TraceState::Started, current_task)
+                .expect("first Started should succeed");
+            assert!(callback_state.prolonged_context.is_some());
+            assert_eq!(callback_state.enable_request, Some(2));
+            let enable_req =
+                server_reader.next_frame_blocking(current_task).expect("read first EnableTracing");
+            assert_eq!(enable_req.request_id, Some(2));
+
+            // Queue replies in the order Perfetto's `traced` emits them across session teardown
+            // when tracing disables before `DisableTracing` resolves (interleaved with unrelated
+            // frames to exercise the skip branches of all three drain loops):
+            // - `request_id = 98` (unrelated frame before DisableTracing reply)
+            // - `request_id = 2` (deferred EnableTracing reply arriving before DisableTracing)
+            // - `request_id = 3` (DisableTracing reply)
+            // - `request_id = 99` (unrelated frame before ReadBuffers reply)
+            // - `request_id = 4` (ReadBuffers reply with `has_more = false`)
+            // - `request_id = 100` (unrelated frame before FreeBuffers reply)
+            // - `request_id = 5` (FreeBuffers reply)
+            for (req_id, has_more) in [
+                (98, false),
+                (2, false),
+                (3, false),
+                (99, false),
+                (4, false),
+                (100, false),
+                (5, false),
+            ] {
+                server_conn
+                    .write_frame(
+                        IpcFrame {
+                            request_id: Some(req_id),
+                            data_for_testing: Vec::new(),
+                            msg: Some(ipc_frame::Msg::MsgInvokeMethodReply(
+                                ipc_frame::InvokeMethodReply {
+                                    success: Some(true),
+                                    has_more: Some(has_more),
+                                    reply_proto: Some(Vec::new()),
+                                },
+                            )),
+                        },
+                        current_task,
+                    )
+                    .expect("write reply");
+            }
+
+            callback_state
+                .on_state_change(TraceState::Stopping, current_task)
+                .expect("first Stopping should drain replies cleanly");
+            assert!(callback_state.prolonged_context.is_none());
+            assert!(callback_state.enable_request.is_none());
+
+            // Verify all three requests (`DisableTracing` = 3, `ReadBuffers` = 4, `FreeBuffers` = 5)
+            // were sent and all queued replies on `client_file` were consumed.
+            for expected_id in [3, 4, 5] {
+                let req = server_reader.next_frame_blocking(current_task).expect("read request");
+                assert_eq!(req.request_id, Some(expected_id));
+            }
+            let events = client_file.query_events(current_task).expect("query_events");
+            assert!(
+                !events.contains(FdEvents::POLLIN),
+                "client socket still has unread frames after first Stopping: {events:?}"
+            );
+
+            callback_state
+                .on_state_change(TraceState::Stopped, current_task)
+                .expect("Stopped should succeed");
+
+            // Session 2 (reusing the same consumer connection): `FreeBuffers` forces
+            // `will_notify_on_stop` data sources to finish disabling via `PostTask`.
+            callback_state
+                .on_state_change(TraceState::Started, current_task)
+                .expect("second Started should succeed");
+            assert!(callback_state.prolonged_context.is_some());
+            assert_eq!(callback_state.enable_request, Some(6));
+            let enable_req =
+                server_reader.next_frame_blocking(current_task).expect("read second EnableTracing");
+            assert_eq!(enable_req.request_id, Some(6));
+
+            // Queue replies in the order Perfetto's `traced` emits them across session teardown
+            // when `FreeBuffers` resolves synchronously before the posted `OnTracingDisabled`
+            // task emits `EnableTracingResponse`:
+            // - `request_id = 7` (DisableTracing reply)
+            // - `request_id = 8` (ReadBuffers reply with `has_more = false`)
+            // - `request_id = 9` (FreeBuffers reply arriving before deferred EnableTracing reply)
+            // - `request_id = 101` (unrelated frame before deferred EnableTracing reply)
+            // - `request_id = 6` (deferred EnableTracing reply arriving after FreeBuffers reply)
+            for (req_id, has_more) in [(7, false), (8, false), (9, false), (101, false), (6, false)]
+            {
+                server_conn
+                    .write_frame(
+                        IpcFrame {
+                            request_id: Some(req_id),
+                            data_for_testing: Vec::new(),
+                            msg: Some(ipc_frame::Msg::MsgInvokeMethodReply(
+                                ipc_frame::InvokeMethodReply {
+                                    success: Some(true),
+                                    has_more: Some(has_more),
+                                    reply_proto: Some(Vec::new()),
+                                },
+                            )),
+                        },
+                        current_task,
+                    )
+                    .expect("write reply");
+            }
+
+            callback_state
+                .on_state_change(TraceState::Stopping, current_task)
+                .expect("second Stopping should wait for both FreeBuffers and EnableTracing");
+            assert!(callback_state.prolonged_context.is_none());
+            assert!(callback_state.enable_request.is_none());
+
+            // Verify all three requests (`DisableTracing` = 7, `ReadBuffers` = 8, `FreeBuffers` = 9)
+            // were sent and all queued replies on `client_file` were consumed.
+            for expected_id in [7, 8, 9] {
+                let req = server_reader.next_frame_blocking(current_task).expect("read request");
+                assert_eq!(req.request_id, Some(expected_id));
+            }
+            let events = client_file.query_events(current_task).expect("query_events");
+            assert!(
+                !events.contains(FdEvents::POLLIN),
+                "client socket still has unread frames after second Stopping: {events:?}"
+            );
         })
         .await;
     }

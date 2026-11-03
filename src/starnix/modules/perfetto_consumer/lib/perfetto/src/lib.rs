@@ -123,7 +123,7 @@ impl IpcConnection {
         self.write_frame(msg, current_task)
     }
 
-    fn write_frame(
+    pub fn write_frame(
         &mut self,
         frame: IpcFrame,
         current_task: &CurrentTask,
@@ -242,6 +242,14 @@ impl Consumer {
         let conn = SocketFile::get_from_file(&conn_file)?;
         let peer = SocketPeer::Handle(resolve_unix_socket_address(current_task, socket_path)?);
         conn.connect(current_task, peer)?;
+        Self::from_file(current_task, conn_file)
+    }
+
+    /// Initializes a `Consumer` over an already-connected `conn_file`.
+    pub fn from_file(
+        current_task: &CurrentTask,
+        conn_file: FileHandle,
+    ) -> Result<Self, anyhow::Error> {
         let mut frame_reader = FrameReader::new(conn_file.clone());
         let mut request_id = 1;
 
@@ -260,7 +268,7 @@ impl Consumer {
         );
         bind_service_message.encode(&mut bind_service_bytes)?;
         let mut bind_service_buffer: VecInputBuffer = bind_service_bytes.into();
-        conn.file().write(current_task, &mut bind_service_buffer)?;
+        conn_file.write(current_task, &mut bind_service_buffer)?;
 
         let reply_frame = frame_reader.next_frame_blocking(current_task)?;
 
