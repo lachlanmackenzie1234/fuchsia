@@ -166,7 +166,24 @@ stopping the daemon.
    {"success": true, "body": {"address": "0x1000", "size": 16, "hex_bytes": "000102030405060708090a0b0c0d0e0f", "u32_le": ["0x03020100"], "u64_le": ["0x0706050403020100"], "rows": [{"address": "0x1000", "bytes_hex": "00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", "ascii": "................"}]}}
    ```
 
-14. **Stop the daemon**:
+14. **Manage tracepoints**:
+   ```bash
+   # Set a tracepoint
+   fx debug cli tracepoint my_func -e x --locals --max-hits 10
+
+   # List tracepoints
+   fx debug cli tracepoint --list
+
+   # Disable or re-enable a tracepoint
+   fx debug cli tracepoint --disable 1
+   fx debug cli tracepoint --enable 1
+
+   # Delete a single tracepoint or clear all tracepoints
+   fx debug cli tracepoint 1 -d
+   fx debug cli tracepoint --clear
+   ```
+
+15. **Stop the daemon**:
    ```bash
    fx debug cli stop
    ```
@@ -297,7 +314,29 @@ For programmatic environments or agents, the same operations can be invoked via 
    {"success": true, "body": {"address": "0x1000", "size": 16, "hex_bytes": "000102030405060708090a0b0c0d0e0f", "u32_le": ["0x03020100"], "u64_le": ["0x0706050403020100"], "rows": [{"address": "0x1000", "bytes_hex": "00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f", "ascii": "................"}]}}
    ```
 
-14. **Stop the daemon**:
+14. **Manage tracepoints**:
+   ```bash
+   fx debug cli --json '{"command": "tracepoint", "function": "my_func", "max_hits": 10}'
+   ```
+   Output:
+   ```json
+   {
+     "success": true,
+     "body": {
+       "tracepoints": [
+         {
+           "id": 1,
+           "location": "my_func",
+           "max_hits": 10,
+           "enabled": true,
+           "verified": true
+         }
+       ]
+     }
+   }
+   ```
+
+15. **Stop the daemon**:
    ```bash
    fx debug cli --json '{"command": "stop"}'
    ```
@@ -324,6 +363,7 @@ For programmatic environments or agents, the same operations can be invoked via 
 | `aspace` | `aspace [addr] [-p <pid>] [-f <filter>]` | `aspace` |
 | `handles` | `handles [-p <pid>] [--type <t>] [-k <koid>] [--detail]` | `handles` |
 | `mem-read` | `mem-read <addr> [-s <size>] [-p <pid>] [-t <id>]` | `mem-read` |
+| `tracepoint` | `tracepoint (<target> \| --list \| --clear \| --enable <id> \| --disable <id> \| <id> -d)` | `tracepoint` |
 
 
 ## Technical Architecture

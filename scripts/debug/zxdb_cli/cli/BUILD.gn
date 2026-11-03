@@ -42,6 +42,7 @@ if (is_host) {
       "commands/step_in.py",
       "commands/stop.py",
       "commands/threads.py",
+      "commands/tracepoint.py",
       "commands/variables.py",
       "commands/wait_for_event.py",
       "commands/watch_cmd.py",
