@@ -19,19 +19,22 @@ void UfsTest::InitMockDevice() {
   TestUfs::SetSupportsPowerDownSuspend(false);
   TestUfs::SetSupportsRuntimePowerManagement(false);
   std::unique_ptr<zx::interrupt> irq = std::make_unique<zx::interrupt>();
-  ZX_ASSERT(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, irq.get()) == ZX_OK);
+  driver_test().RunInEnvironmentTypeContext([&](Environment &env) {
+    env.pci_server().CreateBar(0, RegisterMap::kRegisterSize, /*is_mmio=*/true);
+    ZX_ASSERT(env.pci_server().AddLegacyInterrupt().duplicate(ZX_RIGHT_SAME_RIGHTS, irq.get()) ==
+              ZX_OK);
+  });
 
   // Configure mock device.
   mock_device_.Init(std::move(irq));
   ZX_ASSERT(mock_device_.AddLun(0) == ZX_OK);
+
+  // Init resets dma_handler_, so bind its new fake BTI afterward.
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment &env) { env.pci_server().SetBti(mock_device_.GetFakeBti()); });
 }
 
 void UfsTest::StartDriver(bool supply_power_framework) {
-  driver_test().RunInEnvironmentTypeContext([&](Environment &env) {
-    // Device parameters for physical (parent) device
-    env.pci_server().SetMockDevice(&mock_device_);
-  });
-
   TestUfs::SetMockDevice(&mock_device_);
 
   // Emulate the power element that driver_manager creates for a node whose manifest sets
