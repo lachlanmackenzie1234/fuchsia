@@ -415,11 +415,6 @@ impl HandleTable {
         self.koid
     }
 
-    /// Returns the random value mixer for this handle table.
-    pub fn random_value(&self) -> u32 {
-        self.random_value
-    }
-
     /// Returns the number of handles in this handle table.
     pub fn handle_count(&self) -> u32 {
         ksync::lock!(let guard = self.read_lock());
@@ -863,18 +858,6 @@ pub type HandleTableReadGuard<'a> = HandleTableLockReadGuard<'a>;
 
 /// RAII writer lock guard for a handle table.
 pub type HandleTableWriteGuard<'a> = HandleTableLockWriteGuard<'a>;
-
-impl HandleTableLockReadGuard<'_> {
-    /// Retrieves a handle reference while holding the handle table lock.
-    #[inline]
-    pub fn get_handle(
-        &self,
-        caller: &ProcessDispatcher,
-        handle_value: HandleValue,
-    ) -> Option<HandleRef<'_>> {
-        self.parent.get_handle_locked_internal(Some(caller), handle_value.raw_value(), self.token())
-    }
-}
 
 impl HandleTableLockWriteGuard<'_> {
     /// Retrieves a handle reference while holding the handle table write lock.

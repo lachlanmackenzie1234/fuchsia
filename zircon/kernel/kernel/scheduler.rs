@@ -12978,48 +12978,6 @@ pub unsafe extern "C" fn rust_scheduler_request_power_level_for_testing(
 }
 
 /// # Safety
-/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_update_processing_rates(
-    info: *mut zx_types::zx_cpu_performance_info_t,
-    count: usize,
-) {
-    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
-    let slice =
-        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
-    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
-    unsafe { Scheduler::update_processing_rates(slice) };
-}
-
-/// # Safety
-/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_get_performance_scales(
-    info: *mut zx_types::zx_cpu_performance_info_t,
-    count: usize,
-) {
-    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
-    let slice =
-        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
-    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
-    unsafe { Scheduler::get_performance_scales(slice) };
-}
-
-/// # Safety
-/// `info` must point to `count` valid `zx_cpu_performance_info_t` elements.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_get_default_performance_scales(
-    info: *mut zx_types::zx_cpu_performance_info_t,
-    count: usize,
-) {
-    // SAFETY: When `count > 0`, the caller guarantees `info` points to `count` valid elements.
-    let slice =
-        if count == 0 { &mut [] } else { unsafe { core::slice::from_raw_parts_mut(info, count) } };
-    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
-    unsafe { Scheduler::get_default_performance_scales(slice) };
-}
-
-/// # Safety
 /// `limits` must point to `count` valid `zx_cpu_perf_limit_t` elements.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_scheduler_update_processing_limits(
@@ -13031,23 +12989,6 @@ pub unsafe extern "C" fn rust_scheduler_update_processing_limits(
         if count == 0 { &[] } else { unsafe { core::slice::from_raw_parts(limits, count) } };
     // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
     unsafe { Scheduler::update_processing_limits(slice) };
-}
-
-/// # Safety
-/// `limits` must point to `count` valid `zx_cpu_perf_limit_t` elements.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_get_processing_limits(
-    limits: *mut zx_types::zx_cpu_perf_limit_t,
-    count: usize,
-) {
-    // SAFETY: When `count > 0`, the caller guarantees `limits` points to `count` valid elements.
-    let slice = if count == 0 {
-        &mut []
-    } else {
-        unsafe { core::slice::from_raw_parts_mut(limits, count) }
-    };
-    // SAFETY: Per-CPU schedulers are initialized and `queue_lock_` is not held by the caller.
-    unsafe { Scheduler::get_processing_limits(slice) };
 }
 
 /// Blocks `current_thread` in the scheduler.

@@ -19,6 +19,7 @@
 #define FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST
 #include <zircon/syscalls-next.h>
 #undef FUCHSIA_UNSUPPORTED_ALLOW_SYSCALLS_NEXT_ON_HOST
+#include <lib/stdcompat/array.h>
 #include <lib/stdcompat/utility.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/time.h>
@@ -33,12 +34,12 @@
 #include <kernel/cpu.h>
 #include <kernel/deadline.h>
 #include <kernel/event.h>
+#include <kernel/percpu.h>
+#include <kernel/scheduler.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <ktl/limits.h>
 #include <ktl/optional.h>
-#include <object/handle.h>
-#include <object/port_dispatcher.h>
 
 namespace {
 

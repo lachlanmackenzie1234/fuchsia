@@ -264,11 +264,6 @@ impl Handle {
         HandleTableArena::from_u32(value)
     }
 
-    /// Returns the number of outstanding handles pointing to the given dispatcher.
-    pub fn count(dispatcher: &Dispatcher) -> u32 {
-        dispatcher.current_handle_count()
-    }
-
     /// Initializes an allocated arena slot field by field. The atomic `handle_table_id` and
     /// `base_value` fields are written with atomic stores because lockless lookups may read them
     /// concurrently; a whole-struct `write` would race with those readers.
@@ -605,11 +600,6 @@ impl HandleOwner {
     #[inline]
     pub fn as_raw(&self) -> *mut Handle {
         self.ptr.as_ptr()
-    }
-
-    /// Returns the non-null pointer backing this handle owner.
-    pub fn as_non_null(&self) -> NonNull<Handle> {
-        self.ptr
     }
 
     /// Returns a borrowed `HandleRef` referencing this handle.

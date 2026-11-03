@@ -27,7 +27,6 @@ library_headers("headers") {
 
   if (is_kernel) {
     headers += [ "lib/power-management/pdev-power-level-controller.h" ]
-    public_deps += [ "//zircon/kernel/object" ]
   }
 }
 

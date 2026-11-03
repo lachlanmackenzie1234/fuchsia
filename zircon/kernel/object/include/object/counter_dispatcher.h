@@ -15,6 +15,8 @@
 #include <object/dispatcher.h>
 #include <object/handle.h>
 
+class CounterDispatcher;
+
 extern "C" {
 zx_status_t cpp_counter_dispatcher_create(
     ffi::Uninitialized<KernelHandle<CounterDispatcher>>* handle_out);

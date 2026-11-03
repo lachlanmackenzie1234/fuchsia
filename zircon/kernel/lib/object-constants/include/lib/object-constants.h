@@ -221,10 +221,6 @@ constexpr size_t kPortPacketAllocatorOffset = 80;
 // PortPacket helpers (is_canceled()) and the Rust PortDispatcher.
 constexpr uint32_t kPortPacketTypeCanceled = 0xffffffff;
 
-// Size and alignment for PortInterruptPacket.
-constexpr size_t kPortInterruptPacketSize = 32;
-constexpr size_t kPortInterruptPacketAlign = 8;
-
 // Size and alignment for FutexContext (Rust state).
 constexpr size_t kFutexContextStorageSize = 56;
 constexpr size_t kFutexContextStorageAlign = 8;

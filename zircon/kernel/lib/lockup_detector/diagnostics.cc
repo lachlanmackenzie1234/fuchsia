@@ -13,8 +13,6 @@
 
 #include <kernel/scheduler.h>
 #include <ktl/bit.h>
-#include <object/process_dispatcher.h>
-#include <object/thread_dispatcher.h>
 
 #if defined(__aarch64__)
 #include <arch/arm64/dap.h>

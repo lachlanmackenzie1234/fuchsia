@@ -189,11 +189,7 @@ void rust_scheduler_on_power_domain_set_updated(Scheduler* sched, SchedProcessin
 zx_status_t rust_scheduler_update_active_power_level(Scheduler* sched, uint8_t power_level);
 void rust_scheduler_initialize_processing_rate(Scheduler* sched, SchedProcessingRate scale);
 bool rust_scheduler_request_power_level_for_testing(Scheduler* sched, uint8_t power_level);
-void rust_scheduler_update_processing_rates(zx_cpu_performance_info_t* info, size_t count);
-void rust_scheduler_get_performance_scales(zx_cpu_performance_info_t* info, size_t count);
-void rust_scheduler_get_default_performance_scales(zx_cpu_performance_info_t* info, size_t count);
 void rust_scheduler_update_processing_limits(const zx_cpu_perf_limit_t* limits, size_t count);
-void rust_scheduler_get_processing_limits(zx_cpu_perf_limit_t* limits, size_t count);
 
 void rust_kernel_scheduler_initialize_thread(Thread* thread,
                                              const SchedulerState::BaseProfile* profile);
@@ -574,46 +570,11 @@ class Scheduler {
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
              ChainLockable::GetLock(target), preempt_disabled_token);
 
-  // Updates the performance scales of the requested CPUs and returns the
-  // effective values in place, which may be different than the requested values
-  // if they are below the minimum safe values for the respective CPUs.
-  //
-  // Requires info.size() <= num CPUs.
-  static void UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info)
-      TA_EXCL(queue_lock_) {
-    rust_scheduler_update_processing_rates(info.data(), info.size());
-  }
-
-  // Gets the performance scales of up to info.size() CPUs. Returns the last
-  // values requested by userspace, even if they have not yet taken effect.
-  //
-  // Requires info.size() <= num CPUs.
-  static void GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_) {
-    rust_scheduler_get_performance_scales(info.data(), info.size());
-  }
-
-  // Gets the default performance scales of up to info.size() CPUs. Returns the
-  // initial values determined by the system topology, or 1.0 when no topology
-  // is available.
-  //
-  // Requires info.size() <= num CPUs.
-  static void GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info)
-      TA_EXCL(queue_lock_) {
-    rust_scheduler_get_default_performance_scales(info.data(), info.size());
-  }
-
   // Updates the performance limits of the requested CPUs.
   //
   // Requires limits.size() <= num CPUs.
   static void UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_) {
     rust_scheduler_update_processing_limits(limits.data(), limits.size());
-  }
-
-  // Gets the processing limits of up to limits.size() CPUs.
-  //
-  // Requires limits.size() <= num CPUs.
-  static void GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_) {
-    rust_scheduler_get_processing_limits(limits.data(), limits.size());
   }
 
   // Returns the CPU stats for the given CPU number, forward projected to

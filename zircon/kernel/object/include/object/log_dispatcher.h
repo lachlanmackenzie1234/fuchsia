@@ -15,6 +15,8 @@
 #include <object/dispatcher.h>
 #include <object/handle.h>
 
+class LogDispatcher;
+
 extern "C" {
 // Allocates the C++ LogDispatcher instance. Implemented in C++ (log_dispatcher_ffi.cc)
 // and called by Rust during LogDispatcher::create.

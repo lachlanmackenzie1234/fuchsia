@@ -424,12 +424,6 @@ pub struct PortInterruptPacket {
     key: UnsafeCell<u64>,
 }
 
-zr::static_assert_size_and_align!(
-    PortInterruptPacket,
-    object_constants::kPortInterruptPacketSize,
-    object_constants::kPortInterruptPacketAlign,
-);
-
 impl PortInterruptPacket {
     /// Returns a pin-initializer for an unlinked, zeroed `PortInterruptPacket`.
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {

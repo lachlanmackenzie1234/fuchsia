@@ -29,7 +29,6 @@
 #include <ktl/atomic.h>
 #include <ktl/iterator.h>
 #include <lk/init.h>
-#include <object/thread_dispatcher.h>
 #include <vm/fault.h>
 #include <vm/vm_aspace.h>
 

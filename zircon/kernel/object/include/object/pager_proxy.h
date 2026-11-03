@@ -14,6 +14,7 @@
 #include <object/port_dispatcher.h>
 #include <vm/page_source.h>
 
+class PagerDispatcher;
 class PagerProxy;
 
 extern "C" {

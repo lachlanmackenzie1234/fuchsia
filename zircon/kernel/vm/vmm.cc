@@ -20,7 +20,6 @@
 #include <kernel/mutex.h>
 #include <kernel/restricted_state.h>
 #include <kernel/task_runtime_timers.h>
-#include <object/diagnostics.h>
 #include <vm/fault.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
