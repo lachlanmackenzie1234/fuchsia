@@ -94,6 +94,7 @@ package_group(
         "//src/developer/ffx/plugins/platform/preflight",
         "//src/developer/ffx/plugins/sdk",
         "//src/developer/ffx/tools/bluetooth/common",
+        "//src/developer/ffx/tools/bluetooth/src/peer",
         "//src/devices/lib/fidl-ir",
         "//src/lib/analytics/rust",
         "//src/lib/assembly/assembled_system",

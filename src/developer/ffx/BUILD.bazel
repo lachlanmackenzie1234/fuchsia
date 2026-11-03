@@ -100,6 +100,8 @@ test_suite(
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common_host_test",
         "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common_test",
         "//src/developer/ffx/tools/bluetooth/src/controller:ffx_bluetooth_controller_test",
+        "//src/developer/ffx/tools/bluetooth/src/pairable:ffx_bluetooth_pairable_test",
+        "//src/developer/ffx/tools/bluetooth/src/peer:ffx_bluetooth_peer_test",
         "//src/developer/ffx/tools/efi:ffx-efi_test",
         "//src/developer/ffx/tools/speedtest/common:speedtest_fdomain_test",
     ],
