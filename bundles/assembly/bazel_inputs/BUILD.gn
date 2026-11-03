@@ -1371,8 +1371,6 @@ group("audio_driver_development_tools") {
 group("audio_full_stack_development_tools") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-capture-timestamp-validator",
-    "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-effects-ctl",
-    "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio_listener",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/signal_generator",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/vol",
     "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_player",

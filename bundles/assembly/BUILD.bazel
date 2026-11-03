@@ -4067,8 +4067,8 @@ assembly_input_bundle(
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-capture-timestamp-validator",
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio-effects-ctl",
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/audio_listener",
+        "//src/media/audio/tools/audio-effects-ctl",
+        "//src/media/audio/tools/audio_listener",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/signal_generator",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/vol",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_player",
