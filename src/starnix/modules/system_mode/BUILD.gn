@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_library.gni")
+
+rustc_library("system_mode") {
+  name = "starnix-modules-system-mode"
+  edition = "2024"
+  version = "0.1.0"
+  source_root = "lib.rs"
+  with_unit_tests = true
+
+  # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
+  exclude_toolchain_tags = [
+    "asan",
+    "hwasan",
+  ]
+
+  sources = [ "lib.rs" ]
+
+  configs += [ "//src/starnix/build:kernel_library_config" ]
+
+  visibility = [ "//src/starnix/modules/*" ]
+
+  deps = [
+    "//src/starnix/kernel/core",
+    "//src/starnix/lib/starnix_uapi",
+  ]
+
+  test_deps = [ "//src/lib/fuchsia" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":starnix-system-mode-tests" ]
+}
+
+fuchsia_unittest_package("starnix-system-mode-tests") {
+  manifest = "meta/starnix_system_mode_tests.cml"
+  deps = [ ":system_mode_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+  test_type = "starnix"
+}

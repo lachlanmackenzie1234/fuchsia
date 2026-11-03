@@ -456,6 +456,7 @@ mod tests {
                 "framebuffer aspect_ratio=9:16".to_string(),
                 "magma supported_vendors=0x13B5,0x5143,0x8086".to_string(),
                 "perfetto socket_path=/dev/socket/traced_consumer".to_string(),
+                "system_mode".to_string(),
                 "thermal cooling=cpu,fcc=8".to_string(),
             ],
         );
@@ -465,6 +466,8 @@ mod tests {
         assert!(features.container);
         assert!(modules.is_enabled("ashmem"));
         assert_eq!(modules.args("ashmem"), Some(&[][..]));
+        assert!(modules.is_enabled("system_mode"));
+        assert_eq!(modules.args("system_mode"), Some(&[][..]));
         assert_eq!(modules.args("boot_notifier"), Some(&["cpu_boost_secs=60".to_string()][..]));
         assert_eq!(modules.args("framebuffer"), Some(&["aspect_ratio=9:16".to_string()][..]));
         assert_eq!(

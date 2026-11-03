@@ -413,13 +413,15 @@ struct TaskSchedulerMapping {
     /// An optional inclusive `[min, max]` range (`0..=1024`) matched against the task's
     /// `uclamp.min` (`sched_util_min`).
     uclamp_min: Option<UclampRange>,
+    /// An optional regular expression matched against the active system power mode.
+    system_mode: Option<String>,
 }
 
 impl std::fmt::Debug for TaskSchedulerMapping {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "process `{}` thread `{}` cgroup `{:?}` is_leader `{:?}` min_nice `{:?}` max_nice `{:?}` uclamp_min `{:?}` role `{}`",
+            "process `{}` thread `{}` cgroup `{:?}` is_leader `{:?}` min_nice `{:?}` max_nice `{:?}` uclamp_min `{:?}` system_mode `{:?}` role `{}`",
             self.process,
             self.thread,
             self.cgroup,
@@ -427,6 +429,7 @@ impl std::fmt::Debug for TaskSchedulerMapping {
             self.min_nice,
             self.max_nice,
             self.uclamp_min,
+            self.system_mode,
             self.role
         )
     }
@@ -878,10 +881,16 @@ async fn create_container(
             m.min_nice.as_ref().map(|v| **v),
             m.max_nice.as_ref().map(|v| **v),
             m.uclamp_min.map(|UclampRange(min, max)| (min, max)),
+            m.system_mode.clone(),
             m.role.clone(),
         );
     }
     let task_mappings = task_mappings.build().context("adding custom task role")?;
+    if !modules.is_enabled("system_mode")
+        && start_info.program.task_role_overrides.iter().any(|m| m.system_mode.is_some())
+    {
+        log_warn!("task_role_overrides use system_mode but the system_mode module is disabled");
+    }
     let scheduler_manager = SchedulerManager::new(task_mappings);
 
     let crash_reporter = connect_to_protocol::<CrashReporterMarker>().unwrap();
@@ -1434,6 +1443,10 @@ mod test {
                     key: "uclamp_min".to_string(),
                     value: Some(Box::new(uclamp_min)),
                 },
+                DictionaryEntry {
+                    key: "system_mode".to_string(),
+                    value: Some(Box::new(DictionaryValue::Str("^(LAUNCH|GAME)$".to_string()))),
+                },
             ]),
             ..Default::default()
         };
@@ -1444,6 +1457,7 @@ mod test {
         ))
         .expect("deserialize 1..=1024");
         assert_eq!(mapping.uclamp_min, Some(UclampRange(1, 1024)));
+        assert_eq!(mapping.system_mode.as_deref(), Some("^(LAUNCH|GAME)$"));
 
         // Hyphenated range syntax ("min-max").
         let mapping: TaskSchedulerMapping = runner::serde::deserialize_program(&make_dict(

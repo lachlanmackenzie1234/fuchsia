@@ -3468,6 +3468,7 @@ mod tests {
             None,
             None,
             Some((1, 1024)),
+            None,
             "render_thread_boosted",
         );
         builder.add(".*", "^RenderThread$", None, "render_thread_default");

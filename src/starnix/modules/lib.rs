@@ -63,6 +63,7 @@ use starnix_modules_procfs::proc_fs;
 use starnix_modules_pstore::pstore_fs;
 use starnix_modules_rtc::rtc_device_init;
 use starnix_modules_selinuxfs::selinux_fs;
+use starnix_modules_system_mode::init_system_mode;
 use starnix_modules_touch_power_policy::TouchPowerPolicyDevice;
 use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
@@ -117,6 +118,7 @@ pub fn validate_module(name: &str, args: Option<&[&str]>) -> Result<(), Error> {
         | "network_manager"
         | "power_residency"
         | "rtc"
+        | "system_mode"
         | "tun"
         | "usbfs"
         | "wakeup_test"
@@ -218,6 +220,7 @@ impl Modules {
             "perfetto" => starnix_modules_perfetto_consumer::module_init(kernel, args)?,
             "power_residency" => init_power_residency_device(kernel),
             "rtc" => rtc_device_init(kernel)?,
+            "system_mode" => init_system_mode(kernel),
             "thermal" => starnix_modules_thermal::module_init(kernel, args)?,
             "tun" => {
                 registry.add_device(
