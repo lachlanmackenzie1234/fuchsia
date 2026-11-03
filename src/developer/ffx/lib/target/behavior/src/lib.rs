@@ -14,7 +14,6 @@ use ffx_target::{
 };
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::OnceCell;
 
@@ -236,7 +235,6 @@ pub struct FhoTargetEnvironment(Arc<FhoTargetEnvironmentOuter>);
 #[derive(Default)]
 pub struct FhoTargetEnvironmentOuter {
     inner: FhoTargetEnvironmentInner,
-    want_direct: AtomicBool,
 }
 
 impl std::ops::Deref for FhoTargetEnvironment {
@@ -252,17 +250,6 @@ impl FhoTargetEnvironmentOuter {
     /// to be used outside of the scope of an ffx subtool (outside of the `main` function).
     fn maybe_wrap_connection_errors(&self, err: fho::Error) -> fho::Error {
         self.inner.maybe_wrap_connection_errors(err)
-    }
-
-    /// Specify that we want a direct connection if we ever make that connection. Used when
-    /// an FfxTool specifies '#[direct]', but may not actually need a connection at all
-    pub fn set_direct(&self) {
-        self.want_direct.store(true, Ordering::Relaxed);
-    }
-
-    #[cfg(test)]
-    pub fn get_direct(&self) -> bool {
-        self.want_direct.load(Ordering::Acquire)
     }
 
     /// Initialize a direct connection behavior.
@@ -419,6 +406,7 @@ mod tests {
     use super::*;
     use ffx_config::test_env;
     use std::str::FromStr;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_strict() {
@@ -456,23 +444,14 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_connection_behavior_correct_with_set_direct() {
-        let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
-        let target_env = FhoTargetEnvironment::default();
-        target_env.set_direct();
-        let connector = target_env.init_connection_behavior(&env.context).await.unwrap();
-        assert!(connector.resolution().await.is_ok());
-    }
-
-    #[fuchsia::test]
     async fn set_behavior_persists() {
         let env = test_env().build().unwrap();
         let fho_env = fho::FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
         let target_env = target_interface(&fho_env);
-        assert_eq!(target_env.get_direct(), false);
-        target_env.set_direct();
+        assert!(target_env.behavior().is_err());
+        let _connector = target_env.init_connection_behavior(&env.context).await.unwrap();
         let target_env = target_interface(&fho_env);
-        assert_eq!(target_env.get_direct(), true);
+        assert!(target_env.behavior().is_ok());
     }
 
     fn write_test_cache(context: &EnvironmentContext, nodename: &str, ip: &str) {

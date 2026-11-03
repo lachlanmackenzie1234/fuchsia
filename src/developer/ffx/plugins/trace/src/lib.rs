@@ -388,7 +388,6 @@ fn print_grid(writer: &mut Writer, values: Vec<String>) -> Result<()> {
 
 type Writer = MachineWriter<TraceOutput>;
 #[derive(FfxTool)]
-#[target(direct)]
 pub struct TraceTool {
     #[with(deferred(moniker("/core/trace_manager")))]
     provisioner: Deferred<ProvisionerProxy>,

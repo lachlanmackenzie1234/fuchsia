@@ -33,7 +33,6 @@ if (is_host) {
       "//src/developer/ffx/lib/futures:lib",
       "//src/developer/ffx/lib/pbms:lib",
       "//src/developer/ffx/lib/target:lib",
-      "//src/developer/ffx/lib/target/behavior:lib",
       "//src/developer/ffx/lib/target/holders:lib",
       "//src/developer/ffx/lib/trace:lib",
       "//src/developer/ffx/lib/writer:lib",
