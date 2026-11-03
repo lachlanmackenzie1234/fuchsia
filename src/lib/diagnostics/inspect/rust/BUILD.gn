@@ -81,6 +81,7 @@ rustc_library("fuchsia-inspect") {
     "src/writer/state.rs",
     "src/writer/testing_utils.rs",
     "src/writer/types/base.rs",
+    "src/writer/types/blob_reader_writer.rs",
     "src/writer/types/bool_property.rs",
     "src/writer/types/bytes_property.rs",
     "src/writer/types/double_array.rs",
