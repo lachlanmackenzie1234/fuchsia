@@ -57,6 +57,7 @@ test_suite(
         "//src/connectivity/network/lib/netfilter:netfilter-tests",
         "//src/connectivity/network/lib/udp_serde:udp_serde-unittests",
         "//src/connectivity/network/lib/udp_serde:udp_serde_c_compilation-unittest",
+        "//src/connectivity/network/netstack3/bench:netstack3-benchmarks-test",
         "//src/connectivity/network/netstack3/core:netstack3-core-test-package",
     ],
     visibility = ["//src/connectivity:__pkg__"],
