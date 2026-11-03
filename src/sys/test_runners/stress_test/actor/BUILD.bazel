@@ -7,6 +7,15 @@ load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
+exports_files(
+    ["default.shard.cml"],
+    visibility = [
+        "//src/diagnostics/archivist/tests/stress-test:__pkg__",
+        "//src/sys/component_manager/stress_tests_alt:__pkg__",
+        "//src/sys/test_runners/stress_test/tests/test_data:__subpackages__",
+    ],
+)
+
 rustc_library(
     name = "stress-test-actor",
     srcs = ["src/actor.rs"],
