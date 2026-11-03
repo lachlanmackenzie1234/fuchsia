@@ -34,7 +34,10 @@ rustc_binary("bin") {
   ]
 
   sources = [ "src/main.rs" ]
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+  configs += [
+    "//build/config/rust/lints:clippy_warn_all",
+    "//build/config/rust:bootfs",
+  ]
 }
 
 renamed_binary("log_bin") {

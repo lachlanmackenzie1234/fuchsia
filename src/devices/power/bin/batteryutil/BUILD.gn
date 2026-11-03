@@ -33,6 +33,8 @@ rustc_binary("batteryutil") {
     "src/main.rs",
     "src/spmi.rs",
   ]
+
+  configs += [ "//build/config/rust:bootfs" ]
 }
 
 fuchsia_unittest_package("batteryutil-tests") {

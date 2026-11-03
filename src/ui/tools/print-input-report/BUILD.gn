@@ -49,6 +49,8 @@ rustc_binary("bin") {
     "//third_party/rust_crates:googletest",
     "//third_party/rust_crates:log",
   ]
+
+  configs += [ "//build/config/rust:bootfs" ]
 }
 
 fuchsia_unittest_package("print-input-report-tests") {
