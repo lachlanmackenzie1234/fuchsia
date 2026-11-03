@@ -13,9 +13,9 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/driver.h>
 #include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/fake-resource/cpp/fake-resource.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-#include <lib/fake-resource/resource.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zircon-internal/align.h>

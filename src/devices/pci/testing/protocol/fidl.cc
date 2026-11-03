@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fake-resource/resource.h>
+#include <lib/driver/fake-resource/cpp/fake-resource.h>
 #include <zircon/syscalls/resource.h>
 
 #include "src/devices/pci/testing/pci_protocol_fake.h"

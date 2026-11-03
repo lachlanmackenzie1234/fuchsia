@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
-#include <lib/fake-bti/bti.h>
 #include <lib/pci/constants.h>
+#include <lib/zx/bti.h>
 #include <zircon/errors.h>
 
 #include <fbl/algorithm.h>
@@ -97,6 +97,7 @@ class FakePciProtocolInternal {
   zx::interrupt& AddInterrupt(fuchsia_hardware_pci::InterruptMode mode);
   fuchsia_hardware_pci::wire::DeviceInfo SetDeviceInfoInternal(
       fuchsia_hardware_pci::wire::DeviceInfo new_info);
+  void SetBtiInternal(zx::bti bti) { bti_ = std::move(bti); }
 
   fuchsia_hardware_pci::InterruptMode irq_mode() const { return irq_mode_; }
   uint32_t irq_cnt() const { return irq_cnt_; }

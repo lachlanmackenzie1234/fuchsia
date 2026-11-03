@@ -53,6 +53,9 @@ class FakePciProtocol : public FakePciProtocolInternal,
     return SetDeviceInfoInternal(info);
   }
 
+  // Sets the BTI handle returned by |PciGetBti|.
+  void SetBti(zx::bti bti) { SetBtiInternal(std::move(bti)); }
+
   // Adds a vendor capability of size |size| to the device at |position| in PCI Configuration Space.
   void AddVendorCapability(uint8_t position, uint8_t size) {
     ZX_ASSERT_MSG(

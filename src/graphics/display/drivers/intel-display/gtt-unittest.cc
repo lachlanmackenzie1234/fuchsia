@@ -7,10 +7,10 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
+#include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/mmio/cpp/mmio-view.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/fake-bti/bti.h>
 #include <lib/zircon-internal/align.h>
 
 #include <vector>

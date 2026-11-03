@@ -6,7 +6,6 @@
 
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/fake-bti/bti.h>
 
 #include <memory>
 

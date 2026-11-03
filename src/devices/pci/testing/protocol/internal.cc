@@ -8,7 +8,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
-#include <lib/fake-resource/resource.h>
+#include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/pci/constants.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/sync/completion.h>
@@ -277,8 +277,9 @@ __EXPORT void FakePciProtocolInternal::reset() {
 
   zx_status_t status = zx::vmo::create(pci::kBaseConfigSize, /*options=*/0, &config());
   ZX_ASSERT(status == ZX_OK);
-  status = fake_bti_create(bti_.reset_and_get_address());
-  ZX_ASSERT(status == ZX_OK);
+  zx::result bti = fake_bti::CreateFakeBti();
+  ZX_ASSERT(bti.is_ok());
+  bti_ = std::move(*bti);
 }
 
 __EXPORT bool FakePciProtocolInternal::AllMappedInterruptsFreed() {

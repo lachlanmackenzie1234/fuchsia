@@ -8,12 +8,14 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/fake-bti/cpp/fake-bti.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
 #include <lib/pci/constants.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/object.h>
+#include <lib/zx/pmt.h>
 #include <lib/zx/vmo.h>
 #include <zircon/errors.h>
 #include <zircon/system/public/zircon/syscalls.h>
@@ -82,6 +84,26 @@ TEST_F(FakePciProtocolTests, GetBti) {
   // Verify it's a BTI at least.
   ASSERT_OK(bti.get_info(ZX_INFO_BTI, &info, sizeof(info), /*actual_count=*/nullptr,
                          /*avail_count=*/nullptr));
+}
+
+TEST_F(FakePciProtocolTests, SetBti) {
+  constexpr zx_paddr_t kExpectedPaddr = 0x1234000;
+  const zx_paddr_t paddrs[] = {kExpectedPaddr};
+  zx::result custom_bti = fake_bti::CreateFakeBtiWithPaddrs(paddrs);
+  ASSERT_OK(custom_bti);
+  pci::RunAsync(loop_, [&] { fake_pci().SetBti(std::move(*custom_bti)); });
+
+  zx::bti bti;
+  ASSERT_OK(pci().GetBti(0, &bti));
+
+  const size_t page_size = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
+  zx_paddr_t pinned_paddr = 0;
+  zx::pmt pmt;
+  ASSERT_OK(bti.pin(ZX_BTI_PERM_READ, vmo, 0, page_size, &pinned_paddr, 1, &pmt));
+  EXPECT_EQ(kExpectedPaddr, pinned_paddr);
+  ASSERT_OK(pmt.unpin());
 }
 
 TEST_F(FakePciProtocolTests, SetBusMastering) {
