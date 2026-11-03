@@ -29,7 +29,6 @@
 #include <ktl/atomic.h>
 #include <ktl/utility.h>
 #include <lk/init.h>
-#include <object/interrupt_dispatcher.h>
 #include <platform/timer.h>
 
 // Note: Do NOT attempt to make this inline static.  The storage needs to be

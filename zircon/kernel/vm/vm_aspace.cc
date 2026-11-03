@@ -31,7 +31,6 @@
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <ktl/algorithm.h>
-#include <object/process_dispatcher.h>
 #include <vm/fault.h>
 #include <vm/vm.h>
 #include <vm/vm_address_region.h>
