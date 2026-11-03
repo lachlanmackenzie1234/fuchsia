@@ -46,7 +46,6 @@ rustc_library(
     visibility = ["//src/sys/pkg/bin/grand-swd-binary:__pkg__"],
     deps = [
         ":system_update_committer_config",
-        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
         "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
@@ -62,7 +61,6 @@ rustc_library(
         "//src/lib/fuchsia-component",
         "//src/lib/fuchsia-runtime",
         "//src/lib/fuchsia-sync",
-        "//src/lib/sandbox",
         "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:futures",
