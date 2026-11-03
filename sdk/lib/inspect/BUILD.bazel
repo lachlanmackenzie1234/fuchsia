@@ -35,6 +35,7 @@ cml_shard(
         "//src/sys/test_manager/tests/test_data:__pkg__",
         "//src/sys/test_runners/rust/test_data/concurrency-test:__pkg__",
         "//src/sys/test_runners/rust/test_data/echo-integration-test:__pkg__",
+        "//src/sys/test_runners/stress_test/tests/test_data/echo:__pkg__",
     ],
 )
 
