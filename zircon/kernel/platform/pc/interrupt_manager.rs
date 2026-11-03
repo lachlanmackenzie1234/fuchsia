@@ -13,9 +13,10 @@ use crate::arch_rs::x86::interrupts::{
 use crate::dev_interrupt::{
     InterruptHandler, InterruptPolarity, InterruptTriggerMode, MAX_MSI_IRQS, MsiBlock,
 };
+use crate::ksync_kernel::RawSpinlock;
 use bitmap::{Bitmap, FixedStorage, RawBitmapGeneric};
 use core::sync::atomic::{AtomicBool, Ordering};
-use ksync::{KMutex, RawSpinlock, guarded, lock};
+use ksync::{KMutex, guarded, lock};
 use pin_init::{PinInit, pin_init, pin_init_array_from_fn};
 use zx_status::Status;
 
@@ -103,7 +104,7 @@ impl InterruptTableEntry {
             }
             true
         } else {
-            lock!(let guard = self.lock_mu_policy::<ksync::NoIrqSavePolicy>());
+            lock!(let guard = self.lock_mu_policy::<crate::ksync_kernel::NoIrqSavePolicy>());
             let fields = guard.fields();
             if fields.handler.present() {
                 fields.handler.invoke();

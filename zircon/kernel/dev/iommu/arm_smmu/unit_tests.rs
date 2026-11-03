@@ -33,7 +33,7 @@ use core::sync::atomic::Ordering;
 
 use debug::dprintf;
 use pin_init::PinInit;
-use region_alloc::{AllowOverlap, RegionAllocator, RegionSpan, TestRegionSet};
+use region_alloc::{AllowOverlap, RegionSpan, TestRegionSet};
 use zx_status::Status;
 
 use super::common::translation_table::{LEVELS, TranslationTableHelper, table_slice};
@@ -61,6 +61,8 @@ use super::v2::{
     StreamMatchRegGroup, addr_mode_to_string, arm_cbar_type_to_string, arm_s2cr_type_to_string,
     arm_smmu_mode_to_string, bti_mode_to_string, smr_intersects,
 };
+
+type RegionAllocator = region_alloc::RegionAllocator<super::common::SmmuRawMutex>;
 
 // Lightweight boolean assertion macros shared by both the host FFI test runner (`cross_test_ffi`)
 // and the in-kernel `#[ktest]` harness, where panicking on failure is undesirable.

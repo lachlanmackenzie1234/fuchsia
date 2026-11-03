@@ -51,8 +51,9 @@
 //!
 //! # Thread Safety
 //!
-//! The allocator uses a generic lock parameter `L` (implementing `RawLock`) to synchronize access,
-//! which defaults to `RawMutex`.
+//! The allocator uses a generic lock parameter `L` (implementing `RawLock`) to synchronize access.
+//! There is no default: the kernel's `RawMutex` is not visible to this crate, so callers must
+//! supply the lock type (e.g. the kernel's `RawMutex`).
 
 use crate::recyclable::Recyclable;
 use crate::ref_counted::HasRefCount;
@@ -67,7 +68,7 @@ use core::pin::Pin;
 use core::ptr::{NonNull, drop_in_place, write};
 use kalloc::AllocError;
 pub use ksync::RawLock;
-use ksync::{ConstRawLock, KCell, KMutex, RawMutex, guarded, lock};
+use ksync::{ConstRawLock, KCell, KMutex, guarded, lock};
 use pin_init::{pin_data, pin_init, pinned_drop};
 
 /// The default slab size in bytes (16KB).
@@ -118,7 +119,7 @@ struct FreeListEntry {
 /// # Generics
 ///
 /// * `T`: The type of object allocated by this allocator.
-/// * `L`: The synchronization primitive (defaults to `RawMutex`).
+/// * `L`: The synchronization primitive (e.g. the kernel's `RawMutex`).
 /// * `SLAB_SIZE`: The size of each memory slab in bytes (defaults to 16KB).
 /// * `TRACK_OBJECT_COUNT`: Enable allocation tracking (e.g. `obj_count`, `max_obj_count`).
 ///
@@ -128,9 +129,9 @@ struct FreeListEntry {
 ///
 /// ```rust
 /// use fbl::{
-///     SlabAllocator, RawMutex, impl_instanced_slab_allocatable, UniquePtr,
-///     DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
+///     SlabAllocator, impl_instanced_slab_allocatable, UniquePtr, DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
 /// };
+/// use ksync::RawMutex;
 /// use core::cell::Cell;
 ///
 /// use fbl::SlabOrigin;
@@ -163,9 +164,9 @@ struct FreeListEntry {
 ///
 /// ```rust
 /// use fbl::{
-///     SlabAllocator, RawMutex, impl_static_slab_allocatable, UniquePtr,
-///     DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE
+///     SlabAllocator, impl_static_slab_allocatable, UniquePtr, DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE
 /// };
+/// use ksync::RawMutex;
 ///
 /// struct MyObject {
 ///     value: i32,
@@ -192,7 +193,7 @@ struct FreeListEntry {
 #[pin_data(PinnedDrop)]
 pub struct SlabAllocator<
     T,
-    L: RawLock = RawMutex,
+    L: RawLock,
     const SLAB_SIZE: usize = DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
     const TRACK_OBJECT_COUNT: bool = false,
 > {
@@ -242,7 +243,7 @@ unsafe impl<T, L: RawLock + Send + Sync, const SLAB_SIZE: usize, const TRACK_OBJ
 /// implementations, allowing the containing object to be shared across threads.
 pub struct SlabOrigin<
     T,
-    L: RawLock = RawMutex,
+    L: RawLock,
     const SLAB_SIZE: usize = DEFAULT_SLAB_ALLOCATOR_SLAB_SIZE,
     const TRACK_OBJECT_COUNT: bool = false,
 > {
@@ -843,6 +844,7 @@ mod tests {
     use core::cmp::min;
     use core::ptr::write;
     use core::sync::atomic::{AtomicUsize, Ordering};
+    use ksync::RawMutex;
     use pin_init::stack_pin_init;
     extern crate alloc;
 

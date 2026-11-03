@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::{RawCriticalMutex, RawSpinlock};
 use affine::Round;
 use core::cell::UnsafeCell;
 use core::convert::Infallible;
@@ -11,7 +12,7 @@ use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{Canary, RefPtr};
-use ksync::{KMutex, RawCriticalMutex, RawSpinlock, guarded, lock};
+use ksync::{KMutex, guarded, lock};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;

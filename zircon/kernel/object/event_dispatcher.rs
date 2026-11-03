@@ -9,11 +9,12 @@ use super::event_dispatcher_ffi::{
 };
 use super::{DispatcherOps, KernelHandle};
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::platform_rs::timer::DurationMono;
 use crate::stall::{EventReceiver, StallAggregator, StallObserver};
 use core::ptr::NonNull;
 use fbl::Canary;
-use ksync::{KMutex, RawCriticalMutex, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{

@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::declare_singleton_mutex;
 use core::ffi::{CStr, c_void};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 use fbl::RefPtr;
 use kalloc::Box;
-use ksync::declare_singleton_mutex;
 use object_constants_rs as object_constants;
 use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, ZX_MAX_NAME_LEN, zx_koid_t, zx_signals_t};

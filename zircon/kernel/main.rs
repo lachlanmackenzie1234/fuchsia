@@ -88,6 +88,9 @@ pub mod kconcurrent;
 #[path = "lib/ktrace/src/mod.rs"]
 pub mod ktrace_rs;
 
+#[path = "lib/ksync/mod.rs"]
+pub mod ksync_kernel;
+
 #[cfg(with_lock_dep)]
 #[path = "lib/lockdep/lock_dep.rs"]
 pub mod lockdep_rs;

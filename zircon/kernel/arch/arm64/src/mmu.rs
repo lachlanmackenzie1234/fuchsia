@@ -18,6 +18,7 @@ use super::vm::is_kernel_address;
 use crate::counters;
 use crate::kernel::mp::SMP_MAX_CPUS;
 use crate::kernel::types::{PAddr, VAddr};
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::mmu_rcu::{AutoSimpleGenerationalReader, SimpleGenerational};
 use crate::page_cache::{PageCache, PageList};
 use crate::platform_rs::timer::{current_mono_time, zx_msec, zx_sec};
@@ -45,7 +46,7 @@ use core::sync::atomic::{
 };
 use debug::{dprintf, ltracef, tracef};
 use init::{LK_INIT_LEVEL_KERNEL, LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_VM, LkInitLevel};
-use ksync::{KMutex, RawCriticalMutex, lock};
+use ksync::{KMutex, lock};
 use lazy_init::LazyInit;
 use libarch::arm64::{TTBR0_EL1, TTBR1_EL1, isb};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop, stack_pin_init};

@@ -7,6 +7,7 @@ use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 use crate::kernel::deadline::{Deadline, TimerSlack};
 use crate::kernel::event::Event;
 use crate::kernel::thread::{self, LOW_PRIORITY, ThreadPtr};
+use crate::ksync_kernel::declare_singleton_mutex;
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use crate::vm::physical_page_borrowing_config::PhysicalPageBorrowingConfig;
 use crate::vm::pmm;
@@ -14,7 +15,7 @@ use core::ffi::{c_int, c_void};
 use core::pin::Pin;
 use core::ptr;
 use kprint::kprintln;
-use ksync::{KCell, declare_singleton_mutex, lock};
+use ksync::{KCell, lock};
 use lazy_init::LazyInit;
 use zx_status::Status;
 

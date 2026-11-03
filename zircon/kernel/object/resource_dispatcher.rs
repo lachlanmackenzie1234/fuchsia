@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::{RawCriticalMutex, RawMutex, declare_singleton_critical_mutex};
 #[cfg(console_enabled)]
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
@@ -16,10 +17,7 @@ use fbl::{
 use init::LkInitLevel;
 #[cfg(console_enabled)]
 use kprint::kprintln;
-use ksync::{
-    KCell, KMutex, LockToken, PhantomMutex, RawCriticalMutex, declare_singleton_critical_mutex,
-    guarded, kcell_init, lock,
-};
+use ksync::{KCell, KMutex, LockToken, PhantomMutex, guarded, kcell_init, lock};
 use object_constants_rs::{
     kResourceDispatcherStateAlign, kResourceDispatcherStateOffset, kResourceDispatcherStateSize,
 };
@@ -28,7 +26,7 @@ use pin_init::{
     InPlaceWrite as _, PinInit, pin_data, pin_init, pin_init_array_from_fn, pinned_drop,
 };
 use range_check::{RangeExt, from_offset_len};
-use region_alloc::{AllowOverlap, Region, RegionAllocator, RegionPool, RegionSpan};
+use region_alloc::{AllowOverlap, RegionSpan};
 use zx_status::Status;
 use zx_types::{
     ZX_DEFAULT_RESOURCE_RIGHTS, ZX_MAX_NAME_LEN, ZX_OBJ_TYPE_RESOURCE, ZX_RSRC_FLAG_EXCLUSIVE,
@@ -39,6 +37,10 @@ use zx_types::{
 
 use super::KernelHandle;
 use super::resource_dispatcher_ffi::cpp_resource_dispatcher_create;
+
+type Region = region_alloc::Region<RawMutex>;
+type RegionAllocator = region_alloc::RegionAllocator<RawMutex>;
+type RegionPool = region_alloc::RegionPool<RawMutex>;
 
 /// Maximum size for the global region pool (64 KiB).
 const MAX_REGION_POOL_SIZE: usize = 64 << 10;

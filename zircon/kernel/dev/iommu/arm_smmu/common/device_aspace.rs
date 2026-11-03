@@ -12,11 +12,11 @@ use core::pin::Pin;
 use core::sync::atomic::Ordering;
 
 use fbl::UniquePtr;
-use region_alloc::{AllowOverlap, Region, RegionAllocator, RegionSpan};
+use region_alloc::{AllowOverlap, RegionSpan};
 use zx_status::Status;
 
 use super::constants::{PAGE_MASK, PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_USIZE};
-use super::env::{PinnedVmoSource, SmmuEnv, SmmuPage};
+use super::env::{PinnedVmoSource, SmmuEnv, SmmuPage, SmmuRawMutex};
 use super::page_cache::PageCache;
 use super::translation_table::{TranslationTableHelper, table_slice};
 use super::vmsav8_64::{
@@ -35,6 +35,9 @@ use super::vmsav8_64::{
 /// If that is ever a problem, one option would be to increase the cache to 6 pages total to avoid
 /// the worst case thrash.
 pub const DEFAULT_MAX_PAGE_CACHE_ENTRIES: u32 = 4;
+
+type Region = region_alloc::Region<SmmuRawMutex>;
+type RegionAllocator = region_alloc::RegionAllocator<SmmuRawMutex>;
 
 /// An allocation in a device's aspace is a `UniquePtr` to a region from our region allocator.
 pub type Allocation = UniquePtr<Region>;

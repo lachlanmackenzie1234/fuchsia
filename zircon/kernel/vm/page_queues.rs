@@ -9,6 +9,7 @@ use crate::kernel::deadline::{Deadline, TimerSlack};
 use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::relaxed_atomic::{RelaxedAtomicBool, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::thread::{self, Thread, ThreadPtr};
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
 use crate::vm::compressor::VmCompressor;
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
@@ -28,7 +29,7 @@ use core::sync::atomic::{AtomicBool, AtomicI64, AtomicPtr, AtomicU64, AtomicUsiz
 use debug::kernel_oops;
 use fbl::{DoublyLinkedListContainable, RefPtr};
 use kprint::{kformat, kprintln};
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded, kcell_init};
+use ksync::{KMutex, LockToken, guarded, kcell_init};
 use page_bindings::{vm_page_state, vm_page_t};
 use page_queues_bindings as bindings;
 use pin_init::{InPlaceWrite as _, PinInit, pin_data, pin_init_array_from_fn};

@@ -29,11 +29,12 @@ use crate::kernel::scheduler_state::{
     DEFAULT_PRIORITY, SchedulerStateBaseProfile, ThreadStateKind,
 };
 use crate::kernel::thread::{Thread, ThreadPtr, with_exception_context};
+use crate::ksync_kernel::{RawCriticalMutex, RawSpinlock};
 use core::ffi::c_void;
 use debug::{ltrace_entry_obj, ltrace_exit_obj, ltracef};
 use fbl::{Canary, RefPtr};
 use kprint::kprintln;
-use ksync::{KMutex, LockToken, RawCriticalMutex, RawSpinlock, guarded};
+use ksync::{KMutex, LockToken, guarded};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;

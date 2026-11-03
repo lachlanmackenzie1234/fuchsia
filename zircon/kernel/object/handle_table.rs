@@ -12,6 +12,7 @@ use super::handle::{
 };
 use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
+use crate::ksync_kernel::RawBrwLockPi;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::marker::PhantomPinned;
@@ -230,7 +231,7 @@ pub struct HandleTable {
     // Right now, this is required when a process closes the last handle to
     // another process, during the destruction of the handle table.
     #[brwlock(flags = lockdep::LOCK_FLAGS_MULTI_ACQUIRE)]
-    lock: BrwLockPi,
+    lock: BrwLockPi<RawBrwLockPi>,
 
     // The koid of this handle table. Used to check whether or not a handle belongs to this handle
     // table (and thus that it belongs to a process associated with this handle table).

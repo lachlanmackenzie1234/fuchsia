@@ -22,6 +22,13 @@
 #[unittest::suite]
 /// Tests for Rust ksync bindings
 mod ksync_tests {
+    use crate::ksync_kernel::{
+        IrqSavePolicy, NoIrqSavePolicy, RawBrwLockPi, RawCriticalMutex,
+        RawCriticalMutexOrderedPolicy, RawCriticalMutexPolicy, RawMonitoredSpinlock,
+        RawMonitoredSpinlockStorage, RawMutex, RawMutexSpinMaxDurationPolicy, RawMutexStorage,
+        RawSpinlock, RawSpinlockStorage, TryAcquireResult, declare_singleton_critical_mutex,
+        declare_singleton_monitored_spinlock, declare_singleton_mutex, declare_singleton_spinlock,
+    };
     use kprint::kprintln;
     use pin_init::{pin_data, pin_init, stack_pin_init};
     use unittest::{assert_true, expect_eq, expect_true};
@@ -33,7 +40,7 @@ mod ksync_tests {
     #[repr(C)]
     struct GuardedMutexObj {
         #[mutex]
-        mu: ksync::KMutex,
+        mu: ksync::KMutex<RawMutex>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -41,7 +48,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedSpinlockObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawSpinlock>,
+        mu: ksync::KMutex<RawSpinlock>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -49,7 +56,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedSpinlockObj2 {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawSpinlock>,
+        mu: ksync::KMutex<RawSpinlock>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -57,7 +64,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedMonitoredSpinlockObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawMonitoredSpinlock>,
+        mu: ksync::KMutex<RawMonitoredSpinlock>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -65,7 +72,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedCriticalMutexObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawCriticalMutex>,
+        mu: ksync::KMutex<RawCriticalMutex>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -73,7 +80,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedNestableCriticalMutexObj {
         #[mutex(flags = ksync::LOCK_FLAGS_NESTABLE | lockdep::LOCK_FLAGS_RE_ACQUIRE_FATAL)]
-        mu: ksync::KMutex<ksync::RawCriticalMutex>,
+        mu: ksync::KMutex<RawCriticalMutex>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -81,7 +88,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedNonFatalNestableCriticalMutexObj {
         #[mutex(flags = ksync::LOCK_FLAGS_NESTABLE)]
-        mu: ksync::KMutex<ksync::RawCriticalMutex>,
+        mu: ksync::KMutex<RawCriticalMutex>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -89,7 +96,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedUntrackedMutexObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawMutexStorage>,
+        mu: ksync::KMutex<RawMutexStorage>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -97,7 +104,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedUntrackedSpinlockObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawSpinlockStorage>,
+        mu: ksync::KMutex<RawSpinlockStorage>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -105,7 +112,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedUntrackedMonitoredSpinlockObj {
         #[mutex]
-        mu: ksync::KMutex<ksync::RawMonitoredSpinlockStorage>,
+        mu: ksync::KMutex<RawMonitoredSpinlockStorage>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -113,7 +120,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedBrwLockObj {
         #[brwlock]
-        lock: ksync::BrwLockPi,
+        lock: ksync::BrwLockPi<RawBrwLockPi>,
         #[guarded_by(lock)]
         value: u32,
     }
@@ -121,7 +128,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedBrwLockMultiAcquireObj {
         #[brwlock(flags = lockdep::LOCK_FLAGS_MULTI_ACQUIRE)]
-        lock: ksync::BrwLockPi,
+        lock: ksync::BrwLockPi<RawBrwLockPi>,
         #[guarded_by(lock)]
         value: u32,
     }
@@ -129,7 +136,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedOnceObj {
         #[mutex]
-        mu: ksync::KMutex,
+        mu: ksync::KMutex<RawMutex>,
         #[guarded_by(mu)]
         once_val: ksync::KOnceCell<u32>,
     }
@@ -149,7 +156,7 @@ mod ksync_tests {
     #[repr(C)]
     struct GuardedGenericObj<T> {
         #[mutex]
-        mu: ksync::KMutex,
+        mu: ksync::KMutex<RawMutex>,
         #[guarded_by(mu)]
         value: T,
     }
@@ -207,28 +214,23 @@ mod ksync_tests {
 
     // SAFETY: Every operation delegates to `RawCriticalMutexOrderedPolicy`, which provides mutual
     // exclusion; only the lockdep order passed on reacquire differs.
-    unsafe impl ksync::LockPolicy<ksync::RawCriticalMutex> for LostOrderPolicy {
+    unsafe impl ksync::LockPolicy<RawCriticalMutex> for LostOrderPolicy {
         type AcquireArgs = usize;
-        type GuardState = <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<
-            ksync::RawCriticalMutex,
-        >>::GuardState;
+        type GuardState =
+            <RawCriticalMutexOrderedPolicy as ksync::LockPolicy<RawCriticalMutex>>::GuardState;
         const EXTERNAL_ORDER: bool = true;
 
-        unsafe fn acquire(
-            lock: &ksync::RawCriticalMutex,
-            state: &mut Self::GuardState,
-            order: usize,
-        ) {
+        unsafe fn acquire(lock: &RawCriticalMutex, state: &mut Self::GuardState, order: usize) {
             // SAFETY: The caller upholds `LockPolicy::acquire`'s contract, which is identical for
             // `RawCriticalMutexOrderedPolicy`.
             unsafe {
-                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(
+                <RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(
                     lock, state, order,
                 );
             }
         }
 
-        unsafe fn reacquire(lock: &ksync::RawCriticalMutex, state: &mut Self::GuardState) {
+        unsafe fn reacquire(lock: &RawCriticalMutex, state: &mut Self::GuardState) {
             // Reset `state` after the preceding `release` so that it satisfies `acquire`'s
             // precondition of a freshly `Default`-initialized `GuardState` on the same pinned
             // slot. Deliberately reacquiring at order 0 instead of `state.order` is what this
@@ -237,26 +239,22 @@ mod ksync_tests {
             // SAFETY: `state` is freshly `Default`-initialized and remains pinned on the stack
             // until the matching `release` call per `LockPolicy::reacquire`'s contract.
             unsafe {
-                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(
-                    lock, state, 0,
-                );
+                <RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::acquire(lock, state, 0);
             }
         }
 
-        unsafe fn release(lock: &ksync::RawCriticalMutex, state: &mut Self::GuardState) {
+        unsafe fn release(lock: &RawCriticalMutex, state: &mut Self::GuardState) {
             // SAFETY: The caller upholds `LockPolicy::release`'s contract; `state` came from this
             // policy's `acquire`/`reacquire`, which produce `RawCriticalMutexOrderedPolicy` state.
             unsafe {
-                <ksync::RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::release(
-                    lock, state,
-                );
+                <RawCriticalMutexOrderedPolicy as ksync::LockPolicy<_>>::release(lock, state);
             }
         }
     }
 
     // SAFETY: `LostOrderPolicy` delegates lock acquisition and release to
     // `RawCriticalMutexOrderedPolicy`, which guarantees exclusive mutual exclusion.
-    unsafe impl ksync::ExclusiveLockPolicy<ksync::RawCriticalMutex> for LostOrderPolicy {}
+    unsafe impl ksync::ExclusiveLockPolicy<RawCriticalMutex> for LostOrderPolicy {}
 
     /// test Rust KMutex ID
     #[test]
@@ -307,10 +305,10 @@ mod ksync_tests {
         // `a`.
         {
             ksync::lock!(
-                let mut ga = a.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                let mut ga = a.lock_mu_policy_with::<RawCriticalMutexOrderedPolicy>(0)
             );
             ksync::lock!(
-                let mut gb = b.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                let mut gb = b.lock_mu_policy_with::<RawCriticalMutexOrderedPolicy>(1)
             );
             let sum = gb.as_mut().call_unlocked(|| *ga.value() + 10);
             *gb.as_mut().value_mut() = sum;
@@ -320,10 +318,10 @@ mod ksync_tests {
         // Acquire in reverse instance order (`b` at order 0, then `a` at order 1).
         {
             ksync::lock!(
-                let gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                let gb = b.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(0)
             );
             ksync::lock!(
-                let ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                let ga = a.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(1)
             );
             expect_true!(*b.guard_mu_from_guard(&gb).value() == 11);
             expect_true!(*a.guard_mu_from_guard(&ga).value() == 3);
@@ -331,7 +329,7 @@ mod ksync_tests {
 
         // Exercise `lock_<mu>_aliased_policy_with` with `RawCriticalMutexOrderedPolicy`.
         {
-            type Ordered = ksync::RawCriticalMutexOrderedPolicy;
+            type Ordered = RawCriticalMutexOrderedPolicy;
             ksync::lock!(let ga = a.lock_mu_aliased_policy_with::<_, _, Ordered>(&a.mu, 0));
             ksync::lock!(let gb = b.lock_mu_policy_with::<Ordered>(1));
             let (t1, _t2) = ga.tokens();
@@ -364,10 +362,10 @@ mod ksync_tests {
 
             {
                 ksync::lock!(
-                    let ga = a.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                    let ga = a.lock_mu_policy_with::<RawCriticalMutexOrderedPolicy>(0)
                 );
                 ksync::lock!(
-                    let mut gb = b.lock_mu_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                    let mut gb = b.lock_mu_policy_with::<RawCriticalMutexOrderedPolicy>(1)
                 );
                 expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
                 gb.as_mut().call_unlocked(|| ());
@@ -417,10 +415,10 @@ mod ksync_tests {
             // Equal orders: the second acquisition is not strictly above the first.
             {
                 ksync::lock!(
-                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                    let _ga = a.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(1)
                 );
                 ksync::lock!(
-                    let _gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                    let _gb = b.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(1)
                 );
                 expect_true!(last() == LOCKDEP_RESULT_INVALID_NESTING);
             }
@@ -428,11 +426,11 @@ mod ksync_tests {
             // Descending orders (`a` at 1, then `b` at 0), as in the C++ lockdep tests.
             {
                 ksync::lock!(
-                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(1)
+                    let _ga = a.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(1)
                 );
                 expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
                 ksync::lock!(
-                    let _gb = b.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                    let _gb = b.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(0)
                 );
                 expect_true!(last() == LOCKDEP_RESULT_INVALID_NESTING);
             }
@@ -440,7 +438,7 @@ mod ksync_tests {
             // Reacquiring at order 0 instead of the saved order 1 inside `call_unlocked`.
             {
                 ksync::lock!(
-                    let _ga = a.mu.lock_policy_with::<ksync::RawCriticalMutexOrderedPolicy>(0)
+                    let _ga = a.mu.lock_policy_with::<RawCriticalMutexOrderedPolicy>(0)
                 );
                 ksync::lock!(let mut gb = b.mu.lock_policy_with::<LostOrderPolicy>(1));
                 expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
@@ -492,7 +490,7 @@ mod ksync_tests {
         // Verify persistence and acquire with explicit policy
         {
             ksync::lock!(
-                let guard = obj.lock_mu_policy::<ksync::IrqSavePolicy>(ksync::source_tag!())
+                let guard = obj.lock_mu_policy::<IrqSavePolicy>(ksync::source_tag!())
             );
             expect_eq!(*guard.value(), 20);
         }
@@ -538,7 +536,7 @@ mod ksync_tests {
         }
         {
             ksync::lock!(let guard = obj.mu.lock());
-            ksync::lock!(let guard2 = obj2.mu.lock_policy::<ksync::NoIrqSavePolicy>());
+            ksync::lock!(let guard2 = obj2.mu.lock_policy::<NoIrqSavePolicy>());
             // Expect a no irq save policy guard to be strictly smaller than one that had to
             // remember the irq state.
             expect_true!(core::mem::size_of_val(&*guard2) < core::mem::size_of_val(&*guard));
@@ -555,8 +553,8 @@ mod ksync_tests {
         .unwrap();
 
         expect_true!(core::ptr::eq(
-            <ksync::RawMutex as ksync::RawLock>::as_mut_ptr(obj.mu.raw_mutex()),
-            <ksync::RawMutexStorage as ksync::RawLock>::as_mut_ptr(&**obj.mu.raw_mutex()),
+            <RawMutex as ksync::RawLock>::as_mut_ptr(obj.mu.raw_mutex()),
+            <RawMutexStorage as ksync::RawLock>::as_mut_ptr(&**obj.mu.raw_mutex()),
         ));
 
         {
@@ -590,7 +588,7 @@ mod ksync_tests {
         }
 
         {
-            ksync::lock!(let mut guard = obj.lock_mu_policy::<ksync::RawCriticalMutexPolicy>());
+            ksync::lock!(let mut guard = obj.lock_mu_policy::<RawCriticalMutexPolicy>());
             expect_eq!(*guard.value(), 20);
             *guard.as_mut().value_mut() = 30;
         }
@@ -624,7 +622,7 @@ mod ksync_tests {
         {
             ksync::lock!(
                 let mut guard =
-                    obj.lock_mu_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                    obj.lock_mu_policy_with::<RawMutexSpinMaxDurationPolicy>(
                         SPIN_MAX_DURATION
                     )
             );
@@ -658,7 +656,7 @@ mod ksync_tests {
         {
             ksync::lock!(
                 let mut guard =
-                    obj.mu.lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(0)
+                    obj.mu.lock_policy_with::<RawMutexSpinMaxDurationPolicy>(0)
             );
             if lock_validation_enabled {
                 expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
@@ -690,7 +688,7 @@ mod ksync_tests {
         {
             ksync::lock!(
                 let mut guard =
-                    flagged.lock_seek_lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                    flagged.lock_seek_lock_policy_with::<RawMutexSpinMaxDurationPolicy>(
                         SPIN_MAX_DURATION
                     )
             );
@@ -704,8 +702,8 @@ mod ksync_tests {
         expect_true!(!flagged.seek_lock.raw_mutex().is_held());
 
         type FlaggedRawMutex = ksync::LockdepTracked<
-            ksync::RawMutexStorage,
-            ksync::RawMutexStorage,
+            RawMutexStorage,
+            RawMutexStorage,
             { lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED },
         >;
         stack_pin_init!(
@@ -715,7 +713,7 @@ mod ksync_tests {
         {
             ksync::lock!(
                 let _guard = const_flagged_mu
-                    .lock_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(SPIN_MAX_DURATION)
+                    .lock_policy_with::<RawMutexSpinMaxDurationPolicy>(SPIN_MAX_DURATION)
             );
             if lock_validation_enabled {
                 expect_true!(last() == LOCKDEP_RESULT_SUCCESS);
@@ -732,7 +730,7 @@ mod ksync_tests {
         {
             ksync::lock!(
                 let mut guard =
-                    untracked.lock_mu_policy_with::<ksync::RawMutexSpinMaxDurationPolicy>(
+                    untracked.lock_mu_policy_with::<RawMutexSpinMaxDurationPolicy>(
                         SPIN_MAX_DURATION
                     )
             );
@@ -776,7 +774,9 @@ mod ksync_tests {
             expect_eq!(*guard.value(), 10);
             *guard.as_mut().value_mut() = 20;
 
-            ksync::lock!(let mut mguard = mobj.lock_mu_policy::<ksync::NoIrqSavePolicy>(ksync::source_tag!()));
+            ksync::lock!(
+                let mut mguard = mobj.lock_mu_policy::<NoIrqSavePolicy>(ksync::source_tag!())
+            );
             expect_eq!(*mguard.value(), 50);
             *mguard.as_mut().value_mut() = 60;
         }
@@ -800,8 +800,8 @@ mod ksync_tests {
     /// test raw RawSpinlockStorage methods and KMutex<_, RawSpinlockStorage> assert/release helpers
     #[test]
     fn raw_spinlock_storage() {
-        stack_pin_init!(let outer = ksync::RawSpinlockStorage::new());
-        stack_pin_init!(let inner = ksync::RawSpinlockStorage::new());
+        stack_pin_init!(let outer = RawSpinlockStorage::new());
+        stack_pin_init!(let inner = RawSpinlockStorage::new());
         stack_pin_init!(let obj = pin_init!(GuardedUntrackedSpinlockObj {
             mu <- ksync::KMutex::init(),
             value: 10.into(),
@@ -823,7 +823,7 @@ mod ksync_tests {
         // SAFETY: Interrupts are disabled. `inner` is already held, so this must fail and not
         // acquire the lock.
         let result = unsafe { inner.try_acquire() };
-        expect_eq!(result, ksync::TryAcquireResult::Failed);
+        expect_eq!(result, TryAcquireResult::Failed);
         expect_true!(!result.is_acquired());
         // SAFETY: Interrupts are disabled and `inner` is held by this CPU.
         unsafe { inner.release() };
@@ -831,7 +831,7 @@ mod ksync_tests {
 
         // SAFETY: Interrupts are disabled, and if acquired `inner` is released below.
         let result = unsafe { inner.try_acquire() };
-        expect_eq!(result, ksync::TryAcquireResult::Acquired);
+        expect_eq!(result, TryAcquireResult::Acquired);
         expect_true!(inner.is_held());
         if result.is_acquired() {
             // SAFETY: Interrupts are disabled and `inner` was acquired by this CPU above.
@@ -1069,7 +1069,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedFlaggedMutexObj {
         #[mutex(flags = lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED)]
-        seek_lock: ksync::KMutex,
+        seek_lock: ksync::KMutex<RawMutex>,
         #[guarded_by(seek_lock)]
         seek: u64,
     }
@@ -1088,9 +1088,9 @@ mod ksync_tests {
         expect_eq!(*guard.seek(), 4096);
     }
 
-    ksync::declare_singleton_mutex!(TestKernelSingletonMutex);
-    ksync::declare_singleton_critical_mutex!(TestKernelSingletonCriticalMutex);
-    ksync::declare_singleton_spinlock!(TestKernelSingletonSpinlock);
+    declare_singleton_mutex!(TestKernelSingletonMutex);
+    declare_singleton_critical_mutex!(TestKernelSingletonCriticalMutex);
+    declare_singleton_spinlock!(TestKernelSingletonSpinlock);
 
     /// test Rust declare_singleton_mutex and declare_singleton_critical_mutex
     #[test]
@@ -1169,9 +1169,9 @@ mod ksync_tests {
         }
     }
 
-    ksync::declare_singleton_monitored_spinlock!(TestKernelCpuAlignedSingletonSpinlock, cpu_align);
+    declare_singleton_monitored_spinlock!(TestKernelCpuAlignedSingletonSpinlock, cpu_align);
 
-    ksync::declare_singleton_monitored_spinlock!(
+    declare_singleton_monitored_spinlock!(
         TestKernelCpuAlignExclusiveSingletonSpinlock,
         cpu_align_exclusive,
     );
@@ -1269,7 +1269,7 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedMultiSpinlockObj {
         #[mutex(flags = lockdep::LOCK_FLAGS_MULTI_ACQUIRE)]
-        mu: ksync::KMutex<ksync::RawSpinlock>,
+        mu: ksync::KMutex<RawSpinlock>,
         #[guarded_by(mu)]
         value: u32,
     }
@@ -1332,9 +1332,9 @@ mod ksync_tests {
     #[ksync::guarded]
     struct GuardedMultiLockObj {
         #[mutex]
-        mu1: ksync::KMutex,
+        mu1: ksync::KMutex<RawMutex>,
         #[mutex]
-        mu2: ksync::KMutex,
+        mu2: ksync::KMutex<RawMutex>,
         #[guarded_by(mu1)]
         val1: u32,
         #[guarded_by(mu2)]
@@ -1401,20 +1401,20 @@ mod ksync_tests {
     /// test #[ksync::guarded] with generic lock types
     #[test]
     fn generic_lock_guarded_test() {
-        stack_pin_init!(let mutex_obj = pin_init!(GuardedGenericLockObj::<ksync::RawMutex> {
+        stack_pin_init!(let mutex_obj = pin_init!(GuardedGenericLockObj::<RawMutex> {
             mu <- ksync::KMutex::init(),
             value: 10.into(),
         }));
-        stack_pin_init!(let crit_obj = pin_init!(GuardedGenericLockObj::<ksync::RawCriticalMutex> {
+        stack_pin_init!(let crit_obj = pin_init!(GuardedGenericLockObj::<RawCriticalMutex> {
             mu <- ksync::KMutex::init(),
             value: 20.into(),
         }));
-        stack_pin_init!(let spin_obj = pin_init!(GuardedGenericLockObj::<ksync::RawSpinlock> {
+        stack_pin_init!(let spin_obj = pin_init!(GuardedGenericLockObj::<RawSpinlock> {
             mu <- ksync::KMutex::init(),
             value: 30.into(),
         }));
         stack_pin_init!(
-            let mon_obj = pin_init!(GuardedGenericLockObj::<ksync::RawMonitoredSpinlock> {
+            let mon_obj = pin_init!(GuardedGenericLockObj::<RawMonitoredSpinlock> {
                 mu <- ksync::KMutex::init(),
                 value: 40.into(),
             })
@@ -1425,33 +1425,32 @@ mod ksync_tests {
         unsafe {
             assert_true!(cpp_verify_mutex_id(
                 core::ptr::from_ref(&mutex_obj.mu).cast::<core::ffi::c_void>(),
-                <GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID,
+                <GuardedGenericLockObjMuClass<RawMutex> as ksync::LockClass>::ID,
             ));
             assert_true!(cpp_verify_critical_mutex_id(
                 core::ptr::from_ref(&crit_obj.mu).cast::<core::ffi::c_void>(),
-                <GuardedGenericLockObjMuClass<ksync::RawCriticalMutex> as ksync::LockClass>::ID,
+                <GuardedGenericLockObjMuClass<RawCriticalMutex> as ksync::LockClass>::ID,
             ));
             assert_true!(cpp_verify_spinlock_id(
                 core::ptr::from_ref(&spin_obj.mu).cast::<core::ffi::c_void>(),
-                <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID,
+                <GuardedGenericLockObjMuClass<RawSpinlock> as ksync::LockClass>::ID,
             ));
             assert_true!(cpp_verify_monitored_spinlock_id(
                 core::ptr::from_ref(&mon_obj.mu).cast::<core::ffi::c_void>(),
-                <GuardedGenericLockObjMuClass<ksync::RawMonitoredSpinlock> as ksync::LockClass>::ID,
+                <GuardedGenericLockObjMuClass<RawMonitoredSpinlock> as ksync::LockClass>::ID,
             ));
         }
 
         // Verify that IRQ-safe and non-IRQ-safe instantiations select distinct LockClass IDs
         // when lockdep metadata/validation is enabled.
-        if !<GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID.is_null() {
+        if !<GuardedGenericLockObjMuClass<RawMutex> as ksync::LockClass>::ID.is_null() {
             expect_true!(
-                <GuardedGenericLockObjMuClass<ksync::RawMutex> as ksync::LockClass>::ID
-                    != <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID
+                <GuardedGenericLockObjMuClass<RawMutex> as ksync::LockClass>::ID
+                    != <GuardedGenericLockObjMuClass<RawSpinlock> as ksync::LockClass>::ID
             );
         } else {
             expect_true!(
-                <GuardedGenericLockObjMuClass<ksync::RawSpinlock> as ksync::LockClass>::ID
-                    .is_null()
+                <GuardedGenericLockObjMuClass<RawSpinlock> as ksync::LockClass>::ID.is_null()
             );
         }
 

@@ -4,7 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use ksync::{IrqSavePolicy, KCell, KMutex, LockClass, RawSpinlock, guarded};
+use crate::ksync_kernel::{IrqSavePolicy, RawSpinlock};
+use ksync::{KCell, KMutex, LockClass, guarded};
 
 /// Backing size of [`PanicBuffer`]; see [`PanicBuffer::MAX_SIZE`].
 const MAX_SIZE: usize = 2048;

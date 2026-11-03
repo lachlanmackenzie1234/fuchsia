@@ -16,8 +16,9 @@
 // in an `OpaqueStorage`. The size is an upper bound verified at compile time on
 // the Rust side via `zr::static_assert_size_and_align!`.
 //
-// The Rust struct contains a `ksync::KMutex<ksync::RawCriticalMutex>`, whose raw
-// lock grows when lockdep, lock name tracing, or spinlock tracing are enabled.
+// The Rust struct contains a `ksync::KMutex<crate::ksync_kernel::RawCriticalMutex>`,
+// whose raw lock grows when lockdep, lock name tracing, or spinlock tracing are
+// enabled.
 #if WITH_LOCK_DEP
 constexpr size_t kArm64ArchVmAspaceStateSize = 184;
 #else

@@ -17,6 +17,7 @@ use super::vm_aspace::{
 use super::vm_mapping::VmMapping;
 use super::vm_object::{VmObject, VmObjectLockClass};
 use crate::kernel::types::VAddr;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::user_copy::UserInOutPtr;
 use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char};
@@ -27,7 +28,7 @@ use core::ptr::{self, NonNull};
 use debug::ltracef;
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use kprint::kprint;
-use ksync::{KCell, KMutexGuard, LockToken, RawCriticalMutex};
+use ksync::{KCell, KMutexGuard, LockToken};
 use pin_init::{PinInit, pin_data};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;

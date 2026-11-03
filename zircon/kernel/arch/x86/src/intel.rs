@@ -19,7 +19,7 @@ use super::registers::{
 };
 use super::x86::{read_msr, write_msr};
 
-ksync::declare_singleton_spinlock!(MicrocodeLock);
+crate::ksync_kernel::declare_singleton_spinlock!(MicrocodeLock);
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, FromBytes, Immutable, KnownLayout)]
@@ -106,7 +106,7 @@ unsafe fn x86_intel_load_microcode_patch(
     msr: &mut impl MsrAccess,
     patch: &[u32],
 ) {
-    ksync::lock!(MicrocodeLock::lock_policy::<ksync::IrqSavePolicy>());
+    ksync::lock!(MicrocodeLock::lock_policy::<crate::ksync_kernel::IrqSavePolicy>());
 
     let Ok((hdr, payload)) = X86IntelMicrocodeUpdateHeader::ref_from_prefix(patch.as_bytes())
     else {

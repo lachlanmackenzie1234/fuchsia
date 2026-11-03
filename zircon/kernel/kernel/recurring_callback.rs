@@ -7,9 +7,10 @@
 use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::thread;
 use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
+use crate::ksync_kernel::{KSpinlock, RawSpinlock};
 use crate::platform_rs::timer::{DurationMono, DurationUnknown, InstantMono};
 use core::ffi::c_void;
-use ksync::{KMutex, KSpinlock, guarded, kcell_init};
+use ksync::{KMutex, guarded, kcell_init};
 use pin_init::{PinInit, pin_init};
 use zx_types::zx_instant_mono_t;
 
@@ -23,7 +24,7 @@ pub type CallbackFunc = fn();
 #[guarded]
 struct RecurringCallback {
     #[mutex]
-    lock: KSpinlock,
+    lock: KMutex<RawSpinlock>,
     #[pin]
     #[guarded_by(lock)]
     timer: Timer,
@@ -102,7 +103,7 @@ impl RecurringCallback {
     }
 }
 
-ksync::declare_singleton_spinlock!(
+crate::ksync_kernel::declare_singleton_spinlock!(
     /// Spinlock protecting lazy initialization of `StaticRecurringCallback` instances.
     RecurringCallbackInitLock
 );

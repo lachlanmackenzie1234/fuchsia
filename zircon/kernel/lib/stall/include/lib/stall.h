@@ -45,7 +45,8 @@ class StallAccumulator {
   //
   // //zircon/kernel/kernel/percpu.rs asserts that the two layouts agree.
   struct Storage {
-    // A Rust `ksync::KMutex<ksync::RawSpinlock>`, which mirrors `Lock<SpinLock>`.
+    // A Rust `ksync::KMutex<RawSpinlock>` (`crate::ksync_kernel::RawSpinlock`), which mirrors
+    // `Lock<SpinLock>`.
     alignas(Lock<SpinLock>) uint8_t lock[sizeof(Lock<SpinLock>)];
 
     // Number of progressing threads currently tracked by this structure.

@@ -5,7 +5,7 @@
 #![cfg(test)]
 
 use crate::lockdep_tracked::LockdepTracked;
-use crate::raw_lock::{ExclusiveLockPolicy, LockPolicy, RawLock};
+use crate::raw_lock::{ExclusiveLockPolicy, LockPolicy, RawLock, RawSharedLock};
 use core::ffi::c_void;
 use lock_api::RawRwLock as _;
 use pin_init::{PinInit, pin_init_from_closure};
@@ -105,6 +105,13 @@ unsafe impl RawLock for RawBrwLockPiStorage {
     fn as_mut_ptr(&self) -> *mut c_void {
         self as *const Self as *mut Self as *mut c_void
     }
+}
+
+// SAFETY: `RawBrwLockPiReadPolicy` acquires `RawBrwLockPiStorage` in shared (read) mode, which
+// allows multiple concurrent readers but excludes the exclusive (write) mode acquired by
+// `RawBrwLockPiWritePolicy`, the default and only `ExclusiveLockPolicy` for `RawBrwLockPiStorage`.
+unsafe impl RawSharedLock for RawBrwLockPiStorage {
+    type SharedPolicy = RawBrwLockPiReadPolicy;
 }
 
 /// Lockdep-tracked userspace `RawBrwLockPi`.

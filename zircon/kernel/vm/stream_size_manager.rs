@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::event::Event;
+use crate::ksync_kernel::RawMutex;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -12,7 +13,7 @@ use fbl::{
     DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, Recyclable, RefPtr,
     ref_counted,
 };
-use ksync::{KMutex, KMutexGuard, LockToken, PhantomMutex, RawMutex, guarded};
+use ksync::{KMutex, KMutexGuard, LockToken, PhantomMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{ZX_OK, zx_status_t};

@@ -542,7 +542,7 @@ pub enum SchedulerQueueLockClass {}
 
 impl ksync::LockClass for SchedulerQueueLockClass {
     const ID: *mut core::ffi::c_void = core::ptr::null_mut();
-    const FLAGS: ksync::LockFlags = ksync::RawMonitoredSpinlock::LOCK_FLAGS;
+    const FLAGS: ksync::LockFlags = crate::ksync_kernel::RawMonitoredSpinlock::LOCK_FLAGS;
 }
 
 #[allow(improper_ctypes)]
@@ -563,7 +563,7 @@ unsafe extern "C" {
     fn cpp_scheduler_dump(scheduler: *mut Scheduler, queue_state_only: bool);
     fn cpp_scheduler_get_queue_lock(
         scheduler: *const Scheduler,
-    ) -> *const ksync::KMonitoredSpinlock<SchedulerQueueLockClass>;
+    ) -> *const crate::ksync_kernel::KMonitoredSpinlock<SchedulerQueueLockClass>;
 }
 
 /// Peek at the current active mask state for a given CPU's scheduler.
@@ -10987,7 +10987,7 @@ impl Scheduler {
 
     /// Returns a reference to this scheduler's queue lock (`queue_lock_`).
     #[inline]
-    pub fn queue_lock(&self) -> &ksync::KMonitoredSpinlock<SchedulerQueueLockClass> {
+    pub fn queue_lock(&self) -> &crate::ksync_kernel::KMonitoredSpinlock<SchedulerQueueLockClass> {
         // SAFETY: `self` is a valid `Scheduler` and `cpp_scheduler_get_queue_lock` returns a
         // pointer to its `queue_lock_` member, which is layout-compatible with
         // `KMonitoredSpinlock`.

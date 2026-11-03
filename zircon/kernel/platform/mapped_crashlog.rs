@@ -6,6 +6,7 @@
 
 use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
+use crate::ksync_kernel::RawSpinlock;
 use crate::persistent_debuglog_rs::persistent_dlog_get_recovered_log;
 use crate::platform_rs::crashlog::Interface;
 use crate::platform_rs::power::ZirconCrashReason;
@@ -20,7 +21,7 @@ use core::pin::Pin;
 use core::ptr::{from_mut, from_ref, null, null_mut, slice_from_raw_parts_mut};
 use core::sync::atomic::{AtomicBool, Ordering};
 use kprint::{kformat, kprint};
-use ksync::{KMutex, RawSpinlock, guarded};
+use ksync::{KMutex, guarded};
 use libc::stdio::FILE;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zbi::HwRebootReason;

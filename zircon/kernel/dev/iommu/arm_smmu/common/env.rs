@@ -24,19 +24,28 @@ use zx_status::sys::zx_status_t;
 use super::constants::{ArmSmmuMode, BtiPageLeakReason, InterruptPolarity, InterruptTriggerMode};
 use super::smmu_mode::get_smmu_mode_bytes;
 
-/// Raw spinlock type alias: uses `ksync::RawSpinlock` in the kernel and `ksync::RawMutex` in host
-/// tests (since `RawSpinlock` is only available when `cfg(is_kernel)` is enabled).
+/// Raw spinlock type alias: uses the kernel's `RawSpinlock` in the kernel and `ksync::RawMutex` in
+/// host tests (since `RawSpinlock` is only available in the kernel).
 #[cfg(is_kernel)]
-pub type SmmuRawSpinLock = ksync::RawSpinlock;
+pub type SmmuRawSpinLock = crate::ksync_kernel::RawSpinlock;
 
 /// Raw spinlock type alias for host tests (`ksync::RawMutex`).
 #[cfg(not(is_kernel))]
 pub type SmmuRawSpinLock = ksync::RawMutex;
 
+/// Raw mutex type alias: uses the kernel's `RawMutex` in the kernel and `ksync::RawMutex` in host
+/// tests. Generic code (such as `region_alloc`) is parameterized over this type.
+#[cfg(is_kernel)]
+pub type SmmuRawMutex = crate::ksync_kernel::RawMutex;
+
+/// Raw mutex type alias for host tests (`ksync::RawMutex`).
+#[cfg(not(is_kernel))]
+pub type SmmuRawMutex = ksync::RawMutex;
+
 /// Lock policy for acquiring an [`SmmuRawSpinLock`] from an interrupt handler where interrupts are
 /// already disabled (`NoIrqSavePolicy` in kernel, default mutex policy on host).
 #[cfg(is_kernel)]
-pub type SmmuNoIrqSavePolicy = ksync::NoIrqSavePolicy;
+pub type SmmuNoIrqSavePolicy = crate::ksync_kernel::NoIrqSavePolicy;
 
 /// Lock policy for acquiring an [`SmmuRawSpinLock`] in host tests.
 #[cfg(not(is_kernel))]

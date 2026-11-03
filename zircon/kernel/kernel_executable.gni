@@ -13,6 +13,8 @@ import("//zircon/kernel/params.gni")
 import("//zircon/kernel/phys/kernel_elf_binary.gni")
 
 _kernel_executable_deps = [
+  # main.rs always mounts the kernel's ksync raw lock implementations.
+  "//zircon/kernel/lib/ksync:ksync-rs",
   "//zircon/kernel/lib/syscalls:syscalls-rs",
 
   # main.rs always compiles lib/userabi (even with kernel_no_userabi, where

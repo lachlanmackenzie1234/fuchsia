@@ -12,12 +12,13 @@ use super::handle::KernelHandle;
 use super::mbuf::MBufChain;
 use super::socket_dispatcher_ffi::cpp_socket_dispatcher_create;
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
 use core::pin::Pin;
 use debug::ltrace_entry;
 use fbl::{Canary, RefPtr};
-use ksync::{KMutex, PhantomMutex, RawCriticalMutex, guarded};
+use ksync::{KMutex, PhantomMutex, guarded};
 use object_constants_rs::{
     kSocketDispatcherStateAlign, kSocketDispatcherStateOffset, kSocketDispatcherStateSize,
 };

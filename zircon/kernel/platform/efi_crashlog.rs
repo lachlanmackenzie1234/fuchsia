@@ -7,6 +7,7 @@
 use super::crashlog::Interface;
 use super::efi::try_activate_efi_services;
 use super::power::ZirconCrashReason;
+use crate::ksync_kernel::RawSpinlock;
 use core::cell::UnsafeCell;
 use core::cmp::{max, min};
 use core::ptr::{null, slice_from_raw_parts as ptr_slice_from_raw_parts, slice_from_raw_parts_mut};
@@ -14,7 +15,7 @@ use efi::{
     EFI_NOT_FOUND, EFI_SUCCESS, ZIRCON_CRASHLOG_EFIATTR, kZirconCrashlogEfivar, kZirconVendorGuid,
 };
 use kprint::kprint;
-use ksync::{KMutex, RawSpinlock, guarded};
+use ksync::{KMutex, guarded};
 use libc::stdio::FILE;
 use zr::slice_from_raw_parts;
 

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::RawMutex;
 use crate::vm::compression::{StrategyCompressResult, VmCompressionStrategy};
 use crate::vm::physmap::paddr_to_physmap;
 use crate::vm::vm::vm_get_zero_page_paddr;
@@ -13,7 +14,7 @@ use core::mem::MaybeUninit;
 use core::pin::Pin;
 use kalloc::Box;
 use kprint::kprintln;
-use ksync::{KMutex, RawMutex, guarded, kcell_init};
+use ksync::{KMutex, guarded, kcell_init};
 use lz4_sys::{
     LZ4_MAX_INPUT_SIZE, LZ4_STREAM_MINSIZE, LZ4_compress_fast_extState_fastReset,
     LZ4_decompress_safe, LZ4_initStream, LZ4_stream_t,

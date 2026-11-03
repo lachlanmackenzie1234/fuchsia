@@ -14,6 +14,7 @@ use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num};
 use crate::kernel::percpu::PerCpu;
 use crate::kernel::thread::{self, Thread, ThreadStallState};
 use crate::kernel::types::{INVALID_CPU, cpu_num_t};
+use crate::ksync_kernel::{NoIrqSavePolicy, RawCriticalMutex, RawSpinlock};
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
 use core::convert::Infallible;
 use core::ffi::c_void;
@@ -58,7 +59,7 @@ pub struct AccumulatorStats {
 #[repr(C)]
 pub struct StallAccumulator {
     #[mutex]
-    lock: ksync::KMutex<ksync::RawSpinlock>,
+    lock: ksync::KMutex<RawSpinlock>,
 
     /// Number of progressing threads currently tracked by this structure.
     #[guarded_by(lock)]
@@ -123,7 +124,7 @@ impl StallAccumulator {
         debug_assert!((-1..=1).contains(&op_contributors_progressing));
         debug_assert!((-1..=1).contains(&op_contributors_stalling));
 
-        ksync::lock!(let mut guard = self.lock_lock_policy::<ksync::NoIrqSavePolicy>());
+        ksync::lock!(let mut guard = self.lock_lock_policy::<NoIrqSavePolicy>());
         let fields = guard.as_mut().fields_mut();
         consolidate(
             *fields.num_contributors_progressing,
@@ -455,12 +456,12 @@ struct Observers {
 #[pin_data]
 pub struct StallAggregator {
     #[mutex]
-    stats_lock: ksync::KMutex<ksync::RawCriticalMutex>,
+    stats_lock: ksync::KMutex<RawCriticalMutex>,
     #[guarded_by(stats_lock)]
     stats: AggregatorStats,
 
     #[mutex]
-    observers_lock: ksync::KMutex<ksync::RawCriticalMutex>,
+    observers_lock: ksync::KMutex<RawCriticalMutex>,
     #[guarded_by(observers_lock)]
     #[pin]
     observers: Observers,

@@ -26,6 +26,7 @@ use crate::kernel::thread::{
     AnnotatedAutoEagerReschedDisabler, PreemptDisabledToken, Thread, ThreadPtr, soft_fault,
 };
 use crate::kernel::wait_queue::{ForceInheritance, Interruptible, ResourceOwnership};
+use crate::ksync_kernel::{NoIrqSavePolicy, RawSpinlock};
 use crate::ktrace_rs::{ArgValue, begin_scope_cond};
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::mem::{MaybeUninit, size_of};
@@ -37,7 +38,7 @@ use fbl::{
     DefaultHashable, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode,
     HashTable, HashTableKeyable, UniquePtr,
 };
-use ksync::{KCell, KMutex, LockToken, NoIrqSavePolicy, RawSpinlock, guarded, kcell_init};
+use ksync::{KCell, KMutex, LockToken, guarded, kcell_init};
 use object_constants_rs::{kFutexContextStorageAlign, kFutexContextStorageSize};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;

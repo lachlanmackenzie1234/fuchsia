@@ -13,11 +13,12 @@ use core::ffi::{CStr, c_char, c_int, c_void};
 use core::fmt::{self, Write as _};
 use core::slice;
 
+use crate::ksync_kernel::declare_singleton_mutex;
 use affine::Round;
 use bitflags::bitflags;
 use boot_options::BootOptions;
 use fbl::RefPtr;
-use ksync::{KCell, declare_singleton_mutex};
+use ksync::KCell;
 use libc::stdio::{FILE, StringFile};
 use zx_types::ZX_KOID_INVALID;
 

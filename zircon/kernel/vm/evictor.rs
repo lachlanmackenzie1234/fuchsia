@@ -7,6 +7,7 @@
 use crate::counters::define_kcounter;
 use crate::kernel::event::AutounsignalEvent;
 use crate::kernel::thread::{Thread, ThreadPtr};
+use crate::ksync_kernel::{RawMonitoredSpinlock, RawMutex};
 use crate::platform_rs::timer::InstantMono;
 use crate::vm::compression::VmCompression;
 use crate::vm::page::VmPagePtr;
@@ -20,7 +21,7 @@ use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use evictor_bindings as bindings;
 use fbl::StringBuffer;
-use ksync::{KMutex, RawMonitoredSpinlock, RawMutex, guarded, source_tag};
+use ksync::{KMutex, guarded, source_tag};
 use pin_init::{PinInit, pin_data, pin_init, stack_pin_init};
 use zr::SendSyncInlineFn;
 

@@ -9,6 +9,7 @@ use crate::counters::define_kcounter;
 use crate::kernel::deadline::{Deadline, InstantUnknown};
 use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::thread::{self, LOW_PRIORITY, ThreadPtr};
+use crate::ksync_kernel::declare_singleton_mutex;
 use crate::object::get_memory_watchdog;
 use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
 use crate::vm::arch_vm_aspace::{NonTerminalAction, TerminalAction};
@@ -25,7 +26,7 @@ use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use kprint::kprintln;
-use ksync::{KCell, LockToken, declare_singleton_mutex, lock};
+use ksync::{KCell, LockToken, lock};
 use lazy_init::LazyInit;
 
 #[cfg(console_enabled)]

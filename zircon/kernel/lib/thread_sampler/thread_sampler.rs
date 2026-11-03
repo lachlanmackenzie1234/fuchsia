@@ -36,7 +36,7 @@ use crate::platform_rs::timer::{
 };
 use crate::user_copy::{UserInPtr, UserOutPtr};
 
-ksync::declare_singleton_mutex!(ThreadSamplerLock);
+crate::ksync_kernel::declare_singleton_mutex!(ThreadSamplerLock);
 
 /// The current state of the thread sampler.
 ///

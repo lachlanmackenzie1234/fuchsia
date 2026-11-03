@@ -27,6 +27,7 @@ use crate::kernel::thread::{
     signal_policy_exception,
 };
 use crate::kernel::wait_queue::{ForceInheritance, Interruptible, ResourceOwnership};
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::ktrace_rs::{
     KTrace, category_enabled, duration_begin_timestamp, duration_end_timestamp,
     flow_begin_timestamp, flow_end_timestamp, flow_step_timestamp,
@@ -41,7 +42,7 @@ use fbl::{
     Canary, DefaultObjectTag, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode,
     RefPtr, TrackingSize,
 };
-use ksync::{KMutex, PhantomMutex, RawCriticalMutex, guarded, kcell_init};
+use ksync::{KMutex, PhantomMutex, guarded, kcell_init};
 use object_constants_rs::{
     kChannelDispatcherStateAlign, kChannelDispatcherStateOffset, kChannelDispatcherStateSize,
 };

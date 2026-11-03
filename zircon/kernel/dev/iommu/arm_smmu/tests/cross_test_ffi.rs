@@ -23,7 +23,7 @@ use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 
 use fbl::RefPtr;
-use region_alloc::{Region, RegionSpan, TestRegionSet};
+use region_alloc::{RegionSpan, TestRegionSet};
 use zx_status::Status;
 use zx_status::sys::{ZX_OK, zx_status_t};
 
@@ -53,7 +53,7 @@ pub struct RustDeviceAspace {
 }
 
 /// Raw region pointer type matching `struct RustDeviceAspaceAlloc` in `cross_test_ffi.h`.
-pub type RustDeviceAspaceAlloc = Region;
+pub type RustDeviceAspaceAlloc = region_alloc::Region<crate::arm_smmu::common::SmmuRawMutex>;
 
 /// Opaque handle to a C++ `iommu::Iommu` instance for cross-testing.
 #[repr(C)]

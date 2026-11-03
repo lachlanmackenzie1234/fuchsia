@@ -11,9 +11,9 @@ mod mutex_spin_time_tests {
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicBool, Ordering};
 
+    use crate::ksync_kernel::RawMutexSpinMaxDurationPolicy;
     use affine::{Ratio, Round};
     use kprint::kprintln;
-    use ksync::RawMutexSpinMaxDurationPolicy;
     use pin_init::{pin_init, stack_pin_init};
     use unittest::{assert_ok, expect_ge, unwrap_ok};
 
@@ -89,7 +89,7 @@ mod mutex_spin_time_tests {
         #[ksync::guarded]
         struct Args {
             #[mutex]
-            the_mutex: ksync::KMutex,
+            the_mutex: ksync::KMutex<crate::ksync_kernel::RawMutex>,
             spin_max_duration: DurationMono,
             interlock: AtomicBool,
         }

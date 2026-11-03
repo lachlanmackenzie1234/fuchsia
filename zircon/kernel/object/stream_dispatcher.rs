@@ -5,9 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::{RawCriticalMutex, RawMutex};
 use bitrs::layout;
 use fbl::{Canary, RefPtr};
-use ksync::{KMutex, RawCriticalMutex, RawMutex, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{

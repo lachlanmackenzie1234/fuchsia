@@ -1,16 +1,20 @@
-// Copyright 2026 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
 
-use crate::lockdep_tracked::{LockdepTracked, impl_lockdep_tracked_lock_policy};
-use crate::raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 use core::ffi::c_void;
+use ksync::{
+    ConstRawLock, ExclusiveLockPolicy, LockPolicy, LockdepTracked, RawLock,
+    impl_lockdep_tracked_lock_policy,
+};
 use pin_init::{PinInit, pin_data, pin_init_from_closure};
 use zx_types::zx_duration_mono_t;
 
-#[cfg(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"))]
+#[cfg(any(lock_name_tracing_enabled, scheduler_lock_spin_tracing_enabled))]
 const RAW_MUTEX_SIZE: usize = 32;
-#[cfg(not(any(feature = "lock_name_tracing", feature = "spin_lock_tracing")))]
+#[cfg(not(any(lock_name_tracing_enabled, scheduler_lock_spin_tracing_enabled)))]
 const RAW_MUTEX_SIZE: usize = 24;
 
 unsafe extern "C" {
@@ -33,9 +37,9 @@ const INVALID_CPU: u32 = u32::MAX;
 
 const fn make_mutex_storage() -> [u8; RAW_MUTEX_SIZE] {
     let mut bytes = [0u8; RAW_MUTEX_SIZE];
-    #[cfg(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"))]
+    #[cfg(any(lock_name_tracing_enabled, scheduler_lock_spin_tracing_enabled))]
     let offset = 8;
-    #[cfg(not(any(feature = "lock_name_tracing", feature = "spin_lock_tracing")))]
+    #[cfg(not(any(lock_name_tracing_enabled, scheduler_lock_spin_tracing_enabled)))]
     let offset = 0;
 
     let magic_bytes = MUTEX_MAGIC.to_ne_bytes();
@@ -250,7 +254,7 @@ unsafe impl RawLock for RawMutexStorage {
 
     #[inline]
     fn as_mut_ptr(&self) -> *mut c_void {
-        self as *const Self as *mut Self as *mut c_void
+        self.storage.get().cast::<c_void>()
     }
 }
 
@@ -317,25 +321,25 @@ pub type RawCriticalMutex = LockdepTracked<RawMutexStorage, RawCriticalMutexPoli
 /// Lock acquisition policy for [`RawCriticalMutex`] with an explicit external lockdep order.
 ///
 /// The mutex's lock class must be registered with
-/// [`LOCK_FLAGS_NESTABLE`](crate::LOCK_FLAGS_NESTABLE), which is checked at compile time. The
+/// [`LOCK_FLAGS_NESTABLE`](ksync::LOCK_FLAGS_NESTABLE), which is checked at compile time. The
 /// order is preserved across `call_unlocked` so that the re-acquisition is validated at the same
 /// position in the nesting.
 ///
 /// Unlike the C++ `lockdep::Guard`, which only allows unordered acquisition of a nestable lock
 /// through a type-erased `Lock<CriticalMutex>*`, a `KMutex` with a nestable lock class may also be
 /// acquired without an order through its default policy, which records order `0`. See
-/// [`LOCK_FLAGS_NESTABLE`](crate::LOCK_FLAGS_NESTABLE) for the validation consequences of mixing
+/// [`LOCK_FLAGS_NESTABLE`](ksync::LOCK_FLAGS_NESTABLE) for the validation consequences of mixing
 /// unordered and ordered acquisitions of one class: do not hold an unordered guard across a
 /// nonzero ordered acquisition of the same lock class unless that instance genuinely occupies
 /// order `0` in the class's ordering.
-pub type RawCriticalMutexOrderedPolicy = crate::OrderedLockPolicy<RawCriticalMutexPolicy>;
+pub type RawCriticalMutexOrderedPolicy = ksync::OrderedLockPolicy<RawCriticalMutexPolicy>;
 
 const _: () = {
     const HAS_NAME_STORAGE: bool =
-        cfg!(any(feature = "lock_name_tracing", feature = "spin_lock_tracing"));
-    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
+        cfg!(any(lock_name_tracing_enabled, scheduler_lock_spin_tracing_enabled));
+    #[cfg(with_lock_dep)]
     const EXPECTED_SIZE: usize = if HAS_NAME_STORAGE { 40 } else { 32 };
-    #[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
+    #[cfg(not(with_lock_dep))]
     const EXPECTED_SIZE: usize = if HAS_NAME_STORAGE { 32 } else { 24 };
 
     assert!(core::mem::size_of::<RawMutex>() == EXPECTED_SIZE);

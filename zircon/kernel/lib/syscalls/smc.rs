@@ -37,7 +37,7 @@ mod arch {
     define_kcounter!(ARM_SMCCC_YIELDING_CALLS, "arm_smccc.yielding_calls", Sum);
     define_kcounter!(ARM_SMCCC_QCOM_INTERRUPTED, "arm_smccc.qcom.interrupted", Sum);
 
-    ksync::declare_singleton_mutex!(QcomSmcLock);
+    crate::ksync_kernel::declare_singleton_mutex!(QcomSmcLock);
 
     pub fn smc_call(params: &zx_smc_parameters_t) -> Result<zx_smc_result_t, Status> {
         let client_and_secure_os_id =

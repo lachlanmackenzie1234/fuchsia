@@ -4,10 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::RawSpinlock;
 use core::sync::atomic::{AtomicU32, Ordering};
 use debug::ltracef;
 use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
-use ksync::{KMutex, RawSpinlock, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{pin_data, pinned_drop};
 use zx_status::Status;
 use zx_types::zx_info_msi_t;

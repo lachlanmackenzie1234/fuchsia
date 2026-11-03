@@ -30,10 +30,7 @@ rustc_library("ksync") {
     "src/lock_token.rs",
     "src/lockdep_tracked.rs",
     "src/phantom_mutex.rs",
-    "src/raw_kernel_brwlock.rs",
-    "src/raw_kernel_mutex.rs",
     "src/raw_lock.rs",
-    "src/raw_spin_lock.rs",
     "src/raw_userspace_brwlock.rs",
     "src/raw_userspace_mutex.rs",
     "src/singleton.rs",
@@ -51,21 +48,18 @@ rustc_library("ksync") {
     features = [ "kernel" ]
     if (enable_lock_dep) {
       features += [ "lock_dep" ]
+
+      # `zr` is only used for the lockdep entry storage, and
+      # `//zircon/kernel/lib/ksync` only for the `cpp_lock_dep_*` and
+      # `cpp_lock_validate_*` FFI.
+      deps += [
+        "//src/lib/zr",
+        "//zircon/kernel/lib/ksync",
+      ]
     } else if (enable_lock_dep_metadata_only || lock_name_tracing_enabled ||
                scheduler_lock_spin_tracing_enabled) {
       features += [ "lock_metadata_only" ]
     }
-    if (scheduler_lock_spin_tracing_enabled) {
-      features += [ "spin_lock_tracing" ]
-    }
-    if (lock_name_tracing_enabled || scheduler_lock_spin_tracing_enabled) {
-      features += [ "lock_name_tracing" ]
-    }
-    deps += [
-      "//sdk/rust/zx-types",
-      "//src/lib/zr",
-      "//zircon/kernel/lib/ksync",
-    ]
   } else {
     deps += [
       "//src/lib/fuchsia-sync",

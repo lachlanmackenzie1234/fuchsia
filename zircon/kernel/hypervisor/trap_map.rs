@@ -6,6 +6,7 @@
 
 //! Hypervisor guest trap map and blocking port packet allocator.
 
+use crate::ksync_kernel::{KSpinlock, RawSpinlock};
 use core::convert::Infallible;
 use core::ffi::{CStr, c_void};
 use core::mem::{align_of, offset_of, size_of};
@@ -14,7 +15,7 @@ use core::ptr::NonNull;
 use fbl::{
     Recyclable, RefPtr, UniquePtr, WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
 };
-use ksync::{KCell, KSpinlock, LockClass, RawSpinlock};
+use ksync::{KCell, LockClass};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use range_check::intersects_offset_len;
 use zr::static_assert;

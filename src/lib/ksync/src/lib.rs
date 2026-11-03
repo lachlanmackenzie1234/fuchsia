@@ -117,6 +117,7 @@ macro_rules! source_tag {
     }};
 }
 
+mod brwlock;
 mod kcell;
 mod kmutex;
 mod konce_cell;
@@ -129,27 +130,17 @@ mod singleton;
 #[cfg(not(feature = "kernel"))]
 mod raw_userspace_mutex;
 
-#[cfg(feature = "kernel")]
-mod raw_kernel_mutex;
-#[cfg(feature = "kernel")]
-mod raw_spin_lock;
-
-pub use kcell::{KCell, KCellInit, kcell_init};
-pub use konce_cell::{KOnceCell, KOnceCellGuard};
-#[cfg(any(feature = "kernel", test))]
-mod brwlock;
-
-#[cfg(feature = "kernel")]
-mod raw_kernel_brwlock;
-
 #[cfg(all(not(feature = "kernel"), test))]
 mod raw_userspace_brwlock;
 
+pub use brwlock::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard};
+pub use kcell::{KCell, KCellInit, kcell_init};
 pub use kmutex::{
     AliasedLock, KMutex, KMutexAliasedGuard, KMutexGuard, KMutexGuardMultiple, aliased_lock,
     aliased_lock_policy, aliased_lock_policy_with, aliased_lock_with, guard_multiple,
     guard_multiple_policy, guard_multiple_policy_with, guard_multiple_with,
 };
+pub use konce_cell::{KOnceCell, KOnceCellGuard};
 pub use lock_token::{ExclusiveLockToken, LockToken, LockTokenRead, LockTokenWrite};
 pub use lockdep::{
     LOCK_FLAGS_IRQ_SAFE, LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_NESTABLE, LOCK_FLAGS_NONE,
@@ -160,33 +151,20 @@ pub use lockdep_tracked::{
     LockdepTracked, LockdepTrackedGuardState, OrderedGuardState, OrderedLockPolicy,
 };
 pub use phantom_mutex::PhantomMutex;
-pub use raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
+pub use raw_lock::{
+    ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawAssertHeldLock, RawLock, RawSharedLock,
+    RawUntrackedIrqLock, RawUntrackedLock,
+};
 pub use singleton::SingletonMutex;
 
+// The kernel's raw lock implementations (`RawMutex`, `RawCriticalMutex`, `RawSpinlock`,
+// `RawMonitoredSpinlock` and `RawBrwLockPi`, which wrap the C++ kernel locks) are not part of this
+// crate: they live in the kernel crate itself (see `//zircon/kernel/lib/ksync`). Generic code using
+// `ksync` must therefore be parameterized over its `RawLock` type, with the kernel supplying the
+// concrete raw lock. Only userspace implementations are provided here, for host builds and tests.
 #[cfg(not(feature = "kernel"))]
 pub use raw_userspace_mutex::{RawMutex, RawMutexStorage};
 
-#[cfg(feature = "kernel")]
-pub use raw_spin_lock::{
-    InterruptSavedState, IrqSavePolicy, MonitoredSpinlockGuardState, NoIrqSavePolicy,
-    RawMonitoredSpinlock, RawMonitoredSpinlockStorage, RawSpinlock, RawSpinlockStorage,
-    TryAcquireResult,
-};
-#[cfg(feature = "kernel")]
-pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;
-#[cfg(feature = "kernel")]
-pub type KMonitoredSpinlock<Class> = KMutex<Class, RawMonitoredSpinlock>;
-#[cfg(any(feature = "kernel", test))]
-pub use brwlock::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard};
-#[cfg(feature = "kernel")]
-pub use raw_kernel_brwlock::{
-    RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,
-};
-#[cfg(feature = "kernel")]
-pub use raw_kernel_mutex::{
-    RawCriticalMutex, RawCriticalMutexOrderedPolicy, RawCriticalMutexPolicy, RawMutex,
-    RawMutexSpinMaxDurationPolicy, RawMutexStorage,
-};
 #[cfg(all(not(feature = "kernel"), test))]
 pub use raw_userspace_brwlock::{
     RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,

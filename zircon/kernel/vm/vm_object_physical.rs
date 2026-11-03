@@ -5,11 +5,12 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::types::PAddr;
+use crate::ksync_kernel::RawCriticalMutex;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use fbl::{IsOpaqueRefCounted, RefPtr};
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use ksync::{KMutex, LockToken, guarded};
 use pin_init::pin_data;
 use zr::{Opaque, ToMutPtr};
 use zx_status::Status;

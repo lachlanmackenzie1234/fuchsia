@@ -956,8 +956,10 @@ fn generate_lock_class_registration(
     let flags_ident = format_ident!("{}_{}_FLAGS", struct_upper, mu_upper);
     let path_name = format!("{}::{}", struct_ident, lock_ident);
 
-    // `flags_expr` never references the struct's generics, so a single scoped `const` can serve
-    // as the source of truth for both the registration and `LockClass::FLAGS`.
+    // `flags_expr` never references the struct's generics (callers use
+    // `generate_generic_lock_class_registration` for lock types that mention them), so a single
+    // scoped `const` can serve as the source of truth for both the registration and
+    // `LockClass::FLAGS`.
     quote! {
         const _: () = {
             ::ksync::declare_interned_string!(#string_reg_ident, #path_name);
@@ -1282,13 +1284,14 @@ fn generate_pinned_guard_struct(
 ///
 /// # Attributes
 ///
-/// - `#[mutex]` / `#[mutex(flags = ...)]` / `#[mutex(CustomClass)]`: Marks a `KMutex`,
-///   `KSpinlock`, or `KMonitoredSpinlock` field and generates `lock_<name>()` / `guard_<name>()`
+/// - `#[mutex]` / `#[mutex(flags = ...)]` / `#[mutex(CustomClass)]`: Marks a `KMutex<L>` field,
+///   where `L` is the raw lock type (e.g. the kernel's `RawMutex`, `RawSpinlock`, or
+///   `RawMonitoredSpinlock`; there is no default), and generates `lock_<name>()` / `guard_<name>()`
 ///   methods, plus `lock_<name>_policy[_with]()`, `lock_<name>_aliased[_policy[_with]]()`, and
 ///   `lock_<name>_multiple[_policy]()` variants for custom lock policies (e.g.
 ///   `RawCriticalMutexOrderedPolicy`), aliased locks, and address-ordered multi-lock acquisition
 ///   (there is no `lock_<name>_multiple_policy_with()`; see `KMutex::lock_multiple_policy_with`).
-///   (`KMonitoredSpinlock` fields have no `*_with` variants: their `lock_<name>_policy(args)` and
+///   (Monitored spinlock fields have no `*_with` variants: their `lock_<name>_policy(args)` and
 ///   `lock_<name>_aliased_policy(alias, args)` take the policy's arguments directly; `PhantomMutex`
 ///   fields only get `lock_<name>()`.)
 ///   Without `CustomClass`, a lock class is generated and registered with the raw lock's
@@ -1308,13 +1311,14 @@ fn generate_pinned_guard_struct(
 ///   `lock_<name>_aliased_policy_with::<P>(args)`, and
 ///   `lock_<name>_multiple_policy_with::<P>(items, args)` accepting `AcquireArgs` (useful for
 ///   generic lock types where `AcquireArgs` might not be `()`). Conversely, concrete
-///   `KMonitoredSpinlock` fields do not generate `*_with` methods; instead, their base
+///   monitored spinlock fields do not generate `*_with` methods; instead, their base
 ///   `lock_<name>` methods are generated to directly accept a `SourceTag` argument.
 /// - `#[mutex(untracked)]`: Marks a `KMutex` field whose generated lock class is not registered
 ///   with lockdep (`ID` is null); cannot be combined with `flags` or `CustomClass`. Fields of an
 ///   untracked storage type (e.g. `KMutex<RawMutexStorage>`) are untracked implicitly.
-/// - `#[brwlock]` / `#[brwlock(flags = ...)]` / `#[brwlock(CustomClass)]`: Marks a `BrwLockPi`
-///   field and generates `read_<name>()` / `write_<name>()` / `guard_read_<name>()` /
+/// - `#[brwlock]` / `#[brwlock(flags = ...)]` / `#[brwlock(CustomClass)]`: Marks a `BrwLockPi<L>`
+///   field, where `L` is the raw reader-writer lock type (e.g. the kernel's `RawBrwLockPi`; there
+///   is no default), and generates `read_<name>()` / `write_<name>()` / `guard_read_<name>()` /
 ///   `guard_write_<name>()` methods, with the same lock class rules as `#[mutex]` (except that
 ///   `untracked` is not supported).
 /// - `#[guarded_by(lock1)]` or `#[guarded_by(lock1, lock2, ...)]`: Wraps a field in `KCell` (or
@@ -1337,9 +1341,9 @@ fn generate_pinned_guard_struct(
 /// #[guarded]
 /// struct Example {
 ///     #[mutex]
-///     mu1: KMutex,
+///     mu1: KMutex<RawMutex>,
 ///     #[mutex]
-///     mu2: KMutex,
+///     mu2: KMutex<RawMutex>,
 ///     #[guarded_by(mu1)]
 ///     single: u32,
 ///     #[guarded_by(mu1, mu2)]
@@ -1358,9 +1362,9 @@ fn generate_pinned_guard_struct(
 /// #[::pin_init::pin_data]
 /// struct Example {
 ///     #[pin]
-///     mu1: KMutex<ExampleMu1Class, ::ksync::RawMutex>,
+///     mu1: KMutex<ExampleMu1Class, RawMutex>,
 ///     #[pin]
-///     mu2: KMutex<ExampleMu2Class, ::ksync::RawMutex>,
+///     mu2: KMutex<ExampleMu2Class, RawMutex>,
 ///     single: ::ksync::KCell<u32, ExampleMu1Class>,
 ///     shared: ::ksync::KCell<u64, (ExampleMu1Class, ExampleMu2Class)>,
 /// }
@@ -1382,7 +1386,7 @@ fn generate_pinned_guard_struct(
 ///     _marker: ::core::marker::PhantomData<(&'b (),)>,
 /// }
 ///
-/// impl<'a, P: ::ksync::ExclusiveLockPolicy<::ksync::RawMutex>> ExampleMu1Guard<'a, P> {
+/// impl<'a, P: ::ksync::ExclusiveLockPolicy<RawMutex>> ExampleMu1Guard<'a, P> {
 ///     fn single(&self) -> &u32 {
 ///         unsafe { self.parent.single.get(self.inner.token()) }
 ///     }
@@ -1467,17 +1471,25 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             }
 
             if analysis.is_mutex {
+                // There is no default raw lock type: `ksync` cannot name the kernel's `RawMutex`,
+                // so the lock type must always be given explicitly (e.g. `KMutex<RawMutex>`).
+                let mut mutex_type = quote! { () };
                 if !is_kmutex_type(&field.ty) {
                     errors.push(syn::Error::new(
                         field.ty.span(),
-                        "Mutex field must be of type KMutex",
+                        "Mutex field must be of type KMutex (e.g. use `KMutex<RawSpinlock>` rather \
+                         than `KSpinlock`)",
                     ));
-                }
-                let mut mutex_type = quote! { ::ksync::RawMutex };
-                match extract_lock_type(&field.ty) {
-                    Ok(Some(ty)) => mutex_type = ty,
-                    Ok(None) => {}
-                    Err(e) => errors.push(e),
+                } else {
+                    match extract_lock_type(&field.ty) {
+                        Ok(Some(ty)) => mutex_type = ty,
+                        Ok(None) => errors.push(syn::Error::new(
+                            field.ty.span(),
+                            "KMutex fields must specify the raw lock type explicitly, e.g. \
+                             `KMutex<RawMutex>`",
+                        )),
+                        Err(e) => errors.push(e),
+                    }
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
                 let is_untracked = analysis.is_untracked || is_untracked_storage_type(&mutex_type);
@@ -1495,24 +1507,27 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     is_untracked,
                 ));
             } else if analysis.is_brwlock {
+                // As with `KMutex`, there is no default raw lock type: `ksync` cannot name the
+                // kernel's `RawBrwLockPi`, so it must be given explicitly.
+                let mut raw_lock_type = quote! { () };
                 if !is_brwlock_type(&field.ty) {
                     errors.push(syn::Error::new(
                         field.ty.span(),
                         "Brwlock field must be of type BrwLockPi",
                     ));
-                } else if let Type::Path(type_path) = &field.ty
-                    && let Some(last_segment) = type_path.path.segments.last()
-                    && !matches!(last_segment.arguments, syn::PathArguments::None)
-                {
-                    errors.push(syn::Error::new(
-                        last_segment.arguments.span(),
-                        "BrwLockPi does not accept generic arguments in #[guarded] struct \
-                         definitions; specify a custom lock class with #[brwlock(LockClass)] \
-                         instead",
-                    ));
+                } else {
+                    match extract_brwlock_type(&field.ty) {
+                        Ok(ty) => raw_lock_type = ty,
+                        Err(e) => errors.push(e),
+                    }
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                brwlock_fields.push((field.clone(), analysis.custom_class, analysis.custom_flags));
+                brwlock_fields.push((
+                    field.clone(),
+                    raw_lock_type,
+                    analysis.custom_class,
+                    analysis.custom_flags,
+                ));
             } else if !analysis.guarded_by.is_empty() {
                 let konce_cell_inner_ty = if is_konce_cell_type(&field.ty) {
                     match extract_konce_cell_inner_type(&field.ty) {
@@ -1617,7 +1632,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         });
     }
 
-    for (field, custom_class, custom_flags) in brwlock_fields {
+    for (field, raw_lock_type, custom_class, custom_flags) in brwlock_fields {
         let field_ident = field.ident.unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
@@ -1655,7 +1670,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             ident: field_ident,
             class_ident,
             class_type,
-            mutex_type: quote! { ::ksync::RawBrwLockPi },
+            mutex_type: raw_lock_type,
             custom_class,
             custom_flags,
             is_phantom: false,
@@ -1691,12 +1706,13 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 brwlock_fields_processed.iter().find(|m| m.ident == *field_ident)
             {
                 let class_type = &brwlock_field.class_type;
+                let raw_lock_type = &brwlock_field.mutex_type;
                 if let Type::Path(ref mut type_path) = field.ty
                     && let Some(last_segment) = type_path.path.segments.last_mut()
                 {
                     last_segment.ident = format_ident!("BrwLockPi");
                     last_segment.arguments = syn::PathArguments::AngleBracketed(
-                        syn::parse2(quote! { <#class_type> }).unwrap(),
+                        syn::parse2(quote! { <#class_type, #raw_lock_type> }).unwrap(),
                     );
                 }
             } else if let Some(guarded_field) =
@@ -1909,7 +1925,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
 
         let guard_struct_generics = if mutex.is_phantom {
             let mut params = params_with_bounds.clone();
-            params.push(syn::parse_quote!(M: ::ksync::RawLock = ::ksync::RawMutex));
+            params.push(syn::parse_quote!(M: ::ksync::RawLock));
             params.push(syn::parse_quote!(
                 P: ::ksync::ExclusiveLockPolicy<M> = <M as ::ksync::RawLock>::DefaultPolicy
             ));
@@ -2636,6 +2652,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         let lock_ident = &brwlock.ident;
         let class_ident = &brwlock.class_ident;
         let class_type = &brwlock.class_type;
+        let raw_lock_type = &brwlock.mutex_type;
 
         let mu_camel = to_camel_case(&lock_ident.to_string());
         let read_guard_ident = format_ident!("{struct_ident}{mu_camel}ReadGuard");
@@ -2689,21 +2706,40 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             phantom_ty_params,
         );
 
+        let is_generic_raw_lock_type =
+            mentions_any_ident(raw_lock_type, &generics_info.all_generic_idents);
+
         let class_registration_code = if brwlock.custom_class.is_none() {
-            let flags_expr = match brwlock.custom_flags.as_ref() {
-                Some(flags) => quote! { (::ksync::RawBrwLockPi::LOCK_FLAGS | (#flags)) },
-                None => quote! { ::ksync::RawBrwLockPi::LOCK_FLAGS },
-            };
-            generate_lock_class_registration(
-                struct_ident,
-                lock_ident,
-                &mu_camel,
-                class_ident,
-                &class_impl_generics,
-                &class_ty_generics,
-                where_clause,
-                flags_expr,
-            )
+            if is_generic_raw_lock_type {
+                generate_generic_lock_class_registration(
+                    struct_ident,
+                    lock_ident,
+                    &mu_camel,
+                    class_ident,
+                    &class_impl_generics,
+                    &class_ty_generics,
+                    where_clause,
+                    raw_lock_type,
+                    brwlock.custom_flags.as_ref(),
+                )
+            } else {
+                let flags_expr = match brwlock.custom_flags.as_ref() {
+                    Some(flags) => {
+                        quote! { (<#raw_lock_type as ::ksync::RawLock>::LOCK_FLAGS | (#flags)) }
+                    }
+                    None => quote! { <#raw_lock_type as ::ksync::RawLock>::LOCK_FLAGS },
+                };
+                generate_lock_class_registration(
+                    struct_ident,
+                    lock_ident,
+                    &mu_camel,
+                    class_ident,
+                    &class_impl_generics,
+                    &class_ty_generics,
+                    where_clause,
+                    flags_expr,
+                )
+            }
         } else {
             quote! {}
         };
@@ -2753,7 +2789,8 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             &field_code.write_fields_init,
         );
 
-        let read_guard_inner = quote! { ::ksync::BrwLockPiReadGuard<'a, #class_type> };
+        let read_guard_inner =
+            quote! { ::ksync::BrwLockPiReadGuard<'a, #class_type, #raw_lock_type> };
         let read_guard_struct = generate_pinned_guard_struct(
             struct_vis,
             struct_ident,
@@ -2766,7 +2803,8 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             &read_guard_inner,
         );
 
-        let write_guard_inner = quote! { ::ksync::BrwLockPiWriteGuard<'a, #class_type> };
+        let write_guard_inner =
+            quote! { ::ksync::BrwLockPiWriteGuard<'a, #class_type, #raw_lock_type> };
         let write_guard_struct = generate_pinned_guard_struct(
             struct_vis,
             struct_ident,
@@ -3000,7 +3038,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #[inline]
                 #struct_vis fn #guard_read_from_guard_method_ident<'b, 'a>(
                     &'b self,
-                    guard: &'b ::ksync::BrwLockPiReadGuard<'a, #class_type>,
+                    guard: &'b ::ksync::BrwLockPiReadGuard<'a, #class_type, #raw_lock_type>,
                 ) -> #read_token_guard_ident #token_guard_ty_generics {
                     assert!(
                         guard.is_locked_by(&self.#lock_ident),
@@ -3012,7 +3050,9 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #[inline]
                 #struct_vis fn #guard_write_from_guard_method_ident<'b, 'a>(
                     &'b self,
-                    guard: ::core::pin::Pin<&'b mut ::ksync::BrwLockPiWriteGuard<'a, #class_type>>,
+                    guard: ::core::pin::Pin<
+                        &'b mut ::ksync::BrwLockPiWriteGuard<'a, #class_type, #raw_lock_type>,
+                    >,
                 ) -> #write_token_guard_ident #token_guard_ty_generics {
                     assert!(
                         guard.is_locked_by(&self.#lock_ident),
@@ -3068,15 +3108,12 @@ fn is_wavltree_type(ty: &Type) -> bool {
 
 fn is_kmutex_type(ty: &Type) -> bool {
     is_type_named(ty, "KMutex")
-        || is_type_named(ty, "KSpinlock")
-        || is_type_named(ty, "KMonitoredSpinlock")
 }
 
 fn is_monitored_spinlock_type(tokens: &proc_macro2::TokenStream) -> bool {
     if let Ok(ty) = syn::parse2::<Type>(tokens.clone()) {
         is_type_named(&ty, "RawMonitoredSpinlock")
             || is_type_named(&ty, "RawMonitoredSpinlockStorage")
-            || is_type_named(&ty, "KMonitoredSpinlock")
     } else {
         false
     }
@@ -3123,12 +3160,6 @@ fn is_phantom_mutex_type(ty: &Type) -> bool {
 fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn::Error> {
     let Type::Path(type_path) = ty else { return Ok(None) };
     let Some(last_segment) = type_path.path.segments.last() else { return Ok(None) };
-    if last_segment.ident == "KSpinlock" {
-        return Ok(Some(quote! { ::ksync::RawSpinlock }));
-    }
-    if last_segment.ident == "KMonitoredSpinlock" {
-        return Ok(Some(quote! { ::ksync::RawMonitoredSpinlock }));
-    }
     if last_segment.ident != "KMutex" {
         return Ok(None);
     }
@@ -3150,6 +3181,31 @@ fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn:
             args.span(),
             "KMutex does not support parenthesized generic arguments",
         )),
+    }
+}
+
+/// Extracts the raw lock type `L` from a `BrwLockPi<L>` field type in a `#[guarded]` struct.
+fn extract_brwlock_type(ty: &Type) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let missing = || {
+        syn::Error::new(
+            ty.span(),
+            "BrwLockPi fields must specify the raw lock type explicitly, e.g. \
+             `BrwLockPi<RawBrwLockPi>` (specify a custom lock class with #[brwlock(LockClass)])",
+        )
+    };
+    let Type::Path(type_path) = ty else { return Err(missing()) };
+    let Some(last_segment) = type_path.path.segments.last() else { return Err(missing()) };
+    match &last_segment.arguments {
+        syn::PathArguments::AngleBracketed(args) if args.args.len() == 1 => {
+            let first_arg = &args.args[0];
+            Ok(quote! { #first_arg })
+        }
+        syn::PathArguments::AngleBracketed(args) if args.args.len() > 1 => Err(syn::Error::new(
+            args.span(),
+            "BrwLockPi expects exactly 1 generic argument for the raw lock type in struct \
+             definition; specify a custom lock class with #[brwlock(LockClass)]",
+        )),
+        _ => Err(missing()),
     }
 }
 
@@ -3235,9 +3291,10 @@ impl syn::parse::Parse for SingletonLockInput {
 
 /// Declares a singleton lock class and its statically initialized lock.
 ///
-/// Syntax: `declare_singleton_lock!([#[attrs]] [vis] Name [, RawLockType] [, placement] [,])`.
+/// Syntax: `declare_singleton_lock!([#[attrs]] [vis] Name, RawLockType [, placement] [,])`.
 ///
-/// `RawLockType` defaults to `::ksync::RawMutex`. The optional `placement` controls the
+/// `RawLockType` is required: `ksync` has no default raw lock type, since it cannot name the
+/// kernel's `RawMutex`. The optional `placement` controls the
 /// singleton's static storage, mirroring the C++ kernel's `<align.h>`:
 ///
 /// - `cpu_align`: like C++ `__CPU_ALIGN`, aligns the static to a cache line (64 bytes, the kernel's
@@ -3249,7 +3306,15 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
     let SingletonLockInput { attrs, vis, name, lock_type, placement, .. } =
         parse_macro_input!(input as SingletonLockInput);
 
-    let raw_lock = lock_type.unwrap_or_else(|| syn::parse_quote!(::ksync::RawMutex));
+    let Some(raw_lock) = lock_type else {
+        return syn::Error::new(
+            name.span(),
+            "declare_singleton_lock! requires an explicit raw lock type, e.g. \
+             `declare_singleton_lock!(Name, RawMutex)`",
+        )
+        .to_compile_error()
+        .into();
+    };
     let name_str = name.to_string();
     let name_upper = name_str.to_ascii_uppercase();
     let string_reg_ident = format_ident!("{}_STRING_REG", name_upper);
@@ -3379,7 +3444,7 @@ mod tests {
         let err_empty = guarded_impl(quote! {
             struct BadEmpty {
                 #[mutex]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by()]
                 val: u32,
             }
@@ -3395,7 +3460,7 @@ mod tests {
         let err_dup = guarded_impl(quote! {
             struct BadDup {
                 #[mutex]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by(mu, mu)]
                 val: u32,
             }
@@ -3411,7 +3476,7 @@ mod tests {
         let err_missing = guarded_impl(quote! {
             struct BadMissing {
                 #[mutex]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by(mu, missing)]
                 val: u32,
             }
@@ -3429,9 +3494,9 @@ mod tests {
             struct BadLockGuarded {
                 #[mutex]
                 #[guarded_by(mu2)]
-                mu1: KMutex,
+                mu1: KMutex<RawMutex>,
                 #[mutex]
-                mu2: KMutex,
+                mu2: KMutex<RawMutex>,
             }
         })
         .to_string();
@@ -3445,9 +3510,9 @@ mod tests {
         let err_dup_class = guarded_impl(quote! {
             struct BadDupClass {
                 #[mutex(SharedCustomClass)]
-                mu1: KMutex,
+                mu1: KMutex<RawMutex>,
                 #[mutex(SharedCustomClass)]
-                mu2: KMutex,
+                mu2: KMutex<RawMutex>,
             }
         })
         .to_string();
@@ -3463,7 +3528,7 @@ mod tests {
         let err_bare = guarded_impl(quote! {
             struct BadBare {
                 #[mutex]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by]
                 val: u32,
             }
@@ -3479,7 +3544,7 @@ mod tests {
         let err_invalid_tok = guarded_impl(quote! {
             struct BadInvalidTok {
                 #[mutex]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by(123)]
                 val: u32,
             }
@@ -3495,13 +3560,13 @@ mod tests {
         let err_too_many = guarded_impl(quote! {
             struct BadTooMany {
                 #[mutex]
-                mu1: KMutex,
+                mu1: KMutex<RawMutex>,
                 #[mutex]
-                mu2: KMutex,
+                mu2: KMutex<RawMutex>,
                 #[mutex]
-                mu3: KMutex,
+                mu3: KMutex<RawMutex>,
                 #[mutex]
-                mu4: KMutex,
+                mu4: KMutex<RawMutex>,
                 #[guarded_by(mu1, mu2, mu3, mu4)]
                 val: u32,
             }
@@ -3697,7 +3762,7 @@ mod tests {
         let out_tracked = guarded_impl(quote! {
             struct TrackedObj {
                 #[mutex(flags = lockdep::LOCK_FLAGS_NESTABLE)]
-                mu: KMutex,
+                mu: KMutex<RawMutex>,
                 #[guarded_by(mu)]
                 val: u32,
             }
@@ -3720,7 +3785,10 @@ mod tests {
     fn test_explicit_lock_class_with_flags_compile_errors() {
         // An explicit lock class's flags are fixed where it is registered, so `flags = ...` must
         // be rejected rather than silently ignored, including for generic `CustomClass<T>` types.
-        for (attr, lock_ty) in [("mutex", quote! { KMutex }), ("brwlock", quote! { BrwLockPi })] {
+        for (attr, lock_ty) in [
+            ("mutex", quote! { KMutex<RawMutex> }),
+            ("brwlock", quote! { BrwLockPi<RawBrwLockPi> }),
+        ] {
             let attr_ident = format_ident!("{attr}");
             for args in [
                 quote! { CustomClass, flags = lockdep::LOCK_FLAGS_NESTABLE },
@@ -3760,7 +3828,7 @@ mod tests {
             let err = guarded_impl(quote! {
                 struct BadExplicitClassUntracked<T> {
                     #[mutex(#args)]
-                    lock: KMutex,
+                    lock: KMutex<RawMutex>,
                     #[guarded_by(lock)]
                     val: T,
                 }
@@ -3798,7 +3866,7 @@ mod tests {
             let err = guarded_impl(quote! {
                 struct BadBrwLockUntracked {
                     #[brwlock(#args)]
-                    lock: BrwLockPi,
+                    lock: BrwLockPi<RawBrwLockPi>,
                     #[guarded_by(lock)]
                     val: u32,
                 }
@@ -3819,7 +3887,7 @@ mod tests {
         let err = guarded_impl(quote! {
             struct BadUnknownKey {
                 #[mutex(bogus = 1, CustomClass, flags = lockdep::LOCK_FLAGS_NESTABLE)]
-                lock: KMutex,
+                lock: KMutex<RawMutex>,
                 #[guarded_by(lock)]
                 val: u32,
             }
@@ -3836,7 +3904,7 @@ mod tests {
         let err_brwlock = guarded_impl(quote! {
             struct BadUnknownKeyBrwLock {
                 #[brwlock(bogus = 1)]
-                lock: BrwLockPi,
+                lock: BrwLockPi<RawBrwLockPi>,
                 #[guarded_by(lock)]
                 val: u32,
             }
@@ -3851,7 +3919,10 @@ mod tests {
 
     #[test]
     fn test_duplicate_lock_attribute_args_compile_errors() {
-        for (attr, lock_ty) in [("mutex", quote! { KMutex }), ("brwlock", quote! { BrwLockPi })] {
+        for (attr, lock_ty) in [
+            ("mutex", quote! { KMutex<RawMutex> }),
+            ("brwlock", quote! { BrwLockPi<RawBrwLockPi> }),
+        ] {
             let attr_ident = format_ident!("{attr}");
 
             // 1. Duplicate `flags = ...` in a single attribute.
@@ -3915,7 +3986,7 @@ mod tests {
             struct BadMixedAttr {
                 #[mutex]
                 #[brwlock]
-                lock: KMutex,
+                lock: KMutex<RawMutex>,
                 #[guarded_by(lock)]
                 val: u32,
             }
@@ -3933,7 +4004,7 @@ mod tests {
         let output = guarded_impl(quote! {
             struct ExplicitBrwLockClass {
                 #[brwlock(CustomBrwLockClass)]
-                lock: BrwLockPi,
+                lock: BrwLockPi<RawBrwLockPi>,
                 #[guarded_by(lock)]
                 val: u32,
             }
@@ -3942,7 +4013,10 @@ mod tests {
         assert!(!output.contains("compile_error"), "unexpected output: {output}");
         // The explicit class is used for the field and its guarded KCell, and no class is
         // generated or registered.
-        assert!(output.contains("BrwLockPi < CustomBrwLockClass >"), "unexpected output: {output}");
+        assert!(
+            output.contains("BrwLockPi < CustomBrwLockClass , RawBrwLockPi >"),
+            "unexpected output: {output}"
+        );
         assert!(
             output.contains("KCell < u32 , CustomBrwLockClass >"),
             "unexpected output: {output}"
@@ -3954,27 +4028,83 @@ mod tests {
             "unexpected output: {output}"
         );
 
-        // Passing generic arguments directly on `BrwLockPi<...>` in a `#[guarded]` struct is
-        // rejected with a compile error directing the caller to `#[brwlock(LockClass)]`.
-        for attr in [quote! { #[brwlock] }, quote! { #[brwlock(CustomBrwLockClass)] }] {
+        // `BrwLockPi` fields must name their raw lock type (there is no default), and take no more
+        // than one generic argument (the lock class is specified with `#[brwlock(LockClass)]`).
+        for (attr, lock_ty, msg) in [
+            (
+                quote! { #[brwlock] },
+                quote! { BrwLockPi },
+                "BrwLockPi fields must specify the raw lock type explicitly",
+            ),
+            (
+                quote! { #[brwlock(CustomBrwLockClass)] },
+                quote! { BrwLockPi<CustomBrwLockClass, RawBrwLockPi> },
+                "BrwLockPi expects exactly 1 generic argument for the raw lock type",
+            ),
+        ] {
             let err = guarded_impl(quote! {
                 struct BadBrwLockGenericArgs {
                     #attr
-                    lock: BrwLockPi<CustomBrwLockClass>,
+                    lock: #lock_ty,
                     #[guarded_by(lock)]
                     val: u32,
                 }
             })
             .to_string();
             assert!(
-                err.contains("compile_error")
-                    && err.contains(
-                        "BrwLockPi does not accept generic arguments in #[guarded] struct \
-                         definitions; specify a custom lock class with #[brwlock(LockClass)] \
-                         instead"
-                    ),
-                "unexpected output for {attr}: {err}"
+                err.contains("compile_error") && err.contains(msg),
+                "unexpected output for {attr} {lock_ty}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn test_missing_raw_lock_type_compile_errors() {
+        // `ksync` has no default raw lock type, so a bare `KMutex` field is rejected.
+        let err = guarded_impl(quote! {
+            struct BadBareKMutex {
+                #[mutex]
+                mu: KMutex,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err.contains("compile_error")
+                && err.contains("KMutex fields must specify the raw lock type explicitly"),
+            "unexpected output: {err}"
+        );
+
+        // A non-`KMutex` field should report only the wrong-wrapper diagnostic, not the missing
+        // raw lock type diagnostic on top of it.
+        let err_non_kmutex = guarded_impl(quote! {
+            struct BadNonKMutex {
+                #[mutex]
+                mu: KSpinlock,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_non_kmutex.contains("compile_error")
+                && err_non_kmutex.contains("Mutex field must be of type KMutex")
+                && !err_non_kmutex
+                    .contains("KMutex fields must specify the raw lock type explicitly"),
+            "unexpected output: {err_non_kmutex}"
+        );
+
+        let ok = guarded_impl(quote! {
+            struct ExplicitKMutex {
+                #[mutex]
+                mu: KMutex<RawMutex>,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!ok.contains("compile_error"), "unexpected error: {ok}");
+        assert!(ok.contains("KMutex < ExplicitKMutexMuClass , RawMutex >"), "unexpected: {ok}");
     }
 }

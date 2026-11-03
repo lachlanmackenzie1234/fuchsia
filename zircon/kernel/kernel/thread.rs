@@ -140,7 +140,7 @@ unsafe extern "C" {
     fn cpp_thread_user_thread(thread: *mut Thread) -> *mut crate::object::ThreadDispatcher;
     fn cpp_thread_lock_flow_id(thread: *const Thread) -> u64;
     fn cpp_thread_take_next_lock_flow_id(thread: *mut Thread) -> u64;
-    fn cpp_thread_get_list_lock() -> *mut ksync::KSpinlock<ThreadListLockClass>;
+    fn cpp_thread_get_list_lock() -> *mut crate::ksync_kernel::KSpinlock<ThreadListLockClass>;
     fn cpp_thread_id_to_thread_slow(tid: zx_koid_t) -> *mut Thread;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_current_get_backtrace(out_bt: *mut Backtrace);
@@ -1680,7 +1680,7 @@ pub enum ThreadListLockClass {}
 
 impl ksync::LockClass for ThreadListLockClass {
     const ID: *mut c_void = core::ptr::null_mut();
-    const FLAGS: ksync::LockFlags = ksync::RawSpinlock::LOCK_FLAGS;
+    const FLAGS: ksync::LockFlags = crate::ksync_kernel::RawSpinlock::LOCK_FLAGS;
 }
 
 impl Thread {
@@ -2148,9 +2148,9 @@ impl Thread {
 
     /// Returns a reference to the global thread list spinlock (`Thread::get_list_lock()`).
     #[inline]
-    pub fn get_list_lock() -> &'static ksync::KSpinlock<ThreadListLockClass> {
+    pub fn get_list_lock() -> &'static crate::ksync_kernel::KSpinlock<ThreadListLockClass> {
         // SAFETY: `cpp_thread_get_list_lock` returns the static `Thread::list_lock_` instance,
-        // which is layout-compatible with `ksync::KSpinlock`.
+        // which is layout-compatible with `crate::ksync_kernel::KSpinlock`.
         unsafe { &*cpp_thread_get_list_lock() }
     }
 
@@ -5106,7 +5106,7 @@ mod intensive_thread_tests {
     #[ksync::guarded]
     struct IntensiveMutexHolder {
         #[mutex]
-        m: ksync::KMutex<ksync::RawMutex>,
+        m: ksync::KMutex<crate::ksync_kernel::RawMutex>,
     }
 
     extern "C" fn mutex_thread(arg: *mut c_void) -> i32 {
@@ -6077,7 +6077,7 @@ mod preempt_disable_tests {
 
         // 4. Holding a spinlock should cause a preemption event to become pending.
         expect_true!(setup_and_run_with(&subtest!(|event: &Event| {
-            ksync::declare_singleton_monitored_spinlock!(LocalLock);
+            crate::ksync_kernel::declare_singleton_monitored_spinlock!(LocalLock);
             ksync::lock!(let _guard = LocalLock::get().lock_with(ksync::source_tag!()));
             // Unblock the |waiter|.  Because we're holding a spinlock, a preemption event for the
             // local CPU should become pending.
@@ -6178,7 +6178,7 @@ mod preempt_disable_tests {
     #[ksync::guarded]
     struct CriticalMutexHolder {
         #[mutex]
-        mutex: ksync::KMutex<ksync::RawCriticalMutex>,
+        mutex: ksync::KMutex<crate::ksync_kernel::RawCriticalMutex>,
     }
 
     /// An AutoPreemptDisabler inside a CriticalMutex does not clear the mutex's extension.
@@ -6289,7 +6289,7 @@ mod preempt_disable_tests {
     // This is a regression test for https://fxbug.dev/473600952.
     #[test]
     fn test_preempt_with_spinlock() {
-        ksync::declare_singleton_monitored_spinlock!(SpinlockForTest);
+        crate::ksync_kernel::declare_singleton_monitored_spinlock!(SpinlockForTest);
 
         {
             ksync::lock!(let _guard = SpinlockForTest::get().lock_with(ksync::source_tag!()));

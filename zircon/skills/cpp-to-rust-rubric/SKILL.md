@@ -65,11 +65,11 @@ the port and **Reviewer agents** evaluating the port.
     values via `Option<T>` or `Result<T, Status>` instead of C-style
     out-parameters) without breaking layout or safety requirements. Keep
     single-file items private; in the kernel crate, use `pub` rather than
-    `pub(crate)` for everything else (see §3.10). Preserve
-    named constants. Apply idioms within the C++ structure: keep function
-    boundaries, helpers and control-flow shape so the port can be compared side
-    by side. Do not inline helpers, merge or split functions, or unroll macros
-    unless the C++ shape cannot be expressed in Rust.
+    `pub(crate)` for everything else (see §3.10). Preserve named constants.
+    Apply idioms within the C++ structure: keep function boundaries, helpers and
+    control-flow shape so the port can be compared side by side. Do not inline
+    helpers, merge or split functions, or unroll macros unless the C++ shape
+    cannot be expressed in Rust.
 9.  **Cross-Language FFI Interoperability**: FFI shims must be minimal and
     declarative 1:1 forwards with zero business logic, branching, or sub-object
     chaining. Facade methods for unported C++ classes must correspond 1:1 to
@@ -265,7 +265,7 @@ impl Mapping {
 #[guarded]
 pub struct NetworkDevice {
     #[mutex]
-    mu: KMutex,
+    mu: KMutex<RawMutex>,
 
     #[guarded_by(mu)]
     pub tx_packets: u64,

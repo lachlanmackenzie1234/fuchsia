@@ -191,10 +191,68 @@ pub unsafe trait RawLock: Sized {
     fn as_mut_ptr(&self) -> *mut c_void;
 }
 
+/// Trait for [`RawLock`] types that can also be acquired in shared (reader) mode, such as a
+/// reader-writer lock. The lock's [`RawLock::DefaultPolicy`] acquires it in exclusive (writer)
+/// mode.
+///
+/// # Safety
+///
+/// While any thread holds the lock through [`SharedPolicy`](Self::SharedPolicy), no thread may
+/// hold it through an [`ExclusiveLockPolicy`] (in particular [`RawLock::DefaultPolicy`]), and vice
+/// versa. Multiple threads may hold the lock through `SharedPolicy` concurrently.
+pub unsafe trait RawSharedLock: RawLock {
+    /// Policy acquiring the lock in shared (reader) mode.
+    type SharedPolicy: LockPolicy<Self, AcquireArgs = ()>;
+}
+
 /// Trait for [`RawLock`] types that can be statically initialized in a `const` context (e.g. for
 /// global singleton locks).
 pub trait ConstRawLock: RawLock {
     /// Constant-initialized value for the lock.
     #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self;
+}
+
+/// Trait for [`RawLock`] types that can assert (in debug builds) that the lock is currently
+/// exclusively held by the caller.
+pub trait RawAssertHeldLock: RawLock {
+    /// Asserts (in debug builds) that the lock is currently exclusively held by the caller.
+    fn assert_held(&self);
+}
+
+/// Trait for untracked [`RawLock`] types (not wrapped in [`LockdepTracked`](crate::LockdepTracked))
+/// that support manual, guardless release paired with an untracked raw acquisition.
+///
+/// This must not be implemented for [`LockdepTracked`](crate::LockdepTracked), whose release
+/// requires its per-acquisition lockdep guard state.
+pub trait RawUntrackedLock: RawAssertHeldLock {
+    /// Releases the lock without restoring any saved interrupt state.
+    ///
+    /// # Safety
+    ///
+    /// The caller must currently hold this lock exclusively without outstanding references
+    /// protected by this acquisition, must satisfy any platform preconditions of the raw lock's
+    /// non-interrupt-restoring release (such as interrupts being disabled for a spinlock), and
+    /// must keep the allocation backing `self` live until this call returns.
+    unsafe fn release(&self);
+}
+
+/// Trait for untracked interrupt-saving [`RawLock`] types (such as an untracked kernel spinlock)
+/// that support manual, guardless release restoring saved interrupt state.
+///
+/// Like [`RawUntrackedLock`], this must not be implemented for
+/// [`LockdepTracked`](crate::LockdepTracked).
+pub trait RawUntrackedIrqLock: RawUntrackedLock {
+    /// Saved interrupt state returned by an interrupt-saving raw acquisition.
+    type InterruptState;
+
+    /// Releases the lock and restores saved interrupt state `state`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must currently hold this lock exclusively without outstanding references
+    /// protected by this acquisition, `state` must be the [`Self::InterruptState`] returned by the
+    /// corresponding interrupt-saving acquisition on this CPU, and the allocation backing `self`
+    /// must remain live until this call returns.
+    unsafe fn release_irq_restore(&self, state: Self::InterruptState);
 }

@@ -4,9 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::RawCriticalMutex;
 use core::ffi::c_void;
 use fbl::Canary;
-use ksync::{KMutex, RawCriticalMutex, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{

@@ -18,10 +18,11 @@ use super::dispatcher_ffi::{
 };
 use super::handle::HandleRef;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
+use crate::ksync_kernel::RawCriticalMutex;
 use core::marker::PhantomData;
 use fbl::{Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
 use kalloc::AllocError;
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use ksync::{KMutex, LockToken, guarded};
 use relaxed_atomic::RelaxedAtomicU64;
 use zx_status::Status;
 use zx_types::zx_rights_t;
@@ -256,9 +257,10 @@ macro_rules! impl_dispatcher_facade_with_state {
             $obj_type,
             $offset_const,
             $lock_class,
-            *mut ksync::KMutex<$lock_class, ksync::RawCriticalMutex>,
+            *mut ksync::KMutex<$lock_class, $crate::ksync_kernel::RawCriticalMutex>,
             |ptr: *const $state| {
-                let lock_ref: &ksync::KMutex<$lock_class, ksync::RawCriticalMutex> = ($get_lock)(ptr);
+                let lock_ref: &ksync::KMutex<$lock_class, $crate::ksync_kernel::RawCriticalMutex> =
+                    ($get_lock)(ptr);
                 zr::ToMutPtr::to_mut_ptr(lock_ref)
             }
         );

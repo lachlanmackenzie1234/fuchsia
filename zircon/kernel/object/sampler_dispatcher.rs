@@ -5,10 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::user_copy::UserOutPtr;
 use debug::dprintf;
 use fbl::Canary;
-use ksync::{KMutex, RawCriticalMutex, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{ZX_DEFAULT_SAMPLER_RIGHTS, ZX_OBJ_TYPE_SAMPLER, zx_rights_t, zx_sampler_config_t};

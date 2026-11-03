@@ -8,7 +8,7 @@ use core::mem::MaybeUninit;
 use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, ZX_OK, zx_rsrc_kind_t, zx_status_t};
 
-use region_alloc::Region;
+type Region = region_alloc::Region<crate::ksync_kernel::RawMutex>;
 
 use super::handle::KernelHandle;
 use super::resource_dispatcher::{ResourceDispatcher, ResourceDispatcherState, ResourceStorage};

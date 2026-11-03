@@ -60,7 +60,7 @@ const ARCH_HEAP_ALIGNMENT_BITS: usize = 21;
 #[cfg(sanitize = "address")]
 use crate::instrumentation::asan::{ASAN_INTERNAL_HEAP_MAGIC, asan_poison_shadow};
 
-ksync::declare_singleton_spinlock!(StatLock);
+crate::ksync_kernel::declare_singleton_spinlock!(StatLock);
 
 /// Keep a list of unique caller:size sites in a list.
 #[cfg(kernel_memory_profiler)]

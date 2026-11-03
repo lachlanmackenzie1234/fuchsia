@@ -50,7 +50,7 @@ pub struct PdevInterruptManager {
     table: [IntHandlerStruct; MAX_INTERRUPTS],
 
     #[mutex]
-    lock: ksync::KMutex<ksync::RawSpinlock>,
+    lock: ksync::KMutex<crate::ksync_kernel::RawSpinlock>,
 }
 
 // SAFETY: Internal table synchronization is managed via `lock` for dynamic
@@ -326,7 +326,7 @@ pub unsafe fn register_interrupt_controller(driver: &'static dyn InterruptContro
                 };
                 MAX_INTERRUPTS
             ].into(),
-            lock <- ksync::KSpinlock::init(),
+            lock <- crate::ksync_kernel::KSpinlock::init(),
         }))
     };
 

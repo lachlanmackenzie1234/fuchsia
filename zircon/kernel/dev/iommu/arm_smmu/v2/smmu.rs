@@ -21,7 +21,7 @@ use zx_status::Status;
 
 use crate::arm_smmu::common::{
     ArmSmmuMode, DRIVER_OOPS_BANNER, EscapedName, InterruptPolarity, InterruptTriggerMode, SmmuEnv,
-    SmmuNoIrqSavePolicy, SmmuRawSpinLock, ZX_MAX_NAME_LEN, ZX_RSRC_KIND_MMIO,
+    SmmuNoIrqSavePolicy, SmmuRawMutex, SmmuRawSpinLock, ZX_MAX_NAME_LEN, ZX_RSRC_KIND_MMIO,
 };
 use crate::arm_smmu::v2::context_bank::ContextBank;
 use crate::arm_smmu::v2::registers::gr0::{
@@ -130,7 +130,7 @@ pub struct ZxIommuDescArmSmmu {
 zr::static_assert!(core::mem::size_of::<ZxIommuDescArmSmmu>() == 8);
 zr::static_assert!(core::mem::align_of::<ZxIommuDescArmSmmu>() == 8);
 
-ksync::declare_singleton_lock!(pub(crate) SmmuInstanceLock);
+ksync::declare_singleton_lock!(pub(crate) SmmuInstanceLock, SmmuRawMutex);
 
 pub(crate) struct GlobalInstanceList {
     initialized: core::cell::UnsafeCell<bool>,
@@ -174,10 +174,7 @@ pub(crate) static INSTANCES: GlobalInstanceList = GlobalInstanceList::new();
 
 // Lock protecting `FAULT_BUFFER`. This is a spinlock (acquired at hard IRQ time, with a BTI's
 // spinlock potentially held) in the kernel, and a plain mutex in host tests.
-#[cfg(is_kernel)]
-ksync::declare_singleton_lock!(FaultBufferLock, ::ksync::RawSpinlock);
-#[cfg(not(is_kernel))]
-ksync::declare_singleton_lock!(FaultBufferLock);
+ksync::declare_singleton_lock!(FaultBufferLock, SmmuRawSpinLock);
 
 /// Size in bytes of the global buffer used to render context fault reports.
 const FAULT_BUFFER_LEN: usize = 1024;
@@ -370,7 +367,7 @@ pub struct Smmu {
     context_irq_cookies: core::cell::UnsafeCell<Array<IrqCookie>>,
 
     #[mutex]
-    pub(crate) lock: KMutex,
+    pub(crate) lock: KMutex<SmmuRawMutex>,
     #[guarded_by(lock)]
     pub(crate) user_mode_bound: bool,
     #[pin]

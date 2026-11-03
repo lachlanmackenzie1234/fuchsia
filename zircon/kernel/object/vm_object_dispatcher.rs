@@ -10,6 +10,7 @@ use super::vm_object_dispatcher_ffi::{
     cpp_vm_object_dispatcher_as_child_observer, cpp_vm_object_dispatcher_create,
 };
 use crate::counters::define_kcounter;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use crate::vm::arch_vm_aspace::ArchMmuFlags;
 use crate::vm::stream_size_manager::{Operation as StreamSizeManagerOperation, StreamSizeManager};
@@ -21,7 +22,7 @@ use crate::vm::vm_object_paged::VmObjectPaged;
 use boot_options::BootOptions;
 use debug::ltracef;
 use fbl::{Canary, RefPtr};
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use ksync::{KMutex, LockToken, guarded};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;

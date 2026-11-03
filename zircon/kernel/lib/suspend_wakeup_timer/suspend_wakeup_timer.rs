@@ -10,12 +10,13 @@ use crate::arch_rs::curr_cpu_num;
 use crate::kernel::relaxed_atomic::RelaxedAtomicI64;
 use crate::kernel::timer::{Timer, ZX_CLOCK_BOOT};
 use crate::kernel::types::BOOT_CPU_ID;
+use crate::ksync_kernel::RawSpinlock;
 use crate::platform_rs::timer::InstantBoot;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::pin::Pin;
 use debug::dprintf;
-use ksync::{KMutex, RawSpinlock, guarded};
+use ksync::{KMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_types::{ZX_TIME_INFINITE, zx_instant_boot_t};
 

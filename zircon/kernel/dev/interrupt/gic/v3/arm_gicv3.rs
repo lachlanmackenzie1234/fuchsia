@@ -20,6 +20,7 @@ use crate::kernel::mp::{
     MpIpi, SMP_MAX_CPUS, mbx_generic_irq, mbx_interrupt_irq, mbx_reschedule_irq,
 };
 use crate::kernel::types::{BOOT_CPU_ID, PAddr, cpu_mask_t, cpu_num_t, cpu_num_to_mask};
+use crate::ksync_kernel::RawMutex;
 use crate::pdev_interrupt::{
     InterruptControllerOps, InterruptHandler, InterruptPolarity, InterruptTriggerMode,
     InterruptVector, MsiBlock, pdev_invoke_int_if_present, register_interrupt_controller,
@@ -106,7 +107,7 @@ static ITS_CPU0_RDBASE: AtomicU64 = AtomicU64::new(0);
 static SAVED_SGI_PPI_ENABLES: [AtomicU32; SMP_MAX_CPUS] =
     [const { AtomicU32::new(0) }; SMP_MAX_CPUS];
 
-ksync::declare_singleton_monitored_spinlock!(
+crate::ksync_kernel::declare_singleton_monitored_spinlock!(
     /// Serializes the ITS command queue and LPI configuration table updates.
     GicItsLock
 );
@@ -121,7 +122,7 @@ struct ItsState {
 static ITS_STATE: KCell<ItsState, GicItsLock> =
     KCell::new(ItsState { cmdq_cwriter: 0, lpi_mapped: [false; MAX_LPIS as usize] });
 
-ksync::declare_singleton_spinlock!(
+crate::ksync_kernel::declare_singleton_spinlock!(
     /// Guards `LPI_HANDLERS`. The IRQ path holds it across the handler call, so replacing a
     /// handler waits for any call of it in flight, as the pdev table does.
     ///
@@ -140,7 +141,7 @@ static LPI_HANDLERS: KCell<[InterruptHandler; MAX_LPIS as usize], GicLpiHandlerL
 
 /// The LPI range allocator. Constructed in `rust_arm_gicv3_init_early`; `gic_init_its` sizes it
 /// with `init`.
-static LPI_ALLOC: LazyInit<Pow2RangeAllocator> = LazyInit::uninit();
+static LPI_ALLOC: LazyInit<Pow2RangeAllocator<RawMutex>> = LazyInit::uninit();
 
 /// Returns a bank covering the distributor registers, accessed 32 bits at a time.
 fn gicd_bank() -> MmioBank<u32, RwSafe> {
@@ -1333,7 +1334,7 @@ impl InterruptControllerOps for Gicv3 {
             if idx < MAX_LPIS {
                 ksync::lock!(
                     let guard =
-                        GicLpiHandlerLock::lock_policy::<ksync::NoIrqSavePolicy>()
+                        GicLpiHandlerLock::lock_policy::<crate::ksync_kernel::NoIrqSavePolicy>()
                 );
                 // SAFETY: `guard` holds `GicLpiHandlerLock`, which guards `LPI_HANDLERS`.
                 let handler = unsafe { LPI_HANDLERS.get(guard.token()) }[idx as usize];

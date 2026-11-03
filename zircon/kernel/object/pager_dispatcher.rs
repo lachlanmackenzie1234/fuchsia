@@ -6,14 +6,13 @@
 
 use crate::counters::define_kcounter;
 use crate::kernel::thread;
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::user_copy::UserOutPtr;
 use crate::vm::page_source::PageSource;
 use crate::vm::vm_object::VmObject;
 use core::pin::Pin;
-use fbl::{
-    Canary, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, Name, RefPtr,
-};
-use ksync::{KMutex, RawCriticalMutex, guarded, kcell_init};
+use fbl::{Canary, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, RefPtr};
+use ksync::{KMutex, guarded, kcell_init};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
@@ -25,13 +24,13 @@ use zx_types::{
     zx_vaddr_t, zx_vmo_dirty_range_t,
 };
 
-use super::KernelHandle;
 use super::pager_dispatcher_ffi::{
     cpp_pager_dispatcher_create, cpp_pager_proxy_create, cpp_pager_proxy_create_page_source,
     cpp_pager_proxy_free, cpp_pager_proxy_get_dll_node, cpp_pager_proxy_get_ref_counted,
     cpp_pager_proxy_on_dispatcher_close, cpp_pager_proxy_set_page_source_unchecked,
 };
 use super::port_dispatcher::PortDispatcher;
+use super::{KernelHandle, Name};
 
 /// Default rights assigned to a `PagerDispatcher` handle (`ZX_DEFAULT_PAGER_RIGHTS`).
 const DEFAULT_RIGHTS: zx_rights_t =

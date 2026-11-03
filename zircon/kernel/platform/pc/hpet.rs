@@ -4,13 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::{NoIrqSavePolicy, RawSpinlock};
 use crate::platform_pc::acpi::global_acpi_lite_parser;
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE, ARCH_MMU_FLAG_UNCACHED_DEVICE,
 };
 use core::pin::Pin;
 use debug::dprintf;
-use ksync::{KMutex, RawSpinlock, guarded, lock};
+use ksync::{KMutex, guarded, lock};
 use lazy_init::LazyInit;
 use pin_init::pin_init;
 use zx_status::Status;
@@ -276,7 +277,7 @@ pub(super) fn hpet_set_value(v: u64) -> Result<(), Status> {
         return Err(Status::BAD_STATE);
     }
 
-    lock!(state.lock_mu_policy::<ksync::NoIrqSavePolicy>());
+    lock!(state.lock_mu_policy::<NoIrqSavePolicy>());
 
     // SAFETY: regs is valid and we hold the lock.
     unsafe {
@@ -302,7 +303,7 @@ pub(super) fn hpet_enable() {
     if regs.is_null() {
         return;
     }
-    lock!(state.lock_mu_policy::<ksync::NoIrqSavePolicy>());
+    lock!(state.lock_mu_policy::<NoIrqSavePolicy>());
     // SAFETY: regs is valid and we hold the lock.
     unsafe {
         let general_config = core::ptr::read_volatile(core::ptr::addr_of!((*regs).general_config));
@@ -321,7 +322,7 @@ pub(super) fn hpet_disable() {
     if regs.is_null() {
         return;
     }
-    lock!(state.lock_mu_policy::<ksync::NoIrqSavePolicy>());
+    lock!(state.lock_mu_policy::<NoIrqSavePolicy>());
     // SAFETY: regs is valid and we hold the lock.
     unsafe {
         let general_config = core::ptr::read_volatile(core::ptr::addr_of!((*regs).general_config));

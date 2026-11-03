@@ -8,16 +8,18 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use region_alloc::{RegionAllocator, RegionSpan, TestRegionSet};
+use region_alloc::{RegionSpan, TestRegionSet};
 use zx_status::Status;
 
 use super::constants::{PAGE_SHIFT, PAGE_SIZE_USIZE};
-use super::env::{SmmuEnv, SmmuPage};
+use super::env::{SmmuEnv, SmmuPage, SmmuRawMutex};
 use super::page_cache::PageCache;
 use super::vmsav8_64::{
     ENTRIES_PER_PAGE, get_table_entry_paddr, is_table_entry, is_valid_addr, is_valid_entry,
     make_table_entry, write_pte,
 };
+
+type RegionAllocator = region_alloc::RegionAllocator<SmmuRawMutex>;
 
 /// Number of levels in the 48-bit input / 4 KiB granule VMSAv8-64 translation table tree.
 pub const LEVELS: usize = 4;

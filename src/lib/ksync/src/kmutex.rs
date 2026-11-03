@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{ExclusiveLockPolicy, LockPolicy, LockToken, RawLock, RawMutex};
+use crate::{
+    ExclusiveLockPolicy, LockPolicy, LockToken, RawAssertHeldLock, RawLock, RawUntrackedIrqLock,
+    RawUntrackedLock,
+};
 use core::marker::PhantomData;
 use core::pin::Pin;
 use core::ptr::addr_of_mut;
@@ -15,7 +18,7 @@ use pin_init::{PinInit, pin_data, pin_init, pin_init_from_closure, pinned_drop};
 /// loop-detector active list registrations safely under the lock class `Class`.
 #[repr(transparent)] // Ensure KMutex has the same layout as the underlying RawLock M.
 #[pin_data]
-pub struct KMutex<Class: LockClass, M = RawMutex> {
+pub struct KMutex<Class: LockClass, M> {
     #[pin]
     mutex: M,
     _marker: PhantomData<Class>,
@@ -187,16 +190,15 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     }
 }
 
-#[cfg(feature = "kernel")]
-impl<Class: LockClass, M: RawLock + AsRef<crate::RawSpinlockStorage>> KMutex<Class, M> {
-    /// Asserts (in debug builds) that this spinlock is held by the calling CPU and returns a
-    /// [`LockToken`] witnessing ownership of `Class`, mirroring C++ `SpinLock::AssertHeld()
-    /// TA_ASSERT()`.
+impl<Class: LockClass, M: RawAssertHeldLock> KMutex<Class, M> {
+    /// Asserts (in debug builds) that this lock is held by the caller and returns a [`LockToken`]
+    /// witnessing ownership of `Class`, mirroring C++ `AssertHeld() TA_ASSERT()`.
     ///
     /// # Safety
     ///
-    /// - This spinlock must currently be exclusively held by the calling CPU with interrupts
-    ///   disabled.
+    /// - This lock must currently be exclusively held by the caller, satisfying any platform
+    ///   preconditions of [`M::assert_held`](RawAssertHeldLock::assert_held) (such as interrupts
+    ///   being disabled for a spinlock).
     /// - The returned [`LockToken`] must not outlive that lock acquisition.
     /// - Uses of the returned [`LockToken`] must not overlap any conflicting borrows (shared or
     ///   mutable) derived from another [`LockToken`] or guard for `Class` on the same guarded
@@ -204,66 +206,62 @@ impl<Class: LockClass, M: RawLock + AsRef<crate::RawSpinlockStorage>> KMutex<Cla
     ///   guarded by `Class` on that instance may be live).
     #[inline]
     pub unsafe fn assert_held(&self) -> LockToken<'_, Class> {
-        self.mutex.as_ref().assert_held();
-        // SAFETY: The caller guarantees that this spinlock is exclusively held by the calling CPU
-        // with interrupts disabled, that the returned token will not outlive that acquisition, and
-        // that uses of the token will not overlap any conflicting shared or mutable borrows for
-        // `Class` on the same guarded instance.
+        self.mutex.assert_held();
+        // SAFETY: The caller guarantees that this lock is exclusively held, that the returned
+        // token will not outlive that acquisition, and that uses of the token will not overlap any
+        // conflicting shared or mutable borrows for `Class` on the same guarded instance.
         unsafe { LockToken::new() }
     }
 }
 
-#[cfg(feature = "kernel")]
-impl<Class: LockClass> KMutex<Class, crate::RawSpinlockStorage> {
-    /// Releases the underlying untracked spinlock without restoring interrupt state, consuming
-    /// `token` (`TA_REL()`).
-    ///
-    /// This is the counterpart to an untracked [`crate::RawSpinlockStorage::acquire`] or
-    /// successful [`crate::RawSpinlockStorage::try_acquire`].
+impl<Class: LockClass, M: RawUntrackedLock> KMutex<Class, M> {
+    /// Releases the underlying untracked lock without restoring interrupt state, consuming `token`
+    /// (`TA_REL()`).
     ///
     /// # Safety
     ///
-    /// - Interrupts must be disabled, and this spinlock must currently be held by the calling CPU
-    ///   via a non-interrupt-saving acquisition that `token` witnesses.
+    /// - This lock must currently be exclusively held by the caller via a non-interrupt-saving
+    ///   acquisition that `token` witnesses, satisfying any platform preconditions of
+    ///   [`M::release`](RawUntrackedLock::release) (such as interrupts being disabled for a
+    ///   spinlock).
     /// - No borrows of data guarded by this acquisition (derived from `token` or any other
     ///   [`LockToken`]) may remain live.
     /// - The allocation backing `self` must remain live until this call returns (see
-    ///   [`crate::RawSpinlockStorage::release`]).
+    ///   [`RawUntrackedLock::release`]).
     #[inline]
     pub unsafe fn release(&self, token: LockToken<'_, Class>) {
         let _ = token;
-        // SAFETY: The caller guarantees that the calling CPU holds this spinlock with interrupts
-        // disabled, that no borrows of data guarded by this acquisition remain live, and that
-        // `self` stays live until the call returns.
+        // SAFETY: The caller guarantees that this lock is held exclusively with any platform
+        // preconditions satisfied, that no borrows of data guarded by this acquisition remain
+        // live, and that `self` stays live until the call returns.
         unsafe {
             self.mutex.release();
         }
     }
+}
 
-    /// Releases the underlying untracked spinlock and restores saved interrupt state `state`,
-    /// consuming `token` (`TA_REL()`).
-    ///
-    /// This is the counterpart to an untracked
-    /// [`crate::RawSpinlockStorage::acquire_irq_save`].
+impl<Class: LockClass, M: RawUntrackedIrqLock> KMutex<Class, M> {
+    /// Releases the underlying untracked lock and restores saved interrupt state `state`, consuming
+    /// `token` (`TA_REL()`).
     ///
     /// # Safety
     ///
-    /// - This spinlock must currently be held by the calling CPU via an interrupt-saving
+    /// - This lock must currently be exclusively held by the caller via an interrupt-saving
     ///   acquisition that produced `state`, and `token` must witness that acquisition.
     /// - No borrows of data guarded by this acquisition (derived from `token` or any other
     ///   [`LockToken`]) may remain live.
     /// - The allocation backing `self` must remain live until this call returns (see
-    ///   [`crate::RawSpinlockStorage::release_irq_restore`]).
+    ///   [`RawUntrackedIrqLock::release_irq_restore`]).
     #[inline]
     pub unsafe fn release_irq_restore(
         &self,
-        state: crate::InterruptSavedState,
+        state: M::InterruptState,
         token: LockToken<'_, Class>,
     ) {
         let _ = token;
-        // SAFETY: The caller guarantees that the calling CPU holds this spinlock with saved
-        // interrupt state `state`, that no borrows of data guarded by this acquisition remain
-        // live, and that `self` stays live until the call returns.
+        // SAFETY: The caller guarantees that this lock is held with saved interrupt state `state`,
+        // that no borrows of data guarded by this acquisition remain live, and that `self` stays
+        // live until the call returns.
         unsafe {
             self.mutex.release_irq_restore(state);
         }
@@ -284,7 +282,7 @@ impl<Class: LockClass, M> core::fmt::Debug for KMutex<Class, M> {
 pub struct KMutexGuard<
     'a,
     Class: LockClass,
-    M: RawLock = RawMutex,
+    M: RawLock,
     P: ExclusiveLockPolicy<M> = <M as RawLock>::DefaultPolicy,
 > {
     mutex: Option<&'a KMutex<Class, M>>,
@@ -467,7 +465,7 @@ pub struct KMutexGuardMultiple<
     'a,
     const N: usize,
     Class: LockClass,
-    M: RawLock = RawMutex,
+    M: RawLock,
     P: ExclusiveLockPolicy<M> = <M as RawLock>::DefaultPolicy,
 > {
     mutexes: [Option<&'a KMutex<Class, M>>; N],
@@ -734,7 +732,7 @@ pub struct KMutexAliasedGuard<
     'a,
     Class1: LockClass,
     Class2: LockClass,
-    M1: RawLock = RawMutex,
+    M1: RawLock,
     M2: RawLock = M1,
     P: ExclusiveLockPolicy<M1> = <M1 as RawLock>::DefaultPolicy,
 > {
@@ -870,7 +868,7 @@ impl<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock, P: Excl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KCell, guarded};
+    use crate::{KCell, RawMutex, guarded};
     use lockdep::LockClass;
     use pin_init::{pin_init, stack_pin_init};
 
@@ -883,7 +881,7 @@ mod tests {
     #[pin_init::pin_data]
     struct MyStruct {
         #[pin]
-        mu: KMutex<MyClass>,
+        mu: KMutex<MyClass, RawMutex>,
         data1: KCell<u32, MyClass>,
         data2: KCell<i32, MyClass>,
     }
@@ -914,7 +912,7 @@ mod tests {
     #[guarded]
     struct MyGuardedStruct {
         #[mutex]
-        mu: KMutex,
+        mu: KMutex<RawMutex>,
         #[guarded_by(mu)]
         data1: u32,
         #[guarded_by(mu)]
@@ -953,13 +951,13 @@ mod tests {
 
     #[test]
     fn test_kmutex_init() {
-        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        stack_pin_init!(let mu = KMutex::<MyClass, RawMutex>::init());
         lock!(mu.lock());
     }
 
     #[test]
     fn test_lockdep_tracked_as_ref() {
-        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        stack_pin_init!(let mu = KMutex::<MyClass, RawMutex>::init());
         let tracked: &RawMutex = mu.raw_mutex();
         let storage: &crate::RawMutexStorage = tracked.as_ref();
         assert!(core::ptr::eq(storage, &**tracked));
@@ -968,7 +966,7 @@ mod tests {
     #[test]
     fn test_kmutex_debug() {
         extern crate std;
-        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        stack_pin_init!(let mu = KMutex::<MyClass, RawMutex>::init());
         let debug_str = std::format!("{:?}", mu);
         assert!(debug_str.contains("KMutex"));
     }
@@ -976,9 +974,9 @@ mod tests {
     #[guarded]
     struct MyMultiGuardedStruct {
         #[mutex]
-        mu1: KMutex,
+        mu1: KMutex<RawMutex>,
         #[mutex]
-        mu2: KMutex,
+        mu2: KMutex<RawMutex>,
         #[guarded_by(mu1)]
         data1: u32,
         #[guarded_by(mu2)]
@@ -1008,7 +1006,7 @@ mod tests {
     #[guarded]
     struct MyDefaultGuardedStruct {
         #[mutex]
-        mu: KMutex,
+        mu: KMutex<RawMutex>,
         #[guarded_by(mu)]
         data: u32,
     }
@@ -1058,7 +1056,7 @@ mod tests {
     #[guarded]
     struct MyGenericGuardedStruct<T> {
         #[mutex]
-        mu: KMutex,
+        mu: KMutex<RawMutex>,
         #[guarded_by(mu)]
         data: T,
     }
@@ -1085,7 +1083,7 @@ mod tests {
     #[guarded]
     struct MyExplicitParentGuardedStruct {
         #[mutex]
-        mu: KMutex,
+        mu: KMutex<RawMutex>,
         #[guarded_by(mu)]
         data: u32,
         pub label: &'static str,
@@ -1157,7 +1155,7 @@ mod tests {
     }
 
     impl AliasedTargetStruct {
-        fn lock(&self) -> &KMutex<MyGuardedStructMuClass> {
+        fn lock(&self) -> &KMutex<MyGuardedStructMuClass, RawMutex> {
             // SAFETY: `self.parent` points to a live `MyGuardedStruct` in the test scope.
             unsafe { &(*self.parent).mu }
         }
@@ -1252,7 +1250,7 @@ mod tests {
     #[guarded]
     struct FlaggedMutexStruct {
         #[mutex(flags = lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED)]
-        seek_lock: KMutex,
+        seek_lock: KMutex<RawMutex>,
         #[guarded_by(seek_lock)]
         seek: u64,
     }
@@ -1273,7 +1271,7 @@ mod tests {
     #[guarded]
     struct NestableGuardedStruct {
         #[mutex(flags = lockdep::LOCK_FLAGS_NESTABLE)]
-        mu: KMutex,
+        mu: KMutex<RawMutex>,
         #[guarded_by(mu)]
         data: u32,
     }
@@ -1522,11 +1520,11 @@ mod tests {
     #[guarded]
     struct SharedLockGuardedStruct {
         #[mutex]
-        mu1: KMutex,
+        mu1: KMutex<RawMutex>,
         #[mutex]
-        mu2: KMutex,
+        mu2: KMutex<RawMutex>,
         #[mutex]
-        mu3: KMutex,
+        mu3: KMutex<RawMutex>,
         #[guarded_by(mu1)]
         only1: u32,
         #[guarded_by(mu2)]
@@ -1693,9 +1691,9 @@ mod tests {
     #[ksync::guarded]
     struct GenericMultiLockStruct<'lt, T, const N: usize> {
         #[mutex]
-        mu1: KMutex,
+        mu1: KMutex<RawMutex>,
         #[mutex]
-        mu2: KMutex,
+        mu2: KMutex<RawMutex>,
         #[guarded_by(mu1)]
         slice_ref: &'lt [T; N],
         #[guarded_by(mu1, mu2)]
@@ -1730,7 +1728,7 @@ mod tests {
         #[mutex(MyGuardedStructMuClass)]
         phantom_mu: KMutex<crate::PhantomMutex>,
         #[mutex]
-        local_mu: KMutex,
+        local_mu: KMutex<RawMutex>,
         #[guarded_by(phantom_mu, local_mu)]
         shared: u32,
     }
@@ -1803,5 +1801,147 @@ mod tests {
         *g2.as_mut().val2_mut() = 21;
         assert_eq!(*g1.val1(), 11);
         assert_eq!(*g2.val2(), 21);
+    }
+
+    #[pin_init::pin_data]
+    struct MockIrqLock {
+        held: core::sync::atomic::AtomicBool,
+        restored_irq: core::sync::atomic::AtomicU32,
+    }
+
+    impl MockIrqLock {
+        fn acquire_raw(&self) {
+            assert!(!self.held.swap(true, core::sync::atomic::Ordering::Acquire));
+        }
+
+        fn acquire_irq_save_raw(&self, saved: u32) -> u32 {
+            assert!(!self.held.swap(true, core::sync::atomic::Ordering::Acquire));
+            saved
+        }
+
+        fn is_held(&self) -> bool {
+            self.held.load(core::sync::atomic::Ordering::Relaxed)
+        }
+    }
+
+    struct MockIrqLockPolicy;
+
+    // SAFETY: Single-threaded test mock enforcing `held` state transitions.
+    unsafe impl LockPolicy<MockIrqLock> for MockIrqLockPolicy {
+        type AcquireArgs = ();
+        type GuardState = ();
+
+        unsafe fn acquire(lock: &MockIrqLock, _state: &mut (), _args: ()) {
+            lock.acquire_raw();
+        }
+
+        unsafe fn reacquire(lock: &MockIrqLock, _state: &mut ()) {
+            lock.acquire_raw();
+        }
+
+        unsafe fn release(lock: &MockIrqLock, _state: &mut ()) {
+            assert!(lock.held.swap(false, core::sync::atomic::Ordering::Release));
+        }
+    }
+
+    // SAFETY: `MockIrqLockPolicy` enforces exclusive mutual exclusion in single-threaded tests.
+    unsafe impl ExclusiveLockPolicy<MockIrqLock> for MockIrqLockPolicy {}
+
+    // SAFETY: `MockIrqLock` has non-zero size and a unique address per instance.
+    unsafe impl RawLock for MockIrqLock {
+        type DefaultPolicy = MockIrqLockPolicy;
+
+        unsafe fn init(
+            _class_id: *const core::ffi::c_void,
+        ) -> impl PinInit<Self, core::convert::Infallible> {
+            pin_init!(Self {
+                held: core::sync::atomic::AtomicBool::new(false),
+                restored_irq: core::sync::atomic::AtomicU32::new(0),
+            })
+        }
+
+        fn as_mut_ptr(&self) -> *mut core::ffi::c_void {
+            core::ptr::from_ref(self).cast_mut().cast()
+        }
+    }
+
+    impl RawAssertHeldLock for MockIrqLock {
+        fn assert_held(&self) {
+            assert!(self.is_held());
+        }
+    }
+
+    impl RawUntrackedLock for MockIrqLock {
+        unsafe fn release(&self) {
+            assert!(self.held.swap(false, core::sync::atomic::Ordering::Release));
+        }
+    }
+
+    impl RawUntrackedIrqLock for MockIrqLock {
+        type InterruptState = u32;
+
+        unsafe fn release_irq_restore(&self, state: u32) {
+            assert!(self.held.swap(false, core::sync::atomic::Ordering::Release));
+            self.restored_irq.store(state, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    #[ksync::guarded]
+    struct MockUntrackedIrqObj {
+        #[mutex]
+        mu: KMutex<MockIrqLock>,
+        #[guarded_by(mu)]
+        val: u32,
+    }
+
+    #[ksync::guarded]
+    struct MockTrackedIrqObj {
+        #[mutex]
+        mu: KMutex<crate::LockdepTracked<MockIrqLock>>,
+        #[guarded_by(mu)]
+        val: u32,
+    }
+
+    #[test]
+    fn test_assert_held_and_untracked_release() {
+        stack_pin_init!(let obj = pin_init!(MockUntrackedIrqObj {
+            mu <- KMutex::init(),
+            val: 7.into(),
+        }));
+
+        obj.mu.raw_mutex().acquire_raw();
+        {
+            // SAFETY: `obj.mu` is held via `acquire_raw` and `token` is consumed by `release`.
+            let token = unsafe { obj.mu.assert_held() };
+            // SAFETY: `token` witnesses `obj.mu` on `obj`.
+            assert_eq!(*unsafe { obj.guard_mu(&token) }.val(), 7);
+            // SAFETY: `obj.mu` is held via `acquire_raw` and no guarded borrows remain live.
+            unsafe { obj.mu.release(token) };
+        }
+        assert!(!obj.mu.raw_mutex().is_held());
+
+        let saved = obj.mu.raw_mutex().acquire_irq_save_raw(42);
+        {
+            // SAFETY: `obj.mu` is held via `acquire_irq_save_raw` and `token` is consumed below.
+            let mut token = unsafe { obj.mu.assert_held() };
+            // SAFETY: `token` witnesses `obj.mu` on `obj`.
+            *unsafe { obj.guard_mu_mut(&mut token) }.val_mut() = 99;
+            // SAFETY: `obj.mu` is held with saved state `saved` and no guarded borrows remain live.
+            unsafe { obj.mu.release_irq_restore(saved, token) };
+        }
+        assert!(!obj.mu.raw_mutex().is_held());
+        assert_eq!(obj.mu.raw_mutex().restored_irq.load(core::sync::atomic::Ordering::Relaxed), 42);
+
+        stack_pin_init!(let tracked = pin_init!(MockTrackedIrqObj {
+            mu <- KMutex::init(),
+            val: 123.into(),
+        }));
+        lock!(let guard = tracked.lock_mu());
+        // SAFETY: `guard` holds `tracked.mu` and `token` is only used for shared access while
+        // `guard` is live.
+        let token = unsafe { tracked.mu.assert_held() };
+        // SAFETY: `token` witnesses `tracked.mu` on `tracked`.
+        assert_eq!(*unsafe { tracked.guard_mu(&token) }.val(), 123);
+        assert_eq!(*guard.val(), 123);
     }
 }

@@ -199,3 +199,6 @@ pub use vm_object_dispatcher::{
     InitialMutability, VmObjectDispatcher, VmoOwnership, vmo_to_info_entry,
 };
 pub use wait_signal_observer::WaitSignalObserver;
+
+/// The kernel's `fbl::Name`, protected by a spinlock like the C++ `fbl::Name<Size>`.
+pub type Name<const SIZE: usize> = fbl::Name<SIZE, crate::ksync_kernel::RawSpinlock>;

@@ -43,7 +43,7 @@ const PROFILE_LOW_LATENCY_DEADLINE: DurationMono = DurationMono::from_micros(300
 // A single spinlock protects the data members of all DpcRunners.
 //
 // Take care to drop this lock before calling any code that might acquire a chainlock.
-ksync::declare_singleton_spinlock!(DpcLock);
+crate::ksync_kernel::declare_singleton_spinlock!(DpcLock);
 
 /// Callback function signature for a [`Dpc`].
 pub type DpcFunc = extern "C" fn(&Dpc);

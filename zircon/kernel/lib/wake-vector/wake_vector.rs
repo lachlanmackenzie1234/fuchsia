@@ -128,10 +128,11 @@ fn limit_size_t_u32(size: usize) -> u32 {
 ///   via `call_unlocked`.
 mod lists {
     use super::WakeEvent;
+    use crate::ksync_kernel::{RawMutex, RawSpinlock};
     use core::marker::PhantomPinned;
     use core::pin::Pin;
     use fbl::{DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, TrackingSize};
-    use ksync::{KMutexGuard, KOnceCell, LockToken, RawMutex, RawSpinlock};
+    use ksync::{KMutexGuard, KOnceCell, LockToken};
     use pin_init::{pin_data, pin_init};
 
     struct GlobalListTag;
@@ -218,8 +219,8 @@ mod lists {
     // SAFETY: Access to `PendingListHolder` is serialized by `PendingListLock`.
     unsafe impl Send for PendingListHolder {}
 
-    ksync::declare_singleton_mutex!(pub GlobalListLock);
-    ksync::declare_singleton_spinlock!(pub PendingListLock);
+    crate::ksync_kernel::declare_singleton_mutex!(pub GlobalListLock);
+    crate::ksync_kernel::declare_singleton_spinlock!(pub PendingListLock);
 
     pub type GlobalGuard<'a> = Pin<&'a mut KMutexGuard<'static, GlobalListLock, RawMutex>>;
     pub type PendingGuard<'a> = Pin<&'a mut KMutexGuard<'static, PendingListLock, RawSpinlock>>;

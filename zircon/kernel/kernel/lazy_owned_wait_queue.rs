@@ -13,12 +13,13 @@ use core::mem::{align_of, offset_of, size_of};
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicPtr, Ordering};
-use ksync::{IrqSavePolicy, LockToken};
+use ksync::LockToken;
 use pin_init::{pin_data, pinned_drop};
 use zr::static_assert;
 
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use crate::kernel::owned_wait_queue_pool::{OwnedWaitQueuePool, OwnedWaitQueuePoolLock};
+use crate::ksync_kernel::IrqSavePolicy;
 
 /// Policy selecting the [`OwnedWaitQueuePool`] that a [`LazyOwnedWaitQueueImpl`] borrows queues
 /// from and recycles them to.

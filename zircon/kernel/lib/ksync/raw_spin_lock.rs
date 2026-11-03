@@ -1,10 +1,14 @@
-// Copyright 2026 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
 
-use crate::lockdep_tracked::{LockdepTracked, impl_lockdep_tracked_lock_policy};
-use crate::raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 use core::ffi::c_void;
+use ksync::{
+    ConstRawLock, ExclusiveLockPolicy, LockPolicy, LockdepTracked, RawAssertHeldLock, RawLock,
+    RawUntrackedIrqLock, RawUntrackedLock, impl_lockdep_tracked_lock_policy,
+};
 use pin_init::{PinInit, pin_data};
 
 #[cfg(target_arch = "x86_64")]
@@ -60,9 +64,9 @@ unsafe extern "C" {
     fn cpp_monitored_spinlock_release_no_irqrestore(lock: *mut c_void);
 }
 
-#[cfg(feature = "spin_lock_tracing")]
+#[cfg(scheduler_lock_spin_tracing_enabled)]
 const RAW_SPINLOCK_SIZE: usize = 16;
-#[cfg(not(feature = "spin_lock_tracing"))]
+#[cfg(not(scheduler_lock_spin_tracing_enabled))]
 const RAW_SPINLOCK_SIZE: usize = 4;
 
 /// Opaque layout block for the Zircon C++ `SpinLock` object.
@@ -399,14 +403,14 @@ unsafe impl ExclusiveLockPolicy<RawSpinlockStorage> for NoIrqSavePolicy {}
 #[derive(Copy, Clone, Default)]
 pub struct MonitoredSpinlockGuardState {
     pub interrupt_state: InterruptSavedState,
-    pub tag: crate::SourceTag,
+    pub tag: ksync::SourceTag,
 }
 
 // SAFETY: `cpp_monitored_spinlock_acquire_irqsave` (or `cpp_ksync_interrupt_save` +
 // `cpp_monitored_spinlock_acquire_no_irqsave`) and `cpp_monitored_spinlock_release_irqrestore`
 // enforce mutual exclusion on `RawMonitoredSpinlockStorage`.
 unsafe impl LockPolicy<RawMonitoredSpinlockStorage> for IrqSavePolicy {
-    type AcquireArgs = crate::SourceTag;
+    type AcquireArgs = ksync::SourceTag;
     type GuardState = MonitoredSpinlockGuardState;
 
     #[inline]
@@ -489,8 +493,8 @@ unsafe impl ExclusiveLockPolicy<RawMonitoredSpinlockStorage> for IrqSavePolicy {
 // `cpp_monitored_spinlock_release_no_irqrestore` enforce mutual exclusion on
 // `RawMonitoredSpinlockStorage`.
 unsafe impl LockPolicy<RawMonitoredSpinlockStorage> for NoIrqSavePolicy {
-    type AcquireArgs = crate::SourceTag;
-    type GuardState = crate::SourceTag;
+    type AcquireArgs = ksync::SourceTag;
+    type GuardState = ksync::SourceTag;
 
     #[inline]
     unsafe fn acquire(
@@ -549,6 +553,35 @@ impl ConstRawLock for RawSpinlockStorage {
     const INIT: Self = Self::INIT;
 }
 
+impl RawAssertHeldLock for RawSpinlockStorage {
+    #[inline]
+    fn assert_held(&self) {
+        Self::assert_held(self);
+    }
+}
+
+impl RawUntrackedLock for RawSpinlockStorage {
+    #[inline]
+    unsafe fn release(&self) {
+        // SAFETY: Caller upholds the `RawSpinlockStorage::release` contract.
+        unsafe {
+            Self::release(self);
+        }
+    }
+}
+
+impl RawUntrackedIrqLock for RawSpinlockStorage {
+    type InterruptState = InterruptSavedState;
+
+    #[inline]
+    unsafe fn release_irq_restore(&self, state: Self::InterruptState) {
+        // SAFETY: Caller upholds the `RawSpinlockStorage::release_irq_restore` contract.
+        unsafe {
+            Self::release_irq_restore(self, state);
+        }
+    }
+}
+
 // SAFETY: `RawMonitoredSpinlockStorage` is a physical kernel spinlock with a unique storage
 // address.
 unsafe impl RawLock for RawMonitoredSpinlockStorage {
@@ -585,9 +618,9 @@ pub type RawMonitoredSpinlock =
     LockdepTracked<RawMonitoredSpinlockStorage, IrqSavePolicy, { lockdep::LOCK_FLAGS_IRQ_SAFE }>;
 
 const _: () = {
-    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
+    #[cfg(with_lock_dep)]
     const BASE_SIZE: usize = 8;
-    #[cfg(not(any(feature = "lock_dep", feature = "lock_metadata_only")))]
+    #[cfg(not(with_lock_dep))]
     const BASE_SIZE: usize = 0;
 
     // `RawSpinlockStorage` is `#[repr(C, align(8))]`, so the 4-byte non-tracing storage is padded

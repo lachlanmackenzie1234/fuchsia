@@ -11,9 +11,10 @@ use core::ffi::c_void;
 use core::mem::{align_of, offset_of, size_of};
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
+use crate::ksync_kernel::RawMutexStorage;
 use debug::{ltracef, tracef};
 use fbl::RefPtr;
-use ksync::{LockPolicy, RawLock, RawMutexStorage};
+use ksync::{LockPolicy, RawLock};
 use zx_status::Status;
 
 use super::bootstrap16_ffi::{

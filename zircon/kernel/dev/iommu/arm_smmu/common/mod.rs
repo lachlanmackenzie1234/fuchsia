@@ -35,7 +35,7 @@ pub use device_aspace::{Allocation, DEFAULT_MAX_PAGE_CACHE_ENTRIES, DeviceAspace
 pub use env::CppPinnedVmObjectRef;
 pub use env::{
     DRIVER_OOPS_BANNER, PinnedVmoSource, SmmuEnv, SmmuNoIrqSavePolicy, SmmuPage, SmmuPinnedVmo,
-    SmmuRawSpinLock,
+    SmmuRawMutex, SmmuRawSpinLock,
 };
 #[cfg(not(is_kernel))]
 pub use escaped_name::EscapedName;

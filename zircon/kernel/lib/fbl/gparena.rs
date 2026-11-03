@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::ksync_kernel::RawCriticalMutex;
 use crate::vm::arch_vm_aspace::{ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE};
 use crate::vm::pmm;
 use crate::vm::vm_address_region::{VmAddressRegion, flag};
@@ -18,7 +19,7 @@ use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use fbl::RefPtr;
 use kprint::kprintln;
-use ksync::{KMutex, LockClass, RawCriticalMutex};
+use ksync::{KMutex, LockClass};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 

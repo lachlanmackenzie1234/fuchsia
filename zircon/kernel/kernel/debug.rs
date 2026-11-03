@@ -171,7 +171,7 @@ unsafe extern "C" fn cmd_threadstats(_argc: c_int, _argv: *const CmdArgs, _flags
     0
 }
 
-ksync::declare_singleton_spinlock!(ThreadLoadStateLock);
+crate::ksync_kernel::declare_singleton_spinlock!(ThreadLoadStateLock);
 
 struct ThreadLoadState {
     old_stats: [CpuStats; SMP_MAX_CPUS],

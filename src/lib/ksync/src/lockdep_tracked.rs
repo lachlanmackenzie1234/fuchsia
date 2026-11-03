@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
+use crate::raw_lock::{
+    ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawAssertHeldLock, RawLock, RawSharedLock,
+};
 use core::ffi::c_void;
 use core::marker::PhantomData;
 use pin_init::{PinInit, pin_data, pin_init};
@@ -542,12 +544,16 @@ unsafe impl<
 ///   traits for `L = $lock` and `LP = $default_policy`. Use this for a policy that is valid for
 ///   `$lock` but would bypass the semantics of other default policies on the same `$lock` (for
 ///   example, acquiring a `CriticalMutex` as a plain `Mutex`).
+///
+/// This is exported so that raw lock implementations outside of this crate (such as the kernel's
+/// `RawMutex`) can implement their policies for `LockdepTracked`.
 #[cfg(feature = "kernel")]
+#[macro_export]
 macro_rules! impl_lockdep_tracked_lock_policy {
     (@impl $policy:ty, [$($generics:tt)*], $l:ty, $lp:ty) => {
         // SAFETY: Delegates to `LockdepTracked<$l, $policy, LOCK_FLAGS>`, which performs lockdep
         // validation and forwards mutual exclusion to `$policy`.
-        unsafe impl<$($generics)* const LOCK_FLAGS: lockdep::LockFlags>
+        unsafe impl<$($generics)* const LOCK_FLAGS: $crate::LockFlags>
             $crate::LockPolicy<$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>> for $policy
         where
             $policy: $crate::LockPolicy<$l>,
@@ -680,7 +686,7 @@ macro_rules! impl_lockdep_tracked_lock_policy {
 
         // SAFETY: Delegates to `LockdepTracked<$l, $policy, LOCK_FLAGS>`, and `$policy` guarantees
         // exclusive mutual exclusion on `$l`.
-        unsafe impl<$($generics)* const LOCK_FLAGS: lockdep::LockFlags>
+        unsafe impl<$($generics)* const LOCK_FLAGS: $crate::LockFlags>
             $crate::ExclusiveLockPolicy<$crate::LockdepTracked<$l, $lp, LOCK_FLAGS>> for $policy
         where
             $policy: $crate::ExclusiveLockPolicy<$l>,
@@ -688,19 +694,16 @@ macro_rules! impl_lockdep_tracked_lock_policy {
         }
     };
     ($policy:ty $(,)?) => {
-        $crate::lockdep_tracked::impl_lockdep_tracked_lock_policy!(
+        $crate::impl_lockdep_tracked_lock_policy!(
             @impl $policy, [L: $crate::RawLock, LP: $crate::ExclusiveLockPolicy<L>,], L, LP
         );
     };
     ($policy:ty, $lock:ty, $default_policy:ty $(,)?) => {
-        $crate::lockdep_tracked::impl_lockdep_tracked_lock_policy!(
+        $crate::impl_lockdep_tracked_lock_policy!(
             @impl $policy, [], $lock, $default_policy
         );
     };
 }
-
-#[cfg(feature = "kernel")]
-pub(crate) use impl_lockdep_tracked_lock_policy;
 
 // SAFETY: `LockdepTracked` wraps physical lock `L` and forwards `as_mut_ptr` to uniquely identify
 // it.
@@ -731,4 +734,24 @@ impl<L: ConstRawLock, P: ExclusiveLockPolicy<L>, const LOCK_FLAGS: lockdep::Lock
     for LockdepTracked<L, P, LOCK_FLAGS>
 {
     const INIT: Self = Self::INIT;
+}
+
+// SAFETY: `LockdepTracked<L, L::SharedPolicy, LOCK_FLAGS>` delegates mutual exclusion to
+// `L::SharedPolicy`, which `L: RawSharedLock` guarantees is a shared mode excluding all of `L`'s
+// exclusive policies. Every `ExclusiveLockPolicy` for `LockdepTracked<L, P, LOCK_FLAGS>` (`P`
+// itself, and any policy implemented via `impl_lockdep_tracked_lock_policy!`) delegates to an
+// `ExclusiveLockPolicy` of `L`, so it is excluded by `SharedPolicy` as well.
+unsafe impl<L: RawSharedLock, P: ExclusiveLockPolicy<L>, const LOCK_FLAGS: lockdep::LockFlags>
+    RawSharedLock for LockdepTracked<L, P, LOCK_FLAGS>
+{
+    type SharedPolicy = LockdepTracked<L, L::SharedPolicy, LOCK_FLAGS>;
+}
+
+impl<L: RawAssertHeldLock, P: ExclusiveLockPolicy<L>, const LOCK_FLAGS: lockdep::LockFlags>
+    RawAssertHeldLock for LockdepTracked<L, P, LOCK_FLAGS>
+{
+    #[inline]
+    fn assert_held(&self) {
+        self.lock.assert_held();
+    }
 }

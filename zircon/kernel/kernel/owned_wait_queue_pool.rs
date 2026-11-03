@@ -8,6 +8,7 @@
 
 use crate::counters::define_kcounter;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
+use crate::ksync_kernel::KSpinlock;
 use crate::object_cache::{ObjectCache, UniquePtr};
 use core::convert::Infallible;
 use core::mem::{MaybeUninit, align_of, offset_of, size_of};
@@ -15,7 +16,7 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, Ordering};
 use fbl::DoublyLinkedList;
-use ksync::{KMutex, KSpinlock, LockToken, PhantomMutex};
+use ksync::{KMutex, LockToken, PhantomMutex};
 use lazy_init::LazyInit;
 use owned_wait_queue_pool_bindings as bindings;
 use pin_init::{InPlaceWrite, PinInit, init_from_closure, pin_data, pin_init};
@@ -25,7 +26,7 @@ use zx_types::zx_status_t;
 
 define_kcounter!(OWQ_POOL_EXCESS_CAPACITY, "owned_wait_queue.pool.excess_capacity", Sum);
 
-ksync::declare_singleton_spinlock!(
+crate::ksync_kernel::declare_singleton_spinlock!(
     /// Global lock for [`OwnedWaitQueuePool`].
     ///
     /// If this lock will be held at the same time as [`OwnedWaitQueue`]'s lock, then

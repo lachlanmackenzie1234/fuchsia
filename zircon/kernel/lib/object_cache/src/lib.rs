@@ -29,6 +29,7 @@ use crate::counters::define_kcounter;
 use crate::kernel::percpu::PerCpu as KernelPerCpu;
 use crate::kernel::thread::{AutoPreemptDisabler, current_memory_allocation_state_is_enabled};
 use crate::kernel::types::VAddr;
+use crate::ksync_kernel::RawMutex;
 use crate::vm::page_state::VmPageState;
 use crate::vm::page_state::bindings::vm_page_state;
 use crate::vm::{physmap, pmm};
@@ -44,7 +45,7 @@ use fbl::{
     DoublyLinkedListNode, HasRefCount, ManagedPtr, MutPtr, PtrTraits, Recyclable, RefCounted,
     RefPtr, TrackingSize, magic,
 };
-use ksync::{KCell, KMutex, RawMutex};
+use ksync::{KCell, KMutex};
 use pin_init::{Init, PinInit, init_from_closure, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 

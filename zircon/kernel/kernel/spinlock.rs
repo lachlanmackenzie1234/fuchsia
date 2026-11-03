@@ -11,8 +11,9 @@
 #[unittest::suite(name = "spinlock")]
 mod tests {
     use crate::arch_rs::InterruptDisableGuard;
+    use crate::ksync_kernel::{InterruptSavedState, RawSpinlockStorage, TryAcquireResult};
     use core::pin::Pin;
-    use ksync::{InterruptSavedState, KMutex, RawSpinlockStorage, TryAcquireResult};
+    use ksync::KMutex;
     use pin_init::{PinInit, pin_init, stack_pin_init};
     use unittest::{expect_eq, expect_false, expect_true};
 

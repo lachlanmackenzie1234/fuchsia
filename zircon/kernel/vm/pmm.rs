@@ -273,7 +273,7 @@ mod console {
     use ksync::KOnceCell;
     use zx_status::Status;
 
-    ksync::declare_singleton_mutex!(DumpFreeMemLock);
+    crate::ksync_kernel::declare_singleton_mutex!(DumpFreeMemLock);
 
     /// Repeating timer used by `k pmm free` to periodically dump the free memory count.
     static DUMP_FREE_MEM_TIMER: KOnceCell<Timer, DumpFreeMemLock> = KOnceCell::new();

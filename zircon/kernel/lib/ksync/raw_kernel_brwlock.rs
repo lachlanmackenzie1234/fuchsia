@@ -1,10 +1,11 @@
-// Copyright 2026 The Fuchsia Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2026 The Fuchsia Authors
+//
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT
 
-use crate::lockdep_tracked::LockdepTracked;
-use crate::raw_lock::{ExclusiveLockPolicy, LockPolicy, RawLock};
 use core::ffi::c_void;
+use ksync::{ExclusiveLockPolicy, LockPolicy, LockdepTracked, RawLock, RawSharedLock};
 use pin_init::{PinInit, pin_data};
 
 unsafe extern "C" {
@@ -125,41 +126,39 @@ unsafe impl RawLock for RawBrwLockPiStorage {
 
     #[inline]
     fn as_mut_ptr(&self) -> *mut c_void {
-        self as *const Self as *mut Self as *mut c_void
+        self.storage.get().cast::<c_void>()
     }
+}
+
+// SAFETY: `RawBrwLockPiReadPolicy` acquires `RawBrwLockPiStorage` in shared (read) mode, which
+// allows multiple concurrent readers but excludes the exclusive (write) mode acquired by
+// `RawBrwLockPiWritePolicy`, the default and only `ExclusiveLockPolicy` for `RawBrwLockPiStorage`.
+unsafe impl RawSharedLock for RawBrwLockPiStorage {
+    type SharedPolicy = RawBrwLockPiReadPolicy;
 }
 
 /// Lockdep-tracked kernel `BrwLockPi` matching the Zircon C++ `Lock<BrwLockPi>` layout.
 pub type RawBrwLockPi = LockdepTracked<RawBrwLockPiStorage>;
 
-#[cfg(all(
-    not(target_arch = "riscv64"),
-    not(any(feature = "lock_dep", feature = "lock_metadata_only"))
-))]
+#[cfg(all(not(target_arch = "riscv64"), not(with_lock_dep)))]
 const _: () = {
     assert!(core::mem::size_of::<RawBrwLockPi>() == 128);
     assert!(core::mem::align_of::<RawBrwLockPi>() == 16);
 };
 
-#[cfg(all(
-    not(target_arch = "riscv64"),
-    any(feature = "lock_dep", feature = "lock_metadata_only")
-))]
+#[cfg(all(not(target_arch = "riscv64"), with_lock_dep))]
 const _: () = {
     assert!(core::mem::size_of::<RawBrwLockPi>() == 144);
     assert!(core::mem::align_of::<RawBrwLockPi>() == 16);
 };
 
-#[cfg(all(
-    target_arch = "riscv64",
-    not(any(feature = "lock_dep", feature = "lock_metadata_only"))
-))]
+#[cfg(all(target_arch = "riscv64", not(with_lock_dep)))]
 const _: () = {
     assert!(core::mem::size_of::<RawBrwLockPi>() == 72);
     assert!(core::mem::align_of::<RawBrwLockPi>() == 8);
 };
 
-#[cfg(all(target_arch = "riscv64", any(feature = "lock_dep", feature = "lock_metadata_only")))]
+#[cfg(all(target_arch = "riscv64", with_lock_dep))]
 const _: () = {
     assert!(core::mem::size_of::<RawBrwLockPi>() == 80);
     assert!(core::mem::align_of::<RawBrwLockPi>() == 8);

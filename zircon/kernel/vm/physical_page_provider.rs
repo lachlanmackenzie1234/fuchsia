@@ -25,8 +25,9 @@ use crate::vm::vm_cow_pages::{DeferredOps, SupplyOptions, VmCowPages, VmCowRange
 use crate::vm::vm_page_list::VmPageSpliceList;
 use crate::vm::{physmap, pmm};
 
+use crate::ksync_kernel::RawMutex;
 use fbl::{DoublyLinkedList, DoublyLinkedListContainable};
-use ksync::{KMutex, RawMutex, guarded, kcell_init};
+use ksync::{KMutex, guarded, kcell_init};
 use page_bindings::{vm_page_state, vm_page_t};
 use page_source_bindings::PageSource as CppPageSource;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop, stack_pin_init};

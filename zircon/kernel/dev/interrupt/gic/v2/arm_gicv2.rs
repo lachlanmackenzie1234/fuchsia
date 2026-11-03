@@ -153,7 +153,7 @@ impl CpuMaskTranslator {
 
 static MASK_TRANSLATOR: CpuMaskTranslator = CpuMaskTranslator::new();
 
-ksync::declare_singleton_spinlock!(
+crate::ksync_kernel::declare_singleton_spinlock!(
     /// Serializes the read-modify-write sequences the driver performs on the shared distributor
     /// registers. Acquired with the spinlock's default policy, which saves and restores interrupts.
     GicLock

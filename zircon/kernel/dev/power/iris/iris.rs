@@ -62,10 +62,10 @@ fn reset_requested_opps_for_test() {
     }
 }
 
-ksync::declare_singleton_lock!(Domain0Lock, ::ksync::RawSpinlock);
-ksync::declare_singleton_lock!(Domain1Lock, ::ksync::RawSpinlock);
-ksync::declare_singleton_lock!(Domain2Lock, ::ksync::RawSpinlock);
-ksync::declare_singleton_lock!(Domain3Lock, ::ksync::RawSpinlock);
+crate::ksync_kernel::declare_singleton_spinlock!(Domain0Lock);
+crate::ksync_kernel::declare_singleton_spinlock!(Domain1Lock);
+crate::ksync_kernel::declare_singleton_spinlock!(Domain2Lock);
+crate::ksync_kernel::declare_singleton_spinlock!(Domain3Lock);
 
 /// Acquires the spinlock corresponding to `domain_index` and executes `f`.
 fn with_domain_lock<R>(

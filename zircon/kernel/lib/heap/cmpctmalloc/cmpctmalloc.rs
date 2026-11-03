@@ -148,7 +148,7 @@ mod platform {
     }
     pub(crate) use ktrace_duration_end;
 
-    ksync::declare_singleton_critical_mutex!(
+    crate::ksync_kernel::declare_singleton_critical_mutex!(
         /// This is a popular lock.  Critical sections protected by this lock are
         /// *usually* short-lived, so we'd like to minimize lock thrash by disabling
         /// preemption while holding the lock.  However, in degenerate cases (e.g. with

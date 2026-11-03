@@ -426,7 +426,7 @@ mod console {
             // until the thread is joined.
             let duration: zx_duration_boot_t = unsafe { *(arg as *const zx_duration_boot_t) };
             // Acquire a spinlock and hold it for `duration`.
-            ksync::declare_singleton_monitored_spinlock!(LockupTestLock);
+            crate::ksync_kernel::declare_singleton_monitored_spinlock!(LockupTestLock);
             ksync::lock!(let _guard = LockupTestLock::get().lock_with(ksync::source_tag!()));
             let deadline: zx_instant_boot_t = current_boot_time().0.saturating_add(duration);
             while current_boot_time().0 < deadline {

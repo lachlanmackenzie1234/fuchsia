@@ -17,6 +17,7 @@ use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::thread::{self, Interruptible};
 use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
+use crate::ksync_kernel::declare_singleton_mutex;
 use crate::platform_rs::timer::{
     DurationMono, DurationUnknown, InstantBoot, InstantUnknown, current_boot_time,
     current_mono_time, zx_msec, zx_usec,
@@ -33,7 +34,6 @@ use debug::dprintf;
 use debug::dprintf::{INFO, dprintf_enabled};
 #[cfg(any(console_enabled, ktest))]
 use kprint::kprint;
-use ksync::declare_singleton_mutex;
 use lazy_init::LazyInit;
 use pin_init::{pin_data, pin_init};
 use zbi::KernelDriverIrqFlags;

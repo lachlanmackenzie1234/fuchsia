@@ -39,7 +39,7 @@ mod console {
     use ksync::KCell;
     use zx_status::Status;
 
-    ksync::declare_singleton_mutex!(TestAspaceLock);
+    crate::ksync_kernel::declare_singleton_mutex!(TestAspaceLock);
 
     /// Synchronized static storage for the `vmm` console command's active test address space.
     struct TestAspaceStatic(KCell<Option<RefPtr<VmAspace>>, TestAspaceLock>);

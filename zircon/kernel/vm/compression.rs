@@ -7,6 +7,7 @@
 use crate::counters::define_kcounter;
 use crate::kernel::relaxed_atomic::{RelaxedAtomicI64, RelaxedAtomicU64};
 use crate::kernel::thread;
+use crate::ksync_kernel::RawMutex;
 use crate::platform_rs::timer::{
     DurationMono, InstantMonoTicks, ticks_per_second, timer_current_mono_ticks,
 };
@@ -28,7 +29,7 @@ use core::ptr::NonNull;
 use fbl::{Recyclable, RefCounted, RefPtr, ref_counted};
 use kalloc::Box;
 use kprint::kprintln;
-use ksync::{KMutex, KMutexGuard, RawMutex, guarded};
+use ksync::{KMutex, KMutexGuard, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 

@@ -91,6 +91,7 @@ crate::impl_dispatcher_facade_with_state!(
 ```
 
 ### Benefits:
+
 - **Zero Memory Overhead**: `OpaqueRefCountedFacade` wraps `zr::OpaqueFacade` to
   communicate interior mutability to LLVM optimization passes without adding
   size bytes.
@@ -104,6 +105,7 @@ When a dispatcher holds a `fbl::RefPtr<T>` to a non-dispatcher C++
 `fbl::RefCounted` object (such as `PageSource`, `VmObject`, `VmAddressRegion`,
 or `Bti`), choose the pattern based on whether `T` has `bindgen`-generated
 bindings:
+
 - **Bindgen-Backed C++ Types** (e.g., `PageSource`, `VmObject`, `VmCowPages`):
   If `bindgen` generates `bindings::T`, **do NOT use
   `fbl::impl_opaque_ref_counted_facade!`**. Using that macro replaces the struct
@@ -141,8 +143,9 @@ internal fields guarded by mutex/rwlock (`KMutex` / `BrwLockPi`) inside this
 struct:
 
 ```rust
+use crate::ksync_kernel::RawCriticalMutex;
 use fbl::Canary;
-use ksync::{guarded, KMutex, RawCriticalMutex};
+use ksync::{guarded, KMutex};
 
 #[guarded]
 #[repr(C)]
@@ -330,50 +333,53 @@ using a single unified `impl_dispatcher_state_init!` macro in the dispatcher's
 `dispatcher: *const <Type>` as their first argument:
 
 1.  **Standard Initialization** (calls `<Type>State::init(dispatcher)`):
-   ```rust
-   // In suspend_token_dispatcher_ffi.rs / sampler_dispatcher_ffi.rs:
-   crate::impl_dispatcher_state_init!(SuspendTokenDispatcher, SuspendTokenDispatcherState);
-   ```
+
+    ```rust
+    // In suspend_token_dispatcher_ffi.rs / sampler_dispatcher_ffi.rs:
+    crate::impl_dispatcher_state_init!(SuspendTokenDispatcher, SuspendTokenDispatcherState);
+    ```
 
 2.  **Initialization with Additional Arguments** (calls
     `<Type>State::init(dispatcher, flags)`):
-   ```rust
-   // In log_dispatcher_ffi.rs:
-   crate::impl_dispatcher_state_init!(LogDispatcher, LogDispatcherState, flags: u32);
-   ```
+
+    ```rust
+    // In log_dispatcher_ffi.rs:
+    crate::impl_dispatcher_state_init!(LogDispatcher, LogDispatcherState, flags: u32);
+    ```
 
 3.  **Custom Initialization Logic** (written explicitly when post-initialization
     calls are needed):
-   ```rust
-   // In interrupt_dispatcher_ffi.rs:
-   /// # Safety
-   ///
-   /// `state` must point to uninitialized memory of at least `size_of::<InterruptDispatcherState>()`
-   /// bytes with proper alignment, `dispatcher` must point to the enclosing C++ `InterruptDispatcher`,
-   /// and `init_fn` must initialize `InterruptKind` from `ctx`.
-   #[unsafe(no_mangle)]
-   pub unsafe extern "C" fn rust_interrupt_dispatcher_state_init(
-       dispatcher: NonNull<InterruptDispatcher>,
-       state: *mut InterruptDispatcherState,
-       flags: u32,
-       options: u32,
-       ctx: *mut u8,
-       init_fn: InterruptKindInitFn,
-   ) {
-       // SAFETY: `state` points to valid uninitialized storage in `InterruptDispatcher`.
-       unsafe {
-           let _ = pin_init::PinInit::__pinned_init(
-               InterruptDispatcherState::new(dispatcher, flags, options),
-               state,
-           );
-       }
-       // SAFETY: `InterruptDispatcherState` is now initialized at `state`, and `init_fn`
-       // initializes `(*state).kind` from `ctx`.
-       unsafe {
-           init_fn(dispatcher.as_ref(), ctx);
-       }
-   }
-   ```
+
+    ```rust
+    // In interrupt_dispatcher_ffi.rs:
+    /// # Safety
+    ///
+    /// `state` must point to uninitialized memory of at least `size_of::<InterruptDispatcherState>()`
+    /// bytes with proper alignment, `dispatcher` must point to the enclosing C++ `InterruptDispatcher`,
+    /// and `init_fn` must initialize `InterruptKind` from `ctx`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn rust_interrupt_dispatcher_state_init(
+        dispatcher: NonNull<InterruptDispatcher>,
+        state: *mut InterruptDispatcherState,
+        flags: u32,
+        options: u32,
+        ctx: *mut u8,
+        init_fn: InterruptKindInitFn,
+    ) {
+        // SAFETY: `state` points to valid uninitialized storage in `InterruptDispatcher`.
+        unsafe {
+            let _ = pin_init::PinInit::__pinned_init(
+                InterruptDispatcherState::new(dispatcher, flags, options),
+                state,
+            );
+        }
+        // SAFETY: `InterruptDispatcherState` is now initialized at `state`, and `init_fn`
+        // initializes `(*state).kind` from `ctx`.
+        unsafe {
+            init_fn(dispatcher.as_ref(), ctx);
+        }
+    }
+    ```
 
 ---
 
@@ -516,9 +522,10 @@ Preserve all C++ `LTRACE` statements when porting syscalls:
     import the macros from it (`use debug::ltracef;`).
 2.  Declare `const LOCAL_TRACE: u32 = 0;` at the top of the syscall module.
 3.  Use `ltracef!` for entry and argument logging:
-   ```rust
-   ltracef!("options {:#x}\n", options);
-   ```
+
+    ```rust
+    ltracef!("options {:#x}\n", options);
+    ```
 
 ---
 
@@ -532,15 +539,17 @@ When interfacing between C++ and Rust during incremental dispatcher migrations:
     branching or chain across sub-objects (`disp->sub_object()->Method()`) in a
     `cpp_*` FFI shim.
 2.  **Naming Conventions**:
-   - Rust exposed to C++: `rust_$module_$type_$method`
-   - C++ exposed to Rust: `cpp_$namespace_$type_$method`
+    - Rust exposed to C++: `rust_$module_$type_$method`
+    - C++ exposed to Rust: `cpp_$namespace_$type_$method`
 3.  **Clean Destructor Overrides**: Omit redundant `override` specifiers on
     final C++ methods (e.g., `~LogDispatcher() final;`).
 4.  **Safety Assertions**: Always verify structural memory layout parity across
     language boundaries using compile-time static assertions:
-   ```rust
-   zr::static_assert!(core::mem::size_of::<CounterDispatcher>() == core::mem::size_of::<usize>());
-   ```
+
+    ```rust
+    zr::static_assert!(core::mem::size_of::<CounterDispatcher>() == core::mem::size_of::<usize>());
+    ```
+
 5.  **C++ Header Prototype Declarations**: All C++ FFI helper functions defined
     in `.cc` files (e.g. `cpp_*`) MUST have prototype declarations enclosed in
     `extern "C"` blocks inside an included C++ header file (e.g. `debuglog.h`,

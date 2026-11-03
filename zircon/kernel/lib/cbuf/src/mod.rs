@@ -44,7 +44,7 @@ pub struct Cbuf {
     event: Event,
 
     #[mutex]
-    lock: ksync::KMutex<ksync::RawSpinlock>,
+    lock: ksync::KMutex<crate::ksync_kernel::RawSpinlock>,
 }
 
 // SAFETY: `buf` is the only field that is not `Send`. The memory it points to stays valid while the

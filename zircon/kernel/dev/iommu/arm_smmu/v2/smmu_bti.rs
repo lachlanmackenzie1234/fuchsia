@@ -19,7 +19,8 @@ use zx_status::Status;
 use crate::arm_smmu::common::{
     ALL_PERM_FLAGS, Allocation, ArmSmmuMode, BtiPageLeakReason, DEFAULT_MAX_PAGE_CACHE_ENTRIES,
     DeviceAspace, EscapedName, PAGE_SHIFT, PAGE_SIZE, PinnedVmoSource, RequireContiguousMapping,
-    SmmuEnv, SmmuPinnedVmo, SmmuRawSpinLock, TlbInvalidator, ZX_MAX_NAME_LEN, is_page_rounded,
+    SmmuEnv, SmmuPinnedVmo, SmmuRawMutex, SmmuRawSpinLock, TlbInvalidator, ZX_MAX_NAME_LEN,
+    is_page_rounded,
 };
 use crate::arm_smmu::v2::context_bank::{ContextBank, DEFAULT_TTBR0_ADDR_SPACE_SZ};
 use crate::arm_smmu::v2::registers::gr0::{
@@ -101,7 +102,7 @@ pub struct SmmuBti {
     /// back into BTI when unpinned/destroyed. By having a dedicated PMT lock that nests outside
     /// `lock`, we can synchronize PMT list manipulation and quarantine counting without deadlocks.
     #[mutex]
-    pub(crate) pmt_lock: KMutex,
+    pub(crate) pmt_lock: KMutex<SmmuRawMutex>,
     #[pin]
     #[guarded_by(pmt_lock)]
     pub(crate) active_pmt_list: DoublyLinkedList<RefPtr<SmmuPmt>, DefaultObjectTag, TrackingSize>,

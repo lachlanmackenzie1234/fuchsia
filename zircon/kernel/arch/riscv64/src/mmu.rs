@@ -2747,7 +2747,7 @@ pub struct Riscv64ArchVmAspace {
     /// `UnmapPageTable()`.  Lockdep classifies by class, not by instance, hence the
     /// flag.
     #[mutex(flags = lockdep::LOCK_FLAGS_NESTABLE)]
-    pub(crate) mutex: ksync::KMutex,
+    pub(crate) mutex: ksync::KMutex<crate::ksync_kernel::RawMutex>,
 
     pub(crate) base: usize,
     pub(crate) size: usize,
