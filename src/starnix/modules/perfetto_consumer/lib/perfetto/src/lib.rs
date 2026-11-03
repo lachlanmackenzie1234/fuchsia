@@ -6,9 +6,10 @@
 #![recursion_limit = "256"]
 
 use perfetto_protos::perfetto::protos::{
-    DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest, GetAsyncCommandRequest,
-    GetAsyncCommandResponse, InitializeConnectionRequest, InitializeConnectionResponse, IpcFrame,
-    ReadBuffersRequest, RegisterDataSourceRequest, RegisterDataSourceResponse, ipc_frame,
+    DisableTracingRequest, EnableTracingRequest, FlushRequest, FreeBuffersRequest,
+    GetAsyncCommandRequest, GetAsyncCommandResponse, InitializeConnectionRequest,
+    InitializeConnectionResponse, IpcFrame, ReadBuffersRequest, RegisterDataSourceRequest,
+    RegisterDataSourceResponse, ipc_frame,
 };
 use prost::Message;
 use starnix_core::task::{CurrentTask, EventHandler, Waiter};
@@ -344,6 +345,26 @@ impl Consumer {
         req: DisableTracingRequest,
     ) -> Result<u64, anyhow::Error> {
         let method_id = self.method_id("DisableTracing")?;
+        let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
+        req.encode(&mut encoded_args)?;
+
+        self.send_message(
+            current_task,
+            ipc_frame::Msg::MsgInvokeMethod(ipc_frame::InvokeMethod {
+                service_id: self.bind_service_reply.service_id,
+                method_id: Some(method_id),
+                args_proto: Some(encoded_args),
+                drop_reply: None,
+            }),
+        )
+    }
+
+    pub fn flush(
+        &mut self,
+        current_task: &CurrentTask,
+        req: FlushRequest,
+    ) -> Result<u64, anyhow::Error> {
+        let method_id = self.method_id("Flush")?;
         let mut encoded_args: Vec<u8> = Vec::with_capacity(req.encoded_len());
         req.encode(&mut encoded_args)?;
 
