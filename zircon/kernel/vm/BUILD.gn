@@ -1722,6 +1722,7 @@ kernel_rust_mod("vm-rs") {
     "//zircon/kernel/lib/thread-stack:thread-stack-rs",
     "//zircon/kernel/phys/handoff:handoff-rs",
     "//zircon/kernel/phys/lib/memalloc:memalloc-rs",
+    "//zircon/kernel/vm/phys:arena",
     "//zircon/system/ulib/fbl/rust:fbl",
     "//zircon/system/ulib/pretty/rust:pretty",
   ]

@@ -308,6 +308,7 @@ struct PhysElfImage {
 struct PhysHandoff {
   // Whether the given type represents physical memory that should be turned
   // into a VMO.
+  // LINT.IfChange(IsPhysVmoType)
   static bool IsPhysVmoType(memalloc::Type type) {
     switch (type) {
       case memalloc::Type::kDataZbi:
@@ -321,6 +322,7 @@ struct PhysHandoff {
     }
     return false;
   }
+  // LINT.ThenChange(//zircon/kernel/vm/pmm_node.rs:is_phys_vmo_type)
 
   constexpr bool Valid() const { return magic == kMagic; }
 

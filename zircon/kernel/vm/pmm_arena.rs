@@ -113,7 +113,7 @@ impl PmmArena {
         selected_arena_size: u64,
         selected_bookkeeping_base: u64,
         selected_bookkeeping_size: u64,
-        node: &mut PmmNode,
+        node: &PmmNode,
     ) {
         debug_assert!(kernel_page::is_aligned(selected_arena_base as usize));
         debug_assert!(kernel_page::is_aligned(selected_arena_size as usize));
@@ -534,7 +534,7 @@ pub unsafe extern "C" fn rust_pmm_arena_init(
 ) {
     // SAFETY: The caller ensures `arena` and `node` are valid pointers.
     let arena = unsafe { &mut *arena };
-    let node = unsafe { &mut *node };
+    let node = unsafe { &*node };
     arena.init(
         selected_arena_base,
         selected_arena_size,

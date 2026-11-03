@@ -4,11 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::arch_rs::ints_disabled;
 use crate::counters::define_kcounter;
 use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::event::{AutounsignalEvent, Event};
+use crate::kernel::scheduler::peek_active_mask;
 use crate::kernel::thread::{AutoPreemptDisabler, THREAD_SIGNAL_SUSPEND};
 use crate::kernel::types::PAddr;
+use crate::vm::arch_vm_aspace::ArchVmAspace;
 use crate::vm::compression::VmCompression;
 use crate::vm::evictor::Evictor;
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
@@ -278,6 +281,20 @@ fn asan_unpoison_page(page: &VmPage) {
         }
     }
 }
+
+// LINT.IfChange(is_phys_vmo_type)
+/// Whether the given type represents physical memory that should be turned into a VMO.
+fn is_phys_vmo_type(ty: memalloc::Type) -> bool {
+    matches!(
+        ty,
+        memalloc::Type::DataZbi
+            | memalloc::Type::PhysDebugdata
+            | memalloc::Type::PhysLog
+            | memalloc::Type::Userboot
+            | memalloc::Type::Vdso
+    )
+}
+// LINT.ThenChange(//zircon/kernel/phys/handoff/include/phys/handoff/handoff.h:IsPhysVmoType)
 
 fn return_pages_to_free_list(
     target_list: Pin<&mut VmPageDoublyLinkedList>,
@@ -595,6 +612,205 @@ impl PmmNode {
             arenas: [const { PmmArena::new() }; PmmNode::ARENA_COUNT].into(),
             phantom: core::marker::PhantomData,
         })
+    }
+
+    /// Initializes the PMM node's arenas from the normalized memory ranges handed off by physboot.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called once during single-threaded early boot before the PMM is used, and
+    /// `ranges` must accurately describe the system's physical memory map.
+    unsafe fn init_from_ranges(
+        &self,
+        ranges: impl memalloc::NormalizedRangeIterator + Clone,
+    ) -> Result<(), Status> {
+        // Make sure we're in early boot (ints disabled and no active Schedulers)
+        assert!(peek_active_mask() == 0);
+        assert!(ints_disabled());
+
+        let mut status = Ok(());
+        let mut allocation_excluded = false;
+        let selections = arena::SelectionIterator::<_, { page::SIZE as u64 }>::new(
+            ranges.clone(),
+            arena::MAX_WASTED_BYTES,
+        );
+        for result in selections {
+            match result {
+                // SAFETY: Caller guarantees single-threaded early boot.
+                Ok(selected) => unsafe {
+                    if status == Err(Status::NO_MEMORY) {
+                        continue;
+                    }
+                    let init_status = self.init_arena(selected);
+                    if status.is_ok() {
+                        status = init_status;
+                    }
+                },
+                Err(error) => {
+                    let range = error.range();
+                    let allocated = range.ty().is_allocated();
+                    allocation_excluded |= allocated;
+                    // If we have to throw out less than two pages of free RAM, don't regard that
+                    // as a full blown error.
+                    let level = match error {
+                        arena::SelectionError::TooSmall(_) if !allocated => "warning",
+                        _ => "error",
+                    };
+                    kprint::kprintln!(
+                        "PMM: {level:s}: unable to include [{:#x}, {:#x}) ({:s}) in arena: {:s}",
+                        range.addr(),
+                        range.end(),
+                        range.ty().as_str(),
+                        error.as_str(),
+                    );
+                }
+            }
+        }
+
+        // Exit early if we could not initialize one of the arenas.
+        status?;
+
+        // If we fail to include a pre-PMM allocation in an arena that could be disastrous in
+        // unpredictable / hard-to-debug ways, so fail hard early.
+        assert!(!allocation_excluded);
+
+        // Now mark all pre-PMM allocations and holes within our arenas as reserved.
+        // SAFETY: Caller guarantees single-threaded early boot.
+        let token = unsafe { LockToken::new() };
+        let arenas = self.active_arenas(&token);
+        let mut arena_idx = 0;
+        let aligned =
+            arena::AlignedAllocationOrHoleIterator::<_, { page::SIZE as u64 }>::new(ranges);
+        for range in aligned {
+            // Find the first arena encompassing this range.
+            //
+            // Note that trying to include `range` in an arena may have resulted in an error during
+            // the selection process. If we do encounter a range not in an arena, just skip it.
+            while arena_idx < arenas.len() && (arenas[arena_idx].end().0 as u64) <= range.addr() {
+                arena_idx += 1;
+            }
+            let Some(arena) = arenas.get(arena_idx) else {
+                // In this case the tail of ranges did not end up in any arenas, so we can just
+                // short-circuit.
+                break;
+            };
+            if !arena.address_in_arena(PAddr(range.addr() as usize)) {
+                continue;
+            }
+
+            debug_assert!(arena.address_in_arena(PAddr((range.end() - 1) as usize)));
+            // SAFETY: Caller guarantees single-threaded early boot and valid memory ranges.
+            unsafe {
+                self.init_reserved_range(range);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Append a new arena to the PmmNode, and initialize it.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called during single-threaded early boot.
+    unsafe fn init_arena(&self, selected: arena::Selection) -> Result<(), Status> {
+        // No need to acquire the global pmm lock, this function can only be called within a single
+        // threaded context.
+        // SAFETY: Caller guarantees single-threaded early boot.
+        let mut token = unsafe { LockToken::new() };
+        let used_count = unsafe { *self.used_arena_count.get(&token) };
+        if used_count >= Self::ARENA_COUNT {
+            return Err(Status::NOT_SUPPORTED);
+        }
+        if selected.arena().size() > (Self::MAX_PAGES_PER_ARENA * page::SIZE) as u64 {
+            // We have this limit since we need to compress a page_t pointer to a 24 bit integer.
+            return Err(Status::NOT_SUPPORTED);
+        }
+
+        // SAFETY: `token` is valid in single-threaded early boot, and `PmmArena::init` only
+        // accesses `self.free_list`, `self.free_count`, and `self.may_allocate_evt` (via
+        // `add_free_pages`), which do not alias `self.arenas[used_count]`.
+        unsafe {
+            self.arenas.get_mut(&mut token)[used_count].init(
+                selected.arena().base(),
+                selected.arena().size(),
+                selected.bookkeeping().base(),
+                selected.bookkeeping().size(),
+                self,
+            );
+            *self.used_arena_count.get_mut(&mut token) = used_count + 1;
+            *self.arena_cumulative_size.get_mut(&mut token) += selected.arena().size();
+        }
+        Ok(())
+    }
+
+    /// Updates PMM bookkeeping to reflect that a given page-aligned range is reserved (e.g.,
+    /// wired). Used for both pre-PMM allocations and holes in RAM contained within arenas.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called during single-threaded early boot, and `range` must be a valid
+    /// page-aligned reserved/allocated range within an initialized arena.  `range` is expected to
+    /// be page-aligned and to not intersect with past ranges provided to this method.  Also calls
+    /// to `alloc_page` must not fail.
+    unsafe fn init_reserved_range(&self, range: memalloc::Range) {
+        debug_assert!(page::is_page_rounded(range.addr() as usize));
+        debug_assert!(page::is_page_rounded(range.size() as usize));
+
+        let what = if range.ty() == memalloc::Type::Reserved {
+            "hole in RAM"
+        } else {
+            range.ty().as_str()
+        };
+
+        pin_init::stack_pin_init!(let reserved = VmPageDoublyLinkedList::new());
+        if let Err(status) = self.alloc_range(
+            PAddr(range.addr() as usize),
+            (range.size() as usize) / page::SIZE,
+            reserved.as_mut(),
+        ) {
+            dprintf!(
+                INFO,
+                "PMM: unable to reserve [{:#x}, {:#x}): {what}: {}\n",
+                range.addr(),
+                range.end(),
+                status.into_raw(),
+            );
+            return; // this is probably fatal but go ahead and continue
+        }
+        dprintf!(INFO, "PMM: reserved [{:#x}, {:#x}): {what}\n", range.addr(), range.end());
+
+        // Kernel page tables belong to the arch-specific VM backend, just as they'd
+        // be if they were created post-Physboot.
+        if range.ty() == memalloc::Type::KernelPageTables {
+            // SAFETY: `reserved` contains valid allocated kernel page table pages from physboot.
+            unsafe {
+                ArchVmAspace::handoff_page_tables_from_physboot(reserved);
+            }
+            return;
+        }
+
+        // Otherwise, mark it as wired and merge it into the appropriate reserved list.
+        for p in reserved.iter() {
+            // SAFETY: We have ownership of the freshly allocated pages in `reserved`.
+            unsafe {
+                p.set_state(VmPageState::WIRED);
+            }
+        }
+
+        // SAFETY: `PmmNode` is pinned in memory for its entire lifetime, and we are in
+        // single-threaded early boot.
+        let mut token = unsafe { LockToken::new() };
+        let list = unsafe {
+            if range.ty() == memalloc::Type::TemporaryPhysHandoff {
+                Pin::new_unchecked(&mut *self.phys_handoff_temporary_list.get())
+            } else if is_phys_vmo_type(range.ty()) {
+                self.phys_handoff_vmo_list.get_pinned_mut_locked(&mut token)
+            } else {
+                self.permanently_reserved_list.get_pinned_mut_locked(&mut token)
+            }
+        };
+        list.splice(reserved);
     }
 
     /// Domain-specific conversion: returns raw pointer for `PmmNode`.
@@ -1746,7 +1962,7 @@ impl PmmNode {
     /// # Safety
     ///
     /// Caller guarantees that all pages in |list| are valid and owned by them.
-    pub unsafe fn add_free_pages(&mut self, mut list: Pin<&mut VmPageDoublyLinkedList>) {
+    pub unsafe fn add_free_pages(&self, mut list: Pin<&mut VmPageDoublyLinkedList>) {
         ltracef!("list {:p}\n", list.as_ref().get_ref() as *const _);
 
         // SAFETY: called at boot time as arenas are brought online, no locks are acquired
@@ -2525,6 +2741,73 @@ impl PmmNode {
             }
             asan_poison_page(p, ASAN_PMM_FREE_MAGIC);
         }
+    }
+}
+
+// TODO(https://fxbug.dev/549318457): Delete this temporary witness module when we have ported
+// PhysHandoff to Rust.
+mod witness {
+
+    /// A temporary type witness for normalized range iterators.
+    #[derive(Clone)]
+    pub struct NormalizedRangesWitness<Ranges> {
+        ranges: Ranges,
+    }
+
+    impl<Ranges> NormalizedRangesWitness<Ranges>
+    where
+        Ranges: Iterator<Item = memalloc::Range> + Clone,
+    {
+        /// # Safety
+        ///
+        /// `ranges` must yield normalized ranges (sorted, disjoint, and maximally contiguous).
+        pub unsafe fn new_unchecked(ranges: Ranges) -> Self {
+            Self { ranges }
+        }
+    }
+
+    impl<Ranges> Iterator for NormalizedRangesWitness<Ranges>
+    where
+        Ranges: Iterator<Item = memalloc::Range> + Clone,
+    {
+        type Item = memalloc::Range;
+
+        fn next(&mut self) -> Option<memalloc::Range> {
+            self.ranges.next()
+        }
+    }
+
+    // SAFETY: `NormalizedRangesWitness::new_unchecked` requires the underlying iterator to be
+    // normalized.
+    unsafe impl<Ranges> memalloc::NormalizedRangeIterator for NormalizedRangesWitness<Ranges> where
+        Ranges: Iterator<Item = memalloc::Range> + Clone
+    {
+    }
+}
+
+use witness::*;
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_pmm_node_init(
+    node: *mut PmmNode,
+    ranges: *const memalloc::Range,
+    count: usize,
+) -> zx_status_t {
+    // SAFETY: `node` is a valid pointer to the global PmmNode during single-threaded early boot.
+    let node = unsafe { &*node };
+    let slice = if count == 0 {
+        &[]
+    } else {
+        // SAFETY: Caller provides a valid span of `count` ranges; Rust `memalloc::Range` is
+        // layout-compatible with the C++ version.
+        unsafe { core::slice::from_raw_parts(ranges, count) }
+    };
+    // SAFETY: The ranges handed off from physboot to `PmmNode::Init` are normalized, and this is
+    // called once during single-threaded early boot.
+    let ranges = unsafe { NormalizedRangesWitness::new_unchecked(slice.iter().copied()) };
+    match unsafe { node.init_from_ranges(ranges) } {
+        Ok(()) => zx_types::ZX_OK,
+        Err(status) => status.into_raw(),
     }
 }
 

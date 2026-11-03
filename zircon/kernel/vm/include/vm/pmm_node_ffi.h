@@ -18,6 +18,7 @@ class VmCompression;
 
 __BEGIN_CDECLS
 
+zx_status_t rust_pmm_node_init(PmmNode* node, const memalloc::Range* ranges, size_t count);
 void rust_pmm_node_end_handoff(PmmNode* node);
 zx_status_t rust_pmm_node_alloc_page(PmmNode* node, uint32_t alloc_flags, vm_page_t** out_page);
 zx_status_t rust_pmm_node_alloc_pages(PmmNode* node, size_t count, uint32_t alloc_flags,

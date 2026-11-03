@@ -24,76 +24,7 @@
 // We disable thread safety analysis here, since this function is only called
 // during early boot before threading exists.
 zx_status_t PmmNode::Init(ktl::span<const memalloc::Range> ranges) TA_NO_THREAD_SAFETY_ANALYSIS {
-  // Make sure we're in early boot (ints disabled and no active Schedulers)
-  DEBUG_ASSERT(Scheduler::PeekActiveMask() == 0);
-  DEBUG_ASSERT(arch_ints_disabled());
-
-  zx_status_t status = ZX_OK;
-  auto init_arena = [&status, this](const PmmArenaSelection& selected) {
-    if (status == ZX_ERR_NO_MEMORY) {
-      return;
-    }
-    zx_status_t init_status = InitArena(selected);
-    if (status == ZX_OK) {
-      status = init_status;
-    }
-  };
-
-  bool allocation_excluded = false;
-  auto record_error = [&allocation_excluded](const PmmArenaSelectionError& error) {
-    bool allocated = memalloc::IsAllocatedType(error.range.type);
-    allocation_excluded = allocation_excluded || allocated;
-
-    // If we have to throw out less than two pages of free RAM, don't regard
-    // that as a full blown error.
-    const char* error_type =
-        error.type == PmmArenaSelectionError::Type::kTooSmall && !allocated ? "warning" : "error";
-    ktl::string_view reason = PmmArenaSelectionError::ToString(error.type);
-    ktl::string_view range_type = memalloc::ToString(error.range.type);
-    printf("PMM: %s: unable to include [%#" PRIx64 ", %#" PRIx64 ") (%.*s) in arena: %.*s\n",
-           error_type,                                              //
-           error.range.addr, error.range.end(),                     //
-           static_cast<int>(range_type.size()), range_type.data(),  //
-           static_cast<int>(reason.size()), reason.data());
-  };
-
-  SelectPmmArenas<kPageSize>(ranges, init_arena, record_error);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // If we fail to include a pre-PMM allocation in an arena that could be
-  // disastrous in unpredictable/hard-to-debug ways, so fail hard early.
-  ZX_ASSERT(!allocation_excluded);
-
-  // Now mark all pre-PMM allocations and holes within our arenas as reserved.
-  ktl::span arenas = active_arenas();
-  auto reserve_range = [this, arena{arenas.begin()},
-                        end{arenas.end()}](const memalloc::Range& range) mutable {
-    // Find the first arena encompassing this range.
-    //
-    // Note that trying to include `range` in an arena may have resulted in an
-    // error during the selection process. If we do encounter a range not in an
-    // arena, just skip it.
-    while (arena != end && arena->end() <= range.addr) {
-      ++arena;
-    }
-    if (arena == end) {
-      // In this case the tail of ranges did not end up in any arenas, so we can
-      // just short-circuit.
-      return false;
-    }
-    if (!arena->address_in_arena(range.addr)) {
-      return true;
-    }
-
-    DEBUG_ASSERT(arena->address_in_arena(range.end() - 1));
-    InitReservedRange(range);
-    return true;
-  };
-  ForEachAlignedAllocationOrHole<kPageSize>(ranges, reserve_range);
-
-  return ZX_OK;
+  return rust_pmm_node_init(this, ranges.data(), ranges.size());
 }
 
 void PmmNode::EndHandoff() { rust_pmm_node_end_handoff(this); }
@@ -151,62 +82,6 @@ zx_status_t PmmNode::AllocContiguous(const size_t count, uint alloc_flags, uint8
   return rust_pmm_node_alloc_contiguous(this, count, alloc_flags, alignment_log2, pa, list);
   // Forbid zero size contiguous allocations because we are obligated to provide the physical
   // address on success, but have no sensible value to give.
-}
-
-// We disable thread safety analysis here, since this function is only called
-// during early boot before threading exists.
-zx_status_t PmmNode::InitArena(const PmmArenaSelection& selected) TA_NO_THREAD_SAFETY_ANALYSIS {
-  if (used_arena_count_ >= kArenaCount) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  if (selected.arena.size > (kMaxPagesPerArena * kPageSize)) {
-    // We have this limit since we need to compress a page_t pointer to a 24 bit integer.
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  arenas_[used_arena_count_++].Init(selected, this);
-  arena_cumulative_size_ += selected.arena.size;
-  return ZX_OK;
-}
-
-void PmmNode::InitReservedRange(const memalloc::Range& range) {
-  DEBUG_ASSERT(IsPageRounded(range.addr));
-  DEBUG_ASSERT(IsPageRounded(range.size));
-
-  ktl::string_view what =
-      range.type == memalloc::Type::kReserved ? "hole in RAM"sv : memalloc::ToString(range.type);
-  VmPageDoublyLinkedList reserved;
-  zx_status_t status = pmm_alloc_range(range.addr, range.size / kPageSize, &reserved);
-  if (status != ZX_OK) {
-    dprintf(INFO, "PMM: unable to reserve [%#" PRIx64 ", %#" PRIx64 "): %.*s: %d\n", range.addr,
-            range.end(), static_cast<int>(what.size()), what.data(), status);
-    return;  // this is probably fatal but go ahead and continue
-  }
-  dprintf(INFO, "PMM: reserved [%#" PRIx64 ", %#" PRIx64 "): %.*s\n", range.addr, range.end(),
-          static_cast<int>(what.size()), what.data());
-
-  // Kernel page tables belong to the arch-specific VM backend, just as they'd
-  // be if they were created post-Physboot.
-  if (range.type == memalloc::Type::kKernelPageTables) {
-    ArchVmAspace::HandoffPageTablesFromPhysboot(&reserved);
-    return;
-  }
-
-  // Otherwise, mark it as wired and merge it into the appropriate reserved
-  // list.
-  for (auto& p : reserved) {
-    p.set_state(vm_page_state::WIRED);
-  }
-
-  VmPageDoublyLinkedList* list;
-  if (range.type == memalloc::Type::kTemporaryPhysHandoff) {
-    list = &phys_handoff_temporary_list_;
-  } else if (PhysHandoff::IsPhysVmoType(range.type)) {
-    list = &phys_handoff_vmo_list_;
-  } else {
-    list = &permanently_reserved_list_;
-  }
-  list->splice(list->end(), reserved);
 }
 
 void PmmNode::BeginFreeLoanedPage(vm_page_t* page,
