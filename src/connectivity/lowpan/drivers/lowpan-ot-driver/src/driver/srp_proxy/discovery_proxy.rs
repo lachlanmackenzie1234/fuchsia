@@ -69,7 +69,11 @@ fn ipv6addr_is_unicast_link_local(addr: &std::net::Ipv6Addr) -> bool {
 
 /// Returns `true` if the address should be proxied to the thread network.
 fn should_proxy_address(addr: &std::net::Ipv6Addr) -> bool {
-    !ipv6addr_is_unicast_link_local(addr) && !addr.is_loopback() && !addr.is_unspecified()
+    !ipv6addr_is_unicast_link_local(addr)
+        && !addr.is_loopback()
+        && !addr.is_unspecified()
+        && !addr.is_multicast()
+        && addr.to_ipv4_mapped().is_none()
 }
 
 impl DiscoveryProxy {
@@ -672,12 +676,34 @@ mod test {
     use std::net::Ipv6Addr;
 
     #[test]
-    fn test_should_proxy_address() {
+    fn test_should_proxy_address_accepts_global_unicast() {
         assert!(should_proxy_address(&Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_should_proxy_address_rejects_link_local_unicast() {
         assert!(!should_proxy_address(&Ipv6Addr::new(0xfe80, 0xdb8, 0, 0, 0, 0, 0, 1)));
         assert!(!should_proxy_address(&Ipv6Addr::new(0xfe81, 0xdb8, 0, 0, 0, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_should_proxy_address_rejects_loopback() {
         assert!(!should_proxy_address(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_should_proxy_address_rejects_unspecified() {
         assert!(!should_proxy_address(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)));
+    }
+
+    #[test]
+    fn test_should_proxy_address_rejects_multicast() {
+        assert!(!should_proxy_address(&Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_should_proxy_address_rejects_ipv4_mapped() {
+        assert!(!should_proxy_address(&Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f00, 1)));
     }
 
     #[test]
