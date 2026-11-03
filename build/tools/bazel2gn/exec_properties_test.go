@@ -87,6 +87,23 @@ fuchsia_rust_dso("dso") {
 }`,
 		},
 		{
+			name: "large RBE worker on rustc_staticlib",
+			bazel: `rustc_staticlib(
+    name = "foo_staticlib",
+    srcs = ["src/lib.rs"],
+    exec_properties = RBE_USE_LARGE_WORKER,
+)
+`,
+			wantGN: `rustc_staticlib("foo_staticlib") {
+	sources = [
+		"src/lib.rs",
+	]
+	_concurrent_jobs = concurrent_jobs.rust_highmem
+	configs += _concurrent_jobs.configs
+	forward_variables_from(_concurrent_jobs.vars, "*")
+}`,
+		},
+		{
 			name: "skipped exec_properties",
 			bazel: `rustc_library(
     name = "lib",

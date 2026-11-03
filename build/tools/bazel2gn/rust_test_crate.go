@@ -550,7 +550,7 @@ func callStringAttr(call *syntax.CallExpr, name string) (string, bool) {
 
 func isGenericRustTestOutputName(name string) bool {
 	s := strings.ReplaceAll(name, "-", "_")
-	for _, suffix := range []string{"_lib_test", "_bin_test", "_dylib_test", "_host_test", "_test"} {
+	for _, suffix := range []string{"_lib_test", "_bin_test", "_dylib_test", "_staticlib_test", "_host_test", "_test"} {
 		if before, ok := strings.CutSuffix(s, suffix); ok {
 			s = before
 			break

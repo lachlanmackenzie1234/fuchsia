@@ -169,9 +169,9 @@ rustc_binary("bin") {
 
 `exec_properties` is never emitted verbatim. Other values, other rules (only
 `rustc_binary()`, `rustc_cdylib()`, `fuchsia_rust_dso()`, `rustc_library()`,
-`rustc_test()` and their aliases are supported), and overwrite annotations on
-`exec_properties` are errors; use `# @bazel2gn:skip` and `#
-@bazel2gn:raw_attribute:` instead.
+`rustc_staticlib()`, `rustc_test()` and their aliases are supported), and
+overwrite annotations on `exec_properties` are errors; use `# @bazel2gn:skip`
+and `# @bazel2gn:raw_attribute:` instead.
 
 #### `rustc_cdylib()`, `fuchsia_cc_dso()`, and `fuchsia_rust_dso()`
 

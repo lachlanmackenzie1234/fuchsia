@@ -1176,6 +1176,104 @@ fuchsia_rust_dso("my_rust_dso") {
 	]
 }`,
 		}, {
+			name: "rustc_staticlib",
+			bazel: `
+rustc_staticlib(
+	name = "core",
+	srcs = [
+		"src/hooks.rs",
+		"src/lib.rs",
+	],
+	build_flags = ["//build/config/rust:bootfs"],
+	compile_data = ["data/config.json"],
+	crate_features = ["c_api"],
+	crate_name = "heapdump_core",
+	crate_root = "src/lib.rs",
+	data = [":extra_data"],
+	dynamic_libstd = False,
+	edition = "2024",
+	gn_disable_rustdoc = True,
+	gn_quiet_clippy = True,
+	link_deps = ["//sdk/lib/fdio"],
+	output_name = "heapdump_instrumentation_core",
+	proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+	rustc_env = {"FOO_ENV": "1"},
+	rustc_flags = ["-Cpanic=abort"],
+	target_compatible_with = ["@platforms//os:fuchsia"],
+	testonly = True,
+	validations = [":bindings_golden"],
+	version = "0.1.0",
+	visibility = ["//src/performance/memory:__subpackages__"],
+	deps = [
+		"//sdk/rust/zx",
+		"//third_party/rust_crates/vendor:anyhow",
+	],
+)
+
+rust_static_library(
+	name = "raw_staticlib",
+	srcs = ["src/lib.rs"],
+	edition = "2024",
+)`,
+			wantGN: `if (is_fuchsia) {
+	rustc_staticlib("core") {
+		sources = [
+			"src/hooks.rs",
+			"src/lib.rs",
+		]
+		configs += [
+			"//build/config/rust:bootfs",
+		]
+		inputs = [
+			"data/config.json",
+		]
+		features = [
+			"c_api",
+		]
+		crate_name = "heapdump_core"
+		source_root = "src/lib.rs"
+		non_rust_deps = [
+			":extra_data",
+		]
+		dynamic_libstd = false
+		edition = "2024"
+		disable_rustdoc = true
+		quiet_clippy = true
+		link_deps = [
+			"//sdk/lib/fdio",
+		]
+		output_name = "heapdump_instrumentation_core"
+		proc_macro_deps = [
+			"//third_party/rust_crates:async-trait",
+		]
+		rustenv = [
+			"FOO_ENV=1",
+		]
+		rustflags = [
+			"-Cpanic=abort",
+		]
+		testonly = true
+		validations = [
+			":bindings_golden",
+		]
+		version = "0.1.0"
+		visibility = [
+			":*",
+			"//src/performance/memory/*",
+		]
+		deps = [
+			"//sdk/rust/zx",
+			"//third_party/rust_crates:anyhow",
+		]
+	}
+}
+rustc_staticlib("raw_staticlib") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+}`,
+		}, {
 			name: "rustc_disable_clippy",
 			bazel: `
 rustc_library(
@@ -1192,6 +1290,12 @@ rustc_binary(
 
 rustc_dylib(
 	name = "foo_dylib",
+	srcs = ["src/lib.rs"],
+	disable_clippy = True,
+)
+
+rustc_staticlib(
+	name = "foo_staticlib",
 	srcs = ["src/lib.rs"],
 	disable_clippy = True,
 )
@@ -1221,6 +1325,12 @@ rustc_binary("foo_bin") {
 	disable_clippy = true
 }
 rustc_dylib("foo_dylib") {
+	sources = [
+		"src/lib.rs",
+	]
+	disable_clippy = true
+}
+rustc_staticlib("foo_staticlib") {
 	sources = [
 		"src/lib.rs",
 	]

@@ -11,6 +11,7 @@ load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 load("//build/bazel/rules/rust:rustc_dylib.bzl", "rustc_dylib")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
+load("//build/bazel/rules/rust:rustc_staticlib.bzl", "rustc_staticlib")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 _TagsInfo = provider(
@@ -134,6 +135,19 @@ def clippy_test_suite(name):
         with_unit_tests = True,
     )
 
+    # rustc_staticlib
+    rustc_staticlib(
+        name = "staticlib_default",
+        srcs = ["lib.rs"],
+        edition = "2024",
+    )
+    rustc_staticlib(
+        name = "staticlib_disabled",
+        srcs = ["lib.rs"],
+        disable_clippy = True,
+        edition = "2024",
+    )
+
     # rustc_binary
     rustc_binary(
         name = "bin_default",
@@ -201,6 +215,8 @@ def clippy_test_suite(name):
         ("dylib_default_unit_test", ":dylib_default_test", True, "--deny=deref_nullptr", []),
         ("dylib_disabled", ":dylib_disabled.dylib", False, "--deny=deref_nullptr", []),
         ("dylib_disabled_unit_test", ":dylib_disabled_test", False, "--deny=deref_nullptr", []),
+        ("staticlib_default", ":staticlib_default", True, "--deny=deref_nullptr", []),
+        ("staticlib_disabled", ":staticlib_disabled", False, "--deny=deref_nullptr", []),
         ("bin_default", ":bin_default", True, "--deny=deref_nullptr", []),
         ("bin_default_unit_test", ":bin_default_test", True, "--deny=deref_nullptr", []),
         ("bin_disabled", ":bin_disabled", False, "--deny=deref_nullptr", []),

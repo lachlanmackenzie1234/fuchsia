@@ -352,6 +352,60 @@ rustc_test("my_cdylib_unit_test") {
 	}
 }
 
+func TestRustTestStaticlibCrate(t *testing.T) {
+	bazel := `rustc_staticlib(
+	name = "core",
+	srcs = [
+		"src/hooks.rs",
+		"src/lib.rs",
+	],
+	dynamic_libstd = False,
+	edition = "2024",
+	output_name = "heapdump_instrumentation_core",
+	deps = ["//sdk/rust/zx"],
+)
+
+rustc_test(
+	name = "core_test",
+	crate = ":core",
+	crate_name = "heapdump_instrumentation_core_staticlib_test",
+	deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)`
+	wantGN := `rustc_staticlib("core") {
+	sources = [
+		"src/hooks.rs",
+		"src/lib.rs",
+	]
+	dynamic_libstd = false
+	edition = "2024"
+	output_name = "heapdump_instrumentation_core"
+	deps = [
+		"//sdk/rust/zx",
+	]
+}
+rustc_test("core_test") {
+	sources = [
+		"src/hooks.rs",
+		"src/lib.rs",
+	]
+	edition = "2024"
+	deps = [
+		"//sdk/rust/zx",
+	] + [
+		"//third_party/rust_crates:assert_matches",
+	]
+	output_name = "heapdump_instrumentation_core_staticlib_test"
+}`
+	f := toSyntaxFile(t, bazel)
+	lines, err := bazel2gn.FileToGN(f)
+	if err != nil {
+		t.Fatalf("FileToGN() failed: %s", err)
+	}
+	if diff := cmp.Diff(strings.Join(lines, "\n"), wantGN); diff != "" {
+		t.Errorf("FileToGN() diff (-got +want):\n%s", diff)
+	}
+}
+
 func TestRustTestCrateErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -403,6 +457,19 @@ host_rustc_test(
 	name = "lib_test",
 	srcs = ["src/lib.rs"],
 	binary_name = "custom_bazel_only_name",
+)`,
+		},
+		{
+			name: "generic core_staticlib_test name",
+			bazel: `rustc_staticlib(
+	name = "core",
+	srcs = ["src/lib.rs"],
+	output_name = "heapdump_instrumentation_core",
+)
+
+rustc_test(
+	name = "core_staticlib_test",
+	crate = ":core",
 )`,
 		},
 	} {
