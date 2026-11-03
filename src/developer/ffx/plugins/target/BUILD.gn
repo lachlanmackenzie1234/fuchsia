@@ -66,6 +66,9 @@ if (is_host) {
       # not aggregated by `:ffx_target_tests`.
       "add:tests",
       "discover:tests",
+      "get-time:tests",
+      "log-message:tests",
+      "off:tests",
       "remove:tests",
     ]
   }
