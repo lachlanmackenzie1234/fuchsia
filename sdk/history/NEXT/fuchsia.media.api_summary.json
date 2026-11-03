@@ -2644,6 +2644,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.media/FormatDetails.image_format",
+        "ordinal": "9",
+        "type": "fuchsia.images2/ImageFormat"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.media/FormatDetails.mime_type",
         "ordinal": "2",
         "type": "string"

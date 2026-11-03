@@ -403,6 +403,11 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
   uint64_t GetSharedFidlForStreamWaitCountForTesting() __TA_EXCLUDES(lock_);
   void WaitForSharedFidlForStreamWaitCountForTesting(uint64_t expected_count) __TA_EXCLUDES(lock_);
 
+  // Populates both new top-level FormatDetails fields (`image_format`) and legacy `domain` fields
+  // when either representation is provided, treating the top-level fields as authoritative when
+  // both are present.
+  static void EnsureFormatDetailsBridged(fuchsia::media::FormatDetails* format_details);
+
  private:
   class AddingBuffer;
 
