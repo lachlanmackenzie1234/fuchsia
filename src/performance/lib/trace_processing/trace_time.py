@@ -139,6 +139,13 @@ class TimePoint:
     def from_epoch_delta(cls, time_delta: TimeDelta) -> Self:
         return cls(time_delta.to_nanoseconds())
 
+    @classmethod
+    def from_microseconds(cls, microseconds: float) -> Self:
+        return cls(int(microseconds * 1000))
+
+    def to_epoch_nanoseconds(self) -> int:
+        return self._ticks
+
     def to_epoch_delta(self) -> TimeDelta:
         return TimeDelta.from_nanoseconds(self._ticks)
 

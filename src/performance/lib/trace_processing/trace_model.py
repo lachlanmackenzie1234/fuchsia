@@ -120,20 +120,20 @@ class Event:
     def args(self, rhs: Mapping[str, Any] | None) -> None:
         self._args = _read_only_args(rhs)
 
+    def _init_from_dict(self, event_dict: Mapping[str, Any]) -> None:
+        self.category = sys.intern(event_dict["cat"])
+        self.name = sys.intern(event_dict["name"])
+        self.start = trace_time.TimePoint.from_microseconds(event_dict["ts"])
+        self.pid = event_dict["pid"]
+        self.tid = event_dict["tid"]
+        self._args = _read_only_args(event_dict.get("args"))
+
     @classmethod
     def _consume_dict(cls, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor. Intended for use by subclasses."""
-        category: str = event_dict["cat"]
-        name: str = event_dict["name"]
-        start: trace_time.TimePoint = trace_time.TimePoint.from_epoch_delta(
-            trace_time.TimeDelta.from_microseconds(event_dict["ts"])
-        )
-        pid: int = event_dict["pid"]
-        tid: int = event_dict["tid"]
-        args: dict[str, Any] = event_dict.get("args", {})
-
-        del event_dict  # So that we get ownership of `args`.
-        return cls(category, name, start, pid, tid, args)
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        return instance
 
     def end_time(self) -> trace_time.TimePoint | None:
         """Get the ending time for this Event
@@ -187,7 +187,10 @@ class InstantEvent(Event):
             scope_str
         ]
 
-        return cls(scope, base=Event._consume_dict(event_dict))
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        instance.scope = scope
+        return instance
 
 
 class CounterEvent(Event):
@@ -216,7 +219,10 @@ class CounterEvent(Event):
                     f"parses as int: {event_dict}"
                 ) from t
 
-        return cls(id, base=Event._consume_dict(event_dict))
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        instance.id = id
+        return instance
 
 
 class DurationEvent(Event):
@@ -285,13 +291,13 @@ class DurationEvent(Event):
                 float(microseconds)
             )
 
-        return cls(
-            duration=duration,
-            parent=None,
-            child_durations=(),
-            child_flows=(),
-            base=Event._consume_dict(event_dict),
-        )
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        instance.duration = duration
+        instance.parent = None
+        instance._child_durations = ()
+        instance._child_flows = ()
+        return instance
 
     @typing.override
     def end_time(self) -> trace_time.TimePoint | None:
@@ -323,7 +329,11 @@ class AsyncEvent(Event):
     @classmethod
     def consume_dict(cls, id: int, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor."""
-        return cls(id, duration=None, base=Event._consume_dict(event_dict))
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        instance.id = id
+        instance.duration = None
+        return instance
 
     @typing.override
     def end_time(self) -> trace_time.TimePoint | None:
@@ -404,14 +414,14 @@ class FlowEvent(Event):
             )
         phase: FlowEventPhase = FlowEvent.FLOW_EVENT_PHASE_MAP[phase_str]
 
-        return cls(
-            id,
-            phase,
-            enclosing_duration,
-            previous_flow=None,
-            next_flow=None,
-            base=Event._consume_dict(event_dict),
-        )
+        instance = cls.__new__(cls)
+        instance._init_from_dict(event_dict)
+        instance.id = id
+        instance.phase = phase
+        instance.enclosing_duration = enclosing_duration
+        instance.previous_flow = None
+        instance.next_flow = None
+        return instance
 
 
 @total_ordering
