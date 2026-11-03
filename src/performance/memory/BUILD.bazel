@@ -8,5 +8,6 @@ test_suite(
     name = "target_tests",
     tests = [
         "//src/performance/memory/attribution/processing:tests",
+        "//src/performance/memory/heapdump/lib/heapdump_vmo:tests",
     ],
 )
