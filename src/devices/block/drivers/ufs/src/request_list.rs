@@ -12,7 +12,7 @@ use crate::constants::{
     UTRD_DATA_DIRECTION_SHIFT, UTRD_INTERRUPT_BIT, UTRD_OCS_MASK,
 };
 use crate::dma_buffer::ContiguousDmaBuffer;
-use crate::transfer_request_processor::{BlockIoOp, IoCompletion, ReadBack, ScsiOutcome};
+use crate::transfer_request_processor::{BlockIoOp, IoCompletion, ReadBack};
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -194,16 +194,16 @@ pub enum SlotState {
     Scheduled,
 }
 
-/// Who receives a slot's outcome when it leaves [`SlotState::Scheduled`].
-#[derive(Debug, Default)]
-pub(crate) enum SlotCompletion {
-    /// Cancelled async caller (or unscheduled slot): completion frees the slot and unpins DMA.
-    #[default]
-    None,
-    /// Synchronous block I/O request delivered through [`IoCompletion`].
-    Io { lun: u8, completion: IoCompletion, io_op: Option<BlockIoOp> },
-    /// Async UTP command (`send_scsi_command` on slots `0..30` or `execute_admin` on slot `31`).
-    Scsi { lun: u8, sender: futures::channel::oneshot::Sender<ScsiOutcome> },
+/// Completion target and stats metadata for an in-flight (`Scheduled`) UTP command.
+#[derive(Debug)]
+pub struct SlotCompletion {
+    /// LUN the command was submitted for.
+    pub lun: u8,
+    /// How the command's [`ScsiOutcome`](crate::transfer_request_processor::ScsiOutcome) is
+    /// delivered once the slot completes.
+    pub completion: IoCompletion,
+    /// Block operation recorded in the I/O stats on successful completion.
+    pub io_op: Option<BlockIoOp>,
 }
 
 /// Per-slot state and UCD buffer.
@@ -212,8 +212,9 @@ pub struct RequestSlot {
     pub(crate) state: SlotState,
     /// UCD holding the request UPIU, response UPIU and PRDT.
     pub(crate) command_descriptor_io: ContiguousDmaBuffer,
-    /// Submitter notification once the slot leaves `Scheduled`.
-    pub(crate) completion: SlotCompletion,
+    /// Completion state populated while the slot is in [`SlotState::Scheduled`], and `None` while
+    /// `Free` or `Reserved`.
+    pub completion: Option<SlotCompletion>,
     /// Read transfer whose CPU cache is invalidated after DMA completes (`DeviceToHost` only).
     pub(crate) read_back: Option<ReadBack>,
     /// Instant after which the stall watchdog logs a diagnostic error for this slot.
@@ -231,9 +232,9 @@ impl RequestSlot {
     }
 
     /// Resets the slot to `Free` and takes `(read_back, pmt)` for post-lock cleanup.
-    pub(crate) fn release(&mut self) -> (Option<ReadBack>, Option<zx::Pmt>) {
+    pub fn release(&mut self) -> (Option<ReadBack>, Option<zx::Pmt>) {
         self.state = SlotState::Free;
-        self.completion = SlotCompletion::None;
+        self.completion = None;
         self.deadline = None;
         self.stall_logged = false;
         (self.read_back.take(), self.pmt.take())
@@ -258,6 +259,12 @@ pub struct RequestList {
     pub(crate) closing: bool,
     /// Set once the controller is quiesced; no further submissions or completions run.
     pub(crate) stopped: bool,
+    /// Set while [`TransferRequestProcessor::run_io_timeout_task`] has an armed timer (or has been
+    /// woken to arm one), avoiding redundant wakeups on subsequent submissions.
+    ///
+    /// [`TransferRequestProcessor::run_io_timeout_task`]:
+    ///     crate::transfer_request_processor::TransferRequestProcessor::run_io_timeout_task
+    pub watchdog_armed: bool,
     /// Tasks to wake when any slot is released (async I/O and admin reservations).
     pub(crate) slot_wakers: Vec<std::task::Waker>,
     /// Threads blocked in a synchronous I/O slot reservation.
@@ -284,7 +291,7 @@ impl RequestList {
             request_slots.push(RequestSlot {
                 state: SlotState::Free,
                 command_descriptor_io: ContiguousDmaBuffer::new(bti, UTP_COMMAND_DESCRIPTOR_SIZE)?,
-                completion: SlotCompletion::None,
+                completion: None,
                 read_back: None,
                 deadline: None,
                 stall_logged: false,
@@ -298,6 +305,7 @@ impl RequestList {
             scheduled_mask: 0,
             closing: false,
             stopped: false,
+            watchdog_armed: false,
             slot_wakers: Vec::new(),
             blocked_reservers: 0,
         })

@@ -14,7 +14,7 @@ use crate::query::QueryUpiu;
 use crate::registers::{UicCommandArgument1Reg, UicCommandArgument3Reg};
 use crate::request_list::{OverallCommandStatus, SlotState};
 use crate::scsi::ScsiStatus;
-use crate::transfer_request_processor::{IoCompletion, TransferRequestProcessor};
+use crate::transfer_request_processor::{IoCompletion, ScsiOutcome, TransferRequestProcessor};
 use crate::uic::UicCommandOpcode;
 use crate::upiu::{NopInUpiu, NopOutUpiu, ResponseUpiu, UpiuHeader, UpiuTransactionCode};
 use fake_bti::FakeBti;
@@ -71,17 +71,17 @@ pub(crate) fn expire_deadline(processor: &TestProcessor, slot: u8) {
 }
 
 /// Receives the outcome delivered to an [`io_callback`].
-pub(crate) type IoOutcomeReceiver = futures::channel::oneshot::Receiver<Result<(), zx::Status>>;
+pub type IoOutcomeReceiver = futures::channel::oneshot::Receiver<ScsiOutcome>;
 
 /// A oneshot [`IoCompletion`] and the receiver that collects its delivered outcome.
-pub(crate) fn io_callback() -> (IoCompletion, IoOutcomeReceiver) {
+pub fn io_callback() -> (IoCompletion, IoOutcomeReceiver) {
     let (tx, rx) = futures::channel::oneshot::channel();
     (IoCompletion::Oneshot(tx), rx)
 }
 
 /// Returns the outcome already delivered to `rx`, panicking if none was.
-pub(crate) fn delivered(rx: &mut IoOutcomeReceiver) -> Result<(), zx::Status> {
-    rx.try_recv().expect("Completion dropped").expect("Completion not delivered")
+pub fn delivered(rx: &mut IoOutcomeReceiver) -> Result<(), zx::Status> {
+    rx.try_recv().expect("Completion dropped").expect("Completion not delivered").into_io_status()
 }
 
 /// NOP IN response for `task_tag`.

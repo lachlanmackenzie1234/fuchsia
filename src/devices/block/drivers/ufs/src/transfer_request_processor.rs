@@ -60,7 +60,7 @@ use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 /// Block operation kind and logical byte count recorded in [`BlockIoStats`] on `Ok(())` completion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BlockIoOp {
+pub enum BlockIoOp {
     Read(u64),
     Write(u64),
     Flush,
@@ -212,7 +212,7 @@ impl<'a> DataTransfer<'a> {
 
 /// Read-buffer range whose CPU data cache must be invalidated after `DeviceToHost` DMA.
 #[derive(Debug)]
-pub(crate) struct ReadBack {
+pub struct ReadBack {
     vmo: Arc<zx::Vmo>,
     offset: u64,
     length: u32,
@@ -227,14 +227,13 @@ impl ReadBack {
     }
 }
 
-/// How the outcome of a synchronous I/O request ([`TransferRequestProcessor::submit_io`]) is
-/// delivered.
+/// How the outcome of a UTP command is delivered.
 pub enum IoCompletion {
     /// A block server request, reported to the [`IoCompleter`] installed with
     /// [`TransferRequestProcessor::set_io_completer`]. Carries no per-request allocation.
     Request(RequestId),
-    /// Reported through a oneshot channel without boxing a closure.
-    Oneshot(oneshot::Sender<Result<(), zx::Status>>),
+    /// Reported through a oneshot channel (async UTP commands and tests).
+    Oneshot(oneshot::Sender<ScsiOutcome>),
 }
 
 impl std::fmt::Debug for IoCompletion {
@@ -255,7 +254,8 @@ pub trait IoCompleter: Send + Sync {
 struct DeferredSlot {
     read_back: Option<ReadBack>,
     pmt: Option<zx::Pmt>,
-    outcome: Option<(SlotCompletion, ScsiOutcome)>,
+    completion: SlotCompletion,
+    outcome: ScsiOutcome,
 }
 
 struct Deferred<'a, M: Mmio> {
@@ -273,12 +273,10 @@ impl<'a, M: Mmio> Deferred<'a, M> {
         &mut self,
         read_back: Option<ReadBack>,
         pmt: Option<zx::Pmt>,
-        outcome: Option<(SlotCompletion, ScsiOutcome)>,
+        completion: SlotCompletion,
+        outcome: ScsiOutcome,
     ) {
-        if read_back.is_none() && pmt.is_none() && outcome.is_none() {
-            return;
-        }
-        self.inline[self.len] = Some(DeferredSlot { read_back, pmt, outcome });
+        self.inline[self.len] = Some(DeferredSlot { read_back, pmt, completion, outcome });
         self.len += 1;
     }
 
@@ -295,19 +293,18 @@ impl<'a, M: Mmio> Deferred<'a, M> {
     /// The controller must no longer access any buffer in `self` (doorbell bit 0 or `HCE == 0`).
     unsafe fn complete_after_dma(mut self) {
         let processor = self.processor;
-        for DeferredSlot { read_back, pmt, outcome } in self.drain() {
-            let cache_err = read_back.and_then(|rb| {
-                rb.invalidate_read_cache()
-                    .inspect_err(|err| {
-                        warn!(err:%; "Failed to invalidate transfer buffer cache after read");
-                    })
-                    .err()
-            });
+        for DeferredSlot { read_back, pmt, completion, mut outcome } in self.drain() {
+            if let Some(rb) = read_back
+                && let Err(err) = rb.invalidate_read_cache()
+            {
+                warn!(err:%; "Failed to invalidate transfer buffer cache after read");
+                if matches!(outcome, ScsiOutcome::Good) {
+                    outcome = ScsiOutcome::Fail(UfsError::IoError);
+                }
+            }
             // SAFETY: Guaranteed by the caller.
             unsafe { unpin_pmt(pmt) };
-            if let Some((completion, outcome)) = outcome {
-                processor.deliver_slot_outcome(completion, outcome, cache_err);
-            }
+            processor.complete_io(completion, outcome);
         }
     }
 
@@ -319,18 +316,12 @@ impl<'a, M: Mmio> Deferred<'a, M> {
 
     fn quarantine_remaining(&mut self) {
         let processor = self.processor;
-        for DeferredSlot { read_back: _, pmt, outcome } in self.drain() {
+        for DeferredSlot { read_back: _, pmt, completion, outcome: _ } in self.drain() {
             if let Some(pmt) = pmt {
                 processor.quarantined_pmt_count.fetch_add(1, Ordering::Relaxed);
                 drop(pmt);
             }
-            if let Some((completion, _)) = outcome {
-                processor.deliver_slot_outcome(
-                    completion,
-                    ScsiOutcome::Fail(UfsError::IoError),
-                    None,
-                );
-            }
+            processor.complete_io(completion, ScsiOutcome::Fail(UfsError::IoError));
         }
     }
 }
@@ -437,8 +428,8 @@ pub struct TransferRequestProcessor<M: Mmio> {
     pub(crate) io_stats: BlockIoStats,
     /// Cumulative `zx::Pmt` handles quarantined without `unpin()` after an `HCE = 0` timeout.
     quarantined_pmt_count: AtomicU64,
-    /// Wakes [`Self::run_io_timeout_task`] when a request is scheduled on an idle list or the
-    /// processor is stopped.
+    /// Wakes [`Self::run_io_timeout_task`] when a request is scheduled while the watchdog is
+    /// disarmed or when the processor is stopped.
     timeout_waker: AtomicWaker,
     /// Wakes [`Self::wait_for_link_recovery`] when link recovery is requested or the processor is
     /// stopped.
@@ -854,7 +845,8 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
     /// Writes the UCD and UTRD for `Reserved` `slot` and rings its doorbell while holding
     /// `request_list`. Moves `prepared.pmt` and `completion` into the slot only after the
-    /// descriptors are written and the doorbell is rung.
+    /// descriptors are written and the doorbell is rung, leaving `completion` in place on error
+    /// for [`Self::schedule_slot`] to deliver.
     fn schedule_slot_locked(
         &self,
         list: &mut RequestList,
@@ -862,12 +854,11 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         layout: CommandDescriptorLayout,
         request: &[u8],
         prepared: &mut PreparedTransfer<'_, '_>,
-        completion: &mut SlotCompletion,
+        completion: &mut Option<SlotCompletion>,
     ) -> Result<(), UfsError> {
         if request.len() != layout.request_length() {
             return Err(UfsError::InvalidParameter);
         }
-        let should_wake_watchdog = list.next_timeout_task_deadline().is_none();
         let RequestList { io_buffer, request_slots, closing, stopped, .. } = &mut *list;
         let request_slot = match request_slots.get_mut(slot as usize) {
             Some(s) if !*stopped && !*closing && s.state == SlotState::Reserved => s,
@@ -934,33 +925,32 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
         request_slot.pmt = prepared.pmt.take();
         request_slot.read_back = prepared.read_back.take();
-        request_slot.completion = std::mem::take(completion);
+        request_slot.completion = completion.take();
         request_slot.deadline = Some(zx::MonotonicInstant::after(COMMAND_TIMEOUT));
         request_slot.stall_logged = false;
         list.set_slot_state(slot, SlotState::Scheduled);
-        if should_wake_watchdog {
+        if !std::mem::replace(&mut list.watchdog_armed, true) {
             self.timeout_waker.wake();
         }
         Ok(())
     }
 
-    /// Pins `data`, fills the UCD and UTRD for `reserved`, rings its doorbell, and returns the
-    /// oneshot receiver that yields its [`ScsiOutcome`].
-    fn submit(
+    /// Pins `data` (if any), writes the UCD and UTRD for `reserved`, and rings its doorbell.
+    ///
+    /// Always consumes `reserved` and delivers `completion`: either from the completion path once
+    /// the controller finishes (disarming `reserved`), or inline with [`ScsiOutcome::Fail`] after
+    /// releasing `reserved` if preparation or scheduling fails.
+    fn schedule_slot(
         &self,
-        reserved: &mut ReservedSlot<'_, M>,
+        mut reserved: ReservedSlot<'_, M>,
         layout: CommandDescriptorLayout,
         request: &[u8],
         data: Option<DataTransfer<'_>>,
-        lun: u8,
-    ) -> Result<oneshot::Receiver<ScsiOutcome>, UfsError> {
-        if request.len() != layout.request_length() {
-            return Err(UfsError::InvalidParameter);
-        }
+        completion: SlotCompletion,
+    ) {
         let slot = reserved.slot();
-        let (tx, rx) = oneshot::channel();
-        let mut completion = SlotCompletion::Scsi { lun, sender: tx };
-        self.with_prepared_transfer(data, |prepared| {
+        let mut completion = Some(completion);
+        let result = self.with_prepared_transfer(data, |prepared| {
             let mut list = self.request_list.lock();
             let scheduled = self.schedule_slot_locked(
                 &mut list,
@@ -974,8 +964,29 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 reserved.disarm();
             }
             scheduled
-        })?;
-        Ok(rx)
+        });
+        drop(reserved);
+        if let Err(e) = result
+            && let Some(completion) = completion
+        {
+            warn!(lun = completion.lun, err:% = e; "Failed to schedule UTP request");
+            self.complete_io(completion, ScsiOutcome::Fail(e));
+        }
+    }
+
+    /// Pins `data` (if any), schedules `request` on `reserved`, and awaits its [`ScsiOutcome`].
+    async fn submit(
+        &self,
+        reserved: ReservedSlot<'_, M>,
+        lun: u8,
+        layout: CommandDescriptorLayout,
+        request: &[u8],
+        data: Option<DataTransfer<'_>>,
+    ) -> ScsiOutcome {
+        let (tx, rx) = oneshot::channel();
+        let completion = SlotCompletion { lun, completion: IoCompletion::Oneshot(tx), io_op: None };
+        self.schedule_slot(reserved, layout, request, data, completion);
+        rx.await.unwrap_or(ScsiOutcome::Fail(UfsError::IoError))
     }
 
     /// Submits a SCSI command to `lun` synchronously and returns as soon as its doorbell has been
@@ -991,13 +1002,6 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         completion: IoCompletion,
     ) {
         let data = data.filter(|d| !matches!(d.buffer, TransferBuffer::Vmo(_)) || d.length != 0);
-        if let Some(ref transfer) = data {
-            if let Err(e) = self.validate_transfer(transfer) {
-                warn!(lun, err:% = e; "Failed to validate block request");
-                self.complete_io(lun, completion, Err(zx::Status::from(e)));
-                return;
-            }
-        }
         let expected_transfer_len = data.as_ref().map_or(0, |data| data.length);
         let direction =
             data.as_ref().map_or(DataDirection::NoData, |data| data.direction.to_data_direction());
@@ -1014,103 +1018,63 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             }
             _ => None,
         };
+        let completion = SlotCompletion { lun, completion, io_op };
+        if let Some(ref transfer) = data
+            && let Err(e) = self.validate_transfer(transfer)
+        {
+            warn!(lun, err:% = e; "Failed to validate block request");
+            self.complete_io(completion, ScsiOutcome::Fail(e));
+            return;
+        }
 
         // Reserve (and possibly block for) the slot before pinning, so pushback never holds
         // client pages pinned while waiting.
-        let mut reserved = {
+        let reserved = {
             let mut list = self.request_list.lock();
             match self.reserve_io_slot_locked(&mut list) {
                 Ok(reserved) => reserved,
                 Err(e) => {
                     drop(list);
                     warn!(lun, err:% = e; "Failed to reserve slot for block request");
-                    self.complete_io(lun, completion, Err(zx::Status::from(e)));
+                    self.complete_io(completion, ScsiOutcome::Fail(e));
                     return;
                 }
             }
         };
-        let slot = reserved.slot();
         let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
         command.header.lun = lun;
-        command.header.task_tag = slot;
-        let mut completion = Some(completion);
+        command.header.task_tag = reserved.slot();
 
-        let result = self.with_prepared_transfer(data, |prepared| {
-            let mut list = self.request_list.lock();
-            let mut slot_completion = SlotCompletion::Io {
-                lun,
-                completion: completion
-                    .take()
-                    .expect("with_prepared_transfer invokes its closure at most once"),
-                io_op,
-            };
-            let scheduled = self.schedule_slot_locked(
-                &mut list,
-                slot,
-                CommandDescriptorLayout::SCSI_COMMAND,
-                command.as_bytes(),
-                prepared,
-                &mut slot_completion,
-            );
-            match scheduled {
-                Ok(()) => reserved.disarm(),
-                Err(_) => {
-                    if let SlotCompletion::Io { completion: c, .. } = slot_completion {
-                        completion = Some(c);
-                    }
-                }
-            }
-            scheduled
-        });
-        drop(reserved);
-        if let Err(e) = result {
-            warn!(lun, err:% = e; "Failed to schedule block request");
-            if let Some(completion) = completion {
-                self.complete_io(lun, completion, Err(zx::Status::from(e)));
-            }
-        }
+        self.schedule_slot(
+            reserved,
+            CommandDescriptorLayout::SCSI_COMMAND,
+            command.as_bytes(),
+            data,
+            completion,
+        );
     }
 
-    /// Delivers the outcome of a synchronous I/O request submitted for `lun`.
-    pub fn complete_io(&self, lun: u8, completion: IoCompletion, status: Result<(), zx::Status>) {
+    /// Delivers an error `status` for a request for `lun` that was rejected before submission.
+    pub fn reject_io(&self, lun: u8, completion: IoCompletion, status: zx::Status) {
+        debug_assert_ne!(status.into_raw(), zx::sys::ZX_OK, "reject_io requires an error status");
+        self.complete_io(
+            SlotCompletion { lun, completion, io_op: None },
+            ScsiOutcome::Rejected(status),
+        );
+    }
+
+    /// Delivers `outcome` to `completion`, recording its block I/O stats on success.
+    fn complete_io(&self, completion: SlotCompletion, outcome: ScsiOutcome) {
+        let SlotCompletion { lun, completion, io_op } = completion;
+        if matches!(outcome, ScsiOutcome::Good) {
+            self.io_stats.record(io_op);
+        }
         match completion {
             IoCompletion::Request(request_id) => match self.io_completer.get() {
-                Some(completer) => completer.complete(lun, request_id, status),
+                Some(completer) => completer.complete(lun, request_id, outcome.into_io_status()),
                 None => error!(lun, request_id:?; "No I/O completer installed; dropping request"),
             },
             IoCompletion::Oneshot(sender) => {
-                let _ = sender.send(status);
-            }
-        }
-    }
-
-    fn deliver_slot_outcome(
-        &self,
-        completion: SlotCompletion,
-        outcome: ScsiOutcome,
-        cache_err: Option<zx::Status>,
-    ) {
-        match completion {
-            SlotCompletion::None => {}
-            SlotCompletion::Io { lun, completion, io_op } => {
-                let mut status = outcome.into_io_status();
-                if let Some(err) = cache_err
-                    && status.is_ok()
-                {
-                    status = Err(err);
-                }
-                if status.is_ok() {
-                    self.io_stats.record(io_op);
-                }
-                self.complete_io(lun, completion, status);
-            }
-            SlotCompletion::Scsi { sender, .. } => {
-                let outcome = match outcome {
-                    ScsiOutcome::Good if cache_err.is_some() => {
-                        ScsiOutcome::Fail(UfsError::IoError)
-                    }
-                    other => other,
-                };
                 let _ = sender.send(outcome);
             }
         }
@@ -1150,13 +1114,20 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         loop {
             let Some(wake_at) = std::future::poll_fn(|cx| {
                 self.timeout_waker.register(cx.waker());
-                let list = self.request_list.lock();
+                let mut list = self.request_list.lock();
                 if list.stopped {
+                    list.watchdog_armed = false;
                     return Poll::Ready(None);
                 }
                 match list.next_timeout_task_deadline() {
-                    Some(wake_at) => Poll::Ready(Some(wake_at)),
-                    None => Poll::Pending,
+                    Some(wake_at) => {
+                        list.watchdog_armed = true;
+                        Poll::Ready(Some(wake_at))
+                    }
+                    None => {
+                        list.watchdog_armed = false;
+                        Poll::Pending
+                    }
                 }
             })
             .await
@@ -1193,17 +1164,18 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     /// `AdminSlotGuard`, and reads the validated response UPIU directly from the admin UCD.
     async fn execute_admin<R: FromBytes + IntoBytes + Immutable>(
         &self,
-        admin: &mut AdminSlotGuard<'_, M>,
+        admin: AdminSlotGuard<'_, M>,
         layout: CommandDescriptorLayout,
         request: &[u8],
         expected_response: UpiuTransactionCode,
     ) -> Result<R, UfsError> {
         debug_assert_eq!(std::mem::size_of::<R>(), layout.response_length());
-        let slot = admin.slot.slot();
-        let rx = self.submit(&mut admin.slot, layout, request, None, 0)?;
-        match rx.await.map_err(|_| UfsError::IoError)? {
+        let AdminSlotGuard { slot: reserved, _lock: admin_lock } = admin;
+        let slot = reserved.slot();
+        match self.submit(reserved, 0, layout, request, None).await {
             ScsiOutcome::Good => {}
             ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => return Err(error),
+            ScsiOutcome::Rejected(_) => return Err(UfsError::IoError),
         }
         let response: R = {
             let list = self.request_list.lock();
@@ -1215,6 +1187,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                 .read_struct(layout.response_offset())
                 .map_err(|_| UfsError::IoError)?
         };
+        drop(admin_lock);
         check_response_header(response.as_bytes(), expected_response, slot)?;
         Ok(response)
     }
@@ -1276,20 +1249,15 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         let Ok(request_slot) = list.slot_mut(slot) else {
             return;
         };
-        let completion = std::mem::take(&mut request_slot.completion);
-        let outcome = match completion {
-            SlotCompletion::None => None,
-            SlotCompletion::Io { lun, .. } | SlotCompletion::Scsi { lun, .. } => {
-                let scsi_outcome = match result {
-                    Ok(()) if slot == ADMIN_COMMAND_SLOT_NUMBER => ScsiOutcome::Good,
-                    Ok(()) => Self::decode_io_response(list, slot, lun),
-                    Err(err) => ScsiOutcome::Fail(err),
-                };
-                Some((completion, scsi_outcome))
-            }
+        let completion =
+            request_slot.completion.take().expect("Scheduled slot must have a completion");
+        let outcome = match result {
+            Ok(()) if slot == ADMIN_COMMAND_SLOT_NUMBER => ScsiOutcome::Good,
+            Ok(()) => Self::decode_io_response(list, slot, completion.lun),
+            Err(err) => ScsiOutcome::Fail(err),
         };
         let (read_back, pmt) = self.release_slot_locked(list, slot);
-        deferred.push(read_back, pmt, outcome);
+        deferred.push(read_back, pmt, completion, outcome);
     }
 
     /// Completes `slot` if it is `Scheduled` and its `doorbell` bit has cleared.
@@ -1410,11 +1378,11 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         &self,
         query_request: &QueryUpiu,
     ) -> Result<QueryUpiu, UfsError> {
-        let mut admin = self.reserve_admin_slot().await?;
+        let admin = self.reserve_admin_slot().await?;
         let mut request = *query_request;
         request.header.task_tag = admin.slot.slot();
         self.execute_admin(
-            &mut admin,
+            admin,
             CommandDescriptorLayout::QUERY,
             request.as_bytes(),
             UpiuTransactionCode::QueryResponse,
@@ -1424,12 +1392,12 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
     /// Sends a NOP OUT UPIU on the admin slot and checks the NOP IN response.
     pub async fn send_nop_out_upiu(&self) -> Result<(), UfsError> {
-        let mut admin = self.reserve_admin_slot().await?;
+        let admin = self.reserve_admin_slot().await?;
         let mut nop = NopOutUpiu::new();
         nop.header.task_tag = admin.slot.slot();
         let response: NopInUpiu = self
             .execute_admin(
-                &mut admin,
+                admin,
                 CommandDescriptorLayout::NOP,
                 nop.as_bytes(),
                 UpiuTransactionCode::NopIn,
@@ -1460,19 +1428,20 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             data.as_ref().map_or(DataDirection::NoData, |data| data.direction.to_data_direction());
         let mut retries = 0;
         loop {
-            let mut reserved = self.reserve_io_slot().await?;
+            let reserved = self.reserve_io_slot().await?;
             let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
             command.header.lun = lun;
             command.header.task_tag = reserved.slot();
-            let rx = self.submit(
-                &mut reserved,
-                CommandDescriptorLayout::SCSI_COMMAND,
-                command.as_bytes(),
-                data.clone(),
-                lun,
-            )?;
-            drop(reserved);
-            match rx.await.map_err(|_| UfsError::IoError)? {
+            match self
+                .submit(
+                    reserved,
+                    lun,
+                    CommandDescriptorLayout::SCSI_COMMAND,
+                    command.as_bytes(),
+                    data.clone(),
+                )
+                .await
+            {
                 ScsiOutcome::Good => return Ok(()),
                 ScsiOutcome::Retry { error: _, delay } if retries < SCSI_RETRIES => {
                     retries += 1;
@@ -1482,6 +1451,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                     }
                 }
                 ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => return Err(error),
+                ScsiOutcome::Rejected(_) => return Err(UfsError::IoError),
             }
         }
     }
@@ -1598,20 +1568,24 @@ fn parse_sense(response: &ResponseUpiu) -> (u8, u8, u8) {
 
 /// Classification of a UTP command outcome (and SCSI RESPONSE UPIU on slots `0..30`).
 #[derive(Debug)]
-pub(crate) enum ScsiOutcome {
+pub enum ScsiOutcome {
     /// GOOD status and no transport-level response error.
     Good,
     /// A transient failure (UNIT ATTENTION, NOT READY, BUSY, TASK SET FULL) worth retrying.
     Retry { error: UfsError, delay: bool },
-    /// A failure that retrying will not fix.
+    /// A non-retryable transport, target, or sense failure.
     Fail(UfsError),
+    /// A block request rejected before submission with an exact `zx::Status`.
+    Rejected(zx::Status),
 }
 
 impl ScsiOutcome {
-    fn into_io_status(self) -> Result<(), zx::Status> {
+    /// Maps the outcome to the `zx::Status` reported to block clients.
+    pub fn into_io_status(self) -> Result<(), zx::Status> {
         match self {
             Self::Good => Ok(()),
             Self::Retry { error, .. } | Self::Fail(error) => Err(zx::Status::from(error)),
+            Self::Rejected(status) => Err(status),
         }
     }
 }
@@ -2454,7 +2428,7 @@ mod tests {
         assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
 
         // 2. While slot 0 remains `Scheduled` with `stall_logged == true`, scheduling slot 1 must
-        //    wake `timeout_waker` (`next_timeout_task_deadline().is_none()`) to monitor slot 1.
+        //    wake `timeout_waker` (`!list.watchdog_armed`) to monitor slot 1.
         let mut rx1 = submit_tur(&processor, 0);
         let d1 = processor.request_list.lock().slot(1).unwrap().deadline.unwrap();
         {
@@ -2477,6 +2451,105 @@ mod tests {
         utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
         utp.complete(1, scsi_response(1, 0).as_bytes(), OCS_SUCCESS);
         assert_eq!(delivered(&mut rx0), Ok(()));
+        assert_eq!(delivered(&mut rx1), Ok(()));
+
+        let mut quiesce = std::pin::pin!(processor.quiesce());
+        assert_eq!(exec.run_until_stalled(&mut quiesce), Poll::Ready(Ok(())));
+        assert_eq!(exec.run_until_stalled(&mut watchdog), Poll::Ready(()));
+    }
+
+    #[fuchsia::test]
+    fn test_reject_io_delivers_exact_status_without_recording_stats() {
+        let (_mmio_vmo, processor) = create_test_processor();
+
+        let (completion, mut rx) = io_callback();
+        processor.reject_io(2, completion, zx::Status::ACCESS_DENIED);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Some(ScsiOutcome::Rejected(zx::Status::ACCESS_DENIED)))
+        ));
+
+        let (completion2, mut rx2) = io_callback();
+        processor.reject_io(2, completion2, zx::Status::NOT_SUPPORTED);
+        assert_eq!(delivered(&mut rx2), Err(zx::Status::NOT_SUPPORTED));
+
+        assert_eq!(processor.io_stats.read_ops.load(Ordering::Relaxed), 0);
+        assert_eq!(processor.io_stats.write_ops.load(Ordering::Relaxed), 0);
+        assert_eq!(processor.io_stats.flush_ops.load(Ordering::Relaxed), 0);
+        assert_eq!(processor.io_stats.trim_ops.load(Ordering::Relaxed), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_stall_watchdog_stays_armed_across_idle_gap_and_catches_later_stall() {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(zx::MonotonicInstant::get()));
+
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
+        let mut watchdog = std::pin::pin!(processor.run_io_timeout_task());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert!(!processor.request_list.lock().watchdog_armed);
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
+
+        // 1. Scheduling slot 0 transitions `watchdog_armed` to `true` and arms `Timer::new(d0)`.
+        let mut rx0 = submit_tur(&processor, 0);
+        assert!(processor.request_list.lock().watchdog_armed);
+        let d0 = processor.request_list.lock().slot(0).unwrap().deadline.unwrap();
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert_eq!(
+            fuchsia_async::TestExecutor::next_timer(),
+            Some(fuchsia_async::MonotonicInstant::from_zx(d0))
+        );
+
+        // 2. Completing slot 0 drains `scheduled_mask` to 0 while `watchdog_armed` stays `true`.
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
+        assert_eq!(delivered(&mut rx0), Ok(()));
+        {
+            let list = processor.request_list.lock();
+            assert_eq!(list.scheduled_mask, 0);
+            assert!(list.watchdog_armed);
+        }
+
+        // 3. Submitting a new request while `watchdog_armed` is still `true` does not re-wake or
+        //    replace the existing `d0` timer.
+        let mut rx1 = submit_tur(&processor, 0);
+        let d1 = zx::MonotonicInstant::after(zx::MonotonicDuration::from_hours(1))
+            .max(d0 + zx::MonotonicDuration::from_seconds(1));
+        processor.request_list.lock().slot_mut(0).unwrap().deadline = Some(d1);
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        assert_eq!(
+            fuchsia_async::TestExecutor::next_timer(),
+            Some(fuchsia_async::MonotonicInstant::from_zx(d0))
+        );
+
+        // 4. Advancing fake time to `d0` wakes the watchdog; slot 0 is not yet past `d1`, so the
+        //    watchdog leaves it unlogged, keeps `watchdog_armed == true`, and re-arms at `d1`.
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(d0));
+        assert!(exec.wake_expired_timers());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        {
+            let list = processor.request_list.lock();
+            assert!(!list.slot(0).unwrap().stall_logged);
+            assert!(list.watchdog_armed);
+        }
+        assert_eq!(
+            fuchsia_async::TestExecutor::next_timer(),
+            Some(fuchsia_async::MonotonicInstant::from_zx(d1))
+        );
+
+        // 5. Expiring `d1` logs the stall once, clears `watchdog_armed`, and parks with no timer.
+        expire_deadline(&processor, 0);
+        exec.set_fake_time(fuchsia_async::MonotonicInstant::from_zx(d1));
+        assert!(exec.wake_expired_timers());
+        assert!(exec.run_until_stalled(&mut watchdog).is_pending());
+        {
+            let list = processor.request_list.lock();
+            assert!(list.slot(0).unwrap().stall_logged);
+            assert!(!list.watchdog_armed);
+        }
+        assert_eq!(fuchsia_async::TestExecutor::next_timer(), None);
+
+        utp.complete(0, scsi_response(0, 0).as_bytes(), OCS_SUCCESS);
         assert_eq!(delivered(&mut rx1), Ok(()));
 
         let mut quiesce = std::pin::pin!(processor.quiesce());

@@ -183,8 +183,7 @@ fn ufs_error_to_raw_status(err: UfsError) -> i32 {
         UfsError::InvalidSlot(_)
         | UfsError::CheckCondition
         | UfsError::IoError
-        | UfsError::InvalidParameter
-        | UfsError::NoResources => zx::Status::INTERNAL.into_raw(),
+        | UfsError::InvalidParameter => zx::Status::INTERNAL.into_raw(),
     }
 }
 
@@ -1215,9 +1214,6 @@ pub enum UfsError {
     /// Caller supplied an out-of-range or malformed parameter.
     #[error("Invalid parameter")]
     InvalidParameter,
-    /// All transfer request slots are currently in use.
-    #[error("No transfer slot resources available")]
-    NoResources,
 }
 
 impl From<UfsError> for zx::Status {
@@ -1229,7 +1225,6 @@ impl From<UfsError> for zx::Status {
             UfsError::CheckCondition => zx::Status::IO_REFUSED,
             UfsError::IoError => zx::Status::IO,
             UfsError::InvalidParameter => zx::Status::INVALID_ARGS,
-            UfsError::NoResources => zx::Status::NO_RESOURCES,
         }
     }
 }
@@ -1260,7 +1255,6 @@ mod tests {
         assert_eq!(zx::Status::from(UfsError::CheckCondition), zx::Status::IO_REFUSED);
         assert_eq!(zx::Status::from(UfsError::IoError), zx::Status::IO);
         assert_eq!(zx::Status::from(UfsError::InvalidParameter), zx::Status::INVALID_ARGS);
-        assert_eq!(zx::Status::from(UfsError::NoResources), zx::Status::NO_RESOURCES);
 
         assert_eq!(ufs_error_to_raw_status(UfsError::Timeout), zx::Status::TIMED_OUT.into_raw());
         assert_eq!(
@@ -1324,7 +1318,7 @@ mod tests {
         mmio::WritableRegister::write(&is, &mut utp.regs);
         irq_trigger.trigger(zx::BootInstant::get()).unwrap();
 
-        assert_eq!(rx.await.unwrap(), Ok(()));
+        assert_eq!(rx.await.unwrap().into_io_status(), Ok(()));
         workers.stop().await;
     }
 
@@ -1352,7 +1346,7 @@ mod tests {
         processor.close_submissions();
         let (late_completion, late_rx) = io_callback();
         processor.submit_io(0, ScsiOpcode::build_test_unit_ready_cdb(), None, late_completion);
-        assert_eq!(late_rx.await.unwrap(), Err(zx::Status::IO));
+        assert_eq!(late_rx.await.unwrap().into_io_status(), Err(zx::Status::IO));
 
         // Complete the in-flight write on the dedicated IRQ worker while drain_inflight awaits.
         let hardware = std::thread::spawn(move || {
@@ -1367,7 +1361,7 @@ mod tests {
 
         assert_eq!(processor.drain_inflight(COMMAND_TIMEOUT).await, Ok(()));
         let _utp = hardware.join().unwrap();
-        assert_eq!(rx.await.unwrap(), Ok(()));
+        assert_eq!(rx.await.unwrap().into_io_status(), Ok(()));
         assert_eq!(processor.busy_slot_count(), 0);
         assert!(!slot_pinned(&processor, 0));
 
@@ -1404,6 +1398,6 @@ mod tests {
         assert_eq!(processor.quiesce().await, Ok(()));
         assert!(!HostControllerEnableReg::read(&utp.regs).host_controller_enable());
         assert!(!slot_pinned(&processor, 0));
-        assert_eq!(rx.await.unwrap(), Err(zx::Status::IO));
+        assert_eq!(rx.await.unwrap().into_io_status(), Err(zx::Status::IO));
     }
 }

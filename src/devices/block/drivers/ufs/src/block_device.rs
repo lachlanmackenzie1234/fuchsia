@@ -145,16 +145,6 @@ impl<M: Mmio + Send + Sync + 'static> LunIo<M> {
         Ok(())
     }
 
-    /// Delivers `status` for a request that was rejected before (or could not be) submitted.
-    fn complete_rejected(&self, completion: IoCompletion, status: Result<(), Status>) {
-        self.processor.complete_io(self.lun, completion, status);
-    }
-
-    /// Submits `cdb` with `data` synchronously.
-    fn submit(&self, cdb: [u8; 16], data: Option<DataTransfer<'_>>, completion: IoCompletion) {
-        self.processor.submit_io(self.lun, cdb, data, completion);
-    }
-
     /// Validates a READ or WRITE of `block_count` blocks at `device_block_offset` and builds its
     /// 10-byte or 16-byte CDB and data transfer from `vmo` at `vmo_offset`.
     ///
@@ -280,8 +270,8 @@ impl<M: Mmio + Send + Sync + 'static> LunIo<M> {
             | Operation::ContinueDecompressedRead { .. } => Err(Status::NOT_SUPPORTED),
         };
         match prepared {
-            Ok((cdb, data)) => self.submit(cdb, data, completion),
-            Err(status) => self.complete_rejected(completion, Err(status)),
+            Ok((cdb, data)) => self.processor.submit_io(self.lun, cdb, data, completion),
+            Err(status) => self.processor.reject_io(self.lun, completion, status),
         }
     }
 
