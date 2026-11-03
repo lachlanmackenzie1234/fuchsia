@@ -98,7 +98,6 @@ source_set("tests") {
     "idle_power_thread_tests.cc",
     "intensive_thread_test.cc",
     "mutex_tests.cc",
-    "spinlock_tests.cc",
     "thread_test.cc",
   ]
   deps = [
@@ -525,6 +524,7 @@ kernel_rust_mod("kernel-rs") {
     "scheduler_state.rs",
     "semaphore.rs",
     "spin_tracing.rs",
+    "spinlock.rs",
     "stats.rs",
     "thread.rs",
     "timer.rs",

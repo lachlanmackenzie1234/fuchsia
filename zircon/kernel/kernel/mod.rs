@@ -31,6 +31,7 @@ pub mod scheduler;
 pub mod scheduler_state;
 pub mod semaphore;
 pub mod spin_tracing;
+pub mod spinlock;
 pub mod stats;
 pub mod thread;
 pub mod timer;
