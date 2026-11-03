@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//src/diagnostics/lib/sampler-config:sampler-config_host_test",
         "//src/diagnostics/triage:triage_lib_test",
+        "//src/diagnostics/triage/build/triage_config_test_runner:triage_config_test_runner_test",
     ],
 )
 
