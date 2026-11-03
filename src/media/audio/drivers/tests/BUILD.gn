@@ -23,9 +23,9 @@ group("all") {
   ]
 
   # Certain test cases (e.g. position accuracy) are disabled by default (enabled
-  # by cmdline flag). They have hard realtime constraints; debug builds are too
-  # slow.
-  if (!is_debug) {
+  # by cmdline flag). They have hard realtime constraints; debug and asan builds
+  # are too slow.
+  if (!is_debug && !is_asan) {
     deps += [ ":realtime" ]
   }
 }

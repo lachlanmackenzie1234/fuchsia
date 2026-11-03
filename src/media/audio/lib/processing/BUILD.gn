@@ -7,10 +7,10 @@ import("//build/testing/cc_test_executable.gni")
 
 group("tests") {
   testonly = true
-  deps = [
-    ":audio_lib_processing_death_unittests",
-    ":audio_lib_processing_unittests",
-  ]
+  deps = [ ":audio_lib_processing_unittests" ]
+  if (is_debug || is_coverage) {
+    deps += [ ":audio_lib_processing_death_unittests" ]
+  }
 }
 
 source_set("coefficient_table") {

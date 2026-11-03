@@ -12,14 +12,17 @@ group("api") {
   testonly = true
 
   deps = [
-    ":audio_core_api_error_tests",
     ":audio_core_api_test_effects",
     ":audio_core_api_tests",
   ]
 
+  if (is_debug || is_asan || is_coverage) {
+    deps += [ ":audio_core_api_error_tests" ]
+  }
+
   # These have real-time requirements and must run in release builds (debug
-  # builds are too slow).
-  if (!is_debug) {
+  # and asan builds are too slow).
+  if (!is_debug && !is_asan) {
     deps += [
       ":audio_core_api_pipeline_error_tests",
       ":audio_core_api_pipeline_tests",
