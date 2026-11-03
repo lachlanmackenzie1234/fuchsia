@@ -17,6 +17,7 @@
 #include <zircon/status.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
 #include <memory>
 #include <utility>
@@ -48,6 +49,22 @@ namespace {
 // multiple of 1 hour.
 zx::duration SecondsBeforeNextHour(zx::duration uptime) {
   return zx::sec(3600 - (uptime.to_secs() % 3600));
+}
+
+// TODO(https://fxbug.dev/581232767): Eliminate kNumActivityStates. Until then, keep in sync with
+// the exhaustive switch in GetCobaltEventCodeForDeviceState.
+constexpr uint64_t kNumActivityStates = 3;
+
+template <typename T>
+T GetCobaltEventCodeForDeviceState(fuchsia::ui::activity::State state) {
+  switch (state) {
+    case fuchsia::ui::activity::State::IDLE:
+      return T::Idle;
+    case fuchsia::ui::activity::State::ACTIVE:
+      return T::Active;
+    case fuchsia::ui::activity::State::UNKNOWN:
+      return T::Unknown;
+  }
 }
 
 }  // namespace
@@ -460,14 +477,11 @@ bool SystemMetricsDaemon::LogCpuToCobalt() {
   using EventCode = fuchsia_system_metrics::CpuPercentageMigratedMetricDimensionDeviceState;
   std::vector<MetricEvent> events;
   auto builder = MetricEventBuilder(fuchsia_system_metrics::kCpuPercentageMigratedMetricId);
-  for (const auto& pair : activity_state_to_cpu_map_) {
-    const EventCode event_code = GetCobaltEventCodeForDeviceState<EventCode>(pair.first);
+  for (const auto& [activity_state, bucket_counts] : activity_state_to_cpu_map_) {
+    const EventCode event_code = GetCobaltEventCodeForDeviceState<EventCode>(activity_state);
     std::vector<HistogramBucket> cpu_buckets;
-    for (const auto& bucket_pair : pair.second) {
-      HistogramBucket bucket;
-      bucket.index = bucket_pair.first;
-      bucket.count = bucket_pair.second;
-      cpu_buckets.push_back(std::move(bucket));
+    for (const auto& [bucket_index, bucket_count] : bucket_counts) {
+      cpu_buckets.push_back(HistogramBucket{.index = bucket_index, .count = bucket_count});
       if (cpu_buckets.size() == fuchsia::metrics::MAX_HISTOGRAM_BUCKETS) {
         events.push_back(builder.Clone()
                              .with_event_code(event_code)
