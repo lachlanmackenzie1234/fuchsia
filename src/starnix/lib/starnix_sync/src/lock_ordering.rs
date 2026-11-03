@@ -61,6 +61,7 @@ lock_ordering! {
     DirEntryChildrenLevel => UnixSocketInnerLock,
     DirEntryChildrenRecursiveLevel => FsNodeCacheRecursiveLock,
     DirEntryChildrenRecursiveLevel => MemoryDirectoryReaddirPositionLock,
+    DirectInputConverterLock => InputEventRelayOpenedFilesLock,
     DmDeviceStateLock => DirEntryChildrenLevel,
     DmDeviceStateLock => MemoryManagerStateLock,
     DynamicFileStateLock => CgroupV1Level,

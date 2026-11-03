@@ -14,7 +14,7 @@ use starnix_core::task::Kernel;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_logging::{log_debug, log_warn};
 use starnix_modules_input_report_event_conversion::InputReportConverter;
-use starnix_sync::Mutex;
+use starnix_sync::{DirectInputConverterLock, LockDepMutex, Mutex};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::collections::{HashMap, HashSet};
@@ -90,7 +90,7 @@ pub(crate) struct DirectInputDevice {
     pub(crate) input_device: InputDevice,
     pub(crate) starnix_device: Device,
     pub(crate) device_proxy: fir::InputDeviceProxy,
-    pub(crate) converter: Arc<Mutex<InputReportConverter>>,
+    pub(crate) converter: Arc<LockDepMutex<InputReportConverter, DirectInputConverterLock>>,
 }
 
 impl std::fmt::Debug for DirectInputDevice {
@@ -482,7 +482,7 @@ impl DirectInputManager {
             u32,
             fir::InputDeviceProxy,
             InputDevice,
-            Arc<Mutex<InputReportConverter>>,
+            Arc<LockDepMutex<InputReportConverter, DirectInputConverterLock>>,
         )> = state
             .devices
             .iter()
@@ -636,7 +636,7 @@ impl DirectInputManager {
         {
             let mut state = self.state.lock();
             conv.paused = state.is_paused;
-            let converter = Arc::new(Mutex::new(conv));
+            let converter = Arc::new(LockDepMutex::new(conv));
 
             let direct_device = DirectInputDevice {
                 device_id,
@@ -671,7 +671,7 @@ impl DirectInputManager {
         device_id: u32,
         device_proxy: fir::InputDeviceProxy,
         input_device: InputDevice,
-        converter: Arc<Mutex<InputReportConverter>>,
+        converter: Arc<LockDepMutex<InputReportConverter, DirectInputConverterLock>>,
     ) -> AbortHandle {
         let this_weak = Arc::downgrade(self);
         let ownership_active = self.ownership_active.clone();
@@ -728,7 +728,7 @@ impl DirectInputManager {
     async fn run_reports_reader_v2(
         reader_proxy: fir::InputReportsReaderV2Proxy,
         input_device: InputDevice,
-        converter: Arc<Mutex<InputReportConverter>>,
+        converter: Arc<LockDepMutex<InputReportConverter, DirectInputConverterLock>>,
         ownership_active: Arc<AtomicBool>,
         shortcut_handler: Option<Arc<dyn ButtonShortcutProcessor>>,
         scope: fasync::ScopeHandle,
@@ -885,7 +885,7 @@ impl DirectInputManager {
 
 fn process_input_report(
     report: &fir::InputReport,
-    converter: &Mutex<InputReportConverter>,
+    converter: &LockDepMutex<InputReportConverter, DirectInputConverterLock>,
     input_device: &InputDevice,
     shortcut_handler: Option<&Arc<dyn ButtonShortcutProcessor>>,
     scope: &fasync::ScopeHandle,
