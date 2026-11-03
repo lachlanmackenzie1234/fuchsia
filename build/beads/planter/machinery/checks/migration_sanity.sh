@@ -3137,7 +3137,7 @@ for pkg_dir in sorted(candidate_dirs):
                     + (
                         "an explicit `rustc_test(...)`, "
                         if is_rust
-                        else "`fx_cc_test_binary(tags = [\"manual\"])` for a GN `test()` or `cc_test_executable()`, "
+                        else "`fx_cc_test_binary(...)` for a GN `test()` or `cc_test_executable()`, "
                     )
                     + f"and package it with `fx_unittest_package(name = \"{gname}\", "
                     + (f"package_name = \"{gn_pkg_name}\", " if gn_pkg_name != gname else "")
@@ -4470,6 +4470,30 @@ for pkg_dir in sorted(candidate_dirs):
     def hygiene(line, message, remediation):
         _emit(findings, "rust_test_target_hygiene", "error", bazel_rel, line, message, remediation)
 
+    base_manual_targets = set()
+    try:
+        base_bz_txt = subprocess.check_output(
+            ["git", "-C", workdir, "show", f"{change_base}:{bazel_rel}"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        for bnode in ast.parse(base_bz_txt, filename=bazel_rel).body:
+            if (
+                isinstance(bnode, ast.Expr)
+                and isinstance(bnode.value, ast.Call)
+                and isinstance(bnode.value.func, ast.Name)
+            ):
+                bkws = {kw.arg: kw.value for kw in bnode.value.keywords if kw.arg}
+                bn = bkws.get("name")
+                if (
+                    isinstance(bn, ast.Constant)
+                    and isinstance(bn.value, str)
+                    and "manual" in str_list(bkws.get("tags"))
+                ):
+                    base_manual_targets.add(bn.value)
+    except Exception:
+        pass
+
     crate_of_test = {}
     for tname, (rule, kws, line) in calls.items():
         if rule != "rustc_test":
@@ -4477,9 +4501,6 @@ for pkg_dir in sorted(candidate_dirs):
         crate = kws.get("crate")
         crate_name = crate.value.lstrip(":") if isinstance(crate, ast.Constant) and isinstance(crate.value, str) else None
         crate_of_test[tname] = crate_name
-        if "manual" in str_list(kws.get("tags")):
-            hygiene(line, f"`rustc_test(name = \"{tname}\")` sets `tags = [\"manual\"]`.",
-                    "Remove the `manual` tag: unit tests must run with `fx bazel test //<dir>:all`.")
         if crate_name and crate_name in calls:
             lib_deps = set(str_list(calls[crate_name][1].get("deps")))
             dup = sorted(lib_deps & set(str_list(kws.get("deps"))))
@@ -4576,6 +4597,17 @@ for pkg_dir in sorted(candidate_dirs):
         return False
 
     for tname, (rule, kws, line) in calls.items():
+        if "manual" in str_list(kws.get("tags")) and tname not in base_manual_targets:
+            tags_line = getattr(kws.get("tags"), "lineno", line)
+            _emit(
+                findings,
+                "unnecessary_manual_tag",
+                "error",
+                bazel_rel,
+                tags_line,
+                f'`{rule}(name = "{tname}")` in \'{bazel_rel}\' sets `tags = [..., "manual", ...]`.',
+                f'Remove `"manual"` from `tags` (or omit `tags` if empty) on `{rule}(name = "{tname}")` in \'{bazel_rel}\'.',
+            )
         plumbing = (
             rule in ("rustc_test", "fx_test_component", "fx_unittest_component")
             or (

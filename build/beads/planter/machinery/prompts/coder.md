@@ -121,9 +121,9 @@ use `570694755` for general Bazel migration tech debt) and leave dead code unmig
 - **Manifests & packaged binaries**: Set `component_name` on `fx_component_manifest` (or
   `fx_unittest_component`; never on `fx_component` or `fx_test_component`) matching GN (`<n>` for
   `fuchsia_component`, `package_name` for `fuchsia_package_with_single_component`) and list shards in
-  `includes` (prefer `cml_shard`). Mark binaries `tags = ["manual"]`, wrap in `fx_packaged_binary(..., binary_name = "<elf>")`,
-  and pass to `fx_component(deps)` or `fx_package(tools)`. Test helper components use
-  `fx_component(testonly = True)`, never `fx_test_component`.
+  `includes` (prefer `cml_shard`). Wrap binaries in `fx_packaged_binary(..., binary_name = "<elf>")`
+  and pass to `fx_component(deps)` or `fx_package(tools)`. Never add `tags = ["manual"]` to any
+  target. Test helper components use `fx_component(testonly = True)`, never `fx_test_component`.
 - **`BUILD.gn` & assembly cleanup**: `bazel2gn` converts `fx_component`/`fx_component_manifest`,
   not non-test `fx_package` or `resource`. Keep `fuchsia_package` in `BUILD.gn` only for non-assembly
   GN `subpackages`/`deps`, when its enclosing tool bundle (e.g. `//bundles/tools`) remains in GN, or

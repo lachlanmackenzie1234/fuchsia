@@ -35,8 +35,8 @@ emit findings to re-litigate rules owned by passing checks:
      above `## BAZEL2GN SENTINEL` in `BUILD.gn` or annotated with `# @bazel2gn:skip` in
      `BUILD.bazel` when its dependencies are available in Bazel.
    - Valid `# @bazel2gn:skip` exceptions on non-test targets:
-     * A non-test binary (`tags = ["manual"]`) or component consumed only by a Bazel-only
-       `fx_package` (which `bazel2gn` does not translate).
+     * A non-test binary or component consumed only by a Bazel-only `fx_package` (which
+       `bazel2gn` does not translate).
      * A host binary wrapped by a pre-sentinel `bazel_host_tool()` target in `BUILD.gn`.
      * A package-private `testonly` helper consumed only by Bazel-only tests in the same package.
      * A target genuinely blocked by unmigrated external GN-only deps or a GN-only construct that
