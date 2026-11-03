@@ -243,31 +243,6 @@ if (toolchain_environment == "kernel.phys" ||
     }
   }
 
-  static_library("kernel-package") {
-    complete_static_lib = true
-
-    public = [ "include/phys/kernel-package.h" ]
-    public_deps = [
-      ":allocation",
-      ":symbolize",
-      "handoff",
-      "//src/lib/zbitl",
-      "//zircon/kernel/lib/ktl",
-    ]
-
-    public_configs = [ ":includes" ]
-
-    sources = [ "kernel-package.cc" ]
-    deps = [
-      ":main",
-      ":stdio",
-      ":zbitl-allocation",
-      "//zircon/kernel/lib/boot-options",
-      "//zircon/kernel/lib/libc",
-      "//zircon/system/ulib/pretty",
-    ]
-  }
-
   # Transitive dependencies for the <phys/main.h> header.
   static_library("main") {
     complete_static_lib = true
@@ -622,11 +597,11 @@ if (toolchain_environment == "kernel.phys" ||
     public_deps = [
       ":address-space.header",
       ":elf-image",
-      ":kernel-package",
       ":new",
       ":uart",
       ":zbitl-allocation",
       "handoff",
+      "kernel-package",
       "//sdk/lib/fit",
       "//sdk/lib/zbi-format",
       "//src/lib/trivial-allocator",
@@ -788,7 +763,6 @@ zbi_executable("physboot") {
     ":boot-zbi",
     ":elf-image",
     ":handoff-prep",
-    ":kernel-package",
     ":log",
     ":main",
     ":physboot.h",
@@ -798,6 +772,7 @@ zbi_executable("physboot") {
     ":uart-console",
     "$arch_phys:arch-physboot",
     "handoff",
+    "kernel-package",
     "//sdk/lib/fit",
     "//src/lib/elfldltl",
     "//src/lib/zbitl",

@@ -26,7 +26,7 @@
 #include <phys/elf-image.h>
 #include <phys/handoff/boot-constants.h>
 #include <phys/handoff/handoff.h>
-#include <phys/kernel-package.h>
+#include <phys/kernel-package/kernel-package.h>
 #include <phys/main.h>
 #include <phys/new.h>
 #include <phys/stdio.h>

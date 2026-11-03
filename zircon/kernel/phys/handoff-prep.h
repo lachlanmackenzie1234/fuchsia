@@ -29,7 +29,7 @@
 #include <phys/handoff/handoff.h>
 #include <phys/handoff/ptr.h>
 #include <phys/handoff/zircon-abi-spec.h>
-#include <phys/kernel-package.h>
+#include <phys/kernel-package/kernel-package.h>
 #include <phys/new.h>
 #include <phys/uart.h>
 #include <phys/zbitl-allocation.h>

@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_KERNEL_PACKAGE_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_KERNEL_PACKAGE_H_
+#ifndef ZIRCON_KERNEL_PHYS_KERNEL_PACKAGE_INCLUDE_PHYS_KERNEL_PACKAGE_KERNEL_PACKAGE_H_
+#define ZIRCON_KERNEL_PHYS_KERNEL_PACKAGE_INCLUDE_PHYS_KERNEL_PACKAGE_KERNEL_PACKAGE_H_
 
 #include <lib/arch/ticks.h>
 #include <lib/zbitl/items/bootfs.h>
@@ -70,4 +70,4 @@ class KernelStorage {
   arch::EarlyTicks decompress_start_ts_, decompress_end_ts_;
 };
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_KERNEL_PACKAGE_H_
+#endif  // ZIRCON_KERNEL_PHYS_KERNEL_PACKAGE_INCLUDE_PHYS_KERNEL_PACKAGE_KERNEL_PACKAGE_H_

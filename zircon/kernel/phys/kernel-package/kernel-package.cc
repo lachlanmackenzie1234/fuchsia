@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include "phys/kernel-package.h"
+#include "phys/kernel-package/kernel-package.h"
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/boot-options/word-view.h>

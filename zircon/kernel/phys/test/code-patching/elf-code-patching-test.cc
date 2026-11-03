@@ -16,7 +16,7 @@
 #include <ktl/string_view.h>
 #include <phys/address-space.h>
 #include <phys/elf-image.h>
-#include <phys/kernel-package.h>
+#include <phys/kernel-package/kernel-package.h>
 #include <phys/symbolize.h>
 
 #include "../test-main.h"
