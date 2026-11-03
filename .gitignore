@@ -304,3 +304,6 @@ lcov.info
 
 # Jetski CLI workspace directory
 /.jetskicli/
+
+# Keep the obsolete uncompressed license fixture local.
+/tools/check-licenses/util/testdata/example/project.json
