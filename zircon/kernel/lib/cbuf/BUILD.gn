@@ -35,7 +35,9 @@ kernel_rust_mod("cbuf_rs") {
     "//sdk/rust/zx-status",
     "//src/lib/ksync",
     "//third_party/rust_crates:pin-init",
+    "//zircon/kernel/lib/debug",
   ]
+  test_deps = [ "//sdk/rust/zx-types" ]
 }
 
 group("tests") {
