@@ -171,6 +171,7 @@ fn register_hvdcp_opti_devices(
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_types)]
 mod tests {
     use super::*;
     use fidl::endpoints::{MemberOpener, ServiceProxy as _};

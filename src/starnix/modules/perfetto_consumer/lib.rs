@@ -38,6 +38,7 @@ mod atrace;
 mod blob_sink;
 mod packet_forwarder;
 #[cfg(test)]
+#[allow(clippy::disallowed_types)]
 mod testing;
 
 const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;

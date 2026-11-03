@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![allow(clippy::disallowed_types)]
+
 use crate::{MutexLike, RwLockLike};
 use fuchsia_rcu::RcuDroppable;
 use fuchsia_sync::{

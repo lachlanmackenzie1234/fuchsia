@@ -962,6 +962,7 @@ impl BytesFileOps for GpuPollingIntervalFile {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_types)]
 mod tests {
     use super::*;
     use fidl::endpoints::create_endpoints;

@@ -119,6 +119,7 @@ pub fn serve_input_device_registry(kernel: &Kernel, stream: InputDeviceRegistryR
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_types)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;

@@ -40,7 +40,7 @@ rustc_test("psi_provider-bin_test") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/config:starnix_clippy_lints_test" ]
 }
 
 fuchsia_unittest_package("psi_provider-tests") {

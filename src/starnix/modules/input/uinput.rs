@@ -572,6 +572,7 @@ impl FileOps for UinputDeviceFile {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_types)]
 mod test {
     use super::*;
     use crate::{EventProxyMode, start_input_relays_for_test};
