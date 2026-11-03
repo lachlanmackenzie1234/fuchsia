@@ -1305,7 +1305,7 @@ mod tests {
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder};
-    use fxfs::fsck::{fsck, fsck_volume};
+    use fxfs::fsck::{FsckOptions, fsck, fsck_volume, fsck_volume_with_options, fsck_with_options};
     use fxfs::object_store::directory::replace_child;
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
@@ -2608,7 +2608,16 @@ mod tests {
 
             let BytesAndNodes { nodes, .. } =
                 project_proxy.info(PROJECT_ID).await.unwrap().expect("Fetching project info").1;
+            assert_eq!(nodes, 4);
+
+            // Closing the unnamed temporary file queues it to be reaped in the graveyard; flush
+            // the graveyard before unmounting so we verify project usage and fsck after reaping.
+            file::close(tmpfile_proxy).await.expect("close tmpfile failed");
+            filesystem.graveyard().flush().await;
+            let BytesAndNodes { nodes, .. } =
+                project_proxy.info(PROJECT_ID).await.unwrap().expect("Fetching project info").1;
             assert_eq!(nodes, 3);
+
             volumes_directory.terminate().await;
             filesystem.close().await.expect("close filesystem failed");
         }
@@ -2616,10 +2625,16 @@ mod tests {
         device.ensure_unique();
         device.reopen(false);
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
-        fsck(filesystem.clone()).await.expect("Fsck");
-        fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(new_insecure_crypt())))
-            .await
-            .expect("Fsck volume");
+        let options = FsckOptions { fail_on_warning: true, ..Default::default() };
+        fsck_with_options(filesystem.clone(), &options).await.expect("Fsck");
+        fsck_volume_with_options(
+            filesystem.as_ref(),
+            &options,
+            volume_store_id,
+            Some(Arc::new(new_insecure_crypt())),
+        )
+        .await
+        .expect("Fsck volume");
         filesystem.close().await.expect("close filesystem failed");
     }
 

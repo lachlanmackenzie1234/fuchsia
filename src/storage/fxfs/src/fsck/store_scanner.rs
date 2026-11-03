@@ -253,7 +253,7 @@ impl<'a> ScannedStore<'a> {
                         if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
-                            // Increment only nodes.
+                            entry.0 += i64::try_from(*allocated_size).unwrap();
                             entry.1 += 1;
                         }
                         let parent = if self.root_objects.contains(&key.object_id) {
@@ -705,10 +705,14 @@ impl<'a> ScannedStore<'a> {
                 }
                 match value {
                     ObjectValue::None => {
-                        self.stored_project_usages.remove(&project_id);
+                        if self.root_dir_id == key.object_id {
+                            self.stored_project_usages.remove(&project_id);
+                        }
                     }
                     ObjectValue::BytesAndNodes(BytesAndNodes { bytes, nodes }) => {
-                        self.stored_project_usages.insert(project_id, (*bytes, *nodes));
+                        if self.root_dir_id == key.object_id {
+                            self.stored_project_usages.insert(project_id, (*bytes, *nodes));
+                        }
                     }
                     _ => {
                         self.fsck.error(FsckError::MalformedObjectRecord(
@@ -1578,15 +1582,13 @@ pub(super) async fn scan_store(
                     (*bytes_used, *nodes_used),
                 ))?;
             }
-        } else {
-            if *bytes_stored > 0 || *nodes_stored > 0 {
-                fsck.warning(FsckWarning::ProjectUsageInconsistent(
-                    store_id,
-                    *project_id,
-                    (*bytes_stored, *nodes_stored),
-                    (0, 0),
-                ))?;
-            }
+        } else if *bytes_stored != 0 || *nodes_stored != 0 {
+            fsck.warning(FsckWarning::ProjectUsageInconsistent(
+                store_id,
+                *project_id,
+                (*bytes_stored, *nodes_stored),
+                (0, 0),
+            ))?;
         }
     }
 

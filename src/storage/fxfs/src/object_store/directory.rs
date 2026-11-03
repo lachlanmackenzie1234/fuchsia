@@ -903,33 +903,38 @@ impl<S: HandleOwner> Directory<S> {
             .item
             .value
         else {
-            bail!(
-                anyhow!(FxfsError::Inconsistent)
-                    .context("Directory.create_child_file_with_options: expected mutation object")
-            );
+            bail!(anyhow!(FxfsError::Inconsistent).context(
+                "Directory.create_child_unnamed_temporary_file: expected mutation object"
+            ));
         };
 
-        // Update the object mutation with parent's project ID.
-        let mut child_mutation = transaction
-            .get_object_mutation(
+        if let Some(project_id) = project_id {
+            // Update the object mutation with parent's project ID.
+            let mut child_mutation = transaction
+                .get_object_mutation(
+                    self.store().store_object_id(),
+                    ObjectKey::object(handle.object_id()),
+                )
+                .unwrap()
+                .clone();
+            if let ObjectValue::Object {
+                attributes: ObjectAttributes { project_id: child_project_id, .. },
+                ..
+            } = &mut child_mutation.item.value
+            {
+                *child_project_id = Some(project_id);
+            } else {
+                bail!(anyhow!(FxfsError::Inconsistent).context(
+                    "Directory.create_child_unnamed_temporary_file: expected file object"
+                ));
+            }
+            transaction.add(self.store().store_object_id(), Mutation::ObjectStore(child_mutation));
+            transaction.merge_bytes_and_nodes(
                 self.store().store_object_id(),
-                ObjectKey::object(handle.object_id()),
-            )
-            .unwrap()
-            .clone();
-        if let ObjectValue::Object {
-            attributes: ObjectAttributes { project_id: child_project_id, .. },
-            ..
-        } = &mut child_mutation.item.value
-        {
-            *child_project_id = project_id;
-        } else {
-            bail!(
-                anyhow!(FxfsError::Inconsistent)
-                    .context("Directory.create_child_file_with_options: expected file object")
+                ObjectKey::project_usage(self.store().root_directory_object_id(), project_id),
+                BytesAndNodes { bytes: 0, nodes: 1 },
             );
         }
-        transaction.add(self.store().store_object_id(), Mutation::ObjectStore(child_mutation));
 
         // Add object to graveyard - the object should be removed on remount.
         self.store().add_to_graveyard(transaction, handle.object_id());
