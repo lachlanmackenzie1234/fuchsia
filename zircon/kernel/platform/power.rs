@@ -11,7 +11,6 @@ use crate::jtrace::jtrace_invalidate;
 use crate::pdev_watchdog::{hw_watchdog_pet, hw_watchdog_set_enabled};
 use crate::persistent_debuglog_rs::persistent_dlog_invalidate;
 use crate::platform_rs::crashlog::PlatformCrashlog;
-use crate::platform_rs::timer::InstantBoot;
 use boot_options::BootOptions;
 #[cfg(console_enabled)]
 use core::ffi::{CStr, c_int};
@@ -110,26 +109,9 @@ unsafe extern "C" {
         halt_on_panic: bool,
     ) -> !;
     fn cpp_platform_panic_start();
-    fn cpp_platform_serial_is_suspended() -> bool;
-    fn cpp_platform_serial_suspended_at() -> InstantBoot;
 }
 
-/// Returns whether kernel access to the debug UART has been suspended (or a suspend operation is
-/// in progress) via `platform_serial_suspend`.
-#[inline]
-pub fn platform_serial_is_suspended() -> bool {
-    // SAFETY: `platform_serial_is_suspended` is safe to call from any context, including panic.
-    unsafe { cpp_platform_serial_is_suspended() }
-}
-
-/// Returns the boot time at which the debug UART was most recently suspended via
-/// `platform_serial_suspend`. The value is only meaningful when [`platform_serial_is_suspended`]
-/// returns `true`.
-#[inline]
-pub fn platform_serial_suspended_at() -> InstantBoot {
-    // SAFETY: `platform_serial_suspended_at` is safe to call from any context, including panic.
-    unsafe { cpp_platform_serial_suspended_at() }
-}
+pub use super::debug::{platform_serial_is_suspended, platform_serial_suspended_at};
 
 #[inline]
 fn platform_specific_halt(

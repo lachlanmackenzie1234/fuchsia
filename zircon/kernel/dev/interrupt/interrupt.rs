@@ -182,6 +182,10 @@ mod sys {
             vector: u32,
             handler: InterruptHandler,
         ) -> zx_types::zx_status_t;
+        pub fn register_permanent_int_handler(
+            vector: u32,
+            handler: InterruptHandler,
+        ) -> zx_types::zx_status_t;
         pub fn remap_interrupt(vector: u32) -> u32;
         pub fn is_valid_interrupt(vector: u32, flags: u32) -> bool;
         pub fn msi_is_supported() -> bool;
@@ -257,6 +261,21 @@ pub unsafe fn register_int_handler(
 ) -> Result<(), zx_status::Status> {
     // SAFETY: Guaranteed by the caller.
     zx_status::Status::ok(unsafe { sys::register_int_handler(vector, handler) })
+}
+
+/// Registers a permanent interrupt `handler` for `vector`.
+///
+/// # Safety
+///
+/// If `handler` is present, its callback and `cookie` must remain valid for the remaining lifetime
+/// of the system.
+#[inline]
+pub unsafe fn register_permanent_int_handler(
+    vector: u32,
+    handler: InterruptHandler,
+) -> Result<(), zx_status::Status> {
+    // SAFETY: Guaranteed by the caller.
+    zx_status::Status::ok(unsafe { sys::register_permanent_int_handler(vector, handler) })
 }
 
 /// Remaps an interrupt `vector` number to the platform's internal IRQ number.

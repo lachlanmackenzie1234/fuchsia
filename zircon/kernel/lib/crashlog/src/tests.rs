@@ -220,7 +220,7 @@ mod crashlog_tests {
         assert_le!(len, LARGE_BUFFER_SIZE);
         expect_false!(contains(&buffer[..len], NOTE));
 
-        let status = Status::ok(platform_serial_suspend());
+        let status = platform_serial_suspend();
         if status == Err(Status::NOT_SUPPORTED) {
             kprintln!("debug UART suspend not supported, skipping");
             return true;
@@ -231,7 +231,7 @@ mod crashlog_tests {
         buffer.fill(0);
         let len = crashlog_to_string(&mut buffer, ZirconCrashReason::Panic as u32);
 
-        assert_ok!(Status::ok(platform_serial_resume()));
+        assert_ok!(platform_serial_resume());
         expect_false!(platform_serial_is_suspended());
 
         assert_le!(len, LARGE_BUFFER_SIZE);

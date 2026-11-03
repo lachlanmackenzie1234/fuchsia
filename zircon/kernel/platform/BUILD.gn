@@ -14,7 +14,6 @@ source_set("platform") {
 
   sources = [
     "crashlog_ffi.cc",
-    "debug.cc",
     "debug_ffi.cc",
     "efi.cc",
     "efi_ffi.cc",
@@ -28,7 +27,6 @@ source_set("platform") {
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/pdev/hw_watchdog",
     "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/cbuf",
     "//zircon/kernel/lib/code-patching:headers",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
@@ -42,7 +40,6 @@ source_set("platform") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/root_resource_filter",
-    "//zircon/kernel/lib/uart-gate:headers",
     "//zircon/kernel/phys/handoff",
     "//zircon/kernel/phys/lib/memalloc",
     "//zircon/system/ulib/affine:headers",
@@ -59,7 +56,6 @@ library_headers("headers") {
 source_set("tests") {
   testonly = true
   sources = [
-    "debug_tests.cc",
     "efi_test.cc",
     "suspend_tests.cc",
   ]
@@ -139,10 +135,14 @@ kernel_rust_mod("platform-rs") {
     "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",
+    "//src/lib/lazy_init",
     "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/cbuf:cbuf_rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/efi:efi-rs",
     "//zircon/kernel/lib/libc:rust",
