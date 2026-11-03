@@ -14,7 +14,9 @@ use starnix_core::task::Kernel;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_logging::{log_debug, log_warn};
 use starnix_modules_input_report_event_conversion::InputReportConverter;
-use starnix_sync::{DirectInputConverterLock, DirectInputStateLock, LockDepMutex, Mutex};
+use starnix_sync::{
+    DirectInputConverterLock, DirectInputReservedMinorsLock, DirectInputStateLock, LockDepMutex,
+};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::collections::{HashMap, HashSet};
@@ -105,7 +107,7 @@ impl std::fmt::Debug for DirectInputDevice {
 }
 
 struct ReservedMinorGuard<'a> {
-    reserved_minors: &'a Mutex<HashSet<u32>>,
+    reserved_minors: &'a LockDepMutex<HashSet<u32>, DirectInputReservedMinorsLock>,
     minor: u32,
 }
 
@@ -133,7 +135,7 @@ pub struct DirectInputManager {
     resume_generation: AtomicU64,
     next_device_id: AtomicU32,
     state: LockDepMutex<DirectInputState, DirectInputStateLock>,
-    reserved_minors: Mutex<HashSet<u32>>,
+    reserved_minors: LockDepMutex<HashSet<u32>, DirectInputReservedMinorsLock>,
     scope: fasync::Scope,
 }
 
@@ -216,7 +218,7 @@ impl DirectInputManager {
                 abort_handles: HashMap::new(),
                 watcher_abort_handles: HashMap::new(),
             }),
-            reserved_minors: Mutex::new(HashSet::new()),
+            reserved_minors: LockDepMutex::new(HashSet::new()),
             scope: fasync::Scope::new(),
         });
 
@@ -260,7 +262,7 @@ impl DirectInputManager {
                 abort_handles: HashMap::new(),
                 watcher_abort_handles: HashMap::new(),
             }),
-            reserved_minors: Mutex::new(HashSet::new()),
+            reserved_minors: LockDepMutex::new(HashSet::new()),
             scope: fasync::Scope::new(),
         });
 

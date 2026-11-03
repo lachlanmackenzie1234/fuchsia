@@ -62,6 +62,8 @@ lock_ordering! {
     DirEntryChildrenRecursiveLevel => FsNodeCacheRecursiveLock,
     DirEntryChildrenRecursiveLevel => MemoryDirectoryReaddirPositionLock,
     DirectInputConverterLock => InputEventRelayOpenedFilesLock,
+    DirectInputReservedMinorsLock => DeviceRegistryStateLevel,
+    DirectInputReservedMinorsLock => DirectInputStateLock,
     DirectInputStateLock => DirectInputConverterLock,
     DmDeviceStateLock => DirEntryChildrenLevel,
     DmDeviceStateLock => MemoryManagerStateLock,
