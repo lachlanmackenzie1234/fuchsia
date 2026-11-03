@@ -32,7 +32,6 @@ group("tests") {
     "forensics:tests",
     "fuchsia-controller:tests",
     "fuchsia-criterion:tests",
-    "hw_info:tests",
     "lib:tests",
     "memory:tests",
     "process_explorer:tests",
@@ -45,6 +44,7 @@ group("tests") {
 
 bazel_test_suite("bazel_tests") {
   host_tests = [ "//src/developer:developer_host_tests" ]
+  target_tests = [ "//src/developer:developer_target_tests" ]
 }
 
 group("e2e_tests") {

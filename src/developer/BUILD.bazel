@@ -13,3 +13,10 @@ test_suite(
         "//src/developer/lib/credentials:lib_test",
     ],
 )
+
+test_suite(
+    name = "developer_target_tests",
+    tests = [
+        "//src/developer/hw_info:tests",
+    ],
+)
