@@ -6,6 +6,8 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 
+#include <string>
+
 #include <zxtest/zxtest.h>
 
 namespace sysmem_v1 = fuchsia_sysmem;
@@ -2488,4 +2490,78 @@ TEST(ImageFormat, AfbcTePlaneOnlyWithTeModifier) {
   ASSERT_TRUE(ImageFormatPlaneByteOffset(image_format, 3, &offset));
   EXPECT_LT(offset, ImageFormatImageSize(image_format));
   EXPECT_TRUE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
+}
+
+TEST(ImageFormat, GoldfishOptimalSupportsOnlyLinearPixelFormats) {
+  // Not a defined fuchsia_images2::PixelFormat enum member; exercises default: branches.
+  constexpr auto kUnknownPixelFormat = static_cast<fuchsia_images2::PixelFormat>(12345);
+
+  struct TestCase {
+    fuchsia_images2::PixelFormat pixel_format;
+    const char* name;
+    bool supported;
+  };
+  constexpr TestCase kTestCases[] = {
+      {fuchsia_images2::PixelFormat::kInvalid, "INVALID", false},
+      {fuchsia_images2::PixelFormat::kR8G8B8A8, "R8G8B8A8", true},
+      {fuchsia_images2::PixelFormat::kR8G8B8X8, "R8G8B8X8", true},
+      {fuchsia_images2::PixelFormat::kB8G8R8A8, "B8G8R8A8", true},
+      {fuchsia_images2::PixelFormat::kB8G8R8X8, "B8G8R8X8", true},
+      {fuchsia_images2::PixelFormat::kI420, "I420", true},
+      {fuchsia_images2::PixelFormat::kM420, "M420", true},
+      {fuchsia_images2::PixelFormat::kNv12, "NV12", true},
+      {fuchsia_images2::PixelFormat::kYuy2, "YUY2", true},
+      {fuchsia_images2::PixelFormat::kMjpeg, "MJPEG", false},
+      {fuchsia_images2::PixelFormat::kYv12, "YV12", true},
+      {fuchsia_images2::PixelFormat::kB8G8R8, "B8G8R8", true},
+      {fuchsia_images2::PixelFormat::kR5G6B5, "R5G6B5", true},
+      {fuchsia_images2::PixelFormat::kR3G3B2, "R3G3B2", true},
+      {fuchsia_images2::PixelFormat::kR2G2B2X2, "R2G2B2X2", true},
+      {fuchsia_images2::PixelFormat::kL8, "L8", true},
+      {fuchsia_images2::PixelFormat::kR8, "R8", true},
+      {fuchsia_images2::PixelFormat::kR8G8, "R8G8", true},
+      {fuchsia_images2::PixelFormat::kA2R10G10B10, "A2R10G10B10", true},
+      {fuchsia_images2::PixelFormat::kA2B10G10R10, "A2B10G10R10", true},
+      {fuchsia_images2::PixelFormat::kP010, "P010", true},
+      {fuchsia_images2::PixelFormat::kR8G8B8, "R8G8B8", true},
+      {fuchsia_images2::PixelFormat::kDoNotCare, "DO_NOT_CARE", false},
+      {kUnknownPixelFormat, "UNKNOWN_12345", false},
+  };
+
+  constexpr uint32_t kWidth = 64;
+  constexpr uint32_t kHeight = 64;
+
+  for (const auto& tc : kTestCases) {
+    SCOPED_TRACE(std::string(tc.name) + " (" + std::to_string(fidl::ToUnderlying(tc.pixel_format)) +
+                 ")");
+
+    const PixelFormatAndModifier linear(tc.pixel_format,
+                                        fuchsia_images2::PixelFormatModifier::kLinear);
+    const PixelFormatAndModifier arm_te(tc.pixel_format,
+                                        fuchsia_images2::PixelFormatModifier::kArmLinearTe);
+    const PixelFormatAndModifier goldfish(
+        tc.pixel_format, fuchsia_images2::PixelFormatModifier::kGoogleGoldfishOptimal);
+
+    EXPECT_EQ(tc.supported, ImageFormatIsSupported(linear));
+    EXPECT_EQ(tc.supported, ImageFormatIsSupported(arm_te));
+    EXPECT_EQ(tc.supported, ImageFormatIsSupported(goldfish));
+
+    if (tc.supported) {
+      const uint32_t bytes_per_row = ImageFormatStrideBytesPerWidthPixel(linear) * kWidth;
+
+      fuchsia_images2::ImageFormat linear_image;
+      linear_image.pixel_format() = tc.pixel_format;
+      linear_image.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kLinear;
+      linear_image.size() = {kWidth, kHeight};
+      linear_image.bytes_per_row() = bytes_per_row;
+
+      fuchsia_images2::ImageFormat goldfish_image = linear_image;
+      goldfish_image.pixel_format_modifier() =
+          fuchsia_images2::PixelFormatModifier::kGoogleGoldfishOptimal;
+
+      const uint64_t goldfish_size = ImageFormatImageSize(goldfish_image);
+      EXPECT_GT(goldfish_size, 0u);
+      EXPECT_EQ(ImageFormatImageSize(linear_image), goldfish_size);
+    }
+  }
 }

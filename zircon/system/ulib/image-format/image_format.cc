@@ -786,6 +786,39 @@ CheckedNumeric<uint32_t> linear_minimum_row_bytes(
   return minimum_row_bytes;
 }
 
+// The pixel formats that have a linear layout (see linear_size()).
+bool linear_is_supported_pixel_format(fuchsia_images2::PixelFormat pixel_format) {
+  switch (pixel_format) {
+    case PixelFormat::kInvalid:
+    case PixelFormat::kDoNotCare:
+    case PixelFormat::kMjpeg:
+      return false;
+    case PixelFormat::kR8G8B8A8:
+    case PixelFormat::kR8G8B8X8:
+    case PixelFormat::kB8G8R8A8:
+    case PixelFormat::kB8G8R8X8:
+    case PixelFormat::kB8G8R8:
+    case PixelFormat::kR8G8B8:
+    case PixelFormat::kI420:
+    case PixelFormat::kM420:
+    case PixelFormat::kNv12:
+    case PixelFormat::kP010:
+    case PixelFormat::kYuy2:
+    case PixelFormat::kYv12:
+    case PixelFormat::kR5G6B5:
+    case PixelFormat::kR3G3B2:
+    case PixelFormat::kR2G2B2X2:
+    case PixelFormat::kL8:
+    case PixelFormat::kR8:
+    case PixelFormat::kR8G8:
+    case PixelFormat::kA2B10G10R10:
+    case PixelFormat::kA2R10G10B10:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool linear_is_single_plane(fuchsia_images2::PixelFormat pixel_format) {
   switch (pixel_format) {
     case fuchsia_images2::PixelFormat::kR8G8B8A8:
@@ -825,36 +858,7 @@ class LinearFormats : public ImageFormatSet {
     if (pixel_format.pixel_format_modifier != fuchsia_images2::PixelFormatModifier::kLinear) {
       return false;
     }
-    switch (pixel_format.pixel_format) {
-      case PixelFormat::kInvalid:
-      case PixelFormat::kDoNotCare:
-      case PixelFormat::kMjpeg:
-        return false;
-      case PixelFormat::kR8G8B8A8:
-      case PixelFormat::kR8G8B8X8:
-      case PixelFormat::kB8G8R8A8:
-      case PixelFormat::kB8G8R8X8:
-      case PixelFormat::kB8G8R8:
-      case PixelFormat::kR8G8B8:
-      case PixelFormat::kI420:
-      case PixelFormat::kM420:
-      case PixelFormat::kNv12:
-      case PixelFormat::kP010:
-      case PixelFormat::kYuy2:
-      case PixelFormat::kYv12:
-      case PixelFormat::kR5G6B5:
-      case PixelFormat::kR3G3B2:
-      case PixelFormat::kR2G2B2X2:
-      case PixelFormat::kL8:
-      case PixelFormat::kR8:
-      case PixelFormat::kR8G8:
-      case PixelFormat::kA2B10G10R10:
-      case PixelFormat::kA2R10G10B10:
-        return true;
-      default:
-        return false;
-    }
-    return false;
+    return linear_is_supported_pixel_format(pixel_format.pixel_format);
   }
 
   CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
@@ -958,12 +962,13 @@ class GoldfishFormats : public ImageFormatSet {
   const char* Name() const override { return "GoldfishFormats"; }
 
   bool IsSupported(const PixelFormatAndModifier& pixel_format) const override {
-    switch (pixel_format.pixel_format_modifier) {
-      case fuchsia_images2::PixelFormatModifier::kGoogleGoldfishOptimal:
-        return true;
-      default:
-        return false;
+    if (pixel_format.pixel_format_modifier !=
+        fuchsia_images2::PixelFormatModifier::kGoogleGoldfishOptimal) {
+      return false;
     }
+    // The goldfish-optimal layout is opaque, but its size is computed as if it were linear (see
+    // ImageFormatImageSize() below), so only the pixel formats with a linear layout are supported.
+    return linear_is_supported_pixel_format(pixel_format.pixel_format);
   }
   CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
     ZX_ASSERT(image_format.pixel_format().has_value());
@@ -1008,38 +1013,10 @@ class ArmTELinearFormats : public ImageFormatSet {
   const char* Name() const override { return "ArmTELinearFormats"; }
 
   bool IsSupported(const PixelFormatAndModifier& pixel_format) const override {
-    if (pixel_format.pixel_format_modifier != fuchsia_images2::PixelFormatModifier::kArmLinearTe)
+    if (pixel_format.pixel_format_modifier != fuchsia_images2::PixelFormatModifier::kArmLinearTe) {
       return false;
-    switch (pixel_format.pixel_format) {
-      case PixelFormat::kInvalid:
-      case PixelFormat::kDoNotCare:
-      case PixelFormat::kMjpeg:
-        return false;
-      case PixelFormat::kR8G8B8A8:
-      case PixelFormat::kR8G8B8X8:
-      case PixelFormat::kB8G8R8A8:
-      case PixelFormat::kB8G8R8X8:
-      case PixelFormat::kB8G8R8:
-      case PixelFormat::kR8G8B8:
-      case PixelFormat::kI420:
-      case PixelFormat::kM420:
-      case PixelFormat::kNv12:
-      case PixelFormat::kYuy2:
-      case PixelFormat::kYv12:
-      case PixelFormat::kR5G6B5:
-      case PixelFormat::kR3G3B2:
-      case PixelFormat::kR2G2B2X2:
-      case PixelFormat::kL8:
-      case PixelFormat::kR8:
-      case PixelFormat::kR8G8:
-      case PixelFormat::kA2B10G10R10:
-      case PixelFormat::kA2R10G10B10:
-      case PixelFormat::kP010:
-        return true;
-      default:
-        return false;
     }
-    return false;
+    return linear_is_supported_pixel_format(pixel_format.pixel_format);
   }
 
   CheckedNumeric<uint64_t> ImageFormatImageSize(
