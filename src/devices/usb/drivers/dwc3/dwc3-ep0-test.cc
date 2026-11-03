@@ -2848,6 +2848,276 @@ TEST_F(UnmanagedTestFixture, Ep0SetupPendingAbortsControlTransferAndRearmsSetup)
   });
 
   EXPECT_EQ(DCTL::Get().FromValue(Read_DCTL()).TSTCTL(), 0u);
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that ConfigureEndpoint returns ZX_ERR_IO_NOT_PRESENT when the controller power is off.
+TEST_F(UnmanagedTestFixture, ConfigureEndpointPowerOff) {
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().set_initial_connected(false);  // Start disconnected
+  });
+
+  ASSERT_TRUE(StartDriverWithoutPlatformExtension().is_ok());
+
+  fidl::SyncClient client = ConnectController();
+
+  fuchsia_hardware_usb_descriptor::UsbEndpointDescriptor ep_desc;
+  ep_desc.b_endpoint_address() = 1;  // EP 1 OUT
+  ep_desc.bm_attributes() = 2;       // Bulk
+
+  auto result = client->ConfigureEndpoint({{.ep_descriptor = ep_desc}});
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  EXPECT_EQ(result.error_value().domain_error(), ZX_ERR_IO_NOT_PRESENT);
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that QueueRequests completes each request with ZX_ERR_IO_NOT_PRESENT when the endpoint
+// is disabled.
+TEST_F(UnmanagedTestFixture, QueueRequestsEndpointDisabled) {
+  SetUpAndPowerOnDriver();
+
+  fidl::SyncClient client = ConnectController();
+
+  auto [ep_client, ep_server] = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fuchsia_hardware_usb_dci::UsbDciConnectToEndpointRequest connect_req;
+  connect_req.ep_addr() = 1;
+  connect_req.ep() = std::move(ep_server);
+  auto connect_result = client->ConnectToEndpoint(std::move(connect_req));
+  ASSERT_TRUE(connect_result.is_ok());
+
+  fidl::SyncClient ep_sync_client{std::move(ep_client)};
+
+  fuchsia_hardware_usb_request::BufferRegion region;
+  region.buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>{1}));
+  region.size(1);
+  region.offset(0);
+
+  std::vector<fuchsia_hardware_usb_request::BufferRegion> data;
+  data.push_back(std::move(region));
+
+  fuchsia_hardware_usb_request::Request request;
+  request.data(std::move(data));
+
+  std::vector<fuchsia_hardware_usb_request::Request> reqs;
+  reqs.push_back(std::move(request));
+  auto queue_result = ep_sync_client->QueueRequests(std::move(reqs));
+  ASSERT_TRUE(queue_result.is_ok());
+
+  bool completed = false;
+  zx_status_t status = ZX_OK;
+  TestEndpointEventHandler handler{completed, status};
+
+  ASSERT_TRUE(ep_sync_client.HandleOneEvent(handler).ok());
+  EXPECT_TRUE(completed);
+  EXPECT_EQ(status, ZX_ERR_IO_NOT_PRESENT);
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that CancelAll succeeds on a disabled endpoint.
+TEST_F(UnmanagedTestFixture, CancelAllEndpointDisabled) {
+  SetUpAndPowerOnDriver();
+
+  fidl::SyncClient client = ConnectController();
+
+  auto [ep_client, ep_server] = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fuchsia_hardware_usb_dci::UsbDciConnectToEndpointRequest connect_req;
+  connect_req.ep_addr() = 1;
+  connect_req.ep() = std::move(ep_server);
+  auto connect_result = client->ConnectToEndpoint(std::move(connect_req));
+  ASSERT_TRUE(connect_result.is_ok());
+
+  fidl::SyncClient ep_sync_client{std::move(ep_client)};
+
+  auto cancel_result = ep_sync_client->CancelAll();
+  ASSERT_TRUE(cancel_result.is_ok());
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that the driver powers on and transitions to kPowered when a connection event arrives
+// from the PHY ConnectionWatcher.
+TEST_F(UnmanagedTestFixture, OnConnectStatusChangedConnect) {
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().set_initial_connected(false);  // Start disconnected
+  });
+
+  ASSERT_TRUE(StartDriverWithoutPlatformExtension().is_ok());
+  ASSERT_EQ(WaitForPhy(), ZX_OK);
+
+  bool power_is_on = true;
+  dut_.RunInDriverContext([&](Dwc3& drv) { power_is_on = Dwc3TestHelper::GetPowerOn(drv); });
+  EXPECT_FALSE(power_is_on);
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
+
+  dut_.runtime().RunUntil([&]() {
+    bool watcher_rearmed = false;
+    dut_.RunInDriverContext([&](Dwc3& drv) { power_is_on = Dwc3TestHelper::GetPowerOn(drv); });
+    dut_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { watcher_rearmed = env.usb_phy().has_completer(); });
+    return power_is_on && watcher_rearmed;
+  });
+  EXPECT_TRUE(power_is_on);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kPowered);
+  });
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that the driver powers off and transitions to kNotAttached when a disconnect event
+// arrives from the PHY ConnectionWatcher.
+TEST_F(UnmanagedTestFixture, OnConnectStatusChangedDisconnect) {
+  SetUpAndPowerOnDriver();
+  ASSERT_EQ(WaitForPhy(), ZX_OK);
+
+  bool power_is_on = false;
+  dut_.RunInDriverContext([&](Dwc3& drv) { power_is_on = Dwc3TestHelper::GetPowerOn(drv); });
+  EXPECT_TRUE(power_is_on);
+
+  auto client_end = dut_.Connect<fuchsia_hardware_usb_policy::Service::Controller>();
+  ASSERT_TRUE(client_end.is_ok());
+  fidl::Client client{std::move(*client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+
+  bool is_powered = false;
+  client->WatchDeviceState().Then(
+      [&](fidl::Result<fuchsia_hardware_usb_policy::Controller::WatchDeviceState>& result) {
+        if (!result.is_ok()) {
+          ADD_FAILURE() << "WatchDeviceState failed: " << result.error_value();
+          is_powered = true;
+          return;
+        }
+        EXPECT_EQ(result->state(), fuchsia_hardware_usb_policy::DeviceState::kPowered);
+        is_powered = true;
+      });
+  dut_.runtime().RunUntil([&]() { return is_powered; });
+
+  bool state_changed = false;
+  client->WatchDeviceState().Then(
+      [&](fidl::Result<fuchsia_hardware_usb_policy::Controller::WatchDeviceState>& result) {
+        if (!result.is_ok()) {
+          ADD_FAILURE() << "WatchDeviceState failed: " << result.error_value();
+          state_changed = true;
+          return;
+        }
+        EXPECT_EQ(result->state(), fuchsia_hardware_usb_policy::DeviceState::kNotAttached);
+        state_changed = true;
+      });
+
+  dut_.runtime().RunUntil([&]() {
+    bool queued = false;
+    dut_.RunInDriverContext(
+        [&](Dwc3& drv) { queued = (Dwc3TestHelper::PendingCompletersCount(drv) > 0); });
+    return queued || state_changed;
+  });
+  EXPECT_FALSE(state_changed);
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerDisconnect(); });
+
+  dut_.runtime().RunUntil([&]() {
+    bool watcher_rearmed = false;
+    dut_.RunInDriverContext([&](Dwc3& drv) { power_is_on = Dwc3TestHelper::GetPowerOn(drv); });
+    dut_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { watcher_rearmed = env.usb_phy().has_completer(); });
+    return state_changed && !power_is_on && watcher_rearmed;
+  });
+  EXPECT_FALSE(power_is_on);
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that WatchDeviceState blocks as a hanging get after the client consumes the initial
+// state and completes when SetDeviceState updates the state.
+TEST_F(ManagedTestFixture, WatchDeviceStateHangingGet) {
+  auto client_end = dut_.Connect<fuchsia_hardware_usb_policy::Service::Controller>();
+  ASSERT_TRUE(client_end.is_ok());
+  fidl::Client client{std::move(*client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+
+  bool first_call_done = false;
+  client->WatchDeviceState().Then(
+      [&](fidl::Result<fuchsia_hardware_usb_policy::Controller::WatchDeviceState>& result) {
+        if (!result.is_ok()) {
+          ADD_FAILURE() << "WatchDeviceState failed: " << result.error_value();
+          first_call_done = true;
+          return;
+        }
+        EXPECT_EQ(result->state(), fuchsia_hardware_usb_policy::DeviceState::kNotAttached);
+        first_call_done = true;
+      });
+  dut_.runtime().RunUntil([&]() { return first_call_done; });
+
+  bool second_call_done = false;
+  client->WatchDeviceState().Then(
+      [&](fidl::Result<fuchsia_hardware_usb_policy::Controller::WatchDeviceState>& result) {
+        if (!result.is_ok()) {
+          ADD_FAILURE() << "WatchDeviceState failed: " << result.error_value();
+          second_call_done = true;
+          return;
+        }
+        EXPECT_EQ(result->state(), fuchsia_hardware_usb_policy::DeviceState::kPowered);
+        second_call_done = true;
+      });
+
+  dut_.runtime().RunUntil([&]() {
+    bool queued = false;
+    dut_.RunInDriverContext(
+        [&](Dwc3& drv) { queued = (Dwc3TestHelper::PendingCompletersCount(drv) > 0); });
+    return queued || second_call_done;
+  });
+  EXPECT_FALSE(second_call_done);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetDeviceState(drv, fuchsia_hardware_usb_policy::DeviceState::kPowered);
+  });
+
+  dut_.runtime().RunUntil([&]() { return second_call_done; });
+}
+
+// Verifies that ConfigureEndpoint rejects EP0 (an invalid user endpoint address) with
+// ZX_ERR_INVALID_ARGS.
+TEST_F(UnmanagedTestFixture, ConfigureEndpointInvalidEp) {
+  SetUpAndPowerOnDriver();
+
+  fidl::SyncClient client = ConnectController();
+
+  fuchsia_hardware_usb_descriptor::UsbEndpointDescriptor desc;
+  desc.b_endpoint_address() = 0;  // EP 0 OUT (invalid user endpoint)
+  desc.bm_attributes() = 2;       // Bulk
+
+  fuchsia_hardware_usb_descriptor::UsbSsEpCompDescriptor comp_desc;
+
+  auto result =
+      client->ConfigureEndpoint({{.ep_descriptor = desc, .ss_comp_descriptor = comp_desc}});
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  EXPECT_EQ(result.error_value().domain_error(), ZX_ERR_INVALID_ARGS);
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that ConfigureEndpoint rejects isochronous endpoints with ZX_ERR_NOT_SUPPORTED.
+TEST_F(UnmanagedTestFixture, ConfigureEndpointIsoch) {
+  SetUpAndPowerOnDriver();
+
+  fidl::SyncClient client = ConnectController();
+
+  fuchsia_hardware_usb_descriptor::UsbEndpointDescriptor desc;
+  desc.b_endpoint_address() = 1;  // EP 1 OUT -> ep_num = 2
+  desc.bm_attributes() = 1;       // Isochronous
+
+  fuchsia_hardware_usb_descriptor::UsbSsEpCompDescriptor comp_desc;
+
+  auto result =
+      client->ConfigureEndpoint({{.ep_descriptor = desc, .ss_comp_descriptor = comp_desc}});
+  ASSERT_TRUE(result.is_error());
+  ASSERT_TRUE(result.error_value().is_domain_error());
+  EXPECT_EQ(result.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
   TearDownAndPowerOffDriver();
 }
 }  // namespace dwc3

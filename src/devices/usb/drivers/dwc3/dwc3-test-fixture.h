@@ -114,6 +114,7 @@ class Dwc3TestHelper {
   static void SetDeviceState(Dwc3& drv, fuchsia_hardware_usb_policy::DeviceState state) {
     drv.SetDeviceState(state);
   }
+  static size_t PendingCompletersCount(const Dwc3& drv) { return drv.pending_completers_.size(); }
   static PlatformExtension* GetPlatformExtension(Dwc3& drv) {
     return drv.platform_extension_.get();
   }
