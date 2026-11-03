@@ -961,8 +961,6 @@ mod tests {
         drop_endpoint_on_next_in: AtomicBool,
         /// Number of `QueueRequests` calls received while `ep_addr` was not in `enabled_endpoints`.
         invalid_queue_while_disabled: AtomicUsize,
-        /// Optional hook invoked after sending an IN completion in `QueueRequests`.
-        on_in_completion: Mutex<Option<Box<dyn FnOnce() + Send>>>,
         /// Optional hook invoked when serving `ConnectToEndpoint`.
         on_connect_to_endpoint: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
@@ -1121,11 +1119,6 @@ mod tests {
                     }
                     if !completions.is_empty() {
                         let _ = control_handle.send_on_completion(completions);
-                        if is_in {
-                            if let Some(hook) = state.on_in_completion.lock().take() {
-                                hook();
-                            }
-                        }
                     }
                 }
                 fusb_endpoint::EndpointRequest::CancelAll { responder } => {
@@ -3378,18 +3371,23 @@ mod tests {
             let (arg, _) = map_test_buffers(current_task);
             let buf_addr = map_test_buffer(current_task, 73_728);
 
-            // Complete the first 65,536-byte chunk normally, but reset the endpoint before the
-            // second chunk is submitted. The transfer must fail with ESHUTDOWN (not ENOENT).
+            // Hold the first 65,536-byte chunk until the endpoint is reset, then complete the
+            // first chunk successfully as it is cancelled. The transfer must fail with ESHUTDOWN
+            // before the second chunk is submitted.
+            mock.hold_in_requests.store(true, Ordering::SeqCst);
+            *mock.cancel_behavior.lock() = Some(CancelBehavior::CompleteSuccessfullyAfterReply);
             mock.bulk_in_scripted_packets.lock().push_back((vec![0x42u8; 65_536], zx::sys::ZX_OK));
-            let device_for_hook = Arc::clone(device);
-            *mock.on_in_completion.lock() = Some(Box::new(move || {
-                device_for_hook.reset_endpoint_state(EP1_IN);
-            }));
+            let device_for_reset = Arc::clone(device);
+            let reset = run_when_in_requests_queued(current_task, mock, 1, move |_| {
+                device_for_reset.reset_endpoint_state(EP1_IN);
+            });
 
             assert_eq!(
-                bulk(current_task, &file, arg, EP1_IN, 70_000, 2000, buf_addr),
+                bulk(current_task, &file, arg, EP1_IN, 70_000, 0, buf_addr),
                 error!(ESHUTDOWN)
             );
+            reset.recv().unwrap();
+            assert_eq!(mock.bulk_in_queue_count.load(Ordering::SeqCst), 1);
         })
         .await;
     }
