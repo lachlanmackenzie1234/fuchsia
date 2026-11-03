@@ -535,6 +535,12 @@ class AfbcFormats : public ImageFormatSet {
     }
   }
 
+  // Whether the image has a transaction elimination buffer (plane 3).
+  static bool HasTe(const ImageFormat& image_format) {
+    return fidl::ToUnderlying(image_format.pixel_format_modifier().value()) &
+           fuchsia_images2::kFormatModifierArmTeBit;
+  }
+
   // Calculate the size of the Raw AFBC image without a transaction elimination buffer.
   CheckedNumeric<uint64_t> NonTESize(const ImageFormat& image_format) const {
     // See
@@ -606,8 +612,7 @@ class AfbcFormats : public ImageFormatSet {
 
   CheckedNumeric<uint64_t> ImageFormatImageSize(const ImageFormat& image_format) const override {
     CheckedNumeric<uint64_t> size = NonTESize(image_format);
-    if (fidl::ToUnderlying(image_format.pixel_format_modifier().value()) &
-        fuchsia_images2::kFormatModifierArmTeBit) {
+    if (HasTe(image_format)) {
       size += arm_transaction_elimination_buffer_size(size, image_format.size()->width(),
                                                       image_format.size()->height());
     }
@@ -622,7 +627,7 @@ class AfbcFormats : public ImageFormatSet {
     if (plane == 0) {
       return 0;
     }
-    if (plane == kTransactionEliminationPlane) {
+    if (plane == kTransactionEliminationPlane && HasTe(image_format)) {
       return CheckRoundUp(NonTESize(image_format), kTransactionEliminationAlignment);
     }
     // invalid plane param value
@@ -633,7 +638,7 @@ class AfbcFormats : public ImageFormatSet {
     if (plane == 0) {
       return 0;
     }
-    if (plane == kTransactionEliminationPlane) {
+    if (plane == kTransactionEliminationPlane && HasTe(image_format)) {
       ZX_ASSERT(image_format.size().has_value());
       return arm_transaction_elimination_row_size(image_format.size()->width());
     }

@@ -2471,3 +2471,21 @@ TEST(ImageFormat, ImageConstraintsToFormatZeroSizeAlignmentFails) {
   constraints.size_alignment() = {1u, 1u};
   EXPECT_TRUE(ImageConstraintsToFormat(constraints, 64u, 32u).is_ok());
 }
+
+TEST(ImageFormat, AfbcTePlaneOnlyWithTeModifier) {
+  fuchsia_images2::ImageFormat image_format;
+  image_format.pixel_format() = fuchsia_images2::PixelFormat::kB8G8R8A8;
+  image_format.size() = {1920u, 1080u};
+  image_format.bytes_per_row() = 1920u * 4;
+
+  uint64_t offset;
+  uint32_t row_bytes;
+  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kArmAfbc16X16;
+  EXPECT_FALSE(ImageFormatPlaneByteOffset(image_format, 3, &offset));
+  EXPECT_FALSE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
+
+  image_format.pixel_format_modifier() = fuchsia_images2::PixelFormatModifier::kArmAfbc16X16Te;
+  ASSERT_TRUE(ImageFormatPlaneByteOffset(image_format, 3, &offset));
+  EXPECT_LT(offset, ImageFormatImageSize(image_format));
+  EXPECT_TRUE(ImageFormatPlaneRowBytes(image_format, 3, &row_bytes));
+}
