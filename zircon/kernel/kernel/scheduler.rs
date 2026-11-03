@@ -8039,7 +8039,10 @@ where
                 bandwidth_demand_changed = true;
                 // SAFETY: `scheduler`'s `queue_lock_` is held.
                 unsafe {
-                    (*(*scheduler).state.get()).weight_total += weight_delta;
+                    // Use the setter so that the exported shadow read by other CPUs for
+                    // placement and work stealing follows the change.
+                    let weight_total = (*scheduler).weight_total() + weight_delta;
+                    (*scheduler).set_weight_total(weight_total);
                     (*scheduler).update_fair_bandwidth_period(now.mono_time);
                 }
             }
