@@ -33,6 +33,8 @@ cml_shard(
         "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
         "//src/sys/lib/elf_runner/tests/lifecycle:__pkg__",
         "//src/sys/test_manager/tests/test_data:__pkg__",
+        "//src/sys/test_runners/rust/test_data/concurrency-test:__pkg__",
+        "//src/sys/test_runners/rust/test_data/echo-integration-test:__pkg__",
     ],
 )
 
