@@ -94,6 +94,7 @@ test_suite(
         "//src/developer/ffx/plugins/target/log-message:ffx_target_log_message_test",
         "//src/developer/ffx/plugins/target/off:ffx_off_test",
         "//src/developer/ffx/plugins/target/remove:ffx_target_remove_test",
+        "//src/developer/ffx/plugins/target/wipe:ffx_wipe_test",
         "//src/developer/ffx/plugins/version:ffx_version_test",
         "//src/developer/ffx/plugins/wlan/client:ffx_wlan_client_test",
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common_host_test",
