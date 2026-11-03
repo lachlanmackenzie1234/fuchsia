@@ -4,12 +4,15 @@
 
 #![recursion_limit = "256"]
 
+use fidl_fuchsia_power_battery as fpower;
+use futures::TryStreamExt as _;
 use starnix_core::device::kobject::{Device, UEventAction};
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, serialize_for_file};
+use starnix_logging::log_warn;
 use starnix_sync::{LockDepRwLock, PowerSupplyStateLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -23,6 +26,8 @@ const DEFAULT_CHARGER_MAX_VOLTAGE_UV: i32 = 5_000_000;
 
 /// Linux `power_supply` `usb_type` strings.
 const USB_TYPE_UNKNOWN: &str = "[Unknown] SDP DCP CDP";
+const USB_TYPE_SDP: &str = "Unknown [SDP] DCP CDP";
+const USB_TYPE_DCP: &str = "Unknown SDP [DCP] CDP";
 
 /// In-memory state of the `/sys/class/power_supply/battery` device.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -117,6 +122,18 @@ impl Default for ChargerState {
     }
 }
 
+impl ChargerState {
+    /// Returns a normalized copy with `current_max_ua` and `voltage_max_uv` zeroed when offline
+    /// so `PartialEq` reflects user-visible sysfs changes.
+    fn effective(&self) -> Self {
+        if self.online {
+            *self
+        } else {
+            Self { online: false, current_max_ua: 0, voltage_max_uv: 0 }
+        }
+    }
+}
+
 /// In-memory representation of all power supply devices.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PowerSupplyState {
@@ -136,6 +153,122 @@ impl Default for PowerSupplyState {
             ac: ChargerState::default(),
             wireless: ChargerState::default(),
         }
+    }
+}
+
+impl PowerSupplyState {
+    /// Update the state from a Fuchsia `BatteryInfo` table.
+    fn update_from_battery_info(&mut self, info: &fpower::BatteryInfo) {
+        if let Some(status) = info.status {
+            self.battery.present =
+                matches!(status, fpower::BatteryStatus::Ok | fpower::BatteryStatus::NotAvailable);
+        }
+
+        if let Some(charge_status) = info.charge_status {
+            self.battery.status = match charge_status {
+                fpower::ChargeStatus::Charging => "Charging",
+                fpower::ChargeStatus::Discharging => "Discharging",
+                fpower::ChargeStatus::NotCharging => "Not charging",
+                fpower::ChargeStatus::Full => "Full",
+                _ => "Unknown",
+            };
+        }
+
+        if let Some(source) = info.charge_source {
+            self.usb.online =
+                matches!(source, fpower::ChargeSource::Usb | fpower::ChargeSource::AcAdapter);
+            self.usb_type = match source {
+                fpower::ChargeSource::Usb => USB_TYPE_SDP,
+                fpower::ChargeSource::AcAdapter => USB_TYPE_DCP,
+                _ => USB_TYPE_UNKNOWN,
+            };
+            self.ac.online = source == fpower::ChargeSource::AcAdapter;
+            self.wireless.online = source == fpower::ChargeSource::Wireless;
+        }
+
+        if let Some(level_percent) = info.level_percent {
+            // `battery_manager` already rounds `level_percent` to an integer percentage.
+            self.battery.capacity = level_percent.clamp(0.0, 100.0) as u8;
+            self.battery.capacity_level = BatteryState::capacity_level_for_percent(
+                self.battery.capacity,
+                self.battery.status,
+            );
+        } else if let Some(level_status) = info.level_status {
+            self.battery.capacity_level = match level_status {
+                fpower::LevelStatus::Ok => {
+                    if self.battery.capacity == 100 {
+                        "Full"
+                    } else {
+                        "High"
+                    }
+                }
+                fpower::LevelStatus::Warning => "Normal",
+                fpower::LevelStatus::Low => "Low",
+                fpower::LevelStatus::Critical => "Critical",
+                _ => "Unknown",
+            };
+        }
+
+        if let Some(health) = info.health {
+            self.battery.health = match health {
+                fpower::HealthStatus::Good => "Good",
+                fpower::HealthStatus::Cool => "Cool",
+                fpower::HealthStatus::Warm => "Warm",
+                fpower::HealthStatus::Cold => "Cold",
+                fpower::HealthStatus::Hot | fpower::HealthStatus::Overheat => "Overheat",
+                fpower::HealthStatus::Dead => "Dead",
+                fpower::HealthStatus::OverVoltage => "Over voltage",
+                fpower::HealthStatus::UnspecifiedFailure => "Unspecified failure",
+                _ => "Unknown",
+            };
+        }
+
+        if let Some(voltage_mv) = info.present_voltage_mv {
+            self.battery.voltage_now_uv = (voltage_mv as i32) * 1000;
+        }
+
+        if let Some(current_ua) = info.present_charging_current_ua {
+            self.battery.current_now_ua = current_ua;
+        }
+
+        if let Some(current_avg_ua) = info.average_charging_current_ua {
+            self.battery.current_avg_ua = current_avg_ua;
+        }
+
+        if let Some(charge_uah) = info.remaining_charge_uah {
+            self.battery.charge_counter_uah = charge_uah as i32;
+        }
+
+        if let Some(full_charge_uah) = info.full_capacity_uah {
+            self.battery.charge_full_uah = full_charge_uah;
+        }
+
+        if let Some(temp_mc) = info.temperature_mc {
+            self.battery.temp_celsius_tenths = temp_mc / 100;
+        }
+
+        if let Some(spec) = &info.battery_spec {
+            if let Some(design_uah) = spec.design_capacity_uah {
+                self.battery.charge_full_design_uah = design_uah;
+            }
+            if let Some(max_current_ua) = spec.max_charging_current_ua {
+                self.usb.current_max_ua = max_current_ua;
+                self.ac.current_max_ua = max_current_ua;
+                self.wireless.current_max_ua = max_current_ua;
+            }
+            if let Some(max_voltage_uv) = spec.max_charging_voltage_uv {
+                self.usb.voltage_max_uv = max_voltage_uv;
+                self.ac.voltage_max_uv = max_voltage_uv;
+                self.wireless.voltage_max_uv = max_voltage_uv;
+            }
+        }
+
+        self.battery.time_to_full_now_seconds = match &info.time_remaining {
+            Some(fpower::TimeRemaining::FullCharge(ns)) if *ns >= 0 => {
+                Some(std::time::Duration::from_nanos(*ns as u64).as_secs() as i64)
+            }
+            _ => None,
+        };
     }
 }
 
@@ -223,6 +356,119 @@ impl BytesFileOps for BatteryCapacityFile {
     }
 }
 
+/// Handle to registered power supply devices in sysfs.
+struct PowerSupplyDevices {
+    battery: Device,
+    usb: Device,
+    ac: Device,
+    wireless: Device,
+    state: SharedPowerSupplyState,
+}
+
+impl PowerSupplyDevices {
+    /// Update the shared state from a `BatteryInfo` struct and dispatch uevents for changed power
+    /// supply devices.
+    fn update_from_battery_info(&self, kernel: &Kernel, info: &fpower::BatteryInfo) {
+        let (battery_changed, usb_changed, ac_changed, wireless_changed) = {
+            let mut state = self.state.write();
+            let prev = state.clone();
+            state.update_from_battery_info(info);
+            (
+                state.battery.effective() != prev.battery.effective(),
+                state.usb.effective() != prev.usb.effective() || state.usb_type != prev.usb_type,
+                state.ac.effective() != prev.ac.effective(),
+                state.wireless.effective() != prev.wireless.effective(),
+            )
+        };
+
+        if battery_changed {
+            kernel.device_registry.dispatch_uevent(UEventAction::Change, self.battery.clone());
+        }
+        if usb_changed {
+            kernel.device_registry.dispatch_uevent(UEventAction::Change, self.usb.clone());
+        }
+        if ac_changed {
+            kernel.device_registry.dispatch_uevent(UEventAction::Change, self.ac.clone());
+        }
+        if wireless_changed {
+            kernel.device_registry.dispatch_uevent(UEventAction::Change, self.wireless.clone());
+        }
+    }
+}
+
+/// Handle events from a `BatteryInfoWatcher` stream, updating `devices` and sending replies.
+///
+/// Returns `Ok(true)` if at least one `OnChangeBatteryInfo` update was received before the stream
+/// closed, or `Ok(false)` if the stream closed immediately without delivering an initial update.
+async fn handle_battery_watcher_stream(
+    kernel: &Kernel,
+    devices: &PowerSupplyDevices,
+    mut stream: fpower::BatteryInfoWatcherRequestStream,
+) -> Result<bool, fidl::Error> {
+    let mut received_update = false;
+    while let Some(event) = stream.try_next().await? {
+        received_update = true;
+        match event {
+            fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+                info,
+                // Keep `_wake_lease` alive until after sysfs/uevent updates and `responder.send()`
+                // complete so the system cannot suspend mid-update.
+                wake_lease: _wake_lease,
+                responder,
+            } => {
+                devices.update_from_battery_info(kernel, &info);
+                if let Err(e) = responder.send() {
+                    log_warn!("Failed to send BatteryInfoWatcher response: {:?}", e);
+                }
+            }
+        }
+    }
+    Ok(received_update)
+}
+
+async fn run_battery_watcher(
+    kernel: &Kernel,
+    devices: &PowerSupplyDevices,
+    battery_manager: fpower::BatteryManagerProxy,
+) -> Result<bool, fidl::Error> {
+    let (client_end, server_end) =
+        fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
+    battery_manager.watch(client_end)?;
+    handle_battery_watcher_stream(kernel, devices, server_end.into_stream()).await
+}
+
+async fn monitor_battery_manager(kernel: Arc<Kernel>, devices: Arc<PowerSupplyDevices>) {
+    if let Ok(proxy) =
+        fuchsia_component::client::connect_to_protocol::<fpower::BatteryManagerMarker>()
+    {
+        match run_battery_watcher(&kernel, &devices, proxy).await {
+            Ok(true) => return,
+            Ok(false) => {
+                log_warn!(
+                    "BatteryInfoWatcher via kernel svc closed before initial update, trying container svc"
+                );
+            }
+            Err(e) => {
+                log_warn!(
+                    "BatteryInfoWatcher via kernel svc closed ({:?}), trying container svc",
+                    e
+                );
+            }
+        }
+    }
+
+    if let Ok(client_end) =
+        kernel.connect_to_protocol_at_container_svc::<fpower::BatteryManagerMarker>()
+    {
+        if let Err(e) = run_battery_watcher(&kernel, &devices, client_end.into_proxy()).await {
+            log_warn!("BatteryInfoWatcher via container svc closed: {:?}", e);
+        }
+        return;
+    }
+
+    log_warn!("Failed to connect to BatteryManager");
+}
+
 /// Return a device directory builder that populates the common sysfs attributes (`type`, `online`,
 /// optional `present`, `current_max`, and `voltage_max`) for a charger device (`usb`, `ac`, or
 /// `wireless`).
@@ -251,8 +497,8 @@ fn build_charger_directory(
     }
 }
 
-/// Initialize power supply devices under `/sys/class/power_supply/`.
-pub fn battery_manager_device_init(kernel: &Kernel) {
+/// Register power supply devices under `/sys/class/power_supply/`.
+fn register_power_supply_devices(kernel: &Kernel) -> Arc<PowerSupplyDevices> {
     let registry = &kernel.device_registry;
     let power_supply_class = registry.objects.power_supply_class();
 
@@ -260,7 +506,7 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
 
     // 1. /sys/class/power_supply/battery
     let state_clone = Arc::clone(&state);
-    registry.add_numberless_device(
+    let battery = registry.add_numberless_device(
         "battery".into(),
         /* parent = */ None,
         power_supply_class.clone(),
@@ -303,7 +549,7 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
     let state_clone = Arc::clone(&state);
     let build_usb =
         build_charger_directory(b"USB\n", &state, |s| &s.usb, /* include_present = */ true);
-    registry.add_numberless_device(
+    let usb = registry.add_numberless_device(
         "usb".into(),
         /* parent = */ None,
         power_supply_class.clone(),
@@ -314,7 +560,7 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
     );
 
     // 3. /sys/class/power_supply/ac
-    registry.add_numberless_device(
+    let ac = registry.add_numberless_device(
         "ac".into(),
         /* parent = */ None,
         power_supply_class.clone(),
@@ -322,7 +568,7 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
     );
 
     // 4. /sys/class/power_supply/wireless
-    registry.add_numberless_device(
+    let wireless = registry.add_numberless_device(
         "wireless".into(),
         /* parent = */ None,
         power_supply_class,
@@ -334,7 +580,19 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
         ),
     );
 
-    // TODO(https://fxbug.dev/573313995): Watch BatteryManager and update the state.
+    Arc::new(PowerSupplyDevices { battery, usb, ac, wireless, state })
+}
+
+/// Initialize power supply devices under `/sys/class/power_supply/` and spawn watcher kthread.
+pub fn battery_manager_device_init(kernel: &Arc<Kernel>) {
+    let devices = register_power_supply_devices(kernel);
+    let kernel_clone = Arc::clone(kernel);
+    kernel.kthreads.spawn_future(
+        move || async move {
+            monitor_battery_manager(kernel_clone, devices).await;
+        },
+        "power_supply_monitor",
+    );
 }
 
 #[cfg(test)]
@@ -373,10 +631,102 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    fn test_update_from_battery_info() {
+        let mut state = PowerSupplyState::default();
+        let info = fpower::BatteryInfo {
+            status: Some(fpower::BatteryStatus::Ok),
+            charge_status: Some(fpower::ChargeStatus::Charging),
+            charge_source: Some(fpower::ChargeSource::Usb),
+            level_percent: Some(80.0),
+            level_status: Some(fpower::LevelStatus::Warning),
+            health: Some(fpower::HealthStatus::Warm),
+            present_voltage_mv: Some(3950),
+            present_charging_current_ua: Some(1500000),
+            average_charging_current_ua: Some(1400000),
+            remaining_charge_uah: Some(2500000),
+            full_capacity_uah: Some(3000000),
+            temperature_mc: Some(26500),
+            battery_spec: Some(fpower::BatterySpec {
+                design_capacity_uah: Some(3100000),
+                max_charging_current_ua: Some(2000000),
+                max_charging_voltage_uv: Some(9000000),
+                ..Default::default()
+            }),
+            time_remaining: Some(fpower::TimeRemaining::FullCharge(1800_000_000_000)),
+            ..Default::default()
+        };
+
+        state.update_from_battery_info(&info);
+
+        assert!(state.battery.present);
+        assert_eq!(state.battery.capacity, 80);
+        assert_eq!(state.battery.status, "Charging");
+        assert_eq!(state.battery.health, "Warm");
+        assert_eq!(state.battery.capacity_level, "High");
+        assert_eq!(state.battery.voltage_now_uv, 3950000);
+        assert_eq!(state.battery.current_now_ua, 1500000);
+        assert_eq!(state.battery.current_avg_ua, 1400000);
+        assert_eq!(state.battery.charge_counter_uah, 2500000);
+        assert_eq!(state.battery.charge_full_uah, 3000000);
+        assert_eq!(state.battery.charge_full_design_uah, 3100000);
+        assert_eq!(state.battery.temp_celsius_tenths, 265);
+        assert_eq!(state.battery.time_to_full_now_seconds, Some(1800));
+
+        assert!(state.usb.online);
+        assert_eq!(state.usb_type, "Unknown [SDP] DCP CDP");
+        assert_eq!(state.usb.current_max_ua, 2000000);
+        assert_eq!(state.usb.voltage_max_uv, 9000000);
+
+        assert!(!state.ac.online);
+        assert!(!state.wireless.online);
+
+        let discharging_info = fpower::BatteryInfo {
+            status: Some(fpower::BatteryStatus::NotAvailable),
+            charge_status: Some(fpower::ChargeStatus::Discharging),
+            charge_source: Some(fpower::ChargeSource::None),
+            level_percent: Some(40.0),
+            health: Some(fpower::HealthStatus::Cool),
+            time_remaining: Some(fpower::TimeRemaining::BatteryLife(3600_000_000_000)),
+            ..Default::default()
+        };
+        state.update_from_battery_info(&discharging_info);
+        assert!(state.battery.present);
+        assert_eq!(state.battery.status, "Discharging");
+        assert_eq!(state.battery.health, "Cool");
+        assert_eq!(state.battery.capacity, 40);
+        assert_eq!(state.battery.capacity_level, "Normal");
+        assert!(!state.usb.online);
+        assert_eq!(state.usb_type, "[Unknown] SDP DCP CDP");
+        assert_eq!(state.battery.time_to_full_now_seconds, None);
+
+        // Negative FullCharge duration should be ignored rather than underflowing.
+        let negative_ttf_info = fpower::BatteryInfo {
+            time_remaining: Some(fpower::TimeRemaining::FullCharge(-100)),
+            ..Default::default()
+        };
+        state.update_from_battery_info(&negative_ttf_info);
+        assert_eq!(state.battery.time_to_full_now_seconds, None);
+
+        let wireless_info = fpower::BatteryInfo {
+            status: Some(fpower::BatteryStatus::NotPresent),
+            charge_status: Some(fpower::ChargeStatus::Full),
+            charge_source: Some(fpower::ChargeSource::Wireless),
+            level_percent: Some(100.0),
+            ..Default::default()
+        };
+        state.update_from_battery_info(&wireless_info);
+        assert!(!state.battery.present);
+        assert!(state.wireless.online);
+        assert!(!state.usb.online);
+        assert!(!state.ac.online);
+        assert_eq!(state.battery.time_to_full_now_seconds, None);
+    }
+
+    #[::fuchsia::test]
     async fn power_supply_registers_devices_and_attributes() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            battery_manager_device_init(kernel);
+            let _devices = register_power_supply_devices(kernel);
 
             let root = &kernel.device_registry.objects.root;
 
@@ -421,7 +771,7 @@ mod tests {
     async fn battery_capacity_write_overrides_and_dispatches_uevent() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
-            battery_manager_device_init(kernel);
+            let _devices = register_power_supply_devices(kernel);
 
             let registry = &kernel.device_registry;
             let root = &registry.objects.root;
@@ -470,6 +820,107 @@ mod tests {
                 ]
             );
             registry.unregister_listener(&listener_key);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn update_from_battery_info_dispatches_uevents_for_changed_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let devices = register_power_supply_devices(kernel);
+            let registry = &kernel.device_registry;
+
+            let uevents = Arc::new(Mutex::new(Vec::new()));
+            let uevents_clone = Arc::clone(&uevents);
+            let listener_key =
+                registry.register_listener(move |action, device: Device, _context| {
+                    uevents_clone.lock().unwrap().push((action, device.name().to_string()));
+                });
+
+            let info = fpower::BatteryInfo {
+                status: Some(fpower::BatteryStatus::Ok),
+                charge_status: Some(fpower::ChargeStatus::Full),
+                charge_source: Some(fpower::ChargeSource::AcAdapter),
+                level_percent: Some(100.0),
+                level_status: Some(fpower::LevelStatus::Ok),
+                battery_spec: Some(fpower::BatterySpec {
+                    max_charging_current_ua: Some(2_000_000),
+                    max_charging_voltage_uv: Some(9_000_000),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            devices.update_from_battery_info(kernel, &info);
+
+            {
+                let state = devices.state.read();
+                assert_eq!(state.battery.capacity, 100);
+                assert_eq!(state.battery.capacity_level, "Full");
+                assert_eq!(state.battery.status, "Full");
+                assert!(state.usb.online);
+                assert_eq!(state.usb_type, "Unknown SDP [DCP] CDP");
+                assert!(state.ac.online);
+                assert!(!state.wireless.online);
+            }
+            assert_eq!(
+                *uevents.lock().unwrap(),
+                vec![
+                    (UEventAction::Change, "battery".to_string()),
+                    (UEventAction::Change, "usb".to_string()),
+                    (UEventAction::Change, "ac".to_string()),
+                ]
+            );
+            registry.unregister_listener(&listener_key);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_battery_watcher_stream_handling() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let devices = register_power_supply_devices(kernel);
+
+            let (client_end, server_end) =
+                fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
+            let proxy = client_end.into_proxy();
+
+            let kernel_clone = kernel.clone();
+            let devices_clone = devices.clone();
+            let handler_task = fuchsia_async::Task::local(async move {
+                handle_battery_watcher_stream(
+                    &kernel_clone,
+                    &devices_clone,
+                    server_end.into_stream(),
+                )
+                .await
+            });
+
+            let info = fpower::BatteryInfo {
+                status: Some(fpower::BatteryStatus::Ok),
+                charge_status: Some(fpower::ChargeStatus::Charging),
+                charge_source: Some(fpower::ChargeSource::Usb),
+                level_percent: Some(73.0),
+                level_status: Some(fpower::LevelStatus::Ok),
+                present_voltage_mv: Some(4100),
+                ..Default::default()
+            };
+
+            proxy
+                .on_change_battery_info(&info, None)
+                .await
+                .expect("on_change_battery_info should succeed");
+
+            // Drop client to close stream and complete handler_task
+            std::mem::drop(proxy);
+            assert!(handler_task.await.expect("handler should complete without error"));
+
+            let state = devices.state.read();
+            assert_eq!(state.battery.capacity, 73);
+            assert_eq!(state.battery.status, "Charging");
+            assert!(state.usb.online);
+            assert_eq!(state.battery.voltage_now_uv, 4100000);
         })
         .await;
     }

@@ -57,9 +57,14 @@ rustc_library("battery_manager") {
     "//src/starnix/modules/*",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:futures",
   ]
 }
 
@@ -68,10 +73,19 @@ rustc_test("battery_manager_test") {
   source_root = "lib.rs"
   edition = "2024"
   deps = [
+           "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia-component",
            "//src/starnix/kernel/core",
+           "//src/starnix/lib/starnix_logging",
            "//src/starnix/lib/starnix_sync",
            "//src/starnix/lib/starnix_uapi",
-         ] + [ "//src/lib/fuchsia" ]
+           "//third_party/rust_crates:futures",
+         ] +
+         [
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+         ]
   output_name = "starnix_modules_battery_manager_lib_test"
   lint_config = "//src/starnix/config:starnix_clippy_lints_test"
   exclude_toolchain_tags = [

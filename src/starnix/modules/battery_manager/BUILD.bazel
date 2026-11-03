@@ -27,9 +27,14 @@ rustc_library(
     lint_config = "//src/starnix/build:kernel_library_config",
     visibility = ["//src/starnix/modules:__subpackages__"],
     deps = [
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
         "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
         "//src/starnix/lib/starnix_sync",
         "//src/starnix/lib/starnix_uapi",
+        "//third_party/rust_crates/vendor:futures",
     ],
 )
 
@@ -44,7 +49,10 @@ rustc_test(
         "exclude_toolchain_tags=asan",
         "exclude_toolchain_tags=hwasan",
     ],
-    deps = ["//src/lib/fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
 )
 
 fx_packaged_binary(
