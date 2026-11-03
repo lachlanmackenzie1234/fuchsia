@@ -799,6 +799,7 @@ void Device::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer)
         completer.ReplySuccess(
             {.bar_id = request->bar_id,
              .size = bar_size,
+             .address = bar->address,
              .result = fpci::wire::BarResult::WithVmo(std::move(result.value()))});
         RETURN_DEBUG(ZX_OK, "%u", request->bar_id);
       }
@@ -810,6 +811,7 @@ void Device::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer)
         completer.ReplySuccess(
             {.bar_id = request->bar_id,
              .size = bar_size,
+             .address = bar->address,
              .result = fpci::wire::BarResult::WithIo(
                  arena, fuchsia_hardware_pci::wire::IoBar{.address = bar->address,
                                                           .resource = std::move(result.value())})});

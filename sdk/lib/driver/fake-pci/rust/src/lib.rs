@@ -23,6 +23,7 @@ const CONFIG_HEADER_SIZE: usize = 64;
 const MSI_MAX_VECTORS: u32 = 32;
 const MSIX_MAX_VECTORS: u32 = 8;
 const PCI_EXPRESS_CAPABILITY_SIZE: u8 = 0x3B;
+const FAKE_BAR_ADDRESS: u64 = 0;
 
 // Note: IO BARs are not currently supported.
 enum Bar {
@@ -34,7 +35,12 @@ impl Bar {
         match self {
             Self::Vmo { size, vmo } => {
                 let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-                Ok(fpci::Bar { bar_id, size: *size, result: fpci::BarResult::Vmo(vmo_dup) })
+                Ok(fpci::Bar {
+                    bar_id,
+                    size: *size,
+                    address: FAKE_BAR_ADDRESS,
+                    result: fpci::BarResult::Vmo(vmo_dup),
+                })
             }
         }
     }
@@ -971,9 +977,10 @@ mod tests {
             .await
             .expect("Failed to send get_bar request")
             .expect("get_bar returned error status");
-        let fpci::Bar { bar_id: actual_bar_id, size, result } = bar_res.result;
+        let fpci::Bar { bar_id: actual_bar_id, size, address, result } = bar_res.result;
         assert_eq!(actual_bar_id, bar_id);
         assert_eq!(size, bar_size);
+        assert_eq!(address, FAKE_BAR_ADDRESS);
 
         let fpci::BarResult::Vmo(returned_vmo) = result else {
             panic!("Expected VMO bar result");

@@ -420,8 +420,10 @@ TEST_F(FakePciProtocolTests, GetBar) {
 
   uint32_t bar_id = 3;
   size_t size = 256;
-  pci::RunAsync(loop_,
-                [&] { ASSERT_NO_DEATH([&]() { fake_pci().CreateBar(bar_id, size, true); }); });
+  constexpr uint64_t kBarAddress = 0x12345000;
+  pci::RunAsync(loop_, [&] {
+    ASSERT_NO_DEATH([&]() { fake_pci().CreateBar(bar_id, size, true, kBarAddress); });
+  });
   // Verify that the VMO we got back via the protocol method matches the setup
   // and that the other fields are correct.
   ASSERT_OK(pci().GetBar(arena, bar_id, &bar));
@@ -431,21 +433,27 @@ TEST_F(FakePciProtocolTests, GetBar) {
   ASSERT_TRUE(MatchKoids(borrowed, proto));
   ASSERT_EQ(bar_id, bar.bar_id);
   ASSERT_EQ(size, bar.size);
+  EXPECT_EQ(kBarAddress, bar.address);
 }
 
 TEST_F(FakePciProtocolTests, BarTypes) {
+  constexpr uint64_t kMmioAddress = 0x123456780000;
+  constexpr uint64_t kIoAddress = 0x2000;
   size_t page_size = zx_system_get_page_size();
   pci::RunAsync(loop_, [&] {
-    fake_pci().CreateBar(0, page_size, true);
-    fake_pci().CreateBar(1, page_size, false);
+    fake_pci().CreateBar(0, page_size, true, kMmioAddress);
+    fake_pci().CreateBar(1, page_size, false, kIoAddress);
   });
 
   fidl::Arena arena;
   fuchsia_hardware_pci::wire::Bar bar;
   ASSERT_OK(pci().GetBar(arena, 0, &bar));
   ASSERT_TRUE(bar.result.is_vmo());
+  EXPECT_EQ(kMmioAddress, bar.address);
   ASSERT_OK(pci().GetBar(arena, 1, &bar));
   ASSERT_TRUE(bar.result.is_io());
+  EXPECT_EQ(kIoAddress, bar.address);
+  EXPECT_EQ(kIoAddress, bar.result.io().address);
 }
 
 TEST_F(FakePciProtocolTests, MapMmio) {

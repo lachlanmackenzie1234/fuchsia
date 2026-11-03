@@ -34,6 +34,8 @@ constexpr uint16_t kVendorId = 0x8086;
 constexpr uint16_t kDeviceId = 0x1234;
 constexpr uint8_t kRevisionId = 0x01;
 constexpr uint32_t kConfig32Value = 0xdeadbeef;
+constexpr uint64_t kMmioBarAddress = 0x123456780000;
+constexpr uint64_t kIoBarAddress = 0x1000;
 
 class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
  public:
@@ -90,6 +92,7 @@ class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
       completer.ReplySuccess({
           .bar_id = 0,
           .size = 4096,
+          .address = kMmioBarAddress,
           .result = fpci::wire::BarResult::WithVmo(std::move(vmo)),
       });
       return;
@@ -102,12 +105,13 @@ class FakePciDeviceServer : public fidl::testing::WireTestBase<fpci::Device> {
         return;
       }
       fpci::wire::IoBar io_bar{
-          .address = 0x1000,
+          .address = kIoBarAddress,
           .resource = zx::resource(rsrc_handle),
       };
       completer.ReplySuccess({
           .bar_id = 1,
           .size = 64,
+          .address = kIoBarAddress,
           .result = fpci::wire::BarResult::WithIo(
               fidl::ObjectView<fpci::wire::IoBar>::FromExternal(&io_bar)),
       });
@@ -377,13 +381,15 @@ TEST_F(PciClientTest, GetBar) {
   ASSERT_OK(pci().GetBar(arena, 0, &bar));
   EXPECT_EQ(bar.bar_id, 0u);
   EXPECT_EQ(bar.size, 4096u);
+  EXPECT_EQ(bar.address, kMmioBarAddress);
   EXPECT_TRUE(bar.result.is_vmo());
 
   ASSERT_OK(pci().GetBar(arena, 1, &bar));
   EXPECT_EQ(bar.bar_id, 1u);
   EXPECT_EQ(bar.size, 64u);
+  EXPECT_EQ(bar.address, kIoBarAddress);
   EXPECT_TRUE(bar.result.is_io());
-  EXPECT_EQ(bar.result.io().address, 0x1000u);
+  EXPECT_EQ(bar.result.io().address, kIoBarAddress);
 
   // Calling MapMmio on an I/O BAR should return ZX_ERR_WRONG_TYPE.
   EXPECT_STATUS(pci().MapMmio(1).status_value(), ZX_ERR_WRONG_TYPE);

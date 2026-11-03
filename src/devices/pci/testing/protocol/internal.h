@@ -69,6 +69,7 @@ class FakePciProtocolInternal {
   struct FakeBar {
     size_t size;
     bool is_mmio;
+    uint64_t address = 0;
     std::optional<zx::vmo> vmo;
   };
 

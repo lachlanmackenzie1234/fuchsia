@@ -89,7 +89,7 @@ class FakePciProtocol : public FakePciProtocolInternal,
   // a reference to the VMO backing its mapped region. |is_mmio| determines whether the bar
   // is MMIO or IO backed. The caller is responsible for mocking/faking the IO access in their
   // driver.
-  zx::vmo& CreateBar(uint32_t bar_id, size_t size, bool is_mmio) {
+  zx::vmo& CreateBar(uint32_t bar_id, size_t size, bool is_mmio, uint64_t address = 0) {
     ZX_ASSERT_MSG(bar_id < PCI_DEVICE_BAR_COUNT,
                   "FakePciProtocol Error: valid BAR ids are [0, 5] (bar_id = %u)", bar_id);
     zx::vmo vmo;
@@ -105,6 +105,7 @@ class FakePciProtocol : public FakePciProtocolInternal,
         status, zx_status_get_string(status));
     bars()[bar_id].is_mmio = is_mmio;
     bars()[bar_id].size = size;
+    bars()[bar_id].address = address;
     bars()[bar_id].vmo = std::move(vmo);
     return GetBar(bar_id);
   }

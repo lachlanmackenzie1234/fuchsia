@@ -30,6 +30,7 @@ void FakePciProtocol::GetBar(GetBarRequestView request, GetBarCompleter::Sync& c
     completer.ReplySuccess({
         .bar_id = request->bar_id,
         .size = bar.size,
+        .address = bar.address,
         .result = fuchsia_hardware_pci::wire::BarResult::WithVmo(std::move(dup)),
     });
   } else {
@@ -42,8 +43,8 @@ void FakePciProtocol::GetBar(GetBarRequestView request, GetBarCompleter::Sync& c
     }
     char name[] = "fake IO";
     zx::resource rsrc;
-    if (zx_status_t status = zx::resource::create(fake_ioport_resource, ZX_RSRC_KIND_IOPORT, 0,
-                                                  bar.size, name, sizeof(name), &rsrc);
+    if (zx_status_t status = zx::resource::create(fake_ioport_resource, ZX_RSRC_KIND_IOPORT,
+                                                  bar.address, bar.size, name, sizeof(name), &rsrc);
         status != ZX_OK) {
       completer.ReplyError(status);
       return;
@@ -52,9 +53,10 @@ void FakePciProtocol::GetBar(GetBarRequestView request, GetBarCompleter::Sync& c
     completer.ReplySuccess({
         .bar_id = request->bar_id,
         .size = bar.size,
+        .address = bar.address,
         .result = fuchsia_hardware_pci::wire::BarResult::WithIo(arena,
                                                                 fuchsia_hardware_pci::wire::IoBar{
-                                                                    .address = 0,
+                                                                    .address = bar.address,
                                                                     .resource = std::move(rsrc),
                                                                 }),
     });

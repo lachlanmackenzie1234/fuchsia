@@ -226,6 +226,9 @@ type Bar = resource struct {
     /// The BAR id, [0-5).
     bar_id uint32;
     size uint64;
+    /// The bus-assigned PCI base address.
+    /// For an I/O BAR, this is the same port address as |IoBar.address|.
+    address uint64;
     result BarResult;
 };
 

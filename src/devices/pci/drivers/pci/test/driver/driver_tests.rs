@@ -42,6 +42,7 @@ const fn test_pattern_value(address: u16) -> u8 {
 // LINT.IfChange
 // Constants matching the Quadro K2200 configuration in test_device.h.
 const MAX_BAR_COUNT: u32 = 6;
+const BAR_0_ADDRESS: u64 = 0x800000;
 const BAR_0_SIZE: u64 = 16 * 1024 * 1024;
 const BAR_1_SIZE: u64 = 256 * 1024 * 1024;
 const BAR_2_SIZE: u64 = 1024 * 1024;
@@ -354,11 +355,19 @@ async fn set_bus_mastering() {
     assert_eq!(cached, val);
 }
 
-// Helper to verify that GetBar returns an MMIO VMO matching the expected size.
-async fn get_bar_test_helper(fixture: &TestFixture, bar_id: u32, expected_size: u64) {
+// Helper to verify that GetBar returns an MMIO VMO matching the expected size and address.
+async fn get_bar_test_helper(
+    fixture: &TestFixture,
+    bar_id: u32,
+    expected_size: u64,
+    expected_address: Option<u64>,
+) {
     let info = fixture.get_bar(bar_id).await.unwrap();
     assert_eq!(info.bar_id, bar_id);
     assert_eq!(info.size, expected_size);
+    if let Some(expected_address) = expected_address {
+        assert_eq!(info.address, expected_address);
+    }
     match info.result {
         fpci::BarResult::Vmo(vmo) => {
             let size = vmo.get_size().expect("vmo get_size");
@@ -379,28 +388,28 @@ async fn get_bar_argument_check() {
 #[fuchsia::test]
 async fn get_bar_0() {
     let fixture = TestFixture::new().await;
-    get_bar_test_helper(&fixture, 0, BAR_0_SIZE).await;
+    get_bar_test_helper(&fixture, 0, BAR_0_SIZE, Some(BAR_0_ADDRESS)).await;
 }
 
 // BAR 1: 32-bit prefetchable MMIO (256 MiB).
 #[fuchsia::test]
 async fn get_bar_1() {
     let fixture = TestFixture::new().await;
-    get_bar_test_helper(&fixture, 1, BAR_1_SIZE).await;
+    get_bar_test_helper(&fixture, 1, BAR_1_SIZE, None).await;
 }
 
 // BAR 2: 32-bit MMIO backing the MSI-X table and PBA (1 MiB).
 #[fuchsia::test]
 async fn get_bar_2() {
     let fixture = TestFixture::new().await;
-    get_bar_test_helper(&fixture, 2, BAR_2_SIZE).await;
+    get_bar_test_helper(&fixture, 2, BAR_2_SIZE, None).await;
 }
 
 // BAR 3: 64-bit prefetchable MMIO spanning slots 3 and 4 (32 MiB).
 #[fuchsia::test]
 async fn get_bar_3() {
     let fixture = TestFixture::new().await;
-    get_bar_test_helper(&fixture, 3, BAR_3_SIZE).await;
+    get_bar_test_helper(&fixture, 3, BAR_3_SIZE, None).await;
 }
 
 // BAR 4: upper 32 bits of 64-bit BAR 3, so fetching it directly returns ZX_ERR_NOT_FOUND.
@@ -418,6 +427,8 @@ async fn get_bar_5() {
     let info = fixture.get_bar(5).await.unwrap();
     assert_eq!(info.bar_id, 5);
     assert_eq!(info.size, BAR_5_SIZE);
+    #[cfg(target_arch = "x86_64")]
+    assert_eq!(info.address, BAR_5_ADDRESS);
     #[cfg(target_arch = "x86_64")]
     match info.result {
         fpci::BarResult::Io(io) => {
