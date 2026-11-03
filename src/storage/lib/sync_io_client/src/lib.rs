@@ -525,6 +525,17 @@ impl SyncIo for RemoteIo {
 
     /// Writes `data` at `offset`.
     fn write(&self, offset: u64, data: &[u8]) -> Result<usize, zx::Status> {
+        if data.is_empty() {
+            return Ok(0);
+        }
+        if !self.stream.is_invalid() {
+            return self.stream.write_at(zx::StreamWriteOptions::empty(), offset, data).map_err(
+                |status| match status {
+                    zx::Status::ACCESS_DENIED => zx::Status::BAD_HANDLE,
+                    status => status,
+                },
+            );
+        }
         let file_proxy = self.cast_proxy::<fio::FileSynchronousProxy>();
         let mut total_written = 0;
         for chunk in data.chunks(fio::MAX_TRANSFER_SIZE as usize) {
@@ -1531,5 +1542,59 @@ mod tests {
             assert!(cloned.is_some());
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    fn test_write_stream() {
+        let vmo = zx::Vmo::create(4096).unwrap();
+        vmo.set_stream_size(0).unwrap();
+        let stream = zx::Stream::create(zx::StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
+        let (client, _) = fidl::endpoints::create_sync_proxy::<fio::NodeMarker>();
+        let io = RemoteIo::with_stream(client, stream);
+
+        assert_eq!(io.write(10, b"").unwrap(), 0);
+        assert_eq!(vmo.get_stream_size().unwrap(), 0);
+
+        let data = b"hello";
+        let written = io.write(10, data).unwrap();
+        assert_eq!(written, 5);
+        assert_eq!(vmo.get_stream_size().unwrap(), 15);
+
+        let mut buf = [0u8; 15];
+        vmo.read(&mut buf, 0).unwrap();
+        assert_eq!(&buf[10..15], b"hello");
+
+        let ro_stream = zx::Stream::create(zx::StreamOptions::MODE_READ, &vmo, 0).unwrap();
+        let (ro_client, _) = fidl::endpoints::create_sync_proxy::<fio::NodeMarker>();
+        let ro_io = RemoteIo::with_stream(ro_client, ro_stream);
+        assert_eq!(ro_io.write(0, data), Err(zx::Status::BAD_HANDLE));
+    }
+
+    #[fuchsia::test]
+    fn test_write_stream_append_mode() {
+        let vmo = zx::Vmo::create(4096).unwrap();
+        vmo.write(b"xxxxxxxxxx", 0).unwrap();
+        vmo.set_stream_size(10).unwrap();
+        let stream = zx::Stream::create(
+            zx::StreamOptions::MODE_WRITE | zx::StreamOptions::MODE_APPEND,
+            &vmo,
+            0,
+        )
+        .unwrap();
+        let (client, _) = fidl::endpoints::create_sync_proxy::<fio::NodeMarker>();
+        let io = RemoteIo::with_stream(client, stream);
+
+        let data = b"0123456789abcde"; // 15 bytes
+        // RemoteIo::write maps to WriteAt, which is expected to write at the
+        // specified offset, ignoring the O_APPEND flag.
+        let written = io.write(0, data).unwrap();
+        assert_eq!(written, 15);
+
+        let mut buf = [0u8; 15];
+        vmo.read(&mut buf, 0).unwrap();
+        assert_eq!(&buf[0..15], b"0123456789abcde");
+
+        let size = vmo.get_stream_size().unwrap();
+        assert_eq!(size, 15);
     }
 }
