@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//tools/artifactory:artifactory_lib_tests",
         "//tools/artifactory:artifactory_main_tests",
+        "//tools/bazel-docgen:bazel_docgen_lib_tests",
         "//tools/botanist:botanist_cmd_tests",
         "//tools/botanist:botanist_lib_tests",
         "//tools/botanist:botanist_repo_tests",
