@@ -10,7 +10,9 @@ from typing import Literal
 from unittest import mock
 
 import perf_publish.publish as perf_publish
+from legacy_access_point.access_point import AccessPoint
 from mobly import signals
+from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import Band, SecurityWpa2
 from wlan_test_utils import throughput_utils
 
@@ -126,6 +128,153 @@ def _test_params(
 
 
 class ThroughputUtilsTest(unittest.TestCase):
+    def test_generate_test_name(self) -> None:
+        params = throughput_utils.TestParams(
+            security_mode=SecurityWpa2(),
+            band=Band.BAND_2G,
+            channel=1,
+            channel_bandwidth=20,
+        )
+        self.assertEqual(
+            throughput_utils.generate_test_name(params),
+            "test_wpa2_channel_1_20mhz",
+        )
+
+    def test_build_default_test_params(self) -> None:
+        params = throughput_utils.build_default_test_params()
+        self.assertEqual(len(params), 3)
+        channels = [p[0].channel for p in params]
+        self.assertEqual(channels, [1, 165, 36])
+
+    def test_resolve_ap_phy_caps(self) -> None:
+        mock_openwrt = mock.MagicMock(spec=OpenWrtAP)
+        mock_legacy = mock.MagicMock(spec=AccessPoint)
+
+        caps_openwrt = throughput_utils.resolve_ap_phy_caps(mock_openwrt)
+        self.assertEqual(caps_openwrt, throughput_utils.OPENWRT_ONE_CAPS)
+        self.assertEqual(caps_openwrt.gen, throughput_utils.PhyGen.HE)
+
+        caps_legacy = throughput_utils.resolve_ap_phy_caps(mock_legacy)
+        self.assertEqual(caps_legacy, throughput_utils.WHIRLWIND_CAPS)
+        self.assertEqual(caps_legacy.gen, throughput_utils.PhyGen.VHT)
+
+    def test_build_test_case_record(self) -> None:
+        measurements = _make_measurements()
+        params = throughput_utils.TestParams(
+            security_mode=SecurityWpa2(),
+            band=Band.BAND_2G,
+            channel=1,
+            channel_bandwidth=20,
+        )
+        record_ap0 = throughput_utils.build_test_case_record(
+            params, measurements, ap_name="ap0", is_primary_ap=True
+        )
+        self.assertEqual(record_ap0["ap"], "ap0")
+        self.assertTrue(record_ap0["is_primary_ap"])
+        self.assertEqual(record_ap0["channel"], 1)
+
+        record_ap1 = throughput_utils.build_test_case_record(
+            params, measurements, ap_name="ap1", is_primary_ap=False
+        )
+        self.assertEqual(record_ap1["ap"], "ap1")
+        self.assertFalse(record_ap1["is_primary_ap"])
+        self.assertEqual(record_ap1["channel"], 1)
+
+    def test_throughput_reporter_single_ap(self) -> None:
+        measurements = _make_measurements()
+        params = throughput_utils.TestParams(
+            security_mode=SecurityWpa2(),
+            band=Band.BAND_2G,
+            channel=1,
+            channel_bandwidth=20,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reporter = throughput_utils.ThroughputReporter(log_path=tmpdir)
+            reporter.write_initial_json()
+            reporter.record_test_case(params, measurements, ap_name="ap0")
+
+            with mock.patch.object(perf_publish, "publish_fuchsiaperf"):
+                reporter.finalize_reports()
+
+            # Verify JSON report
+            with open(reporter.json_file_path, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+            self.assertEqual(len(json_data["test_cases"]), 1)
+            self.assertEqual(json_data["test_cases"][0]["ap"], "ap0")
+
+            # Verify HTML report contains 'ap' column
+            with open(reporter.html_file_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            self.assertIn("<th>ap</th>", html_content)
+            self.assertIn("ap0", html_content)
+
+            # Verify fuchsiaperf report has un-prefixed labels
+            with open(
+                reporter.fuchsiaperf_file_path, "r", encoding="utf-8"
+            ) as f:
+                perf_data = json.load(f)
+
+            labels = [entry["label"] for entry in perf_data]
+            self.assertEqual(len(labels), 4)
+            self.assertIn("ch1_20mhz/tcp_tx", labels)
+            self.assertIn("ch1_20mhz/tcp_rx", labels)
+            self.assertIn("ch1_20mhz/udp_tx", labels)
+            self.assertIn("ch1_20mhz/udp_rx", labels)
+
+    def test_throughput_reporter_multi_ap(self) -> None:
+        measurements = _make_measurements()
+        params = throughput_utils.TestParams(
+            security_mode=SecurityWpa2(),
+            band=Band.BAND_2G,
+            channel=1,
+            channel_bandwidth=20,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reporter = throughput_utils.ThroughputReporter(log_path=tmpdir)
+            reporter.write_initial_json()
+            reporter.record_test_case(
+                params, measurements, ap_name="ap0", is_primary_ap=True
+            )
+            reporter.record_test_case(
+                params, measurements, ap_name="ap1", is_primary_ap=False
+            )
+
+            with mock.patch.object(perf_publish, "publish_fuchsiaperf"):
+                reporter.finalize_reports()
+
+            # Verify JSON report contains 'ap' field for both APs
+            with open(reporter.json_file_path, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+            self.assertEqual(len(json_data["test_cases"]), 2)
+            self.assertEqual(json_data["test_cases"][0]["ap"], "ap0")
+            self.assertEqual(json_data["test_cases"][1]["ap"], "ap1")
+
+            # Verify HTML report contains 'ap' column and rows for both APs
+            with open(reporter.html_file_path, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            self.assertIn("<th>ap</th>", html_content)
+            self.assertIn("ap0", html_content)
+            self.assertIn("ap1", html_content)
+
+            # Verify fuchsiaperf report ONLY contains measurements for ap0!
+            with open(
+                reporter.fuchsiaperf_file_path, "r", encoding="utf-8"
+            ) as f:
+                perf_data = json.load(f)
+
+            # Only ap0's 4 metrics should be published
+            labels = [entry["label"] for entry in perf_data]
+            self.assertEqual(len(labels), 4)
+            self.assertIn("ch1_20mhz/tcp_tx", labels)
+            self.assertIn("ch1_20mhz/tcp_rx", labels)
+            self.assertIn("ch1_20mhz/udp_tx", labels)
+            self.assertIn("ch1_20mhz/udp_rx", labels)
+
+            # Ensure ap1 metrics are NOT published to fuchsiaperf
+            self.assertFalse(any("ap1" in label for label in labels))
+
     def test_has_phy_rate_below_target_matches_assert_phy_rate_targets(
         self,
     ) -> None:
@@ -180,10 +329,12 @@ class ThroughputUtilsTest(unittest.TestCase):
             reporter.record_test_case(
                 _test_params(Band.BAND_2G, 1, 20),
                 _make_measurements(throughput_mbps=50.0),
+                ap_name="ap0",
             )
             reporter.record_test_case(
                 _test_params(Band.BAND_5G, 165, 20),
                 _make_measurements(throughput_mbps=80.0),
+                ap_name="ap0",
             )
 
             reporter.finalize_reports()
@@ -234,6 +385,7 @@ class ThroughputUtilsTest(unittest.TestCase):
                     tcp_tx_phy=60.0,
                     throughput_mbps=30.0,
                 ),
+                ap_name="ap0",
             )
             # Ch 36 fails PHY target across directions.
             reporter.record_test_case(
@@ -246,6 +398,7 @@ class ThroughputUtilsTest(unittest.TestCase):
                     udp_rx_phy=500.0,
                     throughput_mbps=200.0,
                 ),
+                ap_name="ap0",
             )
             # Ch 165 meets PHY targets in all directions.
             reporter.record_test_case(
@@ -254,6 +407,7 @@ class ThroughputUtilsTest(unittest.TestCase):
                     phy_max_mbps=100.0,
                     throughput_mbps=75.0,
                 ),
+                ap_name="ap0",
             )
 
             reporter.finalize_reports()
@@ -316,10 +470,12 @@ class ThroughputUtilsTest(unittest.TestCase):
             reporter.record_test_case(
                 _test_params(Band.BAND_2G, 1, 20),
                 _make_measurements(phy_max_mbps=100.0, tcp_tx_phy=50.0),
+                ap_name="ap0",
             )
             reporter.record_test_case(
                 _test_params(Band.BAND_5G, 36, 80),
                 _make_measurements(phy_max_mbps=1200.0, udp_rx_phy=400.0),
+                ap_name="ap0",
             )
 
             reporter.finalize_reports()
@@ -350,10 +506,12 @@ class ThroughputUtilsTest(unittest.TestCase):
             writer.record_test_case(
                 _test_params(Band.BAND_2G, 1, 20),
                 _make_measurements(phy_max_mbps=100.0, tcp_rx_phy=60.0),
+                ap_name="ap0",
             )
             writer.record_test_case(
                 _test_params(Band.BAND_5G, 165, 20),
                 _make_measurements(phy_max_mbps=100.0),
+                ap_name="ap0",
             )
 
             reloaded = throughput_utils.ThroughputReporter(tmpdir)

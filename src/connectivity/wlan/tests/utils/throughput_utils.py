@@ -99,14 +99,12 @@ def get_dut_phy_caps(
     return caps[board]
 
 
-def resolve_ap_phy_caps(
-    openwrt_ap: OpenWrtAP | None, access_point: AccessPoint | None = None
-) -> WlanPhyCaps:
-    if openwrt_ap is not None:
+def resolve_ap_phy_caps(ap: OpenWrtAP | AccessPoint) -> WlanPhyCaps:
+    if isinstance(ap, OpenWrtAP):
         return OPENWRT_ONE_CAPS
-    if isinstance(access_point, AccessPoint):
+    if isinstance(ap, AccessPoint):
         return WHIRLWIND_CAPS
-    raise signals.TestFailure("No supported AP controller available")
+    raise signals.TestFailure(f"Unsupported AP controller: {type(ap)}")
 
 
 def theoretical_max_phy_mbps(
@@ -208,6 +206,10 @@ class MeasurementsByDirection(TypedDict):
 
 
 class TestCaseRecord(TypedDict):
+    ap: str
+    # In multi-ap testbeds, only the primary AP will publish data to perf
+    # dashboards.
+    is_primary_ap: bool
     security: str
     channel: int
     channel_bandwidth: int
@@ -646,9 +648,22 @@ def build_udp_measurement_record(
 def build_test_case_record(
     test: TestParams,
     measurements: MeasurementsByDirection,
+    ap_name: str,
+    is_primary_ap: bool = True,
 ) -> TestCaseRecord:
+    """Builds a test case record dict.
+
+    Args:
+        test: The parameters for the test case.
+        measurements: The throughput measurements.
+        ap_name: Identifier for the AP.
+        is_primary_ap: In multi-ap testbeds, only the primary AP will publish
+            data to perf dashboards.
+    """
     sec_name = ConfigMapper.to_hostapd_security(test.security_mode).value
     return {
+        "ap": ap_name,
+        "is_primary_ap": is_primary_ap,
         "security": sec_name,
         "channel": test.channel,
         "channel_bandwidth": test.channel_bandwidth,
@@ -1085,9 +1100,27 @@ class ThroughputReporter:
         self._write_json_report()
 
     def record_test_case(
-        self, test: TestParams, measurements: MeasurementsByDirection
+        self,
+        test: TestParams,
+        measurements: MeasurementsByDirection,
+        ap_name: str,
+        is_primary_ap: bool = True,
     ) -> None:
-        test_case_record = build_test_case_record(test, measurements)
+        """Records a test case.
+
+        Args:
+            test: The parameters for the test case.
+            measurements: The throughput measurements.
+            ap_name: Identifier for the AP.
+            is_primary_ap: In multi-ap testbeds, only the primary AP will
+                publish data to perf dashboards.
+        """
+        test_case_record = build_test_case_record(
+            test,
+            measurements,
+            ap_name=ap_name,
+            is_primary_ap=is_primary_ap,
+        )
         self.test_cases.append(test_case_record)
         self._write_json_report()
 
@@ -1116,6 +1149,7 @@ class ThroughputReporter:
             return
 
         header_row = [
+            "ap",
             "security",
             "band",
             "channel",
@@ -1141,6 +1175,7 @@ class ThroughputReporter:
             ):
                 link_metrics = measurement["link_metrics"]
                 row: list[Any] = [
+                    test_case["ap"],
                     test_case["security"],
                     test_case["band"],
                     test_case["channel"],
@@ -1267,6 +1302,11 @@ class ThroughputReporter:
     ) -> list[dict[str, Any]]:
         entries_by_label: dict[str, dict[str, Any]] = {}
         for test_case in test_cases:
+            # In multi-ap testbeds, only the primary AP will publish data to perf
+            # dashboards. Secondary AP metrics remain recorded in the JSON and
+            # HTML reports.
+            if not test_case.get("is_primary_ap", True):
+                continue
             measurements = test_case["measurements"]
             if has_phy_rate_below_target(measurements):
                 logger.info(
