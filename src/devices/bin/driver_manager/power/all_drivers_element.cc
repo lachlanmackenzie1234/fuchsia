@@ -47,6 +47,10 @@ void PerformPostOrderDFS(const std::shared_ptr<const Node>& starting_node,
   }
 }
 
+bool IsActiveBoundNode(const std::shared_ptr<const Node>& node) {
+  return node->HasActivePowerElement() && !node->IsStoppingOrStopped();
+}
+
 bool HasPowerEnabledDescendants(const std::shared_ptr<const Node>& start_node) {
   std::unordered_set<const Node*> visited;
   std::vector<std::shared_ptr<const Node>> stack;
@@ -61,7 +65,7 @@ bool HasPowerEnabledDescendants(const std::shared_ptr<const Node>& start_node) {
     auto current = stack.back();
     stack.pop_back();
 
-    if (current->HasActivePowerElement()) {
+    if (IsActiveBoundNode(current)) {
       return true;
     }
 
@@ -119,6 +123,56 @@ void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
   AddDependency(node, std::move(startup_lease), /*bootup_lease=*/nullptr);
 }
 
+void AllDriversElement::OnNodeUnbinding(std::shared_ptr<const Node> node) {
+  if (!transition_complete_) {
+    return;
+  }
+
+  if (node->IsHermeticPowerTest()) {
+    return;
+  }
+
+  // If the node wasn't a leaf driver node that the AllDrivers element was
+  // depending on, return early.
+  if (dependencies_.erase(node.get()) == 0) {
+    return;
+  }
+
+  std::unordered_set<const Node*> visited;
+  std::vector<std::shared_ptr<const Node>> stack;
+
+  for (const auto& parent_weak : node->parents()) {
+    if (auto parent = parent_weak.lock()) {
+      if (visited.insert(parent.get()).second) {
+        stack.push_back(std::move(parent));
+      }
+    }
+  }
+
+  while (!stack.empty()) {
+    auto current = stack.back();
+    stack.pop_back();
+
+    if (IsActiveBoundNode(current)) {
+      if (!current->IsHermeticPowerTest() && !HasPowerEnabledDescendants(current) &&
+          !HasDependency(current)) {
+        AddDependency(current);
+      }
+      // Stop traversing up this branch because |current| is bound and already maintains
+      // power dependencies on its own bound ancestors.
+      continue;
+    }
+
+    for (const auto& parent_weak : current->parents()) {
+      if (auto parent = parent_weak.lock()) {
+        if (visited.insert(parent.get()).second) {
+          stack.push_back(std::move(parent));
+        }
+      }
+    }
+  }
+}
+
 void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
                                       std::optional<zx::eventpair> startup_lease,
                                       std::shared_ptr<zx::eventpair> bootup_lease) {
@@ -134,6 +188,8 @@ void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
     return;
   }
 
+  dependencies_.insert(node.get());
+
   std::vector<fuchsia_power_broker::PowerLevel> requires_levels;
   requires_levels.push_back(1);
   fuchsia_power_broker::LevelDependency dep{{
@@ -144,24 +200,24 @@ void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
   }};
 
   element_control_->AddDependency(std::move(dep))
-      .Then([name = node->name(), startup_lease = std::move(startup_lease),
-             bootup_lease = std::move(bootup_lease)](
+      .Then([weak_self = weak_from_this(), node_ptr = node.get(), name = node->name(),
+             startup_lease = std::move(startup_lease), bootup_lease = std::move(bootup_lease)](
                 fidl::Result<fuchsia_power_broker::ElementControl::AddDependency>& result) {
         if (result.is_error()) {
           // A node can be added twice. Node::is_bound() becomes true as soon as we ask the driver
           // host to start the driver, but OnNodeBound() is only called once that start completes.
           // If the startup transition runs in between, CompleteStartupTransition() adds the
-          // dependency first and OnNodeBound() then adds it again. Power Broker rejects the second
-          // request with ALREADY_EXISTS, which just means the dependency is already in place.
-          //
-          // We deliberately don't track added dependencies ourselves. A restarted node gets a new
-          // power element, which needs a new dependency even though its topological path and power
-          // token are unchanged.
+          // dependency first and OnNodeBound() then adds it again. Power Broker rejects the
+          // second request with ALREADY_EXISTS, which just means the dependency is already in
+          // place.
           if (result.error_value().is_domain_error() &&
               result.error_value().domain_error() ==
                   fuchsia_power_broker::ModifyDependencyError::kAlreadyExists) {
             fdf_log::debug("Dependency on node '{}' already exists", name);
             return;
+          }
+          if (auto self = weak_self.lock()) {
+            self->dependencies_.erase(node_ptr);
           }
           fdf_log::error("Failed to add dependency on node '{}': {}", name, result.error_value());
         }

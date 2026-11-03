@@ -86,6 +86,7 @@ class PowerManager : public fidl::WireServer<fuchsia_power_broker::ElementRunner
   // transition.
   void OnBootupComplete();
   void OnNodeBound(std::shared_ptr<const Node> node);
+  void OnNodeUnbinding(std::shared_ptr<const Node> node);
   void CreateAllDriversPowerElement(std::shared_ptr<Node> root_node);
   void LeaseAllDrivers(const std::shared_ptr<Node>& root_node, fit::callback<void()> callback);
   void CreatePowerElement(

@@ -105,6 +105,7 @@ class NodeManager {
   }
 
   virtual void OnNodeBound(std::shared_ptr<const Node> node) {}
+  virtual void OnNodeUnbinding(std::shared_ptr<const Node> node) {}
 
   virtual DriverHost* GetDriverHost(std::string_view driver_name_name_for_colocation) = 0;
 
@@ -575,6 +576,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       return *is_bound_override_;
     }
     return std::holds_alternative<DriverComponent>(state_);
+  }
+
+  bool IsStoppingOrStopped() const {
+    return node_shutdown_coordinator_ &&
+           node_shutdown_coordinator_->node_state() != NodeState::kRunning &&
+           node_shutdown_coordinator_->node_state() != NodeState::kPrestop;
+  }
+
+  void NotifyNodeUnbinding() {
+    if (is_bound() && node_manager_.has_value()) {
+      node_manager_.value()->OnNodeUnbinding(shared_from_this());
+    }
   }
 
   bool is_running() const {
@@ -1053,7 +1066,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   bool should_destroy_ = false;
   fidl::WireClient<fuchsia_component::Controller> component_controller_;
 
+  // The node is either unbinding or unbound.
   struct Unbound {};
+
   struct Starting {
     std::string driver_url;
   };

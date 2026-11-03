@@ -1000,6 +1000,12 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
 
   // Store a shared_ptr to ourselves so we won't be freed halfway through this function.
   std::shared_ptr this_node = shared_from_this();
+  bool was_bound = is_bound();
+  is_bound_override_ = std::nullopt;
+  state_ = Unbound{};
+  if (was_bound && node_manager_.has_value()) {
+    node_manager_.value()->OnNodeUnbinding(this_node);
+  }
   for (auto& parent : parents()) {
     if (auto ptr = parent.lock(); ptr) {
       ptr->RemoveChild(this_node);
@@ -1007,7 +1013,6 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
     }
     fdf_log::warn("Parent freed before child {} could be removed from it", name());
   }
-  state_ = Unbound{};
   ResetPowerHandles();
 
   for (auto& resource : received_resources_) {
@@ -1089,6 +1094,10 @@ void Node::FinishQuarantine() {
   // |QuarantineNode()| sets this.
   ZX_ASSERT_MSG(std::holds_alternative<Quarantined>(state_),
                 "Node::state_ was not set to Quarantined");
+
+  if (node_manager_.has_value()) {
+    node_manager_.value()->OnNodeUnbinding(shared_from_this());
+  }
 }
 
 void Node::ClearHostDriver() {

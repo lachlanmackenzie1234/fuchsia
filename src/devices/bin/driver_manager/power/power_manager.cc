@@ -387,6 +387,12 @@ void PowerManager::OnNodeBound(std::shared_ptr<const Node> node) {
   }
 }
 
+void PowerManager::OnNodeUnbinding(std::shared_ptr<const Node> node) {
+  if (all_drivers_) {
+    all_drivers_->OnNodeUnbinding(std::move(node));
+  }
+}
+
 void PowerManager::CreateAllDriversPowerElement(std::shared_ptr<Node> root_node) {
   ZX_ASSERT_MSG(SuspendEnabled(), "Suspend must be enabled to create AllDrivers power element");
   ZX_ASSERT_MSG(!all_drivers_, "AllDrivers power element already created");

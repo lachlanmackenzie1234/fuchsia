@@ -303,6 +303,11 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       power_manager_->OnNodeBound(std::move(node));
     }
   }
+  void OnNodeUnbinding(std::shared_ptr<const Node> node) override {
+    if (power_manager_) {
+      power_manager_->OnNodeUnbinding(std::move(node));
+    }
+  }
 
   zx::result<> CreateDriverHostComponent(std::string moniker,
                                          fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,

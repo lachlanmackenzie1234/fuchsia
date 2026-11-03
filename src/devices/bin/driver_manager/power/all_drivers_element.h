@@ -10,6 +10,8 @@
 #include <lib/fit/defer.h>
 
 #include <memory>
+#include <optional>
+#include <unordered_set>
 
 #include "src/devices/bin/driver_manager/node.h"
 
@@ -44,6 +46,16 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   // until the dependency addition completes.
   void OnNodeBound(std::shared_ptr<const Node> node);
 
+  // Called by DriverRunner whenever a node is unbinding. If the node was a leaf driver, traverses
+  // up the topology to find the closest bound ancestor(s) and adds a power dependency on any
+  // bound ancestor that is now a leaf driver.
+  void OnNodeUnbinding(std::shared_ptr<const Node> node);
+
+  // Returns true if a power dependency on |node| has already been added to the AllDrivers element.
+  bool HasDependency(const std::shared_ptr<const Node>& node) const {
+    return dependencies_.contains(node.get());
+  }
+
  private:
   // Traverses the topology bottom-up (post-order) to identify leaf driver nodes and adds
   // power dependencies on them, passing their startup leases to be dropped once the dependencies
@@ -68,8 +80,8 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   // Adding a dependency that already exists is harmless: Power Broker rejects it with
   // ALREADY_EXISTS, which is ignored.
   void AddDependency(const std::shared_ptr<const Node>& node,
-                     std::optional<zx::eventpair> startup_lease,
-                     std::shared_ptr<zx::eventpair> bootup_lease);
+                     std::optional<zx::eventpair> startup_lease = std::nullopt,
+                     std::shared_ptr<zx::eventpair> bootup_lease = nullptr);
 
   fidl::ServerBindingGroup<fuchsia_power_broker::ElementRunner> element_runner_bindings_;
   fidl::Client<fuchsia_power_broker::ElementControl> element_control_;
@@ -95,6 +107,9 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
 
   // Owns this AllDriversElement.
   PowerManager* power_manager_;
+
+  // Tracks which nodes currently have a power dependency added to the AllDrivers element.
+  std::unordered_set<const Node*> dependencies_;
 };
 
 }  // namespace driver_manager
