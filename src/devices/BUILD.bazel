@@ -18,6 +18,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/devices/clock/lib/clocktree/tests:clocktree_test",
         "//src/devices/lib/io-buffer/tests:phys-iter-test",
         "//src/devices/radar/bin/radarutil:radarutil-test",
         "//src/devices/radar/lib/vmo-manager:vmo-manager-test",
