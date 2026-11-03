@@ -2982,8 +2982,26 @@ pub mod tests {
 
             // The client process should have a notification waiting.
             assert_matches!(
-                receiver.proc.lock().command_queue.front(),
+                receiver.proc.lock().command_queue.pop_front(),
                 Some(QueuedCommand { command: Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), .. })
+            );
+
+            // While handling BR_DEAD_BINDER, libbinder clears the death notification before calling
+            // the death recipients. BR_CLEAR_DEATH_NOTIFICATION_DONE lets libbinder release the
+            // proxy, so it must wait for BC_DEAD_BINDER_DONE.
+            receiver
+                .proc
+                .handle_clear_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
+                .expect("clear death notification");
+            assert!(receiver.proc.lock().command_queue.is_empty());
+            assert!(receiver.thread.lock().command_queue.is_empty());
+            receiver.proc.handle_dead_binder_done(DEATH_NOTIFICATION_COOKIE);
+            assert_matches!(
+                receiver.proc.lock().command_queue.pop_front(),
+                Some(QueuedCommand {
+                    command: Command::ClearDeathNotificationDone(DEATH_NOTIFICATION_COOKIE),
+                    ..
+                })
             );
         })
         .await;
@@ -3022,19 +3040,63 @@ pub mod tests {
 
             const DEATH_NOTIFICATION_COOKIE: binder_uintptr_t = 0xDEADBEEF;
 
-            // Register a death notification handler.
-            receiver
-                .proc
-                .handle_request_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
-                .expect("request death notification");
+            // Register a death notification handler. A duplicate request before clearing is
+            // ignored, even though the binder is already dead.
+            for _ in 0..2 {
+                receiver
+                    .proc
+                    .handle_request_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
+                    .expect("request death notification");
+            }
 
             // The receiver thread should not have a notification, as the calling thread is not allowed
             // to receive it, or else a deadlock may occur if the thread is in the middle of a
             // transaction. Since there is only one thread, check the process command queue.
+            assert_eq!(receiver.proc.lock().command_queue.len(), 1);
             assert_matches!(
                 receiver.proc.lock().command_queue.front(),
                 Some(QueuedCommand { command: Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), .. })
             );
+
+            // Before reading BR_DEAD_BINDER, the receiver replaces its only death recipient, so
+            // libbinder clears the death notification and requests it again. Like in Linux, this
+            // does not cancel the pending BR_DEAD_BINDER, and fires a new one.
+            receiver
+                .proc
+                .handle_clear_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
+                .expect("clear death notification");
+            receiver
+                .proc
+                .handle_request_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
+                .expect("request death notification again");
+            for _ in 0..2 {
+                assert_matches!(
+                    receiver.proc.lock().command_queue.pop_front(),
+                    Some(QueuedCommand {
+                        command: Command::DeadBinder(DEATH_NOTIFICATION_COOKIE),
+                        ..
+                    })
+                );
+            }
+
+            // Handling the first BR_DEAD_BINDER clears the new notification. Each clear is only
+            // acknowledged once a BR_DEAD_BINDER is done.
+            receiver
+                .proc
+                .handle_clear_death_notification(handle, DEATH_NOTIFICATION_COOKIE)
+                .expect("clear death notification again");
+            assert!(receiver.proc.lock().command_queue.is_empty());
+            for _ in 0..2 {
+                receiver.proc.handle_dead_binder_done(DEATH_NOTIFICATION_COOKIE);
+                assert_matches!(
+                    receiver.proc.lock().command_queue.pop_front(),
+                    Some(QueuedCommand {
+                        command: Command::ClearDeathNotificationDone(DEATH_NOTIFICATION_COOKIE),
+                        ..
+                    })
+                );
+            }
+            assert!(receiver.proc.lock().death_notifications.is_empty());
         })
         .await;
     }
@@ -3075,11 +3137,13 @@ pub mod tests {
                 .handle_request_death_notification(handle, death_notification_cookie)
                 .expect("request death notification");
 
-            // Now clear the death notification handler.
-            client
-                .proc
-                .handle_clear_death_notification(handle, death_notification_cookie)
-                .expect("clear death notification");
+            // Now clear the death notification handler. A second clear is ignored.
+            for _ in 0..2 {
+                client
+                    .proc
+                    .handle_clear_death_notification(handle, death_notification_cookie)
+                    .expect("clear death notification");
+            }
 
             // Check that the client received an acknowlgement
             {
@@ -3100,6 +3164,16 @@ pub mod tests {
                 state.registration = RegistrationState::Main;
                 state.begin_wait()
             };
+
+            // Clearing the death notification unsubscribed the client from the owner. Even if it
+            // could not, because the clear raced with the release of the owner, no notification
+            // may follow the acknowledgement.
+            assert!(owner.proc.lock().death_subscribers.is_empty());
+            owner
+                .proc
+                .lock()
+                .death_subscribers
+                .push((client.proc.weak_self.clone(), death_notification_cookie));
 
             // Now the owner process dies.
             std::mem::drop(owner);

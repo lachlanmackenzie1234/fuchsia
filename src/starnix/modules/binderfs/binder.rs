@@ -984,7 +984,8 @@ impl BinderDriver {
                 context.binder_proc.handle_clear_death_notification(handle, cookie)
             }
             binder_driver_command_protocol_BC_DEAD_BINDER_DONE => {
-                let _cookie = cursor.read_object::<binder_uintptr_t>()?;
+                let cookie = cursor.read_object::<binder_uintptr_t>()?;
+                context.binder_proc.handle_dead_binder_done(cookie);
                 Ok(())
             }
             binder_driver_command_protocol_BC_TRANSACTION => {

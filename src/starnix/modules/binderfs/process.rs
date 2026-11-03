@@ -40,6 +40,7 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_RELEASE, binder_frozen_state_info, binder_uintptr_t, errno,
     error,
 };
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -65,6 +66,8 @@ pub struct BinderProcessState {
     pub active_transactions: BTreeMap<UserAddress, ReleaseGuard<ActiveTransaction>>,
     /// The list of processes that should be notified if this process dies.
     pub death_subscribers: Vec<(WeakRef<BinderProcess>, binder_uintptr_t)>,
+    /// The death notifications requested by this process, keyed by their cookie.
+    pub death_notifications: BTreeMap<binder_uintptr_t, DeathNotificationState>,
     /// Whether the binder connection for this process is closed. Once closed, any blocking
     /// operation will be aborted and return an EBADF error.
     pub closed: bool,
@@ -77,6 +80,40 @@ pub struct BinderProcessState {
     /// same cookie was in-flight, waiting for BC_FREEZE_NOTIFICATION_DONE before sending
     /// BR_CLEAR_FREEZE_NOTIFICATION_DONE.
     pub pending_clear_freeze_notifications: BTreeSet<binder_uintptr_t>,
+}
+
+/// The state of the death notifications that a process requested for a given cookie.
+///
+/// This mirrors the lifecycle of `binder_ref_death` in Linux. Userspace may release the object
+/// identified by the cookie as soon as it receives `BR_CLEAR_DEATH_NOTIFICATION_DONE` (libbinder
+/// drops the weak reference that it took for the notification), so that command must never be
+/// delivered while a `BR_DEAD_BINDER` for the same cookie is queued or still being processed.
+#[derive(Debug, Default)]
+pub struct DeathNotificationState {
+    /// Whether the notification is registered with the owner of the binder object, which will
+    /// queue a `BR_DEAD_BINDER` when it dies.
+    pub registered: bool,
+    /// The number of `BR_DEAD_BINDER` queued for, or delivered to, userspace that have not been
+    /// acknowledged with `BC_DEAD_BINDER_DONE` yet.
+    pub pending_dead_binders: usize,
+    /// The number of `BR_CLEAR_DEATH_NOTIFICATION_DONE` deferred until a `BC_DEAD_BINDER_DONE`,
+    /// because their `BC_CLEAR_DEATH_NOTIFICATION` arrived while a `BR_DEAD_BINDER` was pending.
+    /// This is the equivalent of `BINDER_WORK_DEAD_BINDER_AND_CLEAR` in Linux.
+    pub deferred_clears: usize,
+}
+
+impl DeathNotificationState {
+    /// Whether a death notification is currently active (not yet cleared by
+    /// `BC_CLEAR_DEATH_NOTIFICATION`). Like `ref->death != NULL` in Linux, this remains true after
+    /// `BR_DEAD_BINDER` is queued until `BC_CLEAR_DEATH_NOTIFICATION` arrives.
+    fn is_set(&self) -> bool {
+        self.registered || self.pending_dead_binders > self.deferred_clears
+    }
+
+    /// Whether the state no longer tracks anything, and can be dropped.
+    fn is_empty(&self) -> bool {
+        !self.registered && self.pending_dead_binders == 0 && self.deferred_clears == 0
+    }
 }
 
 #[derive(Debug, Default)]
@@ -797,7 +834,29 @@ impl BinderProcess {
                 proxy
             }
         };
-        if let Some(owner) = proxy.owner.upgrade() {
+        // Upgrade the owner before locking `self`: holding `Some(owner)` (`TempRef`) prevents
+        // `BinderProcess::release` from running until `owner` is dropped after subscribing, while
+        // `None` records the pending `BR_DEAD_BINDER` directly without exposing `registered`.
+        let owner = proxy.owner.upgrade();
+        {
+            let mut state = self.lock();
+            let notification = state.death_notifications.entry(cookie).or_default();
+            if notification.is_set() {
+                // Like Linux, ignore a request for a death notification that is already set.
+                log_trace!(
+                    "BinderProcess id={} death notification already set for cookie {:#x}",
+                    self.identifier(),
+                    cookie
+                );
+                return Ok(());
+            }
+            if owner.is_some() {
+                notification.registered = true;
+            } else {
+                notification.pending_dead_binders += 1;
+            }
+        }
+        if let Some(owner) = owner {
             owner.lock().death_subscribers.push((self.weak_self.clone(), cookie));
         } else {
             // The object is already dead. Notify immediately. To be noted: the requesting thread
@@ -825,7 +884,41 @@ impl BinderProcess {
                 return Ok(());
             }
             Handle::Object { index } => {
-                self.lock().handles.get_owner(index).ok_or_else(|| errno!(ENOENT))?
+                let mut state = self.lock();
+                let owner = state.handles.get_owner(index).ok_or_else(|| errno!(ENOENT))?;
+                match state.death_notifications.entry(cookie) {
+                    Entry::Occupied(mut entry) if entry.get().registered => {
+                        // No BR_DEAD_BINDER has been queued for the notification, and none will
+                        // be: acknowledge the clear right away.
+                        let notification = entry.get_mut();
+                        notification.registered = false;
+                        if notification.is_empty() {
+                            entry.remove();
+                        }
+                    }
+                    Entry::Occupied(mut entry)
+                        if entry.get().pending_dead_binders > entry.get().deferred_clears =>
+                    {
+                        // A BR_DEAD_BINDER for this cookie is queued or being processed by
+                        // userspace, e.g. this is the BC_CLEAR_DEATH_NOTIFICATION that libbinder's
+                        // `BpBinder::sendObituary()` sends before calling the death recipients.
+                        // Like Linux, defer BR_CLEAR_DEATH_NOTIFICATION_DONE until userspace
+                        // acknowledges the BR_DEAD_BINDER with BC_DEAD_BINDER_DONE.
+                        entry.get_mut().deferred_clears += 1;
+                        return Ok(());
+                    }
+                    _ => {
+                        // The death notification is not set, or each pending BR_DEAD_BINDER
+                        // already has a deferred clear. Like Linux, ignore the clear.
+                        log_trace!(
+                            "BinderProcess id={} death notification not set for cookie {:#x}",
+                            self.identifier(),
+                            cookie
+                        );
+                        return Ok(());
+                    }
+                }
+                owner
             }
         };
         if let Some(owner) = owner.upgrade() {
@@ -840,6 +933,59 @@ impl BinderProcess {
         }
         self.enqueue_command(Command::ClearDeathNotificationDone(cookie).into());
         Ok(())
+    }
+
+    /// Acknowledge that userspace finished processing a death notification (`BR_DEAD_BINDER`).
+    pub fn handle_dead_binder_done(&self, cookie: binder_uintptr_t) {
+        let clear_done = {
+            let mut state = self.lock();
+            match state.death_notifications.entry(cookie) {
+                Entry::Occupied(mut entry) if entry.get().pending_dead_binders > 0 => {
+                    let notification = entry.get_mut();
+                    notification.pending_dead_binders -= 1;
+                    let clear_done = notification.deferred_clears > 0;
+                    if clear_done {
+                        notification.deferred_clears -= 1;
+                    }
+                    if notification.is_empty() {
+                        entry.remove();
+                    }
+                    clear_done
+                }
+                _ => {
+                    // Like Linux, ignore the acknowledgement of a death notification that was not
+                    // sent.
+                    log_trace!(
+                        "BinderProcess id={} no pending death notification for cookie {:#x}",
+                        self.identifier(),
+                        cookie
+                    );
+                    false
+                }
+            }
+        };
+        if clear_done {
+            self.enqueue_command(Command::ClearDeathNotificationDone(cookie).into());
+        }
+    }
+
+    /// Queues a `BR_DEAD_BINDER` for the death notification `cookie`, as the owner of the binder
+    /// object died, unless the notification has been cleared in the meantime.
+    pub(crate) fn notify_dead_binder(&self, cookie: binder_uintptr_t) {
+        {
+            let mut state = self.lock();
+            match state.death_notifications.get_mut(&cookie) {
+                Some(notification) if notification.registered => {
+                    notification.registered = false;
+                    notification.pending_dead_binders += 1;
+                }
+                // The notification has been cleared, and its BR_CLEAR_DEATH_NOTIFICATION_DONE may
+                // already have been delivered: userspace must not receive a BR_DEAD_BINDER after
+                // it.
+                _ => return,
+            }
+        }
+        self.enqueue_command(Command::DeadBinder(cookie).into());
     }
 
     /// Subscribe a process to the freeze of the owner of `handle`.
@@ -1119,7 +1265,7 @@ impl Releasable for BinderProcess {
         // Notify any subscribers that the objects this process owned are now dead.
         for (proc, cookie) in state.death_subscribers {
             if let Some(target_proc) = proc.upgrade() {
-                target_proc.enqueue_command(Command::DeadBinder(cookie).into());
+                target_proc.notify_dead_binder(cookie);
             }
         }
 
