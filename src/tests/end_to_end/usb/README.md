@@ -25,3 +25,8 @@ toggling its USB `authorized` attribute, run `usb_reset_test` with
 ./src/tests/end_to_end/usb/lib/disconnect/run_usb_virtual_disconnect_test_at_desk.sh \
   --mode reset
 ```
+
+Both tests also run as part of the stress suite in
+`./src/tests/end_to_end/usb/run_all_usb_tests_at_desk.sh` (`-s` or the
+default selection), which configures the same `udev` rules before running
+them.

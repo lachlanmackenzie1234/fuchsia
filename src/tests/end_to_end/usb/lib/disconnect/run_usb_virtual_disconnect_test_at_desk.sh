@@ -13,12 +13,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-# Set by --mode in main(): the Mobly test target, and its wrapper group that
-# pulls it in under the host toolchain. The group is the label to add to the
-# build graph; the bare test target is not in the graph.
-TEST_TARGET=""
-TEST_GROUP=""
 UDEV_SCRIPT="${SCRIPT_DIR}/udev.sh"
+
+# Provides FUCHSIA_DIR, FX and the usb_desk_* helpers.
+# shellcheck source=src/tests/end_to_end/usb/lib/desk_test_common.sh
+source "${SCRIPT_DIR}/../desk_test_common.sh"
 
 # Reuse TARGET_VID, TARGET_PIDS, and is_target_pid() from udev.sh.
 # shellcheck source=/dev/null
@@ -66,23 +65,6 @@ require_attached_device() {
     return 1
 }
 
-# `fx test` can only run targets that are in the build graph. Add the test if
-# the current build dir was not configured with it. `fx add-test` only appends
-# to `target_labels` in args.gn, so it preserves the rest of the build config.
-ensure_test_in_build_graph() {
-    local fx="$1"
-    local build_dir
-    build_dir="$("${fx}" get-build-dir)"
-
-    if [[ -f "${build_dir}/tests.json" ]] \
-        && grep -q "${TEST_TARGET}" "${build_dir}/tests.json"; then
-        return 0
-    fi
-
-    echo "${fx} add-test ${TEST_GROUP}"
-    "${fx}" add-test "${TEST_GROUP}"
-}
-
 main() {
     local target_name=""
     local mode="authorize"
@@ -91,6 +73,7 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -t|--target)
+                usb_desk_require_value "$1" "$#" "${2-}"
                 target_name="$2"
                 shift 2
                 ;;
@@ -99,6 +82,7 @@ main() {
                 shift
                 ;;
             -m|--mode)
+                usb_desk_require_value "$1" "$#" "${2-}"
                 mode="$2"
                 shift 2
                 ;;
@@ -133,26 +117,6 @@ main() {
             return 1
             ;;
     esac
-    TEST_TARGET="//src/tests/end_to_end/usb/stress:${test_name}"
-    TEST_GROUP="//src/tests/end_to_end/usb:${test_name}"
-
-    local fuchsia_dir="${FUCHSIA_DIR:-}"
-    if [[ -z "${fuchsia_dir}" ]]; then
-        # SCRIPT_DIR is //src/tests/end_to_end/usb/lib/disconnect, which is six
-        # levels below the checkout root.
-        fuchsia_dir="$(cd "${SCRIPT_DIR}/../../../../../.." >/dev/null 2>&1 \
-            && pwd)"
-    fi
-
-    # `fx` is only on PATH after sourcing scripts/fx-env.sh, which not everyone
-    # has in their shell rc, so invoke it by its canonical path instead.
-    local fx="${fuchsia_dir}/scripts/fx"
-    if [[ ! -x "${fx}" ]]; then
-        echo "[!] ERROR: could not locate the Fuchsia checkout root." >&2
-        echo "    Derived fuchsia_dir=${fuchsia_dir}" >&2
-        echo "    but ${fx} is not executable." >&2
-        return 1
-    fi
 
     require_attached_device
 
@@ -166,25 +130,17 @@ main() {
     echo "${UDEV_SCRIPT}"
     bash "${UDEV_SCRIPT}"
 
-    ensure_test_in_build_graph "${fx}"
+    # `fx test` can only run targets that are in the build graph. The wrapper
+    # group pulls the test in under the host toolchain; the bare test target
+    # is not in the graph, so the group is the label to add.
+    local test_target="//src/tests/end_to_end/usb/stress:${test_name}"
+    usb_desk_ensure_test_in_build_graph \
+        "${test_target}" "//src/tests/end_to_end/usb:${test_name}"
 
-    local -a test_cmd=("${fx}")
-    if [[ -n "${target_name}" ]]; then
-        test_cmd+=(-t "${target_name}")
-    fi
-    test_cmd+=(
-        test
-        -o
-        --e2e
-        --no-allow-temporary-emulator
-        "${TEST_TARGET}"
-    )
-    if [[ ${#extra_test_args[@]} -gt 0 ]]; then
-        test_cmd+=("${extra_test_args[@]}")
-    fi
-
-    echo "${test_cmd[@]}"
-    "${test_cmd[@]}"
+    usb_desk_build_fx_test_cmd "${target_name}" "true" "${test_target}" \
+        ${extra_test_args[@]+"${extra_test_args[@]}"}
+    echo "${USB_DESK_TEST_CMD[@]}"
+    "${USB_DESK_TEST_CMD[@]}"
 }
 
 main "$@"

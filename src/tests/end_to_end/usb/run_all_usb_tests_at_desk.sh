@@ -55,6 +55,12 @@ PHYSICAL_TESTS=(
   usb_mdns_hotplug_test
 )
 
+# Use the host side virtual USB hub, which needs host udev rules (see below).
+VIRTUAL_HUB_TESTS=(
+  usb_virtual_disconnect_test
+  usb_reset_test
+)
+
 # //src/tests/end_to_end/usb/performance/...
 PERFORMANCE_TESTS=(
   adb_throughput_test
@@ -280,6 +286,16 @@ if [[ "${DRY_RUN}" == true ]]; then
   printf '  %s\n' "${TESTS_TO_RUN[@]}"
   exit 0
 fi
+
+# The virtual USB hub tests write the DUT's USB `authorized` attribute or its
+# usbfs device node without sudo, which needs the host udev rules installed by
+# udev.sh. It only prompts for sudo on first-time setup.
+for test_name in "${TESTS_TO_RUN[@]}"; do
+  if [[ " ${VIRTUAL_HUB_TESTS[*]} " == *" ${test_name} "* ]]; then
+    bash "${SCRIPT_DIR}/lib/disconnect/udev.sh"
+    break
+  fi
+done
 
 echo "Running tests: ${TESTS_TO_RUN[*]}"
 usb_desk_build_fx_test_cmd "${DEVICE}" "false" \
