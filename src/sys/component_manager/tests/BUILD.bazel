@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 
 package(default_applicable_licenses = ["//:license"])
@@ -12,6 +13,13 @@ exports_files(
         "meta/use_elf_runner.shard.cml",
     ],
     visibility = ["//src/sys/component_manager/tests:__subpackages__"],
+)
+
+cml_shard(
+    name = "meta/use_elf_runner.shard",
+    includes = ["meta/elf_runner_and_environment.shard.cml"],
+    shard = "meta/use_elf_runner.shard.cml",
+    visibility = ["//examples/components/routing/rust/echo_server:__pkg__"],
 )
 
 rustc_binary(
