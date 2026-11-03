@@ -229,6 +229,7 @@ class FuchsiaBuildConfig(object):
     timeout: str | None = None
     timeout_grace_period: str | None = None
     rbe_casfs: bool = False
+    summarize_failures: bool = False
 
     @staticmethod
     def from_args(
@@ -239,6 +240,18 @@ class FuchsiaBuildConfig(object):
         resultstore_val = args.resultstore or default_resultstore or "none"
         rbe_casfs_val = (
             args.rbe_casfs if args.rbe_casfs is not None else default_rbe_casfs
+        )
+        # TODO(b/573624782): Enable failure summarization by default when running
+        # under Fint (infra):
+        #   summarize_failures_val = (
+        #       args.summarize_failures
+        #       if args.summarize_failures is not None
+        #       else bool(args.fint_params_path)
+        #   )
+        summarize_failures_val = (
+            args.summarize_failures
+            if args.summarize_failures is not None
+            else False
         )
 
         return FuchsiaBuildConfig(
@@ -263,6 +276,7 @@ class FuchsiaBuildConfig(object):
             log_dir=args.log_dir,
             timeout=args.timeout,
             timeout_grace_period=args.timeout_grace_period,
+            summarize_failures=summarize_failures_val,
         )
 
 
@@ -1446,6 +1460,21 @@ class BuildInvocation(object):
         if timeout_metadata:
             metadata["timeout"] = timeout_metadata.to_dict()
 
+        if self.wrap_context.tui:
+            unsuccessful_actions_path = self.wrap_context.tui.artifacts.get(
+                "unsuccessful_actions"
+            )
+            if unsuccessful_actions_path and unsuccessful_actions_path.exists():
+                metadata["unsuccessful_actions"] = str(
+                    unsuccessful_actions_path.resolve()
+                )
+            failure_summary_path = self.wrap_context.tui.artifacts.get(
+                "failure_summary"
+            )
+            if failure_summary_path and failure_summary_path.exists():
+                metadata["failure_summary"] = str(
+                    failure_summary_path.resolve()
+                )
         try:
             mkdir(output_path.parent)
             output_path.write_text(json.dumps(metadata, indent=2) + "\n")
@@ -1459,18 +1488,22 @@ class BuildInvocation(object):
             msg(f"Unexpected error writing metadata JSON: {e}", file=sys.stderr)
             return
 
-        if timeout_metadata and timeout_metadata.active_processes:
-            self._run_fint_ingest_timeout(output_path)
+        has_timeout = bool(
+            timeout_metadata and timeout_metadata.active_processes
+        )
+        has_failure_summary = bool("failure_summary" in metadata)
+        if has_timeout or has_failure_summary:
+            self._run_fint_ingest_metadata(output_path)
 
-    def _run_fint_ingest_timeout(self, metadata_path: pathlib.Path) -> None:
-        """Invokes fint_build.py to ingest timeout diagnostics into build_artifacts.json."""
+    def _run_fint_ingest_metadata(self, metadata_path: pathlib.Path) -> None:
+        """Invokes fint_build.py to ingest failure summary and timeout diagnostics into build_artifacts.json."""
         context_path = self.context.config.fint_context_path
         if not context_path or not self.context.fint_build_py.exists():
             return
         cmd = self.context.fint_build_cmd_prefix + [
             "--context",
             str(context_path),
-            "--ingest-timeout-metadata",
+            "--ingest-build-metadata",
             str(metadata_path),
         ]
         if self.context.config.verbose:
@@ -1486,17 +1519,17 @@ class BuildInvocation(object):
             )
         except subprocess.TimeoutExpired as e:
             msg(
-                f"Timed out after {e.timeout}s ingesting timeout metadata into fint build artifacts",
+                f"Timed out after {e.timeout}s ingesting metadata into fint build artifacts",
                 file=sys.stderr,
             )
         except subprocess.CalledProcessError as e:
             msg(
-                f"Failed to ingest timeout metadata into fint build artifacts: {e.stderr.strip()}",
+                f"Failed to ingest metadata into fint build artifacts: {e.stderr.strip()}",
                 file=sys.stderr,
             )
         except OSError as e:
             msg(
-                f"Failed to execute fint timeout ingestion: {e}",
+                f"Failed to execute fint metadata ingestion: {e}",
                 file=sys.stderr,
             )
 
@@ -1618,6 +1651,7 @@ class BuildInvocation(object):
             enable_resultstore=context.config.resultstore in ("all", "ninja"),
             pre_build_uploads=pre_build_uploads,
             tui=context.config.tui,
+            summarize_failures=context.config.summarize_failures,
             verbose=context.config.verbose,
             dry_run=context.config.dry_run,
         )
@@ -2343,6 +2377,22 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         "--tui", type=properties.str_to_bool, nargs="?", const=True
     )
     parser.add_argument("--no-tui", action="store_false", dest="tui")
+
+    parser.add_argument(
+        "--summarize-failures",
+        action="store_true",
+        default=False,
+        help=(
+            "Generate a structured report and failure summary upon build completion "
+            f"under the build log directory ({top_build_wrap.FAILURE_SUMMARY_RELPATH})."
+        ),
+    )
+    parser.add_argument(
+        "--no-summarize-failures",
+        action="store_false",
+        dest="summarize_failures",
+        help="Disable failure summarization.",
+    )
 
     parser.add_argument(
         "--auth-mode",

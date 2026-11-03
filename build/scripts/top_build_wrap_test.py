@@ -86,6 +86,7 @@ class TopBuildWrapTest(unittest.TestCase):
                 self.tui_wrapper,
                 "--log-dir",
                 str(context.tui.log_dir),
+                "--print_failed_actions",
                 "--",
                 self.rsproxy_wrapper,
                 "--auth-type",
@@ -109,9 +110,75 @@ class TopBuildWrapTest(unittest.TestCase):
                 self.tui_wrapper,
                 "--log-dir",
                 str(context.tui.log_dir),
+                "--print_failed_actions",
                 "--verbose",
                 "--",
             ],
+        )
+
+    def test_summarize_failures_headless(self) -> None:
+        context = self.make_context(summarize_failures=True)
+        assert context.tui is not None
+        assert context.resultstore is not None
+        expected_report = (
+            context.log_dir / top_build_wrap.UNSUCCESSFUL_ACTIONS_REPORT_RELPATH
+        )
+        expected_summary = (
+            context.log_dir / top_build_wrap.FAILURE_SUMMARY_RELPATH
+        )
+        self.assertEqual(
+            context.command_prefix(),
+            [
+                self.tui_wrapper,
+                "--log-dir",
+                str(context.tui.log_dir),
+                "--print_failed_actions",
+                "--headless",
+                "--unsuccessful_actions_report",
+                str(expected_report),
+                "--write_failed_actions",
+                str(expected_summary),
+                "--",
+                self.rsproxy_wrapper,
+                "--auth-type",
+                "none",
+                "--log-dir",
+                str(context.resultstore.log_dir),
+                "--",
+            ],
+        )
+        self.assertEqual(
+            context.tui.artifacts,
+            {
+                "log_dir": context.tui.log_dir,
+                "unsuccessful_actions": expected_report,
+                "failure_summary": expected_summary,
+            },
+        )
+
+    def test_summarize_failures_interactive(self) -> None:
+        context = self.make_context(tui=True, summarize_failures=True)
+        assert context.tui is not None
+        expected_report = (
+            context.log_dir / top_build_wrap.UNSUCCESSFUL_ACTIONS_REPORT_RELPATH
+        )
+        expected_summary = (
+            context.log_dir / top_build_wrap.FAILURE_SUMMARY_RELPATH
+        )
+        prefix = context.command_prefix()
+        self.assertIn(self.tui_wrapper, prefix)
+        self.assertIn("--print_failed_actions", prefix)
+        self.assertIn("--unsuccessful_actions_report", prefix)
+        self.assertIn(str(expected_report), prefix)
+        self.assertIn("--write_failed_actions", prefix)
+        self.assertIn(str(expected_summary), prefix)
+        self.assertNotIn("--headless", prefix)
+        self.assertEqual(
+            context.tui.artifacts["unsuccessful_actions"], expected_report
+        )
+        self.assertEqual(
+            context.tui.artifacts["failure_summary"],
+            expected_summary,
         )
 
     def test_profile_enabled(self) -> None:
@@ -317,6 +384,7 @@ class TopBuildWrapTest(unittest.TestCase):
             str(self.log_dir),
             "--rbe=1",
             "--resultstore=all",
+            "--summarize-failures",
             "--tui=0",
             "--verbose",
             "--dry-run",
@@ -332,10 +400,24 @@ class TopBuildWrapTest(unittest.TestCase):
         self.assertEqual(config.log_dir, self.log_dir)
         self.assertTrue(config.needs_reproxy_rbe)
         self.assertTrue(config.enable_resultstore)
+        self.assertTrue(config.summarize_failures)
         self.assertFalse(config.tui)
         self.assertTrue(config.verbose)
         self.assertTrue(config.dry_run)
         self.assertEqual(command, ["ninja", "-j", "32"])
+
+    def test_parse_args_no_summarize_failures(self) -> None:
+        argv = [
+            "--build-dir",
+            str(self.build_dir),
+            "--no-summarize-failures",
+            "--",
+            "ninja",
+        ]
+        config, command = top_build_wrap.parse_args(argv)
+        self.assertIsNotNone(config)
+        assert config is not None
+        self.assertFalse(config.summarize_failures)
 
     def test_property_access_is_side_effect_free(self) -> None:
         context = self.make_context(

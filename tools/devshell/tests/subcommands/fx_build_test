@@ -441,6 +441,23 @@ TEST_fx-build-auto-no-status-term-dumb() {
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
 
+TEST_fx-build-summarize-failures() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --summarize-failures //src:foo ">" stdout.txt
+    BT_EXPECT grep -q -- "--unsuccessful_actions_report" stdout.txt
+    BT_EXPECT grep -q -- "--write_failed_actions" stdout.txt
+}
+
+TEST_fx-build-no-summarize-failures() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --no-summarize-failures //src:foo ">" stdout.txt
+    BT_EXPECT_FAIL grep -q -- "--unsuccessful_actions_report" stdout.txt
+}
+
 TEST_fx-build-with-gn-label-and-enable_jobserver() {
     setup_build_test
     # Verify that enable_jobserver=true in args.gn sets the Ninja --jobserver flag.

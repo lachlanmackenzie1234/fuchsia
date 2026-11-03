@@ -116,6 +116,11 @@
 ##
 ##   --experimental-tui       Enable terminal UI for monitoring build.
 ##
+##   --summarize-failures     Generate structured reports and a human-readable
+##                            summary of unsuccessful build actions upon completion.
+##
+##   --no-summarize-failures  Disable failure summarization.
+##
 ##   --host                   When building with Ninja, an alias for --toolchain=host.
 ##                            When building with Bazel, an alias for --config=host
 ##
@@ -432,6 +437,22 @@ function main {
 
       --experimental-tui)
         TUI_ENABLED=1
+        ;;
+
+      --summarize-failures)
+        SUMMARIZE_FAILURES=1
+        ;;
+
+      --summarize-failures=*)
+        case "${1#--*=}" in
+          1|true|yes) SUMMARIZE_FAILURES=1 ;;
+          0|false|no) SUMMARIZE_FAILURES=0 ;;
+          *) fx-error "Invalid value for --summarize-failures: ${1#--*=}" ; exit 1 ;;
+        esac
+        ;;
+
+      --no-summarize-failures)
+        SUMMARIZE_FAILURES=0
         ;;
 
       -q|--quiet)

@@ -41,6 +41,7 @@ from build.scripts import (
     main_build,
     python_subprocess,
     signal_utils,
+    top_build_wrap,
 )
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
@@ -2103,6 +2104,65 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
             assert invocation.wrap_context.tui is not None
             self.assertIn(invocation.wrap_context.tui.prefix[0], prefix)
 
+    def test_summarize_failures(self) -> None:
+        context = self.create_context(tui=False)
+        context.config.summarize_failures = True
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = invocation.top_build_command_prefix()
+            self.assertIsNotNone(invocation.wrap_context.tui)
+            self.assertIn("--headless", prefix)
+            self.assertIn("--print_failed_actions", prefix)
+            self.assertIn("--unsuccessful_actions_report", prefix)
+            self.assertIn("--write_failed_actions", prefix)
+            self.assertIsNotNone(invocation.wrap_context.resultstore)
+
+    def test_summarize_failures_defaults(self) -> None:
+        parser = main_build._main_arg_parser()
+
+        # 1. Local build: default is False
+        args = parser.parse_args(["--build-dir", "/tmp/build", "ninja"])
+        config = main_build.FuchsiaBuildConfig.from_args(args)
+        self.assertFalse(config.summarize_failures)
+
+        # 2. Infra / Fint build: default is False until enabled by default
+        args_fint = parser.parse_args(
+            [
+                "--build-dir",
+                "/tmp/build",
+                "--fint-params-path",
+                "/path/to/params.textproto",
+                "ninja",
+            ]
+        )
+        config_fint = main_build.FuchsiaBuildConfig.from_args(args_fint)
+        self.assertFalse(config_fint.summarize_failures)
+
+        # 3. Explicit override in Fint: --summarize-failures enables it
+        args_fint_enabled = parser.parse_args(
+            [
+                "--build-dir",
+                "/tmp/build",
+                "--fint-params-path",
+                "/path/to/params.textproto",
+                "--summarize-failures",
+                "ninja",
+            ]
+        )
+        config_fint_enabled = main_build.FuchsiaBuildConfig.from_args(
+            args_fint_enabled
+        )
+        self.assertTrue(config_fint_enabled.summarize_failures)
+
+        # 4. Explicit override in local build: --summarize-failures enables it
+        args_local_enabled = parser.parse_args(
+            ["--build-dir", "/tmp/build", "--summarize-failures", "ninja"]
+        )
+        config_local_enabled = main_build.FuchsiaBuildConfig.from_args(
+            args_local_enabled
+        )
+        self.assertTrue(config_local_enabled.summarize_failures)
+
     def test_use_machine_credentials_omitted_when_resultstore_is_none(
         self,
     ) -> None:
@@ -3304,6 +3364,71 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                     ["bazel_invocation"],
                 )
 
+    def test_write_metadata_json_with_unsuccessful_actions_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            log_dir = tmp_path / "logs"
+            out_dir = tmp_path / "out"
+            build_dir = tmp_path / "out/default"
+            output_json_path = tmp_path / "metadata.json"
+
+            main_build.mkdir(log_dir)
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+
+            context = self.create_context(
+                env={"USER": "fake-user"},
+                rbe=False,
+                resultstore="none",
+                profile=False,
+                tui=False,
+                verbose=False,
+                dry_run=False,
+                output_metadata_json=output_json_path,
+            )
+            context.config.summarize_failures = True
+            context.out_dir = out_dir
+            context.build_dir = build_dir
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ):
+                assert invocation.wrap_context.tui is not None
+                report_path = invocation.wrap_context.tui.artifacts[
+                    "unsuccessful_actions"
+                ]
+                summary_path = invocation.wrap_context.tui.artifacts[
+                    "failure_summary"
+                ]
+                self.assertEqual(
+                    report_path,
+                    log_dir
+                    / top_build_wrap.UNSUCCESSFUL_ACTIONS_REPORT_RELPATH,
+                )
+                self.assertEqual(
+                    summary_path,
+                    log_dir / top_build_wrap.FAILURE_SUMMARY_RELPATH,
+                )
+                main_build.mkdir(report_path.parent)
+                main_build.write_text(report_path, "{}")
+                main_build.write_text(summary_path, "summary text")
+
+                invocation.write_metadata_json(output_json_path)
+                data = json.loads(output_json_path.read_text())
+                self.assertIn("unsuccessful_actions", data)
+                self.assertEqual(
+                    data["unsuccessful_actions"], str(report_path.resolve())
+                )
+                self.assertIn("failure_summary", data)
+                self.assertEqual(
+                    data["failure_summary"],
+                    str(summary_path.resolve()),
+                )
+
 
 class IterDirectoryFileMapTest(unittest.TestCase):
     def test_iter_directory_file_map_nonexistent_dir(self) -> None:
@@ -3495,7 +3620,7 @@ class CollectTimeoutMetadataTest(MainBuildTestBase):
             invocation = main_build.BuildInvocation(context)
             with (
                 mock.patch.object(
-                    invocation, "_run_fint_ingest_timeout"
+                    invocation, "_run_fint_ingest_metadata"
                 ) as mock_ingest,
                 tempfile.TemporaryDirectory() as tmpdir,
             ):
@@ -3514,8 +3639,39 @@ class CollectTimeoutMetadataTest(MainBuildTestBase):
                     invocation.write_metadata_json(out_path)
                     mock_ingest.assert_called_once_with(out_path)
 
-    def test_run_fint_ingest_timeout(self) -> None:
-        """Verifies _run_fint_ingest_timeout invokes fint_build.py with expected arguments."""
+    def test_write_metadata_json_triggers_fint_ingest_on_failure_summary(
+        self,
+    ) -> None:
+        """Verifies write_metadata_json triggers fint ingestion when failure_summary is present."""
+        context = self.create_context()
+        context.config.fint_context_path = pathlib.Path("/path/to/context.pb")
+        context.config.summarize_failures = True
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            with (
+                mock.patch.object(
+                    invocation, "_run_fint_ingest_metadata"
+                ) as mock_ingest,
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                tmp_path = pathlib.Path(tmpdir)
+                summary_file = tmp_path / "failure_summary.txt"
+                summary_file.write_text("failure text")
+                mock_tui = mock.Mock(
+                    artifacts={"failure_summary": summary_file}
+                )
+                with mock.patch.object(
+                    top_build_wrap.WrapContext,
+                    "tui",
+                    new_callable=mock.PropertyMock,
+                    return_value=mock_tui,
+                ):
+                    out_path = tmp_path / "output_metadata.json"
+                    invocation.write_metadata_json(out_path)
+                    mock_ingest.assert_called_once_with(out_path)
+
+    def test_run_fint_ingest_metadata(self) -> None:
+        """Verifies _run_fint_ingest_metadata invokes fint_build.py with expected arguments."""
         context = self.create_context()
         context.config.fint_context_path = pathlib.Path("/path/to/context.pb")
         context.config.verbose = True
@@ -3525,11 +3681,11 @@ class CollectTimeoutMetadataTest(MainBuildTestBase):
             mock.patch("subprocess.run") as mock_run,
         ):
             meta_path = pathlib.Path("/path/to/metadata.json")
-            invocation._run_fint_ingest_timeout(meta_path)
+            invocation._run_fint_ingest_metadata(meta_path)
             expected_cmd = context.fint_build_cmd_prefix + [
                 "--context",
                 "/path/to/context.pb",
-                "--ingest-timeout-metadata",
+                "--ingest-build-metadata",
                 "/path/to/metadata.json",
                 "--verbose",
             ]

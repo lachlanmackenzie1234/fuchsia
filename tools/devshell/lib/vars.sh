@@ -1311,6 +1311,12 @@ function fx-run-build-command {
     # MAX_BUILD_CONCURRENCY comes from fx.config, written by `gn gen`.
     "--max-concurrency=${MAX_BUILD_CONCURRENCY:-0}"
   )
+  local summarize_failures="${SUMMARIZE_FAILURES:-${FX_BUILD_SUMMARIZE_FAILURES:-}}"
+  if [[ "${summarize_failures}" == "1" ]]; then
+    args+=("--summarize-failures")
+  elif [[ "${summarize_failures}" == "0" ]]; then
+    args+=("--no-summarize-failures")
+  fi
   if [[ "${print_full_cmd}" == "true" ]]; then
     args+=("--verbose")
   fi

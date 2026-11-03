@@ -41,6 +41,18 @@ _TUI_WRAPPER: pathlib.Path = pathlib.Path("build/tui/build-tui-wrap.sh")
 
 _BUILD_LOGS_DIR: str = "_build_logs"
 _TUI_LOGS_DIR: str = "tui_logs"
+_UNSUCCESSFUL_ACTIONS_JSON: str = "unsuccessful_actions.json"
+_FAILURE_SUMMARY_TXT: str = "failure_summary.txt"
+
+# Public relative path to the unsuccessful actions report within the build log directory.
+UNSUCCESSFUL_ACTIONS_REPORT_RELPATH: pathlib.Path = (
+    pathlib.Path(_TUI_LOGS_DIR) / _UNSUCCESSFUL_ACTIONS_JSON
+)
+
+# Public relative path to the human-readable failure summary text.
+FAILURE_SUMMARY_RELPATH: pathlib.Path = (
+    pathlib.Path(_TUI_LOGS_DIR) / _FAILURE_SUMMARY_TXT
+)
 
 _BUILD_PROFILE_DIR: str = "build_profile"
 _SYSTEM_PROFILE_JSON: str = "system_profile.json"
@@ -85,6 +97,7 @@ class Config:
         default_factory=list
     )
     tui: bool = False
+    summarize_failures: bool = False
     verbose: bool = False
     dry_run: bool = False
 
@@ -158,8 +171,8 @@ class WrapContext:
 
     @functools.cached_property
     def tui(self) -> FeatureLayer | None:
-        """Composes the TUI wrapper feature layer."""
-        if not self.config.tui:
+        """Composes the TUI / buildminder wrapper feature layer."""
+        if not (self.config.tui or self.config.summarize_failures):
             return None
 
         tui_log_dir = self.log_dir / _TUI_LOGS_DIR
@@ -167,7 +180,29 @@ class WrapContext:
             str(self.source_dir / _TUI_WRAPPER),
             "--log-dir",
             str(tui_log_dir),
+            "--print_failed_actions",
         ]
+        # When failure summarization is requested without the interactive TUI,
+        # run buildminder headlessly so it monitors JobStatus events in the background
+        # without rendering a terminal curses UI.
+        if not self.config.tui:
+            cmd.append("--headless")
+
+        artifacts: dict[str, pathlib.Path] = {"log_dir": tui_log_dir}
+        if self.config.summarize_failures:
+            report_path = self.log_dir / UNSUCCESSFUL_ACTIONS_REPORT_RELPATH
+            summary_path = self.log_dir / FAILURE_SUMMARY_RELPATH
+            cmd.extend(
+                [
+                    "--unsuccessful_actions_report",
+                    str(report_path),
+                    "--write_failed_actions",
+                    str(summary_path),
+                ]
+            )
+            artifacts["unsuccessful_actions"] = report_path
+            artifacts["failure_summary"] = summary_path
+
         if self.config.verbose:
             cmd.append("--verbose")
         cmd.append("--")
@@ -175,7 +210,7 @@ class WrapContext:
             name="tui",
             prefix=cmd,
             log_dir=tui_log_dir,
-            artifacts={"log_dir": tui_log_dir},
+            artifacts=artifacts,
         )
 
     @functools.cached_property
@@ -262,7 +297,17 @@ class WrapContext:
         self,
         extra_post_build_uploads: Sequence[pathlib.Path] = (),
     ) -> FeatureLayer | None:
-        if not (self.config.enable_resultstore or self.config.tui):
+        # The ResultStore proxy (rsproxy) is required in two scenarios:
+        # 1. Cloud metadata and log uploads are enabled (enable_resultstore=True).
+        # 2. Buildminder is active (via interactive TUI or failure summarization),
+        #    where rsproxy acts as the local event bridge translating ResultStore/Ninja
+        #    events into JobStatus gRPC updates. In this mode, if cloud uploads are
+        #    not requested, we pass --auth-type none to run rsproxy purely locally.
+        if not (
+            self.config.enable_resultstore
+            or self.config.tui
+            or self.config.summarize_failures
+        ):
             return None
 
         rsproxy_log_dir = self.log_dir / _RSPROXY_LOGS_DIR
@@ -460,6 +505,21 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="Enable terminal UI for monitoring build.",
     )
+    parser.add_argument(
+        "--summarize-failures",
+        action="store_true",
+        default=False,
+        help=(
+            "Generate a structured report and failure summary upon build completion "
+            f"under the build log directory ({FAILURE_SUMMARY_RELPATH})."
+        ),
+    )
+    parser.add_argument(
+        "--no-summarize-failures",
+        action="store_false",
+        dest="summarize_failures",
+        help="Disable failure summarization.",
+    )
     return parser
 
 
@@ -503,6 +563,7 @@ def parse_args(argv: Sequence[str]) -> tuple[Config | None, list[str]]:
         pre_build_uploads=args.pre_build_uploads or [],
         post_build_uploads=args.post_build_uploads or [],
         tui=args.tui,
+        summarize_failures=args.summarize_failures,
         verbose=args.verbose,
         dry_run=args.dry_run,
     )
