@@ -418,7 +418,6 @@ def find_gn_duplicate_list_assignments(gn_text):
     for s_start, s_end in scopes:
         buf = list(code[s_start:s_end])
         b_in_str = False
-        b_brack = 0
         j = 0
         while j < len(buf):
             ch = buf[j]
@@ -429,11 +428,7 @@ def find_gn_duplicate_list_assignments(gn_text):
                 b_in_str = ch != '"'
             elif ch == '"':
                 b_in_str = True
-            elif ch == "[":
-                b_brack += 1
-            elif ch == "]":
-                b_brack = max(0, b_brack - 1)
-            elif ch == "{" and b_brack == 0:
+            elif ch == "{":
                 sub_end = closing(code, s_start + j) - s_start
                 for k in range(j, min(sub_end + 1, len(buf))):
                     if buf[k] != "\n":

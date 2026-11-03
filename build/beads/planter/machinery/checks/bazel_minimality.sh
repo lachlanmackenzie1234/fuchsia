@@ -452,7 +452,7 @@ def migrated_dependency_packages():
          failing `cq_reachability` (`missing_bazel_dependency_package`) or `fx bazel build`.
       3. A sole same-area GN consumer of `td` ONLY when co-migrating it eliminates `td/BUILD.gn` or
          avoids `bazel2gn` in `td/BUILD.gn` (Pattern 2.A).
-      3. An unmigrated same-area dependency package required to compile an in-scope target in Bazel
+      4. An unmigrated same-area dependency package required to compile an in-scope target in Bazel
          (even when `bazel2gn` is kept for remaining GN consumers, or when `<pkg>/BUILD.bazel` at
          base was only an `exports_files` stub / partial migration missing the depended-on target),
          or a same-area private helper whose `BUILD.gn` or sentinel is eliminated (Pattern 2.B).
@@ -475,8 +475,9 @@ def migrated_dependency_packages():
     }
     candidates -= set(target_dirs)
     if not candidates or not target_dirs:
-        return set()
+        return set(), set()
     found: set[str] = set()
+    required_upstream: set[str] = set()
     progressed = True
     while progressed:
         progressed = False
@@ -492,12 +493,27 @@ def migrated_dependency_packages():
                 for td in in_scope_pkgs
             ):
                 found.add(cand_pkg)
+                if cand_pkg in active_dep_targets and was_unmigrated_dep_at_base(
+                    cand_pkg, active_dep_targets[cand_pkg]
+                ):
+                    required_upstream.add(cand_pkg)
                 progressed = True
                 continue
             # 1b. Direct FIDL library dependency in //sdk/fidl/<lib> upgraded from legacy
             # fuchsia_fidl_library (C++ only) to fidl_library so Rust/C++ bindings exist in Bazel.
             if cand_pkg in active_dep_targets and cand_pkg.startswith("sdk/fidl/"):
                 found.add(cand_pkg)
+                required_upstream.add(cand_pkg)
+                progressed = True
+                continue
+            # 2. Required unmigrated upstream dependency package in the same third_party scope
+            if (
+                cand_pkg in active_dep_targets
+                and any(is_same_third_party_scope(cand_pkg, td) for td in in_scope_pkgs)
+                and was_unmigrated_dep_at_base(cand_pkg, active_dep_targets[cand_pkg])
+            ):
+                found.add(cand_pkg)
+                required_upstream.add(cand_pkg)
                 progressed = True
                 continue
             # Must be in the same area and third_party scope as at least one target_dir
@@ -509,7 +525,7 @@ def migrated_dependency_packages():
             ]
             if not matching_tds:
                 continue
-            # 2. Pattern 2.A: Sole same-area consumer of td eliminating td/BUILD.gn or bazel2gn
+            # 3. Pattern 2.A: Sole same-area consumer of td eliminating td/BUILD.gn or bazel2gn
             cand_texts = []
             for fn in ("BUILD.gn", "BUILD.bazel"):
                 rel_f = f"{cand_pkg}/{fn}"
@@ -533,17 +549,14 @@ def migrated_dependency_packages():
                 found.add(cand_pkg)
                 progressed = True
                 continue
-            # 3. Pattern 2.B / required unmigrated same-area dependency of an in-scope package
-            if cand_pkg in active_dep_targets and (
-                package_eliminated_gn_or_sentinel(cand_pkg)
-                or was_unmigrated_dep_at_base(cand_pkg, active_dep_targets[cand_pkg])
-            ):
+            # 4. Pattern 2.B: Same-area dependency whose BUILD.gn or sentinel is eliminated
+            if cand_pkg in active_dep_targets and package_eliminated_gn_or_sentinel(cand_pkg):
                 found.add(cand_pkg)
                 progressed = True
-    return found
+    return found, required_upstream
 
 
-dependency_dirs = migrated_dependency_packages()
+dependency_dirs, required_upstream_deps = migrated_dependency_packages()
 in_scope_dep_pkgs: set[str] = set()
 for _src_pkg in dict.fromkeys(list(target_dirs) + sorted(dependency_dirs)):
     in_scope_dep_pkgs |= collect_non_visibility_dep_pkgs(_src_pkg)
@@ -910,10 +923,12 @@ def check_cl_scoping_guidelines():
             continue
         added_lines += count_authored_added_lines(norm)
     anchor = f"{target_dirs[0]}/BUILD.bazel" if target_dirs else f"{sorted(migrated_pkgs)[0]}/BUILD.bazel"
-    fidl_dep_pkgs = {d for d in dependency_dirs if d.startswith("sdk/fidl/")}
-    unassigned_pkgs = migrated_pkgs - set(target_dirs) - fidl_dep_pkgs
-    max_dirs = max(5, len(target_dirs) + len(fidl_dep_pkgs))
-    max_lines = max(550, 250 * (len(target_dirs) + len(fidl_dep_pkgs)))
+    req_dep_pkgs = required_upstream_deps | {
+        d for d in dependency_dirs if d.startswith("sdk/fidl/")
+    }
+    unassigned_pkgs = migrated_pkgs - set(target_dirs) - req_dep_pkgs
+    max_dirs = max(5, len(target_dirs) + len(req_dep_pkgs))
+    max_lines = max(550, 250 * (len(target_dirs) + len(req_dep_pkgs)))
     if unassigned_pkgs and (len(migrated_pkgs) > max_dirs or added_lines > max_lines):
         pkg_list_str = ", ".join(f"//{d}" for d in sorted(migrated_pkgs))
         _emit(findings, "cl_scope_exceeded", "error", anchor, 1, f"Change migrates {len(migrated_pkgs)} directories ({pkg_list_str}) and adds "

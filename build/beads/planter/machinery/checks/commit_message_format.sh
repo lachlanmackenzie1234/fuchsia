@@ -484,6 +484,27 @@ if head and base_rev and head != base_rev:
             "Commit subject has no subsystem tag although the directory's git log uses one.",
             f"Use '{pref_subj}'{alt_note}. {hint}")
 
+    # Check whether the `test` host tool required by `fx test --dry` exists in the build directory.
+    def find_missing_fx_test_tool(wdir, build_dir):
+        if not build_dir:
+            return None
+        try:
+            with open(os.path.join(wdir, build_dir, "tool_paths.json")) as fh:
+                tp_data = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(tp_data, list):
+            return None
+        for entry in tp_data:
+            if not isinstance(entry, dict) or entry.get("name") != "test":
+                continue
+            rel_path = (entry.get("path") or "").strip()
+            lbl = (entry.get("label") or "//scripts/fxtest/python:install").strip()
+            if rel_path and not os.path.isfile(os.path.join(wdir, build_dir, rel_path)):
+                return f"{build_dir}/{rel_path}", lbl
+        return None
+
+    bdir = ""
     tj_targets = None
     try:
         with open(f"{workdir}/.fx-build-dir") as fh:
@@ -501,6 +522,7 @@ if head and base_rev and head != base_rev:
                             tj_targets.add(re.sub(r"^@@?//", "//", val.strip()).split("(", 1)[0])
     except (OSError, ValueError):
         tj_targets = None
+    missing_fx_test_tool = find_missing_fx_test_tool(workdir, bdir)
 
     test_lines = [(i + 1, l) for i, l in enumerate(lines) if l.startswith("Test:")]
     for ln, l in test_lines:
@@ -555,6 +577,29 @@ if head and base_rev and head != base_rev:
         # Check that `fx test` footers do not pass a GN `group("tests")` label (`//<dir>:tests`),
         # which is not a leaf test entry in `tests.json` and fails `fx test --dry`.
         if re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", cmd):
+            if missing_fx_test_tool is not None:
+                tool_rel, tool_lbl = missing_fx_test_tool
+                msg_text = (
+                    f"`Test:` footer `{cmd}` runs `fx test`, but the `test` host tool "
+                    f"(`{tool_rel}`) has not been built, so Planter's `test_verifier` "
+                    "(`fx test --dry`) fails with `missing_fx_test_target` "
+                    "(`Tool \"test\" is required by this command and has not been built`)."
+                )
+                rem_text = (
+                    "Replace `Test: fx test ...` in the commit message and "
+                    "`CoderReport.test_footers` with "
+                    "`Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` "
+                    "(for device tests) or `Test: fx bazel test --config=host "
+                    "@//<dir>:<test>` (for host tests), or build the `fx test` host "
+                    f"tool first with `fx build '{tool_lbl}'`."
+                )
+                add(
+                    "test_footer_fx_test_tool_not_built",
+                    ln,
+                    msg_text,
+                    rem_text,
+                    severity="error",
+                )
             if tj_targets:
                 fx_lbls = [
                     re.sub(r"^@@?//", "//", lbl).split("(", 1)[0]

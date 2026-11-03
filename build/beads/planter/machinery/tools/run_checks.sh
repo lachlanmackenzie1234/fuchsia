@@ -220,6 +220,10 @@ DEP_ALIGN_UNMATCHED_RE = re.compile(
     r'^Target "([^"]+)" dependencies differ between GN and Bazel:.*?'
     r"unmatched in GN: \[([^\]]+)\]; unmatched in Bazel: \[([^\]]+)\]\s*$"
 )
+DEP_ALIGN_BAZEL_ONLY_RE = re.compile(
+    r'^Target "([^"]+)" dependencies differ between GN and Bazel:'
+    r"(?!.*unmatched in GN:).*?unmatched in Bazel: \[([^\]]+)\]\s*$"
+)
 UNIT_TEST_PARITY_MSG_RE = re.compile(
     r'^Unit tests of "([^"]+)": GN test_deps \[([^\]]+)\] '
     r'are not dependencies of "([^"]+)"\.?\s*$'
@@ -434,11 +438,26 @@ def is_macro_synced_attr_false_positive(finding, wdir, base_rev=""):
         lines = bz_text.splitlines()
         ow_var_re = re.compile(r"#\s*@bazel2gn:(?:value_overwrite|raw_overwrite):(.+)$")
         equivs = MACRO_ATTR_EQUIVALENTS.get(gn_attr, (gn_attr,))
-        for bt in pcl.extract_bazel_targets(bz_text, filename=rel_bz):
+        bz_targets = pcl.extract_bazel_targets(bz_text, filename=rel_bz)
+        by_name = {bt["name"]: bt for bt in bz_targets}
+        for bt in bz_targets:
             if bt["name"] != tname:
                 continue
             if any(a in bt["attrs"] for a in equivs):
                 return (tname, gn_attr, "macro_attr")
+            # fx_component / fx_test_component delegates component_name and manifest to
+            # its referenced compiled_manifest (fx_component_manifest) target.
+            cm_node = bt.get("keywords", {}).get("compiled_manifest")
+            if isinstance(cm_node, ast.Constant) and isinstance(cm_node.value, str):
+                cm_lbl = _canon_dep_label(cm_node.value, pkg_rel)
+                cm_name = (
+                    cm_lbl.split(":", 1)[1]
+                    if cm_lbl and cm_lbl.startswith(f"//{pkg_rel}:")
+                    else cm_node.value.lstrip(":")
+                )
+                cm_bt = by_name.get(cm_name)
+                if cm_bt and any(a in cm_bt["attrs"] for a in equivs):
+                    return (tname, gn_attr, "macro_attr")
             if gn_attr not in KNOWN_GN_TARGET_ATTRS:
                 start_ln = max(1, bt.get("line", 1))
                 end_ln = min(len(lines), bt.get("end_line", start_ln))
@@ -634,8 +653,44 @@ def _collect_bazel_target_dep_context(wdir, rel_bz, tname, pkg_rel):
     return existing, overwrites
 
 
+# Verify whether Bazel-only unmatched deps come from a shared `select(...)` list
+# that was already present in conditional GN `deps` at base_rev and synced via bazel2gn.
+def _is_conditional_select_dep_false_positive(wdir, pkg_rel, base_rev, bz_canon):
+    if not wdir or not pkg_rel or not bz_canon:
+        return False
+    base_gn = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+    if not base_gn:
+        return False
+    base_norms = {
+        _norm_vendor_crate_label(c)
+        for raw in re.findall(r'"((?:[^"\\]|\\.)*)"', pcl.blank_comments(base_gn))
+        for c in (_canon_dep_label(raw, pkg_rel),)
+        if c
+    }
+    bz_norms = {_norm_vendor_crate_label(c) for c in bz_canon}
+    if not (bz_norms <= base_norms):
+        return False
+    gn_path = os.path.join(wdir, pkg_rel, "BUILD.gn")
+    if os.path.isfile(gn_path):
+        try:
+            with open(gn_path, encoding="utf-8") as gf:
+                cur_gn = gf.read()
+        except OSError:
+            cur_gn = ""
+        if pcl.has_sentinel(cur_gn):
+            _, below = pcl.split_sentinel(cur_gn)
+            below_norms = {
+                _norm_vendor_crate_label(c)
+                for raw in re.findall(r'"((?:[^"\\]|\\.)*)"', pcl.blank_comments(below))
+                for c in (_canon_dep_label(raw, pkg_rel),)
+                if c
+            }
+            return bz_norms <= below_norms
+    return True
+
+
 # Check whether dep_alignment WARNING is a verified label-normalization, pure GN
-# forwarding-group expansion, or @bazel2gn:path_overwrite false positive.
+# forwarding-group expansion, conditional select(), or @bazel2gn:path_overwrite false positive.
 def is_verified_dep_alignment_false_positive(finding, wdir="", base_rev=""):
     """Returns (target_name, kind) when unmatched GN/Bazel dep lists are equivalent."""
     if finding.get("category") != "dep_alignment":
@@ -645,11 +700,25 @@ def is_verified_dep_alignment_false_positive(finding, wdir="", base_rev=""):
     rel_bz = finding.get("file", "")
     if not rel_bz.endswith("BUILD.bazel"):
         return None
+    pkg_rel = os.path.dirname(rel_bz).strip("/")
+    m_bz_only = DEP_ALIGN_BAZEL_ONLY_RE.match(finding.get("message", ""))
+    if m_bz_only:
+        tname = m_bz_only.group(1)
+        bz_items = [s.strip() for s in m_bz_only.group(2).split(",") if s.strip()]
+        bz_canon = [_canon_dep_label(s, pkg_rel) for s in bz_items]
+        if (
+            bz_canon
+            and None not in bz_canon
+            and _is_conditional_select_dep_false_positive(
+                wdir, pkg_rel, base_rev, bz_canon
+            )
+        ):
+            return (tname, "conditional_select")
+        return None
     m = DEP_ALIGN_UNMATCHED_RE.match(finding.get("message", ""))
     if not m:
         return None
     tname = m.group(1)
-    pkg_rel = os.path.dirname(rel_bz).strip("/")
     gn_items = [s.strip() for s in m.group(2).split(",") if s.strip()]
     bz_items = [s.strip() for s in m.group(3).split(",") if s.strip()]
     gn_canon = [_canon_dep_label(s, pkg_rel) for s in gn_items]
@@ -960,9 +1029,35 @@ def _is_unused_host_test_data_in_pkg(wdir, base_rev, pkg_rel, canon_lbl):
     return not any(tok in src_blob for tok in tokens)
 
 
+# Check whether test_name was an explicit standalone `rustc_test("<test_name>")` in base
+# BUILD.gn that omitted unused GN template `test_deps` from `<lib_name>`.
+def _is_explicit_gn_rustc_test_omitting_template_deps(
+    wdir, base_rev, pkg_rel, lib_name, test_name, gn_canon
+):
+    if not wdir or not pkg_rel or test_name == f"{lib_name}_test":
+        return False
+    base_gn = _read_base_pkg_gn(wdir, pkg_rel, base_rev)
+    if not base_gn:
+        return False
+    blocks = [
+        gt
+        for gt in pcl.extract_gn_targets(base_gn)
+        if gt["name"] == test_name and gt["tmpl"] == "rustc_test"
+    ]
+    if len(blocks) != 1:
+        return False
+    test_body_norms = {
+        _norm_vendor_crate_label(c)
+        for raw in re.findall(r'"((?:[^"\\]|\\.)*)"', blocks[0]["clean_body"])
+        for c in (_canon_dep_label(raw, pkg_rel),)
+        if c
+    }
+    return all(_norm_vendor_crate_label(g) not in test_body_norms for g in gn_canon)
+
+
 # Check whether unit_test_parity ERROR/WARNING is a false positive on non-Rust
 # runtime/compile test data (`data`/`test_data`/`compile_data`), mapped test deps,
-# or unused GN `host_test_data` `test_deps` rejected by `test_data_attribute`.
+# explicit standalone GN `rustc_test` targets, or unused GN `host_test_data` `test_deps`.
 def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
     """Returns (test_name, kind) when reported GN test_deps are carried on test_name."""
     if finding.get("category") != "unit_test_parity":
@@ -987,6 +1082,10 @@ def is_verified_unit_test_parity_false_positive(finding, wdir="", base_rev=""):
     code_deps, data_deps, overwrites, misplaced_data = ctx
     if any(_norm_vendor_crate_label(g) in misplaced_data for g in gn_canon):
         return (test_name, "data_not_test_data")
+    if _is_explicit_gn_rustc_test_omitting_template_deps(
+        wdir, base_rev, pkg_rel, lib_name, test_name, gn_canon
+    ):
+        return (test_name, "explicit_gn_rustc_test")
     stop_set = code_deps | data_deps
     used_runtime_data = False
     dropped_unused_test_data = False
@@ -1314,10 +1413,18 @@ except KeyboardInterrupt:
     log("interrupted")
     sys.exit(130)
 
-# Downgrade unamendable commit-message findings when a workspace write error occurred.
+# Downgrade unamendable commit-message findings when a workspace write error occurred,
+# or when build_verification built the `test` host tool during the same run.
 if any(f["category"] == "workspace_write_error" for f in all_findings):
     for f in all_findings:
         if f["source"] == "commit_message_format" and pcl.is_blocking_finding(f):
+            f["severity"] = "INFO"
+if not builds_skipped and not any(f["category"] == "unbuilt_fx_test_tool" for f in all_findings):
+    for f in all_findings:
+        if (
+            f["source"] == "commit_message_format"
+            and f["category"] == "test_footer_fx_test_tool_not_built"
+        ):
             f["severity"] = "INFO"
 
 blocking_findings = [f for f in all_findings if pcl.is_blocking_finding(f)]
