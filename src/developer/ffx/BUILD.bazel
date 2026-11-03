@@ -81,6 +81,7 @@ test_suite(
         "//src/developer/ffx/plugins/repository/default:ffx_repository_default_test",
         "//src/developer/ffx/plugins/repository/publish:ffx_repository_publish_test",
         "//src/developer/ffx/plugins/sdk:ffx_sdk_test",
+        "//src/developer/ffx/plugins/self-test:ffx_selftest_test",
         "//src/developer/ffx/plugins/setui/do_not_disturb:ffx_setui_do_not_disturb_args_test",
         "//src/developer/ffx/plugins/setui/do_not_disturb:ffx_setui_do_not_disturb_test",
         "//src/developer/ffx/plugins/setui/factory_reset:ffx_setui_factory_reset_args_test",
