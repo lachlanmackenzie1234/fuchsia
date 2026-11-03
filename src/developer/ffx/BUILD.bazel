@@ -13,8 +13,8 @@ json_merge(
     name = "ffx-defaults.json",
     srcs = [
         "data/config.json",
-        "lib/pbms/data/config.json",
         "plugins/trace/data/config.json",
+        "//src/developer/ffx/lib/pbms:data/config.json",
     ],
     deep_merge = True,
     visibility = ["//src/developer/ffx/config/macro/proc_macro:__pkg__"],
@@ -39,6 +39,8 @@ test_suite(
         "//src/developer/ffx/lib/mdns_discovery:lib_test",
         "//src/developer/ffx/lib/metrics:lib_test",
         "//src/developer/ffx/lib/netext:lib_test",
+        "//src/developer/ffx/lib/pbms:pbms_lib_test",
+        "//src/developer/ffx/lib/pkg:pkg_test",
         "//src/developer/ffx/lib/port_picker:lib_test",
         "//src/developer/ffx/lib/process:lib_test",
         "//src/developer/ffx/lib/safe_string:lib_test",

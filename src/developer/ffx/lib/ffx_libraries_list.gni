@@ -67,6 +67,8 @@ tests_migrated_ffx_libraries = [
   "logging",
   "metrics",
   "netext",
+  "pbms",
+  "pkg",
   "port_picker",
   "process",
   "safe_string",
