@@ -178,21 +178,20 @@ class IntelTiledFormats : public ImageFormatSet {
   const char* Name() const override { return "IntelTiledFormats"; }
 
   bool IsSupported(const PixelFormatAndModifier& pixel_format) const override {
-    if (pixel_format.pixel_format != PixelFormat::kR8G8B8A8 &&
-        pixel_format.pixel_format != PixelFormat::kR8G8B8X8 &&
-        pixel_format.pixel_format != PixelFormat::kB8G8R8A8 &&
-        pixel_format.pixel_format != PixelFormat::kB8G8R8X8 &&
-        pixel_format.pixel_format != PixelFormat::kNv12) {
+    if (!Is8888Rgb(pixel_format.pixel_format) && pixel_format.pixel_format != PixelFormat::kNv12) {
       return false;
     }
     switch (pixel_format.pixel_format_modifier) {
       case fuchsia_images2::PixelFormatModifier::kIntelI915XTiled:
       case fuchsia_images2::PixelFormatModifier::kIntelI915YTiled:
       case fuchsia_images2::PixelFormatModifier::kIntelI915YfTiled:
-      // X-Tiled CCS is not supported.
+        return true;
+      // X-tiled CCS is not supported. Y-tiled and Yf-tiled CCS (Gen9-11 render compression) are
+      // only supported for the 8:8:8:8 RGB formats (drm_fourcc.h; Gen9 display and <32-bpp / YUV
+      // hardware restrictions), not planar formats such as NV12.
       case fuchsia_images2::PixelFormatModifier::kIntelI915YTiledCcs:
       case fuchsia_images2::PixelFormatModifier::kIntelI915YfTiledCcs:
-        return true;
+        return Is8888Rgb(pixel_format.pixel_format);
       default:
         return false;
     }
@@ -212,6 +211,8 @@ class IntelTiledFormats : public ImageFormatSet {
     }
 
     if (FormatHasCcs(pixel_format_and_modifier)) {
+      // CCS is only supported for single-plane formats, so this is the size of the only plane.
+      ZX_ASSERT(num_of_planes == 1);
       size += CcsSize(width_in_tiles, height_in_tiles);
     }
 
@@ -372,8 +373,9 @@ class IntelTiledFormats : public ImageFormatSet {
       },
   };
 
-  // For simplicity CCS plane is always 3, leaving room for Y, U, and V planes if the format is I420
-  // or similar.
+  // Auxiliary buffers use fixed plane index 3 across image-format (matching
+  // kTransactionEliminationPlane) so callers do not depend on the number of color planes. Must
+  // remain 3 for ABI compatibility with callers (e.g. Magma).
   static constexpr uint32_t kCcsPlane = 3;
 
   // See https://01.org/sites/default/files/documentation/intel-gfx-prm-osrc-kbl-vol12-display.pdf
@@ -476,6 +478,18 @@ class IntelTiledFormats : public ImageFormatSet {
     }
   }
 
+  static bool Is8888Rgb(PixelFormat pixel_format) {
+    switch (pixel_format) {
+      case PixelFormat::kR8G8B8A8:
+      case PixelFormat::kR8G8B8X8:
+      case PixelFormat::kB8G8R8A8:
+      case PixelFormat::kB8G8R8X8:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   static bool FormatHasCcs(const PixelFormatAndModifier& pixel_format) {
     return fidl::ToUnderlying(pixel_format.pixel_format_modifier) &
            fuchsia_images2::kFormatModifierIntelCcsBit;
@@ -483,17 +497,13 @@ class IntelTiledFormats : public ImageFormatSet {
 
   // Does not include aux planes
   static uint32_t FormatNumOfPlanes(const PixelFormat& pixel_format) {
-    switch (pixel_format) {
-      case PixelFormat::kR8G8B8A8:
-      case PixelFormat::kR8G8B8X8:
-      case PixelFormat::kB8G8R8A8:
-      case PixelFormat::kB8G8R8X8:
-        return 1u;
-      case PixelFormat::kNv12:
-        return 2u;
-      default:
-        ZX_PANIC("Unsupported pixel format: %u", sysmem::fidl_underlying_cast(pixel_format));
+    if (Is8888Rgb(pixel_format)) {
+      return 1u;
     }
+    if (pixel_format == PixelFormat::kNv12) {
+      return 2u;
+    }
+    ZX_PANIC("Unsupported pixel format: %u", sysmem::fidl_underlying_cast(pixel_format));
   }
 
   static CheckedNumeric<uint64_t> CcsWidthInTiles(
