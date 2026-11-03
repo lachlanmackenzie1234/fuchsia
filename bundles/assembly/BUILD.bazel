@@ -4070,7 +4070,7 @@ assembly_input_bundle(
         "//src/media/audio/tools/audio-effects-ctl",
         "//src/media/audio/tools/audio_listener",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/signal_generator",
-        "//bundles/assembly/bazel_inputs/src/media/audio/tools/vol",
+        "//src/media/audio/tools/vol",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_player",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_recorder",
     ],

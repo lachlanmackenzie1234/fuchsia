@@ -11,7 +11,6 @@ group("tools") {
     "signal_generator",
     "virtual_audio_legacy_util",
     "virtual_audio_util",
-    "vol",
     "wav_player",
     "wav_recorder",
   ]
