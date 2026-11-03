@@ -134,7 +134,7 @@ class JobDispatcher final
   // processes.
   zx_status_t SetTimerSlackPolicy(const zx_policy_timer_slack& policy);
 
-  JobPolicy GetPolicy() const;
+  JobPolicy GetPolicy() const TA_EXCL(get_lock());
 
   // Kills its lowest child job that has get_kill_on_oom() set.
   // Returns false if no alive child job had get_kill_on_oom() set.

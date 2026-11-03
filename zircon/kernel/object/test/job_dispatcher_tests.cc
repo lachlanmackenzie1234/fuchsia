@@ -143,9 +143,56 @@ bool TestJobNoChildrenSignal() {
   END_TEST;
 }
 
+bool TestGetPolicyDuringEnumeration() {
+  BEGIN_TEST;
+
+  KernelHandle<JobDispatcher> parent_job;
+  zx_rights_t rights;
+  ASSERT_EQ(JobDispatcher::Create(0, GetRootJobDispatcher(), &parent_job, &rights), ZX_OK);
+
+  KernelHandle<JobDispatcher> child_job;
+  ASSERT_EQ(JobDispatcher::Create(0, parent_job.dispatcher(), &child_job, &rights), ZX_OK);
+
+  const zx_policy_basic_v2 policy = {
+      .condition = ZX_POL_NEW_EVENT,
+      .action = ZX_POL_ACTION_DENY,
+      .flags = ZX_POL_OVERRIDE_DENY,
+  };
+  ASSERT_EQ(child_job.dispatcher()->SetBasicPolicy(ZX_JOB_POL_RELATIVE, &policy, 1), ZX_OK);
+
+  class PolicyJobEnumerator final : public JobEnumerator {
+   public:
+    explicit PolicyJobEnumerator(zx_koid_t target_koid) : target_koid_(target_koid) {}
+
+    bool visited() const { return visited_; }
+    uint32_t action() const { return action_; }
+
+    bool OnJob(JobDispatcher* job) override {
+      if (job->get_koid() == target_koid_) {
+        visited_ = true;
+        action_ = job->GetPolicy().QueryBasicPolicy(ZX_POL_NEW_EVENT);
+      }
+      return true;
+    }
+
+   private:
+    const zx_koid_t target_koid_;
+    bool visited_ = false;
+    uint32_t action_ = ZX_POL_ACTION_ALLOW;
+  } enumerator(child_job.dispatcher()->get_koid());
+
+  EXPECT_TRUE(parent_job.dispatcher()->EnumerateChildrenRecursive(&enumerator));
+  EXPECT_TRUE(enumerator.visited());
+  EXPECT_EQ(enumerator.action(), static_cast<uint32_t>(ZX_POL_ACTION_DENY));
+
+  parent_job.dispatcher()->Kill(0);
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(job_dispatcher_tests)
 UNITTEST("JobDispatcherJobEnumerator", TestJobEnumerator)
 UNITTEST("JobNoChildrenSignal", TestJobNoChildrenSignal)
+UNITTEST("GetPolicyDuringEnumeration", TestGetPolicyDuringEnumeration)
 UNITTEST_END_TESTCASE(job_dispatcher_tests, "job_dispatcher_tests", "JobDispatcher tests")

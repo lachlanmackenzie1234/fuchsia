@@ -333,7 +333,7 @@ void JobDispatcher::UpdateSignalsLocked() {
 }
 
 JobPolicy JobDispatcher::GetPolicy() const {
-  Guard<CriticalMutex> guard{get_lock()};
+  Guard<CriticalMutex> guard{AssertOrderedLock, get_lock(), LockOrder()};
   return policy_;
 }
 
