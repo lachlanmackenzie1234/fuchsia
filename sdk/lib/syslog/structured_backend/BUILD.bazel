@@ -23,6 +23,9 @@ idk_cc_source_library(
     ],
     api_area = "Diagnostics",
     category = "partner",
+    hdrs_for_internal_use = [
+        "cpp/fuchsia_syslog.h",
+    ],
     idk_name = "syslog_structured_backend",
     include_base = "//sdk",
     public_configs = [
