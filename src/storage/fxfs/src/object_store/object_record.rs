@@ -4,8 +4,8 @@
 
 mod legacy;
 pub use legacy::{
-    EncryptionKeyV56, EncryptionKeysV56, ObjectItemV56, ObjectItemV59, ObjectKindV59,
-    ObjectValueV56, ObjectValueV59,
+    EncryptionKeyV56, EncryptionKeysV56, ObjectItemV56, ObjectItemV59, ObjectItemV62, ObjectKeyV54,
+    ObjectKindV59, ObjectValueV56, ObjectValueV59,
 };
 
 // TODO(https://fxbug.dev/42178223): need validation after deserialization.
@@ -69,7 +69,30 @@ pub enum ProjectPropertyV32 {
     Usage,
 }
 
-pub type ObjectKeyData = ObjectKeyDataV54;
+pub type PosixOwner = PosixOwnerV63;
+
+/// Identifies a POSIX owner that storage usage is attributed to.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum PosixOwnerV63 {
+    User(u32),
+    Group(u32),
+}
+
+pub type ObjectKeyData = ObjectKeyDataV63;
 
 #[derive(
     Clone,
@@ -85,7 +108,7 @@ pub type ObjectKeyData = ObjectKeyDataV54;
     SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectKeyDataV54 {
+pub enum ObjectKeyDataV63 {
     /// A generic, untyped object.  This must come first and sort before all other keys for a given
     /// object because it's also used as a tombstone and it needs to merge with all following keys.
     Object,
@@ -121,6 +144,9 @@ pub enum ObjectKeyDataV54 {
     /// A child of a directory that uses the casefold feature.
     /// (i.e. case insensitive, case preserving names)
     CasefoldChild { hash_code: u32, name: String },
+    /// Storage usage tracked for a POSIX user or group id.  Like `Project`, these records are only
+    /// ever attached to the volume's root node, and their values are deltas that the merger sums.
+    PosixOwner { owner: PosixOwnerV63 },
 }
 
 #[derive(
@@ -183,7 +209,7 @@ pub enum AttributeKeyV32 {
 }
 
 /// ObjectKey is a key in the object store.
-pub type ObjectKey = ObjectKeyV54;
+pub type ObjectKey = ObjectKeyV63;
 
 #[derive(
     Clone,
@@ -200,11 +226,11 @@ pub type ObjectKey = ObjectKeyV54;
     Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct ObjectKeyV54 {
+pub struct ObjectKeyV63 {
     /// The ID of the object referred to.
     pub object_id: u64,
     /// The type and data of the key.
-    pub data: ObjectKeyDataV54,
+    pub data: ObjectKeyDataV63,
 }
 // LINT.ThenChange(//src/storage/fxfs/src/object_store/extent_record.rs)
 
@@ -326,6 +352,11 @@ impl ObjectKey {
         }
     }
 
+    /// Creates an ObjectKey for a per-user or per-group usage entry.
+    pub fn posix_owner_usage(object_id: u64, owner: PosixOwner) -> Self {
+        Self { object_id, data: ObjectKeyData::PosixOwner { owner } }
+    }
+
     pub fn extended_attribute(object_id: u64, name: Vec<u8>) -> Self {
         Self { object_id, data: ObjectKeyData::ExtendedAttribute { name } }
     }
@@ -386,7 +417,8 @@ impl LayerKey for ObjectKey {
             | ObjectKeyData::GraveyardAttributeEntry { .. }
             | ObjectKeyData::Project { property: ProjectProperty::Limit, .. }
             | ObjectKeyData::ExtendedAttribute { .. } => MergeType::OptimizedMerge,
-            ObjectKeyData::Project { property: ProjectProperty::Usage, .. } => MergeType::FullMerge,
+            ObjectKeyData::Project { property: ProjectProperty::Usage, .. }
+            | ObjectKeyData::PosixOwner { .. } => MergeType::FullMerge,
         }
     }
 
@@ -1238,9 +1270,9 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV62;
+pub type ObjectItem = ObjectItemV63;
 
-pub type ObjectItemV62 = Item<ObjectKeyV54, ObjectValueV62>;
+pub type ObjectItemV63 = Item<ObjectKeyV63, ObjectValueV62>;
 
 impl ObjectItem {
     pub fn is_tombstone(&self) -> bool {
@@ -1366,7 +1398,7 @@ impl std::fmt::Display for AttributeId {
 
 #[cfg(test)]
 mod tests {
-    use super::{AttributeId, ObjectKey, ObjectKeyV54, TimestampV49};
+    use super::{AttributeId, ObjectKey, TimestampV49};
     use crate::lsm_tree::types::{FuzzyHash as _, LayerKey};
     use crate::object_store::extent::MIN_BLOCK_SIZE;
     use std::ops::Add;
@@ -1378,15 +1410,16 @@ mod tests {
     // https://fxbug.dev/419133532).
     #[test]
     fn test_hash_stability() {
-        // Target a specific version of ObjectKey.  If you want to delete ObjectKeyV54, simply
-        // update this test with a later key version, which will also require re-generating the
-        // hashes.
+        // Persistent layer bloom filters are skipped on older versions (we can't downgrade keys to
+        // hash them, and older layers are compacted away after upgrade), so we only care about
+        // hash stability for the latest ObjectKey version.  If key hashing intentionally changes
+        // as part of a LATEST_VERSION bump, regenerate the expected hashes below.
         assert_eq!(
-            &ObjectKeyV54::object(100).fuzzy_hash().collect::<Vec<_>>()[..],
+            &ObjectKey::object(100).fuzzy_hash().collect::<Vec<_>>()[..],
             &[11885326717398844384]
         );
         assert_eq!(
-            &ObjectKeyV54::extent(1, AttributeId::DATA, 0..2 * 1024 * 1024)
+            &ObjectKey::extent(1, AttributeId::DATA, 0..2 * 1024 * 1024)
                 .fuzzy_hash()
                 .collect::<Vec<_>>()[..],
             &[11090579907097549012, 2814892992701560424]

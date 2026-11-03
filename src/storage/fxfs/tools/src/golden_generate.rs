@@ -72,6 +72,8 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
     // everywhere else.
     ops::set_project_limit(vol, PROJECT_ID, 102400, 1024).await?;
     ops::set_project_for_node(vol, PROJECT_ID, regular_dir_path).await?;
+    // TODO(https://fxbug.dev/562121082): Exercise PosixOwner quota records once user/group usage
+    // tracking is enabled.
 
     ops::put(fs, vol, &Path::new(REGULAR_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;
     ops::put(fs, vol, &Path::new(DELETED_FILE_PATH), EXPECTED_FILE_CONTENT.to_vec()).await?;

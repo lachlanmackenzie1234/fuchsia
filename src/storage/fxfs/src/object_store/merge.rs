@@ -199,25 +199,16 @@ pub fn merge(
             );
         }
         (
-            ObjectKey {
-                object_id: _,
-                data:
-                    ObjectKeyData::Project {
-                        project_id: left_project_id,
-                        property: ProjectProperty::Usage,
-                    },
-            },
-            ObjectKey {
-                object_id: _,
-                data:
-                    ObjectKeyData::Project {
-                        project_id: right_project_id,
-                        property: ProjectProperty::Usage,
-                    },
-            },
+            left_key,
+            right_key,
             ObjectValue::BytesAndNodes(left_usage),
             ObjectValue::BytesAndNodes(right_usage),
-        ) if left_project_id == right_project_id => {
+        ) if matches!(
+            left_key.data,
+            ObjectKeyData::Project { property: ProjectProperty::Usage, .. }
+                | ObjectKeyData::PosixOwner { .. }
+        ) && left_key == right_key =>
+        {
             let result = *left_usage + *right_usage;
             // Tombstone the tracking when it goes to zero.
             if result.is_zero() {
@@ -259,7 +250,7 @@ mod tests {
     use crate::object_store::extent::MIN_BLOCK_SIZE;
     use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::object_record::{
-        AttributeKey, BytesAndNodes, ObjectKey, ObjectValue, Timestamp,
+        AttributeKey, BytesAndNodes, ObjectKey, ObjectValue, PosixOwner, Timestamp,
     };
     use crate::object_store::{AttributeId, ProjectId, VOLUME_DATA_KEY_ID};
     use anyhow::Error;
@@ -1563,6 +1554,170 @@ mod tests {
             &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 2, nodes: 8 })
         );
         iter.advance().await.unwrap();
+        assert!(iter.get().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_merge_posix_owner_usage() {
+        let tree = LSMTree::new(merge, None);
+        let key = ObjectKey::posix_owner_usage(5, PosixOwner::User(1000));
+
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 1000 }),
+        ))
+        .expect("insert error");
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+            ),
+            &key,
+        );
+        tree.seal();
+
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -1, nodes: -2 }),
+            ),
+            &key,
+        );
+        tree.seal();
+
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 16, nodes: 32 }),
+            ),
+            &key,
+        );
+
+        let layer_set = tree.layer_set();
+        let mut merger = layer_set.merger();
+        let mut iter = merger.query(Query::FullScan).await.unwrap();
+        assert_eq!(iter.get().unwrap().key, &key);
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 119, nodes: 1038 })
+        );
+        iter.advance().await.unwrap();
+        assert!(iter.get().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_merge_posix_owner_usage_gap_layer() {
+        let tree = LSMTree::new(merge, None);
+        let key = ObjectKey::posix_owner_usage(5, PosixOwner::User(1000));
+        let key2 = ObjectKey::posix_owner_usage(5, PosixOwner::Group(1000));
+
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 100, nodes: 1000 }),
+        ))
+        .expect("insert error");
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+            ),
+            &key,
+        );
+        tree.merge_into(
+            Item::new(
+                key2.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 20, nodes: 30 }),
+            ),
+            &key2,
+        );
+        tree.seal();
+
+        assert_eq!(
+            tree.find_value(&key).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 104, nodes: 1008 })
+        );
+        assert_eq!(
+            tree.find_value(&key2).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 20, nodes: 30 })
+        );
+
+        tree.merge_into(
+            Item::new(
+                key2.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 13, nodes: 17 }),
+            ),
+            &key2,
+        );
+        tree.seal();
+
+        assert_eq!(
+            tree.find_value(&key).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 104, nodes: 1008 })
+        );
+        assert_eq!(
+            tree.find_value(&key2).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 33, nodes: 47 })
+        );
+
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 16, nodes: 32 }),
+            ),
+            &key,
+        );
+
+        let layer_set = tree.layer_set();
+        let mut merger = layer_set.merger();
+        let mut iter = merger.query(Query::FullScan).await.unwrap();
+        assert_eq!(iter.get().unwrap().key, &key);
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 120, nodes: 1040 })
+        );
+        iter.advance().await.unwrap();
+        assert_eq!(iter.get().unwrap().key, &key2);
+        assert_eq!(
+            iter.get().unwrap().value,
+            &ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 33, nodes: 47 })
+        );
+        iter.advance().await.unwrap();
+        assert!(iter.get().is_none());
+
+        assert_eq!(
+            tree.find_value(&key).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 120, nodes: 1040 })
+        );
+        assert_eq!(
+            tree.find_value(&key2).await.expect("Find").unwrap(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 33, nodes: 47 })
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_merge_posix_owner_usage_to_zero() {
+        let tree = LSMTree::new(merge, None);
+        let key = ObjectKey::posix_owner_usage(5, PosixOwner::User(1000));
+
+        tree.insert(Item::new(
+            key.clone(),
+            ObjectValue::BytesAndNodes(BytesAndNodes { bytes: 4, nodes: 8 }),
+        ))
+        .expect("insert error");
+        tree.seal();
+
+        tree.merge_into(
+            Item::new(
+                key.clone(),
+                ObjectValue::BytesAndNodes(BytesAndNodes { bytes: -4, nodes: -8 }),
+            ),
+            &key,
+        );
+        tree.seal();
+
+        let layer_set = tree.layer_set();
+        let mut merger = layer_set.merger();
+        let iter = merger.query(Query::FullScan).await.unwrap();
         assert!(iter.get().is_none());
     }
 }

@@ -763,6 +763,28 @@ impl<'a> ScannedStore<'a> {
             },
             ObjectKeyData::GraveyardEntry { .. } => {}
             ObjectKeyData::GraveyardAttributeEntry { .. } => {}
+            ObjectKeyData::PosixOwner { owner } => {
+                // Should only be set on the root object store
+                if self.root_dir_id != key.object_id {
+                    self.fsck.error(FsckError::NonRootPosixOwnerMetadata(
+                        self.store_id,
+                        key.object_id,
+                        owner,
+                    ))?;
+                }
+                match value {
+                    ObjectValue::None | ObjectValue::BytesAndNodes(..) => {}
+                    _ => {
+                        // TODO(https://fxbug.dev/562121082): Add full fsck analysis for user/group
+                        // quota.
+                        self.fsck.error(FsckError::MalformedObjectRecord(
+                            self.store_id,
+                            key.into(),
+                            value.into(),
+                        ))?;
+                    }
+                }
+            }
         }
         Ok(())
     }

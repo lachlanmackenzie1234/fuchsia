@@ -22,8 +22,8 @@ use crate::object_store::volume::root_volume;
 use crate::object_store::{
     AttributeId, AttributeKey, BytesAndNodes, ChildValue, DirType, EncryptionKeys, ExtentMode,
     ExtentValue, FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions, ObjectAttributes,
-    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
-    RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, PosixOwner,
+    ProjectId, RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use crate::serialized_types::{OLD_KEY_SERIALIZATION_VERSION, VersionedLatest};
 use crate::testing::writer::Writer;
@@ -5229,5 +5229,51 @@ async fn test_oversized_inline_symlink_warning() {
         &test.errors()[..],
         [FsckIssue::Warning(FsckWarning::OversizedInlineSymlink(warn_store_id, warn_object_id))]
             if *warn_store_id == store_id && *warn_object_id == symlink_id
+    );
+}
+
+#[fuchsia::test]
+async fn test_non_root_posix_owner_metadata() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, child_id) = {
+        let fs = test.filesystem();
+        let store = fs.root_store();
+        let store_id = store.store_object_id();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store_id, root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let child_id = root_directory
+            .create_child_file(&mut transaction, "child")
+            .await
+            .expect("create_child_file failed")
+            .object_id();
+        transaction.merge_bytes_and_nodes(
+            store_id,
+            ObjectKey::posix_owner_usage(child_id, PosixOwner::User(1000)),
+            BytesAndNodes { bytes: 0, nodes: 1 },
+        );
+        transaction.commit().await.expect("commit failed");
+        (store_id, child_id)
+    };
+
+    test.remount().await.expect("remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        &test.errors()[..],
+        [FsckIssue::Error(FsckError::NonRootPosixOwnerMetadata(
+            err_store_id,
+            err_object_id,
+            PosixOwner::User(1000),
+        ))] if *err_store_id == store_id && *err_object_id == child_id
     );
 }
