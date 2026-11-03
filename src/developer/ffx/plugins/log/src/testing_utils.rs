@@ -26,7 +26,7 @@ use moniker::Moniker;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use target_behavior::ConnectionBehavior;
+use target_behavior::DirectConnector;
 use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 
@@ -196,8 +196,8 @@ impl TestEnvironment {
         let conn = ffx_target::Connection::from_fdomain_client(client.clone());
         let resolution = ffx_target::Resolution::mock(|| unreachable!());
         resolution.set_connection_for_test(Some(conn)).await;
-        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
-        target_env.set_behavior_for_test(behavior);
+        let connector = DirectConnector::from_resolution_for_test(resolution);
+        target_env.set_behavior_for_test(connector);
 
         Self { fho_env, state, event_rcv: Some(event_rcv), disconnect_snd }
     }

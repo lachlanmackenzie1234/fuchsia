@@ -156,7 +156,7 @@ mod test {
     use fidl::endpoints::DiscoverableProtocolMarker;
     use serde_json::json;
     use std::sync::Arc;
-    use target_behavior::ConnectionBehavior;
+    use target_behavior::DirectConnector;
 
     fn setup_fake_client(
         rcs_handler: impl Fn(fidl_fuchsia_developer_remotecontrol::RemoteControlRequest)
@@ -217,8 +217,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(DirectConnector::fake_with_fdomain_client(client).await);
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -268,8 +267,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(DirectConnector::fake_with_fdomain_client(client).await);
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -306,8 +304,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(DirectConnector::fake_with_fdomain_client(client).await);
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -347,8 +344,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        let behavior = ConnectionBehavior::fake_with_fdomain_client(client).await;
-        target_env.set_behavior_for_test(behavior);
+        target_env.set_behavior_for_test(DirectConnector::fake_with_fdomain_client(client).await);
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };

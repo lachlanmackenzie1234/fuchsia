@@ -21,7 +21,7 @@ use tempfile::TempDir;
 
 use discovery;
 use ffx_target::{Resolution, TargetInfoQuery};
-use target_behavior::{ConnectionBehavior, target_interface};
+use target_behavior::{DirectConnector, target_interface};
 
 #[derive(Debug, thiserror::Error)]
 pub enum IsolatedEmulatorError {
@@ -346,9 +346,9 @@ impl IsolatedEmulator {
         };
 
         let resolution = Resolution::from_target_handle(th)?;
-        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        let connector = DirectConnector::from_resolution_for_test(resolution);
 
-        target_interface(&fho_env).set_behavior_for_test(behavior);
+        target_interface(&fho_env).set_behavior_for_test(connector);
         Ok(())
     }
 
