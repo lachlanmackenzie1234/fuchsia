@@ -39,6 +39,7 @@ dts_synthetic = [
   "synthetic/arm_idle_states_and_domain.dts",
   "synthetic/arm_idle_states_multiple.dts",
   "synthetic/arm_idle_states_multiple_with_invalid.dts",
+  "synthetic/arm_idle_states_power_domains.dts",
   "synthetic/arm_timer.dts",
   "synthetic/arm_timer_no_frequency_override.dts",
   "synthetic/arm_timer_mmio_no_frequency_override.dts",
