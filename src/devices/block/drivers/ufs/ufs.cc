@@ -2177,6 +2177,7 @@ void Ufs::RetryResume(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_
 }
 
 zx::result<> Ufs::Start(fdf::DriverContext context) {
+  component_inspector_.emplace(context.CreateInspector(this));
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_name_ = context.node_name();
   config_ = context.take_config<ufs_config::Config>();
@@ -2213,16 +2214,6 @@ zx::result<> Ufs::Start(fdf::DriverContext context) {
 
   if (!host_controller_callback_) {
     SetHostControllerCallback(NotifyEventCallback);
-  }
-
-  auto connect_result = incoming_->Connect<fuchsia_inspect::InspectSink>();
-  if (connect_result.is_ok()) {
-    component_inspector_.emplace(dispatcher(), inspect::PublishOptions{
-                                                   .tree_name = "ufs",
-                                                   .client_end = std::move(connect_result.value()),
-                                               });
-  } else {
-    fdf::warn("Failed to connect to InspectSink: {}", connect_result.status_string());
   }
 
   if (zx_status_t status = Init(); status != ZX_OK) {
