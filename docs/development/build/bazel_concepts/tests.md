@@ -97,26 +97,45 @@ Hence, to define a Fuchsia-compatible host test in Bazel:
 Defining the `host_xxx_test()` target alone will **NOT** make it visible to
 `fx test` and, more importantly, to infra builders.
 
-To make a Bazel host test visible to `fx test` and infra builders, write a
-`bazel_test_suite` target in GN that lists the Bazel labels of one or more Bazel
-host tests or suites, and add that target to a "tests" group in GN. For example:
+To make a Bazel host test visible to `fx test` and infra builders, expose a
+`"host_tests"` `test_suite()` in its package, include that package suite in an
+area aggregation `test_suite()`, reference the aggregation suite from a
+`bazel_test_suite()` in the same directory's `BUILD.gn`, and add that target to
+`group("tests")` in GN. For example:
 
-`//src/foo/bar/BUILD.bazel`:
+`//src/foo/lib/parser/BUILD.bazel`:
 
 ```bazel
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
 
 test_suite(
-  name = "host_tests",
-  host_tests = [
-    "//src/foo/bar/lib:lib_tests",
-    "//src/foo/bar/util:util_tests",
-  ]
-  target_compatible_with = HOST_OS_CONSTRAINTS,
+    name = "host_tests",
+    tests = [],  # Include all tests in the package.
+    visibility = ["//src/foo:__pkg__"],
+)
+
+host_rustc_test(
+    name = "parser_test",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 ```
 
-`//src/foo/bar/BUILD.gn`:
+`//src/foo/BUILD.bazel`:
+
+```bazel
+test_suite(
+    name = "foo_host_tests",
+    tests = [
+        "//src/foo/lib/parser:host_tests",
+        "//src/foo/util:host_tests",
+    ],
+)
+```
+
+`//src/foo/BUILD.gn`:
 
 ```gn
 import("//build/bazel/bazel_test_suite.gni")
@@ -124,11 +143,12 @@ import("//build/bazel/bazel_test_suite.gni")
 bazel_test_suite("bazel_tests") {
   host_tests = [
     # This references the target in BUILD.bazel.
-    "//src/foo/bar:host_tests",
+    "//src/foo:foo_host_tests",
   ]
 }
 
 group("tests") {
+  testonly = true
   deps = [
     ":bazel_tests",
     ...
@@ -151,8 +171,10 @@ GN argument is overridden to `false`.
 ### Best practices
 
 For style and best practices on structuring Bazel tests and `test_suite()`
-targets and connecting them to the GN build graph, see
-[Tests and test suites][bazel_tests_style_guide].
+targets, see [Tests and test suites][bazel_tests_style_guide]. For how
+`bazel_test_suite()` connects into the GN test graph and what to do when
+migrating tests from GN, see
+[Hooking Bazel tests into the GN test graph](#gn-test-graph).
 
 ## Defining Fuchsia device tests in Bazel
 
@@ -256,18 +278,21 @@ otherwise.
 
 ## Exporting Bazel device tests to `fx test` and infra builders
 
-Like host tests, device tests must be listed in a GN `bazel_test_suite()`
-target, using the `target_tests` parameter instead of `host_tests`:
+Like host tests, expose device tests from their package via a `"tests"`
+`test_suite()`, group those into an area aggregation `test_suite()`, and list
+the aggregation suite in `target_tests` on a GN `bazel_test_suite()` in the
+same directory (see
+[Hooking Bazel tests into the GN test graph](#gn-test-graph)):
 
-`//src/foo/bar/BUILD.gn`:
+`//src/foo/BUILD.gn`:
 
 ```gn
 import("//build/bazel/bazel_test_suite.gni")
 
 bazel_test_suite("bazel_tests") {
   target_tests = [
-    # This references the target in BUILD.bazel.
-    "//src/foo/bar:bar_tests",
+    # This references the aggregation test_suite() in //src/foo/BUILD.bazel.
+    "//src/foo:foo_tests",
   ]
 }
 ```
@@ -290,6 +315,147 @@ and writes copies of their manifests that point at those blobs (see
 `//build/bazel/scripts/bazel_test_packages.py`). Bazel only guarantees that an
 output is on disk at the end of an invocation that requested it, so a later
 Bazel invocation could otherwise delete files that these consumers need.
+
+## Hooking Bazel tests into the GN test graph {#gn-test-graph}
+
+GN and Ninja are still the entrypoint to the build (especially in infra; in
+some local workflows, such as running a single Bazel test with `fx test`, the
+build invokes Bazel directly), so any Bazel test target must be visible to GN
+for the build and `tests.json` to include it. Every Bazel test must be
+reachable from a GN target that builders already reach:
+
+```none
+fx_test() / host_xxx_test()          (package BUILD.bazel)
+  <- package test_suite()            (package BUILD.bazel: "tests" / "host_tests")
+  <- aggregation test_suite()        (area BUILD.bazel, e.g. "foo_tests")
+  <- bazel_test_suite()              (area BUILD.gn)
+  <- group("tests")                  (area BUILD.gn)
+  <- area groups such as //src:tests, then builder groups in //bundles/buildbot
+```
+
+No presubmit check verifies that a Bazel test has this path. If no
+`bazel_test_suite()` reaches a test, `fx gen` and `fx build` succeed without
+any warning, and the test is silently neither built nor run in infra. After
+adding a test, run `fx gen` and check that its label (which starts with `@`)
+appears in `out/default/tests.json`. Do this with a build configuration the test
+should run in, because Bazel also silently skips tests that are
+[incompatible](#bazel-test-compatibility) with the current configuration.
+
+Builders can also include device tests through a `product_bundle_test_group()`
+in `//bundles/buildbot`, which runs the tests it reaches against a specific
+product bundle instead of the builder's default one. This is an additional
+mechanism; tests reached this way still need a `bazel_test_suite()`.
+
+### Recommended layout
+
+[Tests and test suites][bazel_tests_style_guide] defines the full style rules
+for structuring Bazel tests and `test_suite()` targets. At a high level, tests
+connect to GN in three layers while GN still drives the build:
+
+- **Expose a package `test_suite()` in each package that has tests.** Name it
+  `"tests"` for device tests or `"host_tests"` for host tests, keep individual
+  `*_test` targets private to the package, and set the suite's `visibility` to
+  the area package that aggregates it (using `:__pkg__`, never
+  `:__subpackages__`). Don't include subpackages in a package's `test_suite()`.
+
+- **Group package suites in an area aggregation `test_suite()`, paired with one
+  `bazel_test_suite()` in the same directory's `BUILD.gn`.** Keep aggregation
+  packages as few as is reasonable, and don't recreate GN's pattern of a
+  `tests` group in every intermediate directory. Pick the level at which
+  developers add packages and at which `OWNERS` approve them. For example, use
+  `//src/connectivity/bluetooth` rather than `//src/connectivity`, so adding a
+  new Bluetooth package doesn't need approval from connectivity-wide owners.
+  Name the aggregation `test_suite()` after its scope (ending in
+  `"tests"` or `"host_tests"`), list only package `test_suite()` targets in it,
+  and reference it with a full `//` label from `bazel_test_suite()` in the
+  matching `BUILD.gn`:
+
+  `//src/foo/bar/BUILD.bazel`:
+
+  ```bazel
+  test_suite(
+      name = "tests",
+      tests = [],  # Include all tests in the package.
+      visibility = ["//src/foo:__pkg__"],
+  )
+
+  # Private *_test target(s) in this package.
+  ...
+  ```
+
+  `//src/foo/BUILD.bazel`:
+
+  ```bazel
+  test_suite(
+      name = "foo_tests",
+      tests = [
+          "//src/foo/bar:tests",
+          "//src/foo/baz:tests",
+      ],
+  )
+  ```
+
+  `//src/foo/BUILD.gn`:
+
+  ```gn
+  import("//build/bazel/bazel_test_suite.gni")
+
+  bazel_test_suite("bazel_tests") {
+    target_tests = [ "//src/foo:foo_tests" ]
+  }
+
+  group("tests") {
+    testonly = true
+    deps = [
+      ":bazel_tests",
+      ...
+    ]
+  }
+  ```
+
+- **Add new packages to an existing area aggregation suite when one exists;
+  otherwise agree on an area directory with its owners** and add the
+  aggregation `test_suite()` and `bazel_test_suite()` there. Older area suites
+  such as `//tools:host_tests` still list some individual test targets directly;
+  leave existing entries alone, and expose a package `test_suite()` for newly
+  added or migrated packages.
+
+- **Keep host and device tests apart.** Put device test suites only in
+  `target_tests`, and host test suites only in `host_tests`, and don't mix host
+  and device tests inside any Bazel `test_suite()`. `fx gen` fails if
+  `target_tests` reaches anything other than an `fx_test()`, or `host_tests`
+  reaches anything other than a host test.
+
+- **Hook each test into the GN test graph once.** Reaching the same Bazel test
+  from two `bazel_test_suite()`s doesn't run it twice (identical `tests.json`
+  entries are merged), but it makes the layout harder to follow.
+
+### When migrating tests from GN {#migrating-gn-tests}
+
+Note: This section only applies when you move existing GN targets to Bazel.
+
+- **Don't keep a `BUILD.gn` just to hook Bazel tests into GN.** If every target
+  in a directory moved to Bazel and no GN target depends on it, delete its
+  `BUILD.gn`, remove the deleted directory's `:tests` group from the parent
+  `BUILD.gn`, and add the package's `test_suite()` to the area's aggregation
+  `test_suite()`. Even when `BUILD.gn` stays behind for targets that still have
+  GN dependents (see [Testing libraries in both build
+  systems](#tests-in-both-build-systems)), hook the Bazel tests through the
+  area's aggregation `test_suite()`, not a per-directory `bazel_test_suite()`.
+  In a `BUILD.bazel` file synced by `bazel2gn`, put `# @bazel2gn:skip` on the
+  package `test_suite()` so `bazel2gn` doesn't generate a duplicate
+  `group("tests")` in `BUILD.gn`.
+
+- **Clean up references to deleted GN test targets.** Once a GN test target is
+  removed (see [Testing libraries in both build
+  systems](#tests-in-both-build-systems)), delete it from the GN test groups
+  that listed it. Don't replace a dependency that actually builds or packages
+  the test with a `bazel_test_suite()`: `bazel_test_suite()` only emits metadata
+  for `tests.json` and builds nothing on its own.
+
+- **Keep E2E tests in GN.** E2E tests (host tests that need a device and a
+  product bundle) can't be defined in Bazel yet
+  ([fxbug.dev/576736818](https://fxbug.dev/576736818)).
 
 ## Testing libraries in both build systems {#tests-in-both-build-systems}
 
@@ -317,9 +483,9 @@ In practice:
   `host_go_test()`, `fx_unittest_package()`, `fx_package()` targets with
   `test_components` (with their `fx_test_component()`s and the `fx_test()` for
   them), and the `with_unit_tests`, `with_host_unit_tests`, and `test_deps`
-  attributes of Rust rules. Export the Bazel test with a
-  `bazel_test_suite()` as described above, and list the generated GN copy in the
-  GN test groups that listed the original GN test.
+  attributes of Rust rules. Hook the Bazel test into the GN test graph as
+  described [above](#gn-test-graph), and list the generated GN copy in the GN
+  test groups that listed the original GN test.
 
 - **Device test packages get different names in GN.** A GN test package and its
   Bazel copy can't share a package name, because both are published to the same

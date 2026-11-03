@@ -17,8 +17,8 @@
 #
 # - Add a GN bazel_test_suite() target referencing the aggregation Bazel
 #   test_suite() targets in the same directory.
-# - Ensure it is reachable from those targets, e.g. by adding it to
-#   `host_tests` or `developer_specified_tests` in `args.gn`.
+# - Add it to the `group("tests")` in the same BUILD.gn, so the existing GN
+#   test groups make it reachable from builders.
 #
 # Args:
 #   host_tests: A string list, where each item is a Bazel label (starting with
