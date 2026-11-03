@@ -2,16 +2,28 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Library that exports the metadata.h file  to support the transition
-# to DFv2.
+# TODO(b/572590277): `ddk`, `ddk-deprecated-binding-headers`,
+# `ddk-device-headers`, `ddk_metadata_only` and the GN `ddk_metadata`
+# remain hand-written in BUILD.gn. `ddk` and `ddk-device-headers` depend on
+# //sdk/lib/driver/runtime, which is not built by Bazel yet, and bazel2gn
+# converts the `deps` of `fx_cc_library_headers()` to GN `deps` instead of
+# the `public_deps` these headers targets need.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
 
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
 )
 
+# Library that exports the metadata.h file  to support the transition
+# to DFv2.
+#
+# This target is not synchronized to BUILD.gn: the GN `ddk_metadata`
+# target is hand-written because it depends on the GN-only
+# `ddk_metadata_only` target.
+# @bazel2gn:skip
 cc_library(
     name = "ddk_metadata",
     hdrs = [
@@ -23,5 +35,85 @@ cc_library(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "@fuchsia_sdk//pkg/zbi-format",
+    ],
+)
+
+fx_cc_library_headers(
+    name = "ddk-metadata-headers",
+    hdrs = [
+        "include/ddk/metadata/camera.h",
+        "include/ddk/metadata/display.h",
+        "include/ddk/metadata/test.h",
+    ],
+
+    #  ________  _________  ________  ________
+    # |\   ____\|\___   ___\\   __  \|\   __  \
+    # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+    #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+    #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+    #     ____\_\  \   \ \__\ \ \_______\ \__\
+    #    |\_________\   \|__|  \|_______|\|__|
+    #    \|_________|
+    #
+    # New driver metadata should be defined in FIDL instead of C.
+    #
+    # To remove items from the allowlist, please send a change to one of the
+    # OWNERS of this file to remove an element from the visibility list below.
+    #
+    # Please allowlist entire directories rather than individual targets as it
+    # requires less allowlist churn over time.
+    visibility = [
+        "//sdk/lib/driver/devicetree/visitors:__subpackages__",
+        "//sdk/lib/driver_test_realm:__pkg__",
+        "//src/camera/drivers/bus/aml_mipicsi:__pkg__",
+        "//src/camera/drivers/sensors/imx227:__pkg__",
+        "//src/devices/board/drivers/astro:__pkg__",
+        "//src/devices/board/drivers/astro/post-init:__pkg__",
+        "//src/devices/board/drivers/integration-test:__pkg__",
+        "//src/devices/board/drivers/nelson:__pkg__",
+        "//src/devices/board/drivers/nelson/post-init:__pkg__",
+        "//src/devices/board/drivers/sherlock:__pkg__",
+        "//src/devices/board/drivers/sherlock/post-init:__pkg__",
+        "//src/devices/board/drivers/vim3:__pkg__",
+        "//src/devices/bus/drivers/platform:__pkg__",
+        "//src/devices/bus/drivers/platform/test:__pkg__",
+        "//src/devices/clock/drivers/clock:__pkg__",
+        "//src/devices/gpio/drivers/gpio:__pkg__",
+        "//src/devices/i2c/drivers/intel-i2c:__pkg__",
+        "//src/devices/power/drivers/power:__pkg__",
+        "//src/devices/serial/drivers/ftdi:__pkg__",
+        "//src/devices/serial/drivers/ftdi/test:__pkg__",
+        "//src/devices/testing/driver-integration-test-shim:__pkg__",
+        "//src/devices/usb/drivers/usb-peripheral:__pkg__",
+        "//src/devices/usb/lib/usb:__pkg__",
+        "//src/ui/input/drivers/buttons:__pkg__",
+        "//src/ui/input/drivers/goodix-gt92xx:__pkg__",
+        "//src/ui/input/drivers/hid-input-report:__pkg__",
+        "//src/ui/input/lib/hid:__pkg__",
+        "//src/ui/input/lib/hid-input-report:__pkg__",
+        "//src/ui/light/drivers/aml-light:__pkg__",
+    ],
+)
+
+# Drivers should use //sdk/lib/mmio-ptr instead.
+fx_cc_library_headers(
+    name = "ddk-deprecated-mmio-headers",
+    hdrs = ["include/lib/ddk/hw/reg.h"],
+    visibility = [
+        "//src/devices/bus/lib/virtio:__pkg__",
+        "//zircon/third_party/dev/ethernet/e1000:__pkg__",
+    ],
+)
+
+fx_cc_library_headers(
+    name = "ddk-hw-headers",
+    hdrs = [
+        "include/lib/ddk/hw/arch_ops.h",
+        "include/lib/ddk/hw/inout.h",
+    ],
+    visibility = [
+        "//src/devices/block/drivers/ufs:__pkg__",
+        "//src/graphics/display/drivers/intel-display:__pkg__",
+        "//src/graphics/magma/lib/magma/platform:__pkg__",
     ],
 )
