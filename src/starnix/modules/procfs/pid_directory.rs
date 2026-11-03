@@ -1386,7 +1386,7 @@ impl DynamicFileSource for StatFile {
             let mem_stats = if should_skip_memory_stats(current_task) {
                 stub_memory_stats()
             } else {
-                mm.get_stats(current_task, SelfStatsCacheMode::BypassCache)
+                mm.get_stats(current_task, SelfStatsCacheMode::AllowCached)
             };
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;

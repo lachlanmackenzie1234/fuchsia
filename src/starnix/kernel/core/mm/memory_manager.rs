@@ -4386,12 +4386,10 @@ pub struct MemoryManager {
     /// The architecture width of the process.
     pub arch_width: ArchWidth,
 
-    /// Cached `(timestamp, mappings_generation, stats)` to avoid expensive Zircon VMAR walks on
-    /// sequential reads while invalidating when mappings change.
-    pub cached_stats: LockDepMutex<
-        Option<(zx::MonotonicInstant, u64, MemoryStats)>,
-        MemoryManagerCachedStatsLock,
-    >,
+    /// Cached `(timestamp, stats)` to avoid expensive Zircon VMAR walks on repeated procfs reads;
+    /// see [`Self::get_stats`] for the caching contract.
+    pub cached_stats:
+        LockDepMutex<Option<(zx::MonotonicInstant, MemoryStats)>, MemoryManagerCachedStatsLock>,
 }
 
 impl ArchSpecific for MemoryManager {
@@ -4947,6 +4945,11 @@ impl MemoryManager {
         // Drop the state before the unmapped mappings, since dropping a mapping may acquire a lock
         // in `DirEntry`'s `drop`.
         released_mappings.finalize(state);
+        // `MAP_POPULATE` only commits or faults in pages when the mapping is accessible
+        // (`!prot_flags.is_empty()`); `PROT_NONE` mappings leave resident stats unchanged.
+        if options.contains(MappingOptions::POPULATE) && !prot_flags.is_empty() && result.is_ok() {
+            *self.cached_stats.lock() = None;
+        }
 
         result
     }
@@ -4974,6 +4977,11 @@ impl MemoryManager {
         );
 
         released_mappings.finalize(state);
+        // `MAP_POPULATE` only commits or faults in pages when the mapping is accessible
+        // (`!prot_flags.is_empty()`); `PROT_NONE` mappings leave resident stats unchanged.
+        if options.contains(MappingOptions::POPULATE) && !prot_flags.is_empty() && result.is_ok() {
+            *self.cached_stats.lock() = None;
+        }
 
         result
     }
@@ -5663,15 +5671,28 @@ impl MemoryManager {
         self.state.read().mappings.total_usage
     }
 
+    /// Returns memory statistics for this address space.
+    ///
+    /// Computing resident stats requires an expensive Zircon `ZX_INFO_VMAR_MAPS` walk, so results
+    /// are cached in `self.cached_stats` for `CACHE_TTL` (2s). When returning cached stats (any
+    /// non-self read, or a self-read with `SelfStatsCacheMode::AllowCached`):
+    /// - `vm_size` and `vm_stack` are always exact (`O(1)` from `Mappings::{total_usage,
+    ///   stack_usage}`).
+    /// - `MAP_POPULATE` (when `!prot_flags.is_empty()`, since `PROT_NONE` does not populate
+    ///   pages), `mlock`, `munlock`, and `process_mrelease` explicitly invalidate the cache, so
+    ///   bulk page population/reclaim and `vm_lck` changes are reflected immediately.
+    /// - Other `Mappings` mutations (lazy VMA fault materialization, `mprotect`, `PR_SET_VMA`,
+    ///   `madvise`, non-`POPULATE` `mmap`, `PROT_NONE` `MAP_POPULATE`, `munmap`) and in-place page
+    ///   faults do not invalidate the cache, so `vm_rss`, `rss_*`, `vm_swap`, `vm_data`, and
+    ///   `vm_exe` may be up to `CACHE_TTL` stale, except that cached entries with `vm_rss >
+    ///   vm_size` (after a large `munmap`) are bypassed so `vm_rss <= vm_size` always holds.
+    ///   Callers requiring immediate resident page accuracy on self-reads (such as
+    ///   `/proc/self/statm`) pass `SelfStatsCacheMode::BypassCache`.
     pub fn get_stats(
         &self,
         current_task: &CurrentTask,
         self_cache_mode: SelfStatsCacheMode,
     ) -> MemoryStats {
-        // Acquiring stats is an intensive operation, so when diagnostic processes request
-        // stats of a process in fast succession, we return a short-lived cached value.
-        // Callers such as /proc/self/stat and /proc/self/statm that need immediate reflection
-        // of userspace page faults on self-reads pass `SelfStatsCacheMode::BypassCache`.
         let is_self_read =
             current_task.mm().map_or(false, |mm| std::ptr::eq(Arc::as_ptr(&mm), self));
 
@@ -5679,15 +5700,19 @@ impl MemoryManager {
         // Other Starnix threads should not make any changes to the Zircon mappings while we hold
         // a read lock to the memory manager state.
         let state = self.state.read();
-        let generation = state.mappings.generation;
         let total_usage = state.mappings.total_usage;
         let stack_usage = state.mappings.stack_usage;
         let now = zx::MonotonicInstant::get();
         if !(self_cache_mode == SelfStatsCacheMode::BypassCache && is_self_read) {
             const CACHE_TTL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(2000);
             let cached = self.cached_stats.lock();
-            if let Some((timestamp, cached_gen, stats)) = *cached {
-                if cached_gen == generation && now - timestamp < CACHE_TTL {
+            if let Some((timestamp, mut stats)) = *cached {
+                // `munmap` does not invalidate `cached_stats`, so unmapping a large populated
+                // region can drop `total_usage` (`vm_size`) below the cached `vm_rss`. Bypass the
+                // cache when `stats.vm_rss > total_usage` so `vm_rss <= vm_size` always holds.
+                if now - timestamp < CACHE_TTL && stats.vm_rss <= total_usage {
+                    stats.vm_size = total_usage;
+                    stats.vm_stack = stack_usage;
                     return stats;
                 }
             }
@@ -5772,7 +5797,7 @@ impl MemoryManager {
         // TODO(https://fxbug.dev/396221597): Placeholder for now. We need kernel support to track
         // the committed bytes high water mark.
         stats.vm_rss_hwm = STUB_VM_RSS_HWM;
-        *self.cached_stats.lock() = Some((now, generation, stats));
+        *self.cached_stats.lock() = Some((now, stats));
         stats
     }
 
@@ -6014,12 +6039,11 @@ fn write_map(
 /// own `/proc/self/*` memory statistics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SelfStatsCacheMode {
-    /// Allow returning recent `cached_stats` on self-reads when the mapping generation matches
-    /// (used for high-frequency self-polling files like `/proc/self/status` and
-    /// `/proc/self/smaps_rollup`).
+    /// Allow returning recent `cached_stats` on self-reads (used for high-frequency self-polling
+    /// files like `/proc/self/stat`, `/proc/self/status`, and `/proc/self/smaps_rollup`).
     AllowCached,
     /// Bypass `cached_stats` on self-reads to immediately reflect in-place committed page changes
-    /// from userspace page faults (used for `/proc/self/stat` and `/proc/self/statm`).
+    /// from userspace page faults (used for `/proc/self/statm`).
     BypassCache,
 }
 
@@ -9403,6 +9427,11 @@ mod tests {
                 assert!(initial_stats.vm_size >= 2 * page_size);
                 assert!(initial_stats.vm_rss >= page_size);
 
+                // Pin the cached timestamp far in the future for cache-hit assertions so the test
+                // cannot flake if the thread is preempted for >= CACHE_TTL on a heavily loaded bot.
+                let far_future = zx::MonotonicInstant::get() + zx::MonotonicDuration::from_hours(1);
+                mm.cached_stats.lock().as_mut().unwrap().0 = far_future;
+
                 // Commit the second page of addr1 in-place (without changing mappings.generation)
                 // and verify a subsequent read within CACHE_TTL hits the cache.
                 current_task.write_memory((addr1 + page_size).unwrap(), &[1u8; 8]).unwrap();
@@ -9413,34 +9442,106 @@ mod tests {
                     (initial_stats.vm_size, initial_stats.vm_rss)
                 );
 
-                // 2. Cache expiration once now - timestamp >= CACHE_TTL (2000ms), and cache
-                // invalidation when mappings.generation changes.
-                let gen1 = mm.state.read().mappings.generation;
+                // 2. Cache expiration once now - timestamp >= CACHE_TTL (2000ms), O(1) vm_size
+                // and vm_stack updates across non-POPULATE VMA churn within CACHE_TTL, and
+                // immediate invalidation on MAP_POPULATE.
                 *mm.cached_stats.lock() = Some((
                     zx::MonotonicInstant::get() - zx::MonotonicDuration::from_millis(2001),
-                    gen1,
                     initial_stats,
                 ));
                 let expired_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
                 assert_eq!(expired_stats.vm_size, initial_stats.vm_size);
                 assert_eq!(expired_stats.vm_rss - initial_stats.vm_rss, page_size);
+                mm.cached_stats.lock().as_mut().unwrap().0 = far_future;
 
                 let addr2 = map_memory(&current_task, UserAddress::default(), 2 * *PAGE_SIZE);
                 current_task.write_memory(addr2, &[1u8; 8]).unwrap();
                 current_task.write_memory((addr2 + page_size).unwrap(), &[2u8; 8]).unwrap();
+                let stack_addr = map_memory_growsdown(&current_task, *PAGE_SIZE);
+
+                // Within CACHE_TTL, non-POPULATE VMA churn updates vm_size and vm_stack in O(1)
+                // without walking Zircon mappings (so vm_rss remains the cached value).
+                let churn_cached_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(churn_cached_stats.vm_size - initial_stats.vm_size, 3 * page_size);
+                assert_eq!(churn_cached_stats.vm_stack - initial_stats.vm_stack, page_size);
+                assert_eq!(churn_cached_stats.vm_rss, expired_stats.vm_rss);
+
+                mm.unmap(stack_addr, page_size).unwrap();
+                let unmapped_stack_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
+                assert_eq!(unmapped_stack_stats.vm_size - initial_stats.vm_size, 2 * page_size);
+                assert_eq!(unmapped_stack_stats.vm_stack, initial_stats.vm_stack);
+                assert_eq!(unmapped_stack_stats.vm_rss, expired_stats.vm_rss);
+
+                // MappingOptions::POPULATE with PROT_NONE does not commit pages or invalidate
+                // cached_stats.
+                let prot_none_populated = mm
+                    .map_anonymous(
+                        DesiredAddress::Any,
+                        page_size,
+                        ProtectionFlags::empty(),
+                        MappingOptions::ANONYMOUS | MappingOptions::POPULATE,
+                        MappingName::None,
+                    )
+                    .unwrap();
+                assert!(mm.cached_stats.lock().is_some());
+                mm.unmap(prot_none_populated, page_size).unwrap();
+
+                // Accessible MappingOptions::POPULATE invalidates cached_stats so an immediate
+                // AllowCached read reflects all newly committed pages; unmapping a large populated
+                // region that reduces total_usage below the cached vm_rss bypasses the stale cache.
+                let bulk_populated_len = initial_stats.vm_size + 8 * page_size;
+                let bulk_populated_addr = mm
+                    .map_anonymous(
+                        DesiredAddress::Any,
+                        bulk_populated_len,
+                        ProtectionFlags::READ | ProtectionFlags::WRITE,
+                        MappingOptions::ANONYMOUS | MappingOptions::POPULATE,
+                        MappingName::None,
+                    )
+                    .unwrap();
+                assert!(mm.cached_stats.lock().is_none());
+                let bulk_populated_stats =
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(
+                    bulk_populated_stats.vm_rss - initial_stats.vm_rss,
+                    3 * page_size + bulk_populated_len
+                );
+                mm.cached_stats.lock().as_mut().unwrap().0 = far_future;
+                mm.unmap(bulk_populated_addr, bulk_populated_len).unwrap();
+                let after_bulk_unmap_stats =
+                    mm.get_stats(&current_task, SelfStatsCacheMode::AllowCached);
+                assert_eq!(after_bulk_unmap_stats.vm_rss - initial_stats.vm_rss, 3 * page_size);
+
+                let _populated_addr = mm
+                    .map_anonymous(
+                        DesiredAddress::Any,
+                        page_size,
+                        ProtectionFlags::READ | ProtectionFlags::WRITE,
+                        MappingOptions::ANONYMOUS | MappingOptions::POPULATE,
+                        MappingName::None,
+                    )
+                    .unwrap();
+                assert!(mm.cached_stats.lock().is_none());
 
                 let refreshed_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
-                assert_eq!(refreshed_stats.vm_size - initial_stats.vm_size, 2 * page_size);
-                assert_eq!(refreshed_stats.vm_rss - initial_stats.vm_rss, 3 * page_size);
+                assert_eq!(refreshed_stats.vm_size - initial_stats.vm_size, 3 * page_size);
+                assert_eq!(refreshed_stats.vm_rss - initial_stats.vm_rss, 4 * page_size);
 
                 // 3. Kernel thread (mm() == Err, is_self_read == false) uses cached_stats, whereas a
                 // CLONE_VM sibling thread (is_self_read == true) bypasses stale cached_stats when
                 // SelfStatsCacheMode::BypassCache is requested.
-                let gen2 = mm.state.read().mappings.generation;
+                let sibling = current_task.clone_task_for_test(
+                    (starnix_uapi::CLONE_THREAD
+                        | starnix_uapi::CLONE_VM
+                        | starnix_uapi::CLONE_SIGHAND) as u64,
+                    None,
+                );
+                assert!(Arc::ptr_eq(&sibling.mm().unwrap(), &mm));
+
+                let synthetic_cached_rss = refreshed_stats.vm_size;
                 *mm.cached_stats.lock() = Some((
-                    zx::MonotonicInstant::get(),
-                    gen2,
-                    MemoryStats { vm_size: 123_456, vm_rss: 654_321, ..Default::default() },
+                    far_future,
+                    MemoryStats { vm_rss: synthetic_cached_rss, ..Default::default() },
                 ));
 
                 let (kthread_result_fn, req) =
@@ -9455,17 +9556,16 @@ mod tests {
                         .build_with_sync_result();
                 current_task.kernel().kthreads.spawner().spawn_from_request(req);
                 let kthread_stats = kthread_result_fn().expect("kthread get_stats");
-                assert_eq!((kthread_stats.vm_size, kthread_stats.vm_rss), (123_456, 654_321));
-
-                let sibling = current_task.clone_task_for_test(
-                    (starnix_uapi::CLONE_THREAD
-                        | starnix_uapi::CLONE_VM
-                        | starnix_uapi::CLONE_SIGHAND) as u64,
-                    None,
+                assert_eq!(
+                    (kthread_stats.vm_size, kthread_stats.vm_rss),
+                    (refreshed_stats.vm_size, synthetic_cached_rss)
                 );
-                assert!(Arc::ptr_eq(&sibling.mm().unwrap(), &mm));
+
                 let sibling_cached = mm.get_stats(&sibling, SelfStatsCacheMode::AllowCached);
-                assert_eq!((sibling_cached.vm_size, sibling_cached.vm_rss), (123_456, 654_321));
+                assert_eq!(
+                    (sibling_cached.vm_size, sibling_cached.vm_rss),
+                    (refreshed_stats.vm_size, synthetic_cached_rss)
+                );
                 let sibling_stats = mm.get_stats(&sibling, SelfStatsCacheMode::BypassCache);
                 assert_eq!(
                     (sibling_stats.vm_size, sibling_stats.vm_rss),
@@ -9478,7 +9578,7 @@ mod tests {
                 assert!(mm.cached_stats.lock().is_none());
                 let post_release_stats = mm.get_stats(&reader, SelfStatsCacheMode::AllowCached);
                 assert_eq!(post_release_stats.vm_size, refreshed_stats.vm_size);
-                assert!(post_release_stats.vm_rss + 4 * page_size <= refreshed_stats.vm_rss);
+                assert!(post_release_stats.vm_rss + 5 * page_size <= refreshed_stats.vm_rss);
             },
             KernelFeatures { cached_zx_map_info_bytes: 4096, ..Default::default() },
         )
