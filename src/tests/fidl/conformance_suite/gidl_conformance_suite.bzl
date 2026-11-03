@@ -32,6 +32,7 @@ CONFORMANCE_SUITE_GIDL_FILES = [
     "//src/tests/fidl/conformance_suite:handles.gidl",
     "//src/tests/fidl/conformance_suite:integer.gidl",
     "//src/tests/fidl/conformance_suite:memcpy_compatibility.gidl",
+    "//src/tests/fidl/conformance_suite:nonzero.gidl",
     "//src/tests/fidl/conformance_suite:padding.gidl",
     "//src/tests/fidl/conformance_suite:ported_from_walker_handles.gidl",
     "//src/tests/fidl/conformance_suite:ported_from_walker_strings.gidl",
