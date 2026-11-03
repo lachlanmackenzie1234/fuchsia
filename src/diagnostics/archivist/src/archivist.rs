@@ -336,6 +336,19 @@ impl Archivist {
         let accessors_dict =
             self.pipeline_manager.serve_pipelines(Arc::clone(&self.accessor_server)).await;
 
+        // Serve fuchsia.diagnostics.ArchiveAccessor.logs as a standalone protocol
+        // outside of the diagnostics-accessors dictionary so that it is only routed
+        // explicitly to authorized components.
+        let accessor_server = Arc::clone(&self.accessor_server);
+        let logs_pipeline = self.pipeline_manager.logs_pipeline();
+        svc_dir.add_fidl_service_at(
+            logs_pipeline.protocol_name().into_owned(),
+            move |stream: fdiagnostics::ArchiveAccessorRequestStream| {
+                debug!("fuchsia.diagnostics.ArchiveAccessor.logs connection");
+                accessor_server.spawn_server(Arc::clone(&logs_pipeline), stream);
+            },
+        );
+
         // Serve fuchsia.logger.Log
         let log_server = Arc::clone(&self.log_server);
         svc_dir.add_fidl_service(move |stream| {

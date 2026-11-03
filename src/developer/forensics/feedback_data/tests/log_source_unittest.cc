@@ -131,7 +131,7 @@ TEST_F(LogSourceTest, WritesToSink) {
       dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
                         dispatcher(), batches, kTimeWaitForLimitedLogs, kArchivePeriod));
 
-  InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
+  InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.logs");
 
   source.Start();
   RunLoopFor(kTimeWaitForLimitedLogs);
@@ -159,7 +159,7 @@ TEST_F(LogSourceTest, UnbindsOnIteratorClose) {
 
   stubs::DiagnosticsArchiveClosesIteratorConnection archive;
 
-  InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.feedback");
+  InjectServiceProvider(&archive, "fuchsia.diagnostics.ArchiveAccessor.logs");
 
   source.Start();
   RunLoopUntilIdle();

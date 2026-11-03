@@ -211,6 +211,7 @@
         },
         {
             protocol: [
+                "fuchsia.diagnostics.ArchiveAccessor.logs",
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LogStream",
                 "fuchsia.diagnostics.system.SerialLogControl",

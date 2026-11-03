@@ -288,6 +288,7 @@
             protocol: [
                 "fuchsia.component.resolution.Resolver-full",
                 "fuchsia.device.NameProvider",
+                "fuchsia.diagnostics.ArchiveAccessor.logs",
                 "fuchsia.diagnostics.host.ArchiveAccessor",
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LogStream",

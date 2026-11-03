@@ -25,7 +25,7 @@ LogSource::LogSource(async_dispatcher_t* dispatcher,
   FX_CHECK(sink_ != nullptr);
 
   archive_accessor_.set_error_handler([this](const zx_status_t status) {
-    FX_LOGS(WARNING) << "Lost connection to " << kArchiveAccessorName;
+    FX_LOGS(WARNING) << "Lost connection to " << kLogsArchiveAccessorName;
 
     // The batch iterator and archive accessor connections are not expected to close. Ensure both
     // are unbound at the same time.
@@ -36,7 +36,7 @@ LogSource::LogSource(async_dispatcher_t* dispatcher,
 }
 
 void LogSource::Start() {
-  services_->Connect(archive_accessor_.NewRequest(dispatcher_), kArchiveAccessorName);
+  services_->Connect(archive_accessor_.NewRequest(dispatcher_), kLogsArchiveAccessorName);
 
   auto format = fuchsia::diagnostics::Format::FXT;
   fuchsia::diagnostics::StreamParameters params;

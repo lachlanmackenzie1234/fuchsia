@@ -18,7 +18,13 @@
             path: "/svc/fuchsia.component.runtime.DictionaryRouter",
         },
         {
+            // NOTE: fuchsia.diagnostics.ArchiveAccessor.logs exposes unredacted
+            // system logs prior to redaction by Feedback. Routing this protocol
+            // to any component other than /core/feedback is restricted by
+            // security policy in //src/security/policy/component_manager_policy_base.json5
+            // and requires a Fuchsia Privacy review.
             protocol: [
+                "fuchsia.diagnostics.ArchiveAccessor.logs",
                 "fuchsia.diagnostics.LogFlusher",
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LogStream",
@@ -59,6 +65,7 @@
     expose: [
         {
             protocol: [
+                "fuchsia.diagnostics.ArchiveAccessor.logs",
                 "fuchsia.diagnostics.LogFlusher",
                 "fuchsia.diagnostics.LogSettings",
                 "fuchsia.diagnostics.LogStream",

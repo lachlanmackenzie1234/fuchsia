@@ -218,6 +218,20 @@
                 target_monikers: [],
             },
             {
+                // Exposes unredacted system logs prior to redaction by Feedback.
+                source_moniker: "/bootstrap/archivist",
+                source: "component",
+                source_name: "fuchsia.diagnostics.ArchiveAccessor.logs",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/feedback",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/archivist",
+                ],
+            },
+            {
                 source_moniker: "/bootstrap/fshost",
                 source: "component",
                 source_name: "blob",

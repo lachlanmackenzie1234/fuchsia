@@ -134,7 +134,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, SmokeTest) {
       dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
                         dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod));
 
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -297,7 +297,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, SingleThreaded_Flush) {
       std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
           dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/true));
 
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -389,7 +389,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, MultipleFlushes) {
       std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
           dispatcher(), json_batches, kTimeWaitForLimitedLogs, kArchivePeriod, /*strict=*/true));
 
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -465,7 +465,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, RecordsLogs) {
                         dispatcher(), json_batches, /*initial_delay=*/zx::nsec(0), kArchivePeriod,
                         /*strict=*/false));
 
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -522,7 +522,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogs) {
       dispatcher(),
       std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(json_batches[0]));
 
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -653,7 +653,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsFallbackToArchivi
       std::make_unique<stubs::DiagnosticsBatchIterator>(fallback_stream_json_batches));
 
   stubs::DiagnosticsArchiveSequentialIterators archive(dispatcher(), std::move(iterators));
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -733,7 +733,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsFallbackToArchivi
       disk_json_batches[0]));
   iterators.push_back(std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>());
   stubs::DiagnosticsArchiveSequentialIterators archive(dispatcher(), std::move(iterators));
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -799,7 +799,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, ResumesPersistingAfterCachePurge) {
   stubs::DiagnosticsArchive archive(
       dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
                         dispatcher(), json_batches, zx::sec(0), kArchivePeriod, /*strict=*/false));
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -879,7 +879,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, RestartWritesMessageAndAppendsLogs)
       std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(second_batch));
 
   stubs::DiagnosticsArchiveSequentialIterators archive(dispatcher(), std::move(iterators));
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
@@ -973,7 +973,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, RestartResumesPersistingAfterCacheP
       dispatcher(),
       std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
           dispatcher(), json_batches, kWriterPeriod, kArchivePeriod, /*strict=*/false));
-  InjectServiceProvider(&archive, kArchiveAccessorName);
+  InjectServiceProvider(&archive, kLogsArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
   const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");

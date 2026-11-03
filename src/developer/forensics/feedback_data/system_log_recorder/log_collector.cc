@@ -28,10 +28,10 @@ void LogCollector::Start(Callback callback) {
   started_ = true;
   callback_ = std::move(callback);
 
-  services_->Connect(archive_accessor_.NewRequest(dispatcher_), kArchiveAccessorName);
+  services_->Connect(archive_accessor_.NewRequest(dispatcher_), kLogsArchiveAccessorName);
 
   archive_accessor_.set_error_handler([this](zx_status_t status) {
-    FX_LOGS(WARNING) << "Lost connection to " << kArchiveAccessorName << ": "
+    FX_LOGS(WARNING) << "Lost connection to " << kLogsArchiveAccessorName << ": "
                      << zx_status_get_string(status);
     OnError(Error::kStreamError);
   });
