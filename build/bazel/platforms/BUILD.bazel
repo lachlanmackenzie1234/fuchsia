@@ -223,6 +223,34 @@ platform(
     visibility = ["//:__subpackages__"],
 )
 
+# The Starnix C++ toolchains don't provide the compiler runtime libraries, so
+# arm64 code built for them can't call the outline atomics helpers
+# (__aarch64_*). This matches //build/config/arm64:no-outline-atomics, which GN
+# applies to the arm64 vDSO, but applies to everything built for
+# linux_starnix_arm64, including the vDSO's dependencies.
+_linux_starnix_arm64_extra_flags = ["--copt=-mno-outline-atomics"]
+
+# GN builds the arch32 vDSO in its bionic_arm toolchain, whose
+# //src/starnix/toolchain/config:bionic config applies //build/config/arm
+# (c_family_flags, so both compiler and linker flags) and
+# -fasynchronous-unwind-tables to all code, including the vDSO's dependencies.
+# Keep in sync with those configs.
+_linux_starnix_arm_c_family_flags = [
+    "-march=armv7-a",
+    "-mhwdiv=arm,thumb",
+    "-mfloat-abi=hard",
+    "-mtune=generic",
+    "-fforce-enable-int128",
+]
+
+_linux_starnix_arm_extra_flags = [
+    "--copt=" + flag
+    for flag in _linux_starnix_arm_c_family_flags + ["-fasynchronous-unwind-tables"]
+] + [
+    "--linkopt=" + flag
+    for flag in _linux_starnix_arm_c_family_flags
+]
+
 # Linux platforms for binaries that run in Starnix, e.g. the Starnix vDSO.
 #
 # Unlike the linux_$cpu platforms above, which are used for host binaries,
@@ -253,7 +281,7 @@ platform(
         "@platforms//cpu:arm64",
         ":linux_flavor_starnix",
     ],
-    flags = _flags_for_linux_starnix_arm64,
+    flags = _flags_for_linux_starnix_arm64 + _linux_starnix_arm64_extra_flags,
     visibility = ["//:__subpackages__"],
 )
 
@@ -275,7 +303,7 @@ platform(
         "@platforms//cpu:arm",
         ":linux_flavor_starnix",
     ],
-    flags = _flags_for_linux_starnix_arm,
+    flags = _flags_for_linux_starnix_arm + _linux_starnix_arm_extra_flags,
     visibility = ["//:__subpackages__"],
 )
 
