@@ -410,6 +410,92 @@ impl<'a, const N: usize> ErasedScope for KTraceScope<'a, N> {
     }
 }
 
+/// Zero-sized scope placeholder returned by `begin_scope_cond!` when its compile-time condition is
+/// `false`, avoiding `Option<KTraceScope<'a, N>>` stack slots and out-of-line drop calls.
+#[must_use]
+#[derive(Debug)]
+pub struct DisabledKTraceScope<'a, const N: usize = 0>(core::marker::PhantomData<&'a ()>);
+
+// Empty `Drop` allows callers to pass disabled and enabled scope guards uniformly to `drop(...)`
+// without triggering `clippy::drop_non_drop`, while matching `Option<KTraceScope<'a, N>>` drop
+// borrow checking.
+impl<'a, const N: usize> Drop for DisabledKTraceScope<'a, N> {
+    #[inline(always)]
+    fn drop(&mut self) {}
+}
+
+impl<'a, const N: usize> DisabledKTraceScope<'a, N> {
+    #[inline(always)]
+    pub const fn is_some(&self) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    pub const fn is_none(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    pub fn as_mut(&mut self) -> Option<&mut KTraceScope<'a, N>> {
+        None
+    }
+
+    #[inline(always)]
+    pub fn take(&mut self) -> Option<KTraceScope<'a, N>> {
+        None
+    }
+}
+
+/// Type-level selector mapping a compile-time `bool` trace condition to its scope guard storage.
+#[doc(hidden)]
+pub struct TraceCond<const ENABLED: bool>;
+
+#[doc(hidden)]
+pub trait CondScopeStorage<'a, const N: usize> {
+    type Scope;
+    #[must_use]
+    fn make_scope(f: impl FnOnce() -> Option<KTraceScope<'a, N>>) -> Self::Scope;
+}
+
+impl<'a, const N: usize> CondScopeStorage<'a, N> for TraceCond<false> {
+    type Scope = DisabledKTraceScope<'a, N>;
+
+    #[inline(always)]
+    fn make_scope(_f: impl FnOnce() -> Option<KTraceScope<'a, N>>) -> Self::Scope {
+        DisabledKTraceScope(core::marker::PhantomData)
+    }
+}
+
+impl<'a, const N: usize> CondScopeStorage<'a, N> for TraceCond<true> {
+    type Scope = Option<KTraceScope<'a, N>>;
+
+    #[inline(always)]
+    fn make_scope(f: impl FnOnce() -> Option<KTraceScope<'a, N>>) -> Self::Scope {
+        f()
+    }
+}
+
+#[doc(hidden)]
+pub trait OptionalKTraceScope<'a, const N: usize> {
+    fn end_with(self, f: impl FnOnce(&mut KTraceScope<'a, N>));
+}
+
+impl<'a, const N: usize> OptionalKTraceScope<'a, N> for DisabledKTraceScope<'a, N> {
+    #[inline(always)]
+    fn end_with(self, _f: impl FnOnce(&mut KTraceScope<'a, N>)) {}
+}
+
+impl<'a, const N: usize> OptionalKTraceScope<'a, N> for Option<KTraceScope<'a, N>> {
+    #[inline(always)]
+    fn end_with(self, f: impl FnOnce(&mut KTraceScope<'a, N>)) {
+        if let Some(mut scope) = self {
+            core::hint::cold_path();
+            f(&mut scope);
+            core::mem::forget(scope);
+        }
+    }
+}
+
 // KTraceBuffer wraps per-CPU buffers allocated by the C++ ktrace subsystem, which tracks
 // dropped records using percpu_writer's DroppedRecordStats across the FFI boundary.
 use crate::percpu_writer::{DroppedRecordDurationEvent, DroppedRecordStats, serialize_drop_stats};
@@ -1900,6 +1986,109 @@ mod tests {
         }
 
         // Dropping `scope` here emits the complete event from the arguments it owns.
+    }
+
+    /// Verifies disabled and enabled compile-time conditional trace scopes.
+    #[test]
+    fn disabled_cond_scope_is_zero_sized() {
+        const DISABLED: bool = false;
+        const ENABLED: bool = true;
+
+        struct OverrideGuard(*mut ffi::c_void);
+        impl Drop for OverrideGuard {
+            fn drop(&mut self) {
+                // SAFETY: Clearing the thread-local override to null ensures no subsequent trace
+                // call on this thread can dereference `self.0`.
+                unsafe { cpp_ktrace_set_thread_local_override(ptr::null_mut()) };
+                // SAFETY: `self.0` was allocated by `rust_ktrace_init` and is no longer referenced
+                // after clearing the thread-local override with interrupts disabled.
+                unsafe { rust_ktrace_free(self.0) };
+            }
+        }
+        let _guard = InterruptDisableGuard::new();
+        META_CAT.set_index(0, kstring::interned_category::InternedCategory::INVALID_INDEX);
+
+        let local_state = KTraceState::new();
+        let local_state_ptr = ptr::from_ref(&local_state).cast::<ffi::c_void>();
+        let mut ktrace_ptr = ptr::null_mut();
+        // SAFETY: `local_state_ptr` points to `local_state`, which outlives `_override_guard`
+        // (and thus `ktrace_ptr`), and `&mut ktrace_ptr` is a valid writable out-pointer.
+        let status = unsafe { rust_ktrace_init(max_num_cpus(), local_state_ptr, &mut ktrace_ptr) };
+        assert_eq!(status, 0);
+        // SAFETY: `ktrace_ptr` was initialized by `rust_ktrace_init` and `_override_guard` clears
+        // the thread-local override before freeing `ktrace_ptr`.
+        unsafe { cpp_ktrace_set_thread_local_override(ktrace_ptr) };
+        let _override_guard = OverrideGuard(ktrace_ptr);
+
+        // Enable `META_CAT` at runtime first so the `DISABLED` checks below verify that a `false`
+        // compile-time condition suppresses scope creation and argument evaluation even when the
+        // runtime category is active.
+        local_state.categories_bitmask.store(1 << META_CAT.index(), Ordering::Release);
+        expect_true!(KTrace::category_enabled(META_CAT));
+
+        let mut begin_evaluated = false;
+        let mut end_evaluated = false;
+        let local_bytes = *b"borrowed";
+
+        let mut scope = begin_scope_cond!(
+            DISABLED,
+            META_CAT,
+            "disabled_scope",
+            "begin_arg" => {
+                begin_evaluated = true;
+                1u64
+            },
+            "borrowed" => &local_bytes[..],
+        );
+        expect_eq!(core::mem::size_of_val(&scope), 0);
+        expect_false!(begin_evaluated);
+        expect_false!(scope.is_some());
+        expect_true!(scope.is_none());
+        expect_true!(scope.as_mut().is_none());
+        expect_true!(scope.take().is_none());
+        end_scope!(
+            scope,
+            "end_arg" => {
+                end_evaluated = true;
+                2u64
+            },
+        );
+        expect_false!(end_evaluated);
+
+        struct AssocConstCaller;
+        impl AssocConstCaller {
+            const DISABLED: bool = false;
+            fn check() -> usize {
+                let s = begin_scope_cond!(Self::DISABLED, META_CAT, "assoc_disabled");
+                core::mem::size_of_val(&s)
+            }
+        }
+        expect_eq!(AssocConstCaller::check(), 0);
+
+        let cpu_scope = cpu_begin_scope_cond!(DISABLED, META_CAT, "disabled_cpu_scope");
+        expect_eq!(core::mem::size_of_val(&cpu_scope), 0);
+        drop(cpu_scope);
+
+        let enabled_scope = begin_scope_cond!(
+            ENABLED,
+            META_CAT,
+            "enabled_scope",
+            "begin_arg" => {
+                begin_evaluated = true;
+                1u64
+            },
+        );
+        expect_true!(core::mem::size_of_val(&enabled_scope) > 0);
+        expect_true!(begin_evaluated);
+        expect_true!(enabled_scope.is_some());
+        end_scope!(
+            enabled_scope,
+            "end_arg" => {
+                end_evaluated = true;
+                2u64
+            },
+        );
+        expect_true!(end_evaluated);
     }
 
     /// Verifies bitfield layout construction and encoding.

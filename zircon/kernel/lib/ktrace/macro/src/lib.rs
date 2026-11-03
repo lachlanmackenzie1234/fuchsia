@@ -579,23 +579,30 @@ macro_rules! cpu_begin_scope {
     };
 }
 
-/// Similar to `begin_scope!`, but checks the given runtime_condition, in addition to the given
-/// category, to determine whether to emit the event.
+/// Similar to `begin_scope!`, but gates the trace scope on a compile-time `bool` condition in
+/// addition to the trace category. Evaluates to `Option<KTraceScope>` when `$cond` is `true` and
+/// a zero-sized `DisabledKTraceScope` when `$cond` is `false`.
 #[macro_export]
 macro_rules! begin_scope_cond {
-    ($cond:expr, $category:tt, $label:tt, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {{
-        let category = $crate::resolve_category!($category);
-        if $cond && crate::ktrace_rs::KTrace::category_enabled(category) {
-            Some(crate::ktrace_rs::KTraceScope::begin(
-                category,
-                $crate::resolve_string!($label),
-                $context,
-                [$(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
-            ))
-        } else {
-            None
-        }
-    }};
+    ($cond:expr, $category:tt, $label:tt, $context:expr $(, $key:tt => $val:expr)* $(,)?) => {
+        <crate::ktrace_rs::TraceCond<{ $cond }> as crate::ktrace_rs::CondScopeStorage<
+            '_,
+            _,
+        >>::make_scope(|| {
+            let category = $crate::resolve_category!($category);
+            if crate::ktrace_rs::KTrace::category_enabled(category) {
+                core::hint::cold_path();
+                Some(crate::ktrace_rs::KTraceScope::begin(
+                    category,
+                    $crate::resolve_string!($label),
+                    $context,
+                    [$(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*],
+                ))
+            } else {
+                None
+            }
+        })
+    };
     ($cond:expr, $category:tt, $label:tt $(, $key:tt => $val:expr)* $(,)?) => {
         $crate::begin_scope_cond!(
             $cond,
@@ -625,19 +632,18 @@ macro_rules! cpu_begin_scope_cond {
 /// Ends a trace scope created by a begin scope macro with additional key-value argument pairs.
 ///
 /// # Arguments:
-/// - scope: The `Option<KTraceScope>` returned by a begin scope macro.
+/// - scope: The scope guard returned by a begin scope macro.
 /// - ...: List of key => value argument pairs.
 #[macro_export]
 macro_rules! end_scope {
     ($scope:expr $(, $key:tt => $val:expr)* $(,)?) => {
-        if let Some(mut scope) = $scope {
+        crate::ktrace_rs::OptionalKTraceScope::end_with($scope, |scope| {
             if !scope.is_ended() {
                 scope.end_with_args(&[
                     $(crate::ktrace_rs::Argument::new($crate::resolve_string!($key), $val)),*
                 ]);
             }
-            core::mem::forget(scope);
-        }
+        })
     };
 }
 
