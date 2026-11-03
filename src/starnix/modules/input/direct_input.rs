@@ -14,7 +14,7 @@ use starnix_core::task::Kernel;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_logging::{log_debug, log_warn};
 use starnix_modules_input_report_event_conversion::InputReportConverter;
-use starnix_sync::{DirectInputConverterLock, LockDepMutex, Mutex};
+use starnix_sync::{DirectInputConverterLock, DirectInputStateLock, LockDepMutex, Mutex};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::collections::{HashMap, HashSet};
@@ -132,7 +132,7 @@ pub struct DirectInputManager {
     ownership_active: Arc<AtomicBool>,
     resume_generation: AtomicU64,
     next_device_id: AtomicU32,
-    state: Mutex<DirectInputState>,
+    state: LockDepMutex<DirectInputState, DirectInputStateLock>,
     reserved_minors: Mutex<HashSet<u32>>,
     scope: fasync::Scope,
 }
@@ -148,7 +148,7 @@ impl std::fmt::Debug for DirectInputManager {
 
 impl Drop for DirectInputManager {
     fn drop(&mut self) {
-        let mut state = self.state.lock();
+        let state = self.state.get_mut();
         for (_, handle) in state.abort_handles.drain() {
             handle.abort();
         }
@@ -210,7 +210,7 @@ impl DirectInputManager {
             ownership_active: Arc::new(AtomicBool::new(initial_active)),
             resume_generation: AtomicU64::new(if initial_active { 1 } else { 0 }),
             next_device_id: AtomicU32::new(1),
-            state: Mutex::new(DirectInputState {
+            state: LockDepMutex::new(DirectInputState {
                 is_paused: !initial_active,
                 devices: HashMap::new(),
                 abort_handles: HashMap::new(),
@@ -254,7 +254,7 @@ impl DirectInputManager {
             ownership_active: Arc::new(AtomicBool::new(false)),
             resume_generation: AtomicU64::new(0),
             next_device_id: AtomicU32::new(1),
-            state: Mutex::new(DirectInputState {
+            state: LockDepMutex::new(DirectInputState {
                 is_paused: true,
                 devices: HashMap::new(),
                 abort_handles: HashMap::new(),
