@@ -478,14 +478,17 @@ impl Broker {
         }
     }
 
+    /// Acquires a lease on `element_id` at `level`, keyed by `lease_control` and recorded in
+    /// Inspect under `lease_name`.
     pub fn acquire_lease(
         &mut self,
         element_id: ElementID,
         level: IndexedPowerLevel,
         lease_control: zx::Koid,
+        lease_name: &str,
     ) -> Result<Lease, fpb::LeaseError> {
         fuchsia_trace::duration!("power-broker", "Broker::acquire_lease");
-        log::debug!("acquire_lease({element_id}@{level})");
+        log::debug!("acquire_lease({lease_name}: {element_id}@{level})");
         let counter = self.adjust_lease_counter(element_id, level.level, 1) as i64;
         fuchsia_trace::counter!(
             c"power-broker", c"LeaseCounter", level.level.into(),
@@ -494,7 +497,7 @@ impl Broker {
 
         let targets = vec![ElementLevel { element_id, level }];
         let (lease, deps_claimed) =
-            self.catalog.create_lease_and_claim_dependencies(None, targets, lease_control);
+            self.catalog.create_lease_and_claim_dependencies(lease_name, targets, lease_control);
         // Activate all pending claims that have all of their
         // dependencies satisfied.
         self.activate_claims_if_dependencies_satisfied(
@@ -548,7 +551,7 @@ impl Broker {
         }
 
         let (lease, deps_claimed) = self.catalog.create_lease_and_claim_dependencies(
-            Some(&lease_name),
+            &lease_name,
             required_levels,
             lease_control,
         );
@@ -1080,10 +1083,17 @@ impl Broker {
 
         let provisional_lease = if need_provisional_lease {
             let lease_token = zx::Event::create();
-            let lease_koid = lease_token.koid().unwrap();
+            let lease_koid = lease_token.koid().expect("koid failed");
+            let provisional_lease_name =
+                format!("{}_provisional_lease", self.lookup_name(element_id));
             let lease = self
-                .acquire_lease(requires_element_id.clone(), requires_level, lease_koid)
-                .unwrap();
+                .acquire_lease(
+                    requires_element_id.clone(),
+                    requires_level,
+                    lease_koid,
+                    &provisional_lease_name,
+                )
+                .expect("acquire_lease failed");
             Some(lease)
         } else {
             None
@@ -1414,12 +1424,12 @@ impl Catalog {
         essential_deps
     }
 
-    /// Creates a new lease for the given targets along with all
+    /// Creates a new lease named `lease_name` for the given targets along with all
     /// claims necessary to satisfy this lease and adds them as pending claims.
     /// Returns the new lease and the Vec of dependencies claimed.
     fn create_lease_and_claim_dependencies(
         &mut self,
-        lease_name: Option<&str>,
+        lease_name: &str,
         targets: Vec<ElementLevel>,
         lease_control: zx::Koid,
     ) -> (Lease, Vec<Dependency>) {
@@ -2359,7 +2369,7 @@ mod tests {
     // process pending claims again: nothing would drop it, the new element would stay required,
     // and the lease would never vacate.
     #[fuchsia::test]
-    fn test_add_dependency_while_lease_powering_down() {
+    async fn test_add_dependency_while_lease_powering_down() {
         let inspect = fuchsia_inspect::Inspector::default();
         let mut broker = Broker::new(inspect.root().create_child("test"));
         let (element_c, token_c) =
@@ -2374,7 +2384,8 @@ mod tests {
         );
 
         // Acquire lease on A(ON); B and A turn ON.
-        let lease_a = broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).unwrap();
+        let lease_a =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1), "A_lease").unwrap();
         settle_levels(&mut broker, &[element_a, element_b]);
         assert_eq!(broker.get_lease_status(lease_a.id), Some(LeaseStatus::Satisfied));
 
@@ -2400,6 +2411,27 @@ mod tests {
             .unwrap()
             .unwrap();
         broker.update_current_level(element_c, ON);
+        assert_data_tree!(inspect, root: contains {
+            test: contains {
+                topology: contains {
+                    "fuchsia.inspect.Graph": contains {
+                        topology: contains {
+                            element_c.to_string() => contains {
+                                meta: contains {
+                                    leases: {
+                                        provisional_lease.id.to_string() => {
+                                            name: "B_provisional_lease",
+                                            level: ON.level as u64,
+                                            status: LeaseStatus::Satisfied.into_primitive() as u64,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
         broker
             .add_dependency(
                 element_b,
@@ -2457,7 +2489,8 @@ mod tests {
         );
 
         // Acquire lease_x1 on X(ON); A, B, and X turn ON.
-        let lease_x1 = broker.acquire_lease(element_x, ON, zx::Koid::from_raw(1)).unwrap();
+        let lease_x1 =
+            broker.acquire_lease(element_x, ON, zx::Koid::from_raw(1), "X_lease").unwrap();
         settle_levels(&mut broker, &[element_a, element_b, element_x]);
         assert_eq!(broker.get_lease_status(lease_x1.id), Some(LeaseStatus::Satisfied));
 
@@ -2474,7 +2507,8 @@ mod tests {
         assert_lease_cleaned_up(&broker.catalog, lease_x1.id);
 
         // Acquire and drop a new lease on A(ON); A must cleanly return to required level OFF.
-        let lease_a = broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2)).unwrap();
+        let lease_a =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2), "A_lease").unwrap();
         broker.update_current_level(element_a, ON);
         assert_eq!(broker.get_lease_status(lease_a.id), Some(LeaseStatus::Satisfied));
         broker.drop_lease(lease_a.id).unwrap();
@@ -3201,7 +3235,9 @@ mod tests {
         // P1's required level should become ON.
         // P2's required level should become ON.
         // The lease should be pending, as C isn't ON yet.
-        let lease = broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(child, ON, zx::Koid::from_raw(1), "C_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(parent1, ON);
         broker_status.required_level.update(parent2, ON);
         broker_status.lease.update(lease.id, LeaseStatus::Pending);
@@ -3274,6 +3310,7 @@ mod tests {
                                     required_level: ON.level as u64,
                                     leases: {
                                         format!("{}", lease.id) => {
+                                            name: "C_lease",
                                             level: 1u64,
                                             status: 2u64,
                                         }
@@ -3427,6 +3464,7 @@ mod tests {
                     rm_lease: {
                         element_id: *child,
                         lease_id: *lease.id,
+                        name: "C_lease",
                         level: 1u64,
                     },
                 },
@@ -3479,7 +3517,9 @@ mod tests {
         // dependency and GP as the transitive dependency.
         // P's required level should remain OFF, it depends on GP.
         // GP's required level should become ON.
-        let lease = broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(child, ON, zx::Koid::from_raw(1), "C_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(grandparent, ON);
         broker_status.lease.update(lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -3565,7 +3605,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Lease C, which will result in GGP's required level becoming ON.
-        let lease = broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(child, ON, zx::Koid::from_raw(1), "C_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(greatgrandparent, ON);
         broker_status.lease.update(lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -3665,7 +3707,7 @@ mod tests {
         // dependency on Grandparent. Grandparent has no dependencies so its
         // level should be raised first.
         let lease1 = broker
-            .acquire_lease(child1, IndexedPowerLevel::new(5, 1), zx::Koid::from_raw(1))
+            .acquire_lease(child1, IndexedPowerLevel::new(5, 1), zx::Koid::from_raw(1), "C1_lease")
             .expect("acquire failed");
         broker_status.required_level.update(grandparent, IndexedPowerLevel::new(200, 2));
         broker_status.lease.update(lease1.id, LeaseStatus::Pending);
@@ -3694,7 +3736,7 @@ mod tests {
         // requirements of Parent at 30 and Grandparent at 100, they are
         // superseded by Child 1's requirements of 50 and 200.
         let lease2 = broker
-            .acquire_lease(child2, IndexedPowerLevel::new(3, 1), zx::Koid::from_raw(2))
+            .acquire_lease(child2, IndexedPowerLevel::new(3, 1), zx::Koid::from_raw(2), "C2_lease")
             .expect("acquire failed");
         broker_status.required_level.update(child2, IndexedPowerLevel::new(3, 1));
         broker_status.lease.update(lease2.id, LeaseStatus::Pending);
@@ -3805,8 +3847,9 @@ mod tests {
         // should have required level ON because Child 1 has a dependency
         // on Parent and Parent has a dependency on Grandparent. Grandparent
         // has no dependencies so its level should be raised first.
-        let lease1 =
-            broker.acquire_lease(child1, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease1 = broker
+            .acquire_lease(child1, ON, zx::Koid::from_raw(1), "C1_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(grandparent, ON);
         broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -3832,8 +3875,9 @@ mod tests {
 
         // Acquire a lease for Child 2. Child 2 requires Parent and
         // Grandparent ON, which is already met by Child 1's requirements.
-        let lease2 =
-            broker.acquire_lease(child2, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        let lease2 = broker
+            .acquire_lease(child2, ON, zx::Koid::from_raw(2), "C2_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(child2, ON);
         broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -3935,8 +3979,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Acquire lease for E. C's required level should become on as a result.
-        let lease1 =
-            broker.acquire_lease(element_e, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease1 = broker
+            .acquire_lease(element_e, ON, zx::Koid::from_raw(1), "E_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(element_c, ON);
         broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -3958,8 +4003,9 @@ mod tests {
 
         // Acquire a lease for A. A requires B, which is currently OFF and
         // C, which is already ON.
-        let lease2 =
-            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        let lease2 = broker
+            .acquire_lease(element_a, ON, zx::Koid::from_raw(2), "A_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(element_b, ON);
         broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -4067,8 +4113,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Acquire lease for Child.
-        let lease1 =
-            broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease1 = broker
+            .acquire_lease(child, ON, zx::Koid::from_raw(1), "C_lease")
+            .expect("acquire failed");
         broker_status.required_level.update(grandparent, ON);
         broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
@@ -4169,8 +4216,9 @@ mod tests {
         // B and C's required level should be 1.
         //
         // A's lease is pending.
-        let lease_a =
-            broker.acquire_lease(element_a, TWO, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease_a = broker
+            .acquire_lease(element_a, TWO, zx::Koid::from_raw(1), "A_lease")
+            .expect("acquire failed");
         let lease_a_id = lease_a.id;
         broker_status.required_level.update(element_b, ONE);
         broker_status.required_level.update(element_c, ONE);
@@ -4265,10 +4313,12 @@ mod tests {
         // B & C's required level should remain OFF.
         // Both leases should be pending, as they should
         // have a new dependency on the topology unsatisfiable element.
-        let lease_b =
-            broker.acquire_lease(element_b, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        let lease_c =
-            broker.acquire_lease(element_c, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        let lease_b = broker
+            .acquire_lease(element_b, ON, zx::Koid::from_raw(1), "B_lease")
+            .expect("acquire failed");
+        let lease_c = broker
+            .acquire_lease(element_c, ON, zx::Koid::from_raw(2), "C_lease")
+            .expect("acquire failed");
         broker.update_current_level(element_a, ON);
         broker_status.lease.update(lease_b.id, LeaseStatus::Pending);
         broker_status.lease.update(lease_c.id, LeaseStatus::Pending);
@@ -4298,8 +4348,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Acquire lease for level 1.
-        let lease =
-            broker.acquire_lease(element, ONE, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element, ONE, zx::Koid::from_raw(1), "E_lease_1")
+            .expect("acquire failed");
         // Required level should become 1.
         broker_status.required_level.update(element, ONE);
         broker_status.assert_matches(&broker);
@@ -4316,8 +4367,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Acquire and drop a level 2 lease.
-        let lease =
-            broker.acquire_lease(element, TWO, zx::Koid::from_raw(2)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element, TWO, zx::Koid::from_raw(2), "E_lease_2")
+            .expect("acquire failed");
         broker.drop_lease(lease.id).expect("drop failed");
         // Required level should stay 0, to preserve orderly transition.
         broker_status.assert_matches(&broker);
@@ -4328,8 +4380,9 @@ mod tests {
         broker_status.assert_matches(&broker);
 
         // Acquire lease for level 1 and check required level.
-        let lease =
-            broker.acquire_lease(element, ONE, zx::Koid::from_raw(3)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element, ONE, zx::Koid::from_raw(3), "E_lease_3")
+            .expect("acquire failed");
         broker_status.required_level.update(element, ONE);
         broker_status.assert_matches(&broker);
 
@@ -4540,16 +4593,21 @@ mod tests {
         let mut broker_status = BrokerStatusMatcher::new();
 
         // Grab all required leases and power on all elements.
-        let lease_gp2 =
-            broker.acquire_lease(element_gp2, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        let lease_c1 =
-            broker.acquire_lease(element_c1, ON, zx::Koid::from_raw(2)).expect("acquire failed");
-        let lease_c2 =
-            broker.acquire_lease(element_c2, ON, zx::Koid::from_raw(3)).expect("acquire failed");
-        let lease_c3 =
-            broker.acquire_lease(element_c3, ON, zx::Koid::from_raw(4)).expect("acquire failed");
-        let lease_c4 =
-            broker.acquire_lease(element_c4, ON, zx::Koid::from_raw(5)).expect("acquire failed");
+        let lease_gp2 = broker
+            .acquire_lease(element_gp2, ON, zx::Koid::from_raw(1), "GP2_lease")
+            .expect("acquire failed");
+        let lease_c1 = broker
+            .acquire_lease(element_c1, ON, zx::Koid::from_raw(2), "C1_lease")
+            .expect("acquire failed");
+        let lease_c2 = broker
+            .acquire_lease(element_c2, ON, zx::Koid::from_raw(3), "C2_lease")
+            .expect("acquire failed");
+        let lease_c3 = broker
+            .acquire_lease(element_c3, ON, zx::Koid::from_raw(4), "C3_lease")
+            .expect("acquire failed");
+        let lease_c4 = broker
+            .acquire_lease(element_c4, ON, zx::Koid::from_raw(5), "C4_lease")
+            .expect("acquire failed");
         settle_levels(&mut broker, &all);
 
         // At this point, all elements should have required level ON.
@@ -5167,8 +5225,9 @@ mod tests {
             &[(ON.level, &token_a, ON.level)],
         );
 
-        let lease =
-            broker.acquire_lease(element_b, ON, zx::Koid::from_raw(456)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element_b, ON, zx::Koid::from_raw(456), "B_lease")
+            .expect("acquire failed");
 
         settle_levels(&mut broker, &[element_a, element_b]);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
@@ -5229,6 +5288,7 @@ mod tests {
                     rm_lease: {
                         element_id: *element_b,
                         lease_id: *lease.id,
+                        name: "B_lease",
                         level: ON.level as u64,
                         status: LeaseStatus::Vacated.into_primitive() as u64,
                     },
@@ -5277,8 +5337,9 @@ mod tests {
 
         // Acquire a lease on D(ON). Initially `[B(ON) -> A(ON)]` is activated (requiring A(ON)),
         // while `[C(ON) -> B(ON)]`, `[D(ON) -> C(ON)]`, and `[None -> D(ON)]` are pending.
-        let lease =
-            broker.acquire_lease(element_d, ON, zx::Koid::from_raw(789)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element_d, ON, zx::Koid::from_raw(789), "D_lease")
+            .expect("acquire failed");
         assert_eq!(broker.get_required_level(&element_a), Some(ON));
         assert_eq!(broker.get_required_level(&element_b), Some(OFF));
         assert_eq!(broker.get_required_level(&element_c), Some(OFF));
@@ -5319,8 +5380,9 @@ mod tests {
             add_test_element_with_token(&mut broker, "B", &BINARY_POWER_LEVELS, &[]);
 
         // Create a lease for A at ON and verify that A's required level is now ON.
-        let lease =
-            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element_a, ON, zx::Koid::from_raw(1), "A_lease")
+            .expect("acquire failed");
         assert_eq!(broker.get_required_level(&element_a), Some(ON));
 
         // Update current level to ON and verify the lease is satisfied.
@@ -5372,7 +5434,7 @@ mod tests {
 
         // Create a lease for A at 1.
         let lease = broker
-            .acquire_lease(element_a, level_1, zx::Koid::from_raw(1))
+            .acquire_lease(element_a, level_1, zx::Koid::from_raw(1), "A_lease")
             .expect("acquire failed");
 
         // There should be only one claim for A at 1.
@@ -5429,6 +5491,7 @@ mod tests {
                 element_b,
                 IndexedPowerLevel::from_same_level_and_index(1),
                 zx::Koid::from_raw(1),
+                "B_lease",
             )
             .expect("acquire failed");
 
@@ -5471,8 +5534,9 @@ mod tests {
         );
 
         // Acquire lease on A at ON.
-        let lease =
-            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease = broker
+            .acquire_lease(element_a, ON, zx::Koid::from_raw(1), "A_lease")
+            .expect("acquire failed");
 
         // Satisfy dependencies.
         settle_levels(&mut broker, &[element_b, element_a]);
@@ -5518,14 +5582,16 @@ mod tests {
         let level_20 = IndexedPowerLevel::new(20, 2);
 
         // Acquire Lease 1 on A at level 10.
-        let lease1 =
-            broker.acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(1)).unwrap();
+        let lease1 = broker
+            .acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(1), "A_lease_1")
+            .unwrap();
         settle_levels(&mut broker, &[element_b, element_a]);
         assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
 
         // Acquire Lease 2 on A at level 10.
-        let lease2 =
-            broker.acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(2)).unwrap();
+        let lease2 = broker
+            .acquire_lease(element_a, level_10.clone(), zx::Koid::from_raw(2), "A_lease_2")
+            .unwrap();
         assert_eq!(broker.get_lease_status(lease2.id), Some(LeaseStatus::Satisfied));
 
         // Bring B to level 20 first so that Lease 3's top claim can be
@@ -5534,8 +5600,9 @@ mod tests {
 
         // Acquire Lease 3 on A at level 20. This puts element A into
         // in_transition while transiting to 20.
-        let lease3 =
-            broker.acquire_lease(element_a, level_20.clone(), zx::Koid::from_raw(3)).unwrap();
+        let lease3 = broker
+            .acquire_lease(element_a, level_20.clone(), zx::Koid::from_raw(3), "A_lease_3")
+            .unwrap();
 
         // While A is in transition, drop Lease 2.
         // Because A is in transition, Lease 2's bottom claim (A@10 -> B@10)
@@ -5568,10 +5635,12 @@ mod tests {
         let (element_a, _) =
             add_test_element_with_token(&mut broker, "A", &BINARY_POWER_LEVELS, &[]);
 
-        let lease1 =
-            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        let lease2 =
-            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        let lease1 = broker
+            .acquire_lease(element_a, ON, zx::Koid::from_raw(1), "A_lease_1")
+            .expect("acquire failed");
+        let lease2 = broker
+            .acquire_lease(element_a, ON, zx::Koid::from_raw(2), "A_lease_2")
+            .expect("acquire failed");
 
         broker.update_current_level(element_a, ON);
         assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
@@ -5612,7 +5681,7 @@ mod tests {
         );
         let all = [a, e, f, g];
 
-        let lease = broker.acquire_lease(a, ON, zx::Koid::from_raw(1)).unwrap();
+        let lease = broker.acquire_lease(a, ON, zx::Koid::from_raw(1), "A_lease").unwrap();
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
@@ -5661,7 +5730,7 @@ mod tests {
         );
         let all = [e, m, p, q];
 
-        let lease = broker.acquire_lease(q, ON, zx::Koid::from_raw(1)).unwrap();
+        let lease = broker.acquire_lease(q, ON, zx::Koid::from_raw(1), "Q_lease").unwrap();
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
         assert_eq!(broker.get_current_level(&m), Some(TWO));
@@ -5700,8 +5769,8 @@ mod tests {
         let all = [e, y];
         let level_3 = IndexedPowerLevel::from_same_level_and_index(3);
 
-        let lease_e = broker.acquire_lease(e, level_3, zx::Koid::from_raw(1)).unwrap();
-        let lease_y = broker.acquire_lease(y, ON, zx::Koid::from_raw(2)).unwrap();
+        let lease_e = broker.acquire_lease(e, level_3, zx::Koid::from_raw(1), "E_lease").unwrap();
+        let lease_y = broker.acquire_lease(y, ON, zx::Koid::from_raw(2), "Y_lease").unwrap();
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease_e.id), Some(LeaseStatus::Satisfied));
         assert_eq!(broker.get_lease_status(lease_y.id), Some(LeaseStatus::Satisfied));
@@ -5739,8 +5808,8 @@ mod tests {
         );
         let all = [e, a, r];
 
-        let lease2 = broker.acquire_lease(a, ON, zx::Koid::from_raw(2)).unwrap();
-        let lease1 = broker.acquire_lease(r, ON, zx::Koid::from_raw(1)).unwrap();
+        let lease2 = broker.acquire_lease(a, ON, zx::Koid::from_raw(2), "A_lease").unwrap();
+        let lease1 = broker.acquire_lease(r, ON, zx::Koid::from_raw(1), "R_lease").unwrap();
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_lease_status(lease1.id), Some(LeaseStatus::Satisfied));
 
@@ -5788,8 +5857,8 @@ mod tests {
         );
         let all = [e, a, x, y];
 
-        let _lease_a = broker.acquire_lease(a, ON, zx::Koid::from_raw(1)).unwrap();
-        let _lease_x = broker.acquire_lease(x, ON, zx::Koid::from_raw(2)).unwrap();
+        let _lease_a = broker.acquire_lease(a, ON, zx::Koid::from_raw(1), "A_lease").unwrap();
+        let _lease_x = broker.acquire_lease(x, ON, zx::Koid::from_raw(2), "X_lease").unwrap();
         settle_levels(&mut broker, &all);
         assert_eq!(broker.get_current_level(&e), Some(TWO));
 

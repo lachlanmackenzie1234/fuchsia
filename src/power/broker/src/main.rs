@@ -75,6 +75,7 @@ impl BrokerSvc {
         element_name: String,
         stream: LessorRequestStream,
     ) -> Result<(), Error> {
+        let lease_name = format!("{element_name}_lessor_lease");
         stream
             .map(|result| result.context("failed request"))
             .try_for_each(|request| async {
@@ -96,7 +97,7 @@ impl BrokerSvc {
                                     .send(Err(LeaseError::InvalidLevel))
                                     .context("send failed");
                             };
-                            broker.acquire_lease(element_id, level, lease_control_koid)
+                            broker.acquire_lease(element_id, level, lease_control_koid, &lease_name)
                         };
                         match resp {
                             Ok(lease) => {
@@ -571,6 +572,8 @@ impl BrokerSvc {
                                 if let Some(lease_token) = initial_lease_token {
                                     let lease_token_koid =
                                         lease_token.as_handle_ref().koid().unwrap();
+                                    let initial_lease_name =
+                                        format!("{element_name}_initial_lease");
 
                                     let resp = {
                                         let mut broker = self.broker.borrow_mut();
@@ -578,7 +581,12 @@ impl BrokerSvc {
                                             Some(lvl) => {
                                                 let level = lvl.clone();
                                                 broker
-                                                    .acquire_lease(element_id, level, lease_token_koid)
+                                                    .acquire_lease(
+                                                        element_id,
+                                                        level,
+                                                        lease_token_koid,
+                                                        &initial_lease_name,
+                                                    )
                                                     .map_err(|e| match e {
                                                         fpb::LeaseError::NotAuthorized => {
                                                             fpb::AddElementError::NotAuthorized
@@ -1203,7 +1211,8 @@ mod tests {
             let level_1 = broker.get_level_index(element_b, &1).unwrap().clone();
             // Lease B at level 1 so B's required level is 1; adding a dependency from B(1) to A(1)
             // will therefore acquire a provisional lease on A(1) and wait for it to be satisfied.
-            let _lease_b = broker.acquire_lease(element_b, level_1, zx::Koid::from_raw(1)).unwrap();
+            let _lease_b =
+                broker.acquire_lease(element_b, level_1, zx::Koid::from_raw(1), "B_lease").unwrap();
             (element_a, element_b)
         };
 
