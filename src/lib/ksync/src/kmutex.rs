@@ -187,6 +187,89 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
     }
 }
 
+#[cfg(feature = "kernel")]
+impl<Class: LockClass, M: RawLock + AsRef<crate::RawSpinlockStorage>> KMutex<Class, M> {
+    /// Asserts (in debug builds) that this spinlock is held by the calling CPU and returns a
+    /// [`LockToken`] witnessing ownership of `Class`, mirroring C++ `SpinLock::AssertHeld()
+    /// TA_ASSERT()`.
+    ///
+    /// # Safety
+    ///
+    /// - This spinlock must currently be exclusively held by the calling CPU with interrupts
+    ///   disabled.
+    /// - The returned [`LockToken`] must not outlive that lock acquisition.
+    /// - Uses of the returned [`LockToken`] must not overlap any conflicting borrows (shared or
+    ///   mutable) derived from another [`LockToken`] or guard for `Class` on the same guarded
+    ///   instance (in particular, if used mutably, no other shared or mutable borrows of data
+    ///   guarded by `Class` on that instance may be live).
+    #[inline]
+    pub unsafe fn assert_held(&self) -> LockToken<'_, Class> {
+        self.mutex.as_ref().assert_held();
+        // SAFETY: The caller guarantees that this spinlock is exclusively held by the calling CPU
+        // with interrupts disabled, that the returned token will not outlive that acquisition, and
+        // that uses of the token will not overlap any conflicting shared or mutable borrows for
+        // `Class` on the same guarded instance.
+        unsafe { LockToken::new() }
+    }
+}
+
+#[cfg(feature = "kernel")]
+impl<Class: LockClass> KMutex<Class, crate::RawSpinlockStorage> {
+    /// Releases the underlying untracked spinlock without restoring interrupt state, consuming
+    /// `token` (`TA_REL()`).
+    ///
+    /// This is the counterpart to an untracked [`crate::RawSpinlockStorage::acquire`] or
+    /// successful [`crate::RawSpinlockStorage::try_acquire`].
+    ///
+    /// # Safety
+    ///
+    /// - Interrupts must be disabled, and this spinlock must currently be held by the calling CPU
+    ///   via a non-interrupt-saving acquisition that `token` witnesses.
+    /// - No borrows of data guarded by this acquisition (derived from `token` or any other
+    ///   [`LockToken`]) may remain live.
+    /// - The allocation backing `self` must remain live until this call returns (see
+    ///   [`crate::RawSpinlockStorage::release`]).
+    #[inline]
+    pub unsafe fn release(&self, token: LockToken<'_, Class>) {
+        let _ = token;
+        // SAFETY: The caller guarantees that the calling CPU holds this spinlock with interrupts
+        // disabled, that no borrows of data guarded by this acquisition remain live, and that
+        // `self` stays live until the call returns.
+        unsafe {
+            self.mutex.release();
+        }
+    }
+
+    /// Releases the underlying untracked spinlock and restores saved interrupt state `state`,
+    /// consuming `token` (`TA_REL()`).
+    ///
+    /// This is the counterpart to an untracked
+    /// [`crate::RawSpinlockStorage::acquire_irq_save`].
+    ///
+    /// # Safety
+    ///
+    /// - This spinlock must currently be held by the calling CPU via an interrupt-saving
+    ///   acquisition that produced `state`, and `token` must witness that acquisition.
+    /// - No borrows of data guarded by this acquisition (derived from `token` or any other
+    ///   [`LockToken`]) may remain live.
+    /// - The allocation backing `self` must remain live until this call returns (see
+    ///   [`crate::RawSpinlockStorage::release_irq_restore`]).
+    #[inline]
+    pub unsafe fn release_irq_restore(
+        &self,
+        state: crate::InterruptSavedState,
+        token: LockToken<'_, Class>,
+    ) {
+        let _ = token;
+        // SAFETY: The caller guarantees that the calling CPU holds this spinlock with saved
+        // interrupt state `state`, that no borrows of data guarded by this acquisition remain
+        // live, and that `self` stays live until the call returns.
+        unsafe {
+            self.mutex.release_irq_restore(state);
+        }
+    }
+}
+
 impl<Class: LockClass, M> core::fmt::Debug for KMutex<Class, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("KMutex").field("class", &core::any::type_name::<Class>()).finish()
@@ -872,6 +955,14 @@ mod tests {
     fn test_kmutex_init() {
         stack_pin_init!(let mu = KMutex::<MyClass>::init());
         lock!(mu.lock());
+    }
+
+    #[test]
+    fn test_lockdep_tracked_as_ref() {
+        stack_pin_init!(let mu = KMutex::<MyClass>::init());
+        let tracked: &RawMutex = mu.raw_mutex();
+        let storage: &crate::RawMutexStorage = tracked.as_ref();
+        assert!(core::ptr::eq(storage, &**tracked));
     }
 
     #[test]

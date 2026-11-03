@@ -185,6 +185,15 @@ impl<L: RawLock, P, const LOCK_FLAGS: lockdep::LockFlags> core::ops::Deref
     }
 }
 
+impl<L: RawLock, P, const LOCK_FLAGS: lockdep::LockFlags> AsRef<L>
+    for LockdepTracked<L, P, LOCK_FLAGS>
+{
+    #[inline]
+    fn as_ref(&self) -> &L {
+        &self.lock
+    }
+}
+
 // SAFETY: `LockdepTracked` is safe to share across threads when the underlying lock `L` is `Sync`.
 unsafe impl<L: RawLock + Sync, P, const LOCK_FLAGS: lockdep::LockFlags> Sync
     for LockdepTracked<L, P, LOCK_FLAGS>

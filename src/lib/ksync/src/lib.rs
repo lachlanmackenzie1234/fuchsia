@@ -170,6 +170,7 @@ pub use raw_userspace_mutex::{RawMutex, RawMutexStorage};
 pub use raw_spin_lock::{
     InterruptSavedState, IrqSavePolicy, MonitoredSpinlockGuardState, NoIrqSavePolicy,
     RawMonitoredSpinlock, RawMonitoredSpinlockStorage, RawSpinlock, RawSpinlockStorage,
+    TryAcquireResult,
 };
 #[cfg(feature = "kernel")]
 pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;

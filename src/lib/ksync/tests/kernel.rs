@@ -797,6 +797,108 @@ mod ksync_tests {
         }
     }
 
+    /// test raw RawSpinlockStorage methods and KMutex<_, RawSpinlockStorage> assert/release helpers
+    #[test]
+    fn raw_spinlock_storage() {
+        stack_pin_init!(let outer = ksync::RawSpinlockStorage::new());
+        stack_pin_init!(let inner = ksync::RawSpinlockStorage::new());
+        stack_pin_init!(let obj = pin_init!(GuardedUntrackedSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+
+        // SAFETY: `outer` is not held by this CPU, and it is released below with the returned
+        // state on this CPU without blocking.
+        let outer_state = unsafe { outer.acquire_irq_save() };
+        expect_true!(outer.is_held());
+        outer.assert_held();
+
+        // Holding `outer` keeps interrupts disabled, so the non-IRQ-saving operations on `inner`
+        // and `obj.mu` below are valid.
+        expect_true!(!inner.is_held());
+        // SAFETY: Interrupts are disabled, `inner` is not held, and it is released below.
+        unsafe { inner.acquire() };
+        expect_true!(inner.is_held());
+        inner.assert_held();
+        // SAFETY: Interrupts are disabled. `inner` is already held, so this must fail and not
+        // acquire the lock.
+        let result = unsafe { inner.try_acquire() };
+        expect_eq!(result, ksync::TryAcquireResult::Failed);
+        expect_true!(!result.is_acquired());
+        // SAFETY: Interrupts are disabled and `inner` is held by this CPU.
+        unsafe { inner.release() };
+        expect_true!(!inner.is_held());
+
+        // SAFETY: Interrupts are disabled, and if acquired `inner` is released below.
+        let result = unsafe { inner.try_acquire() };
+        expect_eq!(result, ksync::TryAcquireResult::Acquired);
+        expect_true!(inner.is_held());
+        if result.is_acquired() {
+            // SAFETY: Interrupts are disabled and `inner` was acquired by this CPU above.
+            unsafe { inner.release() };
+        }
+        expect_true!(!inner.is_held());
+
+        // SAFETY: Interrupts are disabled, `obj.mu` is not held, and it is released below via
+        // `KMutex::release`.
+        unsafe { obj.mu.raw_mutex().acquire() };
+        {
+            // SAFETY: `obj.mu` is held by this CPU with interrupts disabled, and `token` is
+            // consumed by `release` below with no outstanding borrows.
+            let token = unsafe { obj.mu.assert_held() };
+            // SAFETY: `token` witnesses `obj.mu`, which guards `obj.value`.
+            let value = *unsafe { obj.guard_mu(&token) }.value();
+            expect_eq!(value, 10);
+            // SAFETY: `obj.mu` is held by this CPU via `acquire` with interrupts disabled, `token`
+            // witnesses that acquisition, and no guarded borrows remain live.
+            unsafe { obj.mu.release(token) };
+        }
+        expect_true!(!obj.mu.raw_mutex().is_held());
+
+        // SAFETY: `outer` is held by this CPU and `outer_state` came from its acquisition.
+        unsafe { outer.release_irq_restore(outer_state) };
+
+        // SAFETY: `obj.mu` is not held by this CPU, and it is released below via
+        // `KMutex::release_irq_restore` with the returned state.
+        let state = unsafe { obj.mu.raw_mutex().acquire_irq_save() };
+        {
+            // SAFETY: `obj.mu` is held by this CPU with interrupts disabled, and `token` is
+            // consumed by `release_irq_restore` below with no outstanding borrows.
+            let mut token = unsafe { obj.mu.assert_held() };
+            // SAFETY: `token` witnesses `obj.mu`, which guards `obj.value`.
+            *unsafe { obj.guard_mu_mut(&mut token) }.value_mut() = 20;
+            // SAFETY: `token` witnesses `obj.mu`, which guards `obj.value`.
+            let value = *unsafe { obj.guard_mu(&token) }.value();
+            expect_eq!(value, 20);
+            // SAFETY: `obj.mu` is held by this CPU via `acquire_irq_save`, which returned `state`,
+            // `token` witnesses that acquisition, and no guarded borrows remain live.
+            unsafe { obj.mu.release_irq_restore(state, token) };
+        }
+
+        {
+            ksync::lock!(let guard = obj.lock_mu());
+            expect_eq!(*guard.value(), 20);
+        }
+    }
+
+    /// test KSpinlock::assert_held on a lockdep-tracked spinlock
+    #[test]
+    fn spinlock_assert_held() {
+        stack_pin_init!(let obj = pin_init!(GuardedSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 30.into(),
+        }));
+
+        ksync::lock!(let guard = obj.lock_mu());
+        // SAFETY: `guard` holds `obj.mu` with interrupts disabled, `token` does not outlive
+        // `guard`, and both are only used for shared access.
+        let token = unsafe { obj.mu.assert_held() };
+        // SAFETY: `token` witnesses `obj.mu`, which guards `obj.value`.
+        let value = *unsafe { obj.guard_mu(&token) }.value();
+        expect_eq!(value, 30);
+        expect_eq!(*guard.value(), 30);
+    }
+
     /// test PhantomMutex and #[mutex(LockClass)]
     #[test]
     fn phantom_lock() {

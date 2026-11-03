@@ -13,9 +13,28 @@ type InnerSavedState = u64;
 type InnerSavedState = bool;
 
 /// Opaque token representing the saved interrupt state.
+#[must_use = "saved interrupt state must be passed to a matching `release_irq_restore`"]
 #[repr(transparent)]
 #[derive(Copy, Clone, Default)]
 pub struct InterruptSavedState(InnerSavedState);
+
+/// Outcome of a non-blocking [`RawSpinlockStorage::try_acquire`] attempt.
+#[must_use = "if `Acquired`, the spinlock is now held and must be released"]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TryAcquireResult {
+    /// The spinlock was acquired by the calling CPU and must be released.
+    Acquired,
+    /// The spinlock was already held and was not acquired.
+    Failed,
+}
+
+impl TryAcquireResult {
+    /// Returns `true` if the spinlock was acquired (and so must be released).
+    #[inline]
+    pub const fn is_acquired(self) -> bool {
+        matches!(self, Self::Acquired)
+    }
+}
 
 unsafe extern "C" {
     fn cpp_ksync_interrupt_save() -> InterruptSavedState;
@@ -25,7 +44,10 @@ unsafe extern "C" {
     fn cpp_spinlock_acquire_irqsave(lock: *mut c_void) -> InterruptSavedState;
     fn cpp_spinlock_release_irqrestore(lock: *mut c_void, state: InterruptSavedState);
     fn cpp_spinlock_acquire_no_irqsave(lock: *mut c_void);
+    fn cpp_spinlock_try_acquire(lock: *mut c_void) -> bool;
     fn cpp_spinlock_release_no_irqrestore(lock: *mut c_void);
+    fn cpp_spinlock_is_held(lock: *const c_void) -> bool;
+    fn cpp_spinlock_assert_held(lock: *const c_void);
 
     fn cpp_monitored_spinlock_init(lock: *mut c_void, class_id: *const c_void);
     fn cpp_monitored_spinlock_destroy(lock: *mut c_void);
@@ -63,6 +85,164 @@ impl RawSpinlockStorage {
     /// Statically initializes a `RawSpinlockStorage` in constant context.
     pub const fn const_init() -> Self {
         Self { storage: zr::OpaqueBytes::new([0u8; RAW_SPINLOCK_SIZE]) }
+    }
+
+    /// Initializes a `RawSpinlockStorage` in place.
+    #[inline]
+    pub fn new() -> impl PinInit<Self, core::convert::Infallible> {
+        // SAFETY: Passing a null `class_id` is always valid for an untracked spinlock.
+        unsafe { <Self as RawLock>::init(core::ptr::null()) }
+    }
+
+    /// Acquire the spinlock.
+    ///
+    /// Interrupts must already be disabled.
+    ///
+    /// # Safety
+    ///
+    /// Interrupts must already be disabled on the calling CPU, the calling CPU must not already
+    /// hold this spinlock, and this acquisition must be paired with a matching [`Self::release`]
+    /// or [`Self::release_irq_restore`] on the same CPU before interrupts are re-enabled or the
+    /// thread blocks or migrates.
+    #[inline]
+    pub unsafe fn acquire(&self) {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock` with write provenance,
+        // and the caller upholds the interrupt-disabled and non-reentrant locking preconditions.
+        unsafe {
+            cpp_spinlock_acquire_no_irqsave(self.storage.get().cast::<c_void>());
+        }
+    }
+
+    /// Attempt to acquire the spinlock without waiting.
+    ///
+    /// Interrupts must already be disabled.
+    ///
+    /// Returns [`TryAcquireResult::Acquired`] when the lock is acquired, and
+    /// [`TryAcquireResult::Failed`] when the lock is not acquired.
+    ///
+    /// `try_acquire` operations are not permitted to fail spuriously, even on architectures with
+    /// weak memory ordering. If a `try_acquire` operation fails, it must be because the lock was
+    /// actually observed to be held during the attempt.
+    ///
+    /// # Safety
+    ///
+    /// Interrupts must already be disabled on the calling CPU, and if this call acquires the lock
+    /// (returns [`TryAcquireResult::Acquired`]), it must be paired with a matching
+    /// [`Self::release`] or [`Self::release_irq_restore`] on the same CPU before interrupts are
+    /// re-enabled or the thread blocks or migrates.
+    #[inline]
+    pub unsafe fn try_acquire(&self) -> TryAcquireResult {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock` with write provenance,
+        // and the caller upholds the interrupt-disabled locking preconditions.
+        // C++ `SpinLock::TryAcquire()` returns `false` when acquired and `true` when not acquired.
+        if unsafe { cpp_spinlock_try_acquire(self.storage.get().cast::<c_void>()) } {
+            TryAcquireResult::Failed
+        } else {
+            TryAcquireResult::Acquired
+        }
+    }
+
+    /// Release the spinlock.
+    ///
+    /// Interrupts must already be disabled.
+    ///
+    /// # Safety
+    ///
+    /// Interrupts must be disabled and this spinlock must currently be held by the calling CPU
+    /// without outstanding references protected by this acquisition.
+    ///
+    /// The allocation backing `self` must remain live until this call returns. Once the lock word
+    /// is released another CPU may acquire the lock immediately, so this must not be used to
+    /// release a lock that guards the destruction of its own containing allocation.
+    #[inline]
+    pub unsafe fn release(&self) {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock` with write provenance,
+        // and the caller guarantees that the calling CPU currently holds the spinlock with
+        // interrupts disabled.
+        unsafe {
+            cpp_spinlock_release_no_irqrestore(self.storage.get().cast::<c_void>());
+        }
+    }
+
+    /// Returns `true` if held by the calling CPU.
+    ///
+    /// Interrupts must be disabled before calling this method, otherwise it could return `true`
+    /// when it should return `false`.
+    ///
+    /// # Panics
+    ///
+    /// In builds with kernel debug assertions enabled, panics if interrupts are not disabled on
+    /// the calling CPU. Without debug assertions no check is made, and calling this with
+    /// interrupts enabled (and so migration possible) can return a false positive.
+    #[inline]
+    pub fn is_held(&self) -> bool {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock`. C++
+        // `SpinLock::IsHeld()` debug-asserts `arch_ints_disabled()` and then calls
+        // `arch_spin_lock_held()`, which performs a relaxed atomic load of the lock word and
+        // compares it against `arch_curr_cpu_num()`, which reads the architectural per-CPU
+        // register state (e.g. `%gs`, `x20`, or `tp`) that is set up before any spinlock can be
+        // used. Both are memory-safe in all states.
+        unsafe { cpp_spinlock_is_held(self.storage.get().cast_const().cast::<c_void>()) }
+    }
+
+    /// Just like [`Self::acquire`], but saves interrupt state and disables interrupts.
+    ///
+    /// # Safety
+    ///
+    /// The calling CPU must not already hold this spinlock, and the returned
+    /// [`InterruptSavedState`] must be passed to a matching [`Self::release_irq_restore`] on the
+    /// same CPU before the thread blocks or migrates.
+    #[inline]
+    pub unsafe fn acquire_irq_save(&self) -> InterruptSavedState {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock` with write provenance,
+        // and the caller upholds the non-reentrant locking preconditions.
+        unsafe { cpp_spinlock_acquire_irqsave(self.storage.get().cast::<c_void>()) }
+    }
+
+    /// Just like [`Self::release`], but also restores interrupt state.
+    ///
+    /// # Safety
+    ///
+    /// This spinlock must currently be held by the calling CPU without outstanding references
+    /// protected by this acquisition, and `state` must be the [`InterruptSavedState`] returned by
+    /// the corresponding interrupt-saving acquisition on this CPU.
+    ///
+    /// The allocation backing `self` must remain live until this call returns. The lock word is
+    /// released before interrupts are restored, and once released another CPU may acquire the
+    /// lock immediately, so this must not be used to release a lock that guards the destruction
+    /// of its own containing allocation.
+    #[inline]
+    pub unsafe fn release_irq_restore(&self, state: InterruptSavedState) {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock` with write provenance,
+        // and the caller guarantees that the calling CPU holds the lock with saved interrupt
+        // state `state`.
+        unsafe {
+            cpp_spinlock_release_irqrestore(self.storage.get().cast::<c_void>(), state);
+        }
+    }
+
+    /// Asserts (in debug builds) that the spinlock is currently held by the calling CPU.
+    ///
+    /// # Panics
+    ///
+    /// In builds with kernel debug assertions enabled, panics if interrupts are not disabled on
+    /// the calling CPU or if this spinlock is not held by the calling CPU.
+    #[inline]
+    pub fn assert_held(&self) {
+        // SAFETY: `self.storage.get()` points to an initialized `SpinLock`. C++
+        // `SpinLock::AssertHeld()` evaluates `DEBUG_ASSERT(IsHeld())`, which is memory-safe in all
+        // states (see `is_held`), and compiles to nothing when kernel debug assertions are
+        // disabled.
+        unsafe {
+            cpp_spinlock_assert_held(self.storage.get().cast_const().cast::<c_void>());
+        }
+    }
+}
+
+impl AsRef<RawSpinlockStorage> for RawSpinlockStorage {
+    #[inline]
+    fn as_ref(&self) -> &RawSpinlockStorage {
+        self
     }
 }
 
@@ -351,6 +531,9 @@ unsafe impl ExclusiveLockPolicy<RawMonitoredSpinlockStorage> for NoIrqSavePolicy
 unsafe impl RawLock for RawSpinlockStorage {
     type DefaultPolicy = IrqSavePolicy;
 
+    /// # Safety
+    ///
+    /// `class_id` must be null or a valid static `LockClassId` that outlives the initialized lock.
     #[inline]
     unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
         zr::pin_init_ffi!(cpp_spinlock_init, class_id)
@@ -358,7 +541,7 @@ unsafe impl RawLock for RawSpinlockStorage {
 
     #[inline]
     fn as_mut_ptr(&self) -> *mut c_void {
-        self as *const Self as *mut Self as *mut c_void
+        self.storage.get().cast::<c_void>()
     }
 }
 
@@ -371,6 +554,9 @@ impl ConstRawLock for RawSpinlockStorage {
 unsafe impl RawLock for RawMonitoredSpinlockStorage {
     type DefaultPolicy = IrqSavePolicy;
 
+    /// # Safety
+    ///
+    /// `class_id` must be null or a valid static `LockClassId` that outlives the initialized lock.
     #[inline]
     unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
         zr::pin_init_ffi!(cpp_monitored_spinlock_init, class_id)
@@ -378,7 +564,7 @@ unsafe impl RawLock for RawMonitoredSpinlockStorage {
 
     #[inline]
     fn as_mut_ptr(&self) -> *mut c_void {
-        self as *const Self as *mut Self as *mut c_void
+        self.storage.get().cast::<c_void>()
     }
 }
 

@@ -5,7 +5,11 @@
 # https://opensource.org/licenses/MIT
 
 source_set("ksync") {
-  sources = [ "bindings.cc" ]
+  sources = [
+    "bindings.cc",
+    "bindings.h",
+  ]
+  public = []
   deps = [ "//zircon/kernel/lib/lockdep" ]
 }
 
